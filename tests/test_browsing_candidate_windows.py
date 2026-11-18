@@ -2,6 +2,7 @@ import json
 
 import pytest
 from pydantic import ValidationError
+from schema_contract import validate_schema_complexity
 from test_browsing import BV, batch_plan_wire, finished, model_packet
 from test_browsing import browsing as browsing
 from test_browsing_batches import authorize
@@ -26,11 +27,9 @@ def test_candidate_action_requires_a_nonblank_explanation():
 
 
 def test_keyed_plan_requires_all_twenty_sources_and_tied_priorities_use_candidate_order():
-    from tuber_studio.inference_validation import _local_schema
-
     candidates = [candidate(number) | {"available_actions": ["watch", "comments", "skip", "later"]} for number in range(1, 21)]
     schema = candidate_batch_schema(candidates, 4)
-    _local_schema(schema)
+    validate_schema_complexity(schema)
     choices = schema["properties"]["choices"]
     assert choices["required"] == [item["bvid"] for item in candidates]
     assert set(choices["properties"]) == set(choices["required"])

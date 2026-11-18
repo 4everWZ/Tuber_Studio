@@ -188,9 +188,6 @@ p { margin-block: .55em 1em; }
 .status-dot, .status-indicator { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; background: #707070; }
 .status-dot.good, .status-indicator.good { background: var(--green); }
 .status-dot.bad { background: var(--danger); }
-.win-segmented-bar .mode-buttons { padding: 3px; background: #f1f1f1; border-radius: 9px; }
-.win-segmented-bar .btn-segment { min-height: 31px; padding: 3px 8px; border-radius: 7px; font-size: .88rem; }
-.win-segmented-bar .btn-segment[aria-pressed="true"] { background: var(--panel); color: var(--ink); }
 .win-notice { padding: 9px 16px; background: var(--soft); color: #184e82; }
 .win-notice.error { background: var(--danger-bg); color: var(--danger); }
 

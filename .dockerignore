@@ -6,7 +6,6 @@ docs
 tests
 data
 tools/training
-tools/deployment/push*_to_hf.py
 evaluations/*
 !evaluations/semantic-cases.json
 !evaluations/speech-cases.json

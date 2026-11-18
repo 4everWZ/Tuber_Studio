@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from io import BytesIO
 from pathlib import Path
 
 import httpx
@@ -26,6 +27,50 @@ CLIPS = {
     "confused": ("expressions", [0, 1, 2, 3, 2, 1, 0], [300, 180, 250, 650, 250, 180, 500]),
     "gift": ("actions", [0, 5, 5, 1, 0], [250, 200, 700, 500, 350]),
 }
+
+REACTIONS = {
+    "dance": ("摇摆一下", ["cheerful"], list(range(1, 32, 2)), 90),
+    "eat": ("开饭啦", ["cheerful", "excited"], list(range(1, 32, 2)), 110),
+    "jump": ("蹦起来", ["excited"], [0, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31], 80),
+    "sleep": ("困了，晚安", ["idle"], [1, 3, 5, 7, 9, 11, 13, 17, 19, 21, 23, 25, 27, 29, 31], 160),
+    "sneak": ("悄悄偷吃", ["shy", "cheerful"], [1, 3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25, 27, 29, 13, 31], 100),
+    "walk": ("这就来", ["idle", "cheerful"], [0, 16, 5, 6, 22, 10, 26, 13, 14, 30], 100),
+}
+
+
+def write_clip(atlas, indices, durations, path, size):
+    frames = []
+    for index in indices:
+        left, top = index % 4 * 512, index // 4 * 512
+        tile = atlas.crop((left, top, left + 512, top + 512)).resize((size, size), Image.Resampling.LANCZOS)
+        frame = tile.convert("RGB").quantize(colors=255, method=Image.Quantize.MEDIANCUT)
+        frame.paste(255, mask=tile.getchannel("A").point(lambda alpha: 255 if alpha < 128 else 0))
+        frame.info["transparency"] = 255
+        frames.append(frame)
+    frames[0].save(path, save_all=True, append_images=frames[1:], duration=durations, loop=0,
+                   disposal=2, transparency=255, optimize=False)
+
+
+def build_reactions():
+    folder = ROOT / "assets/whale/memes"
+    manifest = folder / "manifest.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    entries = {entry["id"]: entry for entry in data["entries"]}
+    with httpx.Client(timeout=60, follow_redirects=True) as client:
+        for action, (title, emotions, indices, duration) in REACTIONS.items():
+            asset = f"assets/whale/dense-{action}.png"
+            identity = "motion-" + action
+            response = client.get(f"{RAW}/{asset}")
+            response.raise_for_status()
+            with Image.open(BytesIO(response.content)) as atlas:
+                if atlas.size != (2048, 4096):
+                    raise ValueError(f"Unexpected atlas dimensions for {action}")
+                write_clip(atlas.convert("RGBA"), indices, duration, folder / f"{identity}.gif", 256)
+            entries[identity] = {"id": identity, "title": title, "path": f"{identity}.gif", "emotions": emotions,
+                                 "source": f"{REPOSITORY}/blob/{REVISION}/{asset}",
+                                 "note": f"原动作图集按帧 {indices}（行优先，从 0 编号）裁切，缩放为 256×256 透明循环 GIF，每帧 {duration} ms。"}
+    data["entries"] = list(entries.values())
+    manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def build(singing_only=False):
@@ -52,27 +97,7 @@ def build(singing_only=False):
     manifest_path = ROOT / "assets/whale/manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     for name, (atlas, indices, durations) in [] if singing_only else CLIPS.items():
-        frames = []
-        for index in indices:
-            x, y = index % 4 * 512, index // 4 * 512
-            tile = atlases[atlas].crop((x, y, x + 512, y + 512))
-            tile = tile.resize((384, 384), Image.Resampling.LANCZOS)
-            # Reserve palette index 255 for transparent pixels on every frame.
-            frame = tile.convert("RGB").quantize(colors=255, method=Image.Quantize.MEDIANCUT)
-            frame.paste(255, mask=tile.getchannel("A").point(lambda alpha: 255 if alpha < 128 else 0))
-            frame.info["transparency"] = 255
-            frames.append(frame)
-        destination = ROOT / f"assets/whale/{name}.gif"
-        frames[0].save(
-            destination,
-            save_all=True,
-            append_images=frames[1:],
-            duration=durations,
-            loop=0,
-            disposal=2,
-            transparency=255,
-            optimize=False,
-        )
+        write_clip(atlases[atlas], indices, durations, ROOT / f"assets/whale/{name}.gif", 384)
         entry = next(item for item in manifest["entries"] if item["id"] == name)
         entry.update(
             source=f"{REPOSITORY}/blob/{REVISION}/assets/whale/{atlas}.png",
@@ -122,5 +147,11 @@ def build(singing_only=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--singing-only", action="store_true")
-    build(parser.parse_args().singing_only)
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--singing-only", action="store_true")
+    modes.add_argument("--reactions-only", action="store_true")
+    options = parser.parse_args()
+    if options.reactions_only:
+        build_reactions()
+    else:
+        build(options.singing_only)

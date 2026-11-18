@@ -52,12 +52,12 @@ uv run --locked python tools/ci/check_style.py
 uv run --locked pytest tests/test_comments.py
 ```
 
-For a change, run the tests that cover the affected flow. See the [documentation index](docs/README.md) for guides, specifications and the game implementation plan, and the [9B training guide](tools/training/README.md) for training and model evaluation.
+For a change, run the tests that cover the affected flow. See the [documentation index](docs/README.md) for guides, specifications and the game implementation plan. Model serving and weight releases belong to the external service, not this workbench.
 
 `uv run --locked pytest tests/test_account_ui.py` runs the workbench browser-module tests in Node when available. Use the project test directory to keep test backups and packaged releases out of discovery.
 
 ## Acknowledgements
 
-See the [Genie-TTS license](third_party/Genie-TTS/LICENSE) and [Codex notices](third_party/openai-codex/NOTICE) for bundled third-party materials.
+See [Codex notices](third_party/openai-codex/NOTICE) for bundled third-party materials.
 
 The included Da-Fei-Yu character uses artwork by YunYueSama. Sources and terms are recorded in the [artwork notes](third_party/whale-avatar/UPSTREAM.md), [asset manifest](assets/whale/manifest.json) and [voice profiles](config/voices.json).

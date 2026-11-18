@@ -2,14 +2,15 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
-import { initOperatorChat } from "./modules/operator-chat.js?v=20261116.3";
+import { initOperatorChat } from "./modules/operator-chat.js?v=20261118.1";
+import { initChatPet } from "./modules/chat-pet.js";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261114.01";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261115.2";
-import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261113.02";
+import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261118.1";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
-import { MemeGallery, MemePicker, memePreview } from "./memes.js?v=20261111.08";
-import { MessagesPanel } from "./messages.js?v=20261111.08";
+import { MemeGallery, MemePicker, memePreview } from "./memes.js?v=20261118.1";
+import { MessagesPanel } from "./messages.js?v=20261118.1";
 import { UserMemoryEditor } from "./user-memory.js";
 import {
   applyAutomationStatus,
@@ -31,13 +32,12 @@ import {
 } from "./modules/maintenance.js?v=20261107.12";
 import {
   renderControls,
-  initLiveModule,
 } from "./modules/live.js?v=20261114.1";
 
 import {
   badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, tokenCount,
 } from "./modules/workspace-display.js?v=20261107.23";
-import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261113.01";
+import { initWorkspaceNavigation, workspaceSection } from "./modules/workspace-navigation.js?v=20261113.01";
 import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261114.1";
 
 const api = async (path, options = {}) => {
@@ -57,7 +57,6 @@ const model = {
   settings: null, socket: null, polling: false, comments: [], selectedComments: new Set(),
   commentId: null, policy: null,
   importPreviewSignature: null, categorySaving: new Set(),
-  modeSwitch: null, modeResult: null,
   threadContextPending: null,
   retention: null, retentionPreview: null, retentionDirty: false, retentionPending: null,
   dynamicPolicy: null, dynamicPolicyDirty: false, dynamicSaving: false, dynamicEvaluating: false,
@@ -81,17 +80,7 @@ const commentContinuation = new OperationContinuationView($("comment-continuatio
 const dynamicContinuation = new OperationContinuationView($("dynamic-continuation"), api, notice, refreshDynamics);
 const dynamicDecisionContinuation = new OperationContinuationView($("dynamic-decision-continuation"), api, notice, refreshDynamics);
 const cachePanel = new CachePanel($("cache-panel"), api, notice);
-const inferenceNodePanel = new InferenceNodePanel($("inference-node-panel"), api, async () => {
-  model.modeResult = null;
-  try {
-    await refreshSettings();
-    renderStatus(await api("/api/status"));
-  } catch (error) {
-    notice(`节点已配对，状态刷新失败：${error.message}`, true);
-  }
-});
 setInterval(() => { if (model.authenticated && !document.hidden && model.page === "overview") cachePanel.refresh(); }, 5000);
-setInterval(() => { if (model.authenticated && !document.hidden && model.page === "settings") inferenceNodePanel.refresh(); }, 10000);
 
 const userMemoryEditor = new UserMemoryEditor(api);
 const messagesPanel = new MessagesPanel($("messages-panel"), api, notice, scope => {
@@ -101,7 +90,10 @@ const messagesPanel = new MessagesPanel($("messages-panel"), api, notice, scope 
 messagesPanel.mountSettings($("message-policy-settings"));
 const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
 const issueLog = initIssueLog(api, () => model.page);
+const chatPet = initChatPet(api);
 const operatorChat = initOperatorChat((path, options) => baseApi(path, options, showLogin), {
+  setPet: chatPet.setCharacter,
+  refreshAutomation: () => updatePermissionCapsule({ background: true }),
   getAutomationStatus, applyAutomationStatus: status => applyAutomationStatus(status, accountPanel),
 });
 document.addEventListener("workspace-issue", event => {
@@ -124,6 +116,7 @@ const memeGallery = new MemeGallery($("meme-gallery"), api, notice, () => {
   messagesPanel.memeCache.clear();
 });
 const accountPanel = new BilibiliAccountUI({
+  shouldPoll: () => model.page === "accounts" || workspaceSection(model.page) === "operations",
   header: $("global-bilibili-account"),
   badges: [$("top-account-badge"), $("chat-account-badge")],
   settings: $("account-settings"),
@@ -220,22 +213,11 @@ async function refreshSettings() {
 async function enterWorkspace() {
   voiceSettings.reset();
   await refreshSettings();
-  await Promise.all([
-    loadVoices(),
-    loadAssets(),
-    accountPanel.activate(),
-    api("/api/status").then(async status => {
-      renderStatus(status);
-      await characterStudio?.loadCharacters();
-    })
-  ]);
   model.authenticated = true;
   $("login").hidden = true;
   $("workspace").hidden = false;
   connectAdmin();
   await changePage();
-  if (model.page !== "automation") await Promise.all([discoveryPanel.refresh(), updatePermissionCapsule({ background: true })]);
-  void issueLog.refresh();
 }
 
 function connectAdmin() {
@@ -257,6 +239,8 @@ function renderStatus(status) {
   }
   if (model.authenticated && previousCharacter?.id !== status.character?.id) personalization.refreshScope();
   operatorChat.renderModel(status, model.settings);
+  if (model.authenticated && model.page === "chat" && previousCharacter &&
+      (previousCharacter.id !== status.character?.id || previousCharacter.version !== status.character?.version)) void operatorChat.refresh();
 }
 setInterval(refreshWorkspaceClock, 1000);
 
@@ -362,6 +346,7 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
   if (model.page !== "comments") commentQueue.leave();
   if (model.page !== "chat") operatorChat.leave();
   if (!model.authenticated) return;
+  if (workspaceSection(model.page) === "operations" && !accountPanel.active) void accountPanel.activate();
   if (model.page === "chat") {
     await operatorChat.refresh();
   } else if (model.page === "comments") {
@@ -394,7 +379,9 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
   } else if (model.page === "dynamics") {
     await refreshDynamics();
   } else if (model.page === "assets") {
-    await memeGallery.refresh();
+    await Promise.all([loadAssets(), memeGallery.refresh()]);
+  } else if (model.page === "voices") {
+    await loadVoices();
   } else if (["live", "live-scene", "live-music", "live-settings"].includes(model.page)) {
     const frame = document.querySelector(`[data-section="${model.page}"] iframe`);
     if (!frame.hasAttribute("src")) frame.src = frame.dataset.src;
@@ -402,12 +389,13 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
     await interactiveGamesUI.refresh();
   } else if (model.page === "characters" || model.page === "personalization") {
     personalization.refresh();
+    if (model.page === "characters") await characterStudio.loadCharacters();
   } else if (model.page === "overview") {
     await Promise.allSettled([cachePanel.refresh(), maintenanceModule?.loadRetention()]);
   } else if (model.page === "accounts") {
-    await Promise.allSettled([accountPanel.settingsOpened(), updatePermissionCapsule(), commentsModule?.loadPolicy()]);
+    await Promise.allSettled([accountPanel.active ? accountPanel.settingsOpened() : accountPanel.activate(), updatePermissionCapsule(), commentsModule?.loadPolicy()]);
   } else if (model.page === "settings") {
-    await Promise.allSettled([inferenceNodePanel.refresh(), inferenceProviders.refresh()]);
+    if (!inferenceProviders.dirty) await refreshSettings();
   }
 }
 
@@ -415,10 +403,10 @@ async function poll() {
   if (!model.authenticated || model.polling || document.hidden) return;
   model.polling = true;
   try {
-    const automationRefresh = updatePermissionCapsule({ background: true });
-    const updates = [api("/api/status").then(renderStatus), automationRefresh];
+    const updates = model.socket?.readyState === WebSocket.OPEN && model.status ? [] : [api("/api/status").then(renderStatus)];
+    if (workspaceSection(model.page) === "operations" || model.page === "accounts") updates.push(updatePermissionCapsule({ background: true }));
     if (["automation", "automation-settings", "comments"].includes(model.page)) updates.push(discoveryPanel.refresh());
-    if (model.page === "chat") updates.push(automationRefresh.then(operatorChat.refreshCards));
+    if (model.page === "chat") updates.push(operatorChat.refreshCards());
     if (model.page === "automation") updates.push($("operation-activity-issues").hidden ? refreshOperationsActivity() : issueLog.refresh());
     if (model.page === "comments") updates.push(commentQueue.refresh());
     if (model.page === "messages") updates.push(messagesPanel.refresh({ background: true }));
@@ -501,20 +489,12 @@ maintenanceModule = initMaintenanceModule(model, {
   onCommentsImported: showCommentSources,
 });
 
-initLiveModule(model, {
-  api,
-  notice,
-  renderStatusFn: renderStatus,
-  renderVoicePreviewFn: () => renderVoicePreview(model),
-  loadSettingsFn: refreshSettings,
-});
-
 initOperationsModule(api, accountPanel);
 const inferenceProviders = initInferenceProvidersUI(model, {
   api,
   busy,
   apply: applyWorkbenchSettings,
-  refreshStatus: () => Promise.allSettled([api("/api/status").then(renderStatus), loadVoices()]),
+  refreshStatus: () => api("/api/status").then(renderStatus),
 });
 const voiceSettings = initVoiceSettings(model, api, busy, applyWorkbenchSettings);
 
@@ -610,17 +590,22 @@ if ($("refresh-operations")) {
 
 const changePage = initWorkspaceNavigation(model, loadWorkspacePage);
 window.addEventListener("beforeunload", event => {
-  if (commentQueue.hasUnsaved() || model.characterDirty || inferenceProviders.dirty || inferenceNodePanel.dirty || voiceSettings.dirty || interactiveGamesUI.rulesDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || dynamicsModule?.hasUnsaved() || messagesPanel.hasUnsaved()) {
+  if (commentQueue.hasUnsaved() || model.characterDirty || inferenceProviders.dirty || voiceSettings.dirty || interactiveGamesUI.rulesDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || dynamicsModule?.hasUnsaved() || messagesPanel.hasUnsaved()) {
     event.preventDefault();
     event.returnValue = "";
   }
 });
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) poll();
+  if (!document.hidden) {
+    if (model.authenticated && model.page === "chat") void operatorChat.refresh();
+    poll();
+  }
 });
 setInterval(poll, 2500);
 setInterval(() => {
-  if (model.authenticated && !document.hidden && !["issues", "automation-records"].includes(model.page)) {
+  if (!model.authenticated || document.hidden) return;
+  if (model.page === "chat") void operatorChat.refresh();
+  if (workspaceSection(model.page) === "operations" && model.page !== "automation-records") {
     void issueLog.refresh();
   }
 }, 10000);

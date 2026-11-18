@@ -97,11 +97,9 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
 
     @app.get("/api/live/studio", dependencies=[Depends(require_admin)])
     async def live_studio():
-        inference = runtime.inference.status or {}
-        pending = (inference.get("operation") or {}).get("mode")
         return view(operator=True) | room_feed(runtime.live) | {
             "live_enabled": settings.data.get("features", {}).get("live_enabled", False),
-            "inference_transitioning": pending is not None and pending != inference.get("mode"),
+            "inference_transitioning": False,
         }
 
     @app.get("/media/live2d/{group}/{relative:path}", dependencies=[Depends(require_view)])

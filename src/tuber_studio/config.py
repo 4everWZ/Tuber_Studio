@@ -93,23 +93,24 @@ class Settings:
             self._secret("inference-token") if self.data.get("inference_broker", {}).get("enabled") else None
         )
         self.credentials_path = self.runtime / "provider-credentials.json"
-        if self.credentials_path.is_symlink():
+        self.provider_keys = self.read_provider_keys(self.credentials_path)
+
+    @staticmethod
+    def read_provider_keys(path):
+        if path.is_symlink():
             raise ValueError("API凭证文件不能使用符号链接")
-        saved_keys = (
-            json.loads(self.credentials_path.read_text(encoding="utf-8"))
-            if self.credentials_path.exists()
-            else {}
-        )
+        saved_keys = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
         if not isinstance(saved_keys, dict) or set(saved_keys) - {"llm", "tts", "vision", "responses"}:
             raise ValueError("API凭证文件格式无效")
-        self._provider_keys = {}
+        keys = {}
         for name, entry in saved_keys.items():
             if isinstance(entry, str):
-                self._provider_keys[name] = _EndpointKey(entry, None)
+                keys[name] = _EndpointKey(entry, None)
             elif isinstance(entry, dict) and set(entry) == {"key", "base_url"}:
-                self._provider_keys[name] = _EndpointKey(entry["key"], entry["base_url"])
+                keys[name] = _EndpointKey(entry["key"], entry["base_url"])
             else:
                 raise ValueError("API凭证文件格式无效")
+        return keys
 
     def _validate(self, data=None):
         data = self.data if data is None else data

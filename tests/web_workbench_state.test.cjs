@@ -148,21 +148,42 @@ test("main and standalone live controls share session, feature and mode-transiti
   assert.equal(inferenceModeChanging({ mode: "text", operation: { mode: "live" } }), true);
 });
 
-test("node pairing preserves newer credential edits made while its request is pending", async t => {
-  const { get, document } = dom(t);
-  const Panel = classic("inference-node.js", "InferenceNodePanel", document);
-  let complete;
-  const panel = new Panel(get("node"), async () => new Promise(resolve => { complete = resolve; }), async () => {});
-  get("[data-url]").value = "http://old-node:9012";
-  get("[data-token]").value = "first-value";
-  get("[data-pair]").onsubmit({ preventDefault() {} });
-  get("[data-token]").value = "second-value";
-  get("[data-token]").oninput();
-  complete({ paired: true, base_url: "http://old-node:9012", capabilities: {} });
-  for (let i = 0; panel.busy && i < 10; i++) await new Promise(resolve => setImmediate(resolve));
-  assert.equal(panel.busy, false);
-  assert.equal(get("[data-token]").value, "second-value");
-  assert.equal(panel.dirty, true);
+test("pet picker requires attributable assets with source and permission links", async () => {
+  const { hasPetSource } = await import("../src/tuber_studio/web/modules/chat-pet.js");
+  const asset = {source: {author: "creator", url: "https://example.org/art"}, license: {name: "permission", url: "https://example.org/license"}};
+  assert.equal(hasPetSource(asset), true);
+  assert.equal(hasPetSource({...asset, source: {...asset.source, author: ""}}), false);
+  assert.equal(hasPetSource({...asset, license: {name: "unknown"}}), false);
+  assert.equal(hasPetSource({...asset, source: {...asset.source, url: "javascript:void(0)"}}), false);
+});
+
+test("pet follows chat identity, stays hidden across reload and never fetches the gallery on startup", async t => {
+  const { get, document, make } = dom(t);
+  document.body = make();
+  document.createElement = () => ({ ...make(), close() {} });
+  const media = { matches: false, addEventListener() {} };
+  const preferences = new Map();
+  globalThis.matchMedia = () => media;
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
+    getItem: key => preferences.get(key), setItem: (key, value) => preferences.set(key, value),
+  } });
+  t.after(() => { delete globalThis.matchMedia; delete globalThis.localStorage; });
+  get("operator-chat-more-toggle").click = get("operator-chat-more-toggle").focus = () => {};
+  const { initChatPet } = await import("../src/tuber_studio/web/modules/chat-pet.js");
+  const api = () => assert.fail("unexpected gallery request");
+  const view = initChatPet(api);
+  const character = {character_id: "whale", avatar: "/assets/whale/idle.gif"};
+  view.setCharacter(character);
+  assert.equal(get("chat-agent-avatar").src, character.avatar);
+  get("chat-pet-toggle").onclick();
+  const restored = initChatPet(api);
+  restored.setCharacter(character);
+  assert.equal(get("chat-pet").hidden, true);
+  get("chat-pet-toggle").onclick();
+  assert.equal(get("chat-agent-avatar").src, character.avatar);
+  restored.setCharacter(null);
+  assert.equal(get("chat-pet").hidden, true);
+  assert.equal(get("chat-agent-avatar").src, "");
 });
 
 test("an older character request cannot replace the last selected character", async t => {

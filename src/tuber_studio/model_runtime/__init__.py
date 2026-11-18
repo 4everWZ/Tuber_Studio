@@ -1,1 +1,1 @@
-"""Business-side model configuration and inference mode ownership."""
+"""Business-side inference API configuration."""

@@ -10,7 +10,6 @@ import psutil
 from .agent.memory_organizer import MemoryOrganizer
 from .agent_tools import build_default_tool_registry
 from .api_providers import VisionService, create_llm
-from .config import uses_broker_llm
 from .context import ContextManager
 from .context_delivery import comment_scope
 from .daily_memory import DailyMemoryService, MemoryChanged
@@ -19,7 +18,6 @@ from .live.scene import LiveScene
 from .live.session import HANDOFF_PLATFORM, LiveSession
 from .media_cache import MediaCache
 from .memory import missing_slots
-from .model_runtime.session import InferenceRuntime
 from .models import OperationReply, Reply
 from .operation_continuations import ContinuationCoordinator, content_hash
 from .operation_generation import generate_with_recovery, hold_comment_body, reply_generation_binding
@@ -31,7 +29,6 @@ from .operations_control import OperationsControl
 from .providers import VoiceService, public_error, reuse_turn_token_counts
 from .relationships import Relationships
 from .retention import INTERVAL_SECONDS, RetentionManager
-from .runtime_modes import apply_mode_profile, profile_alignment_error
 from .store import character_card, dump
 from .video_vision_service import restore_admission
 
@@ -71,6 +68,7 @@ class Runtime:
         )
         self.retention = RetentionManager(settings, store)
         self.retention_worker = None
+        self.connection_probe = None
         self.retention_error = None
         self.generation_lock = asyncio.Lock()
         self.operation_turns = OperationTurns(self.generation_lock, self.operations_waiting)
@@ -79,7 +77,6 @@ class Runtime:
         self.cache = MediaCache(self)
         self.live.media.cache = self.cache
         self.voices.cache = self.cache
-        self.inference = InferenceRuntime(self)
 
     @property
     def character(self):
@@ -181,68 +178,49 @@ class Runtime:
             return
 
     def operator_generation(self, lane="chat"):
-        if self.inference.status.get("mode") == "live" or (
-            self.inference.client is None and self.live.state in {"live", "paused"}
-        ):
+        if self.live.state in {"live", "paused"}:
             return self.generation_lock
         return self.offline_generation(lane)
 
     def operations_waiting(self):
-        profiles = self.settings.data.get("work_mode_profiles")
-        node = self.inference.status
-        if profiles and (
-            node.get("mode") != "text"
-            or node.get("state") in {"loading", "starting", "switching"}
-            or (node.get("state") == "error" and uses_broker_llm(self.settings.data))
-            or profile_alignment_error(self, node)
-        ):
-            return True
         return self.live.state in {"live", "paused"} and self.live.busy
 
     async def open(self):
         char = self.character
         self.daily_memory.check_and_record_downtime(char["id"], char["version"])
         await self.live.online_songs.open()
-        if self.settings.data.get("work_mode_profiles") and self.inference.client:
-            try:
-                observed = await self.inference.refresh()
-                async with self.generation_lock:
-                    await apply_mode_profile(self, observed["mode"])
-                if observed.get("provider_alignment_error"):
-                    await self.inference.refresh()
-            except Exception as error:
-                self.inference.status = self.inference.status | {
-                    "state": "error", "active": None, "error": public_error(error),
-                }
+        self.connection_probe = asyncio.create_task(self._probe_connections())
+        await self.cleanup_retention(automatic=True)
+        self.retention_worker = asyncio.create_task(self._retention_loop())
+        self.live.start_worker()
+
+    async def _probe_connections(self):
+        provider = self.llm
         try:
-            await self.llm.health()
-            self.error = None
+            await provider.health()
         except Exception as error:
-            self.error = public_error(error)
+            if provider is self.llm:
+                self.error = public_error(error)
         if getattr(self, "browsing", None):
             try:
                 await restore_admission(self)
             except Exception:
                 pass
-        await self.cleanup_retention(automatic=True)
-        self.retention_worker = asyncio.create_task(self._retention_loop())
-        self.live.start_worker()
-        if self.settings.data.get("inference_broker", {}).get("enabled"):
-            self.inference.start_observer()
 
     async def close(self):
+        if self.connection_probe:
+            self.connection_probe.cancel()
+            await asyncio.gather(self.connection_probe, return_exceptions=True)
         if self.retention_worker:
             self.retention_worker.cancel()
             await asyncio.gather(self.retention_worker, return_exceptions=True)
         await self.control("stop")
         await self.live.online_songs.close()
-        await self.inference.stop_observer()
         await self.live.stop_worker()
         await self.llm.close()
         await self.live.media.singing.close()
         await self.voices.close()
         await self.vision.close()
-        await self.inference.close()
         self.daily_memory.update_active_timestamp()
 
     async def cleanup_retention(self, before=None, *, automatic=False):
@@ -289,7 +267,7 @@ class Runtime:
                     getattr(self.llm, "live_thinking_budget_supported", None)
                     if self.settings.data["llm"]["kind"] == "llama_cpp" else False
                 ),
-                "llm_route": "node" if uses_broker_llm(self.settings.data) else "direct",
+                "llm_route": "direct",
                 "tts": self.settings.data["tts"]["kind"],
             },
             "resources": {
@@ -301,13 +279,11 @@ class Runtime:
             },
             "timings": self.live.timings,
             "context": self.context.status(),
-            "inference": self.inference.status,
-            "inference_node": self.inference.capabilities,
             "deployment": {
-                "mode": self.settings.data.get("inference_broker", {}).get("deployment", "local"),
+                "mode": "service",
                 "business_data": str(self.settings.runtime),
                 "business_host": socket.gethostname(),
-                "inference_url": self.settings.data.get("inference_broker", {}).get("base_url"),
+                "inference_url": self.settings.data["llm"].get("base_url"),
             },
             "playback": self.live.playback,
             "operations_waiting": self.operations_waiting(),

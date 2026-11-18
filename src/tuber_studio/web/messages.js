@@ -1,5 +1,5 @@
 "use strict";
-import { MemePicker, memePreviewUrl } from "./memes.js";
+import { MemePicker, memePreviewUrl } from "./memes.js?v=20261118.1";
 import { contactLabel, contactReason, contactStatus } from "./modules/message-labels.js?v=20261107.20";
 
 export class MessagesPanel {

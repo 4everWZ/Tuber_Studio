@@ -14,7 +14,7 @@ from pathlib import Path
 
 from tuber_studio.comments import Comments
 from tuber_studio.compaction import is_summary_message
-from tuber_studio.config import Settings, redact_credentials, uses_broker_llm, validate_api_key
+from tuber_studio.config import Settings, redact_credentials, uses_broker_llm
 from tuber_studio.providers import public_error
 from tuber_studio.runtime import Runtime
 from tuber_studio.store import Store
@@ -36,8 +36,9 @@ def isolated_settings(config_path, runtime_path, seed):
     credentials = source_runtime if config_path == default_config.resolve() else config_path.parent
     target = runtime_path / "studio.json"
     config = redact_credentials(json.loads(config_path.read_text(encoding="utf-8")))
-    if config["llm"]["kind"] != "llama_cpp":
-        raise ValueError("Use a configured native llama.cpp endpoint")
+    if config["llm"]["kind"] not in {"llama_cpp", "openai_compatible"} or uses_broker_llm(config):
+        raise ValueError("Use a configured independent inference API")
+    config["inference_broker"] = {"enabled": False}
     if seed is not None:
         config["llm"]["seed"] = seed
     config["features"] = config.get("features", {}) | {"live_enabled": False}
@@ -51,41 +52,20 @@ def isolated_settings(config_path, runtime_path, seed):
             os.environ.pop("TUBER_CONFIG", None)
         else:
             os.environ["TUBER_CONFIG"] = previous
-    if uses_broker_llm(settings.data):
-        token = (credentials / "inference-token").read_text(encoding="utf-8").strip()
-        validate_api_key(token)
-        settings.inference_token = token
-    else:
-        settings.data["inference_broker"] = {"enabled": False}
-        key_file = credentials / "provider-credentials.json"
-        if key_file.is_file():
-            key = json.loads(key_file.read_text(encoding="utf-8")).get("llm")
-            if key is not None:
-                validate_api_key(key)
-                settings.provider_keys = {"llm": key}
+    keys = Settings.read_provider_keys(credentials / "provider-credentials.json")
+    settings.provider_keys = {"llm": keys["llm"]} if "llm" in keys else {}
     return settings
 
 
 async def ready_model(runtime):
-    model = runtime.settings.data["llm"]["model"]
-    if runtime.inference.client is not None:
-        response = await runtime.inference.client.get("/health", timeout=5)
-        state = response.raise_for_status().json()
-        if (
-            state.get("mode") != "text" or state.get("busy") or state.get("error")
-            or state.get("model") != model or state.get("active_provider") != state.get("selected_provider")
-            or not state.get("active_provider")
-        ):
-            raise ValueError("The configured inference model must already be active in idle text mode")
-
     async def inference_only(request):
-        routes = ("/tokenize", "/apply-template", "/v1/chat/completions")
+        routes = ("/tokenize", "/apply-template", "/chat/completions", "/chat/prompt_tokens")
         if request.method != "GET" and not (request.method == "POST" and request.url.path.endswith(routes)):
             raise ValueError("The diagnostic cannot warm up or reconfigure an inference service")
 
     runtime.llm.client.event_hooks["request"].append(inference_only)
     await runtime.llm.health()
-    if runtime.llm.is_sleeping:
+    if getattr(runtime.llm, "is_sleeping", False):
         raise ValueError("The configured inference model is sleeping")
     runtime.llm.supports_operation_web_fetch = False
 

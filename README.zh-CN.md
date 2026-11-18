@@ -52,10 +52,10 @@ uv run --locked python tools/ci/check_style.py
 uv run --locked pytest tests/test_comments.py
 ```
 
-按改动范围运行对应流程的测试。使用指南、技术规范和游戏计划见[文档索引](docs/README.md)，微调与评估见 [9B 训练指南](tools/training/README.md)。
+按改动范围运行对应流程的测试。使用指南、技术规范和游戏计划见[文档索引](docs/README.md)。模型部署与权重发布由独立服务负责，工坊不再训练或发布模型。
 
 ## 致谢
 
-随附第三方材料的条款见 [Genie-TTS 许可证](third_party/Genie-TTS/LICENSE)和 [Codex 声明](third_party/openai-codex/NOTICE)。
+随附第三方材料的条款见 [Codex 声明](third_party/openai-codex/NOTICE)。
 
 内置大肥鱼形象源于 YunYueSama 的作品。来源、许可与修改见[形象说明](third_party/whale-avatar/UPSTREAM.md)、[素材清单](assets/whale/manifest.json)和[音色配置](config/voices.json)。

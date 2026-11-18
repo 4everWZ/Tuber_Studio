@@ -6,15 +6,13 @@ import copy
 import httpx
 
 from .api_providers import VisionService, create_llm
-from .config import atomic_bytes, normalize_broker_llm, uses_broker_llm, validate_api_key
+from .config import atomic_bytes, normalize_broker_llm, validate_api_key
 from .deployment_profiles import select_local_voice
-from .http_api import inference_transport
-from .inference_profiles import DAFEIYU_9B_CONTEXT, DAFEIYU_9B_MODEL, LLM_MODELS, llm_resource_key
 from .providers import VoiceService, public_error
-from .runtime_modes import require_model_idle
 from .video_vision import ApiVideoEvidenceProvider
 
 FIELDS = {
+    "responses": {"base_url", "model", "max_output_tokens", "timeout_seconds"},
     "llm": {"kind", "base_url", "model", "context_tokens", "native_context_tokens", "operations_max_tokens",
             "enable_thinking", "live_thinking_tokens", "structured_output"},
     "tts": {"kind", "base_url", "model", "voice"},
@@ -40,87 +38,6 @@ async def _settle_cleanup(operation):
         except asyncio.CancelledError:
             interrupted = True
     return task.result(), interrupted
-
-
-async def _broker_snapshot(client, fallback_window):
-    response = await client.get("/health")
-    response.raise_for_status()
-    health = response.json()
-    selected, providers = health.get("selected_provider"), health.get("providers", {})
-    if (
-        health.get("mode") != "text"
-        or health.get("busy") is not False
-        or not isinstance(selected, str)
-        or not selected.startswith("llm")
-        or not isinstance(providers, dict)
-        or selected not in providers
-        or any(
-            not isinstance(value, dict) or type(value.get("running")) is not bool
-            for value in providers.values()
-        )
-    ):
-        raise ProviderConfigurationError("本地资源未处于可确认的空闲文本模式，请先结束当前任务或资源实验")
-    running = {key for key, value in providers.items() if value["running"]}
-    if not running.issubset({selected}):
-        raise ProviderConfigurationError("其他本地资源正在使用，请先结束资源实验再修改Provider")
-    window = health.get("requested_context_tokens", fallback_window)
-    if type(window) is not int or window < 4096:
-        raise ProviderConfigurationError("无法确认本地上下文窗口")
-    if running and providers[selected].get("context_tokens") != window:
-        raise ProviderConfigurationError("本地实际加载窗口与配置不一致，请先检查资源状态")
-    return {"selected": selected, "window": window, "resident": bool(running)}
-
-
-def _profile_calls(window, current_window, model=None):
-    context = ("/context", {"context_tokens": window})
-    if model is None:
-        return (context,)
-    select = ("/model", {"key": model})
-    if window == current_window:
-        return (select,)
-    return (context, select) if window < current_window else (select, context)
-
-
-async def _restore_broker(client, snapshot, *, attempted_window, model_attempted, was_local):
-    resident = was_local and snapshot["resident"]
-    expected = {**snapshot, "resident": resident}
-    actual = None
-    try:
-        actual = await _broker_snapshot(client, snapshot["window"])
-        if actual == expected:
-            # A confirmed rejection or the broker's own rollback may already
-            # have left the exact original resources. Do not reload them.
-            return True
-    except BaseException:
-        pass
-    model = (
-        snapshot["selected"]
-        if model_attempted and (actual is None or actual["selected"] != snapshot["selected"])
-        else None
-    )
-    if model or attempted_window is not None or resident:
-        current_window = actual["window"] if actual is not None else attempted_window or snapshot["window"]
-        for path, payload in _profile_calls(snapshot["window"], current_window, model):
-            try:
-                response = await client.post(path, json=payload)
-                response.raise_for_status()
-            except BaseException:
-                pass
-    # Also execute this after a failed context rollback: an old external/idle
-    # profile must not retain a newly loaded local worker.
-    if not resident:
-        try:
-            response = await client.post("/idle", json={})
-            response.raise_for_status()
-        except BaseException:
-            pass
-    try:
-        actual = await _broker_snapshot(client, snapshot["window"])
-        # A restoration response can also be lost after commit. The verified
-        # resulting window/residency decides, never RPC success alone.
-        return actual == expected
-    except BaseException:
-        return False
 
 
 def _restore_file(path, previous, *, private=False):
@@ -155,6 +72,8 @@ def proposal(settings, body):
     for name in clear:
         keys.pop(name, None)
     for name, fields in FIELDS.items():
+        if name == "responses" and name not in body:
+            continue
         patch = body.get(name, {})
         if not isinstance(patch, dict) or set(patch) - fields:
             raise ValueError("未知Provider字段")
@@ -190,34 +109,22 @@ def proposal(settings, body):
             and name not in clear
         ):
             raise ValueError("更换API地址时须重新填写或明确清除对应Key，避免旧凭证发送到新服务")
-    if not _voice_only(body):
-        if uses_broker_llm(data):
-            target = llm_resource_key(data["llm"].get("model"))
-            if target is None:
-                raise ValueError("未知推理节点模型")
-            data["llm"]["model"] = LLM_MODELS[target]
-        _update_model_profiles(data, settings.data["llm"])
     settings._validate(data)
     return data, keys
 
 
-def _update_model_profiles(data, previous_llm):
-    broker = data.setdefault("inference_broker", {})
-    broker.setdefault(
-        "model", previous_llm["model"] if previous_llm["kind"] == "llama_cpp" else DAFEIYU_9B_MODEL
-    )
-    broker.setdefault(
-        "context_tokens", previous_llm["context_tokens"] if previous_llm["kind"] == "llama_cpp" else DAFEIYU_9B_CONTEXT
-    )
-    if uses_broker_llm(data):
-        broker.update(model=data["llm"]["model"], context_tokens=data["llm"]["context_tokens"])
-    profiles = data.get("work_mode_profiles")
-    mode = broker.get("mode")
-    if profiles and mode in profiles:
-        profiles[mode] = {name: copy.deepcopy(data[name]) for name in ("llm", "vision")}
-        if "live_thinking_tokens" in data["llm"]:
-            for profile in profiles.values():
-                profile["llm"]["live_thinking_tokens"] = data["llm"]["live_thinking_tokens"]
+def require_model_idle(runtime):
+    """Saved channel preferences do not prevent changing an idle deployment."""
+    if runtime.live.state != "stopped":
+        raise ValueError("请先停止直播再修改推理配置")
+    if runtime.operations.policy()["enabled"]:
+        raise ValueError("请先停止自主运营再修改推理配置")
+    browsing = getattr(runtime, "browsing", None)
+    if browsing and (
+        getattr(browsing, "active", None)
+        or getattr(getattr(browsing, "comments", None), "active_task_id", None)
+    ):
+        raise ValueError("请等待当前运营任务结束再修改推理配置")
 
 
 async def apply_settings(runtime, body):
@@ -225,7 +132,6 @@ async def apply_settings(runtime, body):
     if (
         runtime.live.state != "stopped"
         or runtime.generation_lock.locked()
-        or runtime.inference.mode_lock.locked()
     ):
         raise ProviderConfigurationError("请先停止直播并等待当前生成完成，再修改Provider")
     data, keys = proposal(settings, body)
@@ -258,18 +164,9 @@ async def apply_settings(runtime, body):
     except BaseException:
         await _settle_cleanup(_close_clients(created))
         raise
-    previous_data = settings.data
-    was_local = uses_broker_llm(previous_data)
-    is_local = uses_broker_llm(data)
-    old_window = (
-        previous_data["llm"]["context_tokens"]
-        if was_local
-        else previous_data.get("inference_broker", {}).get("context_tokens", 131072)
-    )
-    previous_file = previous_private = snapshot = None
-    broker_attempted = model_attempted = files_attempted = False
-    attempted_window = None
-    async with runtime.inference.mode_lock, runtime.generation_lock:
+    previous_file = previous_private = None
+    files_attempted = False
+    async with runtime.generation_lock:
         try:
             if model_update:
                 require_model_idle(runtime)
@@ -277,29 +174,6 @@ async def apply_settings(runtime, body):
             previous_private = (
                 settings.credentials_path.read_bytes() if settings.credentials_path.exists() else None
             )
-            if model_update and runtime.inference.client and (was_local or is_local):
-                try:
-                    snapshot = await _broker_snapshot(runtime.inference.client, old_window)
-                except (httpx.ConnectError, httpx.ConnectTimeout):
-                    snapshot = None
-                if snapshot is not None:
-                    # A lost response can follow a committed RPC. Record ownership
-                    # before sending, never infer "not executed" from an exception.
-                    broker_attempted = True
-                    if is_local:
-                        window = data["llm"]["context_tokens"]
-                        target = llm_resource_key(data["llm"]["model"]) if uses_broker_llm(data) else None
-                        model = target if target != snapshot["selected"] else None
-                        for path, payload in _profile_calls(window, snapshot["window"], model):
-                            if path == "/model":
-                                model_attempted = True
-                            else:
-                                attempted_window = window
-                            response = await runtime.inference.client.post(path, json=payload)
-                            response.raise_for_status()
-                    else:
-                        response = await runtime.inference.client.post("/idle", json={})
-                        response.raise_for_status()
             if model_update and data["llm"]["kind"] == "llama_cpp":
                 try:
                     await llm.ensure_capacity()
@@ -322,15 +196,7 @@ async def apply_settings(runtime, body):
 
             async def rollback():
                 confirmed = True
-                if broker_attempted:
-                    confirmed = await _restore_broker(
-                        runtime.inference.client,
-                        snapshot,
-                        attempted_window=attempted_window,
-                        model_attempted=model_attempted,
-                        was_local=was_local,
-                    )
-                if broker_attempted or files_attempted:
+                if files_attempted:
                     # Try both independently; a public-file failure must not
                     # skip restoring the scoped credentials file.
                     for path, previous, private in (
@@ -362,22 +228,6 @@ async def apply_settings(runtime, body):
             runtime.error = None
             if video is not None:
                 old_clients.append(runtime.browsing.replace_visual_provider(video))
-            broker_conf = data.get("inference_broker", {})
-            if broker_conf.get("enabled"):
-                old_inference = runtime.inference.client
-                base_url = broker_conf.get("base_url", "http://127.0.0.1:9012")
-                runtime.inference.client = httpx.AsyncClient(
-                    base_url=base_url,
-                    headers={"X-Tuber-Inference-Key": settings.inference_token},
-                    timeout=httpx.Timeout(400, connect=5),
-                    trust_env=False,
-                    transport=inference_transport(base_url, remote=broker_conf.get("deployment") == "remote"),
-                )
-                if old_inference is not None:
-                    old_clients.append(old_inference)
-            elif runtime.inference.client is not None:
-                old_clients.append(runtime.inference.client)
-                runtime.inference.client = None
         await asyncio.gather(
             *(client.close() if hasattr(client, "close") else client.aclose() for client in old_clients),
             return_exceptions=True,

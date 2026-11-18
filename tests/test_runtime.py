@@ -105,66 +105,16 @@ async def test_saved_speech_api_supplies_preview_and_live_then_restores_local(ru
     assert runtime.character["version"] == character["version"]
 
 
-async def test_text_work_mode_cancels_playback_before_releasing_tts(runtime, store):
+async def test_live_control_owns_playback_not_model_residency(runtime, store, monkeypatch):
+    def reject(*args, **kwargs):
+        pytest.fail("live control must not send model management requests")
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", reject)
     owner, submitted, ack, _ = await prepare_play(runtime, store)
-
-    async def broker(request):
-        assert request.url.path == "/mode"
-        assert runtime.live.state == "stopped"
-        assert store.job(submitted["job_id"])["status"] == "cancelled"
-        assert runtime.generation_lock.locked()
-        return httpx.Response(200, json={"mode": "text", "active_provider": "llm2b"})
-
-    runtime.inference.client = httpx.AsyncClient(
-        transport=httpx.MockTransport(broker), base_url="http://broker"
-    )
-    state = await runtime.inference.set_mode("text")
-    assert state["mode"] == "text"
-    assert runtime.settings.data["inference_broker"]["mode"] == "text"
+    await runtime.control("stop")
+    assert store.job(submitted["job_id"])["status"] == "cancelled"
     assert not await runtime.live.acknowledge(owner, ack | {"type": "ended"})
     assert not store.all("SELECT * FROM conversations")
-
-
-async def test_failed_live_residency_never_starts_the_live_worker(runtime):
-    runtime.inference.status = {"mode": "text", "active": "llm2b"}
-
-    async def broker(request):
-        if request.method == "POST":
-            return httpx.Response(503, json={"detail": "resource unavailable"})
-        return httpx.Response(200, json={"mode": "text", "active_provider": "llm2b", "state": "active"})
-
-    runtime.inference.client = httpx.AsyncClient(
-        transport=httpx.MockTransport(broker), base_url="http://broker"
-    )
-    with pytest.raises(ValueError, match="工作模式切换失败"):
-        await runtime.control("start")
-    assert runtime.live.state == "stopped"
-    assert runtime.live.session_id is None
-    assert runtime.inference.status["mode"] == "text"
-
-
-async def test_live_start_waits_for_resident_pair_confirmation(runtime):
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    async def broker(request):
-        entered.set()
-        await release.wait()
-        return httpx.Response(200, json={"mode": "live", "active_provider": "tts"})
-
-    runtime.inference.client = httpx.AsyncClient(
-        transport=httpx.MockTransport(broker), base_url="http://broker"
-    )
-    task = asyncio.create_task(runtime.control("start"))
-    try:
-        await entered.wait()
-        assert runtime.live.state == "stopped" and runtime.live.session_id is None
-        release.set()
-        await task
-    finally:
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
-    assert runtime.live.state == "live"
-    assert runtime.inference.status["mode"] == "live"
 
 
 async def test_only_owner_started_then_ended_counts_as_delivered(runtime, store):

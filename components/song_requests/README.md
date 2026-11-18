@@ -1,10 +1,10 @@
 # 可选在线点歌组件
 
-只增加一个 Node.js 22+ 辅助进程，通过私有 stdio JSON-lines 与 Python 通信；不启动网易云 HTTP 服务、UNM 代理或模型。直接执行 `npm start` 也可独立收发协议。普通安装及主镜像不安装 Node／npm 依赖，默认开关关闭。
+只增加一个 Node.js 22+ 辅助进程，通过私有 stdio JSON-lines 与 Python 通信；不启动网易云 HTTP 服务、UNM 代理或模型。直接执行 `npm start` 也可独立收发协议。本地 Python 安装不自带 Node／npm 依赖，点歌默认关闭。
 
 在本目录执行 `npm ci --ignore-scripts`，然后在 `/live` 的「在线点歌」中启用。依赖及其传递版本由 `package-lock.json` 锁定，使用指定仓库的固定提交：
 
-Docker部署可使用CI发布的在线环境扩展：首次运行启动器时传`--environment online`，以后按数据目录保存的环境选择继续复用。程序包携带base／online两种固定环境引用；更新helper源码不重建镜像，npm依赖改变才更新扩展。工作台播放用途可显式选择“仅本机／OBS技术测试”，不代表确认直播用途，只接收工作台／Mock请求。
+Core Compose 镜像已包含点歌依赖。工作台播放用途可显式选择“仅本机／OBS技术测试”，不代表确认直播用途，只接收工作台／Mock请求。
 
 - [xgxdmx/NeteaseMusic-API](https://github.com/xgxdmx/NeteaseMusic-API/tree/0395d087d9e99ceef480c54e7932c2332e5c0c39)，MIT，仅使用 `cloudsearch`、`song_detail`、`lyric`／`lyric_new`，不调用其 `song_url_v1` 或 `unblockmusic-utils` 解析。
 - [UnblockNeteaseMusic/server](https://github.com/UnblockNeteaseMusic/server/tree/1d64281c0fae81a4e3cf21f176706b0baa3a606d)，LGPL-3.0-only，仅调用波点／咪咕 Provider；保留其包内许可。通过模块边界替换宽松的 `select`，拒绝首条结果兜底；禁用 `insure` 远程解析兜底。
@@ -48,12 +48,4 @@ Docker部署可使用CI发布的在线环境扩展：首次运行启动器时传
 
 响应包含同一 `id` 及 `result` 或 `error`。`resolve` 的临时 URL 仅供 Python 下载使用，不是可直接提交至播放器的公共接口。解析串行，元数据与健康查询可并发。
 
-可选容器变体：先构建匹配依赖的环境镜像，再执行：
-
-```sh
-docker build -f components/song_requests/Dockerfile --build-arg TUBER_IMAGE=tuber-studio:environment-r36.4 -t tuber-studio:online .
-```
-
-该环境变体携带 Node 与 npm 依赖，辅助进程源码仍来自只读程序挂载，通过 NODE_PATH 复用镜像内依赖；启动预检核对变体内的 npm 锁文件，依赖不匹配先报错。只有 npm 依赖变化才重建该变体，helper 源码变化直接随程序更新；继续使用同一启动器、runtime 卷及非 root 用户。普通 CI 另验证组件安装、匹配规则和真实 stdio 进程，不请求外部歌曲；各音源可用性及 OBS 本体解码仍需在目标网络／设备验收。
-
-当前Jetson已安装并启用该扩展，保存online环境选择；本机测试的真实搜索、波点FLAC和浏览器播放证据见[设备验收](../../evaluations/results/online-song-component-device-20261031.json)。新安装仍默认关闭；咪咕需单独配置凭证，浏览器结果不代替OBS本体验证。
+CI 验证组件安装、匹配和 stdio 通信，不访问外部歌曲。真实音源、播放器和 OBS 需在目标设备另行验收。[历史设备验收](../../evaluations/results/online-song-component-device-20261031.json)。

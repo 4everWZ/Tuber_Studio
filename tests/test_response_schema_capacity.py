@@ -1,8 +1,8 @@
-"""Long transcript source sets stay within the broker schema budget."""
+"""Long transcript source sets retain compact references through tool selection."""
 
 import pytest
+from schema_contract import validate_schema_complexity
 
-from tuber_studio.inference_validation import validate_llm_request
 from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
 from tuber_studio.operations.browsing.models import response_schema
 from tuber_studio.web_fetch import OperationWebFetch
@@ -41,17 +41,8 @@ async def test_long_video_keeps_all_sources_and_actions_through_optional_web_fet
     captured = []
 
     async def invoke(messages, wire_schema):
+        validate_schema_complexity(wire_schema)
         captured.append(wire_schema)
-        validate_llm_request(
-            "v1/chat/completions",
-            {
-                "messages": messages,
-                "response_format": {"type": "json_object", "schema": wire_schema},
-                "dry_multiplier": 0.8,
-                "dry_allowed_length": 5,
-                "dry_penalty_last_n": 512,
-            },
-        )
         return candidate
 
     result = await OperationWebFetch(lambda: None).complete([], schema, invoke)

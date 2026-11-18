@@ -5,8 +5,6 @@
     <a href="#voices" class="win-link-btn">前往配置语音 →</a>
   </div>
 
-  <section class="win-group-box" id="inference-node-panel"></section>
-
   <div class="win-group-box" id="providers-panel" data-workspace-anchor style="margin-top:16px;">
     <div class="panel-heading">
       <div class="win-group-title" style="margin:0;">文本推理端点配置</div>
@@ -35,7 +33,6 @@
                 <label>模型标识 (Model ID)</label>
                 <div style="display:flex; gap:6px; margin-top:5px;">
                   <select id="llm-model-select" style="flex:1;">
-                    <optgroup label="节点模型" id="local-models-group"></optgroup>
                     <optgroup label="🌐 远端已拉取模型" id="remote-models-group" hidden></optgroup>
                     <option value="__custom__">自定义输入模型 ID…</option>
                   </select>
@@ -48,7 +45,7 @@
             </div>
 
             <label style="margin-top:10px;">服务 Base URL
-              <input id="llm-base-url" type="url" placeholder="http://127.0.0.1:9012/llm 或 http://127.0.0.1:8000/v1" autocomplete="off" aria-describedby="llm-endpoint-help">
+              <input id="llm-base-url" type="url" placeholder="http://127.0.0.1:8000/v1" autocomplete="off" aria-describedby="llm-endpoint-help">
             </label>
             <p id="llm-endpoint-help" class="hint">支持任意本地工作站 (如 vLLM, Ollama, llama-server) 或外部兼容端点；Base URL 通常以 /v1 结尾。</p>
 
@@ -74,6 +71,13 @@
               <span id="llm-key-state" class="hint">密钥状态待读取</span>
               <label class="check-field"><input id="llm-clear-key" type="checkbox"> 清除已保存密钥</label>
             </div>
+          </fieldset>
+          <fieldset class="provider-group">
+            <legend>后台创作任务 · Responses</legend>
+            <label>后台 Base URL<input id="background-base" type="url" placeholder="http://127.0.0.1:8000/llm/v1"></label>
+            <label>后台模型别名<input id="background-model" placeholder="llm-default"></label>
+            <label>后台应用凭据<input id="background-key" type="password" autocomplete="new-password" placeholder="留空保留已保存凭据"></label>
+            <label class="check-field"><input id="background-clear" type="checkbox">清除已保存的后台凭据</label>
           </fieldset>
         </fieldset>
 

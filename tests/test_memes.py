@@ -226,9 +226,16 @@ async def test_bootstrap_preserves_disabled_deleted_preferences_and_original_fil
         pytest.skip("真实ffprobe未安装")
     original = {p.name: p.read_bytes() for p in (settings.root / "assets/whale").glob("*.gif")}
     rows = await catalog.seed_existing()
-    gifs = [row for row in rows if row["animated"]]
+    gifs = [row for row in rows if row["animated"] and not row["enabled"]]
+    new_clips = [row for row in rows if row["animated"] and row["enabled"]]
     reactions = [row for row in rows if not row["animated"]]
-    assert len(gifs) == 6 and all(not row["enabled"] for row in gifs)
+    assert len(gifs) == 6 and len(new_clips) == 6
+    assert len({row["sha256"] for row in gifs + new_clips}) == 12
+    for clip in new_clips:
+        assert clip["frames"] >= 10 and not clip["missing"]
+        assert (clip["source"]["author"], clip["license"]["name"]) == ("YunYueSama", "大肥鱼项目署名许可 1.0")
+        assert f'/blob/{clip["source"]["revision"]}/assets/whale/dense-' in clip["source"]["url"]
+        assert catalog.read(clip["asset_id"], "whale")["mime_type"] == "image/gif"
     assert len(reactions) == 8 and all(row["enabled"] for row in reactions)
     row = gifs[0]
     assert row["source"]["kind"] == "existing_user_assets" and row["source"]["author"] == "YunYueSama"
@@ -238,10 +245,11 @@ async def test_bootstrap_preserves_disabled_deleted_preferences_and_original_fil
         == original[row["title"] + ".gif"]
     )
     catalog.delete(row["asset_id"])
+    catalog.enable(new_clips[0]["asset_id"], False)
     reopened = MemeCatalog(settings, store)
     await reopened.seed_existing(enabled=True)
-    assert len(reopened.list("whale", include_disabled=True)) == 13
-    assert reopened.list("whale") == reactions
+    assert len(reopened.list("whale", include_disabled=True)) == 19
+    assert {row["asset_id"] for row in reopened.list("whale")} == {row["asset_id"] for row in reactions + new_clips[1:]}
     assert {p.name: p.read_bytes() for p in (settings.root / "assets/whale").glob("*.gif")} == original
 
 

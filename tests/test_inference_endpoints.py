@@ -4,15 +4,27 @@ from fastapi.testclient import TestClient
 from tuber_studio.app import create_app
 
 
-def test_get_local_models_endpoint(settings):
-    app = create_app(settings)
-    with TestClient(app) as client:
+def test_model_management_routes_are_not_registered_even_for_admin(settings, monkeypatch):
+    outbound = []
+
+    async def record(client, request, **kwargs):
+        outbound.append((request.method, request.url.path))
+        return httpx.Response(503, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", record)
+    settings.data["inference_broker"]["enabled"] = True
+    with TestClient(create_app(settings)) as client:
         headers = {"Authorization": "Bearer " + settings.admin_token}
-        res = client.get("/api/providers/local-models", headers=headers)
-        assert res.status_code == 200
-        models = res.json()["models"]
-        assert any("MiniCPM-V-4.7-1B" in item["id"] and item["multimodal"] for item in models)
-        assert any(item["id"] == "MiniCPM5-2B" and item["multimodal"] is False for item in models)
+        for method, path in (
+            ("POST", "/api/inference/mode"), ("GET", "/api/inference/node"),
+            ("PUT", "/api/inference/node"), ("POST", "/api/inference/node/check"),
+            ("POST", "/api/inference/node/vision-probe"), ("POST", "/api/inference/node/idle"),
+            ("GET", "/api/providers/local-models"),
+        ):
+            assert client.request(method, path, headers=headers).status_code == 404
+        for action in ("start", "pause", "resume", "stop"):
+            assert client.post(f"/api/live/{action}", headers=headers).status_code == 200
+    assert not [call for call in outbound if call[0] != "GET"]
 
 
 def test_get_remote_models_endpoint_error_handling(settings):
@@ -129,29 +141,6 @@ def test_retired_business_host_model_downloader_is_not_exposed(settings):
         for action in ("download", "cancel"):
             assert client.post(f"/api/models/dafeiyu/{action}", headers=headers).status_code == 404
         assert not list(settings.models.iterdir())
-
-
-def test_model_catalog_uses_current_profile_and_observed_inventory(settings):
-    from tuber_studio.inference_profiles import GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL
-
-    app = create_app(settings)
-    with TestClient(app) as client:
-        headers = {"Authorization": "Bearer " + settings.admin_token}
-        def catalog():
-            data = client.get("/api/providers/local-models", headers=headers).json()
-            return {item["id"]: item for item in data["models"]}
-
-        models = catalog()
-        assert GROUNDED_DAFEIYU_MODEL in models
-        assert all(item["installed"] is None for item in models.values())
-        app.state.runtime.inference.capabilities = {
-            "profiles": {GROUNDED_DAFEIYU_KEY: {"installed": True}, "llm2b": {"installed": False}}
-        }
-        models = catalog()
-        assert models[GROUNDED_DAFEIYU_MODEL]["installed"] is True
-        assert models["MiniCPM5-2B"]["installed"] is False
-        app.state.runtime.inference.capabilities["monitoring_error"] = "node disconnected"
-        assert catalog()[GROUNDED_DAFEIYU_MODEL]["installed"] is None
 
 
 def test_saving_provider_settings_has_no_implicit_download_result(settings, monkeypatch):

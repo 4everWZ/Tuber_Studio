@@ -1,7 +1,7 @@
 "use strict";
 
 class BilibiliAccountUI {
-  constructor({header, settings = null, badges = [], api, notify, onSessionRevoked = () => {}, onChange = () => {}}) {
+  constructor({header, settings = null, badges = [], api, notify, shouldPoll = () => true, onSessionRevoked = () => {}, onChange = () => {}}) {
     this.header = header; this.settings = settings; this.api = api; this.notify = notify;
     this.onSessionRevoked = onSessionRevoked; this.onChange = onChange;
     this.value = null; this.active = false; this.loading = false; this.pending = false;
@@ -21,7 +21,7 @@ class BilibiliAccountUI {
     this.h("[data-refresh]").onclick = () => this.requestError ? this.load() : this.refreshProfile();
     if (settings) this.buildSettings();
     this.render();
-    setInterval(() => { if (this.active && !document.hidden) this.load(); }, 30000);
+    setInterval(() => { if (this.active && !document.hidden && shouldPoll()) this.load(); }, 30000);
   }
   buildSettings() {
     this.settings.innerHTML = `<article class="panel account-settings-panel" aria-labelledby="bilibili-account-heading">

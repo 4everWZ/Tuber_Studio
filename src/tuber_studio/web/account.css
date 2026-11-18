@@ -4,7 +4,6 @@
 .account-qr{margin:14px 0;padding:14px;border:1px solid var(--line,#d7e4e8);border-radius:8px;width:fit-content;max-width:100%;box-sizing:border-box}
 .account-qr[hidden]{display:none}
 .account-qr img{display:block;max-width:100%;height:auto;background:white}
-#inference-node-panel dd{overflow-wrap:anywhere}
 @media(max-width:760px){.topbar.account-topbar{gap:7px;padding-top:8px;padding-bottom:8px}.topbar.account-topbar #resource-mode-help{display:none}.topbar.account-topbar .status-line{font-size:11px}.topbar.account-topbar .account-profile{font-size:10px}}
 .account-badge {
   display: inline-flex;

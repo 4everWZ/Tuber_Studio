@@ -24,15 +24,15 @@ B 站凭证在「设置 → 账号与权限」保存SESSDATA和CSRF／bili_jct�
 
 该命令只检查，不改文件；每次都会分别报告 lint 和 format 的结果，任一失败就返回非零退出码。仅看到 `ruff check` 成功不代表格式检查通过。格式问题可运行 `uv run --locked ruff format src tests tools` 修复，检查差异后重新运行上述入口；修改之后再提交，不要把修改前的检查结果当作当前提交已通过。
 
-CI 分开运行 Python CPU 测试、独立程序包校验和可选组件的 Node 测试。CPU 测试与打包校验均通过后才交付正式程序包。失败的运行仍可分别查看 CPU 测试报告和打包日志，打包校验成功时也可查看候选包的审计记录。Lint 和格式检查保留为本地命令，可用 `--format-advisory` 将格式差异作为提示。
-
-代码检查不替代功能测试。运行受改动影响的 pytest 测试，并以对应 PR 提交的 Linux CPU CI 结果确认完整套件与打包结果。若本地因 NumPy、ONNX 或 PyYAML 等可选依赖缺失而跳过测试，应如实报告。
+CI 分别运行锁定项目环境的 Python 测试和可选点歌组件的 Node 测试，不再打包或推送 Jetson 环境、程序包或权重。Lint 和格式检查保留为本地命令。
 
 这些代码检查可在 Windows／Linux 的开发环境独立运行。服务能力和实际设备上的端到端验收见下文。
 
 ## 业务部署与服务接入
 
-Tuber Studio 运行业务、工作台和平台工具，通过受认证的 API 接入已部署的 Omni 推理与 Avatar 服务。Core 可以运行在选定的业务主机上，浏览器和 OBS 使用各自可达的业务与媒体入口。模型及渲染资产由服务方管理，业务数据库、平台凭据和管理会话由 Core 管理。 [数据归属](../specs/foundation/distributed-runtime.md) · [服务接入](../../deploy/omni/README.md)
+本地新安装使用回环网关 `http://127.0.0.1:8000`：前台聊天和视频视觉走 `/v1`（`omni-default`），后台任务走 `/llm/v1`（`llm-default`），窗口读取模型卡。语音默认预录，不启动推理节点。工作站在其他主机时，分别配置可达的服务地址和凭据；已有 `studio.json` 不会被示例覆盖。
+
+Tuber Studio 运行业务、工作台和平台工具，通过受认证的 API 接入已部署的 Omni 推理与 Avatar 服务。Core 可以运行在选定的业务主机上，浏览器和 OBS 使用各自可达的业务与媒体入口。工坊不训练模型、不下载或装载推理权重。模型及渲染资产由独立的 `omni-avatar-api` 服务管理，业务数据库、平台凭据和管理会话由 Core 管理。 [数据归属](../specs/foundation/distributed-runtime.md) · [服务接入](../../deploy/omni/README.md)
 
 使用仓库的 Core Compose 时，准备可达的网关及独立的 Core 服务令牌。示例地址为 `http://omni-gateway:8000/v1`，由外部 Docker 网络提供寻址。使用其他兼容地址时，从工作台配置相应 Provider 和凭据。访问远程 Core 时使用管理令牌登录，回环绑定可用 SSH 转发。 [Compose 启动与工作台访问](../../deploy/omni/README.md)
 
@@ -70,7 +70,7 @@ Windows 业务主机也可使用项目环境直接启动。启用在线点歌时
 
 先查询实际模型卡与能力，再用当前 Provider 做正常及流式生成、结构化输出和实际取帧。经认证的模型卡窗口覆盖渲染后的输入和输出。通用 API 仅有配置声明时按声明显示。改变 Provider 或窗口后，下次生成重新计数。思考默认开启，可在设置中切换。画面失败且有字幕时按字幕继续，详情显示失败原因。 [Omni 接入能力与验收](../specs/foundation/omni-deployment.md#接入验收与切换)
 
-LLM、视觉和 TTS 的 Key 各自存于私有 `runtime/provider-credentials.json`，仅发送到其绑定地址。更换地址时显式填写或清除该 Key。语音 API 使用独立的 `external_api` 音色，角色切换和换声线按实际设置生效。兼容服务会收到完成任务所需的上下文，业务与服务侧留存分别管理。
+LLM、后台 Responses、视觉和 TTS 的 Key 存于私有 `runtime/provider-credentials.json`，绑定完整 Base URL。视频视觉可以使用同一 `/v1` 地址的 LLM Key。换地址时须重新填写或清除对应 Key；旧文件若只有 Key 而没有绑定地址，升级后须在确认地址后重新填写，不会把它发送给当前默认服务。语音 API 使用独立的 `external_api` 音色，角色切换和换声线按实际设置生效。兼容服务会收到完成任务所需的上下文，业务与服务侧留存分别管理。
 
 Avatar 会话入口与媒体观看入口分开配置和验收。浏览器或 OBS 使用观看凭据实际解码节目，并验证已发布的 ICE 候选可达。播放回执和业务平台回执分别核对。 [节目接入示例](../../deploy/omni/README.md#gif-avatar-与-obs-媒体)
 

@@ -1,65 +1,18 @@
-"""Business-side model, voice, and inference node routes."""
+"""Business-side inference and voice clients; the service owns model management."""
 
 import asyncio
 import base64
 import binascii
-from typing import Literal
 
 import httpx
 from fastapi import Body, Depends, HTTPException
 
-from ..inference_node_client import pair_node, refresh_capabilities
-from ..inference_node_client import status as inference_node_status
-from ..inference_profiles import DAFEIYU_KEY, LLM_MODELS, VISION_ROUTES
 from ..provider_diagnostics import register_provider_diagnostics
 from ..provider_settings import ProviderConfigurationError, apply_settings
 from ..providers import public_error
-from ..video_vision_service import probe_visual
 
 
 def register_model_api(app, settings, runtime, require_admin):
-    @app.post("/api/inference/mode", dependencies=[Depends(require_admin)])
-    async def work_mode(mode: Literal["text", "live"] = Body(embed=True)):
-        return await runtime.inference.set_mode(mode)
-
-    @app.get("/api/inference/node", dependencies=[Depends(require_admin)])
-    async def inference_node():
-        return inference_node_status(runtime)
-
-    @app.post("/api/inference/node/check", dependencies=[Depends(require_admin)])
-    async def check_inference_node():
-        await refresh_capabilities(runtime)
-        return inference_node_status(runtime)
-
-    @app.put("/api/inference/node", dependencies=[Depends(require_admin)])
-    async def configure_inference_node(data: dict = Body(...)):
-        return await pair_node(runtime, data)
-
-    @app.post("/api/inference/node/vision-probe", dependencies=[Depends(require_admin)])
-    async def probe_inference_vision():
-        return await probe_visual(runtime)
-
-    @app.post("/api/inference/node/idle", dependencies=[Depends(require_admin)])
-    async def release_inference_cache():
-        if not runtime.inference.client:
-            raise ValueError("尚未配置推理节点")
-        if (
-            runtime.live.state != "stopped"
-            or runtime.generation_lock.locked()
-            or runtime.inference.mode_lock.locked()
-        ):
-            raise ValueError("请先停止直播并等待当前任务结束")
-        if runtime.inference.status.get("mode") != "text":
-            raise ValueError("请先切到运营模式")
-        async with runtime.inference.mode_lock, runtime.generation_lock:
-            response = await runtime.inference.client.post("/idle", json={})
-            response.raise_for_status()
-            runtime.inference.status = response.json()
-            cleared = await runtime.inference.client.post("/cache/clear", json={})
-            cleared.raise_for_status()
-            result = cleared.json()
-        return {"cache_result": result, "capabilities": await refresh_capabilities(runtime)}
-
     @app.get("/api/voices", dependencies=[Depends(require_admin)])
     async def voices():
         return settings.voices()
@@ -124,23 +77,5 @@ def register_model_api(app, settings, runtime, require_admin):
 
         llm, tts, vision = await asyncio.gather(one(runtime.llm), one(runtime.voices), one(runtime.vision))
         return {"llm": llm, "tts": tts, "vision": vision}
-
-    @app.get("/api/providers/local-models", dependencies=[Depends(require_admin)])
-    async def local_models():
-        """Known node profiles; installation comes from the observed node inventory."""
-        capabilities = runtime.inference.capabilities or {}
-        profiles = {} if capabilities.get("monitoring_error") else capabilities.get("profiles", {})
-        return {
-            "models": [
-                {
-                    "id": model,
-                    "name": model,
-                    "installed": profiles.get(key, {}).get("installed"),
-                    "multimodal": key in VISION_ROUTES.values(),
-                }
-                for key, model in LLM_MODELS.items()
-                if key != DAFEIYU_KEY
-            ]
-        }
 
     register_provider_diagnostics(app, settings, require_admin)

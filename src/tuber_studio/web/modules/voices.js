@@ -28,20 +28,13 @@ function renderVoiceSettings(model, saving) {
     "已保存密钥。同一地址留空可保留。" : "服务需要认证时填写。";
   $("tts-source-help").textContent = external ? "保存后用于试听和直播台词。" :
     selection === "prerecorded" ? "当前使用预录音色。" :
-      "默认跟随 Jetson，直播模式就绪后可试听角色的本地音色。";
+      "使用已配置的语音服务试听角色音色。";
 }
 
 export function voiceAvailability(voice, model) {
   const kind = model.settings?.tts?.kind;
   if (voice?.provider === "prerecorded") return "";
   if (voice?.provider !== kind) return "请选择当前语音来源的音色";
-  if (kind === "gpt_sovits") {
-    if (model.modeSwitch) return "正在切换推理模式";
-    if (!model.settings?.features?.live_enabled) return "当前推理配置未启用本地语音";
-    if (model.settings?.inference_broker?.enabled && model.status?.inference?.mode !== "live") {
-      return "切换到直播模式后可试听本地语音";
-    }
-  }
   return voice ? "" : "暂无可用音色";
 }
 

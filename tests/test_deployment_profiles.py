@@ -1,12 +1,8 @@
-import json
-from pathlib import Path
-
 import pytest
 
 from tuber_studio.deployment_profiles import business_configuration, mode_configuration
 from tuber_studio.http_api import endpoint
-from tuber_studio.inference import ProcessRunner
-from tuber_studio.inference_profiles import DAFEIYU_9B_DIGESTS, DAFEIYU_9B_KEY, DAFEIYU_9B_MODEL
+from tuber_studio.inference_profiles import DAFEIYU_9B_MODEL
 
 
 def test_business_modes_preserve_operator_data_and_separate_thinking_models(settings):
@@ -36,20 +32,6 @@ def test_new_profiles_share_the_pinned_fine_tuned_9b(settings):
     assert data["llm"]["model"] == live["llm"]["model"] == DAFEIYU_9B_MODEL
     assert data["llm"]["context_tokens"] == live["llm"]["context_tokens"] == 262144
     assert data["video_vision"]["model"] == DAFEIYU_9B_MODEL
-
-
-def test_default_cuda_launch_uses_pinned_model_and_projector(tmp_path):
-    manifest = json.loads((Path(__file__).resolve().parents[1] / "config/jetson/downloads.json").read_text())
-    entries = {entry["path"]: entry for entry in manifest["files"]}
-    runner = ProcessRunner(tmp_path, context_tokens=262144, kv_cache_type="q4_0")
-    command = runner.command(DAFEIYU_9B_KEY)
-    for role, option in (("model", "-m"), ("projector", "--mmproj")):
-        asset = Path(command[command.index(option) + 1]).relative_to(tmp_path / "runtime").as_posix()
-        entry = entries[asset]
-        assert entry["sha256"] == DAFEIYU_9B_DIGESTS[role]
-        assert "/resolve/21ecede9e9a3f07764c8c0ee3bc24d2de7cf5aff/" in entry["urls"][0]
-    assert command[command.index("--ctx-size") + 1] == "262144"
-    assert command[command.index("--cache-type-k") + 1] == command[command.index("--cache-type-v") + 1] == "q4_0"
 
 
 @pytest.mark.parametrize("address", ["http://100.128.0.1:9012", "http://1.1.1.1:9012"])

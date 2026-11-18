@@ -6,20 +6,6 @@ function syncModelSelectWithInput() {
   if (value) select.value = [...select.options].some(option => option.value === value) ? value : "__custom__";
 }
 
-async function loadLocalModelsDropdown(api) {
-  try {
-    const data = await api("/api/providers/local-models");
-    $("local-models-group").replaceChildren(...data.models.map(model => {
-      const option = node("option", model.name || model.id);
-      option.value = model.id;
-      return option;
-    }));
-    syncModelSelectWithInput();
-  } catch (err) {
-    console.warn("Failed to load local models dropdown:", err);
-  }
-}
-
 function formUsesModelCard(settings) {
   const llm = settings?.llm;
   return llm?.context_source === "model_card"
@@ -77,6 +63,18 @@ export function readProviderPayload(settings) {
   if (!key.disabled && key.value && clear) throw new Error("请在填写新密钥和清除旧密钥之间选一项。");
   if (clear) payload.clear_credentials.push("llm");
   else if (!key.disabled && key.value) payload.credentials.llm = key.value;
+
+  const backgroundBase = $("background-base")?.value?.trim();
+  const backgroundModel = $("background-model")?.value?.trim();
+  const backgroundKey = $("background-key")?.value;
+  const clearBackground = $("background-clear")?.checked;
+  if (backgroundBase || backgroundModel || backgroundKey || clearBackground || settings?.responses) {
+    if (!backgroundBase || !backgroundModel) throw new Error("请完整填写后台服务地址和模型别名。");
+    if (backgroundKey && clearBackground) throw new Error("后台凭据不能同时填写和清除。");
+    payload.responses = { base_url: backgroundBase, model: backgroundModel };
+    if (backgroundKey) payload.credentials.responses = backgroundKey;
+    if (clearBackground) payload.clear_credentials.push("responses");
+  }
 
   return payload;
 }
@@ -211,7 +209,6 @@ export function initInferenceProvidersUI(model, { api, busy, apply, refreshStatu
   return {
     get dirty() { return dirty; },
     sync,
-    refresh: () => loadLocalModelsDropdown(api),
   };
 }
 
@@ -247,6 +244,12 @@ function providerFormFromSettings(settings, status) {
   });
   if ($("llm-enable-thinking")) $("llm-enable-thinking").checked = llm.enable_thinking !== false;
   $("llm-key").value = "";
+  if ($("background-base")) {
+    $("background-base").value = settings?.responses?.base_url || "";
+    $("background-model").value = settings?.responses?.model || "";
+    $("background-key").value = "";
+    $("background-clear").checked = false;
+  }
   $("llm-clear-key").checked = false;
   syncModelSelectWithInput();
 }
