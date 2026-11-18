@@ -4,7 +4,7 @@
 
 ## 登记本站验收结果
 
-沿用普通私聊服务的 `TUBER_PRIVATE_REALTIME_ORIGIN`、`TUBER_PRIVATE_REALTIME_TOKEN_FILE`。以同一普通应用身份登记两份原稿，分别核对接收端的形象、实际语音口型与停顿。通过后，在 Studio 的运行目录下写入 `private-call-avatars.json`。下例的 ID 为占位值；将每项的 `accepted` 按实际验收结果填写。原稿、真实 ID、凭据和验收配置留在本站。
+沿用普通私聊服务的 `TUBER_PRIVATE_REALTIME_ORIGIN`、`TUBER_PRIVATE_REALTIME_TOKEN_FILE`。由独立媒体服务加载两个原画 INP 文件，在它的私有登记表中各分配一个形象 ID。工坊使用自己的普通应用凭据查询这两个 ID。返回 404 表示该服务没有登记此形象，503 表示需要检查服务侧素材或驱动。两套分别完成接收端形象、中文口型、打断及混合负载验收后，在 Studio 的运行目录下写入 `private-call-avatars.json`。下例中的 ID 为占位值。原稿、真实 ID、凭据和验收配置留在本站。
 
 ```json
 {
@@ -19,7 +19,7 @@
 
 打开选择器和绑定通话时，Studio 分别查询服务登记的两个 ID，核对 ID、驱动及就绪状态。Inochi2D 使用部署方公布的 rig ID；Ditto 使用登记后返回的形象 ID，旧配置省略驱动时按 Ditto 读取。改稿后换成新形象 ID 并重新验收。服务地址、角色、授权或本站验收变化会使原选择凭据失效。浏览器须能连通网关 WebSocket 及 WHEP 应答中的 ICE 地址。
 
-2026-11-18 的两份母版短片均未观察到闭唇，两份跨机录像也均未达到 25 fps。这次实测不构成启用两套配置的依据。[原稿口型与 WHEP 实测](../../evaluations/results/ditto-master-mouth-20261118.md)
+两份母版在 Ditto 上经过逐图校准仍有静音闭唇问题。工坊现有两套原画的连续二维绑定，均已用真实 Omni 语音在浏览器通话。正式启用还要核对目标工作站媒体到号主浏览器的持续通话表现，以及共享网关两条形象记录的就绪状态。[Ditto 原稿诊断](../../evaluations/results/ditto-master-mouth-20261118.md) · [工作站原画实测](../../evaluations/results/inochi-whep-master-rigs-20261119.md) · [真实通话](../../evaluations/results/private-rig-omni-voice-20261119.md)
 
 ## 通话与回执
 
