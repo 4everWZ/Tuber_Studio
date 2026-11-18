@@ -97,19 +97,93 @@ def cited_programme_names(steps, source_ids):
     return names
 
 
-def check_work_attribution(text, extracted, source_names):
-    mentioned = extracted.get("work_names")
-    if not isinstance(mentioned, list) or not all(isinstance(n, str) and n and n in text for n in mentioned):
-        raise DelegationError("作品名审查没有对应字段原文。")
-    names = set(mentioned) | set(re.findall(r"《([^《》]+)》", text))
-    mode = extracted.get("work_reference")
-    if mode not in {"无作品引用", "仅提节目资料", "另有未经署名核实的作品名", "断言镜头或人物归属某作品或集"}:
-        raise DelegationError("缺少作品归属的审查回执。")
-    if names - source_names or mode == "另有未经署名核实的作品名" or mode == "仅提节目资料" and not names:
-        return "该作品名没有本项引用的节目署名字段支持；请依据构图重新表述。"
-    if mode == "断言镜头或人物归属某作品或集":
-        return "来源字段可核节目名，无法鉴定镜头或人物归属；请仅写本帧可见事实。"
-    return None
+class WorkClaim(StrictModel):
+    phrase: str = Field(min_length=1, description="逐字引用含作品名或将镜头、人物归到特定作品或集的完整短语。")
+    target: str = Field(min_length=1, description="短语内逐字出现的作品名、集号或指向特定作品的指代。")
+    relation: Literal["提及节目资料", "断言镜头或人物的作品或集归属"]
+
+
+async def review_work_claims(fields, generate, budget, *, known_names=(), visible_descriptions=()):
+    subjects = ["构图、物件、外观或服装", "场内人物或道具的身份及所有者", "创作安排或其它表述",
+                "含具体影视作品名称或将画面归属特定影片剧集"]
+    subject_schema = {"type": "object", "properties": {k: {"type": "string", "enum": subjects} for k in fields},
+                      "required": list(fields), "additionalProperties": False}
+    classified = await generate([{"role": "system", "content": "逐字段判断文字谈论的对象。特定作品指可指认的电影、节目、"
+        "剧名或其集次。讨论镜中有什么、某物属于谁、历史背景或怎么剪辑，分别按本义归类。"
+        "一句兼有具体作品身份时选择含具体作品的一项。"},
+        {"role": "user", "content": dump(fields)}], subject_schema, max_tokens=budget)
+    if set(classified) != fields.keys() or any(kind not in subjects for kind in classified.values()):
+        raise DelegationError("归属审读没有逐字段辨明讨论对象。")
+    entities = {k: set(re.findall(r"《([^《》]+)》", v)) | {n for n in known_names if n in v} for k, v in fields.items()}
+    relevant = {k: v for k, v in fields.items() if classified[k] == subjects[-1] or entities[k]}
+    result = {k: [] for k in fields}
+    if not relevant:
+        return result
+    # Extract possible referents independently of the reviewer who judges attribution.
+    # A complete visual observation is not itself a proper name or an episode designation.
+    mention = {"type": "object", "properties": {"span": {"type": "string"}, "kind": {"type": "string", "enum": [
+        "特定作品专名", "具体影视作品或集次的指代", "人物地点或可见物体", "场景或一般表述"]}},
+        "required": ["span", "kind"], "additionalProperties": False}
+    spans = await generate([{"role": "system", "content": "按字段做实体识别。span 摘取原文里最小的专名、集次或显式节目指代，"
+        "分别标明实体类型。镜内人物或物件的所有者只属于场内关系。普通名词和描述可以标为一般表述。"},
+        {"role": "user", "content": dump(relevant)}], {"type": "object", "properties": {
+            k: {"type": "array", "items": mention} for k in relevant}, "required": list(relevant),
+            "additionalProperties": False}, max_tokens=budget)
+    if set(spans) != relevant.keys():
+        raise DelegationError("作品实体审查未返回对应字段。")
+    for k, text in relevant.items():
+        for entry in spans[k]:
+            span = entry["span"].strip()
+            if marked := re.fullmatch(r"《([^《》]+)》", span):
+                span = marked[1]
+            if (span and span in text and span not in visible_descriptions and
+                    entry["kind"] in {"特定作品专名", "具体影视作品或集次的指代"}):
+                entities[k].add(span)
+    relevant = {k: v for k, v in relevant.items() if entities[k]}
+    if not relevant:
+        return result
+    claim = WorkClaim.model_json_schema()
+    schema = {"type": "object", "properties": {"work_claims": {"type": "object", "properties": {
+        k: {"type": "array", "items": claim | {"properties": claim["properties"] | {
+            "target": {"type": "string", "enum": sorted(entities[k])}}}} for k in relevant},
+        "required": list(relevant), "additionalProperties": False}},
+        "required": ["work_claims"], "additionalProperties": False}
+    reviewed = await generate([{"role": "system", "content": "只读每个字段本身，提取它实际命名的作品，或明确把镜头、人物归到"
+        "特定影视作品或集的文字，包括问句的前提。每条逐字引用 phrase 和其中的 target。"
+        "一般布景、服饰、类型、道具属于谁、怎样剪辑均不表示作品身份。这些字段填空数组。"
+        "不要替作者补充作品名、出处或镜头归属。"},
+        {"role": "user", "content": dump(relevant)}], schema, max_tokens=budget)
+    claims = reviewed["work_claims"]
+    if set(claims) != relevant.keys():
+        raise DelegationError("作品归属审查未逐项核对原字段。")
+    if any(c["target"] not in entities[k] for k, entries in claims.items() for c in entries):
+        raise DelegationError("审稿回包引用了字段中未识别的作品实体。")
+    return result | claims
+
+
+def attribution_receipt(path, text, claims, steps, item):
+    pages = [{"source": s["id"], "url": s["result"]["url"], "title": s["result"].get("title"),
+              "programme_credits": s["result"].get("programme_credits"),
+              "programme_names": sorted(cited_programme_names([s], item.sources))}
+             for s in steps if s["tool"] == "web_page" and s["id"] in item.sources and (s.get("result") or {}).get("excerpt")]
+    names = {name for page in pages for name in page["programme_names"]}
+    references = [WorkClaim.model_validate(c) for c in claims]
+    for name in re.findall(r"《([^《》]+)》", text):
+        if not any(c.target == name for c in references):
+            references.append(WorkClaim(phrase=f"《{name}》", target=name, relation="提及节目资料"))
+    checked = []
+    for ref in references:
+        issue = None
+        if ref.phrase not in text or ref.target not in ref.phrase:
+            issue = "审核未能逐字定位该主张，归属判断尚未核实。"
+        elif ref.relation == "断言镜头或人物的作品或集归属":
+            issue = "引用的节目署名无法鉴定镜头或人物的作品或集归属。"
+        elif ref.target not in names:
+            issue = "本项引用的已读节目署名未支持所写作品名。"
+        checked.append(ref.model_dump() | {"issue": issue, "matching_programme_pages": [
+            page["source"] for page in pages if ref.target in page["programme_names"]], "other_programme_pages": [
+            page["source"] for page in pages if page["programme_names"] and ref.target not in page["programme_names"]]})
+    return {"field": path, "text": text, "primary_frame": item.primary_frame, "claims": checked, "pages": pages}
 
 
 class Video(StrictModel):
@@ -1162,6 +1236,10 @@ def create_task_runtime(runtime, store, browsing):
                             "required": list(correction), "additionalProperties": False}
             repair = {"draft": draft, "issues": correction,
                       "request": "依据被指出字段自身的画面与号主要求，填写完整替换文字。"}
+            draft_fields = editorial_fields(PrivateDelivery.model_validate(draft))
+            if receipts := [row for row in task["plan"].get("attribution_rejections", ())
+                            if row["field"] in correction and row["text"] == draft_fields.get(row["field"])]:
+                repair["work_attribution_rejections"] = receipts
             repair_images = []
             repair_choices = {}
             missing_anchors = {}
@@ -1389,21 +1467,6 @@ def create_task_runtime(runtime, store, browsing):
                                     "enum": ["", *dict.fromkeys(part for key in keys for part in quotes[key])]}},
                                "required": ["source", "claim", "observation"], "additionalProperties": False}
                                for path, keys in clip_basis.items()}
-                    if image:
-                        for path, specification in binding.items():
-                            item = product.items[int(path.split(".")[1])]
-                            credits = cited_programme_names(task.get("steps", ()), item.sources)
-                            exact_names = sorted({n for n in credits if n in editable[path]} | set(re.findall(r"《([^《》]+)》", editable[path])))
-                            name_list = {"type": "array", "items": {"type": "string"}, "uniqueItems": True}
-                            if exact_names:
-                                name_list["items"]["enum"] = exact_names
-                            else:
-                                name_list["maxItems"] = 0
-                            specification["properties"].update(
-                                work_names=name_list, work_reference={"type": "string",
-                                    "description": "其它未加书名号、未有本项署名支持的作品名也须标出。", "enum": [
-                                        "无作品引用", "仅提节目资料", "另有未经署名核实的作品名", "断言镜头或人物归属某作品或集"]})
-                            specification["required"].extend(["work_names", "work_reference"])
                     review_schema["properties"]["field_basis"] = {"type": "object", "properties": binding,
                         "required": list(binding), "additionalProperties": False}
                     review_schema["required"].append("field_basis")
@@ -1417,6 +1480,20 @@ def create_task_runtime(runtime, store, browsing):
                 reply = await request_json(review, review_schema, max_tokens=budget)
                 basis = reply.pop("field_basis", {})
                 verdict = VideoGroundingReview.model_validate(reply)
+                if clip_basis and image:
+                    attribution_fields = {path: fields[path] for path in clip_basis}
+                    works = set().union(*(cited_programme_names(task.get("steps", ()), product.items[int(p.split(".")[1])].sources)
+                                          for p in attribution_fields))
+                    claims = await review_work_claims(attribution_fields, request_json, budget, known_names=works,
+                        visible_descriptions={*inventory["labels"], *inventory["details"]})
+                    for path, text in attribution_fields.items():
+                        item = product.items[int(path.split(".")[1])]
+                        receipt = attribution_receipt(path, text, claims[path], task.get("steps", ()), item)
+                        conflicts = [c for c in receipt["claims"] if c["issue"]]
+                        if conflicts:
+                            product._attribution_reviews.append(receipt)
+                            issues[path] = " ".join(f"「{c['phrase']}」{c['issue']}" for c in conflicts)
+                            rejected.append(f"{path} 作品署名或镜头归属未经核实")
                 if clip_basis and verdict.supported:
                     if not isinstance(basis, dict) or set(basis) != set(clip_basis):
                         raise DelegationError("前台核对缺少标题或理由的逐字段画面依据。")
@@ -1429,12 +1506,6 @@ def create_task_runtime(runtime, store, browsing):
                         if value.get("claim") not in {"有来源的事实", "编辑用途", "事实及编辑用途"}:
                             issues[path] = "该字段含有画面或出处无法验证的事实或效果；按所见或具体编辑用途修正。"
                             rejected.append(f"{path} 未获依据的事实或成效")
-                        if image:
-                            item = product.items[int(path.split(".")[1])]
-                            names = cited_programme_names(task.get("steps", ()), item.sources)
-                            if problem := check_work_attribution(fields[path], value, names):
-                                issues[path] = problem
-                                rejected.append(f"{path} 作品署名或镜头归属未经核实")
                     product._field_sources.update(basis)
                 if not verdict.supported and not verdict.issues:
                     raise DelegationError("前台核对未通过：选材文字含引用无法支持的事实。")
@@ -1470,7 +1541,7 @@ def create_task_runtime(runtime, store, browsing):
                 elif not correction and issues.keys() <= fields.keys() - locked_fields:
                     raise EditorialCorrection(product, issues)
                 else:
-                    raise DelegationError("前台核对未通过：" + "；".join(rejected))
+                    raise DelegationError("前台核对未通过：" + "；".join(rejected), attribution_reviews=product._attribution_reviews)
         product.gaps.extend(collection_gaps)
         if missing_origin:
             product.gaps.append("本轮尚未取得独立原出处正文。")

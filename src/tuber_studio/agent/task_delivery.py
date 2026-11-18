@@ -74,10 +74,15 @@ class PrivateDelivery(StrictModel):
     _frame_reviews: dict = PrivateAttr(default_factory=dict)
     _window_reviews: dict = PrivateAttr(default_factory=dict)
     _locked_fields: set[str] = PrivateAttr(default_factory=set)
+    _attribution_reviews: list[dict] = PrivateAttr(default_factory=list)
 
 
 class DelegationError(ValueError):
     """A diagnostic safe to show without exposing provider payloads."""
+
+    def __init__(self, message, *, attribution_reviews=()):
+        super().__init__(message)
+        self.attribution_reviews = list(attribution_reviews)
 
 
 class AdditionalVideoRead(DelegationError):
@@ -100,7 +105,7 @@ class EditorialCorrection(DelegationError):
     """One private editorial draft and the specific fields Omni rejected."""
 
     def __init__(self, product, issues):
-        super().__init__("前台要求按回执修正选材文字。")
+        super().__init__("前台要求按回执修正选材文字。", attribution_reviews=product._attribution_reviews)
         self.draft = product.model_dump()
         self.issues = issues
         self.frame_reviews = product._frame_reviews

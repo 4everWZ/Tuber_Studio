@@ -21,7 +21,7 @@ from tuber_studio.agent.task_delivery import (
 )
 from tuber_studio.agent.task_tools import (
     accepted_window,
-    check_work_attribution,
+    attribution_receipt,
     cited_programme_names,
     classify_clip_captions,
     clip_review_image,
@@ -210,12 +210,52 @@ def test_work_name_requires_cited_credit_and_can_never_identify_the_frame():
     other["result"]["excerpt"] = "文字里出现了《另一个名字》。"
     names = cited_programme_names([archived, other], ["official", "other"])
     assert names == {"示例作品"} and cited_programme_names([archived, other], ["other"]) == set()
-    plain = {"work_names": [], "work_reference": "无作品引用"}
-    assert check_work_attribution("宝座旁站着谁？", plain, names) is None
-    assert check_work_attribution("这是《另一个名字》的画面吗？", plain, names)
-    credit = {"work_names": ["示例作品"], "work_reference": "仅提节目资料"}
-    assert check_work_attribution("节目资料列有《示例作品》。", credit, names) is None
-    assert check_work_attribution("这是示例作品中的一幕。", credit | {"work_reference": "断言镜头或人物归属某作品或集"}, names)
+    item = selection("official", "other", primary="v:1").items[0]
+
+    def review(text, claims=()):
+        return attribution_receipt("items.0.title", text, claims, [archived, other], item)
+
+    assert not review("宝座旁站着谁？")["claims"]
+    unsupported = review("这是《另一个名字》的画面吗？")
+    claim = unsupported["claims"][0]
+    assert claim["issue"] and claim["phrase"] in unsupported["text"] and claim["other_programme_pages"] == ["official"]
+    assert unsupported["pages"][0]["programme_credits"] == archived["result"]["programme_credits"]
+    assert not review("节目资料列有《示例作品》。")["claims"][0]["issue"]
+    claimed = {"phrase": "示例作品中的一幕", "target": "示例作品", "relation": "断言镜头或人物的作品或集归属"}
+    attribution = review("这是示例作品中的一幕。", [claimed])["claims"][0]
+    assert attribution["issue"] and attribution["matching_programme_pages"] == ["official"]
+    assert review("雕花衣领", [claimed])["claims"][0]["issue"] == "审核未能逐字定位该主张，归属判断尚未核实。"
+
+
+async def test_attribution_rejections_persist_original_and_repair_with_private_citations(runtime, store):
+    tasks = create_task_runtime(runtime, store, None)
+    task = tasks.create(str(uuid4()), "私下核对提纲")
+    doc = page("catalogue")
+    doc["result"].update(programme_credits="节目名：示例作品", title="节目目录")
+    product = selection("catalogue", primary="v:1")
+    tasks._save(task, steps=[reading(frame(7)), doc], plan={"backend": "responses", "prior_goals": [],
+                                                                   "candidate": product.model_dump()})
+    expected = []
+
+    async def editor(task, evidence):
+        item = product.items[0]
+        item.title = "本镜头来自示例作品" if expected else "这是示例作品的一幕"
+        claim = {"phrase": item.title, "target": "示例作品", "relation": "断言镜头或人物的作品或集归属"}
+        receipt = attribution_receipt("items.0.title", item.title, [claim], task["steps"], item)
+        expected.append(receipt)
+        if len(expected) == 1:
+            product._attribution_reviews = [receipt]
+            raise EditorialCorrection(product, {"items.0.title": "归属未核"})
+        raise DelegationError("作品归属未核", attribution_reviews=[receipt])
+
+    tasks.edit_delivery = editor
+    await tasks._advance(tasks.current(task["id"]))
+    first = tasks.current(task["id"])
+    assert first["status"] == "queued" and first["plan"]["attribution_rejections"] == expected
+    await tasks._advance(first)
+    final = tasks.current(task["id"])
+    assert final["status"] == "failed" and final["plan"]["attribution_rejections"] == expected
+    assert final["message"] == "作品归属未核" and expected[-1]["claims"][0]["matching_programme_pages"] == ["catalogue"]
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="requires local video decoder")
@@ -329,11 +369,17 @@ async def test_real_image_inventory_and_caption_do_not_inherit_worker_plot(runti
 
     async def omni(messages, schema, **kwargs):
         props = schema["properties"]
+        if props and all("含具体影视作品名称或将画面归属特定影片剧集" in v.get("enum", ()) for v in props.values()):
+            return dict.fromkeys(props, "构图、物件、外观或服装")
         if "requested_count" in props:
             return {"requested_count": 1, "usage": "讲解构图", "playable": True, "trace_origin": False}
         if "decision" in props:
             return {"decision": "采用", "primary_frame": "read:1", "rationale": "可以看构图"}
         content = messages[-1]["content"]
+        if "work_claims" in props:
+            fields = json.loads(content)
+            assert all(k.startswith("items.0.") for k in fields)
+            return {"work_claims": {path: [] for path in fields}}
         if "opening" in props:
             assert json.loads(content)["号主交办"] == task["goal"] and "后台推测" not in content
             return {"opening": "我会用这一镜引出布景话题。", "main": "在讲解时插入。", "transition": "先停一下旁白。"}

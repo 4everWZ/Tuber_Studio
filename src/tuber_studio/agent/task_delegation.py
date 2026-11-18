@@ -242,10 +242,18 @@ async def advance(runtime, task):
             return
         except EditorialCorrection as correction:
             if runtime.scope() == task["scope"]:
+                plan = task["plan"].copy()
+                if correction.attribution_reviews:
+                    plan["attribution_rejections"] = [*plan.get("attribution_rejections", []), *correction.attribution_reviews]
                 runtime._save(task, status="queued", due=time.time(), message=str(correction),
-                              plan=task["plan"] | {"editor_draft": correction.draft, "editor_issues": correction.issues,
+                              plan=plan | {"editor_draft": correction.draft, "editor_issues": correction.issues,
                                                    "frame_reviews": correction.frame_reviews, "window_reviews": correction.window_reviews})
             return
+        except DelegationError as error:
+            if error.attribution_reviews and runtime.scope() == task["scope"]:
+                runtime._save(task, plan=task["plan"] | {"attribution_rejections": [
+                    *task["plan"].get("attribution_rejections", []), *error.attribution_reviews]})
+            raise
         if runtime.scope() != task["scope"]:
             return
         verified, delivery = render_private_delivery(product, evidence)
