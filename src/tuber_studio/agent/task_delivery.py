@@ -488,8 +488,14 @@ def primary_frame(item, evidence):
                          and points[f"{step}:{i}"].cid == clip["cid"])
         index = sampled.index((points[primary].seconds, primary))
         adjacent = {key for _, key in sampled[max(0, index-1):index+2]}
-    if any(key not in adjacent and not points[primary].supports(points[key]) for key in timed if key != primary):
-        raise DelegationError("同项视频证据须来自主帧时点或同一已核实的抽样窗。")
+    unsupported = [key for key in timed if key != primary and key not in adjacent
+                   and not points[primary].supports(points[key])]
+    if unsupported:
+        raise DelegationError(
+            f"同项视频证据须来自主帧时点或同一已核实的抽样窗。primary_frame={primary} "
+            f"（P{points[primary].part} · {points[primary].seconds:g} 秒），sources 中的 "
+            f"{'、'.join(unsupported)} 缺少关联。请移除这些引用及依赖它们的描述，或另行取材后再提交。"
+        )
     return primary
 
 
