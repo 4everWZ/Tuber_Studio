@@ -88,6 +88,79 @@ def test_primary_requires_a_cited_frame_and_text_research_keeps_multiple_sources
     assert "单帧采样" in body and "音轨均未经该画面回执核实" in body
 
 
+def test_code_grant_is_not_an_artifact_receipt():
+    evidence = evidence_index([
+        {"id": "grant", "tool": "owner_code_grant", "result": {"allowed": True}},
+        {"id": "missing", "tool": "private_code", "result": {"name": "notes.md"}},
+        {"id": "done", "tool": "private_code", "result": {"name": "notes.md", "text": "已经整理"}},
+    ])
+    assert evidence == {"done": "工件 notes.md：已经整理"}
+
+
+async def test_front_and_reviewer_share_scoped_media_and_unread_page_receipts(runtime, store, monkeypatch):
+    read = reading(frame(11))
+    read["result"].update(gaps=["此区间未取得可公开读取的字幕。", "画面按时点抽样，未连续观看或听审音轨。"])
+    read["provided_page_urls"] = ["https://example.org/origin", "https://example.org/p2"]
+    missing_page = {"tool": "web_page", "id": "missing", "arguments": {"web_fetch": "https://example.org/p2"},
+                    "result": {"error": "未取得正文"}}
+    evidence = evidence_index([read, page("origin"), missing_page])
+    product = selection("v:1", "origin").model_dump()
+    inspected = []
+
+    async def editor(messages, schema, *, max_tokens):
+        packet = json.loads(messages[-1]["content"])
+        assert packet["pages_without_body_receipts"] == ["https://example.org/p2"]
+        coverage = packet["video_read_coverage"]["v"]
+        assert coverage["requested_ranges"] == read["result"]["selection"]["ranges"]
+        assert coverage["samples"] == [{"id": "v:1", "part": 2, "seconds": 11, "medium": "单帧采样"}]
+        assert coverage["read_gaps"] == read["result"]["gaps"]
+        inspected.append("candidate" in packet)
+        return product if "candidate" in packet else {"supported": True, "issues": []}
+
+    monkeypatch.setattr(runtime.llm, "generate_json", editor)
+    tasks = create_task_runtime(runtime, store, None)
+    task = {"goal": "整理", "plan": {"candidate": product, "prior_goals": []}}
+    selected = await tasks.edit_delivery(task, evidence)
+    assert inspected == [True, False]
+    _, body = render_private_delivery(selected, evidence)
+    assert body.endswith("以下给定来源尚无网页正文回执：\n- <https://example.org/p2>")
+
+
+@pytest.mark.parametrize("bad_review", [False, True])
+async def test_keep_original_frame_item_and_review_only_rendered_fields(runtime, store, monkeypatch, bad_review):
+    evidence = evidence_index([reading(frame(11), frame(35), frame(230)), page("origin")])
+    original = selection("origin", primary="v:1")
+    old = original.items[0].model_dump()
+    replacement = selection("origin", primary="v:3").items[0].model_dump()
+
+    async def editor(messages, schema, *, max_tokens):
+        packet = json.loads(messages[-1]["content"])
+        if "candidate" in packet:
+            assert packet["previous_items_by_primary_frame"] == {"v:1": old}
+            keep = schema["properties"]["items"]["items"]["anyOf"][1]
+            assert keep["properties"]["keep_previous"]["enum"] == ["v:1"]
+            return {"items": [{"keep_previous": "v:1"}, replacement], "gaps": []}
+        props = schema["$defs"]["EditorialIssue"]["properties"]
+        assert "items.0.rationale" in props["field"]["enum"]
+        assert not any("v:2" in key or "gap_evidence" in key for key in props["field"]["enum"])
+        assert "画面不能判断实际声音" in props["reason"]["enum"]
+        if bad_review:
+            return {"supported": False, "issues": [
+                {"field": "gap_evidence.v:2", "reason": "引用未支持该断言", "quote": "椅子"}]}
+        return {"supported": True, "issues": []}
+
+    monkeypatch.setattr(runtime.llm, "generate_json", editor)
+    tasks = create_task_runtime(runtime, store, None)
+    task = {"goal": "保留第一项，换第二项", "plan": {"previous_selection": original.model_dump(),
+                                                  "prior_goals": [], "candidate": original.model_dump()}}
+    if bad_review:
+        with pytest.raises(DelegationError, match="没有绑定"):
+            await tasks.edit_delivery(task, evidence)
+    else:
+        selected = await tasks.edit_delivery(task, evidence)
+        assert [item.model_dump() for item in selected.items] == [old, replacement]
+
+
 def test_legacy_subtitle_points_remain_citable_and_old_part_links_get_actual_timestamp():
     one = frame(18.625) | {"kind": "字幕", "url": f"https://www.bilibili.com/video/{BV}/?p=2"}
     two = frame(96) | {"kind": "字幕"}
@@ -98,7 +171,7 @@ def test_legacy_subtitle_points_remain_citable_and_old_part_links_get_actual_tim
         render_private_delivery(selection("v:2", primary="v:1"), evidence)
 
 
-@pytest.mark.parametrize("fault", ["backend_mix", "editor_mix", "unheard_audio", "unheard_gap"])
+@pytest.mark.parametrize("fault", ["backend_mix", "editor_mix", "unheard_audio", "unheard_gap", "correct_reason", "still_wrong"])
 async def test_invalid_video_delivery_cannot_complete(runtime, settings, store, monkeypatch, fault):
     def worker(payload):
         schema = next(tool for tool in payload["tools"] if tool["name"] == "submit_materials")["parameters"]
@@ -114,6 +187,10 @@ async def test_invalid_video_delivery_cannot_complete(runtime, settings, store, 
 
     async def editor(messages, schema, *, max_tokens):
         packet = json.loads(messages[-1]["content"])
+        if "issues" in packet and "draft" in packet:
+            assert packet["issues"] == {"items.0.rationale": "「一片寂静」画面不能判断实际声音"}
+            assert set(schema["properties"]) == {"items.0.rationale"}
+            return {"items.0.rationale": "我想用椅子的构图开场。" if fault == "correct_reason" else "一片寂静。"}
         if "candidate" in packet:
             assert fault != "backend_mix"
             assert schema["$defs"]["CreativeItem"]["properties"]["primary_frame"]["anyOf"][0]["enum"] == ["v:1", "v:2"]
@@ -129,9 +206,15 @@ async def test_invalid_video_delivery_cannot_complete(runtime, settings, store, 
         assert set(review["evidence"]) == {"v:1", "a"}
         if fault == "unheard_gap":
             assert packet["gaps"] == ["只录到静默，无法核对台词。"]
+        elif fault == "correct_reason" and reviews:
+            assert review["rationale"] == "我想用椅子的构图开场。"
         else:
             assert "一片寂静" in review["rationale"]
         reviews.append(review)
+        if fault in {"correct_reason", "still_wrong"}:
+            if len(reviews) == 2 and fault == "correct_reason":
+                return {"supported": True, "issues": []}
+            return {"supported": False, "issues": [{"field": "items.0.rationale", "quote": "一片寂静", "reason": "画面不能判断实际声音"}]}
         return {"supported": False}
 
     monkeypatch.setattr(runtime.llm, "generate_json", editor)
@@ -146,7 +229,17 @@ async def test_invalid_video_delivery_cannot_complete(runtime, settings, store, 
         assert pending["status"] == "queued" and "candidate" in pending["plan"]
         await tasks._advance(pending)
     final = tasks.current(identity)
+    if fault in {"correct_reason", "still_wrong"}:
+        assert final["status"] == "queued" and tasks.workspace.latest(identity) is None
+        recovered = create_task_runtime(runtime, store, None)
+        await recovered._advance(recovered.current(identity))
+        final = recovered.current(identity)
+        assert len(reviews) == 2
+        if fault == "correct_reason":
+            assert final["status"] == "completed" and "我想用椅子的构图开场。" in recovered.workspace.latest(identity)["body"]
+            assert final["plan"]["selected"]["items"][0]["sources"] == ["v:1", "a"]
+            return
     assert final["status"] == "failed" and tasks.workspace.latest(identity) is None
-    assert bool(reviews) == (fault in {"unheard_audio", "unheard_gap"})
+    assert bool(reviews) == (fault in {"unheard_audio", "unheard_gap", "still_wrong"})
     assert ("前台核对未通过" if reviews else "同一已核实") in final["message"]
     assert "一片寂静" not in final["message"] and "只录到静默" not in final["message"]

@@ -76,6 +76,38 @@ class DelegationError(ValueError):
     """A diagnostic safe to show without exposing provider payloads."""
 
 
+class EditorialCorrection(DelegationError):
+    """One private editorial draft and the specific fields Omni rejected."""
+
+    def __init__(self, product, issues):
+        super().__init__("前台要求按回执修正选材文字。")
+        self.draft = product.model_dump()
+        self.issues = issues
+
+
+def editorial_fields(product):
+    fields = {f"items.{i}.{name}": getattr(item, name) for i, item in enumerate(product.items)
+              for name in ("title", "rationale")}
+    fields.update({f"gaps.{i}": gap for i, gap in enumerate(product.gaps)})
+    return fields
+
+
+def correct_editorial_fields(draft, issues, replacements):
+    product = PrivateDelivery.model_validate(draft)
+    if set(replacements) != set(issues) or not set(issues) <= editorial_fields(product).keys():
+        raise DelegationError("前台修正超出指定字段。")
+    data = product.model_dump()
+    for path, value in replacements.items():
+        if not isinstance(value, str) or not value.strip():
+            raise DelegationError("前台修正缺少文字。")
+        parts = path.split(".")
+        if parts[0] == "gaps":
+            data["gaps"][int(parts[1])] = value
+        else:
+            data["items"][int(parts[1])][parts[2]] = value
+    return PrivateDelivery.model_validate(data)
+
+
 @dataclass(frozen=True)
 class VideoPoint:
     bvid: str
@@ -107,6 +139,13 @@ class EvidenceIndex(dict):
     def __init__(self):
         super().__init__()
         self.points: dict[str, VideoPoint] = {}
+        self.provided_pages: dict[str, None] = {}
+        self.read_pages: set[str] = set()
+        self.video_coverage: dict[str, dict] = {}
+
+    @property
+    def unread_pages(self):
+        return [url for url in self.provided_pages if url not in self.read_pages]
 
 
 def _time(value):
@@ -163,24 +202,39 @@ def evidence_index(steps):
     for step in steps:
         result = step.get("result") or {}
         tool = step["tool"]
+        evidence.provided_pages.update(dict.fromkeys(url for url in step.get("provided_page_urls", ()) if _source(url)))
         if tool == "owner_attachment":
             body = result["text"]
             for offset in range(0, len(body), 800):
                 label = f"{_text(result['name'])} · 字符 {offset + 1}–{min(offset + 800, len(body))}"
                 evidence[f"{step['id']}:{offset}"] = f"{label}：{_text(body[offset:offset + 800])}"
             continue
-        if tool in {"web_search", "delegate_text"}:
+        if tool in {"web_search", "delegate_text", "owner_code_grant"}:
             continue
         if tool == "inspect_video" and result.get("status") in {"completed", "partial"}:
+            samples = []
             for index, item in enumerate(result.get("findings", []), 1):
                 if point := _video_point(item, step, result):
                     key = f"{step['id']}:{index}"
                     evidence.points[key] = point
                     evidence[key] = point.citation(item)
+                    samples.append({"id": key, "part": point.part, "seconds": point.seconds, "medium": point.medium})
+            selection = result.get("selection") or {}
+            evidence.video_coverage[step["id"]] = {
+                "status": result["status"], "viewing": result.get("viewing"),
+                "bvid": selection.get("bvid") or step.get("arguments", {}).get("bvid"),
+                "requested_ranges": selection.get("ranges", []), "samples": samples,
+                "read_gaps": [gap for gap in result.get("gaps") or [] if isinstance(gap, str)],
+            }
         elif result and not result.get("error"):
             lines, verified = _describe(tool, result)
             if verified:
                 evidence[step["id"]] = " · ".join(line for line in lines if line)
+                if tool == "web_page":
+                    evidence.read_pages.add(result["url"])
+                    address = step.get("arguments", {}).get("web_fetch")
+                    if address:
+                        evidence.read_pages.add(address)
     return evidence
 
 
@@ -206,6 +260,21 @@ def primary_frame(item, evidence):
     return primary
 
 
+def previous_frame_items(task, evidence):
+    retained = {}
+    for row in (task["plan"].get("previous_selection") or {}).get("items", []):
+        if not set(row["sources"]) <= evidence.keys():
+            continue
+        item = CreativeItem.model_validate(row)
+        try:
+            key = primary_frame(item, evidence)
+        except DelegationError:
+            continue  # Older editions could group unrelated frames. They cannot be reused as a clip.
+        if key:
+            retained[key] = item.model_dump() | {"primary_frame": key}
+    return retained
+
+
 def render_private_delivery(product, evidence):
     blocks = []
     used = set()
@@ -223,12 +292,18 @@ def render_private_delivery(product, evidence):
         blocks.append("\n".join(lines))
     if product.gaps:
         blocks.append("未核实或未覆盖：\n" + "\n".join(f"- {_text(gap)}" for gap in product.gaps))
+    if evidence.unread_pages:
+        blocks.append("以下给定来源尚无网页正文回执：\n" + "\n".join(f"- {_source(url)}" for url in evidence.unread_pages))
     if not blocks:
         raise DelegationError("交付缺少材料或缺口说明。")
     return bool(product.items), "\n\n".join(blocks)
 
 
 def _describe(tool, result):
+    if tool == "private_code":
+        if result.get("name") and "text" in result:
+            return [f"工件 {_text(result['name'])}：{_text(result['text'])}"], True
+        return ["未取得文件工件。"], False
     if tool == "inbox_received":
         return [f"UID {result['sender_uid']} 的来信已进入账号 {result['account_id']} 的收件箱。",
                 f"消息 ID：{result['message_id']} · 收件箱条目：{result['inbox_id']}"], True

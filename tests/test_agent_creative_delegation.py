@@ -13,16 +13,64 @@ from tuber_studio import http_api
 from tuber_studio.agent import task_tools
 from tuber_studio.agent.task_delivery import (
     CreativeItem,
+    DelegationError,
     PrivateDelivery,
     evidence_index,
     render_private_delivery,
 )
+from tuber_studio.agent.task_runtime import ToolRequest
 from tuber_studio.api_providers import APIProvider
 from tuber_studio.app import create_app
 
 
 def call(name, args, identity):
     return {"type": "function_call", "name": name, "call_id": identity, "arguments": json.dumps(args)}
+
+
+async def test_dropped_part_parameter_returns_exact_unread_urls(runtime, store):
+    tasks = task_tools.create_task_runtime(runtime, store, None)
+    url = f"https://www.bilibili.com/video/{BV}/?p=2"
+    request = ToolRequest(str(uuid4()), f"核对 {url} 和 https://example.org/source", tasks.scope(), None, None)
+    tool = tasks.tools["web_page"]
+    receipt = await tool.run(request, tool.arguments(web_fetch=url.split("?")[0]))
+    assert receipt["error"] and receipt["allowed_urls"] == [url, "https://example.org/source"]
+
+
+@pytest.mark.parametrize("count", [4678, 8192])
+async def test_front_delivery_uses_measured_remaining_window(runtime, store, monkeypatch, count):
+    completion_budgets = []
+    text = "保留此段完整的来源摘录"
+
+    def front(request):
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": "omni", "max_model_len": 8192}]})
+        body = json.loads(request.content)
+        assert any(text in item["content"] for item in body["messages"])
+        if request.url.path == "/v1/chat/prompt_tokens":
+            return httpx.Response(200, json={"count": count})
+        assert request.url.path == "/v1/chat/completions"
+        completion_budgets.append(body["max_tokens"])
+        return httpx.Response(200, json={"usage": {"prompt_tokens": count}, "choices": [{"finish_reason": "stop",
+                             "message": {"content": json.dumps({"items": [], "gaps": ["资料不足"]})}}]})
+
+    monkeypatch.setattr(http_api, "inference_transport", lambda _: httpx.MockTransport(front))
+    provider = APIProvider({"base_url": "https://example.org/v1", "model": "omni", "context_source": "model_card",
+                            "structured_output": "json_schema", "prompt_token_endpoint": True})
+    monkeypatch.setattr(runtime, "llm", provider)
+    monkeypatch.setitem(runtime.settings.data["llm"], "max_tokens", 4096)
+    tasks = task_tools.create_task_runtime(runtime, store, None)
+    evidence = evidence_index([{"id": "origin", "tool": "web_page", "result": {"url": "https://example.org/s", "excerpt": text}}])
+    task = {"goal": "取材", "plan": {"prior_goals": [], "candidate": {"items": [], "gaps": ["待核实"]}}}
+    try:
+        if count == 8192:
+            with pytest.raises(DelegationError, match="窗口预算"):
+                await tasks.edit_delivery(task, evidence)
+            assert not completion_budgets
+        else:
+            await tasks.edit_delivery(task, evidence)
+            assert completion_budgets == [8192 - count]
+    finally:
+        await provider.close()
 
 
 def gateway(settings, monkeypatch, reply):
@@ -72,6 +120,38 @@ async def test_bad_tool_arguments_return_a_diagnostic_without_execution(runtime,
         assert all(step.get("invalid_call") for step in task["steps"])
     finally:
         await tasks.close()
+
+
+async def test_mixed_video_and_source_batch_returns_each_call_its_own_receipt(runtime, settings, store, monkeypatch):
+    url = "https://example.org/public-origin"
+    fetched = []
+
+    async def fetch(address):
+        fetched.append(str(address))
+        return {"url": url, "excerpt": "公开出处", "title": "资料页"}
+
+    def worker(payload):
+        receipts = {item["call_id"]: json.loads(item["output"]) for item in payload["input"]
+                    if item.get("type") == "function_call_output"}
+        if not receipts:
+            page = next(tool for tool in payload["tools"] if tool["name"] == "web_page")
+            assert page["parameters"]["properties"]["web_fetch"]["enum"] == [url]
+            return [call("inspect_video", {"bvid": BV, "part": 2, "start": 17, "end": 17}, "bad"),
+                    call("web_page", {"web_fetch": url}, "origin")]
+        assert receipts["bad"]["receipt"]["issues"][0]["field"] == "end" and not receipts["bad"]["evidence"]
+        assert receipts["origin"]["evidence"] and receipts["origin"]["receipt"]["url"] == url
+        return [call("ask_owner", {"question": "需要哪个时段？"}, "ask")]
+
+    gateway(settings, monkeypatch, worker)
+    monkeypatch.setattr(task_tools, "fetch_excerpt", fetch)
+    tasks = task_tools.create_task_runtime(runtime, store, None)
+    identity = str(uuid4())
+    tasks.create(identity, f"核对 {BV} P2 和 {url}")
+    for _ in range(4):
+        await tasks._advance(tasks.current(identity))
+    final = tasks.current(identity)
+    assert final["status"] == "needs_input" and fetched == [url]
+    assert [step.get("invalid_call", False) for step in final["steps"]] == [True, False]
 
 
 async def test_responses_parallel_checkpoint_child_isolation_and_steering(runtime, settings, store, monkeypatch):
