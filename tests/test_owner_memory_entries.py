@@ -338,6 +338,31 @@ async def test_exact_original_ranked_before_eight_fuzzy_matches(owner, monkeypat
     assert len(hits) == 8
     assert (hits[0]["id"],hits[0]["source_key"],hits[0]["quote"],hits[0]["note"]) == (target,key,NOTE,"新的开场偏好。")
 
+async def test_voice_preview_binds_original_and_forgets_both_texts(owner, monkeypatch):
+    from tuber_studio.agent.voice_origin import sign, ticket_context
+    client, state = owner
+    raw, confirmed = "好的，以后用陈述句。", "以后用陈述句。"
+    key = "isolated-ordinary"
+    monkeypatch.setattr(private_call, "private_service", lambda: ("https://voice.example", key))
+    context = ticket_context(key, "single-use-ticket", state.runtime.tasks.scope())
+    origin = dict(context, capture_id="selected", samples=32000, machine_text=raw,
+                  receipt=sign(key, ["omni.mic.v1", context["ticket_hash"], "selected", 32000, raw]))
+    body = {"source":"confirmed_voice", "text":confirmed, "voice_origin":origin}
+    for fields in [{"machine_text":confirmed}, {"samples":3}, {"scope_signature":"0"*64}]:
+        assert (await client.post(MEM+".propose", json=body | {"voice_origin":origin | fields})).status_code == 409
+    preview = (await client.post(MEM+".propose", json=body)).raise_for_status().json()
+    assert preview["machine_text"] == raw and preview["text"] == confirmed
+    response = await client.post(MEM+"/confirm", json=body | {"stamp":preview["stamp"], "text":raw})
+    assert response.status_code == 409
+    identity = (await client.post(MEM+"/confirm", json=body | {"stamp":preview["stamp"]})).raise_for_status().json()["id"]
+    stored = (await client.post(MEM+".get", json={"id":identity})).raise_for_status().json()
+    assert stored["quote"] == confirmed and stored["voice_origin"] == {
+        "machine_text":raw, "samples":32000, "capture_id":"selected", "owner_edited":True}
+    (await client.delete(f"/api/daily-memory/organized/{identity}?expected_revision={stored['revision']}")).raise_for_status()
+    assert not state.store.one("SELECT 1 FROM confirmed_voice_origins WHERE item_id=?", (identity,))
+    assert (await client.post(MEM+"/confirm", json=body | {"stamp":preview["stamp"]})).status_code == 409
+
+
 async def test_confirmed_voice_correction_rechecks_target_and_revision(owner, monkeypatch):
     client, state = owner
     identity = await save(client)

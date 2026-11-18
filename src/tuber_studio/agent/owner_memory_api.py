@@ -13,6 +13,8 @@ from ..memory_sources import memory_transaction
 from ..models import StrictModel
 from ..operation_continuations import content_hash
 from .memory_organizer import MemorySuggestion
+from . import private_call, voice_origin
+from .voice_origin import VoiceOrigin
 from .owner_memory import Get, MemoryUse, OwnerNote, Search, check_use, citation, correctable_preference, private_rows
 
 
@@ -21,7 +23,12 @@ class VoiceCorrection(Get):
     use: MemoryUse
 
 
+class SourceLookup(Get):
+    source_key: str | None = Field(default=None, max_length=500)
+
+
 class Proposal(StrictModel):
+    voice_origin: VoiceOrigin | None = None
     correction: VoiceCorrection | None = None
     source: Literal["turn", "confirmed_voice", "settings", "task"]
     text: OwnerNote
@@ -37,18 +44,25 @@ class Confirmation(Proposal):
 def register_owner_memory(app, runtime, chat, require_admin):
     deps = [Depends(require_admin)]
     memory = runtime.daily_memory
+    voice_origin.install(runtime.store.db)
 
     @app.post("/api/agent/memory.search", dependencies=deps)
     async def search(data: Search):
         return {"items": [citation(row) for row in private_rows(runtime, data.query)]}
 
     @app.post("/api/agent/memory.get", dependencies=deps)
-    async def get(data: Get):
+    async def get(data: SourceLookup):
         scope = runtime.memory_organizer.scope()
         rows = memory.organized(scope, item_id=data.id) if memory.preference(scope)["enabled"] else []
         if not rows or rows[0]["status"] != "active" or not (row := memory.owner_projection(rows[0])):
             raise HTTPException(404, "当前没有可引用的这条记忆")
-        return citation(row)
+        if data.source_key:
+            hits = memory.lookup_source(scope, "operator", data.source_key)
+            exact = next((hit for hit in hits if hit["id"] == data.id and hit["source_key"] == data.source_key), None)
+            if not exact:
+                raise HTTPException(404, "当前没有可核对的这条来源")
+            row = row | {"exact_source":exact}
+        return voice_origin.attach(runtime.store, citation(row))
 
     @app.post("/api/agent/memory/validate", dependencies=deps)
     async def validate(data: MemoryUse):
@@ -63,6 +77,11 @@ def register_owner_memory(app, runtime, chat, require_admin):
         pref = memory.preference(scope)
         if not pref["enabled"] or contains_memory_credential(data.text):
             raise HTTPException(409, "当前设置或内容不允许保存这句话")
+        if origin := data.voice_origin:
+            service = private_call.private_service()
+            if data.source != "confirmed_voice" or not service or contains_memory_credential(origin.machine_text):
+                raise HTTPException(409, "此转写来源不能保存")
+            voice_origin.verify_origin(origin, service[1], runtime.tasks.scope())
         target = None
         if correction := data.correction:
             if data.source != "confirmed_voice" or correction.id not in correction.use.ids:
@@ -109,6 +128,8 @@ def register_owner_memory(app, runtime, chat, require_admin):
             key = data.source + ":" + content_hash([memory.private_owner, scope[1], data.text])
             if target:
                 key = "confirmed_voice:" + content_hash([key, target["id"], target["revision"]])
+            if origin:
+                key = "confirmed_voice:" + content_hash([origin.ticket_hash, origin.capture_id])
             at = time.time()
         source = {"kind": "private", "key": key, "text": data.text, "at": at,
                   "private_owner": memory.private_owner}
@@ -119,7 +140,8 @@ def register_owner_memory(app, runtime, chat, require_admin):
     @app.post("/api/agent/memory.propose", dependencies=deps)
     async def propose(data: Proposal):
         _, source, stamp, target = proposal(data)
-        return {"text": source["text"], "stamp": stamp, **({"replaces": citation(target)} if target else {})}
+        return {"text": source["text"], "stamp": stamp, **({"replaces": citation(target)} if target else {}),
+                **({"machine_text":data.voice_origin.machine_text} if data.voice_origin else {})}
 
     @app.post("/api/agent/memory/confirm", dependencies=deps)
     async def confirm(data: Confirmation):
@@ -135,13 +157,18 @@ def register_owner_memory(app, runtime, chat, require_admin):
                 hits = memory.lookup_source(scope, "operator", source["key"])
                 if len(hits) != 1 or hits[0]["id"] != target["id"] or hits[0]["quote"] != data.text:
                     raise HTTPException(409, "新原话与其他条目冲突，更正尚未保存")
+                if data.voice_origin:
+                    voice_origin.save(runtime.store.db, target["id"], source["key"], data.voice_origin)
                 return {"id": target["id"], "revision": hits[0]["revision"]}
-        existing = memory.lookup_source(scope, "operator", source["key"])
-        if not existing:
-            decision = MemorySuggestion(action="add", existing_id=None, headline=data.text[:40], note=data.text, tags=[])
-            if not memory.save_organized(scope, source, decision, None):
-                raise HTTPException(409, "该来源已撤回或无法核实")
+        with memory_transaction(runtime.store.db):
             existing = memory.lookup_source(scope, "operator", source["key"])
-        if not existing:
-            raise HTTPException(409, "来源已变化，请重新读取")
-        return {"id": existing[0]["id"]}
+            if not existing:
+                decision = MemorySuggestion(action="add", existing_id=None, headline=data.text[:40], note=data.text, tags=[])
+                if not memory.save_organized(scope, source, decision, None):
+                    raise HTTPException(409, "该来源已撤回或无法核实")
+                existing = memory.lookup_source(scope, "operator", source["key"])
+            if not existing or existing[0]["quote"] != data.text:
+                raise HTTPException(409, "来源已变化，请重新读取")
+            if data.voice_origin:
+                voice_origin.save(runtime.store.db, existing[0]["id"], source["key"], data.voice_origin)
+            return {"id": existing[0]["id"]}

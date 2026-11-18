@@ -42,9 +42,10 @@ export function selectUtterance(button, feedback, send, handoff) {
           audio_bounds: "这句超过录音范围，请缩短后重录。", empty_audio: "未收到有效录音。"}[e.reason]) || "未取得完整转写，请重新录入。");
         else if (state === "waiting" && e.type === prefix + "completed" && e.source === "explicit_user_audio" &&
             Number.isInteger(e.samples) && e.samples > 0 && e.samples <= 240000 &&
-            typeof e.transcript === "string" && e.transcript.trim() && [...e.transcript].length <= 2000) {
+            typeof e.transcript === "string" && e.transcript.trim() && [...e.transcript].length <= 2000 &&
+            /^[a-f0-9]{64}$/.test(e.receipt)) {
           reset();
-          handoff(e.transcript.trim());
+          handoff(e.transcript, {machine_text:e.transcript, capture_id:e.capture_id, samples:e.samples, receipt:e.receipt});
         }
       }
     },

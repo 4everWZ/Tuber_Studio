@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const path = require("node:path");
+const {createHash, createHmac} = require("node:crypto");
 const { chromium } = require(require.resolve("playwright", {
   paths: [__dirname, path.join(path.dirname(process.execPath), "node_modules/@playwright/cli")],
 }));
@@ -37,13 +38,16 @@ async function test(browser, origin, mode) {
           renewed();
         }
         send({type: "session.created", session: {capabilities: {implementation_level: "model_native_duplex",
-          ...(selected ? {gateway_input_transcription: {mode:"explicit_once", sample_rate_hz:16000, max_seconds:15}} : {})}}});
+          ...(selected ? {gateway_input_transcription: {mode:"explicit_once", sample_rate_hz:16000, max_seconds:15, receipt:"hmac-sha256-v1"}} : {})}}});
       } else if (selected && event.type === "gateway.input_transcription.start") {
         send({type:"gateway.input_transcription.started", capture_id:"selected-slice"});
       } else if (selected && event.type === "gateway.input_transcription.finish") {
         assert.equal(event.capture_id, "selected-slice");
+        const machine = "好的，" + voiceNote;
+        const ticketHash = createHash("sha256").update("session-fixture").digest("hex");
+        const receipt = createHmac("sha256", "fixture").update(JSON.stringify(["omni.mic.v1", ticketHash, event.capture_id, 16000, machine])).digest("hex");
         const reply = {type:"gateway.input_transcription.completed", capture_id:event.capture_id,
-          samples:16000, transcript:voiceNote, source:"explicit_user_audio"};
+          samples:16000, transcript:machine, source:"explicit_user_audio", receipt};
         send({...reply, capture_id:"other-slice", transcript:"错误录音"});
         send({...reply, source:"assistant", transcript:"助手的回复"});
         send(reply); send(reply);
@@ -108,7 +112,8 @@ async function test(browser, origin, mode) {
     await start.click();
     await page.getByRole("button",{name:"结束并转认这句"}).click();
     await page.locator("#private-call-utterances blockquote").filter({hasText:voiceNote}).waitFor();
-    assert.deepEqual(await page.locator("#private-call-utterances blockquote").allTextContents(), [voiceNote]);
+    assert.deepEqual(await page.locator("#private-call-utterances blockquote").allTextContents(), ["好的，"+voiceNote]);
+    await page.getByLabel("号主确认的文字（可改正误听）").fill(voiceNote);
     assert.equal((await (await other.request.post(origin+"/api/agent/memory.get", {data:{id:originalRow.id}})).json()).revision,
       originalRow.revision);
   }
@@ -120,7 +125,10 @@ async function test(browser, origin, mode) {
     assert.deepEqual(await (await updated).json(), {id:originalRow.id, revision:originalRow.revision+1});
     await resumed;
     const current = await other.request.post(origin+"/api/agent/memory.get", {data:{id:originalRow.id}});
-    assert.equal((await current.json()).quote, voiceNote);
+    const stored = await current.json();
+    assert.equal(stored.quote, voiceNote);
+    if (selected) assert.deepEqual(stored.voice_origin, {machine_text:"好的，"+voiceNote, samples:16000,
+      capture_id:"selected-slice", owner_edited:true});
     const list = await other.request.get(origin+"/api/daily-memory");
     assert.equal((await list.json()).organized.filter(row => row.status === "active").length, 1);
     await other.close();

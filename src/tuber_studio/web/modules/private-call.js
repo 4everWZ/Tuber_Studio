@@ -193,10 +193,10 @@ async function begin(previous = null) {
           call.heartbeat = setInterval(() => call.send({type: "session.heartbeat"}), 20000);
           await capture(call, config.character);
           const selection = caps.gateway_input_transcription;
-          if (!ephemeral && current === call && selection?.mode === "explicit_once" &&
+          if (!ephemeral && current === call && config.voice_context && selection?.receipt === "hmac-sha256-v1" && selection.mode === "explicit_once" &&
               selection.sample_rate_hz === 16000 && selection.max_seconds === 15) {
             call.selection = selectUtterance(byId("private-call-transcribe"), byId("private-call-transcribe-state"),
-              e => call.send(e), text => showHandoff(byId("private-call-utterances"), text, config, "所选录音的转写，请核对原话"));
+              e => call.send(e), (text, origin) => showHandoff(byId("private-call-utterances"), text, config, {...origin, ...config.voice_context}));
           }
         } else if (call.stream) {
           call.selection?.event(event);

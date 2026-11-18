@@ -20,6 +20,7 @@ from ..http_api import endpoint
 from ..operation_continuations import content_hash
 from ..store import dump
 from .owner_memory import citation, correctable_preference, private_rows, read_stamp
+from .voice_origin import ticket_context
 
 
 class CallOptions(BaseModel):
@@ -108,6 +109,7 @@ def register_private_call(app, runtime, require_admin):
         return {
             "socket": origin.replace("http", "ws", 1) + "/v1/realtime",
             "ticket": ticket,
+            "voice_context": ticket_context(token, ticket, grant) if not options.temporary else None,
             "call_scope": content_hash(grant),
             "character": character["name"],
             "avatar": call_avatar(runtime.settings, character),
