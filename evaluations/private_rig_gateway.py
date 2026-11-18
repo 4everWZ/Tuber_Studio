@@ -94,7 +94,8 @@ async def main():
                     track = sender.track
                     if track and track.index:
                         step = VIDEO_SAMPLES if track.kind == "video" else 480
-                        sample = track.start_sample + (track.index - 1) * step
+                        clock = getattr(track, "clock", track)
+                        sample = clock.start_sample + (track.index - 1) * step
                         ages[track.kind] = round((now - sample) * 1000 / RATE)
             return web.json_response(ages)
 

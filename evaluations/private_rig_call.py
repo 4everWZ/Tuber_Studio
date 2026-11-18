@@ -138,6 +138,7 @@ async def exercise(browser, origin, profile, work, gateway, token, reference, me
                     nonlocal source_id
                     e = json.loads(raw)
                     if e["type"] == "session.created":
+                        state["realtime_model"] = e["session"].get("model")
                         state["native"] = (
                             e["session"].get("capabilities", {}).get("implementation_level")
                             == "model_native_duplex"
@@ -219,6 +220,8 @@ async def exercise(browser, origin, profile, work, gateway, token, reference, me
                 and view["format"]["driver"] == "inochi2d"
             )
             state["accepted_avatar_ack_ms"] = view["playback"].get("played_ms", 0)
+            state["avatar_id"] = view["avatar_id"]
+            state["driver"] = view["format"]["driver"]
             state["sender_frame_age_ms"] = (
                 (await client.get("/qa/sender-clocks/" + joined)).raise_for_status().json()
             )
@@ -227,6 +230,7 @@ async def exercise(browser, origin, profile, work, gateway, token, reference, me
                 while True:
                     view = (await client.get("/v1/avatar/sessions/" + joined)).raise_for_status().json()
                     if view["state"] == "closed":
+                        state["hangup_state"] = view["state"]
                         break
                     await asyncio.sleep(0.1)
         capture = work / "received.webm"

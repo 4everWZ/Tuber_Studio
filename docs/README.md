@@ -25,7 +25,7 @@
 
 ## 实测记录
 
-- [原画工作站实测](../evaluations/results/inochi-whep-master-rigs-20261119.md) · [真实 Omni 私有通话](../evaluations/results/private-rig-omni-voice-20261119.md)
+- [原画工作站实测](../evaluations/results/inochi-whep-master-rigs-20261119.md) · [真实 Omni 私有通话](../evaluations/results/private-rig-omni-voice-20261119.md) · [Windows 隔离部署与双形象通话回归](../evaluations/results/windows-local-avatar-placement-20261119.md)
 - [跨端记忆](../evaluations/results/owner-memory-20261119.md) · [按当时的选材理由回看原稿](../evaluations/results/private-task-history-20261119.md) · [P2 选段与纠偏](../evaluations/results/creative-video-grounding-20261119.md)
 - [AGX 运营档部署](../evaluations/results/agx-clean-9b-deployment-20261111.md) · [30 个真实视频审核回放](../evaluations/results/review-agx-mainline-20261111.md)
 - [11 月 11–12 日运营实跑核查](../evaluations/results/operations-feedback-20261112.md)
