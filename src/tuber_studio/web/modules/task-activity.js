@@ -74,6 +74,7 @@ export function initTaskActivity(api, requestId) {
   const panel = $("chat-activity"), toggle = $("chat-activity-toggle"), closeButton = $("chat-activity-close");
   const content = $("chat-activity-content"), notice = $("chat-activity-status");
   let selection = null, version = 0, timer, reading = false, viewKey, editing = false;
+  let returnFocus;
 
   function status(message) {
     notice.textContent = message;
@@ -88,10 +89,12 @@ export function initTaskActivity(api, requestId) {
     content.replaceChildren();
     editing = false;
     if (!restore) toggle.textContent = "活动";
-    if (restore) toggle.focus();
+    if (restore) (returnFocus?.isConnected ? returnFocus : toggle).focus({ preventScroll: true });
+    returnFocus = null;
   }
 
   function open(id = null) {
+    if (panel.hidden) returnFocus = document.activeElement?.closest("button") || toggle;
     clearInterval(timer);
     version++;
     selection = id;
@@ -124,7 +127,13 @@ export function initTaskActivity(api, requestId) {
         }
       } else renderList(value.tasks, value.goals || [], value.attention || []);
     } catch (error) {
-      if (current === version) status(safeMessage(error.message));
+      if (current === version) {
+        if ([401, 403, 404].includes(error.status)) {
+          viewKey = null;
+          content.replaceChildren();
+        }
+        status(safeMessage(error.message));
+      }
     } finally {
       reading = false;
       if (current !== version && !panel.hidden) refresh();
@@ -278,9 +287,26 @@ export function initTaskActivity(api, requestId) {
         result.prepend(node("p", "按工具回执交付", "hint"));
       }
     }
-    const steps = node("ol", null, "chat-task-steps");
-    for (const step of task.steps) {
+    // Keep unchanged steps mounted during polling so a playing video keeps
+    // its decoder, playhead and focus. Changed or revoked results are removed.
+    const steps = content.querySelector(".chat-task-steps") || node("ol", null, "chat-task-steps");
+    const keys = new Map(task.steps.map(step => [step.id, JSON.stringify(step)]));
+    const existing = new Map();
+    for (const item of Array.from(steps.children)) {
+      const id = item.dataset.stepId;
+      if (item.stepKey === keys.get(id)) existing.set(id, item);
+      else item.remove();
+    }
+    for (const [index, step] of task.steps.entries()) {
+      const next = steps.children[index] || null;
+      const prior = existing.get(step.id);
+      if (prior) {
+        if (prior !== next) steps.insertBefore(prior, next);
+        continue;
+      }
       const item = node("li");
+      item.dataset.stepId = step.id;
+      item.stepKey = keys.get(step.id);
       const label = tools[step.tool] || step.tool;
       const observation = observedStatus(step.tool, step.result);
       const summary = observation || (step.result ? (step.result.error ? "有错误" : "已收到结果") : "等待结果");
@@ -298,7 +324,12 @@ export function initTaskActivity(api, requestId) {
           video.playsInline = true;
           video.style.maxWidth = "100%";
           video.src = `${base}/${encodeURIComponent(task.id)}/clips/${encodeURIComponent(step.id)}`;
-          preview.append(video, node("p", `${clip.frames} 个连续原帧 · 仅画面`, "hint"));
+          preview.ontoggle = () => { if (!preview.open) video.pause(); };
+          preview.append(video, node("p", `${clip.bvid} · CID ${clip.cid} · ${clip.frames} 个连续原帧 · 仅画面`, "hint"));
+          if (/^BV[0-9A-Za-z]{10}$/.test(clip.bvid) && Number.isInteger(clip.part) &&
+              clip.part > 0 && Number.isFinite(clip.start) && clip.start >= 0) {
+            appendSource(preview, `https://www.bilibili.com/video/${clip.bvid}/?p=${clip.part}&t=${Math.floor(clip.start)}`, "跳到原片");
+          }
           item.append(preview);
         }
         if (step.tool === "private_code" && typeof result.text === "string" && result.name) {
@@ -315,7 +346,7 @@ export function initTaskActivity(api, requestId) {
       diagnostics.append(node("summary", "工具记录"), node("pre", JSON.stringify(result || step.arguments, null, 2)));
       details.append(diagnostics);
       item.append(details);
-      steps.append(item);
+      steps.insertBefore(item, next);
     }
     const adjust = button(task.status === "needs_input" ? "补充要求" : "调整任务");
     const stop = button("停止任务");
@@ -343,7 +374,13 @@ export function initTaskActivity(api, requestId) {
       adjust.replaceWith(form);
       input.focus();
     };
-    content.replaceChildren(back, title, state, result, steps, adjust, stop);
+    if (steps.parentElement === content) {
+      for (const child of Array.from(content.children)) if (child !== steps) child.remove();
+      steps.before(back, title, state, result);
+      steps.after(adjust, stop);
+    } else {
+      content.replaceChildren(back, title, state, result, steps, adjust, stop);
+    }
     if (task.can_control === false && !task.creative_goal?.closed) content.append(node("p", "原执行授权已失效。记录与成果仍可查看；如需继续，请重新交办。", "hint"));
     renderWorkspace(task);
     mountTaskBrowser(task, content, api, open, value => { editing = value; });

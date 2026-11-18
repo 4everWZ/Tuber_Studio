@@ -169,10 +169,14 @@ def register_task_api(app, tasks, require_admin):
     @app.get("/api/agent/tasks/{identity}/clips/{step_id}", dependencies=deps)
     async def read_clip(identity: UUID, step_id: UUID):
         task = visible(identity)
-        if not any(step["id"] == str(step_id) and step["tool"] == "inspect_video" and
-                   (step.get("result") or {}).get("clip") for step in task["steps"]):
+        video_steps = {step["id"]: step for step in tasks.view(task)["steps"] if step["tool"] == "inspect_video"}
+        step = video_steps.get(str(step_id), {})
+        receipt = step.get("result") or {}
+        # A resumed or reused read keeps the original request's media file.
+        media_id = receipt.get("request_id", str(step_id))
+        if not receipt.get("clip") or media_id not in video_steps:
             raise HTTPException(404, "此任务没有这段已核实的画面")
-        path = clip_path(app.state.runtime.settings.runtime, str(step_id))
+        path = clip_path(app.state.runtime.settings.runtime, media_id)
         if not path.is_file():
             raise HTTPException(404, "此工作区未保留这段短片文件")
         return FileResponse(path, media_type="video/mp4", headers={"Cache-Control": "private, no-store"})

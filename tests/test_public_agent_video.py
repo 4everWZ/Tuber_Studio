@@ -70,5 +70,19 @@ async def test_private_anonymous_video_uses_only_requested_part(settings, monkey
                 assert (await device.get(path)).content == b"fixture clip bytes"
                 other = tasks.create(str(uuid4()), "另一个目标")
                 assert (await device.get(path.replace(task["id"], other["id"]))).status_code == 404
+                reused = step | {"id": str(uuid4()), "reused_from": step["id"], "revision": 2}
+                task = tasks.current(task["id"])
+                tasks._save(task, steps=[step, reused], revision=2)
+                reuse_path = path.replace(step["id"], reused["id"])
+                assert (await device.get(reuse_path)).content == b"fixture clip bytes"
+                tasks._save(other, steps=[reused])
+                assert (await device.get(reuse_path.replace(task["id"], other["id"]))).status_code == 404
+
+                def revoked(*_):
+                    raise ValueError("引用的记忆已撤回")
+
+                monkeypatch.setattr(tasks, "_validate_reads", revoked)
+                assert not (await device.get(f"/api/agent/tasks/{task['id']}")).json()["steps"]
+                assert (await device.get(path)).status_code == 404
     finally:
         app.state.store.close()
