@@ -162,11 +162,14 @@ class TaskHistory:
                 if edition and edition["edition"]:
                     cards[key]["artifact"] = {k: edition[k] for k in ("task_revision", "edition")}
                     if not exact and not version and edition["edition"] > 1:
-                        original = self.store.one(
-                            "SELECT edition,author FROM creative_editions WHERE task_id=? AND task_revision=? "
-                            "ORDER BY edition LIMIT 1", (key, edition["task_revision"]))
-                        if original and original["edition"] != edition["edition"]:
+                        versions = self.store.all(
+                            "SELECT edition,author,instr(char(10)||body,char(10)||'选材理由：')>0 AS has_rationale "
+                            "FROM creative_editions WHERE task_id=? AND task_revision=? AND edition IN (1,?) "
+                            "ORDER BY edition", (key, edition["task_revision"], edition["edition"]))
+                        if len(versions) == 2:
+                            original, matched = versions
                             cards[key]["original_edition"] = {"task_revision": edition["task_revision"], **original}
+                            cards[key]["matched_edition"] = matched
                 if len(cards) >= 6:
                     break
         return list(cards.values())

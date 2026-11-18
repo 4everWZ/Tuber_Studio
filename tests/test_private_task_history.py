@@ -253,7 +253,10 @@ async def test_reason_question_can_open_the_agent_original_after_an_owner_edit(s
         if schema["title"] == "CardTurnIntent":
             card, = packet["history_task_cards"]
             assert card["artifact"]["edition"] == 2 and card["original_edition"]["author"] == "agent"
-            assert "read_original" in schema["properties"]
+            assert "read_original" in schema["required"]
+            assert card["matched_edition"]["author"] == "owner"
+            assert not card["matched_edition"]["has_rationale"] and card["original_edition"]["has_rationale"]
+            assert REASON not in str(packet)
             return {"intent": "discuss", "reference": task, "read_original": True}
         assert packet["task"]["delivery"]["body"] == ORIGINAL
         return {"action": "chat", "reply_markdown": REASON}
