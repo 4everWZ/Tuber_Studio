@@ -111,6 +111,7 @@ class EditorialCorrection(DelegationError):
         self.issues = issues
         self.frame_reviews = product._frame_reviews
         self.window_reviews = product._window_reviews
+        self.locked_fields = sorted(product._locked_fields)
 
 
 def editorial_fields(product):
@@ -118,6 +119,39 @@ def editorial_fields(product):
               for name in ("title", "rationale")}
     fields.update({f"gaps.{i}": gap for i, gap in enumerate(product.gaps)})
     return fields
+
+
+def retain_reviewed_items(product, kept, locked_fields):
+    """Move the surviving items and their field evidence to the same new indices."""
+    paths = {f"items.{i}.{field}": f"items.{j}.{field}" for j, (i, _) in enumerate(kept)
+             for field in ("title", "rationale")}
+    product.items = [item for _, item in kept]
+    product._field_sources = {new: product._field_sources[old] for old, new in paths.items()
+                              if old in product._field_sources}
+    return {new for old, new in paths.items() if old in locked_fields}
+
+
+def exhausted_video_gaps(product, evidence, rejected, approved, locked):
+    """Only omit locally rejected video copy; keep diagnostics and rejected quotes out of the card."""
+    if not all(primary_frame(item, evidence) for item in product.items):
+        return {}
+    for receipt in product._attribution_reviews:
+        for claim in receipt["claims"]:
+            if claim.get("issue") and (not claim["phrase"] or claim["phrase"] not in receipt["text"]
+                    or (claim.get("person") or claim.get("target") or "") not in claim["phrase"]
+                    or (claim.get("work_type") or "") not in claim["phrase"]):
+                return {}
+    gaps = {}
+    labels = {"title": "标题", "rationale": "选材理由"}
+    for path, reason in rejected:
+        match = re.fullmatch(r"items\.(0|[1-9]\d*)\.(title|rationale)", path)
+        if not match or int(match[1]) >= len(product.items) or any(f"items.{match[1]}.{f}" in locked for f in labels):
+            return {}
+        gaps.setdefault(int(match[1]), []).append(f"{labels[match[2]]}：{reason}")
+    remaining = set(range(len(product.items))) - gaps.keys()
+    if not remaining or any(f"items.{i}.{field}" not in approved for i in remaining for field in labels):
+        return {}
+    return {i: f"原第 {i + 1} 项未交付（{'；'.join(dict.fromkeys(reasons))}）。" for i, reasons in gaps.items()}
 
 
 def review_groups(product, evidence):

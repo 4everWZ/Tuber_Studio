@@ -47,9 +47,11 @@ from .task_delivery import (
     correct_editorial_fields,
     editorial_fields,
     evidence_index,
+    exhausted_video_gaps,
     previous_frame_items,
     primary_frame,
     render_private_delivery,
+    retain_reviewed_items,
     review_groups,
 )
 from .task_identity import TaskIdentity
@@ -1442,6 +1444,7 @@ def create_task_runtime(runtime, store, browsing):
                 "required": ["keep_previous"], "additionalProperties": False}]}
         if correction:
             draft = task["plan"]["editor_draft"]
+            locked_fields.update(task["plan"].get("editor_locked_fields", ()))
             locked_fields.update(task.get("editor_locked_fields", ()))
             if locked_fields.intersection(correction):
                 raise DelegationError("本轮修订不能改写号主要求保留的字段。")
@@ -1732,6 +1735,8 @@ def create_task_runtime(runtime, store, browsing):
             )
             issues = {}
             rejected = []
+            approved = set()
+            review_bound = True
             rejected_material = []
             for editable, cited_frames, packet in review_groups(product, evidence):
                 reviewed_fields = editable | cited_frames
@@ -1787,20 +1792,24 @@ def create_task_runtime(runtime, store, browsing):
                             evidence.video_coverage[primary.rsplit(":",1)[0]].get("clip"))
                         if coordinate:
                             issues[path] = f"「{coordinate}」不在本项分 P 和取材时窗内。"
-                            rejected.append(f"{path} 引用时码超出素材范围")
+                            rejected.append((path, "引用时码超出素材范围"))
                         receipt = check_people(path, text, people[path], editor=character["name"], primary=primary,
                             credits=credits, screen_text=observed.get("screen_text", []))
                         conflicts = [c for c in receipt["claims"] if c["issue"]]
                         if conflicts:
                             product._attribution_reviews.append(receipt)
                             issues[path] = " ".join(f"「{c['phrase']}」{c['issue']}" for c in conflicts)
-                            rejected.append(f"{path} 人物或物主归属未经核实")
+                            rejected.append((path, "人物或物主归属未经核实"))
                         elif receipt["claims"]:
                             if path in basis:
                                 basis[path]["people"] = receipt["claims"]
                             else:
                                 product._field_sources.setdefault(path, {})["people"] = receipt["claims"]
                 verdict = VideoGroundingReview.model_validate(reply)
+                if verdict.supported and not verdict.issues:
+                    approved.update(editable)
+                elif verdict.supported:
+                    review_bound = False
                 if clip_basis and image:
                     attribution_fields = {path: fields[path] for path in clip_basis}
                     visual_fields = {p: t for p, t in attribution_fields.items()
@@ -1812,7 +1821,7 @@ def create_task_runtime(runtime, store, browsing):
                         for path, row in disputed.items():
                             product._attribution_reviews.append(row)
                             issues[path] = " ".join(f"「{c['term']}」{c['issue']} 可见：{c['observation']}" for c in row["claims"])
-                            rejected.append(f"{path} 画面缺少区分具体称呼的依据")
+                            rejected.append((path, "画面缺少区分具体称呼的依据"))
                     works = set().union(*(cited_programme_names(task.get("steps", ()), product.items[int(p.split(".")[1])].sources)
                                           for p in attribution_fields))
                     for path, text in attribution_fields.items():
@@ -1822,7 +1831,7 @@ def create_task_runtime(runtime, store, browsing):
                             if mark and (invalid := [c for c in mark["claims"] if c["issue"]]):
                                 product._attribution_reviews.append(mark)
                                 issues[path] = " ".join(f"「{c['phrase']}」{c['issue']}" for c in invalid)
-                                rejected.append(f"{path} 屏字的内容或归属未核实")
+                                rejected.append((path, "屏字的内容或归属未核实"))
                     claims = await review_work_claims(attribution_fields, request_json, budget, known_names=works,
                         visible_descriptions={*inventory["labels"], *inventory["details"]})
                     for path, text in attribution_fields.items():
@@ -1833,7 +1842,7 @@ def create_task_runtime(runtime, store, browsing):
                         if conflicts:
                             product._attribution_reviews.append(receipt)
                             issues[path] = " ".join(f"「{c['phrase']}」{c['issue']}" for c in conflicts)
-                            rejected.append(f"{path} 作品署名或镜头归属未经核实")
+                            rejected.append((path, "作品署名或镜头归属未经核实"))
                         elif receipt["claims"] and path in basis:
                             basis[path]["works"] = receipt["claims"]
                 if clip_basis and verdict.supported:
@@ -1847,7 +1856,7 @@ def create_task_runtime(runtime, store, browsing):
                             raise DelegationError("前台字段核对未引用该项的实际画面回执原文。")
                         if value.get("claim") not in {"有来源的事实", "编辑用途", "事实及编辑用途"}:
                             issues[path] = "该字段含有画面或出处无法验证的事实或效果；按所见或具体编辑用途修正。"
-                            rejected.append(f"{path} 未获依据的事实或成效")
+                            rejected.append((path, "未获依据的事实或成效"))
                     product._field_sources.update(basis)
                 if not verdict.supported and not verdict.issues and not any(path in issues for path in editable):
                     raise DelegationError("前台核对未通过：选材文字含引用无法支持的事实。")
@@ -1862,8 +1871,10 @@ def create_task_runtime(runtime, store, browsing):
                         if key and issue.field not in locked_fields:
                             rejected_material.append(key)
                     issues[issue.field] = (issues.get(issue.field, "") + " " + reason).strip()
-                    rejected.append(f"{issue.field} {issue.reason}")
+                    rejected.append((issue.field, issue.reason))
             if issues:
+                exhausted = bool(correction and not issues.keys().isdisjoint(
+                    set(correction) | set(task["plan"].get("previously_corrected_fields", ()))))
                 if rejected_material:
                     kept = [(i, item) for i, item in enumerate(product.items) if not any(
                         path.startswith(f"items.{i}.") for path in issues)]
@@ -1873,18 +1884,20 @@ def create_task_runtime(runtime, store, browsing):
                         raise AdditionalVideoRead("已读画面与无剧透目标冲突，请在授权范围另读取材，再提交候选。",
                                                   rejected_material, [item.model_dump() for _, item in kept], windows=windows,
                                                   reviews=window_reviews, frames=inventories)
-                    by_field = product._field_sources
-                    product._field_sources = {f"items.{j}.{f}": by_field[f"items.{i}.{f}"] for j, (i, _) in enumerate(kept)
-                                              for f in ("title", "rationale") if f"items.{i}.{f}" in by_field}
                     product.gaps = [f"当前已读窗口中仍缺 {len(product.items) - len(kept)} 项符合要求的素材。"]
-                    product.items = [item for _, item in kept]
-                    locked_fields = {f"items.{j}.{f}" for j, (i, _) in enumerate(kept) for f in ("title", "rationale")
-                                     if f"items.{i}.{f}" in locked_fields}
-                elif (not correction or issues.keys().isdisjoint(
-                        set(correction) | set(task["plan"].get("previously_corrected_fields", [])))) and issues.keys() <= fields.keys() - locked_fields:
+                elif not exhausted and issues.keys() <= fields.keys() - locked_fields:
+                    product._locked_fields = locked_fields
                     raise EditorialCorrection(product, issues)
+                elif (exhausted and review_bound
+                      and (gaps := exhausted_video_gaps(product, evidence, rejected, approved, locked_fields))):
+                    kept = [(i, item) for i, item in enumerate(product.items) if i not in gaps]
+                    # The draft's prose gaps were reviewed against the larger selection.
+                    # Rebuild them for the delivered items and append the collection receipts below.
+                    product.gaps = list(gaps.values())
                 else:
-                    raise DelegationError("前台核对未通过：" + "；".join(rejected), attribution_reviews=product._attribution_reviews)
+                    summary = "；".join(f"{path} {reason}" for path, reason in rejected)
+                    raise DelegationError("前台核对未通过：" + summary, attribution_reviews=product._attribution_reviews)
+                locked_fields = retain_reviewed_items(product, kept, locked_fields)
         product.gaps.extend(collection_gaps)
         if missing_origin:
             product.gaps.append("本轮尚未取得独立原出处正文。")

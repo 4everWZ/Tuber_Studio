@@ -656,6 +656,60 @@ def test_distinct_points_in_requested_range_cannot_form_one_clip(primary, second
         render_private_delivery(selection("v:1", "v:2", "source", primary=primary), evidence)
 
 
+@pytest.mark.parametrize("bad_index", [0, 1])
+@pytest.mark.parametrize("outcome", ["bound", "unlocated", "both_rejected", "missing_source", "mixed_text"])
+async def test_exhausted_video_field_keeps_only_reviewed_items(runtime, store, monkeypatch, reviewed_window, bad_index, outcome):
+    reads = [short_read("first", 7), short_read("second", 39)]
+    evidence = evidence_index([*reads, page("origin")])
+    originals = [selection("origin", primary=s["id"] + ":1").items[0] for s in reads]
+    good_index = 1 - bad_index
+    if outcome == "mixed_text":
+        originals[good_index] = selection("origin").items[0]
+    originals[good_index].title = "保留这项的标题原文"
+    if outcome == "missing_source":
+        originals[bad_index].sources.append("expired")
+    draft = PrivateDelivery(items=originals, gaps=[]).model_dump()
+    path = f"items.{bad_index}.title"
+    locked = [f"items.{good_index}.{f}" for f in ("title", "rationale")]
+    task = {"goal": "保留原项，修订另一项", "steps": reads, "plan": {
+        "candidate": draft, "prior_goals": [], "editor_draft": draft, "editor_issues": {path: "标题的画面断言未获依据"},
+        "editor_locked_fields": locked}}
+
+    async def no_pixels(*args):
+        return None
+
+    async def editor(messages, schema, **kwargs):
+        if path in schema["properties"]:
+            return {path: "仍未核实的私有稿件内容"}
+        packet = json.loads(messages[-1]["content"])
+        index = packet["items_to_verify"][0]["index"]
+        if outcome == "mixed_text" and index == good_index:
+            return {"supported": True}
+        if index == bad_index or outcome == "both_rejected":
+            return {"supported": False, "issues": [{"field": f"items.{index}.title",
+                    "quote": "并未出现在稿件中" if outcome == "unlocated" else packet["items_to_verify"][0]["title"],
+                    "reason": "引用未支持该断言"}]}
+        return {"supported": True, "field_basis": {p: {"claim":"有来源的事实","source": keys[0],
+                    "observation":"左侧有一把椅子"} for p, keys in packet["field_visual_sources"].items()}}
+
+    monkeypatch.setattr("tuber_studio.agent.task_tools.clip_review_image", no_pixels)
+    monkeypatch.setattr(runtime.llm, "generate_json", editor)
+    tasks = create_task_runtime(runtime, store, None)
+    if outcome != "bound":
+        with pytest.raises(DelegationError) as failure:
+            await tasks.edit_delivery(task, evidence)
+        assert type(failure.value) is DelegationError
+        return
+    partial = await tasks.edit_delivery(task, evidence)
+    assert partial.items == [originals[good_index]]
+    assert partial._locked_fields == {"items.0.title", "items.0.rationale"}
+    assert set(partial._field_sources) == partial._locked_fields
+    assert all(basis["source"] == originals[good_index].primary_frame for basis in partial._field_sources.values())
+    assert partial.gaps == [f"原第 {bad_index + 1} 项未交付（标题：引用未支持该断言）。"]
+    verified, body = render_private_delivery(partial, evidence)
+    assert verified and "仍未核实的私有稿件内容" not in body
+
+
 def test_sampled_window_membership_comes_from_domain_samples():
     window = {"start": 10, "end": 13, "state": "sampled", "samples": [11.125, 12]}
     highlights = [{"start": f["seconds"], "source_url": f["url"], "text": f["text"], "kind": f["kind"]}

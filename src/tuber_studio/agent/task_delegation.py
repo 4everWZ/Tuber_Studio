@@ -201,7 +201,7 @@ async def advance(runtime, task):
             product = await runtime.edit_delivery(task, evidence)
         except AdditionalVideoRead as request:
             if runtime.scope() == task["scope"]:
-                plan = {k: v for k, v in task["plan"].items() if k not in {"candidate", "editor_draft", "editor_issues"}}
+                plan = {k: v for k, v in task["plan"].items() if k not in {"candidate", "editor_draft", "editor_issues", "editor_locked_fields"}}
                 if request.video:
                     plan.update(requested_video_read=str(request),
                                 excluded_video_frames=list(dict.fromkeys([*plan.get("excluded_video_frames", []), *request.exclude])))
@@ -261,6 +261,7 @@ async def advance(runtime, task):
                     plan["attribution_rejections"] = [*plan.get("attribution_rejections", []), *correction.attribution_reviews]
                 runtime._save(task, status="queued", due=time.time(), message=str(correction),
                               plan=plan | {"editor_draft": correction.draft, "editor_issues": correction.issues,
+                                                   "editor_locked_fields": correction.locked_fields,
                                                    "frame_reviews": correction.frame_reviews, "window_reviews": correction.window_reviews})
             return
         except DelegationError as error:
@@ -274,6 +275,8 @@ async def advance(runtime, task):
         for item in product.items:
             item.primary_frame = primary_frame(item, evidence)
         plan = task["plan"] | {"selected": product.model_dump()}
+        if product._attribution_reviews:
+            plan["attribution_rejections"] = [*plan.get("attribution_rejections", []), *product._attribution_reviews]
         if verified and plan.get("attribution_rejections"):
             for row in plan["attribution_rejections"]:
                 parts = row["field"].split(".")
@@ -283,7 +286,7 @@ async def advance(runtime, task):
                         current = getattr(product.items[slot], parts[2])
                         if current != row["text"]:
                             row.setdefault("approved_replacement", current)
-        if product._field_sources:
+        if product._field_sources or "selected_field_sources" in plan:
             plan["selected_field_sources"] = product._field_sources
         if product._frame_reviews:
             plan["frame_reviews"] = product._frame_reviews

@@ -14,6 +14,8 @@
 
 私有视频选材的每项成果绑定一个主帧。后台 Responses 提交候选，前台 Omni 按号主当前要求选材、写理由并核对文字。独立网页出处可以共引；附加视频时点须有同源同窗的抽样回执。工坊从持久回执显示 BV、分 P、实际采样秒数、链接与覆盖缺口。单帧只覆盖该时点，同窗多帧仍属抽样。音轨需要独立听审依据。一般文字研究可继续在一项内引用多份来源。
 
+私有视频成果中，若某项标题或理由在局部返修后仍未通过，工坊可交付本轮已审通过、引用仍有效的其余项。缺口按原项号注明未通过的字段和原因。号主从另一端打开该版时能看到保留的正文、证据和缺口，也可查看先前版本。
+
 [Chats](../tuber-studio.md#号主对话与任务)提供 Higgs 式带 Avatar 的双工语音会话。语音、文字、获准视觉输入与后台任务接入同一 Agent。实时 Provider 负责感知、重叠语音与输出，Agent 负责状态、统一记忆、授权、后台工具和任务结果。原生双工工具可用时接入同一工具校验与审计。也支持由确认后的用户语句把工作交给后台 Agent，结果按任务 ID 回流，挂断或推理断线后从活动恢复。 [Omni 与 Avatar API](omni-deployment.md) · [Higgs Realtime Duplex](https://www.boson.ai/blog/higgs-realtime-duplex)
 
 目标参照 ChatGPT Dots 公布的持续运行、跨入口接续、多任务、主动查资料、进度查看、纠偏和审批体验，及 ChatGPT 的记忆摘要与控制。产品资料用于确定可观察行为。Tuber Studio 的状态存储、工具权限、终端和模型属于本项目设计。 [Introducing dots](https://openai.com/index/introducing-dots/) · [Meet dots](https://learn.chatgpt.com/docs/dots) · [Dots 权限与活动](https://help.openai.com/en/articles/20001529-dots-privacy-security-and-safety-faqs) · [ChatGPT 记忆整理](https://openai.com/index/chatgpt-memory-dreaming/)

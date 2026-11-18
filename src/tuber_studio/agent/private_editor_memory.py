@@ -2,15 +2,23 @@
 
 from pydantic import Field
 
-from ..daily_memory import MemoryChanged
 from ..cooperation import collaboration_text
+from ..daily_memory import MemoryChanged
 from ..generation_meter import budgeted_call
 from ..models import StrictModel
 from ..store import dump
-from .owner_memory import MemoryUse, check_use, citation, correctable_preference, private_rows, read_stamp
 from .editor_contract import FormatCheck, literal_evidence, review_preferences
+from .owner_memory import MemoryUse, check_use, citation, correctable_preference, private_rows, read_stamp
 from .task_delivery import DelegationError
-from .title_form import RequestedTitleForm, explicit_title_form, form_instruction, frame_observations, grounded_options, meets_form, read_title
+from .title_form import (
+    RequestedTitleForm,
+    explicit_title_form,
+    form_instruction,
+    frame_observations,
+    grounded_options,
+    meets_form,
+    read_title,
+)
 
 
 class WritingSelection(StrictModel):
@@ -135,6 +143,7 @@ def connect_private_editor(runtime):
                 return await generate(messages, schema, use)
 
             async def verify(draft):
+                locked = getattr(draft, "_locked_fields", set())
                 readings = {}
                 attempt = {"titles":readings, "submitted_titles":[item.title for item in draft.items]}
                 audit["attempts"].append(attempt)
