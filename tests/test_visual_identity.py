@@ -3,7 +3,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from tuber_studio.agent.task_tools import attribution_receipt, cited_programme_names, selected_title
+from tuber_studio.agent.task_tools import (
+    attribution_receipt,
+    cited_programme_names,
+    requested_title_form,
+    selected_title,
+    unsupported_timecode,
+)
 from tuber_studio.agent.visual_identity import check_people, check_screen_title, extract_people
 from tuber_studio.operation_identity import (
     captured_identity,
@@ -81,13 +87,52 @@ async def test_names_absent_from_the_field_cannot_be_cited_as_a_field_defect():
         assert text in fields.values() and "频道甲" not in str(messages) and "image_url" not in str(messages)
         if "person_subject" in schema["properties"]:
             return {"person_subject": schema["properties"]["person_subject"]["enum"][-1]}
-        person, phrase = ("频道甲", "频道甲 bilibili") if text == fields["title"] else ("无", "皇帝宝座")
-        return {"person_references": [{"person": person, "phrase": phrase, "relation": "场景或物件归属"}]}
+        return {"mentions":[{"span":"频道甲","kind":"人名、专属昵称、明确指向特定人的名号"}]}
     parsed = await extract_people(fields, omni, 512)
     for path, text in fields.items():
         receipt = check_people(path, text, parsed[path], editor="编辑", primary="v:1",
                                credits=[], screen_text=["频道甲 bilibili"])
-        assert not receipt["claims"] and receipt["unlocated"]
+        assert not receipt["claims"]
+
+
+async def test_apparel_description_with_and_without_a_personal_name():
+    description = "穿着华丽服饰、头戴红色头盔的人物"
+    fields = {"a":description,"b":"穿蓝衣的演员林甲"}
+    async def omni(messages,schema,**kwargs):
+        props = schema["properties"]
+        text = messages[-1]["content"]
+        if "person_subject" in props:
+            return {"person_subject":props["person_subject"]["enum"][-1]}
+        if "mentions" in props:
+            return {"mentions":[{"span":description,"kind":"服饰、位置、动作等外观指称"}] if text == description else
+                               [{"span":"林甲","kind":"人名、专属昵称、明确指向特定人的名号"}]}
+        assert props["person_references"]["items"]["properties"]["person"]["enum"] == ["林甲"]
+        return {"person_references":[{"phrase":text,"person":"林甲","relation":"画中人物身份"}]}
+    result = await extract_people(fields,omni,512)
+    assert not result["a"]
+    assert check_people("b",fields["b"],result["b"],editor="编辑",primary="v:1",credits=[],screen_text=[])["claims"][0]["issue"]
+
+
+def test_written_part_and_time_must_belong_to_this_clip():
+    point = SimpleNamespace(part=2,seconds=.84)
+    clip = {"start":0,"end":5.8}
+    assert unsupported_timecode("P2 0:37 金色字体",point,clip) == "P2 0:37"
+    assert unsupported_timecode("P3 00:02",point,clip)
+    assert not unsupported_timecode("P2 0:00 金色字体",point,clip)
+    assert not unsupported_timecode("屏上计时 0:37",point,clip)
+
+
+async def test_requested_form_needs_a_literal_owner_instruction_about_form():
+    calls = []
+    async def assess(messages, schema, **kw):
+        text = messages[-1]["content"]
+        calls.append(text)
+        return {"explicit_form":"问句" if text == "标题用问句" else "未规定标题句式"}
+    inputs = ["读两段素材；标题用问句"]
+    for quote in ("","没有写过","读两段素材"):
+        assert await requested_title_form({"requested_form":"问句","form_quote":quote}, inputs, assess, 512) is None
+    assert await requested_title_form({"requested_form":"问句","form_quote":"标题用问句"}, inputs, assess, 512) == "问句"
+    assert calls == ["读两段素材","标题用问句"]
 
 
 @pytest.mark.parametrize(("fragment","mode","supported"), [
@@ -98,8 +143,20 @@ async def test_names_absent_from_the_field_cannot_be_cited_as_a_field_defect():
 ])
 async def test_animated_mark_transcript_does_not_authorise_a_new_subject(fragment, mode, supported):
     async def audit(messages, schema, **kwargs):
+        if "title_subject" in schema["properties"]:
+            return {"title_subject":"具体物件、字形、构图或视觉载体","subject_words":""}
         assert messages[-1]["content"][1]["type"] == "image_url"
         return {fragment:mode}
     result = await check_screen_title("items.0.title", f"{fragment}，金色字体", "v:1", {"type":"image_url"},
         [fragment], [{"person":"青山影记","relation":"投稿署名"}], set(), audit, 512)
     assert (result["claims"][0]["issue"] is None) == supported
+
+
+async def test_theme_inferred_from_typeface_is_checked_even_without_copying_any_letters():
+    async def audit(messages, schema, **kwargs):
+        if "title_subject" in schema["properties"]:
+            assert messages[-1]["content"] == "书法艺术"
+            return {"title_subject":"以内容主题、学科或艺术门类命名","subject_words":"书法艺术"}
+        return {"topic_evidence":"只能看到字形、图形设计或局部字样"}
+    result = await check_screen_title("items.0.title","书法艺术","v:1",{"type":"image_url"},["甲乙影像"],[],set(),audit,512)
+    assert result["claims"][0]["phrase"] == "书法艺术" and result["claims"][0]["issue"]

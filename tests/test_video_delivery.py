@@ -397,9 +397,11 @@ async def test_real_image_inventory_and_caption_do_not_inherit_worker_plot(runti
             return {"opening": "我会用这一镜引出布景话题。", "main": "在讲解时插入。", "transition": "先停一下旁白。"}
         if "title_action" in props:
             return {"title_action": "另拟标题", "fact": props["fact"]["enum"][0]}
+        if "title_reading" in props:
+            return {"title_reading": props["title_reading"]["enum"][0]}
         if set(props) == {"title"}:
             assert "enum" not in props["title"]
-            assert json.loads(content)["选定的事实锚点"] == "座椅旁站着一人"
+            assert json.loads(content)["选定的事实锚点"] == "一人站在椅子旁"
             return {"title": "这是登基仪式吗？" if invented_title else "椅子旁站着谁？"}
         assert isinstance(content, list) and "后台推测" not in str(content)
         if "labels" in props:
@@ -431,10 +433,10 @@ async def test_real_image_inventory_and_caption_do_not_inherit_worker_plot(runti
                             frame_reviews=correction.value.frame_reviews, window_reviews=correction.value.window_reviews)
         revised = await tasks.edit_delivery(task, evidence)
         assert revised.items[0].title == "一人站在椅子旁。"
-        assert revised._frame_reviews["read:1"]["title_anchor"] == ["座椅旁站着一人"]
+        assert revised._frame_reviews["read:1"]["title_anchor"] == ["一人站在椅子旁"]
     else:
         result = await tasks.edit_delivery(task, evidence)
-        assert result._frame_reviews["read:1"]["title_anchor"] == ["座椅旁站着一人"]
+        assert result._frame_reviews["read:1"]["title_anchor"] == ["一人站在椅子旁"]
         assert result.items[0].title == "椅子旁站着谁？"
         assert result.items[0].rationale == "画面依据：一人站在椅子旁。剪辑安排：用在开场，我会用这一镜引出布景话题。"
 

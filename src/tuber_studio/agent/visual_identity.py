@@ -21,9 +21,9 @@ async def extract_people(fields, generate, budget):
     subjects = ["地点、构图或物件", "未指认身份的人物外观", "编辑安排或其它表述", "含具体人物的姓名、昵称、署名或身份归属"]
     subject_schema = {"type": "object", "properties": {"person_subject": {"type": "string", "enum": subjects}},
                       "required": ["person_subject"], "additionalProperties": False}
-    extraction = {"type": "object", "properties": {"person_references": {
-        "type": "array", "items": PersonReference.model_json_schema()}}, "required": ["person_references"],
-        "additionalProperties": False}
+    kinds = ["人名、专属昵称、明确指向特定人的名号", "职务或群体的泛称", "服饰、位置、动作等外观指称", "其他实体或一般表述"]
+    span_schema = {"type":"object","properties":{"span":{"type":"string"},"kind":{"type":"string","enum":kinds}},
+                   "required":["span","kind"],"additionalProperties":False}
     result = {}
     for path, text in fields.items():
         field = {"role": "user", "content": text}
@@ -32,9 +32,23 @@ async def extract_people(fields, generate, budget):
         if subject.get("person_subject") not in subjects:
             raise DelegationError("人物实体审读没有返回有效的字段分类。")
         if subject["person_subject"] == subjects[-1]:
-            reply = await generate([{"role": "system", "content": "逐字摘取这个字段里人的姓名、昵称或具体职衔及包含它的"
-                "关系短语。地方、物件与节目名称不属于人名。"}, field], extraction, max_tokens=budget)
-            result[path] = [PersonReference.model_validate(c) for c in reply["person_references"]]
+            spans = await generate([{"role":"system","content":"对人物指代表达做实体分析。分别标注专名和一般指称。"
+                "含姓名的长定语只截出姓名，不把衣着、头饰、动作或‘人物’附在人名上。只有外观时按外观指称标注。"},
+                field], {"type":"object","properties":{"mentions":{"type":"array","items":span_schema}},
+                         "required":["mentions"],"additionalProperties":False},max_tokens=budget)
+            names = {s["span"] for s in spans["mentions"] if s["kind"] == kinds[0] and s["span"] and s["span"] in text}
+            if names:
+                reference = PersonReference.model_json_schema()
+                reference["properties"]["person"]["enum"] = sorted(names)
+                reply = await generate([{"role":"system","content":"逐字定位字段中每位具名人物的完整关系短语。"}, field],
+                    {"type":"object","properties":{"person_references":{"type":"array","items":reference}},
+                     "required":["person_references"],"additionalProperties":False},max_tokens=budget)
+                references = [PersonReference.model_validate(c) for c in reply["person_references"] if c["person"] in names]
+                located = {r.person for r in references if r.phrase in text and r.person in r.phrase}
+                references.extend(PersonReference(phrase=n,person=n,relation="其它具名关系") for n in names - located)
+                result[path] = references
+            else:
+                result[path] = []
         else:
             result[path] = []
     return result
@@ -93,8 +107,31 @@ async def check_screen_title(path, title, primary, image, screen_text, bylines, 
     """An observed string supports transcription. Using it as an identity requires an independent credit."""
     fragments = list(dict.fromkeys(line.strip() for text in screen_text for line in text.splitlines()
                                    if line.strip() and line.strip() in title))
-    if not fragments:
+    if not screen_text:
         return None
+    categories = ["具体物件、字形、构图或视觉载体", "以内容主题、学科或艺术门类命名", "其他句式或剪辑安排"]
+    subject = await generate([{"role":"system","content":"只判断这个标题本身为素材取了什么名字。"
+        "一个学科或艺术门类的名称属于主题。具体的文字对象、字体形状、标识或其外观属于可见载体。"
+        "若以主题命名，逐字摘取这个主题词。"},
+        {"role":"user","content":title}],{"type":"object","properties":{"title_subject":{"type":"string","enum":categories},
+        "subject_words":{"type":"string"}},"required":["title_subject","subject_words"],"additionalProperties":False},max_tokens=budget)
+    claims = []
+    if subject["title_subject"] == categories[1]:
+        words = subject["subject_words"]
+        if not words or words not in title:
+            raise DelegationError("主题审读未定位标题内的实际主张。")
+        proof = ["主帧直接展示该主题的内容或实践", "只能看到字形、图形设计或局部字样", "内容无法辨明"]
+        checked = await generate([{"role":"system","content":"核对这幅图能否独立支持用所述主题命名素材。"
+            "用某种字形排印标识，仅说明标识的外观。将主帧表现的实物或实践与渲染文字的方式分别判断。"},
+            {"role":"user","content":[{"type":"text","text":dump({"候选主题":words})},image]}],
+            {"type":"object","properties":{"topic_evidence":{"type":"string","enum":proof}},
+             "required":["topic_evidence"],"additionalProperties":False},max_tokens=budget)
+        claims.append({"phrase":words,"target":words,"relation":"主帧内容主题","observation":checked["topic_evidence"],
+                       "issue":None if checked["topic_evidence"] == proof[0] else "可见的字形或图形不足以把该主题赋给片段。"})
+    receipt = {"field":path,"text":title,"primary_frame":primary,"claims":claims,"pages":bylines,
+               "programme_names":sorted(programme_names),"screen_text":screen_text}
+    if not fragments:
+        return receipt
     roles = ["字形或构图描述，未用屏字指称主体", "明确转录当前可见的字", "以屏字命名主体或作品", "把字形或残字解释为节目内容主题"]
     schema = {"type":"object","properties":{f:{"type":"string","enum":roles} for f in fragments},
               "required":fragments,"additionalProperties":False}
@@ -106,7 +143,6 @@ async def check_screen_title(path, title, primary, image, screen_text, bylines, 
     if set(reply) != set(fragments) or any(use not in roles for use in reply.values()):
         raise DelegationError("屏字用途审查没有逐项返回有效判断。")
     names = {c["person"] for c in bylines if c["relation"] == "投稿署名"} | set(programme_names)
-    claims = []
     for fragment, use in reply.items():
         issue = None
         if use == roles[2] and fragment not in names:
@@ -114,5 +150,4 @@ async def check_screen_title(path, title, primary, image, screen_text, bylines, 
         if use == roles[3]:
             issue = "屏字外形或局部文字无法证明节目的内容主题。"
         claims.append({"phrase":fragment,"target":fragment,"relation":use,"issue":issue})
-    return {"field":path,"text":title,"primary_frame":primary,"claims":claims,"pages":bylines,
-            "programme_names":sorted(programme_names),"screen_text":screen_text}
+    return receipt

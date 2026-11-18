@@ -307,6 +307,32 @@ def selected_title(value, facts):
     return ClipTitle(title=value).title
 
 
+async def requested_title_form(choice, instructions, generate, budget):
+    expected = choice.get("requested_form")
+    quote = choice.get("form_quote", "").strip()
+    if not expected or expected == "不限" or not quote or not any(quote in text for text in instructions):
+        return None
+    forms = ["未规定标题句式","名词短语","陈述句","问句"]
+    reply = await generate([{"role":"system","content":"读号主原话，只判断其明确要求标题用哪种句式。"
+        "取几个片段、标题应写什么内容以及怎样使用素材等要求都不指定句式。"},
+        {"role":"user","content":quote}], {"type":"object","properties":{
+            "explicit_form":{"type":"string","enum":forms}},"required":["explicit_form"],"additionalProperties":False},
+        max_tokens=budget)
+    return expected if reply["explicit_form"] == expected else None
+
+
+def unsupported_timecode(title, point, clip):
+    """Check explicit part/time coordinates independently from on-screen clock text."""
+    for match in re.finditer(r"(?i)(?:\bP|分\s*P)\s*(\d+)\s*[·,，/：:\s]\s*(\d+(?::\d{2}){1,2}(?:\.\d+)?)", title):
+        seconds = 0.0
+        for component in match[2].split(":"):
+            seconds = seconds * 60 + float(component)
+        valid = clip["start"] <= seconds < clip["end"] if clip else int(seconds) == int(point.seconds)
+        if int(match[1]) != point.part or not valid:
+            return match[0]
+    return None
+
+
 _CAPTION_TOPICS = (*NON_NARRATIVE, "故事内的人物、动作、对话或反应", "故事事件的起因、经过、结局或分析", "含义不清或混合")
 
 
@@ -1158,7 +1184,7 @@ def create_task_runtime(runtime, store, browsing):
                 inventories[key] = VisibleFrame.model_validate(observed).model_dump()
             return image
 
-        async def compose_frame_title(facts, image, *, rejected_relations=()):
+        async def compose_frame_title(key, facts, image, *, rejected_relations=()):
             packet = {"号主本次交办": task["goal"], "已核画面事实": facts,
                       "写作偏好": task.get("owner_writing_preferences", [])}
             if rejected_relations:
@@ -1167,14 +1193,16 @@ def create_task_runtime(runtime, store, browsing):
                        "fact":{"type":"string","enum":facts}},"required":["title_action","fact"],"additionalProperties":False}
             if rejected_relations:
                 schema["properties"]["requested_form"] = {"type":"string","enum":["名词短语","陈述句","问句","不限"]}
-                schema["required"].append("requested_form")
+                schema["properties"]["form_quote"] = {"type":"string","description":"逐字摘录号主明确规定标题句式的指令；未规定填空。"}
+                schema["required"].extend(["requested_form","form_quote"])
             choice = await request_json([{"role":"system","content":"为这张主帧编辑素材标题。根据号主要求，判断给出的哪条"
                 "观察本身可以直接作为标题，或是否需要另拟句式。选逐字沿用将直接采用所选原句。"
-                "requested_form 依据当轮交办与已选的写作约定。具体写作约定优先；缺省采用简短的构图名词短语。"},
+                "requested_form 只按当轮交办与已选的写作约定。没有约定时选不限；完整的可见构图原句可以直接作标题。"},
                 {"role":"user","content":[{"type":"text","text":dump(packet)}, image]}],
                 schema, max_tokens=budget)
             anchor = selected_title({"use_fact":choice["fact"]}, facts)
             title = anchor
+            defect = None
             if choice["title_action"] == "另拟标题":
                 title_packet = {"选定的事实锚点":anchor, "号主本次交办":task["goal"],
                                 "写作偏好":task.get("owner_writing_preferences", [])}
@@ -1182,8 +1210,26 @@ def create_task_runtime(runtime, store, browsing):
                     "标题只用给定锚点能够核实的事实。署名已由作品与投稿字段单列。"},
                     {"role":"user","content":dump(title_packet)}], ClipTitle.model_json_schema(), max_tokens=budget)
                 title = ClipTitle.model_validate(reply).title
-            expected = choice.get("requested_form")
-            if expected and expected != "不限":
+                readings = ["标题独立可读，所有事实由这一条观察支持", "拼接多个标签、屏字或不连贯的断片",
+                            "引入观察没有的主题、实体或细节"]
+                review = await request_json([{"role":"system","content":"编辑校对：通读整条标题。它应当能独立用作标题，且只表达"
+                    "所选观察支持的事实。将相邻控件或多处屏字的文字直接连起来，省略了指代关系，不能算完整标题。"},
+                    {"role":"user","content":dump({"标题":title,"所选完整观察":anchor})}], {"type":"object","properties":{
+                        "title_reading":{"type":"string","enum":readings}},"required":["title_reading"],"additionalProperties":False},
+                    max_tokens=budget)
+                if review["title_reading"] != readings[0]:
+                    defect = review["title_reading"]
+            coord = unsupported_timecode(title, evidence.points[key], evidence.video_coverage[key.rsplit(":",1)[0]].get("clip"))
+            if coord or defect:
+                selected = await request_json([{"role":"system","content":"自拟标题未通过校对。请从已核过的主帧观察中，"
+                    "逐字选一条有具体指代、独立可读的完整事实作标题，并遵守号主明确要求的句式。"},
+                    {"role":"user","content":dump({"候选观察":facts,"校对意见":defect,"超出范围的时码":coord})}],
+                    {"type":"object","properties":{"fact":{"type":"string","enum":facts}},
+                     "required":["fact"],"additionalProperties":False},max_tokens=budget)
+                title = anchor = selected_title({"use_fact":selected["fact"]}, facts)
+            instructions = [task["goal"], *(str(p) for p in task.get("owner_writing_preferences", []))]
+            expected = await requested_title_form(choice, instructions, request_json, budget)
+            if expected:
                 async def assess(messages, schema):
                     return await request_json(messages, schema, max_tokens=budget)
                 reading = await read_title(title, [anchor], assess)
@@ -1192,6 +1238,8 @@ def create_task_runtime(runtime, store, browsing):
                     if not options["chosen"]:
                         raise DelegationError("原主帧的修订候选尚未同时通过号主句式和事实锚点核对。")
                     title = options["chosen"]
+                    anchor = options["fact"]
+            inventories[key]["title_anchor"] = [anchor]
             return title
         replacements = []
         pool = evidence
@@ -1400,7 +1448,8 @@ def create_task_runtime(runtime, store, browsing):
                                  if not any(name and name in v for name in disputed)]
                         title_facts[path] = facts
                         if facts and any(r["field"] == path for r in receipts):
-                            fixed[path] = await compose_frame_title(facts, image, rejected_relations=[c["relation"] for r in receipts
+                            observations = [v for v in inventories[key]["details"] if v in facts]
+                            fixed[path] = await compose_frame_title(key, observations or facts, image, rejected_relations=[c["relation"] for r in receipts
                                 if r["field"] == path for c in r["claims"] if c.get("issue")])
                             del patch_schema["properties"][path]
                             continue
@@ -1527,9 +1576,7 @@ def create_task_runtime(runtime, store, browsing):
                             {"role": "user", "content": content}], caption_schema, max_tokens=budget)
                         if image:
                             rationale = pixel_rationale(choices, caption_reply)
-                            inventories[reply.primary_frame]["title_anchor"] = [caption_reply["anchor"]]
-                            facts = list(dict.fromkeys([caption_reply["anchor"], caption_reply["detail"]]))
-                            title = await compose_frame_title(facts, image)
+                            title = await compose_frame_title(reply.primary_frame, [caption_reply["detail"]], image)
                             caption = ClipCaption(title=title, rationale=rationale)
                         else:
                             caption = ClipCaption.model_validate(caption_reply)
@@ -1662,6 +1709,11 @@ def create_task_runtime(runtime, store, browsing):
                     credits = person_credits(task.get("steps", ()), item, evidence, primary)
                     observed = inventories.get(primary, {})
                     for path, text in editable.items():
+                        coordinate = unsupported_timecode(text, evidence.points[primary],
+                            evidence.video_coverage[primary.rsplit(":",1)[0]].get("clip"))
+                        if coordinate:
+                            issues[path] = f"「{coordinate}」不在本项分 P 和取材时窗内。"
+                            rejected.append(f"{path} 引用时码超出素材范围")
                         receipt = check_people(path, text, people[path], editor=character["name"], primary=primary,
                             credits=credits, screen_text=observed.get("screen_text", []))
                         conflicts = [c for c in receipt["claims"] if c["issue"]]
