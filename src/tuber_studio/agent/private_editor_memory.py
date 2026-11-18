@@ -103,7 +103,8 @@ def connect_private_editor(runtime):
                 instructions = {path:"保留事实、证据和选材，按号主约定改写：" + "；".join(notes[k] for k in ids)
                                 for path,ids in issues.items()}
                 repair = private_plan | {"editor_draft":product.model_dump(), "editor_issues":instructions,
-                                         "frame_reviews":product._frame_reviews}
+                                         "frame_reviews":product._frame_reviews,
+                                         "window_reviews":getattr(product, "_window_reviews", {})}
                 product = await editor(request | {"plan":repair}, evidence)
                 check_use(runtime, use)
                 if remaining := await verify(product):
