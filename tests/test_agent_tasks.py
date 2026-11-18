@@ -397,6 +397,9 @@ async def test_owner_lookup_routes_to_bound_uid(settings, monkeypatch):
         return binding
 
     async def decide(messages, schema, *, max_tokens, on_content, on_stage):
+        if schema["title"] == "WorkLifecycle":
+            assert "owner_profile" not in schema["properties"]["action"]["enum"]
+            return {"action": "direct_tool"}
         assert "owner_profile" in schema["properties"]["action"]["enum"]
         return {"action": "owner_profile"}
 

@@ -80,7 +80,7 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                     edits.append(len(decision["items"]))
                 else:
                     assert packet["message"] == replay.CHANGE and edits == [2]
-                    decision = {"action": "steer_task", "reference": packet["recent_task_cards"][0]["id"]}
+                    decision = {"intent": "revise", "reference": packet["recent_task_cards"][0]["id"]}
             result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(decision)}}],
                       "usage": {"prompt_tokens": 128}}
         else:

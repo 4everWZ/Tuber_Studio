@@ -134,7 +134,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
 
   function setPending(value) {
     pending = clear.disabled = clearAction.disabled = value;
-    videoFields.disabled = value || selectedAction !== "full_video";
+    videoFields.disabled = value || videoFields.hidden;
     for (const menu of menus) menu.toggle.disabled = value;
     updateSend();
   }
@@ -152,8 +152,9 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   function setAction(action) {
     selectedAction = action;
     const videoMode = action === "full_video", shortcut = shortcutInputs[action];
-    videoFields.hidden = !videoMode;
-    videoFields.disabled = pending || !videoMode;
+    videoFields.hidden = !videoMode && action !== "agent_task";
+    videoFields.disabled = pending || videoFields.hidden;
+    videoId.required = videoMode || Boolean(rangeList.children.length);
     $("operator-chat-input-label").hidden = input.hidden = input.disabled = videoMode;
     input.placeholder = shortcut?.placeholder || defaultInputLabel;
     clearAction.hidden = !shortcut;
@@ -365,9 +366,10 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     }
     const remove = node("button", "移除");
     remove.type = "button";
-    remove.onclick = () => row.remove();
+    remove.onclick = () => { row.remove(); videoId.required = selectedAction === "full_video" || Boolean(rangeList.children.length); };
     row.append(remove);
     rangeList.append(row);
+    videoId.required = true;
     row.querySelector('[name="end"]').focus();
   }
 
@@ -377,10 +379,17 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
       const shortcut = shortcutInputs[selectedAction];
       if (!shortcut) return { message: topic };
       return {
+        ...(selectedAction === "agent_task" && (videoId.value.trim() || rangeList.children.length) ?
+          { video_selection: videoSelection() } : {}),
         message: shortcut.command && topic ? `${shortcut.command}：${topic}` : topic || shortcut.command,
         intent: { action: selectedAction, ...(topic && selectedAction !== "agent_task" ? { topic } : {}) },
       };
     }
+    const selection = videoSelection();
+    return { message: `看完整视频：${selection.bvid}`, intent: { action: "full_video" }, video_selection: selection };
+  }
+
+  function videoSelection() {
     const bvid = /^(?:https:\/\/www\.bilibili\.com\/video\/)?(BV[0-9A-Za-z]{10})(?:\/?(?:[?#].*)?)$/.exec(videoId.value.trim())?.[1];
     if (!bvid) throw new Error("请输入有效的视频 BV 号或 B 站视频链接。");
     const ranges = Array.from(rangeList.children, row => {
@@ -388,7 +397,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
       if (end <= start) throw new Error("取材时段的终点须晚于起点。");
       return { part, start, end };
     });
-    return { message: `看完整视频：${bvid}`, intent: { action: "full_video" }, video_selection: { bvid, ranges } };
+    return { bvid, ranges };
   }
 
   async function submit(payload, fromComposer = true) {
@@ -448,6 +457,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
       }
       if (fromComposer && selectedAction === initialAction) {
         if (payload.video_selection) {
+          if (input.value === initialValue && initialAction === "agent_task") input.value = "";
           videoId.value = "";
           rangeList.replaceChildren();
           setAction(null);

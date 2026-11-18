@@ -5,6 +5,7 @@ application credential only). Optional aliases: OMNI_MODEL_ALIAS and
 OMNI_LLM_MODEL_ALIAS. No deployment discovery, platform clients or business DB.
 """
 
+import argparse
 import asyncio
 import json
 import os
@@ -53,15 +54,15 @@ def connection(env):
     return root, token
 
 
-async def exercise(store, omni, responses):
-    from tuber_studio.agent.operator_chat import ChatTurn, OperatorChat
+async def exercise(store, omni, responses, *, explicit=False):
+    from tuber_studio.agent.operator_chat import ChatIntent, ChatTurn, OperatorChat
     from tuber_studio.agent.task_runtime import Tool
     from tuber_studio.agent.task_tools import create_task_runtime
 
     class IsolatedChat(OperatorChat):
         async def _action(self, intent, *args):
             if intent.action not in {"agent_task", "steer_task", "clarify"}:
-                raise ReplayMismatch("unexpected_chat_action")
+                raise ReplayMismatch(f"unexpected_chat_action/{intent.action}")
             return await super()._action(intent, *args)
 
     seeds = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
@@ -92,7 +93,12 @@ async def exercise(store, omni, responses):
     tasks.responses_client = lambda: responses.create
     identity = uuid4()
     for message, revision in ((REQUEST, 1), (CHANGE, 2)):
-        result = await chat.send(ChatTurn(request_id=identity if revision == 1 else uuid4(), message=message))
+        intent = None
+        if explicit:
+            intent = (ChatIntent(action="agent_task") if revision == 1
+                      else ChatIntent(action="steer_task", reference=str(identity)))
+        result = await chat.send(ChatTurn(request_id=identity if revision == 1 else uuid4(), message=message,
+                                          intent=intent))
         card = result.get("card") or {}
         task = card.get("data", {})
         if (card.get("type"), task.get("id"), task.get("revision")) != ("agent_task", str(identity), revision):
@@ -120,7 +126,7 @@ async def exercise(store, omni, responses):
         await tasks.close()
 
 
-async def run(env):
+async def run(env, *, explicit=False):
     config = connection(env)
     if config is None:
         return {"status": "skipped", "reason": "missing_studio_service_configuration"}
@@ -139,17 +145,20 @@ async def run(env):
         responses = await stack.enter_async_context(ResponsesClient(
             {"base_url": root + "/llm/v1", "model": env.get("OMNI_LLM_MODEL_ALIAS", "llm-default")}, token))
         async with asyncio.timeout(300):
-            return await exercise(store, omni, responses)
+            return await exercise(store, omni, responses, explicit=explicit)
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--entry", choices=("chat", "quick-action"), default="chat")
+    entry = parser.parse_args().entry
     try:
-        report = asyncio.run(run(os.environ))
+        report = asyncio.run(run(os.environ, explicit=entry == "quick-action"))
     except ReplayMismatch as error:
         report = {"status": "failed", "check": str(error)}
     except Exception as error:
         report = {"status": "failed", "category": type(error).__name__}
-    print(json.dumps(report, ensure_ascii=False))
+    print(json.dumps(report | {"entry": entry}, ensure_ascii=False))
     return int(report["status"] == "failed")
 
 

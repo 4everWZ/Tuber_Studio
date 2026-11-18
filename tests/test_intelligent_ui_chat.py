@@ -44,6 +44,21 @@ def test_plain_assistant_stream_sends_prose_without_transport_framing():
     assert visible == ["半碗，", "还给你留了一口。"]
 
 
+def test_partial_discriminator_or_reply_first_cannot_open_chat_stream():
+    visible = []
+    stream = AssistantTextStream(visible.append)
+    stream.feed('{"action":"ch')
+    assert not visible
+    stream.feed('at","reply_markdown":"可以')
+    assert visible == ["可以"]
+    visible.clear()
+    stream = AssistantTextStream(visible.append)
+    stream.feed('{"reply_markdown":"还不能显示",')
+    assert not visible
+    stream.feed('"action":"agent_task"}')
+    assert not visible
+
+
 def test_assistant_stream_persists_only_final_text_and_retries_under_same_id(settings, monkeypatch):
     app = create_app(settings, adapter=ControlledPlatform())
     calls = []
@@ -89,6 +104,8 @@ def test_assistant_rejects_invalid_tool_payload_before_dispatch(settings, monkey
     app = create_app(settings, adapter=ControlledPlatform())
 
     async def generate(messages, schema, *, max_tokens, on_content, on_stage):
+        if schema["title"] == "WorkLifecycle":
+            return {"action": "direct_tool"}
         return {"action": "inspect_video_frame", "part": 0, "seconds": 1}
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
@@ -99,6 +116,82 @@ def test_assistant_rejects_invalid_tool_payload_before_dispatch(settings, monkey
         assert "event: error" in response.text
         assert "event: done" not in response.text
         assert not app.state.store.one("SELECT 1 FROM browsing_rounds")
+
+
+@pytest.mark.parametrize(("lifecycle", "tool", "expected_card"), [
+    ("agent_task", None, "agent_task"), ("direct_tool", "live_status", "live_studio_hud"),
+    ("live_status", None, None), ("direct_tool", "agent_task", None),
+])
+async def test_chat_lifecycle_separates_live_status_from_persistent_work(settings, monkeypatch, lifecycle, tool, expected_card):
+    app = create_app(settings, adapter=ControlledPlatform())
+    calls = []
+
+    async def generate(messages, schema, **options):
+        calls.append(schema["title"])
+        menu = schema["properties"]["action"]["enum"]
+        if schema["title"] == "WorkLifecycle":
+            assert set(menu) == {"chat", "direct_tool", "agent_task", "steer_task", "clarify"}
+            return {"action": lifecycle}
+        assert "live_status" in menu and not {"direct_tool", "agent_task", "steer_task", "chat"}.intersection(menu)
+        assert options["on_content"] is None
+        return {"action": tool}
+
+    monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS", raising=False)
+    monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        identity = str(uuid4())
+        response = await client.post("/api/chat/intelligent", json={
+            "request_id": identity, "message": "核对一下直播状态" + ("，给我留份交接记录" if lifecycle == "agent_task" else ""),
+        })
+        assert calls == (["WorkLifecycle", "AssistantDecision"] if lifecycle == "direct_tool" else ["WorkLifecycle"])
+        if expected_card:
+            assert response.raise_for_status().json()["card"]["type"] == expected_card
+        else:
+            assert response.status_code == 503
+            assert not app.state.store.one("SELECT 1 FROM operator_chat_turns")
+        assert bool(app.state.runtime.tasks.current(identity)) == (expected_card == "agent_task")
+
+
+@pytest.mark.parametrize(("route", "card_type"), [
+    ("agent_task", "agent_task"), ("steer_task", "agent_task"),
+    ("direct_tool", "live_studio_hud"), ("clarify", None),
+])
+async def test_nonchat_acknowledgement_is_neither_streamed_nor_saved(settings, monkeypatch, route, card_type):
+    app = create_app(settings, adapter=ControlledPlatform())
+    hidden = "这段未核验的应答不能对号主显示"
+    previous = str(uuid4())
+
+    async def generate(messages, schema, *, on_content, **options):
+        if schema["title"] == "CardTurnIntent":
+            assert on_content is None and "reply_markdown" not in schema["properties"]
+            return {"intent": "revise", "reference": previous}
+        if schema["title"] != "WorkLifecycle":
+            assert on_content is None
+            return {"action": "live_status", "reply_markdown": hidden}
+        decision = {"action": route, "reply_markdown": hidden}
+        if route == "clarify":
+            decision["topic"] = "你指的是哪段素材？"
+        wire = json.dumps(decision if route != "clarify" else dict(reversed(decision.items())), ensure_ascii=False)
+        for chunk in wire:
+            on_content(chunk)
+        return decision
+
+    monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS", raising=False)
+    monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
+    path = "/api/chat/intelligent"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        if route == "steer_task":
+            (await client.post(path, json={"request_id": previous, "message": "预备素材",
+                                           "intent": {"action": "agent_task"}})).raise_for_status()
+        identity = str(uuid4())
+        result = await client.post(path + "/stream", json={"request_id": identity, "message": "核对 P2 的直播素材"})
+        assert "event: done" in result.text and "event: error" not in result.text
+        assert "event: delta" not in result.text and hidden not in result.text
+        turn = (await client.get(path + "/turns/" + identity)).raise_for_status().json()
+        assert (turn["card"] or {}).get("type") == card_type
+        if route == "steer_task":
+            assert turn["card"]["data"]["id"] == previous and turn["card"]["data"]["revision"] == 2
+        assert hidden not in str(turn)
 
 
 async def test_semantic_task_cards_bind_clarified_steering_without_approval(settings, monkeypatch):
@@ -112,15 +205,22 @@ async def test_semantic_task_cards_bind_clarified_steering_without_approval(sett
         content = messages[-1]["content"]
         packet = json.loads(content) if content.startswith("{") else {"message": content}
         index = texts.index(packet["message"])
-        actions = schema["properties"]["action"]["enum"]
-        assert {"chat", "agent_task", "steer_task", "clarify"} <= set(actions)
-        if index < 2:
+        reference = schema["properties"]["reference"]
+        if index == 0:
+            assert reference == {"type": "null"}
             return {"action": "agent_task"}
+        else:
+            assert schema["title"] == "CardTurnIntent" and options["on_content"] is None
+            expected = [ids[0]] if index == 1 else [ids[1], ids[0]]
+            assert reference == {"anyOf": [{"type": "string", "enum": expected}, {"type": "null"}]}
+            assert "reference" in schema["required"]
+        if index < 2:
+            return {"intent": "new_work", "reference": None}
         assert [card["id"] for card in packet["recent_task_cards"]] == [ids[1], ids[0]]
         if index == 2:
-            return {"action": "steer_task"}
+            return {"intent": "revise", "reference": None}
         assert packet["clarification"]["request"] == texts[2]
-        return {"action": "steer_task", "reference": ids[0], "clarification_id": packet["clarification"]["id"]}
+        return {"intent": "revise", "reference": ids[0], "clarification_id": packet["clarification"]["id"]}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", decide, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
@@ -138,6 +238,72 @@ async def test_semantic_task_cards_bind_clarified_steering_without_approval(sett
         assert (await client.post(path, json=payload)).json()["card"]["data"]["revision"] == 2
 
 
+@pytest.mark.parametrize("ask_about_card", [True, False])
+async def test_discussing_a_card_or_chatting_without_material_does_not_steer(settings, monkeypatch, ask_about_card):
+    app = create_app(settings, adapter=ControlledPlatform())
+    path, identity = "/api/chat/intelligent", str(uuid4())
+    stages = []
+
+    async def generate(messages, schema, *, on_content, **options):
+        stages.append(schema["title"])
+        if schema["title"] == "CardTurnIntent":
+            assert on_content is None and "reply_markdown" not in schema["properties"]
+            return {"intent": "discuss", "reference": identity if ask_about_card else None}
+        assert schema["properties"]["action"]["enum"] == ["chat"]
+        current = messages[-1]["content"]
+        if ask_about_card:
+            assert json.loads(current)["task"]["goal"] == "准备一份提纲"
+        else:
+            assert current == "陪我聊会儿" and identity not in str(messages)
+        reply = {"action": "chat", "reply_markdown": "我在呢。"}
+        on_content(json.dumps(reply))
+        return reply
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        (await client.post(path, json={"request_id": identity, "intent": {"action": "agent_task"},
+                                       "message": "准备一份提纲"})).raise_for_status()
+        result = await client.post(path + "/stream", json={"request_id": str(uuid4()),
+                                   "message": "那份提纲现在怎样了？" if ask_about_card else "陪我聊会儿"})
+        assert "event: delta" in result.text and "event: done" in result.text
+        assert stages == ["CardTurnIntent", "WorkLifecycle"]
+        assert app.state.runtime.tasks.current(identity)["revision"] == 1
+
+
+@pytest.mark.parametrize("route", ["agent_task", "direct_tool", "shortcut"])
+async def test_typed_video_selection_is_input_not_dispatch(settings, monkeypatch, route):
+    app = create_app(settings, adapter=ControlledPlatform())
+    selection = {"bvid": BV, "ranges": [{"part": 2, "start": 1, "end": 4}]}
+    stages, reads = [], []
+
+    async def generate(messages, schema, **options):
+        stages.append(schema["title"])
+        assert json.loads(messages[-1]["content"])["video_selection"] == selection
+        if schema["title"] == "WorkLifecycle":
+            return {"action": route}
+        assert schema["properties"]["action"]["enum"] == ["full_video", "clarify"]
+        return {"action": "full_video"}
+
+    async def queue(identity, character, selected):
+        reads.append(selected)
+        return {"id": identity}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
+    monkeypatch.setattr(app.state.browsing, "queue_full_video", queue)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        identity = str(uuid4())
+        result = await client.post("/api/chat/intelligent", json={"request_id": identity, "video_selection": selection,
+            "message": "准备一份提纲" if route == "agent_task" else "看看这段", **(
+                {"intent": {"action": "full_video"}} if route == "shortcut" else {})})
+        card = result.raise_for_status().json()["card"]
+        if route == "agent_task":
+            assert card["type"] == "agent_task" and not reads and stages == ["WorkLifecycle"]
+            assert app.state.runtime.tasks.current(identity)["plan"]["video_selection"] == selection
+        else:
+            assert card["type"] == "video_browsing" and reads == [selection]
+            assert stages == ([] if route == "shortcut" else ["WorkLifecycle", "AssistantDecision"])
+
+
 async def test_chat_steer_rejects_concurrent_revision_and_non_card_tasks(settings, monkeypatch):
     app = create_app(settings, adapter=ControlledPlatform())
     tasks = app.state.runtime.tasks
@@ -147,7 +313,7 @@ async def test_chat_steer_rejects_concurrent_revision_and_non_card_tasks(setting
     async def decide(messages, schema, **options):
         assert hidden not in str(messages)
         await tasks.control(identity, 1, "steer", goal="另一端的新要求")
-        return {"action": "steer_task", "reference": identity}
+        return {"intent": "revise", "reference": identity}
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", decide, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
@@ -521,12 +687,17 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
         return {"items": [2, 1]}
 
     async def assistant(messages, schema, **options):
-        assert schema["title"] == "AssistantDecision"
         message = messages[-1]["content"]
         action = {"今天有什么趣事": "activity", "第二件是谁讲的": "event_author", "后来回了没": "event_reply",
                   "把它记成公开经历": "remember_event", "那件公开经历": "recall_experience",
                   "查看公开经历": "public_experiences", "你记得我什么": "memory_summary",
                   "现在去吃饭吧": "chat", "再查第一句是谁说的": "event_author"}[message]
+        if schema["title"] == "WorkLifecycle":
+            if action == "chat":
+                return {"action": "chat", "reply_markdown": "这就来。"}
+            assert action not in schema["properties"]["action"]["enum"]
+            return {"action": "direct_tool"}
+        assert schema["title"] == "AssistantDecision"
         assert action in schema["properties"]["action"]["enum"]
         return {"action": action, "position": 2 if message.startswith("第二件") else None,
                 "topic": "第一句" if action == "recall_experience" or message.startswith("再查") else "",
@@ -704,7 +875,7 @@ def test_specified_video_reuses_range_checkpoints_and_reconnects_under_same_id(s
     browsing.read_interval = 0
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         path = "/api/chat/intelligent"
-        request = {"request_id": str(uuid4()), "message": "看完整视频：" + BV, "video_selection": {
+        request = {"request_id": str(uuid4()), "message": "看完整视频：" + BV, "intent": {"action": "full_video"}, "video_selection": {
             "bvid": BV, "ranges": [{"part": 1, "start": 0, "end": 5}, {"part": 2, "start": 3, "end": 20}],
         }}
         turn_url = path + "/turns/" + request["request_id"]
@@ -874,7 +1045,7 @@ def test_operator_video_to_live_uses_only_handoff_text_and_player_receipt(settin
             return req, client.post(path, json=req).raise_for_status().json()
 
         send(f"姓名：{name}，私下讨论加盐让鸡蛋浮起来，内部链接 {private_url}")
-        request, queued = send(f"帮{name}看一下 {BV}，范围是 P1 开头五秒。", video_selection={
+        request, queued = send(f"帮{name}看一下 {BV}，范围是 P1 开头五秒。", intent={"action": "full_video"}, video_selection={
             "bvid": BV, "ranges": [{"part": 1, "start": 0, "end": 5}],
         })
         assert queued["card"]["data"]["selection"]["bvid"] == BV

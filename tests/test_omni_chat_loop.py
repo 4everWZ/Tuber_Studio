@@ -34,7 +34,14 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
         elif path == "/v1/chat/completions":
             content = body["messages"][-1]["content"]
             if content == replay.REQUEST:
-                decision = {"action": "agent_task" if behavior != "public_action" else "start_live"}
+                schema = json.loads(body["structured_outputs"]["structural_tag"])["format"]["json_schema"]
+                if schema["title"] == "WorkLifecycle":
+                    assert set(schema["properties"]["action"]["enum"]) == {
+                        "chat", "direct_tool", "agent_task", "steer_task", "clarify"}
+                    decision = {"action": "agent_task" if behavior != "public_action" else "direct_tool"}
+                else:
+                    assert behavior == "public_action" and "start_live" in schema["properties"]["action"]["enum"]
+                    decision = {"action": "start_live"}
             else:
                 packet = json.loads(content)
                 if "candidate" in packet:
@@ -48,15 +55,21 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
                 else:
                     assert packet["message"] == replay.CHANGE
                     card, = packet["recent_task_cards"]
-                    decision = {"action": "steer_task", "reference": card["id"]}
+                    decision = {"intent": "revise", "reference": card["id"]}
             result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(decision)}}],
                       "usage": {"prompt_tokens": 128}}
         elif path == "/llm/v1/responses":
+            schemas = {tool["name"]: tool["parameters"] for tool in body["tools"]}
+            assert all(tool["strict"] for tool in body["tools"])
+            assert schemas["operation_status"]["properties"] == {}
+            item = schemas["submit_materials"]["properties"]["items"]["items"]
+            assert "title" in item["properties"] and set(item["required"]) == set(item["properties"])
             assert {tool["name"] for tool in body["tools"]} == {
                 "live_status", "operation_status", "submit_materials", "ask_owner"}
             assert body["tool_choice"] == "required"
             outputs = [item for item in body["input"] if item.get("type") == "function_call_output"]
             if not outputs:
+                assert schemas["submit_materials"]["properties"]["items"]["maxItems"] == 0
                 name, args = "operation_status", {}
             else:
                 output, = outputs
@@ -64,6 +77,7 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
                 receipt = json.loads(output["output"])
                 assert receipt["receipt"] == {"state": "off"}
                 evidence.update(receipt["evidence"])
+                assert set(item["properties"]["sources"]["items"]["enum"]) == set(evidence)
                 name, args = "submit_materials", {"items": [
                     {"title": "交接便笺", "rationale": "已核实", "sources": list(receipt["evidence"])}], "gaps": []}
                 if behavior == "invented_source":
