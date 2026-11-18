@@ -1,5 +1,6 @@
 import { $, node, safeMessage } from "./core.js";
 import { commentFinished } from "./comment-state.js?v=20261107.13";
+import { replyHandoff } from "./reply-handoff.js";
 
 const pageSize = 10;
 const sources = { manual: "手动", interaction: "公开互动", discovery: "自主浏览" };
@@ -58,6 +59,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
   const batchProgress = $("queue-batch-progress"), batchResult = $("queue-batch-result");
   const draftEdits = new Map();
   const checkedDrafts = new Map(), rowChecks = new Map();
+  const delegate = replyHandoff(api), batchDelegate = $("queue-batch-delegate");
   let view = "review", offset = 0, routeKey = null, inferRouteView = false, selected = null, version = 0;
   let rows = [], listSignature = "", detailSignature = "", active = false, busy = false, loaded = false, focusedKey = null;
   let generation = null;
@@ -78,6 +80,9 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     batchToggle.disabled = busy || selectionLoading;
     batchToggle.textContent = allSelected ? "全不选" : "全选所有页";
     batchPublish.disabled = busy || selectionLoading || !checkedDrafts.size;
+    const selectedRows = [...checkedDrafts.values()];
+    batchDelegate.disabled = batchPublish.disabled || selectedRows.length > 100 ||
+      selectedRows.some(row => row.channel !== "comments" || !row.comment_id || draftEdits.has(keyOf(row)));
     $("queue-batch-count").textContent = `已选 ${checkedDrafts.size} 条`;
     for (const [key, { check, row }] of rowChecks) {
       check.checked = checkedDrafts.has(key);
@@ -503,6 +508,26 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
         selectionLoading = false;
         syncBatchControls();
       }
+    }
+  };
+
+  batchDelegate.onclick = async () => {
+    if (batchDelegate.disabled) return;
+    const items = [...checkedDrafts.values()].map(row => ({
+      channel: "comments", draft_id: Number(row.id), source_ids: [row.comment_id],
+    }));
+    busy = true;
+    syncBatchControls();
+    try {
+      await delegate(items);
+      setBatchProgress(`已交办 ${items.length} 条回复，可在对话的活动中逐条审批。`);
+      checkedDrafts.clear();
+      allSelected = false;
+    } catch (error) {
+      setBatchProgress(safeMessage(error.message));
+    } finally {
+      busy = false;
+      syncBatchControls();
     }
   };
 

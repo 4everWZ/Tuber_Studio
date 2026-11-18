@@ -2237,6 +2237,12 @@ class DirectMessages:
                      "contact_state": contact_state(row)}
         for field in ("trigger_source", "outreach_check"):
             row[field] = json.loads(row[field]) if isinstance(row.get(field), str) else row.get(field)
+        if row["source_kind"] == "message":
+            try:
+                audit = json.loads(row.get("answer_check") or "{}")
+                row["reply_source_ids"] = audit.get("reply_incoming_ids") or [row["source_id"]]
+            except (ValueError, AttributeError):
+                row["reply_source_ids"] = []
         result = continuation_view(self.runtime, "messages", row)
         if result["continuation"] is None:
             result["continuation"] = generation_view(

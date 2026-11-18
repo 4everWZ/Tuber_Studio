@@ -99,7 +99,10 @@ async def approve(s, item):
     res = await s.owner.post(s.path, json={"epoch": s.scope["epoch"], "items": [item]})
     assert res.status_code == 200, res.text
     selection = res.json()["selection_id"]
-    task = s.tasks.create(str(uuid4()), f"处理回复选择 {selection}")
+    response = await s.owner.post(f"{s.path}/{selection}/delegate")
+    assert response.status_code == 200, response.text
+    assert (await s.owner.post(f"{s.path}/{selection}/delegate")).json() == response.json()
+    task = s.tasks.current(response.json()["task_id"])
     step = {"tool": "submit_selected_reply", "id": str(uuid4()), "call_id": "reply", "response_id": "turn",
             "arguments": {"selection_id": selection, "item": 1}, "revision": 1}
     s.tasks._save(task, plan={"backend": "responses", "prior_goals": []}, steps=[step])

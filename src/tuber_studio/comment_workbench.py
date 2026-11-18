@@ -139,7 +139,7 @@ def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, t
 def queue_selection(store, *, can_write, **scope):
     rows = list_queue(store, "review", -1, 0, can_write=can_write, **scope)["items"]
     items = [
-        {key: row[key] for key in ("channel", "id", "excerpt", "updated_at")}
+        {key: row[key] for key in ("channel", "id", "comment_id", "excerpt", "updated_at")}
         for row in rows if row["can_publish"]
     ]
     return {"items": items, "total": len(items)}

@@ -1,6 +1,7 @@
 "use strict";
 import { MemePicker, memePreviewUrl } from "./memes.js?v=20261118.1";
 import { contactLabel, contactReason, contactStatus } from "./modules/message-labels.js?v=20261107.20";
+import { replyHandoff } from "./modules/reply-handoff.js";
 
 export class MessagesPanel {
   constructor(root,api,notify,openProfile) {
@@ -17,6 +18,27 @@ export class MessagesPanel {
     const views=this.element('fieldset',null,'queue-status-options');views.dataset.draftViews='';
     views.innerHTML='<legend>私信记录</legend><label><input type="radio" name="message-draft-view" value="pending" checked>待处理</label><label><input type="radio" name="message-draft-view" value="history">历史</label>';
     this.$('[data-drafts]').before(views);
+    this.replyChecks = new Map();
+    const delegate = replyHandoff(api);
+    this.delegateButton = this.element('button');
+    this.delegateButton.type = 'button';
+    this.delegateButton.hidden = true;
+    this.$('[data-drafts]').after(this.delegateButton);
+    this.delegateButton.onclick = () => this.action(async () => {
+      const items = [...this.replyChecks.keys()].map(id => {
+        const row = this.value.drafts.find(draft => draft.id === id);
+        if (!row || this.edits.has(this.editKey(id)) || this.replyChecks.get(id) !== row.updated_at) {
+          throw new Error('草稿已变化，请保存后重新选择。');
+        }
+        return {channel: 'messages', draft_id: id, source_ids: row.reply_source_ids};
+      });
+      if (!items.length) return;
+      await delegate(items);
+      this.replyChecks.clear();
+      this.draftSignature = null;
+      this.render();
+      notify(`已交办 ${items.length} 份私信草稿，可在对话的活动中逐条审批。`);
+    });
     views.onchange=event=>{this.rememberDraft();this.draftView=event.target.value;this.selected=null;this.dirty=false;this.$('[data-error]').textContent='';this.render();};
     const profileButton = this.element("button", "用户档案");
     const conversationState = this.element('p', '', 'hint');conversationState.dataset.conversationState='';conversationState.setAttribute('role','status');
@@ -159,8 +181,38 @@ export class MessagesPanel {
     const select=this.$('[data-users]');const userSignature=JSON.stringify(this.value.users.map(user=>[user.platform,user.platform_user_id,user.display_name]));if(userSignature!==this.userSignature){this.userSignature=userSignature;select.replaceChildren(this.element('option','选择用户'));select.firstChild.value='';for(const user of this.value.users){const option=this.element('option',`${user.display_name||'用户'} · ${user.platform_user_id}`);option.value=`${user.platform}|${user.platform_user_id}`;select.append(option);}}select.value=this.user||'';
     const drafts=this.value.drafts.filter(row=>(!this.user||`${row.platform}|${row.platform_user_id}`===this.user)&&(this.draftState(row).history===(this.draftView==='history')));
     for(const radio of this.$('[data-draft-views]').querySelectorAll('input')){radio.checked=radio.value===this.draftView;radio.disabled=this.busy;}
-    const draftSignature=JSON.stringify([this.user,this.draftView,drafts,this.selected]);if(draftSignature!==this.draftSignature){this.draftSignature=draftSignature;this.$('[data-drafts]').replaceChildren(...drafts.map(row=>{const button=this.element('button',`#${row.id} ${this.contactLabel(row)} · ${row.display_name||row.platform_user_id} · ${this.draftState(row).label}`);button.setAttribute('aria-pressed',String(row.id===this.selected));button.onclick=()=>this.selectDraft(row.id);return button;}));
+    const scope = JSON.stringify([this.value.account_id, this.value.character_id, this.user, this.draftView]);
+    if (scope !== this.replyScope) this.replyChecks.clear();
+    this.replyScope = scope;
+    for (const [id, stamp] of this.replyChecks) {
+      if (!drafts.some(row => row.id === id && row.updated_at === stamp)) this.replyChecks.delete(id);
+    }
+    this.updateDelegateButton();
+    const draftSignature=JSON.stringify([scope,drafts,this.selected]);if(draftSignature!==this.draftSignature){this.draftSignature=draftSignature;this.$('[data-drafts]').replaceChildren(...drafts.map(row=>{
+      const label = `#${row.id} ${this.contactLabel(row)} · ${row.display_name||row.platform_user_id} · ${this.draftState(row).label}`;
+      const button=this.element('button',label);
+      button.setAttribute('aria-pressed',String(row.id===this.selected));
+      button.onclick=()=>this.selectDraft(row.id);
+      if (!row.reply_source_ids?.length || !['pending_review','approved','copied'].includes(row.status)) return button;
+      const wrapper=this.element('div',null,'queue-check-row'), check=this.element('input');
+      check.type='checkbox';
+      check.setAttribute('aria-label','选择私信草稿 '+label);
+      check.checked=this.replyChecks.has(row.id);
+      check.onchange=()=>{
+        if (check.checked) this.replyChecks.set(row.id,row.updated_at);
+        else this.replyChecks.delete(row.id);
+        this.updateDelegateButton();
+      };
+      wrapper.append(check,button);
+      return wrapper;
+    }));
     if(!drafts.length)this.$('[data-drafts]').append(this.element('p',this.draftView==='history'?'暂无历史私信记录。':'暂无待处理私信。新来信按当前自动读取与发送设置处理。','hint'));}this.renderEditor();this.renderPrivateContinuations();
+  }
+  updateDelegateButton() {
+    const count=this.replyChecks.size;
+    this.delegateButton.hidden=!count;
+    this.delegateButton.disabled=this.busy || count>100;
+    this.delegateButton.textContent=`交给大肥鱼逐条送审（${count}）`;
   }
   renderPrivateContinuations(){
     const rows=this.value?.private_continuations||[],section=this.$('[data-private-generations]'),list=this.$('[data-private-generation-list]');
@@ -198,6 +250,8 @@ export class MessagesPanel {
   }
   renderEditor(){const row=this.value?.drafts.find(row=>row.id===this.selected),state=this.draftState(row);this.continuation.render(row?.continuation,{channel:'messages',localId:row?.id,dirty:this.dirty,entityStatus:row?.status});const terminalInPending=this.draftView!=='history'&&state.history;const editable=row&&!terminalInPending&&['pending_review','approved','rejected','copied'].includes(row.status);const text=this.$('[data-text]');if(!this.dirty&&text.value!==(row?.text||''))text.value=row?.text||'';text.disabled=this.busy||(!editable&&!this.dirty);text.readOnly=!editable;text.hidden=!this.dirty&&(state.progress||state.waiting);this.$('[data-text-label]').hidden=text.hidden;
     this.$('[data-users]').disabled=this.busy;
+    this.updateDelegateButton();
+    for (const check of this.root.querySelectorAll('[data-drafts] input[type=checkbox]')) check.disabled=this.busy;
     for(const radio of this.$('[data-draft-views]').querySelectorAll('input'))radio.disabled=this.busy;
     const image=row?.message_kind==='image',asset=row?.meme||this.memeCache.get(`${row?.character_id}:${row?.meme_id}`),unavailable=image&&asset&&(!asset.enabled||asset.missing);
     this.$('[data-text-label]').textContent=image?'审阅文字 / 文字备选（不会随图片发送）':'私信内容';
