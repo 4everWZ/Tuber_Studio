@@ -44,7 +44,7 @@ docker compose -f deploy/omni/app-compose.yml exec -T tuber-core cat /data/admin
 
 ## GIF Avatar 与 OBS 媒体
 
-使用已部署的 Avatar 服务时，向服务方取得会话地址、节目观看地址和各自的访问凭据。先核对节目健康状态，再建立新的授权会话。现行节目桥通过 `GET /healthz` 读取节目发布状态，通过受认证的 WebSocket `/session` 协商原生双工，OBS 与浏览器从媒体入口获取 WHEP。确认观看端可访问服务发布的 ICE 候选。通用 Avatar 会话能力由服务实际提供后接入。节目发布、真实音画解码与播放器播完回执分别验收。 [Avatar 与音画交付](../../docs/specs/foundation/omni-deployment.md#avatar-与音画交付)
+使用节目桥时，向服务方取得会话地址、节目观看地址和各自的访问凭据。桥的 `GET /healthz` 报告节目发布状态，受认证的 WebSocket `/session` 协商原生双工，OBS 与浏览器从媒体入口获取 WHEP。确认观看端可访问服务发布的 ICE 候选。私聊原画使用独立网关的 Avatar 会话与 WHEP 订阅。节目状态、音画解码与播完回执分别验收。[私聊原画通话](../../docs/guides/private-avatar-call.md) · [直播交接播完实测](../../evaluations/results/live-handoff-ended-20261119.md)
 
 本仓库另带可选 GIF 渲染和媒体桥。运行示例需已可访问的网关及媒体发布入口。将网关服务令牌、桥接访问令牌和发布密码分别置于 `secrets/gateway-media.token`、`secrets/media-access.token` 和 `secrets/media-publish.password`。示例发布地址为 `rtsp://mediamtx:8554/program`，发布用户为 `tuber-publisher`。网关授予媒体令牌的节目准入权限使节目连接期间进入 Live Mode，关闭后回到网关的手动模式。
 
