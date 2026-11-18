@@ -40,6 +40,43 @@ def frame_observations(inventory):
                               for text in inventory.get(field, []) if isinstance(text, str) and text))
 
 
+class AssertionPart(StrictModel):
+    role: Literal["实体", "场所", "关系", "属性"]
+    words: str = Field(min_length=1, description="标题中这一部分的连续原文。")
+    basis: str = Field(description="观察中直接表达同一内容的连续原文。缺少依据填空。")
+    entailed: bool = Field(strict=True)
+
+
+class AssertionReview(StrictModel):
+    parts: list[AssertionPart] = Field(min_length=1)
+    same_relations: bool = Field(strict=True, description="观察是否支持整句中同一主体与客体、谓语方向、否定以及地点的组合。")
+
+
+async def statement_basis(words, observation, call):
+    """Account for the entire assertion, including the setting of a visible object."""
+    if words == title_words(observation):
+        return {"complete_observation": True, "supported": True}
+    messages = [
+        {"role": "system", "content": "仅凭这一条原始观察审核陈述。按原文顺序拆分整句，parts.words 拼起来必须还原标题。"
+         "分开完整实体名、关系谓语、场所与属性。场所使用原句完整的处所名词短语，介词归入关系。"
+         "逐项从观察摘出表示同一事实的依据。只出现物体，不能证明它所处的场所或与另一实体的关系。"
+         "方向、否定、主体与客体须和观察一致；有新增、颠倒或无法核实的断言时相应项 entailed 为 false。"},
+        {"role": "user", "content": dump({"statement": words, "frame_observation": observation})},
+    ]
+    review = AssertionReview.model_validate(await call(messages, AssertionReview.model_json_schema()))
+    parts = []
+    for part in review.parts:
+        bound = bool(part.basis.strip() and part.basis in observation)
+        if part.role in {"实体", "场所"}:
+            bound = bound and part.words in part.basis
+        parts.append(part.model_dump() | {"bound": bound})
+    complete = "".join(p["words"] for p in parts) == words
+    supported = (complete and review.same_relations and any(p["role"] == "关系" for p in parts)
+                 and all(p["bound"] and p["entailed"] for p in parts))
+    return {"complete_observation": False, "parts": parts, "covers_statement": complete,
+            "same_relations": review.same_relations, "supported": supported}
+
+
 async def read_title(title, observations, call):
     words = title_words(title)
     messages = [
@@ -56,9 +93,15 @@ async def read_title(title, observations, call):
     schema["properties"]["observation"]["enum"] = ["", *observations]
     reading = TitleReading.model_validate(await call(messages, schema))
     answer_bound = bool(reading.answer.strip() and reading.answer in reading.observation)
-    return reading.model_dump() | {"core_bound":bool(reading.core.strip() and reading.core in words), "answer_bound":answer_bound,
-                                  "grounded":bool(reading.supported and reading.observation in observations
-                                                  and reading.observation)}
+    grounded = bool(reading.supported and reading.observation and reading.observation in observations)
+    result = reading.model_dump() | {"core_bound":bool(reading.core.strip() and reading.core in words), "answer_bound":answer_bound}
+    if grounded and reading.form == "陈述句":
+        if result["core_bound"]:
+            result["statement_basis"] = await statement_basis(words, reading.observation, call)
+            grounded = result["statement_basis"]["supported"]
+        else:
+            grounded = False
+    return result | {"grounded": grounded}
 
 
 def meets_form(reading, expected, *, require_grounding):
@@ -96,21 +139,30 @@ class TitleOption(StrictModel):
 
 
 class TitleOptions(StrictModel):
+    fact: str = Field(description="逐字选定的一整条主帧观察，所有候选只写这一条。")
     options: list[TitleOption] = Field(min_length=2, max_length=3)
 
 
-async def grounded_options(fact, preference, expected, checks, call):
+async def grounded_options(details, expected, checks, call):
     """Offer alternative expressions of one observation for the existing field repair."""
     messages = [
-        {"role":"system","content":"你是私有成果的文字编辑。只使用给定的这一条可见事实，"
-         "写两至三个不同的完整标题候选。每个都必须符合号主要求的句式和标点。"
+        {"role":"system","content":"你是私有成果的文字编辑。选同一主帧的一条完整观察作事实依据。"
+         "陈述标题优先选已有完整谓语的观察，第一候选沿用完整原句及所需标点。其余候选可调整语序。"
+         "实体、关系、方位和场所均须在这条观察内有据。写两至三个符合所给句式与字面约定的标题。"
          + form_instruction(expected)},
-        {"role":"user","content":dump({"verified_observation":fact, "writing_preference":preference})},
+        {"role":"user","content":dump({"frame_details":details, "title_form":expected,
+                                      "title_format":[c.model_dump() for c in checks]})},
     ]
-    options = TitleOptions.model_validate(await call(messages, TitleOptions.model_json_schema()))
+    schema = TitleOptions.model_json_schema()
+    schema["properties"]["fact"]["enum"] = details
+    options = TitleOptions.model_validate(await call(messages, schema))
+    fact = options.fact
+    if fact not in details:
+        raise DelegationError("标题候选没有选用该主帧的完整观察。")
     measured = []
     chosen = None
-    for option in options.options:
+    ordered = sorted(options.options, key=lambda opt: expected == "陈述句" and title_words(opt.title) != title_words(fact))
+    for option in ordered:
         title = option.title
         anchored = option.evidence_span in fact
         literal_ok = all(check.meets(title) for check in checks)

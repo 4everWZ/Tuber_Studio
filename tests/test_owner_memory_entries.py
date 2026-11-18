@@ -192,17 +192,19 @@ async def test_chromium_owner_controls(settings, monkeypatch, mode):
             await app.state.comments.adapter.close()
             app.state.store.close()
 
-@pytest.mark.parametrize("scenario", ["corrected", "withdrawn", "still_invalid", "statement", "label_with_period"])
+@pytest.mark.parametrize("scenario", ["corrected", "withdrawn", "still_invalid", "statement", "label_with_period", "unsupported_setting"])
 async def test_private_video_editor_reads_preferences_only_after_research(owner, monkeypatch, scenario):
     from types import SimpleNamespace
     from tuber_studio.agent import public_video
 
     client, state = owner
     tasks = state.runtime.tasks
-    statement = scenario in {"statement", "label_with_period"}
+    statement = scenario in {"statement", "label_with_period", "unsupported_setting"}
     note = ("以后写视频提纲，每个标题都用陈述句，以句号结尾。" if statement else
             "以后写视频提纲，每个标题都用问句，以问号结尾。")
     first_title = "画面中的椅子。" if statement else "画面中的椅子"
+    if scenario == "unsupported_setting":
+        first_title = "椅子位于直播间左侧。"
     good_title = "左侧有一把椅子。" if statement else "椅子放在哪里？"
     turn = str(uuid4())
     (await client.post(CHAT, json={"request_id": turn, "message": note, "intent": {"action": "chat"}})).raise_for_status()
@@ -255,16 +257,28 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
     seen = []
     repairs = []
     async def editor(messages, schema, **kwargs):
+        if "person_subject" in schema["properties"]:
+            field_text = messages[-1]["content"]
+            assert isinstance(field_text, str) and note not in field_text
+            assert "椅子" in field_text or "构图" in field_text
+            return {"person_subject":"编辑安排或其它表述" if "构图" in field_text else "地点、构图或物件"}
         if schema.get("title") == "ClipBrief":
             assert messages[-1]["content"] == tasks.current(task_id)["goal"]
             assert note not in str(messages)
             return {"requested_count": None, "usage": "根据画面写私有文字提纲",
                     "playable": False, "trace_origin": False, "clip_seconds": None}
         packet = json.loads(messages[-1]["content"])
+        if "statement" in packet:
+            assert packet["statement"] == "椅子位于直播间左侧"
+            assert "直播间" not in packet["frame_observation"]
+            return {"same_relations":True, "parts":[{"role":role,"words":words,"basis":basis,"entailed":True}
+                             for role,words,basis in [("实体","椅子","椅子"),("关系","位于","有"),
+                                                      ("场所","直播间左侧","左侧")]]}
         if "title_words" in packet:
             words = packet["title_words"]
             assert not words.endswith(("？", "。")) and note not in str(packet)
-            form, core = {"左侧有一把椅子":("陈述句","有一把椅子"), "椅子放在哪里":("问句","哪里")
+            form, core = {"左侧有一把椅子":("陈述句","有一把椅子"), "椅子放在哪里":("问句","哪里"),
+                          "椅子位于直播间左侧":("陈述句","位于直播间左侧")
                          }.get(words, ("名词短语","椅子"))
             return {"form":form, "core":core, "supported":True, "observation":packet["observations"][0],
                     "answer":"左侧" if form == "问句" else ""}
@@ -344,6 +358,11 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
                 assert reading["observation"] in reading["observations"]
         return
     assert first["status"] == "completed" and good_title in first["artifact"]["body"]
+    if scenario == "unsupported_setting":
+        reading = audits[-1]["attempts"][0]["titles"]["items.0.title"]
+        assert reading["form"] == "陈述句" and reading["literal_checks_passed"] and not reading["grounded"]
+        assert not reading["statement_basis"]["parts"][-1]["bound"]
+        assert first_title not in first["artifact"]["body"]
     assert repairs == [first_title]
     assert first["memory_citations"][0]["source_key"] == "turn:"+turn
     history = (await client.get(f"/api/agent/tasks/{task_id}/artifacts")).raise_for_status().json()

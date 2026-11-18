@@ -79,15 +79,19 @@ async def test_editor_selects_a_sentence_against_one_observation_for_the_origina
     fact = "白色台灯位于书桌右侧"
     async def call(messages, schema):
         data = json.loads(messages[-1]["content"])
-        if "verified_observation" in data:
-            assert data["verified_observation"] == fact
-            return {"options":[{"evidence_span":"位于书桌右侧","title":t} for t in
+        if "frame_details" in data:
+            assert data["frame_details"] == ["白色台灯", fact]
+            return {"fact":fact, "options":[{"evidence_span":"位于书桌右侧","title":t} for t in
                                ("书桌右侧的白色台灯。","台灯在书桌右侧。","书桌右侧有一盏白色台灯。")]}
+        if "statement" in data:
+            assert data == {"statement":"台灯在书桌右侧", "frame_observation":fact}
+            return {"same_relations":True, "parts":[{"role":role, "words":words, "basis":basis, "entailed":True} for role,words,basis in
+                             [("实体","台灯","白色台灯"),("关系","在","位于"),("场所","书桌右侧","书桌右侧")]]}
         assert data["observations"] == [fact] and "writing_preference" not in data
         phrase = data["title_words"].endswith("台灯")
         return {"form":"名词短语" if phrase else "陈述句", "core":"台灯" if phrase else "在书桌右侧",
                 "observation":fact, "supported":True, "answer":""}
-    review = await grounded_options(fact, "标题用陈述句，以句号结尾。", "陈述句",
+    review = await grounded_options(["白色台灯", fact], "陈述句",
                                     [FormatCheck(field="title", operation="ends_with",value="。")], call)
     assert review["chosen"] == "台灯在书桌右侧。"
     assert review["candidates"][0]["reading"]["form"] == "名词短语"
@@ -100,13 +104,13 @@ async def test_anchored_question_candidate_must_ask_for_a_visible_answer():
     fact = "左侧有一盏红色台灯"
     async def call(messages, schema):
         packet = json.loads(messages[-1]["content"])
-        if "verified_observation" in packet:
-            return {"options":[{"evidence_span":"台灯","title":"这是谁的台灯？"},
+        if "frame_details" in packet:
+            return {"fact":fact, "options":[{"evidence_span":"台灯","title":"这是谁的台灯？"},
                                {"evidence_span":"红色","title":"左侧的台灯是什么颜色？"}]}
         ownership = "谁" in packet["title_words"]
         return {"form":"问句","core":"谁" if ownership else "什么颜色","observation":fact,
                 "supported":True,"answer":"" if ownership else "红色"}
-    options = await grounded_options(fact, "标题用问句", "问句", [], call)
+    options = await grounded_options([fact], "问句", [], call)
     assert not options["candidates"][0]["reading"]["answer_bound"]
     assert options["chosen"] == "左侧的台灯是什么颜色？"
 

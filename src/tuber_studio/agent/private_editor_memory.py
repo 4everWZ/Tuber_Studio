@@ -161,11 +161,7 @@ def connect_private_editor(runtime):
                         expected = {forms[k] for k in issues[path] if k in forms}
                         if details and len(expected) == 1:
                             rules = [c for _,c in checks if c.field == "title"]
-                            relevant = "；".join(notes[k] for k in issues[path])
-                            basis = product._field_sources.get(path.replace(".title", ".rationale"), {})
-                            fact = basis.get("observation") if basis.get("source") == item.primary_frame else None
-                            options = await grounded_options(fact if fact in details else details[0], relevant,
-                                                             expected.pop(), rules, call)
+                            options = await grounded_options(details, expected.pop(), rules, call)
                             audit["alternatives"][path] = options
                             if options["chosen"]:
                                 verified_titles[path] = {"primary_frame":item.primary_frame, "original":item.title, "fact":options["fact"],
