@@ -23,7 +23,7 @@ from ..store import dump
 from ..web_fetch import WebFetchRequest, fetch_excerpt, source_url
 from ..web_search import search_broadcast_programmes, search_public_web
 from . import operator_facts
-from .title_form import verified_title_fields
+from .clip_refinement import positive_subwindows, subwindow_brief
 from .clip_review import review_clip_window, unreviewed_preview
 from .clip_screening import fit_review_group, observe_clip_batch
 from .dynamic_publication import register_dynamic_publication
@@ -62,6 +62,7 @@ from .task_runtime import (
     ToolWait,
 )
 from .task_video_scope import permits, video_binding
+from .title_form import verified_title_fields
 
 
 class Search(StrictModel):
@@ -334,6 +335,16 @@ def attempted_windows(task):
 def overlaps(left, right):
     return (left["bvid"] == right["bvid"] and left["part"] == right["part"]
             and left["start"] < right["end"] and right["start"] < left["end"])
+
+
+def new_refinement(window, attempts):
+    for old in attempts:
+        if overlaps(window, old):
+            if not old["start"] <= window["start"] < window["end"] <= old["end"]:
+                return False
+            if (old["start"], old["end"]) == (window["start"], window["end"]):
+                return False
+    return True
 
 
 def unused_starts(task, reads, clips, seconds):
@@ -904,7 +915,7 @@ def create_task_runtime(runtime, store, browsing):
 
     tasks.review_source_question = review_source_question
 
-    async def propose_window(task, evidence, seconds, reviews):
+    async def propose_window(task, evidence, seconds, reviews, required_seconds=None):
         by_part = {}
         for step in task.get("steps", []):
             args = step["arguments"]
@@ -915,19 +926,33 @@ def create_task_runtime(runtime, store, browsing):
             return []
         clips = attempted_windows(task) + [r["clip"] for r in evidence.video_coverage.values() if r.get("clip")]
         starts = unused_starts(task, reads, clips, seconds)
-        if not starts:
+        bound = video_binding(task)
+        refined = {k: p for k, p in positive_subwindows(evidence, reviews).items()
+                   if permits(bound, p["window"]) and new_refinement(p["window"], clips)}
+        goals = [*task["plan"]["prior_goals"], task["goal"]]
+        if refined and task["plan"]["prior_goals"] and required_seconds is None:
+            length = await request_json([{"role": "system", "content": "原始委托与改口合起来看，每段是否有仍然生效的固定时长？"
+                "只填写号主明确要求的秒数，未限定填 null。"}, {"role": "user", "content": dump(goals)}],
+                {"type": "object", "properties": {"required_seconds": {"anyOf": [{"type": "number", "exclusiveMinimum": 0},
+                    {"type": "null"}]}}, "required": ["required_seconds"], "additionalProperties": False},
+                max_tokens=runtime.settings.data["llm"]["max_tokens"])
+            required_seconds = length["required_seconds"]
+        if required_seconds is not None:
+            refined = {k: p for k, p in refined.items() if math.isclose(p["window"]["end"] - p["window"]["start"], required_seconds)}
+        if not starts and not refined:
             return []
         schema = WindowProbe.model_json_schema()
         schema["properties"]["read"]["enum"] = list(starts)
         ranges = sorted({tuple(pair) for intervals in starts.values() for pair in intervals})
         schema["properties"]["start"] = {"anyOf": [{"type": "number", "minimum": lo, "maximum": hi} for lo, hi in ranges]}
         proposals = unexplored_samples(evidence, reads, starts, seconds)
+        subclips = subwindow_brief(refined)
+        proposals.update(subclips["proposals"])
         rejected = [{"range": [r["clip"]["start"], r["clip"]["end"]], "part": r["clip"]["part"], "bvid": r["clip"]["bvid"],
                      "uncovered_state_count": len(r["coverage"]["uncovered"]),
                      "caption_topics": list(dict.fromkeys(t["topic"] for t in r.get("caption_topics", []))),
                      "last_observation": next((o["basis"] for o in reversed(r["observations"]) if o.get("basis")), "")}
                     for r in reviews.values() if r.get("screening_version") == WINDOW_REVIEW_VERSION and not r["accepted"]]
-        goals = [*task["plan"]["prior_goals"], task["goal"]]
         region_context = {k: {"part": p.part, "bvid": p.bvid, "seconds": p.seconds, "observation": evidence.observations[k]}
                           for k, p in evidence.points.items() if p.medium == "单帧采样" and k not in proposals and
                           any(b["end"] - b["start"] > 10 for b in evidence.video_coverage[k.rsplit(":", 1)[0]]["requested_ranges"]
@@ -935,6 +960,7 @@ def create_task_runtime(runtime, store, browsing):
         accepted = [{"clip": r["clip"], "observed_topics": [t["topic"] for t in r["caption_topics"]]}
                     for r in reviews.values() if accepted_window(r, r["clip"], strict=False)]
         exploration = {"goals": goals, "untried_observations": proposals, "other_overview_observations": region_context,
+                       "parent_objections": subclips["parent_objections"],
                        "accepted_windows": accepted, "rejected_windows": rejected}
         if proposals:
             assessment = DiscoveryAssessment.model_json_schema()
@@ -944,6 +970,7 @@ def create_task_runtime(runtime, store, browsing):
                 "required": ["samples", "first"], "additionalProperties": False}
             ranked = await request_json([{"role": "system", "content": "为补读取材逐项比较未试主帧。根据各帧完整观察和屏字判断主体片类，"
                 "区分片头署名、片外资料、叙事等；叙事中的水印不能替整帧定类。结合此前拒收的实际范围和原因，"
+                "带 parent_read 的提案是原窗局部拒收后连续正面观察的入出点。可另取这一段原片复审，或选邻近新窗。"
                 "优先调查与目标相符且内容类型不同的材料；多次相邻拒收后换一个有观察依据的内容区。"
                 "first 填最高优先级中的一个证据 ID，全部不合适时填 null。判断只用于补读，整段需另行审查。"},
                 {"role": "user", "content": dump(exploration)}],
@@ -958,6 +985,8 @@ def create_task_runtime(runtime, store, browsing):
                 return [proposals[ranked["first"]]["window"]]
             if ranked["first"] is not None:
                 raise DelegationError("补读提案选择了已评为不适合的主帧。")
+        if not starts:
+            return []
         probe = WindowProbe.model_validate(await request_json([
             {"role": "system", "content": "按当前目标选一个已有授权的分P和一个新的短窗入点。已保存的短片不能重复使用。"
              "根据概览主帧与实际审查结果判断不同内容区。连续几个相邻短窗已因叙事不合用时，转向更有依据的区域。"
@@ -995,12 +1024,12 @@ def create_task_runtime(runtime, store, browsing):
         ask_for_discovery = (not any((s.get("result") or {}).get("part_duration") for s in task.get("steps", ()))
                              and task["plan"].get("discovery_evidence") != evidence.discovery_progress())
 
-        async def next_windows(candidate, pool, seconds, count):
+        async def next_windows(candidate, pool, seconds, count, required_seconds=None):
             nominated = discovery_windows(candidate, pool, seconds, count)
             new = [p for p in nominated if not any(overlaps(p, a) for a in attempts)]
             if new and any(r.get("screening_version") == WINDOW_REVIEW_VERSION and not r["accepted"] for r in window_reviews.values()):
-                return await propose_window(task, evidence, seconds, window_reviews) or new
-            return new or await propose_window(task, evidence, seconds, window_reviews)
+                return await propose_window(task, evidence, seconds, window_reviews, required_seconds) or new
+            return new or await propose_window(task, evidence, seconds, window_reviews, required_seconds)
 
         async def window_usable(key, *, keep=False):
             nonlocal inherited
@@ -1103,7 +1132,8 @@ def create_task_runtime(runtime, store, browsing):
                     if not (old := window_reviews.get(key.rsplit(":", 1)[0]))
                     or old.get("screening_version") == WINDOW_REVIEW_VERSION]
         if excluded:
-            pool = pool.unused_video_material([k for k in excluded if k in evidence.points], original=evidence)
+            pool = pool.unused_video_material([k for k in excluded if k in evidence.points], original=evidence,
+                                              refinements=positive_subwindows(evidence, window_reviews).values())
         sources = pool.prompt_sources()
         if pool.points:
             sources.update(pool.video_byline)
@@ -1131,7 +1161,8 @@ def create_task_runtime(runtime, store, browsing):
                 needs.append("检索并打开与节目相关的独立原出处，综合检索无结果时选择合适的公开资料库。")
             windows = []
             if brief.playable and not short:
-                windows = await next_windows(candidate, pool, brief.clip_seconds or 3, brief.requested_count or len(candidate["items"]))
+                windows = await next_windows(candidate, pool, brief.clip_seconds or 3, brief.requested_count or len(candidate["items"]),
+                                             brief.clip_seconds)
             if brief.playable and not short and (windows or ask_for_discovery):
                 needs.append("宽范围采样仅发现候选。请在所选分P内分别读取不超过10秒的明确短窗以取得可播放画面。")
             if needs:
@@ -1383,7 +1414,7 @@ def create_task_runtime(runtime, store, browsing):
                         rejected_keys.append(key)
                 if len(selected) < target:
                     missing = target - len(selected)
-                    new_windows = await next_windows(candidate, pool, brief.clip_seconds or 3, missing)
+                    new_windows = await next_windows(candidate, pool, brief.clip_seconds or 3, missing, brief.clip_seconds)
                     if new_windows or ask_for_discovery:
                         raise AdditionalVideoRead(f"保留 {len(selected)} 项，尚缺 {missing} 项。继续核对其它授权窗口。",
                                                   rejected_keys, selected, windows=new_windows, reviews=window_reviews, frames=inventories)
@@ -1546,7 +1577,7 @@ def create_task_runtime(runtime, store, browsing):
                     kept = [(i, item) for i, item in enumerate(product.items) if not any(
                         path.startswith(f"items.{i}.") for path in issues)]
                     windows = await next_windows(candidate, pool, brief.clip_seconds if brief and brief.clip_seconds else 3,
-                                                 len(rejected_material))
+                                                 len(rejected_material), brief.clip_seconds if brief else None)
                     if windows or ask_for_discovery:
                         raise AdditionalVideoRead("已读画面与无剧透目标冲突，请在授权范围另读取材，再提交候选。",
                                                   rejected_material, [item.model_dump() for _, item in kept], windows=windows,

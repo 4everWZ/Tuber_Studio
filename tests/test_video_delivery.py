@@ -11,6 +11,7 @@ from test_agent_creative_delegation import call, gateway
 
 from tuber_studio.agent.public_video import clip_path
 from tuber_studio.agent.task_delivery import (
+    WINDOW_REVIEW_VERSION,
     AdditionalVideoRead,
     DelegationError,
     EditorialCorrection,
@@ -291,7 +292,7 @@ def reviewed_window(monkeypatch):
         return {"clip": clip, "coverage": {"complete": True, "uncovered": [], "scanned_frames": clip["frames"], "samples": samples,
                                           "start": clip["start"], "end": clip["end"]},
                 "observations": [s | {"scene": "符合要求", "captions": "无烧录字幕", "screen_text": ""} for s in samples],
-                "caption_topics": [], "usage": "仅无剧透素材", "accepted": True, "screening_version": 4}
+                "caption_topics": [], "usage": "仅无剧透素材", "accepted": True, "screening_version": WINDOW_REVIEW_VERSION}
 
     monkeypatch.setattr("tuber_studio.agent.task_tools.saved_review_media", media)
     monkeypatch.setattr("tuber_studio.agent.task_tools.screen_clip_window", reviewed)
@@ -504,7 +505,7 @@ async def test_failed_window_after_narrowing_keeps_good_item_and_reads_an_unused
         overview = reading(frame(8), frame(3), frame(18) | {"text": full_caption})
         task["steps"].append(overview)
         task["plan"]["window_reviews"] = {"bad": {"clip": bad["result"]["clip"], "coverage": {"uncovered": []},
-            "observations": [{"basis": "主体为剧情对白，虽有频道水印。"}], "screening_version": 4, "accepted": False}}
+            "observations": [{"basis": "主体为剧情对白，虽有频道水印。"}], "screening_version": WINDOW_REVIEW_VERSION, "accepted": False}}
 
     async def editor(messages, schema, **kwargs):
         props = schema["properties"]

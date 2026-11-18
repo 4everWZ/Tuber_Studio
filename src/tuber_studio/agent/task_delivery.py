@@ -246,25 +246,39 @@ class EvidenceIndex(dict):
             body = body.replace(citation, f"〔证据 {key}〕")
         return body
 
-    def unused_video_material(self, previous, *, original=None):
+    def unused_video_material(self, previous, *, original=None, refinements=()):
         """Exclude old material for an explicit unused-window replacement, without asserting continuity."""
         original = self if original is None else original
-        old_points = [original.points[key] for key in previous]
+        old_points = [(key.rsplit(":", 1)[0], original.points[key]) for key in previous]
         intervals = []
         for key in previous:
             point = original.points[key]
             bounds = original.video_coverage[key.rsplit(":", 1)[0]].get("explicit_interval")
             if bounds and bounds[1] - bounds[0] <= 10:
-                intervals.append((point.bvid, point.part, point.cid, *bounds))
+                intervals.append((key.rsplit(":", 1)[0], point.bvid, point.part, point.cid, *bounds))
+        parents_by_read = {}
+        if refinements:
+            # Process longer parent intervals first so a second verified narrowing retains its ancestry.
+            actual = [(read, entry["clip"]) for read, entry in self.video_coverage.items() if entry.get("clip")]
+            for read, clip in sorted(actual, key=lambda pair: pair[1]["end"] - pair[1]["start"], reverse=True):
+                parents = set()
+                for proposal in refinements:
+                    if clip["cid"] == proposal["cid"] and all(clip[k] == v for k, v in proposal["window"].items()):
+                        parent = proposal["parent_read"]
+                        parents.add(parent)
+                        parents.update(parents_by_read.get(parent, ()))
+                parents_by_read[read] = parents
         subset = EvidenceIndex()
         for key, text in self.items():
             point = self.points.get(key)
             if point:
-                own_interval = self.video_coverage[key.rsplit(":", 1)[0]].get("explicit_interval")
-                if any(old == point or old.supports(point) for old in old_points) or any(
+                own_read = key.rsplit(":", 1)[0]
+                own_interval = self.video_coverage[own_read].get("explicit_interval")
+                parents = parents_by_read.get(own_read, ())
+                if any(read not in parents and (old == point or old.supports(point)) for read, old in old_points) or any(
                     (point.bvid, point.part, point.cid) == (bvid, part, cid) and
                     (start <= point.seconds < end or own_interval and own_interval[0] < end and start < own_interval[1])
-                    for bvid, part, cid, start, end in intervals
+                    for read, bvid, part, cid, start, end in intervals if read not in parents
                 ):
                     continue
                 subset.points[key] = point
@@ -328,7 +342,7 @@ def bind_delivery_schema(items, item_schema, evidence):
 
 
 NON_NARRATIVE = ("仅频道、作者或节目题名与标识", "播出及制作资料", "评论收视或表演", "没有事件的布景描述")
-WINDOW_REVIEW_VERSION = 4
+WINDOW_REVIEW_VERSION = 5
 NO_SPOILERS = "仅无剧透素材"
 PROGRAMME_CONTEXT = "只谈片外的节目、制作、传播或可见形式"
 
