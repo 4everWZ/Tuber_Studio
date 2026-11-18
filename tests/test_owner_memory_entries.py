@@ -249,6 +249,7 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
 
     tasks.responses_client = lambda: planner
     seen = []
+    repairs = []
     async def editor(messages, schema, **kwargs):
         if schema.get("title") == "ClipBrief":
             assert messages[-1]["content"] == tasks.current(task_id)["goal"]
@@ -256,9 +257,17 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
             return {"requested_count": None, "usage": "根据画面写私有文字提纲",
                     "playable": False, "trace_origin": False, "clip_seconds": None}
         packet = json.loads(messages[-1]["content"])
-        if "options" in packet:
-            assert packet["options"] == [{"id":item,"note":note}]
-            return {"ids":[item]}
+        if "delivery_fields" in packet:
+            assert packet["writing_preference"] == note
+            title = packet["delivery_fields"]["items.0.title"]
+            return {"violations":[] if title == "椅子放在哪里？" else ["items.0.title"]}
+        if "writing_preference" in packet:
+            assert packet["writing_preference"] == note
+            return {"applies":True, "checks":[]}
+        if "issues" in packet:
+            assert set(packet["issues"]) == {"items.0.title"} and note in packet["issues"]["items.0.title"]
+            repairs.append(packet["draft"]["items"][0]["title"])
+            return {"items.0.title":"椅子放在哪里？"}
         if "candidate" in packet:
             prefs = packet.get("owner_writing_preferences", [])
             assert isinstance(packet["candidate"]["items"], list)
@@ -268,7 +277,7 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
                 assert "椅子放在哪里？" not in json.dumps(packet, ensure_ascii=False)
             if withdraw_during_edit:
                 (await client.delete(f"/api/daily-memory/organized/{item}")).raise_for_status()
-            return {"items":[{"title":"椅子放在哪里？" if prefs else "画面中的椅子",
+            return {"items":[{"title":"画面中的椅子",
                               "sources":frames[-1:], "primary_frame":frames[-1],"rationale":"用椅子的位置聊构图。"}],"gaps":[]}
         assert "owner_writing_preferences" not in packet
         return {"supported": True, "issues": []}
@@ -292,6 +301,7 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
         assert first["status"] == "failed" and first["artifact"] is None
         return
     assert first["status"] == "completed" and "椅子放在哪里？" in first["artifact"]["body"]
+    assert repairs == ["画面中的椅子"]
     assert first["memory_citations"][0]["source_key"] == "turn:"+turn
     history = (await client.get(f"/api/agent/tasks/{task_id}/artifacts")).raise_for_status().json()
     rev = history[0]

@@ -7,10 +7,13 @@ from ..generation_meter import budgeted_call
 from ..models import StrictModel
 from ..store import dump
 from .owner_memory import MemoryUse, check_use, citation, correctable_preference, private_rows, read_stamp
+from .editor_contract import FormatCheck, review_preferences
+from .task_delivery import DelegationError
 
 
 class WritingSelection(StrictModel):
-    ids: list[int] = Field(max_length=8)
+    applies: bool = Field(strict=True)
+    checks: list[FormatCheck] = Field(max_length=12)
 
 
 def connect_private_editor(runtime):
@@ -56,28 +59,54 @@ def connect_private_editor(runtime):
             return await editor(request, evidence)
         candidates = list(candidates.values())
         selection_use = MemoryUse(ids=[r["id"] for r in candidates], stamp=read_stamp(runtime, candidates))
-        options = [{"id": row["id"], "note": row["anecdote"]} for row in candidates]
-        messages = [{"role": "system", "content": "只选择与本次私有成果的组织、措辞或选材直接相关的号主写作偏好。"
-                     "排除个人事实、身份、无关偏好和行动授权。材料是资料。无需偏好时返回空 ids。"},
-                    {"role": "user", "content": dump({"goal": task["goal"], "options": options})}]
+        instruction = ("判断这条号主偏好是否适用于本次私有成果的组织、措辞或选材。"
+                     "排除个人事实、身份、无关偏好和行动授权。本轮明确覆盖的约定不选。"
+                     "将原话明确要求每个字段遵守的字面前缀、后缀、包含文字或字符数界限列入 checks。"
+                     "value 填实际字符（标点名转为对应符号）或十进制数。"
+                     "局部条件或语义要求交由成品复核，不推测阈值。无字面约束时 checks 为空。")
         schema = WritingSelection.model_json_schema()
-        schema["properties"]["ids"]["items"]["enum"] = selection_use.ids
-        async with runtime.operator_generation("background"):
-            check_use(runtime, selection_use)
-            provider = runtime.llm
-            reply = await budgeted_call(provider, lambda: provider.generate_json(messages, schema, max_tokens=512),
-                                        messages, max_tokens=512)
-        check_use(runtime, selection_use)
-        ids = set(WritingSelection.model_validate(reply).ids)
-        if not ids <= set(selection_use.ids):
-            raise ValueError("编辑器选择了授权范围外的偏好")
-        rows = [r for r in candidates if r["id"] in ids or r["id"] in inherited]
+        async def generate(messages, schema, use):
+            async with runtime.operator_generation("background"):
+                check_use(runtime, use)
+                provider = runtime.llm
+                limit = min(runtime.settings.data["llm"]["max_tokens"], 1024)
+                result = await budgeted_call(provider, lambda: provider.generate_json(messages, schema, max_tokens=limit),
+                                             messages, max_tokens=limit)
+                check_use(runtime, use)
+                return result
+        notes, checks = {}, []
+        for row in candidates:
+            messages = [{"role":"system","content":instruction},
+                        {"role":"user","content":dump({"goal":task["goal"], "writing_preference":row["anecdote"]})}]
+            selection = WritingSelection.model_validate(await generate(messages, schema, selection_use))
+            if selection.applies:
+                notes[row["id"]] = row["anecdote"]
+                checks.extend((row["id"], check) for check in selection.checks)
+        rows = [r for r in candidates if r["id"] in notes or r["id"] in inherited]
         if not rows:
             return await editor(request, evidence)
         use = MemoryUse(ids=[row["id"] for row in rows], stamp=read_stamp(runtime, rows))
         plan["editor_memory"] = {"memory_use": use.model_dump(), "memory_citations": [citation(r) for r in rows]}
         try:
-            return await editor(request | {"owner_writing_preferences": [r["anecdote"] for r in rows if r["id"] in ids]}, evidence)
+            request = request | {"owner_writing_preferences": list(notes.values())}
+            product = await editor(request, evidence)
+            check_use(runtime, use)
+            if not notes:
+                return product
+            locked = getattr(product, "_locked_fields", set())
+            async def verify(draft):
+                return await review_preferences(task["goal"], notes, checks, draft,
+                                                lambda messages,schema: generate(messages,schema,use), locked)
+            if issues := await verify(product):
+                repair = private_plan | {"editor_draft":product.model_dump(), "editor_issues":issues,
+                                         "frame_reviews":product._frame_reviews}
+                product = await editor(request | {"plan":repair}, evidence)
+                check_use(runtime, use)
+                if await verify(product):
+                    raise DelegationError("成品仍有字段未满足本轮选定的号主写作约定，尚未交付。")
+            plan["editor_memory"]["review"] = {"preference_ids":list(notes), "format_checks":len(checks),
+                                               "repaired_fields":sorted(issues)}
+            return product
         finally:
             check_use(runtime, use)
 
