@@ -68,7 +68,8 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False):
     if voice_only and not config:
         raise ValueError("Independent voice replay requires an ordinary application binding")
     first_note = AUTO if voice_only else CONFIRMED
-    report = {"platform_writes": 0, "source": "owner-supplied AGENTS.md / Global Working Rules"}
+    report = {"platform_writes": 0, "source": "owner-authorized QA speech and title preferences" if voice_only
+              else "owner-supplied AGENTS.md / Global Working Rules and authorized QA title preferences"}
     output = Path(tempfile.mkdtemp(dir=ROOT / "tmp", prefix="owner-memory-evidence-")) / "result.json"
     print("Evidence:", output.relative_to(ROOT), flush=True)
     def record(name, value):
@@ -170,6 +171,10 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False):
                         await device_call(device, port, token, "DELETE", f"/api/daily-memory/organized/{row['id']}?expected_revision={row['revision']}")
                     assert not (await client.post(SEARCH, json={"query":first_note})).json()["items"]
                     report["independent_device"]["forget_visible_on_original_client"] = True
+                    if live and gateway_checkout:
+                        voice_ok = bool(report.get("voice_cross_device_revision"))
+                        report["acceptance_passed"] = voice_ok and (voice_only or (
+                            report.get("voice_style_observed") is True and report["video"]["semantic_status"] == "observed"))
                     record("stage", "closing_clients")
             except Exception as error:
                 record("failed_at", {"stage":report["stage"], "exception":type(error).__name__})
@@ -201,4 +206,7 @@ if __name__ == "__main__":
     parser.add_argument("--gateway-checkout", type=Path, help="use the independent gateway checkout for voice only")
     parser.add_argument("--voice-wav", type=Path, help="speech fixture authorized for private Realtime input")
     args = parser.parse_args()
-    print(json.dumps(asyncio.run(run(args.device, args.live, args.voice_wav, args.gateway_checkout, args.voice_only)), ensure_ascii=False, indent=2))
+    result = asyncio.run(run(args.device, args.live, args.voice_wav, args.gateway_checkout, args.voice_only))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if result.get("acceptance_passed") is False:
+        raise SystemExit(1)

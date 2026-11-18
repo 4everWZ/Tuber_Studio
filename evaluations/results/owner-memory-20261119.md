@@ -10,12 +10,15 @@ Windows 上的 Chromium 156.0.8078.4 登录隔离工坊，在设置页预览并�
 | 真实 Omni 初次回放 | 已确认自动整理和 3 条 P2 取材。第一版引用了号主的结论先行偏好，实际先写画面再给建议，语义未通过。撤回时旧修订触发冲突。保留了[原始提纲与判读](owner-memory-live-before-20261119.json)。 |
 | 真实 Omni 问句标题对照 | 号主确认设置来源后，通过文字对话给出“每个标题都用问句，以问号结尾”。另一台 x86_64 设备读到自动整理的 v2。工坊对同一 BV 的 P2、11–14 秒完成两次私有取材。第一份标题为「宝座前站着的人是谁？」；对端按 v2 忘记后，同一交办的标题为「古宫宝座」，引用为空。两份成品均从另一设备读回。平台写入 0。[实际正文与取材回执摘要](owner-memory-live-titles-20261119.json) |
 | 部署中的原生双工 | Chromium 发送 22 秒 PCM，服务确认一个用户音频条目，返回了助手语音及助手字幕，最终用户转写事件为 0。该轮没有触发语音更正。输入为号主授权 QA 句子的中文合成发音。 |
+| 独立设备的语音更正 | 普通应用凭据连接真实 Omni，本机运行独立服务网关。真实 Chromium 在号主选择的 8 秒录音上取得「好的，以后直播提纲的标题都用陈述句，以句号结尾。」。预览按授权测试原句改正后，另一台 x86_64 设备读回原条目 v2，同时核实了含“好的”的机器原稿与不含该词的号主确认稿。忘记 v2 后原端检索为空，服务退出时剩余 HTTP 任务与连接均为 0。[机器输出、确认稿和跨端读回](owner-memory-voice-confirmation-20261119.json) |
+| 真实短片标题失败对照 | 同一画面的三份成品依次引用问句偏好 v2、语音确认的陈述句偏好 v3、零条偏好，标题均为「宫廷场景」。该轮语音原稿准确，独立设备读回 v3；两项有效偏好均未落实到标题。后续在成品交付前加入写作约定核对。[三版标题、来源修订与采样时点](owner-memory-clip-title-failure-20261119.json) |
 
 运行独立设备验收需可用的 SSH 客户端别名及对端 Python 3。设置普通网关连接后，`--live` 使用相同 BV、P2 和时间区间各创建一项任务，并输出前后两份实际成果以便检查文字。普通 token 也可为原生 Realtime 签发一次性票据。结构对照使用号主授权的隔离 QA 问句标题偏好，并以合成语音朗读改为陈述句的要求，`--voice-wav` 可指定获准发送的语音。每次回放在本地 tmp 下输出独立 result.json，分别记录最终转写与两份成果。
 
 ```sh
 uv run --locked python -m evaluations.owner_memory_device --device <ssh-alias> --live --voice-wav <speech.wav>
 uv run --locked python -m evaluations.owner_memory_device --device <ssh-alias> --live --gateway-checkout ../omni-avatar-api
+uv run --locked python -m evaluations.owner_memory_device --device <ssh-alias> --live --gateway-checkout ../omni-avatar-api --voice-only
 uv run --locked pytest -q tests/test_owner_memory_entries.py
 ```
 

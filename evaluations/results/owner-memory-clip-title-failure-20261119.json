@@ -1,0 +1,113 @@
+{
+  "goal": "请只读取 BV1Hy4y1J7xH P2 的 11 到 14 秒，用其中最接近 13.5 秒的已核实画面给我写一项私有直播文字提纲。交付标题、选用理由和覆盖缺口。有画面即可成稿，缺少字幕或音轨就标明。标题沿用已约定的写法，未约定时用末尾无标点的简短名词标题。先别发。",
+  "platform_writes": 0,
+  "semantic_status": "failed",
+  "reason": "Three actual titles identical despite changing the active writing preference and then withdrawing it.",
+  "versions": [
+    {
+      "phase": "before",
+      "titles": [
+        "宫廷场景"
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "revision": 2,
+          "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。"
+        }
+      ],
+      "frames": [
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 11.44,
+          "kind": "实际视频帧"
+        },
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 12.48,
+          "kind": "实际视频帧"
+        },
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 13.52,
+          "kind": "实际视频帧"
+        }
+      ]
+    },
+    {
+      "phase": "voice_corrected",
+      "titles": [
+        "宫廷场景"
+      ],
+      "citations": [
+        {
+          "id": 1,
+          "revision": 3,
+          "quote": "以后直播提纲的标题都用陈述句，以句号结尾。"
+        }
+      ],
+      "frames": [
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 11.44,
+          "kind": "实际视频帧"
+        },
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 12.48,
+          "kind": "实际视频帧"
+        },
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 13.52,
+          "kind": "实际视频帧"
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "titles": [
+        "宫廷场景"
+      ],
+      "citations": [],
+      "frames": [
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 11.44,
+          "kind": "实际视频帧"
+        },
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 12.48,
+          "kind": "实际视频帧"
+        },
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 13.52,
+          "kind": "实际视频帧"
+        }
+      ]
+    }
+  ],
+  "voice": {
+    "speaker": "synthetic Mandarin QA speech",
+    "native_user_final_events": 0,
+    "machine_text": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "owner_text": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "owner_edited": false
+  },
+  "teardown": {
+    "remaining_http_tasks": 0,
+    "open_connections": 0,
+    "server_exited": true
+  }
+}
