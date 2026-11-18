@@ -14,6 +14,13 @@ Chromium 在隔离工坊确认设置原话后，文字对话自动将问句标�
 
 这次对照证实了问句、句号和撤回后的无标点标题。第二版采用名词短语；完整主谓陈述句的生成质量仍需另行判读。
 
+合并回归通过 106 个 pytest 用例，覆盖私有编辑、视频交付、记忆来源、历史召回、通话及 Chromium 设置入口，另有 2 个前端单测通过。Chromium 回归将实际首次角色状态延迟到输入原话之后送达，核对焦点、原文和确认保存。可设置 `TUBER_TEST_CHROMIUM=1` 与 `CHROMIUM_EXECUTABLE` 后在仓库根目录运行：
+
+```sh
+uv run --locked pytest -q tests/test_private_editor_contract.py tests/test_owner_memory_entries.py tests/test_private_call.py tests/test_private_task_history.py tests/test_video_delivery.py tests/test_daily_memory_provenance.py tests/test_daily_memory_passive_recall.py tests/test_memory_sources.py
+node --test tests/web_personalization.test.cjs tests/web_private_call.test.cjs
+```
+
 ## 历次对照与回归
 
 Windows 上的 Chromium 156.0.8078.4 登录隔离工坊，在设置页预览并确认了号主提供的原文 “Group related points and separate distinct concerns. Use headings and lists when they improve readability.”。关闭页面后，另一台 ARM64 设备通过仅绑定回环的 SSH 转发访问同一个工坊。该设备首次未登录读取返回 401，独立登录后取得相同原文、设置来源及修订 1。该设备按修订号忘记这条偏好后，原设备检索为空。本次使用新建业务库，平台写入 0。
@@ -31,7 +38,7 @@ Windows 上的 Chromium 156.0.8078.4 登录隔离工坊，在设置页预览并�
 | 应用绑定约定后的真实复验（`c046fad`） | 三份实际标题仍为「宫廷场景」。问句和陈述句两版的检查记录都选中了条目 1，却生成 0 条格式检查，语义审稿也未要求改写。跨端来源和撤回事务通过，成品验收返回 false，退出时剩余 HTTP 任务和连接均为 0。对照文件的 `after_application_bound_review` 保存三份正文和同轮的审核数据。[逐版读回](owner-memory-clip-title-failure-20261119.json) |
 | 字面约定交付拦截（`a3c287d`） | 同一 P2 读取到 3 个带时点的真实画面。第一版修稿后仍未满足约定 #1 的 `items.0.title`，任务失败且没有可交付成果。这轮未进入语音或忘记阶段，关闭时没有遗留 HTTP 任务或连接。[失败消息与实际帧](owner-memory-clip-title-failure-20261119.json) |
 
-运行独立设备验收需可用的 SSH 客户端别名及对端 Python 3。设置普通网关连接后，`--live` 使用相同 BV、P2 和时间区间各创建一项任务，并输出前后两份实际成果以便检查文字。普通 token 也可为原生 Realtime 签发一次性票据。结构对照使用号主授权的隔离 QA 问句标题偏好，并以合成语音朗读改为陈述句的要求，`--voice-wav` 可指定获准发送的语音。每次回放在本地 tmp 下输出独立 result.json，分别记录最终转写与两份成果。
+运行独立设备验收需可用的 SSH 客户端别名及对端 Python 3。设置普通网关连接后，完整回放在文字约定、语音更正、忘记偏好三个阶段分别向同一 BV、P2 和时间区间交办任务。普通 token 可为原生 Realtime 签发一次性票据。结构对照使用号主授权的隔离 QA 问句标题偏好，并以合成语音朗读改为陈述句的要求，`--voice-wav` 可指定获准发送的语音。每次回放在本地 tmp 下输出独立 result.json，记录转写事件、号主确认的原话、各阶段实际交付及跨端读回。
 
 ```sh
 uv run --locked python -m evaluations.owner_memory_device --device <ssh-alias> --live --voice-wav <speech.wav>

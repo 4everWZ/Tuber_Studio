@@ -92,4 +92,19 @@ test("a slow memory summary survives poll ticks and is cancelled on close or sco
   reads[5].resolve(result(scope));
   await retry;
   assert.equal(load.hidden, true);
+
+  dialog.close();
+  panel.refresh();
+  await flush();
+  const statement = get("owner-memory-statement");
+  statement.value = "这是尚未确认的原话";
+  panel.refreshScope();
+  assert.equal(statement.disabled, true);
+  await flush();
+  assert.equal(statement.value, "这是尚未确认的原话");
+  scope = "third";
+  panel.refreshScope();
+  await flush();
+  assert.equal(statement.value, "");
+  assert.equal(statement.disabled, false);
 });

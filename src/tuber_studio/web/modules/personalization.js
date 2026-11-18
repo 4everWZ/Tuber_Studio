@@ -74,6 +74,7 @@ export function initPersonalization(model, api) {
   const organizerStatus = $("daily-memory-notice");
   const retryPreference = $("retry-memory-preference");
   let preference;
+  let pendingDraft;
   let report;
   let recentSignature;
   let recentScope;
@@ -101,6 +102,13 @@ export function initPersonalization(model, api) {
 
   function showPreference(value) {
     preference = value;
+    const statement = $("owner-memory-statement");
+    statement.disabled = !value.enabled;
+    $("owner-memory-save").inert = !value.enabled;
+    if (pendingDraft && pendingDraft.scope === value.scope && value.enabled && !statement.value) {
+      statement.value = pendingDraft.text;
+    }
+    pendingDraft = undefined;
     toggle.checked = value.enabled;
     historyToggle.checked = value.history_enabled !== false;
     historyToggle.disabled = savingPreference;
@@ -592,7 +600,10 @@ export function initPersonalization(model, api) {
   $("filter-memory").onchange = renderEntries;
   $("search-memory").oninput = renderEntries;
 
-  function resetScope() {
+  function resetScope(restoreSameScope = false) {
+    const statement = $("owner-memory-statement");
+    if (!restoreSameScope) pendingDraft = undefined;
+    else if (preference) pendingDraft = { scope: preference.scope, text: statement.value };
     scopeVersion++;
     readingPreference++;
     cancelReportLoad();
@@ -605,7 +616,9 @@ export function initPersonalization(model, api) {
     toggle.checked = false;
     historyToggle.disabled = true;
     historyToggle.checked = false;
-    $("owner-memory-statement").value = "";
+    statement.value = "";
+    statement.disabled = true;
+    $("owner-memory-save").inert = true;
     settingsStatus.textContent = "";
     preview.textContent = "正在读取…";
     recentList.replaceChildren();
@@ -621,7 +634,7 @@ export function initPersonalization(model, api) {
   }
 
   function refreshScope() {
-    resetScope();
+    resetScope(true);
     refresh();
   }
 

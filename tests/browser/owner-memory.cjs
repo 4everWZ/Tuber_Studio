@@ -13,6 +13,18 @@ async function test(browser, origin, mode) {
     route.continue() : route.abort());
   const page = await context.newPage();
   page.on("pageerror", error => console.error(error.message));
+  // Deliver the actual initial role status while the settings input has focus.
+  let releaseStatus;
+  const typing = new Promise(resolve => { releaseStatus = resolve; });
+  if (mode === "save") {
+    await page.routeWebSocket(url => url.pathname === "/ws/admin", socket => {
+      const server = socket.connectToServer();
+      server.onMessage(async message => {
+        if (JSON.parse(message).type === "status") await typing;
+        socket.send(message);
+      });
+    });
+  }
   await page.addInitScript(() => {
     navigator.mediaDevices.getUserMedia = async () => {
       const context = new AudioContext(), signal = context.createOscillator(), output = context.createMediaStreamDestination();
@@ -68,6 +80,12 @@ async function test(browser, origin, mode) {
     await dialog.accept();
   });
   await page.locator("#owner-memory-statement").fill(statement);
+  releaseStatus();
+  if (mode === "save") {
+    await page.waitForFunction(() => document.querySelector("#overview-queue").textContent.trim() === "0");
+    assert.equal(await page.locator("#owner-memory-statement").evaluate(input => input === document.activeElement), true);
+    assert.equal(await page.locator("#owner-memory-statement").inputValue(), statement);
+  }
   await page.getByRole("button", {name: "保存私有记忆"}).click();
   await page.locator("#owner-memory-save").getByText("已保存").waitFor();
   await page.locator("#open-memory-summary").click();

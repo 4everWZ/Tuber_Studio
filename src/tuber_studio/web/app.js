@@ -232,12 +232,16 @@ function connectAdmin() {
 }
 
 function renderStatus(status) {
+  const hadStatus = model.status != null;
   const previousCharacter = model.status?.character;
   renderWorkspaceStatus(model, status);
   if (previousCharacter?.id !== status.character?.id || previousCharacter?.name !== status.character?.name) {
     characterStudio?.refreshActivation();
   }
-  if (model.authenticated && previousCharacter?.id !== status.character?.id) personalization.refreshScope();
+  if (model.authenticated && previousCharacter?.id !== status.character?.id) {
+    if (hadStatus) personalization.refreshScope();
+    else personalization.refresh({ background: true });
+  }
   operatorChat.renderModel(status, model.settings);
   if (model.authenticated && model.page === "chat" && previousCharacter &&
       (previousCharacter.id !== status.character?.id || previousCharacter.version !== status.character?.version)) void operatorChat.refresh();
