@@ -7,7 +7,7 @@ from ..generation_meter import budgeted_call
 from ..models import StrictModel
 from ..store import dump
 from .owner_memory import MemoryUse, check_use, citation, correctable_preference, private_rows, read_stamp
-from .editor_contract import FormatCheck, review_preferences
+from .editor_contract import FormatCheck, literal_checks, review_preferences
 from .task_delivery import DelegationError
 
 
@@ -81,7 +81,9 @@ def connect_private_editor(runtime):
             selection = WritingSelection.model_validate(await generate(messages, schema, selection_use))
             if selection.applies:
                 notes[row["id"]] = row["anecdote"]
-                checks.extend((row["id"], check) for check in selection.checks)
+                bound_checks = literal_checks(row["anecdote"])
+                bound_checks.extend(check for check in selection.checks if check not in bound_checks)
+                checks.extend((row["id"], check) for check in bound_checks)
         rows = [r for r in candidates if r["id"] in notes or r["id"] in inherited]
         if not rows:
             return await editor(request, evidence)
@@ -98,12 +100,16 @@ def connect_private_editor(runtime):
                 return await review_preferences(task["goal"], notes, checks, draft,
                                                 lambda messages,schema: generate(messages,schema,use), locked)
             if issues := await verify(product):
-                repair = private_plan | {"editor_draft":product.model_dump(), "editor_issues":issues,
+                instructions = {path:"保留事实、证据和选材，按号主约定改写：" + "；".join(notes[k] for k in ids)
+                                for path,ids in issues.items()}
+                repair = private_plan | {"editor_draft":product.model_dump(), "editor_issues":instructions,
                                          "frame_reviews":product._frame_reviews}
                 product = await editor(request | {"plan":repair}, evidence)
                 check_use(runtime, use)
-                if await verify(product):
-                    raise DelegationError("成品仍有字段未满足本轮选定的号主写作约定，尚未交付。")
+                if remaining := await verify(product):
+                    diagnostics = "；".join(f"{path}（约定 " + "、".join(f"#{k}" for k in ids) + "）"
+                                           for path,ids in remaining.items())
+                    raise DelegationError("成品仍未满足本轮写作约定：" + diagnostics + "。尚未交付。")
             plan["editor_memory"]["review"] = {"preference_ids":list(notes), "format_checks":len(checks),
                                                "repaired_fields":sorted(issues)}
             return product

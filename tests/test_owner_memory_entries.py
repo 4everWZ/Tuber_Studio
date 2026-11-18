@@ -192,14 +192,14 @@ async def test_chromium_owner_controls(settings, monkeypatch, mode):
             await app.state.comments.adapter.close()
             app.state.store.close()
 
-@pytest.mark.parametrize("withdraw_during_edit", [False, True])
-async def test_private_video_editor_reads_preferences_only_after_research(owner, monkeypatch, withdraw_during_edit):
+@pytest.mark.parametrize("scenario", ["corrected", "withdrawn", "still_invalid"])
+async def test_private_video_editor_reads_preferences_only_after_research(owner, monkeypatch, scenario):
     from types import SimpleNamespace
     from tuber_studio.agent import public_video
 
     client, state = owner
     tasks = state.runtime.tasks
-    note = "以后写视频提纲，请让每个开场标题都用一个问题。"
+    note = "以后写视频提纲，每个标题都用问句，以问号结尾。"
     turn = str(uuid4())
     (await client.post(CHAT, json={"request_id": turn, "message": note, "intent": {"action": "chat"}})).raise_for_status()
     body = {"source":"turn", "turn_id": turn, "text":note}
@@ -260,14 +260,15 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
         if "delivery_fields" in packet:
             assert packet["writing_preference"] == note
             title = packet["delivery_fields"]["items.0.title"]
-            return {"violations":[] if title == "椅子放在哪里？" else ["items.0.title"]}
+            # Some real reviews accepted a noun label and omitted the explicit punctuation check.
+            return {"violations":[] if scenario == "still_invalid" or title == "椅子放在哪里？" else ["items.0.title"]}
         if "writing_preference" in packet:
             assert packet["writing_preference"] == note
             return {"applies":True, "checks":[]}
         if "issues" in packet:
             assert set(packet["issues"]) == {"items.0.title"} and note in packet["issues"]["items.0.title"]
             repairs.append(packet["draft"]["items"][0]["title"])
-            return {"items.0.title":"椅子放在哪里？"}
+            return {"items.0.title":"椅子" if scenario == "still_invalid" else "椅子放在哪里？"}
         if "candidate" in packet:
             prefs = packet.get("owner_writing_preferences", [])
             assert isinstance(packet["candidate"]["items"], list)
@@ -275,7 +276,7 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
             seen.append(prefs)
             if not prefs:
                 assert "椅子放在哪里？" not in json.dumps(packet, ensure_ascii=False)
-            if withdraw_during_edit:
+            if scenario == "withdrawn":
                 (await client.delete(f"/api/daily-memory/organized/{item}")).raise_for_status()
             return {"items":[{"title":"画面中的椅子",
                               "sources":frames[-1:], "primary_frame":frames[-1],"rationale":"用椅子的位置聊构图。"}],"gaps":[]}
@@ -297,8 +298,10 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
 
     first = await edition()
     assert reads and seen == [[note]]
-    if withdraw_during_edit:
+    if scenario in {"withdrawn","still_invalid"}:
         assert first["status"] == "failed" and first["artifact"] is None
+        if scenario == "still_invalid":
+            assert repairs == ["画面中的椅子"] and "写作约定" in first["message"]
         return
     assert first["status"] == "completed" and "椅子放在哪里？" in first["artifact"]["body"]
     assert repairs == ["画面中的椅子"]
