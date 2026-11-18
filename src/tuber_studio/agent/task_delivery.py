@@ -362,6 +362,8 @@ def evidence_index(steps):
                 evidence[step["id"]] = " · ".join(line for line in lines if line)
                 if tool == "web_page":
                     evidence.read_pages.add(result["url"])
+                    if credits := _text(result.get("programme_credits")):
+                        evidence.video_byline[step["id"]] = f"{credits} {_source(result['url'])}"
                     if result.get("source_kind") == "bilibili_public_metadata":
                         # The adapter keeps its public byline and part metadata before the synopsis field.
                         header, marker, _ = result["excerpt"].partition(" 秒。投稿简介：")

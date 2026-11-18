@@ -2,6 +2,7 @@ import httpx
 import pytest
 
 from tuber_studio.agent import public_sources
+from tuber_studio.agent.task_delivery import evidence_index
 from tuber_studio.web_fetch import read_excerpt
 
 
@@ -33,7 +34,13 @@ async def test_programme_credits_are_literal_fields_on_cctv_only():
     </script><p>选集</p>"""
     async def excerpt(host):
         response = httpx.Response(200, headers={"content-type": "text/html"}, content=body.encode())
-        return (await read_excerpt(httpx.URL(f"https://{host}/v/album.html"), response))["excerpt"]
+        return await read_excerpt(httpx.URL(f"https://{host}/v/album.html"), response)
 
-    assert await excerpt("tv.cctv.com") == "节目名：节目名 导演：导演甲 选集"
-    assert await excerpt("example.org") == "选集"
+    programme = await excerpt("tv.cctv.com")
+    assert programme["excerpt"] == "节目名：节目名 导演：导演甲 选集"
+    assert programme["programme_credits"] == "节目名：节目名；导演：导演甲"
+    sources = evidence_index([{"id": "read", "tool": "web_page", "result": programme}])
+    assert sources.display_source("read") == "节目名：节目名；导演：导演甲 <https://tv.cctv.com/v/album.html>"
+    other_page = await excerpt("example.org")
+    assert other_page["excerpt"] == "选集"
+    assert "programme_credits" not in other_page

@@ -224,13 +224,19 @@ class CCTVProgramPage(PageText):
 
     fields = {"video_album_title": "节目名", "play_director": "导演"}
 
+    def __init__(self):
+        super().__init__()
+        self.credits = {}
+
     def handle_data(self, data):
         if self.hidden == ["script"]:
             for key, value in re.findall(
                 r"(?m)^\s*var[ \t]+(video_album_title|play_director)[ \t]*=[ \t]*'([^'\\\r\n<>]{1,160})'[ \t]*;",
                 data,
             ):
-                self.body.append(f"{self.fields[key]}：{value.strip()}")
+                if value.strip():
+                    self.credits[key] = value.strip()
+                    self.body.append(f"{self.fields[key]}：{value.strip()}")
         super().handle_data(data)
 
 
@@ -332,16 +338,21 @@ async def read_excerpt(url, response):
             break
     content = raw.decode(response.encoding or "utf-8", errors="replace")
     title = ""
+    metadata = {}
     if "html" in media:
         is_cctv_program = url.host == "tv.cctv.com" and url.path.startswith("/v/")
         page = CCTVProgramPage() if is_cctv_program else PageText()
         page.feed(content)
         page.close()
         title, content = " ".join(page.title), " ".join(page.body)
+        if isinstance(page, CCTVProgramPage) and page.credits:
+            metadata["programme_credits"] = "；".join(
+                f"{label}：{page.credits[key]}" for key, label in page.fields.items() if key in page.credits)
     content = " ".join(content.split())
     if not content:
         raise ValueError("网页没有返回可读文本")
     return {
+        **metadata,
         "url": str(url),
         "title": title[:120],
         "excerpt": content[:MAX_EXCERPT],
