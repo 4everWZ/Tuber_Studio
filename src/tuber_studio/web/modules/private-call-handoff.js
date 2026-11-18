@@ -33,8 +33,9 @@ export class FinalUtterances {
   }
 }
 
-export function showHandoff(root, text, call = {}) {
+export function showHandoff(root, text, call = {}, source = "") {
   const row = document.createElement("div");
+  if (source) row.append(document.createTextNode(source));
   const quote = document.createElement("blockquote");
   quote.textContent = text;
   row.append(quote);

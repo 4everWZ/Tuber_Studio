@@ -160,7 +160,7 @@ async def test_private_child_memory_functions_and_mid_delivery_withdrawal(owner)
 
 
 @pytest.mark.skipif(not os.getenv("TUBER_TEST_CHROMIUM"), reason="requires local Playwright and Chromium")
-@pytest.mark.parametrize("mode", ["save", "correct"])
+@pytest.mark.parametrize("mode", ["save", "correct", "selected"])
 async def test_chromium_owner_controls(settings, monkeypatch, mode):
     app = create_app(settings)
 
@@ -250,6 +250,11 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
     tasks.responses_client = lambda: planner
     seen = []
     async def editor(messages, schema, **kwargs):
+        if schema.get("title") == "ClipBrief":
+            assert messages[-1]["content"] == tasks.current(task_id)["goal"]
+            assert note not in str(messages)
+            return {"requested_count": None, "usage": "根据画面写私有文字提纲",
+                    "playable": False, "trace_origin": False, "clip_seconds": None}
         packet = json.loads(messages[-1]["content"])
         if "options" in packet:
             assert packet["options"] == [{"id":item,"note":note}]

@@ -5,6 +5,7 @@ import { guardCall } from "./private-call-guard.js";
 import { CallAvatar } from "./private-call-avatar.js";
 import { citations } from "./owner-memory.js";
 import { FinalUtterances, showHandoff } from "./private-call-handoff.js";
+import { selectUtterance } from "./private-call-transcription.js";
 
 const byId = id => document.getElementById(id);
 const open = byId("private-call-open"), dialog = byId("private-call-dialog");
@@ -41,6 +42,7 @@ new MutationObserver(check).observe(menu, {attributes: true, attributeFilter: ["
 function finish(call, message) {
   if (call !== current || !call) return;
   current = null;
+  call.selection?.close();
   cancelAnimationFrame(call.frame);
   avatar.draw(false);
   mute.hidden = true;
@@ -89,6 +91,7 @@ async function capture(call, identity) {
     if (call.socket.bufferedAmount > 128000) { finish(call, "网络积压，通话已结束"); return; }
     const audio = btoa(String.fromCharCode(...new Uint8Array(data)));
     call.send({type: "input_audio_buffer.append", format: "pcm16", sample_rate_hz: 16000, audio});
+    call.selection?.afterChunk();
     // Seal after the next whole capture unit so the last syllables reach the gateway.
     if (call.commitNextChunk) {
       call.commitNextChunk = false;
@@ -151,6 +154,7 @@ async function begin(previous = null) {
     }
     const url = new URL(config.socket);
     url.search = new URLSearchParams({ticket: config.ticket, duplex: "1", autostart: "0"});
+    if (!ephemeral) url.searchParams.set("input_transcription", "explicit");
     call.playback = portraitPlayback(call, url) ||
       new PrivatePlayback(call.context, event => call.send(event));
     if (previous?.muted) {
@@ -188,7 +192,14 @@ async function begin(previous = null) {
           call.receipts = setInterval(() => call.playback.acknowledge(), 200);
           call.heartbeat = setInterval(() => call.send({type: "session.heartbeat"}), 20000);
           await capture(call, config.character);
+          const selection = caps.gateway_input_transcription;
+          if (!ephemeral && current === call && selection?.mode === "explicit_once" &&
+              selection.sample_rate_hz === 16000 && selection.max_seconds === 15) {
+            call.selection = selectUtterance(byId("private-call-transcribe"), byId("private-call-transcribe-state"),
+              e => call.send(e), text => showHandoff(byId("private-call-utterances"), text, config, "所选录音的转写，请核对原话"));
+          }
         } else if (call.stream) {
+          call.selection?.event(event);
           const text = call.utterances.accept(event);
           if (text && !ephemeral) showHandoff(byId("private-call-utterances"), text, config);
           if (config.memory_use && ["response.audio.delta", "response.output_audio.delta"].includes(event.type)) {

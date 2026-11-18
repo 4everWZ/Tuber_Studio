@@ -4,7 +4,8 @@ const { chromium } = require(require.resolve("playwright", {
   paths: [__dirname, path.join(path.dirname(process.execPath), "node_modules/@playwright/cli")],
 }));
 
-async function test(browser, origin, correction) {
+async function test(browser, origin, mode) {
+  const selected = mode === "selected", correction = selected || mode === "correct";
   assert.equal(new URL(origin).hostname, "127.0.0.1");
   const context = await browser.newContext({serviceWorkers: "block"});
   await context.route("**/*", route => new URL(route.request().url()).origin === origin ?
@@ -35,8 +36,18 @@ async function test(browser, origin, correction) {
           if (correction) assert.ok(event.session.instructions.includes(voiceNote));
           renewed();
         }
-        send({type: "session.created", session: {capabilities: {implementation_level: "model_native_duplex"}}});
-      } else if (!sentTranscript && event.type === "input_audio_buffer.append") {
+        send({type: "session.created", session: {capabilities: {implementation_level: "model_native_duplex",
+          ...(selected ? {gateway_input_transcription: {mode:"explicit_once", sample_rate_hz:16000, max_seconds:15}} : {})}}});
+      } else if (selected && event.type === "gateway.input_transcription.start") {
+        send({type:"gateway.input_transcription.started", capture_id:"selected-slice"});
+      } else if (selected && event.type === "gateway.input_transcription.finish") {
+        assert.equal(event.capture_id, "selected-slice");
+        const reply = {type:"gateway.input_transcription.completed", capture_id:event.capture_id,
+          samples:16000, transcript:voiceNote, source:"explicit_user_audio"};
+        send({...reply, capture_id:"other-slice", transcript:"错误录音"});
+        send({...reply, source:"assistant", transcript:"助手的回复"});
+        send(reply); send(reply);
+      } else if (!selected && !sentTranscript && event.type === "input_audio_buffer.append") {
         sentTranscript = true;
         send({type: "conversation.item.created", item: {id: "mic", role: "user", type: "message",
           content: [{type: "input_audio"}]}});
@@ -90,6 +101,17 @@ async function test(browser, origin, correction) {
   const originalRow = (await original.json()).items[0];
   await page.locator("#private-call-topic").fill(correction ? originalRow.source_key : statement);
   await page.locator("#private-call-start").click();
+  if (selected) {
+    const start = page.getByRole("button", {name:"转认下一句"});
+    await start.waitFor();
+    assert.equal(await page.getByRole("button",{name:"将这句话交办"}).count(), 0);
+    await start.click();
+    await page.getByRole("button",{name:"结束并转认这句"}).click();
+    await page.locator("#private-call-utterances blockquote").filter({hasText:voiceNote}).waitFor();
+    assert.deepEqual(await page.locator("#private-call-utterances blockquote").allTextContents(), [voiceNote]);
+    assert.equal((await (await other.request.post(origin+"/api/agent/memory.get", {data:{id:originalRow.id}})).json()).revision,
+      originalRow.revision);
+  }
   if (correction) {
     const selector = page.getByLabel("更正本次引用的偏好");
     await selector.selectOption(String(originalRow.id));
@@ -135,5 +157,5 @@ async function test(browser, origin, correction) {
   const browser = await chromium.launch({executablePath: process.env.CHROMIUM_EXECUTABLE || undefined,
     args: ["--disable-background-networking", "--use-fake-device-for-media-stream", "--autoplay-policy=no-user-gesture-required",
       "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"]});
-  try { await test(browser, process.argv[2], process.argv[3] === "correct"); } finally { await browser.close(); }
+  try { await test(browser, process.argv[2], process.argv[3]); } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
