@@ -111,7 +111,8 @@ async def test_anchored_question_candidate_must_ask_for_a_visible_answer():
     assert options["chosen"] == "左侧的台灯是什么颜色？"
 
 
-async def test_verified_title_goes_verbatim_to_the_final_image_review(runtime, store, monkeypatch, reviewed_window):
+@pytest.mark.parametrize("reject", [False, True])
+async def test_verified_title_goes_verbatim_to_the_final_image_review(runtime, store, monkeypatch, reviewed_window, reject):
     from tuber_studio.agent import task_tools
     from tuber_studio.agent.task_delivery import evidence_index
     from tuber_studio.agent.title_form import verified_title_fields
@@ -143,10 +144,18 @@ async def test_verified_title_goes_verbatim_to_the_final_image_review(runtime, s
             return {"requested_count":1, "usage":"解释画面", "playable":True, "trace_origin":False}
         assert "field_basis" in props and title in str(messages[-1]["content"])
         audited.append(title)
+        if reject:
+            return {"supported":False, "issues":[{"field":"items.0.title", "quote":title, "reason":"引用未支持该断言"}]}
         return {"supported":True, "issues":[], "field_basis":{
             "items.0."+name:{"source":"read:1","observation":fact,"claim":"有来源的事实"} for name in ("title","rationale")}}
     monkeypatch.setattr(task_tools, "clip_review_image", image)
     monkeypatch.setattr(task_tools, "review_work_claims", claims)
     monkeypatch.setattr(runtime.llm, "generate_json", omni)
-    result = await task_tools.create_task_runtime(runtime, store, None).edit_delivery(task, evidence)
+    editor = task_tools.create_task_runtime(runtime, store, None).edit_delivery
+    if reject:
+        with pytest.raises(DelegationError, match="核对未通过"):
+            await editor(task, evidence)
+        assert audited
+        return
+    result = await editor(task, evidence)
     assert audited and result.items[0].title == title
