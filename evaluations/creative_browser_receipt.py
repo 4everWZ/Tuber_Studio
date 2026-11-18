@@ -227,6 +227,16 @@ def verify(directory: Path, bvid: str, part: int):
         )
         if browser.get("schema") == 1:
             require(browser.get("changeTurn") == turns[1]["request_id"], "设备 B 消息与持久改口回执不符")
+            side = browser.get("sideChat") or {}
+            saved_chat = db.execute(
+                "SELECT message, result FROM operator_chat_turns WHERE request_id=?",
+                (side.get("turn"),),
+            ).fetchone()
+            require(
+                saved_chat and saved_chat["message"] == side.get("message") == CHAT
+                and json.loads(saved_chat["result"] or "{}").get("memory_intent") == "chat",
+                "设备 A 的闲聊没有按普通对话结算",
+            )
         for row, intent in zip(turns, ["agent_task", "steer_task"], strict=True):
             result = json.loads(row["result"])
             require(

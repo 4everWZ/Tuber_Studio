@@ -284,6 +284,8 @@ async def exercise(origin, directory, args):
             }
             write(directory / "browser.json", report)
             require(await turn.get_by_role("button", name="查看任务").count() == 0, "闲聊被识别为交办")
+            after_chat = await page.request.get(f"{origin}/api/agent/tasks/{task}")
+            require(after_chat.ok and (await after_chat.json())["revision"] == 1, "闲聊改变了原任务的要求")
         async with device(pw.chromium, origin, args) as page:
             report["secondBrowserProcess"] = True
             phase("restore in B")
