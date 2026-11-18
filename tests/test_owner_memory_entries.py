@@ -274,7 +274,9 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
             return {"violations":[] if statement or scenario == "still_invalid" or title == good_title else ["items.0.title"]}
         if "writing_preference" in packet:
             assert packet["writing_preference"] == note
-            return {"applies":True, "checks":[]}
+            return {"applies":True, "checks":[{"field":"title","operation":"contains","value":"独家"},
+                                             {"field":"title","operation":"max_chars","value":"1"},
+                                             {"field":"title","operation":"starts_with","value":"开场"}]}
         if "issues" in packet:
             assert set(packet["issues"]) == {"items.0.title"} and note in packet["issues"]["items.0.title"]
             repairs.append(packet["draft"]["items"][0]["title"])
@@ -322,6 +324,12 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
 
     first = await edition()
     assert reads and seen == [[note]]
+    if scenario != "withdrawn":
+        rule, = audits[-1]["format_rules"]
+        assert rule["quote"] == note[rule["start"]:rule["end"]]
+        assert rule["check"] == {"field":"title","operation":"ends_with","value":"。" if statement else "？"}
+        assert {x["suggested"]["operation"] for x in audits[-1]["discarded_format_suggestions"]} == {
+            "contains","max_chars","starts_with"}
     if scenario in {"withdrawn","still_invalid","label_with_period"}:
         assert first["status"] == "failed" and first["artifact"] is None
         if scenario != "withdrawn":

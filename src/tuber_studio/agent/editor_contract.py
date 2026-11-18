@@ -14,38 +14,67 @@ from .task_delivery import DelegationError, editorial_fields
 _PUNCTUATION = {"问号":"？", "句号":"。", "感叹号":"！", "叹号":"！", "冒号":"：", "逗号":"，",
                 "分号":"；", "顿号":"、", "省略号":"……", "破折号":"——"}
 _FIELD = {"标题":"title", "理由":"rationale", "缺口":"gap"}
-_LITERAL = r'(?:「([^」]+)」|“([^”]+)”|"([^"]+)"|(' + "|".join(_PUNCTUATION) + r'))'
+_LITERAL = r'(?:「([^」]+)」|“([^”]+)”|"([^"]+)"|(' + "|".join(_PUNCTUATION) + r'|[？?。.!！：:，,；;、]))'
 _BOUNDARY = re.compile(r"(?:以|用)" + _LITERAL + r"(?:作为)?(开头|前缀|结尾|收尾|后缀)")
 _CONTAINS = re.compile(r"(?:须|必须|要)?(?:包含|含有)" + _LITERAL)
 _LENGTH = re.compile(r"(最多|不超过|至少|不少于)\s*([1-9]\d*)\s*(?:个)?(?:字|字符)")
 
 
-def literal_checks(note):
-    """Read unconditional, explicitly named field literals. Leave conditional prose to the editor."""
-    checks = []
-    for sentence in re.split(r"(?<=[。！？；;])(?!(?:」|”|\"))|\n", note):
-        if re.search(r"若|如果|除非|仅当|只有|有时|偶尔|尽量|可以|可选|第[一二三四五六七八九十\d]+|否则|不要|不必|不得|禁止|不能|不以|不用|或", sentence):
+_QUOTED = r'「[^」]*」|“[^”]*”|"[^"]*"'
+_SPLIT = re.compile(_QUOTED + r"|[，,。！？；;\n]")
+_MODIFIERS = re.compile(r"(?:都|均|一律|统一|全部|须|需|必须|请|应当|应该|应|一定|要|文字|字数|长度|的|格式|\s)*")
+_CONDITIONAL = re.compile(r"若|如果|除非|仅当|只有|有时|偶尔|尽量|可以|可选|第[一二三四五六七八九十\d]+|否则|不要|不必|不得|禁止|不能|不以|不用|不要求|不需要|是否|能否|或者|或")
+_FIELD_NAME = re.compile("|".join(_FIELD))
+
+
+def spans(text, delimiters):
+    start = 0
+    for match in _SPLIT.finditer(text):
+        if match[0] in delimiters and not (match.start() and text[match.start()-1] in "以用"
+                and re.match(r"(?:作为)?(?:结尾|开头|收尾|前缀|后缀)", text[match.end():])):
+            yield start, match.start()
+            start = match.end()
+    yield start, len(text)
+
+
+def literal_evidence(note):
+    """Bind each executable check to a named field and a directive in the owner's own text."""
+    bindings = []
+    for begin, end in spans(note, "。！？；;\n"):
+        sentence = note[begin:end]
+        if _CONDITIONAL.search(re.sub(_QUOTED, "", sentence)):
             continue
         field = None
-        for clause in re.split(r"[，,]", sentence):
-            named = [value for label,value in _FIELD.items() if label in clause]
+        for offset, stop in spans(sentence, "，,"):
+            clause = sentence[offset:stop]
+            bare = re.sub(_QUOTED, lambda m: " " * len(m[0]), clause)
+            named = list(_FIELD_NAME.finditer(bare))
             if named:
-                field = named[0] if len(named) == 1 else None
+                field = _FIELD[named[0][0]] if len(named) == 1 else None
+                field_start = begin + offset + named[0].start()
             if not field:
                 continue
-            for match in _BOUNDARY.finditer(clause):
-                literal = next(v for v in match.groups()[:-1] if v is not None)
-                if match.group(4):
-                    literal = _PUNCTUATION[literal]
-                op = "starts_with" if match.group(5) in {"开头","前缀"} else "ends_with"
-                checks.append(FormatCheck(field=field, operation=op, value=literal))
-            for match in _CONTAINS.finditer(clause):
-                literal = next(v for v in match.groups() if v is not None)
-                checks.append(FormatCheck(field=field, operation="contains", value=_PUNCTUATION[literal] if match.group(4) else literal))
-            for match in _LENGTH.finditer(clause):
-                op = "max_chars" if match.group(1) in {"最多","不超过"} else "min_chars"
-                checks.append(FormatCheck(field=field, operation=op, value=match.group(2)))
-    return checks
+            for pattern in (_BOUNDARY, _CONTAINS, _LENGTH):
+                for match in pattern.finditer(clause):
+                    prefix = clause[named[0].end() if named else 0:match.start()]
+                    if not _MODIFIERS.fullmatch(prefix) or (named and match.start() < named[0].end()):
+                        continue
+                    if pattern is _LENGTH:
+                        op = "max_chars" if match[1] in {"最多","不超过"} else "min_chars"
+                        value = match[2]
+                    else:
+                        value = next(v for v in match.groups()[:4] if v is not None)
+                        value = _PUNCTUATION.get(value, value) if match[4] else value
+                        op = "contains" if pattern is _CONTAINS else (
+                            "starts_with" if match[5] in {"开头","前缀"} else "ends_with")
+                    finish = begin + offset + match.end()
+                    bindings.append({"check":FormatCheck(field=field, operation=op, value=value),
+                                     "start":field_start, "end":finish, "quote":note[field_start:finish]})
+    return bindings
+
+
+def literal_checks(note):
+    return [binding["check"] for binding in literal_evidence(note)]
 
 
 class FormatCheck(StrictModel):

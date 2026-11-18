@@ -7,7 +7,7 @@ from ..generation_meter import budgeted_call
 from ..models import StrictModel
 from ..store import dump
 from .owner_memory import MemoryUse, check_use, citation, correctable_preference, private_rows, read_stamp
-from .editor_contract import FormatCheck, literal_checks, review_preferences
+from .editor_contract import FormatCheck, literal_evidence, review_preferences
 from .task_delivery import DelegationError
 from .title_form import RequestedTitleForm, explicit_title_form, form_instruction, frame_observations, grounded_options, meets_form, read_title
 
@@ -78,18 +78,29 @@ def connect_private_editor(runtime):
                 check_use(runtime, use)
                 return result
         notes, checks, forms = {}, [], {}
+        format_rules, discarded = [], []
         for row in candidates:
+            edited = row["proof"].get("owner_edit_at", 0) > row["source"]["at"]
+            owner_text = row["anecdote"] if edited else row["quote"]
             messages = [{"role":"system","content":instruction},
                         {"role":"user","content":dump({"goal":task["goal"], "writing_preference":row["anecdote"],
-                                                       "owner_quote":row["quote"]})}]
+                                                       "owner_quote":owner_text})}]
             selection = WritingSelection.model_validate(await generate(messages, schema, selection_use))
             if selection.applies:
-                notes[row["id"]] = row["anecdote"]
-                if form := explicit_title_form(row["quote"]) or selection.title_form:
+                notes[row["id"]] = owner_text
+                if form := explicit_title_form(owner_text) or selection.title_form:
                     forms[row["id"]] = form
-                bound_checks = literal_checks(row["anecdote"])
-                bound_checks.extend(check for check in selection.checks if check not in bound_checks)
-                checks.extend((row["id"], check) for check in bound_checks)
+                bindings = literal_evidence(owner_text)
+                source = {"id":row["id"], "revision":row["revision"],
+                          "source":"owner_edit" if edited else row["source"]["key"]}
+                for binding in bindings:
+                    check = binding["check"]
+                    if (row["id"], check) not in checks:
+                        checks.append((row["id"], check))
+                    format_rules.append(source | binding | {"check":check.model_dump()})
+                for proposed in selection.checks:
+                    if not any(b["check"] == proposed for b in bindings):
+                        discarded.append(source | {"suggested":proposed.model_dump(), "reason":"号主原文没有可核对的字段、操作与值跨度"})
         rows = [r for r in candidates if r["id"] in notes or r["id"] in inherited]
         if not rows:
             return await editor(request, evidence)
@@ -107,7 +118,8 @@ def connect_private_editor(runtime):
             async def call(messages, schema):
                 return await generate(messages, schema, use)
 
-            audit = {"preference_ids":list(notes), "format_checks":len(checks), "attempts":[], "alternatives":{}}
+            audit = {"preference_ids":list(notes), "format_checks":len(checks), "format_rules":format_rules,
+                     "discarded_format_suggestions":discarded, "attempts":[], "alternatives":{}}
             plan["editor_memory"]["review"] = audit
             async def verify(draft):
                 readings = {}

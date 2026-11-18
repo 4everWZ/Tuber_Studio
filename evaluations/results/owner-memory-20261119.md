@@ -23,6 +23,8 @@ node --test tests/web_personalization.test.cjs tests/web_private_call.test.cjs
 
 ## 历次对照与回归
 
+`7flk5nyj` 的取材回执齐全，后台在提交候选前报告预算不足。旧回执未细分准入与输出耗尽。`ke4w4yf5` 的普通模型端点实报 262,144 token 窗口，两轮 Responses 分别使用 1,236／235 及 2,481／790 个输入／输出 token，均为 HTTP 200 completed。初版修稿「为什么画面中央的宝座是醒目的金色？」被判为有画面依据的问句，旧字面检查仍拒绝它。旧审查执行了四项规则，原话只支持标题以问号结尾。重判时两稿均满足该后缀；当时未记录其余三项的内容。现行检查记录原话跨度、授权修订及无依据建议，逐项区分句式、标点和画面依据。[实际拒稿、候选与预算回执](owner-memory-title-review-rejection-20261119.json)
+
 分开审查句式后，第一次重新联网取材取得 CID 301983263 的 P2 三帧，初版因 `gaps.0 引用未支持该断言` 未交付（`ekd1g4j1`）。第二次复用封存的 11–14 秒原片及取材回执，解码得到 75 帧；首版标题修正后仍被约定 #1 拦截（`nsubsfsg`）。该轮只记录了失败字段，无法从回执还原被拒的两个标题。两轮都未进入语音阶段，不参与三版语义对照。
 
 Windows 上的 Chromium 156.0.8078.4 登录隔离工坊，在设置页预览并确认了号主提供的原文 “Group related points and separate distinct concerns. Use headings and lists when they improve readability.”。关闭页面后，另一台 ARM64 设备通过仅绑定回环的 SSH 转发访问同一个工坊。该设备首次未登录读取返回 401，独立登录后取得相同原文、设置来源及修订 1。该设备按修订号忘记这条偏好后，原设备检索为空。本次使用新建业务库，平台写入 0。

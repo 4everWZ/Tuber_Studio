@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from tuber_studio.agent.editor_contract import FormatCheck, literal_checks, review_preferences
+from tuber_studio.agent.editor_contract import FormatCheck, literal_checks, literal_evidence, review_preferences
 from tuber_studio.agent.task_delivery import DelegationError, PrivateDelivery
 
 
@@ -37,9 +37,14 @@ def test_private_punctuation_and_codepoint_length_checks():
     ("缺口须包含“待核实”。", [("gap","contains","待核实")]),
     ("如果是开播预告，标题可以以问号结尾。", []),
     ("第二个标题以问号结尾。", []), ("标题不要以问号结尾。", []),
+    ("标题讨论以问号结尾的商标。", []), ("标题不要求包含“独家”。", []),
+    ("标题以？结尾。", [("title","ends_with","？")]),
+    ("标题以「甲，乙」开头。", [("title","starts_with","甲，乙")]),
 ])
 def test_unambiguous_owner_field_literals(note, expected):
     assert [(c.field,c.operation,c.value) for c in literal_checks(note)] == expected
+    for binding in literal_evidence(note):
+        assert binding["quote"] == note[binding["start"]:binding["end"]]
 
 
 @pytest.mark.parametrize(("phase","title","form","core","observation","punctuation","passed"), [

@@ -1,0 +1,150 @@
+{
+  "run": "ke4w4yf5",
+  "material_origin": {
+    "mode": "reused_verified_public_read",
+    "task_id": "06b1ee8d-40f4-4756-8ca0-e91bd68f34bc",
+    "step_id": "840ec0bf-e632-5856-a442-1b7045296a31",
+    "selection": {
+      "bvid": "BV1Hy4y1J7xH",
+      "ranges": [
+        {
+          "part": 2,
+          "start": 11,
+          "end": 14
+        }
+      ]
+    },
+    "cid": "301983263",
+    "clip_frames": 75
+  },
+  "status": "withheld_before_voice",
+  "scope": "private QA diagnosis of an incorrect formatting gate",
+  "owner_quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+  "attempts": [
+    {
+      "title": "画面中央是一个装饰华丽的金色宝座，为什么它的颜色如此醒目？",
+      "original_reading": "陈述句",
+      "predicate_or_question_core": "它的颜色如此醒目",
+      "grounded_in": "画面中央是一个装饰华丽的金色宝座",
+      "original_literal_checks_passed": false,
+      "actual_owner_suffix_passed": true
+    },
+    {
+      "title": "为什么画面中央的宝座是醒目的金色？",
+      "original_reading": "问句",
+      "predicate_or_question_core": "为什么画面中央的宝座是醒目的金色",
+      "grounded_in": "画面中央是一个装饰华丽的金色宝座",
+      "original_literal_checks_passed": false,
+      "actual_owner_suffix_passed": true
+    }
+  ],
+  "original_executed_rule_count": 4,
+  "original_rule_list_recorded": false,
+  "verified_literal_rules": [
+    {
+      "check": {
+        "field": "title",
+        "operation": "ends_with",
+        "value": "？"
+      },
+      "start": 12,
+      "end": 24,
+      "quote": "标题都用问句，以问号结尾"
+    }
+  ],
+  "old_candidates": {
+    "fact": "画面中央是一个装饰华丽的金色宝座",
+    "candidates": [
+      {
+        "title": "画面中央是一个装饰华丽的金色宝座，这是什么场景？",
+        "literal_checks_passed": false,
+        "reading": null
+      },
+      {
+        "title": "画面中央是一个装饰华丽的金色宝座，这是谁的宝座？",
+        "literal_checks_passed": false,
+        "reading": null
+      },
+      {
+        "title": "画面中央是一个装饰华丽的金色宝座，这是哪里的宝座？",
+        "literal_checks_passed": false,
+        "reading": null
+      }
+    ],
+    "chosen": null
+  },
+  "responses_capacity": {
+    "id": "llm-default",
+    "max_model_len": 262144
+  },
+  "responses_receipts": [
+    {
+      "requested_output_tokens": 4096,
+      "model": "llm-default",
+      "input_bytes": 1835,
+      "tools_bytes": 1866,
+      "tool_names": [
+        "inspect_video",
+        "submit_materials",
+        "ask_owner"
+      ],
+      "http_status": 200,
+      "status": "completed",
+      "incomplete_details": null,
+      "usage": {
+        "input_tokens": 1236,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "input_tokens_per_turn": [],
+          "cached_tokens_per_turn": []
+        },
+        "output_tokens": 235,
+        "output_tokens_details": {
+          "reasoning_tokens": 162,
+          "tool_output_tokens": 0,
+          "output_tokens_per_turn": [],
+          "tool_output_tokens_per_turn": []
+        },
+        "total_tokens": 1471
+      }
+    },
+    {
+      "requested_output_tokens": 4096,
+      "model": "llm-default",
+      "input_bytes": 4466,
+      "tools_bytes": 2117,
+      "tool_names": [
+        "inspect_video",
+        "submit_materials",
+        "ask_owner"
+      ],
+      "http_status": 200,
+      "status": "completed",
+      "incomplete_details": null,
+      "usage": {
+        "input_tokens": 2481,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "input_tokens_per_turn": [],
+          "cached_tokens_per_turn": []
+        },
+        "output_tokens": 790,
+        "output_tokens_details": {
+          "reasoning_tokens": 542,
+          "tool_output_tokens": 0,
+          "output_tokens_per_turn": [],
+          "tool_output_tokens_per_turn": []
+        },
+        "total_tokens": 3271
+      }
+    }
+  ],
+  "platform_writes": 0,
+  "teardown": {
+    "remaining_http_tasks": 0,
+    "open_connections": 0,
+    "server_exited": true
+  }
+}
