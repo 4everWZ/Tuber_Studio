@@ -239,9 +239,16 @@
   "forgotten_revisions": {
     "1": 3
   },
-  "semantic_status": "observed",
-  "voice_style_observed": true,
-  "acceptance_passed": true,
+  "semantic_status": "unmet",
+  "punctuation_sequence_observed": true,
+  "voice_style_observed": false,
+  "acceptance_passed": false,
+  "original_runner_verdict": {
+    "measurement": "terminal punctuation only",
+    "semantic_status": "observed",
+    "voice_style_observed": true,
+    "acceptance_passed": true
+  },
   "teardown": {
     "remaining_http_tasks": 0,
     "open_connections": 0,

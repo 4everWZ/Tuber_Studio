@@ -192,14 +192,18 @@ async def test_chromium_owner_controls(settings, monkeypatch, mode):
             await app.state.comments.adapter.close()
             app.state.store.close()
 
-@pytest.mark.parametrize("scenario", ["corrected", "withdrawn", "still_invalid"])
+@pytest.mark.parametrize("scenario", ["corrected", "withdrawn", "still_invalid", "statement", "label_with_period"])
 async def test_private_video_editor_reads_preferences_only_after_research(owner, monkeypatch, scenario):
     from types import SimpleNamespace
     from tuber_studio.agent import public_video
 
     client, state = owner
     tasks = state.runtime.tasks
-    note = "以后写视频提纲，每个标题都用问句，以问号结尾。"
+    statement = scenario in {"statement", "label_with_period"}
+    note = ("以后写视频提纲，每个标题都用陈述句，以句号结尾。" if statement else
+            "以后写视频提纲，每个标题都用问句，以问号结尾。")
+    first_title = "画面中的椅子。" if statement else "画面中的椅子"
+    good_title = "左侧有一把椅子。" if statement else "椅子放在哪里？"
     turn = str(uuid4())
     (await client.post(CHAT, json={"request_id": turn, "message": note, "intent": {"action": "chat"}})).raise_for_status()
     body = {"source":"turn", "turn_id": turn, "text":note}
@@ -257,18 +261,25 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
             return {"requested_count": None, "usage": "根据画面写私有文字提纲",
                     "playable": False, "trace_origin": False, "clip_seconds": None}
         packet = json.loads(messages[-1]["content"])
+        if "title_words" in packet:
+            words = packet["title_words"]
+            assert not words.endswith(("？", "。")) and note not in str(packet)
+            form, core = {"左侧有一把椅子":("陈述句","有一把椅子"), "椅子放在哪里":("问句","哪里")
+                         }.get(words, ("名词短语","椅子"))
+            return {"form":form, "core":core, "supported":True, "observation":packet["observations"][0]}
         if "delivery_fields" in packet:
             assert packet["writing_preference"] == note
             title = packet["delivery_fields"]["items.0.title"]
             # Some real reviews accepted a noun label and omitted the explicit punctuation check.
-            return {"violations":[] if scenario == "still_invalid" or title == "椅子放在哪里？" else ["items.0.title"]}
+            return {"violations":[] if statement or scenario == "still_invalid" or title == good_title else ["items.0.title"]}
         if "writing_preference" in packet:
             assert packet["writing_preference"] == note
             return {"applies":True, "checks":[]}
         if "issues" in packet:
             assert set(packet["issues"]) == {"items.0.title"} and note in packet["issues"]["items.0.title"]
             repairs.append(packet["draft"]["items"][0]["title"])
-            return {"items.0.title":"椅子" if scenario == "still_invalid" else "椅子放在哪里？"}
+            return {"items.0.title":first_title if scenario == "label_with_period" else
+                                    "椅子" if scenario == "still_invalid" else good_title}
         if "candidate" in packet:
             prefs = packet.get("owner_writing_preferences", [])
             assert isinstance(packet["candidate"]["items"], list)
@@ -276,9 +287,10 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
             seen.append(prefs)
             if not prefs:
                 assert "椅子放在哪里？" not in json.dumps(packet, ensure_ascii=False)
+                assert note not in json.dumps(packet, ensure_ascii=False)
             if scenario == "withdrawn":
                 (await client.delete(f"/api/daily-memory/organized/{item}")).raise_for_status()
-            return {"items":[{"title":"画面中的椅子",
+            return {"items":[{"title":first_title if prefs else "画面中的椅子",
                               "sources":frames[-1:], "primary_frame":frames[-1],"rationale":"用椅子的位置聊构图。"}],"gaps":[]}
         assert "owner_writing_preferences" not in packet
         return {"supported": True, "issues": []}
@@ -298,18 +310,18 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
 
     first = await edition()
     assert reads and seen == [[note]]
-    if scenario in {"withdrawn","still_invalid"}:
+    if scenario in {"withdrawn","still_invalid","label_with_period"}:
         assert first["status"] == "failed" and first["artifact"] is None
-        if scenario == "still_invalid":
-            assert repairs == ["画面中的椅子"] and "写作约定" in first["message"]
+        if scenario != "withdrawn":
+            assert repairs == [first_title] and "写作约定" in first["message"]
         return
-    assert first["status"] == "completed" and "椅子放在哪里？" in first["artifact"]["body"]
-    assert repairs == ["画面中的椅子"]
+    assert first["status"] == "completed" and good_title in first["artifact"]["body"]
+    assert repairs == [first_title]
     assert first["memory_citations"][0]["source_key"] == "turn:"+turn
     history = (await client.get(f"/api/agent/tasks/{task_id}/artifacts")).raise_for_status().json()
     rev = history[0]
     artifact = await client.get(f"/api/agent/tasks/{task_id}/artifacts/{rev['task_revision']}/{rev['edition']}")
-    assert "椅子放在哪里？" in artifact.raise_for_status().json()["body"]
+    assert good_title in artifact.raise_for_status().json()["body"]
     (await client.delete(f"/api/daily-memory/organized/{item}")).raise_for_status()
     (await client.patch(f"/api/agent/tasks/{task_id}", json={
         "action":"steer", "revision":1, "goal":f"再看 {bv} P2 同一区间，重新写这份视频提纲。"

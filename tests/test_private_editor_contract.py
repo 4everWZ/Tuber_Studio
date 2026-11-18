@@ -40,3 +40,27 @@ def test_private_punctuation_and_codepoint_length_checks():
 ])
 def test_unambiguous_owner_field_literals(note, expected):
     assert [(c.field,c.operation,c.value) for c in literal_checks(note)] == expected
+
+
+@pytest.mark.parametrize(("phase","title","form","core","observation","punctuation","passed"), [
+    ("voice_corrected","皇帝宝座的华丽装饰。","名词短语","装饰","宝座在中央",True,False),
+    ("voice_corrected","宝座在中央。","陈述句","在中央","宝座在中央",True,True),
+    ("voice_corrected","宝座在中央","陈述句","在中央","宝座在中央",False,False),
+    ("voice_corrected","宝座象征权力。","陈述句","象征权力","无法核实",True,False),
+    ("voice_corrected","宝座的装饰。","陈述句","呈金色","宝座在中央",True,False),
+    ("before","宝座在什么位置？","问句","什么位置","宝座在中央",True,True),
+    ("before","宝座在中央？","陈述句","在中央","宝座在中央",True,False),
+    ("after","中央的宝座","名词短语","宝座","宝座在中央",True,True),
+])
+async def test_three_edition_measurement_separates_form_punctuation_and_grounding(
+        phase, title, form, core, observation, punctuation, passed):
+    from evaluations.owner_memory_video import measure_edition
+
+    async def read(messages, schema):
+        packet = json.loads(messages[-1]["content"])
+        assert packet == {"title_words":title.rstrip("。？"), "observations":["宝座在中央"]}
+        return {"form":form, "core":core, "supported":True, "observation":observation}
+
+    report = await measure_edition([{"title":title,"primary_frame":"frame"}], {"frame":{"details":["宝座在中央"]}}, phase, read)
+    assert report["items"][0]["punctuation_matches"] is punctuation
+    assert report["passed"] is passed

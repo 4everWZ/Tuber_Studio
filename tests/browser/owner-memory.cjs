@@ -99,7 +99,7 @@ async function test(browser, origin, mode) {
     r.url().endsWith("/daily-memory/preferences") && r.ok()), page.reload()]);
   assert.equal((await restored.json()).history_enabled, false);
   await page.waitForFunction(() => !document.querySelector("#memory-history-enabled:disabled, #memory-history-enabled:checked"));
-  await page.goto(origin);
+  await page.locator('a[data-page="chat"]').click();
   await page.locator("#operator-chat-shortcuts-toggle").waitFor();
   await page.locator("#operator-chat-more-toggle").click();
   await page.locator("#temporary-chat-open").click();

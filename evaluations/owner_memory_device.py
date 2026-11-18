@@ -59,7 +59,7 @@ async def device_call(device, port, login, method, path, data=None):
     return json.loads(result.stdout)
 
 
-async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False):
+async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, reviewed_receipt=None):
     from evaluations.omni_chat_loop import connection
     from contextlib import AsyncExitStack
 
@@ -164,6 +164,11 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False):
                         record("forgotten_revisions", await forget_current(client, port, device, token, [updated]))
                     elif config:
                         from evaluations.owner_memory_video import compare
+                        if reviewed_receipt:
+                            from evaluations.owner_memory_receipt import reviewed_read
+                            origin, replay = reviewed_read(*reviewed_receipt)
+                            stack.enter_context(patch("tuber_studio.agent.task_tools.read_public_part", replay))
+                            record("material_origin", origin)
                         report["video"] = await compare(client, runtime, port, device, token, row, record, correct_voice)
                     else:
                         report["final_user_transcript"] = {"status":"unverified", "reason":"ordinary_service_binding_missing"}
@@ -205,8 +210,10 @@ if __name__ == "__main__":
     parser.add_argument("--voice-only", action="store_true", help="confirm the authorized speech independently of video research")
     parser.add_argument("--gateway-checkout", type=Path, help="use the independent gateway checkout for voice only")
     parser.add_argument("--voice-wav", type=Path, help="speech fixture authorized for private Realtime input")
+    parser.add_argument("--reviewed-receipt", nargs=2, metavar=("QA_RUNTIME", "STEP_ID"),
+                        help="reuse an exact completed public-video read and its clip for all three editions")
     args = parser.parse_args()
-    result = asyncio.run(run(args.device, args.live, args.voice_wav, args.gateway_checkout, args.voice_only))
+    result = asyncio.run(run(args.device, args.live, args.voice_wav, args.gateway_checkout, args.voice_only, args.reviewed_receipt))
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result.get("acceptance_passed") is False:
         raise SystemExit(1)
