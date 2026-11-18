@@ -22,7 +22,7 @@ def add_turn(runtime, text, **result):
     return identity
 
 
-def test_memory_switch_persists_per_account_and_character(settings):
+def test_owner_memory_switch_follows_character_across_operating_accounts(settings):
     app = create_app(settings)
     path = "/api/daily-memory/preferences"
     with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
@@ -36,7 +36,7 @@ def test_memory_switch_persists_per_account_and_character(settings):
         assert client.get("/api/daily-memory").json()["organization"]["status"] == "disabled"
         assert MemoryOrganizer(runtime).state()["status"] == "disabled"
         discovery.remember_account("200")
-        assert client.get(path).json()["enabled"]
+        assert not client.get(path).json()["enabled"]
         assert client.put(path, json={"enabled": False, "scope": before["scope"]}).status_code == 409
         discovery.remember_account("100")
         other = client.post("/api/characters", json={"name": "另一个角色"}).raise_for_status().json()

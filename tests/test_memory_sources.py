@@ -22,6 +22,26 @@ def save(memory, scope, key, quote, at, existing=None):
         return memory.save_organized(scope, source, decision, existing)
 
 
+def test_owner_memory_switch_moves_with_role_and_preserves_unmapped_opt_out(store):
+    memory = DailyMemoryService(store)
+    memory.private_owner = "owner-a"
+    store.set("memory_preference:100:whale", {"enabled": False, "revision": 3})
+    assert memory.preference(A) == {"enabled": False, "revision": 3}
+    assert memory.preference(B)["enabled"]
+    memory.set_preference(B, False)
+    assert not memory.preference(A)["enabled"]
+    assert not memory.preference(("", "whale", 8))["enabled"]
+    assert memory.preference(("200", "other-character", 1))["enabled"]
+    memory.private_owner = "owner-b"
+    assert memory.preference(B)["enabled"]
+    memory.private_owner = "owner-a"
+    memory.set_preference(B, True)
+    assert not memory.preference(A)["enabled"]
+    assert memory.set_preference(A, True)["enabled"]
+    revision = memory.preference(A)["revision"]
+    assert memory.set_preference(A, True)["revision"] == revision
+
+
 def test_portable_sources_revisions_and_atomic_forgetting(store):
     memory = DailyMemoryService(store)
     memory.private_owner = "studio-owner"

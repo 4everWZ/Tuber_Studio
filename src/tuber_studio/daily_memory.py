@@ -389,15 +389,34 @@ class DailyMemoryService:
 
     def preference(self, scope):
         account, character, _ = scope
-        return self.store.get(f"memory_preference:{account}:{character}", {"enabled": True, "revision": 0})
+        default = {"enabled": True, "revision": 0}
+        legacy = self.store.get(f"memory_preference:{account}:{character}", default)
+        if not self.private_owner:
+            return legacy
+        principal = self.store.get(f"owner_memory_preference:{self.private_owner}:{character}", default)
+        return {"enabled": principal["enabled"] and legacy["enabled"],
+                "revision": principal["revision"] + legacy["revision"]}
 
     def set_preference(self, scope, enabled):
         account, character, _ = scope
-        current = self.preference(scope)
-        if current["enabled"] != enabled:
-            current = {"enabled": enabled, "revision": current["revision"] + 1}
-            self.store.set(f"memory_preference:{account}:{character}", current)
-        return current
+        legacy = f"memory_preference:{account}:{character}"
+        owner = f"owner_memory_preference:{self.private_owner}:{character}" if self.private_owner else legacy
+        keys = [owner]
+        if enabled and self.private_owner:
+            # A legacy account-specific opt-out survives until the owner explicitly
+            # enables memory while viewing that account.
+            keys.append(legacy)
+        with memory_sources.memory_transaction(self.store.db):
+            for key in keys:
+                self.store.db.execute("INSERT OR IGNORE INTO kv VALUES(?,?)",
+                                      (key, dump_memory({"enabled": True, "revision": 0})))
+                self.store.db.execute(
+                    "UPDATE kv SET value=json_set(value,'$.enabled',json(?),"
+                    "'$.revision',json_extract(value,'$.revision')+1) "
+                    "WHERE key=? AND json_extract(value,'$.enabled')!=?",
+                    (dump_memory(enabled), key, enabled),
+                )
+            return self.preference(scope)
 
     def save_organized(self, scope, source, decision, existing):
         db = self.store.db
