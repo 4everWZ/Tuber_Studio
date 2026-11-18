@@ -24,7 +24,8 @@ from ..web_fetch import WebFetchRequest, fetch_excerpt, source_url
 from ..web_search import search_broadcast_programmes, search_public_web
 from . import operator_facts
 from .title_form import verified_title_fields
-from .clip_review import review_clip_window
+from .clip_review import review_clip_window, unreviewed_preview
+from .clip_screening import fit_review_group, observe_clip_batch
 from .dynamic_publication import register_dynamic_publication
 from .handoff import PublicText, handoff_text, supplied_private_fragments, video_findings
 from .public_sources import fetch_task_source
@@ -252,13 +253,6 @@ class ClipTitle(StrictModel):
     title: str = Field(min_length=1, max_length=300)
 
 
-class WindowObservation(StrictModel):
-    scene: Literal["符合要求", "不符合要求", "无法核实"]
-    captions: Literal["无烧录字幕", "已读且符合", "已读但不符合", "无法读清"]
-    screen_text: str = Field(description="有烧录字幕时抄录该帧实际可读的文字，不补齐断句。")
-    basis: str = Field(min_length=1, description="针对画面、可读屏字和本次用途，写出这一判断的依据。")
-
-
 _CAPTION_TOPICS = (*NON_NARRATIVE, "故事内的人物、动作、对话或反应", "故事事件的起因、经过、结局或分析", "含义不清或混合")
 
 
@@ -454,28 +448,37 @@ async def clip_review_image(runtime_dir, task, evidence, primary):
     return {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(image).decode()}}
 
 
+def retry_incomplete_previews(plan):
+    reviews = plan.get("window_reviews", {})
+    pending = {key for key, review in reviews.items() if unreviewed_preview(review)}
+    if pending:
+        # The ordinary next checkpoint must retire the corresponding exclusions too.
+        plan["window_reviews"] = {key: review for key, review in reviews.items() if key not in pending}
+        plan["excluded_video_frames"] = [key for key in plan.get("excluded_video_frames", ())
+                                         if key.rsplit(":", 1)[0] not in pending]
+
+
 async def screen_clip_window(media, goal, generate, budget, inherit_no_spoilers=False):
     path, clip = media
-    result = await review_clip_window(path, start=clip["start"], end=clip["end"], expected_frames=clip["frames"], max_images=12)
-    coverage, images = result["coverage"], result["images"]
+    observations, calls, limits = [], [], []
+
+    async def observe_batch(samples, images):
+        observations.extend(await observe_clip_batch(samples, images, goal, generate, budget, calls, limits))
+
+    result = await review_clip_window(path, start=clip["start"], end=clip["end"], expected_frames=clip["frames"],
+                                      max_images=None, on_batch=observe_batch)
+    coverage = result["coverage"]
+    coverage["model_batches"] = calls
+    coverage["model_budget_splits"] = limits
     samples = coverage["samples"]
-    receipt = {"clip": clip, "coverage": coverage, "observations": [], "accepted": False, "screening_version": WINDOW_REVIEW_VERSION}
+    receipt = {"clip": clip, "coverage": coverage, "observations": observations, "accepted": False, "screening_version": WINDOW_REVIEW_VERSION}
     if (not coverage["complete"] or coverage["uncovered"] or coverage["scanned_frames"] != clip["frames"]
             or coverage.get("start") != clip["start"] or coverage.get("end") != clip["end"]
-            or not samples or len(samples) != len(images)
-            or samples[0]["frame"] != 0 or samples[-1]["frame"] != clip["frames"] - 1):
+            or not samples or samples[0]["frame"] != 0 or samples[-1]["frame"] != clip["frames"] - 1
+            or [(s["frame"], s["seconds"]) for s in observations] != [(s["frame"], s["seconds"]) for s in samples]
+            or any(o["scene"] != "符合要求" or o["captions"] not in {"无烧录字幕", "已读且符合"}
+                   or o["captions"] == "已读且符合" and not o["screen_text"].strip() for o in observations)):
         return receipt
-    for sample, image in zip(samples, images, strict=True):
-        observation = WindowObservation.model_validate(await generate([
-            {"role": "system", "content": "审读这一实际帧能否在号主要求下使用。分别判断画面与烧录在画面中的字幕。"
-             "若要求不剧透，具体剧情的起因、事件、结果或角色台词均须拒绝；节目引介、收视评价和制作资料单独判断。"
-             "逐字读取底部屏字，区分投稿水印和节目字幕。有字而读不清时必须注明。只核实画面。"},
-            {"role": "user", "content": [{"type": "text", "text": dump({"goal": goal, "seconds": sample["seconds"]})}, image]}],
-            WindowObservation.model_json_schema(), max_tokens=budget))
-        receipt["observations"].append({**sample, **observation.model_dump()})
-        if (observation.scene != "符合要求" or observation.captions not in {"无烧录字幕", "已读且符合"}
-                or observation.captions == "已读且符合" and not observation.screen_text.strip()):
-            return receipt
     return await classify_clip_captions(receipt, goal, generate, budget, inherit_no_spoilers)
 
 
@@ -493,15 +496,21 @@ async def classify_clip_captions(receipt, goal, generate, budget, inherit_no_spo
     subjects = (PROGRAMME_CONTEXT, "提及片中人物或所讲世界中发生的事", "混合或无法辨明")
     field = {"type": "object", "properties": {"topic": {"type": "string", "enum": list(_CAPTION_TOPICS)},
              "subject": {"type": "string", "enum": list(subjects)}}, "required": ["topic", "subject"], "additionalProperties": False}
-    schema = {"type": "object", "properties": {str(k): field for k in lines},
-              "required": list(map(str, lines)), "additionalProperties": False}
-    topics = await generate([{"role": "system", "content": "标注字幕的叙述层次。片外是节目本身的制作、播出、收视和观众评价，"
-        "这些可以有时间和动作，但不是片中世界的事实。片内是作品讲述的人物和事件；提问、假设或评论中提到的片内事件也标出。"
-        "例：‘观众称它是年度佳作’是节目评价，谈片外；‘今年重映’是播出资料，谈片外。"
-        "‘桥断后村民去了哪儿’提及故事中‘桥断’，应标事件；‘他推开门’标人物动作。"},
-        {"role": "user", "content": dump({"待标注原句": lines})}], schema, max_tokens=budget) if lines else {}
-    if set(topics) != set(map(str, lines)):
-        raise DelegationError("字幕分类未逐条绑定实际审读原文。")
+
+    async def classify_group(keys):
+        schema = {"type": "object", "properties": {str(k): field for k in keys},
+                  "required": list(map(str, keys)), "additionalProperties": False}
+        topics = await generate([{"role": "system", "content": "标注字幕的叙述层次。片外是节目本身的制作、播出、收视和观众评价，"
+            "这些可以有时间和动作，但不是片中世界的事实。片内是作品讲述的人物和事件；提问、假设或评论中提到的片内事件也标出。"
+            "例：‘观众称它是年度佳作’是节目评价，谈片外；‘今年重映’是播出资料，谈片外。"
+            "‘桥断后村民去了哪儿’提及故事中‘桥断’，应标事件；‘他推开门’标人物动作。"},
+            {"role": "user", "content": dump({"待标注原句": {k: lines[k] for k in keys}})}], schema, max_tokens=budget)
+        if set(topics) != set(map(str, keys)):
+            raise DelegationError("字幕分类未逐条绑定实际审读原文。")
+        return topics
+
+    receipt["caption_budget_splits"] = []
+    topics = await fit_review_group(list(lines), classify_group, receipt["caption_budget_splits"]) if lines else {}
     receipt["caption_topics"] = []
     for k, line in lines.items():
         entry = topics[str(k)]
@@ -977,6 +986,7 @@ def create_task_runtime(runtime, store, browsing):
         inventories = dict(task["plan"].get("frame_reviews", {}))
         images = {}
         uses = {}
+        retry_incomplete_previews(task["plan"])
         window_reviews = dict(task["plan"].get("window_reviews", {}))
         screening_goal = "\n".join(dict.fromkeys([*prior, task["goal"]]))
         inherited = None

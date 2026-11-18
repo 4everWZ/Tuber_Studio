@@ -314,14 +314,17 @@ async def test_window_gate_reviews_changed_tail_pixels(tmp_path, tail):
             assert json.loads(content) == {"待标注原句": {"1": "测试字幕"}}
             subject = "提及片中人物或所讲世界中发生的事" if tail == "已被视觉误判符合的叙事" else "只谈片外的节目、制作、传播或可见形式"
             return {"1": {"topic": "播出及制作资料", "subject": subject}}
-        coordinate = json.loads(content[0]["text"])
-        seen.append(coordinate["seconds"])
-        jpeg = base64.b64decode(content[1]["image_url"]["url"].split(",")[1])
-        with Image.open(io.BytesIO(jpeg)) as picture:
-            red, _, blue = picture.getpixel((10, 10))
-        verdict = "已读且符合" if tail == "已被视觉误判符合的叙事" else tail
-        return {"scene": "符合要求", "captions": verdict if blue > red else "无烧录字幕",
-                "screen_text": "测试字幕" if blue > red else "", "basis": "按当前实际颜色标记测试状态。"}
+        replies = {}
+        for header, image in zip(content[:-1:2], content[1::2], strict=True):
+            coordinate = json.loads(header["text"])
+            seen.append(coordinate["seconds"])
+            jpeg = base64.b64decode(image["image_url"]["url"].split(",")[1])
+            with Image.open(io.BytesIO(jpeg)) as picture:
+                red, _, blue = picture.getpixel((10, 10))
+            verdict = "已读且符合" if tail == "已被视觉误判符合的叙事" else tail
+            replies[str(coordinate["frame"])] = {"scene": "符合要求", "captions": verdict if blue > red else "无烧录字幕",
+                    "screen_text": "测试字幕" if blue > red else "", "basis": "按当前实际颜色标记测试状态。"}
+        return replies
 
     result = await screen_clip_window((file, {"start": 7, "end": 10, "frames": 75}), "整段无剧透", review, 512)
     assert result["coverage"]["scanned_frames"] == 75 and seen[0] == 7 and any(t >= 9 for t in seen)

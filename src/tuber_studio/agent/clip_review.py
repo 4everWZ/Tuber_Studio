@@ -21,7 +21,26 @@ _W, _H = 320, 180
 _PROXY_BYTES = _W * _H * 3 // 2
 _MAX_FILE = 8 * 1024 * 1024
 _MAX_FRAMES = 600
-_MAX_IMAGES = 12
+_MAX_BATCH_IMAGES = 12
+# Bound decoded RGB memory per pass independently of the number of states.
+_RGB_BATCH_BYTES = 8 * 1024 * 1024
+
+
+def unreviewed_preview(receipt):
+    """An old total-image cap stopped screening before Omni saw a single frame."""
+    coverage = receipt.get("coverage") or {}
+    count = coverage.get("scanned_frames")
+    return (
+        receipt.get("accepted") is False
+        and receipt.get("observations") == []
+        and coverage.get("complete") is False
+        and bool(coverage.get("uncovered"))
+        and "batches" not in coverage
+        and bool(coverage.get("samples"))
+        and type(count) is int
+        and count > 0
+        and count == (receipt.get("clip") or {}).get("frames")
+    )
 
 
 def _unknown(start, end, note):
@@ -211,6 +230,10 @@ def _select(states, times, end, budget):
         centre = (times[i] + (times[stop] if stop <= last else end)) / 2
         frame = i if "scene_change" in labels else min(range(i, stop), key=lambda k: abs(times[k] - centre))
         candidates[frame] = labels
+    if len(candidates) <= budget - len(selected):
+        selected.update(candidates)
+        reasons.update(candidates)
+        candidates.clear()
     while candidates and len(selected) < budget:
         frame = max(
             candidates,
@@ -253,17 +276,23 @@ def _encode(raw, size, count):
 
 
 async def review_clip_window(
-    path: Path, *, start: float, end: float, expected_frames: int, max_images: int = 6
+    path: Path, *, start: float, end: float, expected_frames: int, max_images: int | None = 6, on_batch=None
 ) -> dict:
-    """Return coverage metadata and ordered full-resolution image_url content parts."""
+    """With a total image budget, return a bounded preview. With max_images=None,
+    deliver every representative to async on_batch(samples, images) in PTS order.
+    The callback owns inference errors; a service failure is not a visual verdict.
+    """
     if not (math.isfinite(start) and math.isfinite(end) and 0 <= start < end <= start + 10.000001):
         raise ValueError("需要已授权的至多十秒短片窗口")
-    if type(max_images) is not int or max_images < 0:
+    if max_images is None:
+        if on_batch is None:
+            raise ValueError("完整短片审核需要分批接收代表帧")
+    elif type(max_images) is not int or max_images < 0:
         raise ValueError("图片预算须为非负整数")
     if (
         type(expected_frames) is not int
         or not 1 <= expected_frames <= _MAX_FRAMES
-        or max_images < min(2, expected_frames)
+        or (max_images is not None and max_images < min(2, expected_frames))
     ):
         return _unknown(start, end, "帧数或图片预算不足，需缩短窗口或补充预算。")
     decoder = FfmpegTiles()
@@ -276,22 +305,43 @@ async def review_clip_window(
         if len(proxy) != expected_frames * _PROXY_BYTES:
             raise ValueError("变化扫描的帧数不符")
         states = await asyncio.to_thread(_states, proxy, times)
-        samples, gaps = _select(states, times, end, min(max_images, _MAX_IMAGES))
-        selection = "+".join(f"eq(n\\,{s['frame']})" for s in samples)
-        raw = await decoder._run(
-            _ffmpeg(decoder, "select=" + selection, "rgb24"), media, len(samples) * size[0] * size[1] * 3
-        )
-        images = await asyncio.to_thread(_encode, raw, size, len(samples))
+        del proxy
+        budget = len(times) if max_images is None else min(max_images, len(times))
+        samples, gaps = _select(states, times, end, budget)
     except ValueError as error:
         return _unknown(start, end, f"短片无法完整核对（{error}），需重新读取或缩短窗口。")
     except (OSError, KeyError, TypeError, ZeroDivisionError) as error:
         return _unknown(start, end, f"短片无法完整核对（{type(error).__name__}），需重新读取或缩短窗口。")
+    stride = size[0] * size[1] * 3
+    batch_size = min(_MAX_BATCH_IMAGES, max(1, _RGB_BATCH_BYTES // stride))
+    images, batches = [], []
+    for offset in range(0, len(samples), batch_size):
+        batch = samples[offset : offset + batch_size]
+        selection = "+".join(f"eq(n\\,{s['frame']})" for s in batch)
+        try:
+            raw = await decoder._run(
+                _ffmpeg(decoder, "select=" + selection, "rgb24"), media, len(batch) * stride
+            )
+            parts = await asyncio.to_thread(_encode, raw, size, len(batch))
+            del raw
+        except (OSError, ValueError) as error:
+            if on_batch is not None:
+                raise
+            return _unknown(start, end, f"代表帧解码失败（{error}），需重新读取短片。")
+        if on_batch is None:
+            images.extend(parts)
+        else:
+            await on_batch(batch, parts)
+        batches.append(
+            {"first_frame": batch[0]["frame"], "last_frame": batch[-1]["frame"], "count": len(batch)}
+        )
     coverage = {
         "complete": not gaps,
         "start": start,
         "end": end,
         "scanned_frames": len(times),
         "samples": samples,
+        "batches": batches,
         "changes": [{"frame": i, "seconds": times[i], "reasons": r} for i, r in states],
         "uncovered": gaps,
         "note": "逐帧检测画面和下方笔画变化，仅所列代表帧供视觉审读。微小变化可能漏检，音轨未经审核。",
