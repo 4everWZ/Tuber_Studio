@@ -71,8 +71,8 @@ def register_private_call(app, runtime, require_admin):
             "socket": origin.replace("http", "ws", 1) + "/v1/realtime",
             "ticket": ticket,
             "character": character["name"],
-            "instructions": "\n".join(filter(None, [
+            "instructions": "\n".join(text for text in (
                 f"你是{character['name']}，正在和号主私下通话。",
                 character.get("core", {}).get("identity"), character.get("style", {}).get("instructions"),
-            ])),
+            ) if isinstance(text, str))[:6000],
         }
