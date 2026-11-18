@@ -62,6 +62,20 @@ def _json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
+def _has_legacy_chat_lineage(row):
+    def items(field):
+        value = row.get(field) or []
+        return json.loads(value) if isinstance(value, str) else value
+
+    def private(source):
+        if isinstance(source, str):
+            return source.startswith("daily-chat:")
+        return (source.get("type") == "daily_chat" or str(source.get("id", "")).startswith("daily-chat:")
+                or any(private(item) for item in source.get("memory_dependencies", [])))
+
+    return any(private(source) for field in ("source_ids", "sources", "context_sources") for source in items(field))
+
+
 def dynamic_decision_messages(character, recent_posts, public_sources, *, current_time):
     return [
         {
@@ -70,8 +84,6 @@ def dynamic_decision_messages(character, recent_posts, public_sources, *, curren
                 "你是作为自己在写动态。由你决定今天想分享什么，或者暂时不发。"
                 "public_incident是公开经历和原评论，published_reply是来评和你当时发出的回复，"
                 "public_memory是角色故事摘录，runtime_event是运行记录，operator_note是号主确认的经历。"
-                "daily_chat是角色从日常对话挑出的可公开感受或反应，只写角色自己的视角。"
-                "如选 daily_chat，填对应来源 ID。它的文字已经写好，content 直接使用这段文字。"
                 "随想、创作、兴趣、日常观察、角色小故事或公开互动都可以独立成稿，篇幅随话题。"
                 "只有实际使用材料才填一项 source_ids。纯感想、玩笑或明确的虚构可留空。"
                 "讲到真实发生的动作、次数和结果时，用可公开的材料支持。"
@@ -122,7 +134,6 @@ class Dynamics:
         self._automatic_post_id = None
         self.memory_summary = OperationsMemory(store)
         self.daily_memory = getattr(runtime, "daily_memory", None) or DailyMemoryService(store)
-        self.chat_material = None
         for sql in (
             "CREATE TABLE IF NOT EXISTS dynamic_memory_public(memory_id INTEGER PRIMARY KEY,"
             " fingerprint TEXT NOT NULL,marked_at REAL NOT NULL)",
@@ -182,6 +193,17 @@ class Dynamics:
             "UPDATE dynamic_edits SET status='pending_verification',error='请核对原动态的编辑结果'"
             " WHERE status='submitting'"
         )
+        for row in store.db.execute(
+            "SELECT id,source_ids,sources,context_sources FROM dynamic_posts WHERE attempted_at IS NULL "
+            "AND status IN ('pending_review','approved','rejected') AND receipt IS NULL"
+        ):
+            try:
+                private = _has_legacy_chat_lineage(dict(row))
+            except (ValueError, TypeError, AttributeError):
+                self._status(row["id"], "invalidated", "旧稿来源记录不完整，无法核验公开授权")
+                continue
+            if private:
+                self._status(row["id"], "invalidated", "旧稿使用了未经披露授权的私聊素材，请从公开来源重新起草")
 
     def policy(self):
         base = DEFAULT_POLICY | self.store.get("dynamic_policy", {})
@@ -362,9 +384,6 @@ class Dynamics:
             result = self.daily_memory.public_incident_sources(char["id"], char["version"])
             result.extend(self.daily_memory.public_experience_sources(char["id"], char["version"]))
         if scope and preference["enabled"]:
-            if self.chat_material:
-                result.extend(source | {"memory_preference_revision": preference["revision"]}
-                              for source in self.chat_material.sources(scope))
             for row in self.daily_memory.organized(scope, limit=100):
                 if row["status"] != "active" or "dynamic" not in row["channels"]:
                     continue
@@ -513,6 +532,8 @@ class Dynamics:
         return render_comment_card(card, page)
 
     def _valid_sources(self, row):
+        if _has_legacy_chat_lineage(row):
+            return False
         char = self._character()
         sources = row["sources"]
         if row.get("manual") and len(sources) == 1 and sources[0].get("type") == "operator_topic":
@@ -1194,7 +1215,7 @@ class Dynamics:
             except PublishCancelled:
                 if token:
                     self.operations.finish(token, "cancelled")
-                status = row["status"] if self._valid_sources(row) else "invalidated"
+                status = row["status"] if self._valid_sources(self._post(post_id)) else "invalidated"
                 self._status(post_id, status, "发送前授权或来源已变化，取消发送；未写入平台")
                 raise ValueError("发送前授权或来源已变化，取消发送；未写入平台") from None
             except asyncio.CancelledError:
@@ -1279,6 +1300,7 @@ class Dynamics:
             {"content": post["content"], "published_at": post["published_at"]}
             for post in self.list_posts("published", 5)
             if (post["character_id"], post["character_version"]) == (character["id"], character["version"])
+            and not _has_legacy_chat_lineage(post)
             and not json.loads(post.get("context_sources") or "[]")
             and not any(
                 source.get("memory_version") or source.get("memory_dependencies")
@@ -1336,10 +1358,6 @@ class Dynamics:
             raise ValueError("模型下次评估间隔无效")
         if data["action"] == "post":
             data["content"] = validate_text(data["content"])
-            # Selecting a private-side product is a decision to publish that
-            # finished caption. Keep its wording across the public boundary.
-            if material := next((s for s in sources if s["id"] in ids and s["type"] == "daily_chat"), None):
-                data["content"] = validate_text(material["text"])
         elif data["content"] != "":
             raise ValueError("等待决定不得包含待发布正文")
         return data
@@ -1639,23 +1657,6 @@ class Dynamics:
             messages = identity_messages(messages, generation_identity)
             selected, selection_failed = None, False
             try:
-                scope, preference = memory_preference
-                if not manual and self.chat_material and scope and scope[0] and preference["enabled"]:
-
-                    def can_collect():
-                        return (
-                            self._memory_preference() == memory_preference
-                            and self.policy()["enabled"] and not self.operations.draining and not self._live_busy()
-                        )
-
-                    try:
-                        await self.chat_material.collect(scope, char, authorized=can_collect)
-                    except (ValueError, TimeoutError, httpx.HTTPError):
-                        # Leave these turns available for the next scheduled evaluation.
-                        pass
-                    if not can_collect():
-                        base["reason"] = "私聊取材期间账号、角色或运营状态已变化，延后动态评估"
-                        return self._save_decision(char, manual, base, [])
                 sources = self._summary_sources()
                 async with self.runtime.offline_generation("background"):
                     if not manual and self._live_busy():
