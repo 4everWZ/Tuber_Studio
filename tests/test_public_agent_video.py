@@ -13,6 +13,13 @@ from tuber_studio.app import create_app
 BV = "BV1aa1234567"
 
 
+def test_long_preview_reaches_the_opening_and_ending_inside_the_granted_window():
+    times = public_video.preview_times(200, 3800)
+    assert times[0] == 201 and times[-1] == 3799
+    assert times == sorted(set(times))
+    assert public_video.preview_times(4, 10) == pytest.approx([4.9, 7, 9.1])
+
+
 @pytest.mark.parametrize("part", [2, 3])
 async def test_private_anonymous_video_uses_only_requested_part(settings, monkeypatch, part):
     calls = []

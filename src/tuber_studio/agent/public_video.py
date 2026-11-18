@@ -16,6 +16,15 @@ def clip_path(runtime_dir, step_id):
     return Path(runtime_dir) / "browsing" / "private-clips" / (str(UUID(step_id)) + ".mp4")
 
 
+def preview_times(start, end):
+    span = end - start
+    interior = [start + span * fraction for fraction in (0.15, 0.5, 0.85)]
+    if span >= 30:
+        # A proportional sample of a long part can start minutes after its opening.
+        return [start + 1, *interior, end - 1]
+    return interior
+
+
 async def save_clip(adapter, metadata, part, start, end, request, granted, runtime_dir):
     try:
         clip = await adapter.video_stream_clip(metadata, cid=part["cid"], start=start, end=end)
@@ -76,10 +85,9 @@ async def read_public_part(request, selection, vision, granted, runtime_dir=None
             gaps.append("此区间未取得可公开读取的字幕。")
         visual_count = 0
         seen = set()
-        for fraction in (0.15, 0.5, 0.85):
+        for target in preview_times(start, end):
             if not granted():
                 return {"error": "任务授权已变化。"}
-            target = start + fraction * (end - start)
             try:
                 frame = await adapter.video_stream_frame(metadata, cid=part["cid"], timestamp=target)
                 actual = frame["actual_time"]
@@ -89,7 +97,7 @@ async def read_public_part(request, selection, vision, granted, runtime_dir=None
                 if not granted():
                     return {"error": "任务授权已变化。"}
                 observed = await vision.analyze_video_evidence(
-                    {"id": request.id}, metadata, [frame], "只描述该帧可见的构图与内容。",
+                    {"id": request.id}, metadata, [frame], "描述该帧可见的人物位置、物件与构图。屏字清晰时保留原文。",
                     deadline=time.time() + 90)
                 if frame["id"] not in observed.get("evidence_ids", []):
                     continue
