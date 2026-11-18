@@ -1,0 +1,219 @@
+{
+  "confirmation": {
+    "browser": "156.0.8078.4",
+    "quote": "Group related points and separate distinct concerns. Use headings and lists when they improve readability.",
+    "revision": 1
+  },
+  "cooperation_admission": [
+    {
+      "source": "turn:58ef4b4b-3df5-42ca-9700-300e54167933",
+      "owner_quote": "辛苦啦，跟我聊两句吧。",
+      "expected": "skipped",
+      "status": "skipped",
+      "remote_source_matches": 0
+    },
+    {
+      "source": "turn:eaec494a-eca2-44cd-8b66-2fc86881b2f3",
+      "owner_quote": "咱俩对稿有个默契：存疑处圈红，定稿处描蓝。",
+      "expected": "saved",
+      "status": "saved",
+      "remote_source_matches": 1,
+      "rule": {
+        "statement": "咱俩对稿有个默契：存疑处圈红，定稿处描蓝。",
+        "statement_span": [
+          0,
+          21
+        ],
+        "scope_span": [
+          0,
+          8
+        ],
+        "practice_span": [
+          9,
+          21
+        ],
+        "proposed_scope_span": [
+          0,
+          8
+        ]
+      },
+      "scope_quote": "咱俩对稿有个默契",
+      "practice_quote": "存疑处圈红，定稿处描蓝。",
+      "proposed_scope_quote": "咱俩对稿有个默契"
+    }
+  ],
+  "chat_admission_judgments": {
+    "turn:58ef4b4b-3df5-42ca-9700-300e54167933": [
+      {
+        "stage": "utterance",
+        "meaning": "社交交谈",
+        "statement": "辛苦啦，跟我聊两句吧。",
+        "scope_quote": "未说明",
+        "practice_quote": "跟我聊两句吧。"
+      },
+      {
+        "stage": "source_ledger",
+        "status": "skipped"
+      }
+    ],
+    "turn:eaec494a-eca2-44cd-8b66-2fc86881b2f3": [
+      {
+        "stage": "utterance",
+        "meaning": "持续合作方式",
+        "statement": "咱俩对稿有个默契：存疑处圈红，定稿处描蓝。",
+        "scope_quote": "咱俩对稿有个默契",
+        "practice_quote": "存疑处圈红，定稿处描蓝。"
+      },
+      {
+        "stage": "review",
+        "bound": {
+          "statement": "咱俩对稿有个默契：存疑处圈红，定稿处描蓝。",
+          "statement_span": [
+            0,
+            21
+          ],
+          "scope_span": [
+            0,
+            8
+          ],
+          "practice_span": [
+            9,
+            21
+          ],
+          "proposed_scope_span": [
+            0,
+            8
+          ]
+        },
+        "judgment": {
+          "meaning": "号主本人的持续协作约定",
+          "scope_supported": true,
+          "practice_supported": true,
+          "same_agreement": true,
+          "topic_quote": "咱俩对稿有个默契",
+          "existing_id": null,
+          "replaces_source": null,
+          "summary_kind": "preference"
+        },
+        "accepted": true
+      },
+      {
+        "stage": "source_ledger",
+        "status": "saved"
+      }
+    ],
+    "turn:02949910-7ef0-46f8-a5c6-a82e4c31c213": [
+      {
+        "stage": "utterance",
+        "meaning": "持续合作方式",
+        "statement": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+        "scope_quote": "以后",
+        "practice_quote": "每个标题都用问句，以问号结尾。"
+      },
+      {
+        "stage": "review",
+        "bound": {
+          "statement": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+          "statement_span": [
+            0,
+            25
+          ],
+          "scope_span": [
+            0,
+            9
+          ],
+          "practice_span": [
+            10,
+            25
+          ],
+          "proposed_scope_span": [
+            0,
+            2
+          ]
+        },
+        "judgment": {
+          "meaning": "号主本人的持续协作约定",
+          "scope_supported": true,
+          "practice_supported": true,
+          "same_agreement": true,
+          "topic_quote": "以后写直播素材提纲",
+          "existing_id": 2,
+          "replaces_source": null,
+          "summary_kind": "preference"
+        },
+        "accepted": true
+      },
+      {
+        "stage": "correction_target",
+        "judgment": {
+          "relation": "新做法取代原做法",
+          "old_value": "Group related points and separate distinct concerns. Use headings and lists when they improve readability.",
+          "new_value": "以后写直播素材提纲，每个标题都用问句，以问号结尾。"
+        },
+        "replaces": true
+      },
+      {
+        "stage": "source_ledger",
+        "status": "saved"
+      }
+    ]
+  },
+  "independent_preferences": {
+    "manual": {
+      "id": 2,
+      "revision": 2,
+      "headline": "以后写直播素材提纲",
+      "note": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+      "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+      "source_key": "turn:02949910-7ef0-46f8-a5c6-a82e4c31c213"
+    },
+    "automatic": {
+      "id": 2,
+      "revision": 2,
+      "headline": "以后写直播素材提纲",
+      "note": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+      "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+      "source_key": "turn:02949910-7ef0-46f8-a5c6-a82e4c31c213"
+    }
+  },
+  "platform_writes": 0,
+  "teardown": {
+    "remaining_http_tasks": 0,
+    "open_connections": 0,
+    "server_exited": true
+  },
+  "failed_at": {
+    "stage": "organizing_owner_chat_turn",
+    "exception": "AssertionError",
+    "file": "owner_memory_video.py",
+    "function": "compare",
+    "line": 101,
+    "winerror": null
+  },
+  "stage": "failed",
+  "independent_device": {
+    "architecture": "x86_64",
+    "fresh_authenticated_session": true,
+    "read_after_page_close": true
+  },
+  "material_origin": {
+    "mode": "reused_verified_public_read",
+    "task_id": "06b1ee8d-40f4-4756-8ca0-e91bd68f34bc",
+    "step_id": "840ec0bf-e632-5856-a442-1b7045296a31",
+    "selection": {
+      "bvid": "BV1Hy4y1J7xH",
+      "ranges": [
+        {
+          "part": 2,
+          "start": 11,
+          "end": 14
+        }
+      ]
+    },
+    "cid": "301983263",
+    "clip_frames": 75
+  },
+  "run": "op2bxlgr",
+  "voice": {},
+  "cross_device_voice": {}
+}

@@ -1,0 +1,400 @@
+{
+  "eyzg8xrf": {
+    "stage": "failed",
+    "cooperation_admission": [
+      {
+        "source": "turn:f60f25a8-4d27-4341-bd74-2c9297ef1ecf",
+        "owner_quote": "辛苦啦，跟我聊两句吧。",
+        "expected": "skipped",
+        "status": "skipped",
+        "remote_source_matches": 0
+      },
+      {
+        "source": "turn:d3045c83-d6ba-4ae0-a335-5774ee8dfc17",
+        "owner_quote": "咱俩对稿有个默契：存疑处圈红，定稿处描蓝。",
+        "expected": "saved",
+        "status": "skipped",
+        "remote_source_matches": 0
+      }
+    ],
+    "chat_admission_judgments": {
+      "turn:f60f25a8-4d27-4341-bd74-2c9297ef1ecf": [
+        {
+          "stage": "proposal",
+          "action": "skip",
+          "routine": null
+        },
+        {
+          "stage": "source_ledger",
+          "status": "skipped"
+        }
+      ],
+      "turn:d3045c83-d6ba-4ae0-a335-5774ee8dfc17": [
+        {
+          "stage": "proposal",
+          "action": "skip",
+          "routine": null
+        },
+        {
+          "stage": "source_ledger",
+          "status": "skipped"
+        }
+      ]
+    },
+    "failed_at": {
+      "stage": "checking_ordinary_chat_preferences",
+      "exception": "AssertionError",
+      "file": "owner_memory_cooperation.py",
+      "function": "verify_chat_admission",
+      "line": 31,
+      "winerror": null
+    },
+    "platform_writes": 0,
+    "teardown": {
+      "remaining_http_tasks": 0,
+      "open_connections": 0,
+      "server_exited": true
+    }
+  },
+  "36eivlo9": {
+    "stage": "failed",
+    "cooperation_admission": [
+      {
+        "source": "turn:6ec76e76-e1ef-4183-b2da-47d8e19c0c71",
+        "owner_quote": "辛苦啦，跟我聊两句吧。",
+        "expected": "skipped",
+        "status": "skipped",
+        "remote_source_matches": 0
+      },
+      {
+        "source": "turn:43953fbb-f6f6-4184-b89e-4ff09ed80d2c",
+        "owner_quote": "咱俩对稿有个默契：存疑处圈红，定稿处描蓝。",
+        "expected": "saved",
+        "status": "skipped",
+        "remote_source_matches": 0
+      }
+    ],
+    "chat_admission_judgments": {
+      "turn:6ec76e76-e1ef-4183-b2da-47d8e19c0c71": [
+        {
+          "stage": "proposal",
+          "action": "skip",
+          "routine": null
+        },
+        {
+          "stage": "source_ledger",
+          "status": "skipped"
+        }
+      ],
+      "turn:43953fbb-f6f6-4184-b89e-4ff09ed80d2c": [
+        {
+          "stage": "proposal",
+          "action": "skip",
+          "routine": null
+        },
+        {
+          "stage": "source_ledger",
+          "status": "skipped"
+        }
+      ]
+    },
+    "failed_at": {
+      "stage": "checking_ordinary_chat_preferences",
+      "exception": "AssertionError",
+      "file": "owner_memory_cooperation.py",
+      "function": "verify_chat_admission",
+      "line": 31,
+      "winerror": null
+    },
+    "platform_writes": 0,
+    "teardown": {
+      "remaining_http_tasks": 0,
+      "open_connections": 0,
+      "server_exited": true
+    }
+  },
+  "before_wire": [
+    {
+      "provider": "APIProvider",
+      "method": "generate_json",
+      "path": "/v1/chat/completions",
+      "model": "omni-default",
+      "format": "structural_tag",
+      "schema": {
+        "$defs": {
+          "PrivateSuggestion": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "add",
+                  "update"
+                ],
+                "title": "Action",
+                "type": "string"
+              },
+              "existing_id": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Existing Id"
+              },
+              "headline": {
+                "maxLength": 40,
+                "title": "Headline",
+                "type": "string"
+              },
+              "note": {
+                "maxLength": 150,
+                "title": "Note",
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "title": "Tags",
+                "type": "array"
+              },
+              "summary_kind": {
+                "default": "preference",
+                "enum": [
+                  "preference",
+                  "decision"
+                ],
+                "title": "Summary Kind",
+                "type": "string"
+              },
+              "statement": {
+                "description": "包含全部适用条件和要求的原话，逐字摘录。",
+                "minLength": 1,
+                "title": "Statement",
+                "type": "string"
+              },
+              "scope_quote": {
+                "description": "原话中表明跨次适用、通用惯例或稳定个人偏好的文字。",
+                "minLength": 1,
+                "title": "Scope Quote",
+                "type": "string"
+              },
+              "practice_quote": {
+                "description": "原话中工坊能够实际执行的具体合作方式。",
+                "minLength": 1,
+                "title": "Practice Quote",
+                "type": "string"
+              }
+            },
+            "required": [
+              "action",
+              "existing_id",
+              "headline",
+              "note",
+              "tags",
+              "statement",
+              "scope_quote",
+              "practice_quote"
+            ],
+            "title": "PrivateSuggestion",
+            "type": "object"
+          },
+          "SkipPrivateTurn": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "const": "skip",
+                "title": "Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "title": "SkipPrivateTurn",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "source_1": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrivateSuggestion"
+              },
+              {
+                "$ref": "#/$defs/SkipPrivateTurn"
+              }
+            ],
+            "title": "Source 1"
+          },
+          "source_2": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrivateSuggestion"
+              },
+              {
+                "$ref": "#/$defs/SkipPrivateTurn"
+              }
+            ],
+            "title": "Source 2"
+          }
+        },
+        "required": [
+          "source_1",
+          "source_2"
+        ],
+        "title": "MemoryBatch",
+        "type": "object"
+      },
+      "max_tokens": 1000,
+      "identity_block": true,
+      "public_example": true
+    }
+  ],
+  "isolated_wire": [
+    {
+      "provider": "APIProvider",
+      "method": "generate_json",
+      "path": "/v1/chat/completions",
+      "model": "omni-default",
+      "format": "structural_tag",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "meaning": {
+            "enum": [
+              "持续合作方式",
+              "当前事项",
+              "社交交谈",
+              "其他"
+            ],
+            "title": "Meaning",
+            "type": "string"
+          },
+          "statement": {
+            "description": "表达该意思的一句原话，保留条件和否定。",
+            "maxLength": 150,
+            "title": "Statement",
+            "type": "string"
+          },
+          "scope_quote": {
+            "description": "逐字摘出说明适用场合、时间或习惯的文字，未说明填空。",
+            "title": "Scope Quote",
+            "type": "string"
+          },
+          "practice_quote": {
+            "description": "逐字摘出号主希望对方怎么做的文字，未说明填空。",
+            "title": "Practice Quote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meaning",
+          "statement",
+          "scope_quote",
+          "practice_quote"
+        ],
+        "title": "OwnerUtterance",
+        "type": "object"
+      },
+      "max_tokens": 1000,
+      "identity_block": false,
+      "public_example": false
+    },
+    {
+      "provider": "APIProvider",
+      "method": "generate_json",
+      "path": "/v1/chat/completions",
+      "model": "omni-default",
+      "format": "structural_tag",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "meaning": {
+            "enum": [
+              "号主本人的持续协作约定",
+              "单次请求或邀请",
+              "寒暄玩笑或举例转述",
+              "缺少跨次范围或具体做法"
+            ],
+            "title": "Meaning",
+            "type": "string"
+          },
+          "scope_supported": {
+            "description": "范围摘录在整段号主原话中确实表示重复适用或稳定惯例。",
+            "title": "Scope Supported",
+            "type": "boolean"
+          },
+          "practice_supported": {
+            "description": "做法摘录写明工坊可以执行的协作要求。",
+            "title": "Practice Supported",
+            "type": "boolean"
+          },
+          "same_agreement": {
+            "description": "该范围修饰该做法，所选原句保留条件、例外和否定，属于号主本人。",
+            "title": "Same Agreement",
+            "type": "boolean"
+          },
+          "topic_quote": {
+            "description": "从原话摘取代表约定主题的短语。",
+            "maxLength": 40,
+            "title": "Topic Quote",
+            "type": "string"
+          },
+          "existing_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "更正同一件事时选原条目 ID，否则 null。",
+            "title": "Existing Id"
+          },
+          "replaces_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "改掉本批较早约定时选其来源编号，否则 null。",
+            "title": "Replaces Source"
+          },
+          "summary_kind": {
+            "enum": [
+              "preference",
+              "decision"
+            ],
+            "title": "Summary Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meaning",
+          "scope_supported",
+          "practice_supported",
+          "same_agreement",
+          "topic_quote",
+          "existing_id",
+          "replaces_source",
+          "summary_kind"
+        ],
+        "title": "AgreementReview",
+        "type": "object"
+      },
+      "max_tokens": 1000,
+      "identity_block": false,
+      "public_example": false
+    }
+  ]
+}

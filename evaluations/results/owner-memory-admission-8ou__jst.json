@@ -1,0 +1,367 @@
+{
+  "confirmation": {
+    "browser": "156.0.8078.4",
+    "quote": "Group related points and separate distinct concerns. Use headings and lists when they improve readability.",
+    "revision": 1
+  },
+  "cooperation_admission": [
+    {
+      "source": "turn:ed3bc285-833c-4c09-9fa6-c52b4f999aee",
+      "owner_quote": "辛苦啦，跟我聊两句吧。",
+      "expected": "skipped",
+      "status": "skipped",
+      "remote_source_matches": 0
+    },
+    {
+      "source": "turn:87e3dff5-454d-4ef5-9889-1e6b625e9f2e",
+      "owner_quote": "咱俩对稿有个默契：存疑处圈红，定稿处描蓝。",
+      "expected": "saved",
+      "status": "saved",
+      "remote_source_matches": 1,
+      "rule": {
+        "statement": "咱俩对稿有个默契：存疑处圈红，定稿处描蓝。",
+        "statement_span": [
+          0,
+          21
+        ],
+        "scope_span": [
+          0,
+          8
+        ],
+        "practice_span": [
+          9,
+          21
+        ],
+        "proposed_scope_span": [
+          0,
+          8
+        ]
+      },
+      "scope_quote": "咱俩对稿有个默契",
+      "practice_quote": "存疑处圈红，定稿处描蓝。",
+      "proposed_scope_quote": "咱俩对稿有个默契"
+    }
+  ],
+  "chat_admission_judgments": {
+    "turn:ed3bc285-833c-4c09-9fa6-c52b4f999aee": [
+      {
+        "stage": "utterance",
+        "meaning": "社交交谈",
+        "statement": "辛苦啦，跟我聊两句吧。",
+        "scope_quote": "未说明",
+        "practice_quote": "跟我聊两句吧。"
+      },
+      {
+        "stage": "source_ledger",
+        "status": "skipped"
+      }
+    ],
+    "turn:87e3dff5-454d-4ef5-9889-1e6b625e9f2e": [
+      {
+        "stage": "utterance",
+        "meaning": "持续合作方式",
+        "statement": "咱俩对稿有个默契：存疑处圈红，定稿处描蓝。",
+        "scope_quote": "咱俩对稿有个默契",
+        "practice_quote": "存疑处圈红，定稿处描蓝。"
+      },
+      {
+        "stage": "review",
+        "bound": {
+          "statement": "咱俩对稿有个默契：存疑处圈红，定稿处描蓝。",
+          "statement_span": [
+            0,
+            21
+          ],
+          "scope_span": [
+            0,
+            8
+          ],
+          "practice_span": [
+            9,
+            21
+          ],
+          "proposed_scope_span": [
+            0,
+            8
+          ]
+        },
+        "judgment": {
+          "meaning": "号主本人的持续协作约定",
+          "scope_supported": true,
+          "practice_supported": true,
+          "same_agreement": true,
+          "topic_quote": "咱俩对稿有个默契",
+          "existing_id": null,
+          "replaces_source": null,
+          "summary_kind": "preference"
+        },
+        "accepted": true
+      },
+      {
+        "stage": "source_ledger",
+        "status": "saved"
+      }
+    ],
+    "turn:4812ba6d-5e50-48b3-a6ef-8a8f6065d7fd": [
+      {
+        "stage": "utterance",
+        "meaning": "持续合作方式",
+        "statement": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+        "scope_quote": "以后",
+        "practice_quote": "每个标题都用问句，以问号结尾。"
+      },
+      {
+        "stage": "review",
+        "bound": {
+          "statement": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+          "statement_span": [
+            0,
+            25
+          ],
+          "scope_span": [
+            0,
+            9
+          ],
+          "practice_span": [
+            10,
+            25
+          ],
+          "proposed_scope_span": [
+            0,
+            2
+          ]
+        },
+        "judgment": {
+          "meaning": "号主本人的持续协作约定",
+          "scope_supported": true,
+          "practice_supported": true,
+          "same_agreement": true,
+          "topic_quote": "以后写直播素材提纲",
+          "existing_id": 2,
+          "replaces_source": null,
+          "summary_kind": "preference"
+        },
+        "accepted": true
+      },
+      {
+        "stage": "correction_target",
+        "judgment": {
+          "relation": "新做法取代原做法",
+          "common_reference": "写直播素材提纲",
+          "old_value": "Group related points and separate distinct concerns. Use headings and lists when they improve readability.",
+          "new_value": "每个标题都用问句，以问号结尾。"
+        },
+        "replaces": false
+      },
+      {
+        "stage": "source_ledger",
+        "status": "saved"
+      }
+    ]
+  },
+  "independent_preferences": {
+    "manual": {
+      "id": 2,
+      "revision": 1,
+      "headline": "Group related points and separate distin",
+      "note": "Group related points and separate distinct concerns. Use headings and lists when they improve readability.",
+      "quote": "Group related points and separate distinct concerns. Use headings and lists when they improve readability.",
+      "source_key": "settings:3b1617abf5b2dde36b21b0314d07aee8094b5b2856f71cadd12cca189b901c40"
+    },
+    "automatic": {
+      "id": 3,
+      "revision": 1,
+      "headline": "以后写直播素材提纲",
+      "note": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+      "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+      "source_key": "turn:4812ba6d-5e50-48b3-a6ef-8a8f6065d7fd"
+    }
+  },
+  "video": {
+    "input": "owner-authorized isolated QA preference",
+    "original": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+    "before_titles": [
+      "宝座上铺着黄色坐垫吗？"
+    ],
+    "after_titles": [],
+    "same_frame": false,
+    "semantic_status": "unverified"
+  },
+  "platform_writes": 0,
+  "teardown": {
+    "remaining_http_tasks": 0,
+    "open_connections": 0,
+    "server_exited": true
+  },
+  "acceptance_passed": false,
+  "stage": "finished",
+  "independent_device": {
+    "architecture": "x86_64",
+    "fresh_authenticated_session": true,
+    "read_after_page_close": true,
+    "forget_visible_on_original_client": true
+  },
+  "forgotten_revisions": {
+    "3": 2,
+    "2": 1
+  },
+  "material_origin": {
+    "mode": "reused_verified_public_read",
+    "task_id": "06b1ee8d-40f4-4756-8ca0-e91bd68f34bc",
+    "step_id": "840ec0bf-e632-5856-a442-1b7045296a31",
+    "selection": {
+      "bvid": "BV1Hy4y1J7xH",
+      "ranges": [
+        {
+          "part": 2,
+          "start": 11,
+          "end": 14
+        }
+      ]
+    },
+    "cid": "301983263",
+    "clip_frames": 75
+  },
+  "run": "8ou__jst",
+  "voice": {
+    "speaker": "synthetic Mandarin QA speech",
+    "status": "observed",
+    "protocol": "explicit_user_audio",
+    "explicit_samples": 128000,
+    "final_transcript_events": 0,
+    "bound_final_transcript": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "owner_confirmed_text": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "preview_edited_by_authorized_qa": false,
+    "correction": {
+      "id": 3,
+      "revision": 2
+    }
+  },
+  "cross_device_voice": {
+    "id": 3,
+    "revision": 2,
+    "quote": "以后直播提纲的标题都用陈述句，以句号结尾。"
+  },
+  "before": {
+    "body": "**宝座上铺着黄色坐垫吗？**\n选材理由：画面依据：画面中央是一个装饰华丽的皇帝宝座，上面铺有黄色坐垫。剪辑安排：用在开场，开场时插入这一镜，作为过渡引入主题的视觉铺垫。\n主帧：BV1Hy4y1J7xH · 单帧采样 · 分 P 2 · 13.52 秒 · <https://www.bilibili.com/video/BV1Hy4y1J7xH/?p=2&t=13>\n覆盖：仅核实所列采样时点；连续画面及音轨均未经该画面回执核实。\n\n当轮取材窗口与观测覆盖：\n- 第 1 项 · BV1Hy4y1J7xH P2 · 连续取材入点 11 秒、出点 14 秒（不含），保存 75 个连续原帧。私有短片不含音轨。\n- 第 1 项 · 逐帧检测画面及下方屏字变化；Omni 审读代表帧 11、12.24、13.96 秒，检测到的状态均有代表帧。\n- 第 1 项 · BV1Hy4y1J7xH P2 · 请求抽样范围 [11, 14) 秒。初读取材观察 3 帧，实际时点为 11.44、12.48、13.52 秒。\n- 第 1 项的工具回执：此区间未取得可公开读取的字幕。\n- 第 1 项的工具回执：画面内容按时点抽样描述；未听审原片音轨。\n\n未核实或未覆盖：\n- 本轮尚未取得独立原出处正文。\n- 本轮尚未取得独立原出处正文。",
+    "status": "completed",
+    "citations": [
+      {
+        "id": 3,
+        "revision": 1,
+        "headline": "以后写直播素材提纲",
+        "note": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+        "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+        "source_key": "turn:4812ba6d-5e50-48b3-a6ef-8a8f6065d7fd"
+      },
+      {
+        "id": 2,
+        "revision": 1,
+        "headline": "Group related points and separate distin",
+        "note": "Group related points and separate distinct concerns. Use headings and lists when they improve readability.",
+        "quote": "Group related points and separate distinct concerns. Use headings and lists when they improve readability.",
+        "source_key": "settings:3b1617abf5b2dde36b21b0314d07aee8094b5b2856f71cadd12cca189b901c40"
+      }
+    ],
+    "primary_points": [
+      {
+        "part": 2,
+        "cid": "301983263",
+        "seconds": 13.52
+      }
+    ],
+    "independent_device_body_matched": true,
+    "measurement": {
+      "items": [
+        {
+          "title": "宝座上铺着黄色坐垫吗？",
+          "ending": "？",
+          "punctuation_matches": true,
+          "expected_form": "问句",
+          "reading": {
+            "form": "问句",
+            "core": "宝座上铺着黄色坐垫吗",
+            "supported": true,
+            "observation": "画面中央是一个装饰华丽的皇帝宝座，上面铺有黄色坐垫",
+            "answer": "是的，宝座上铺着黄色坐垫",
+            "core_bound": true,
+            "answer_bound": false,
+            "grounded": true
+          },
+          "form_matches": true,
+          "frame_observations": [
+            "画面中央是一个装饰华丽的皇帝宝座，上面铺有黄色坐垫",
+            "宝座前方站着一位穿着传统服饰的男子",
+            "宝座周围摆放着蓝色的金属装饰物",
+            "背景是带有精美雕花的屏风或墙面",
+            "宫殿内部",
+            "皇帝宝座",
+            "古代服饰人物",
+            "很快就创造了16.7%的收视奇迹",
+            "史君说剧 bilibili",
+            "慎周身俯思永",
+            "六事精诚惟作"
+          ]
+        }
+      ],
+      "passed": true,
+      "requested_frame": true
+    },
+    "titles": [
+      "宝座上铺着黄色坐垫吗？"
+    ]
+  },
+  "voice_corrected": {
+    "body": null,
+    "status": "failed",
+    "citations": [],
+    "measurement": {
+      "passed": false,
+      "items": []
+    },
+    "titles": [],
+    "failed_message": "items.1 Value error, 交付项至少需要一个证据 ID。",
+    "rejected_tool_attempts": [
+      {
+        "tool": "submit_materials",
+        "arguments": {
+          "items": [
+            {
+              "title": "13.52 秒古装宫殿画面与收视言辞",
+              "rationale": "该帧为 11-14 秒区间内最接近 13.5 秒的已核实画面（13.52 秒），展示古装宫殿场景及字幕线索。画面中央为金色主座，两侧各有一名穿蓝色官服戴官帽人物，墙壁挂有汉字条幅。画面上方字幕提及‘很快就创造了16.7%的收视奇迹’，可指向相关内容。",
+              "sources": [
+                "822c4021-7d4a-51bd-80be-3589ce44c7da:3"
+              ],
+              "primary_frame": "822c4021-7d4a-51bd-80be-3589ce44c7da:3"
+            },
+            {
+              "title": "缺口：字幕及音轨",
+              "rationale": "回执显示此区间未取得可公开读取的字幕，仅按时点抽样描述画面；音轨为 visual_only（只读取画面），未听审原片音轨。",
+              "sources": [],
+              "primary_frame": null
+            }
+          ],
+          "gaps": [
+            "此区间未取得可公开读取的字幕。",
+            "音轨为 visual_only，未听审原片音轨。"
+          ]
+        },
+        "result": {
+          "error": "items.1 Value error, 交付项至少需要一个证据 ID。"
+        }
+      }
+    ]
+  },
+  "after": {
+    "body": null,
+    "status": "needs_input",
+    "citations": [],
+    "measurement": {
+      "passed": false,
+      "items": []
+    },
+    "titles": [],
+    "failed_message": "请以BL大物bvid搜索获取该节目的背景资料库链接。",
+    "rejected_tool_attempts": []
+  }
+}
