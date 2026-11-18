@@ -34,3 +34,5 @@ WHEP 播放器接收音频和视频。Avatar 回执使用订阅起点加播放�
 在 Studio 项目环境执行 `python tests/browser/run_private_call.py --whep`。默认从相邻的 `omni-avatar-api` 项目环境启动真实 Gateway、Avatar 服务与 aiortc，Chromium 通过工坊入口依次选择两套形象。测试使用临时业务目录、模拟语音引擎和替身渲染器，检查媒体解码、两种回执、静音、打断换代、挂断和媒体故障回退。两套生产原稿的视觉质量须独立验收。
 
 要核对真实 rig 渲染与记忆撤回，可执行 `python tests/browser/run_private_call.py --rig-dir runtime/releases/dafeiyu-avatar/master-rigs`。[两套原画与跨端撤回验收](../../evaluations/results/private-rig-memory-20261119.md)
+
+要验证真实 Omni 语音，配置 `OMNI_GATEWAY_URL` 和普通应用的 `OMNI_CORE_TOKEN_FILE` 或 `OMNI_STUDIO_TOKEN`，执行 `uv run --locked python -m evaluations.private_rig_call`。命令使用同一个临时工坊依次呼叫两套原画，默认把仓库的 `assets/whale/sample1.wav` 接入 Chromium 麦克风。可用 `--wav` 指定获准发送的语音。运行环境需要 FFmpeg、Chromium 和相邻独立服务的项目环境。每套形象输出一行实测结果；任一项未达标会以非零状态退出。[真实语音与原画播放读回](../../evaluations/results/private-rig-omni-voice-20261119.md)
