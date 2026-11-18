@@ -4,11 +4,15 @@ import asyncio
 import base64
 import importlib.util
 import json
+import socket
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
+import uvicorn
+
+from tuber_studio.agent.task_tools import observed_live_status
 
 MEDIA = Path(__file__).resolve().parents[1] / "deploy" / "omni" / "media"
 
@@ -29,6 +33,28 @@ def media(monkeypatch):
     bridge = load_media("bridge")
     monkeypatch.setattr(publisher, "load_frames", lambda _: ((1, b""),))
     return bridge, publisher
+
+
+async def test_core_reads_idle_from_actual_bridge_endpoint(media, monkeypatch):
+    bridge, _ = media
+    runtime = SimpleNamespace(live=SimpleNamespace(state="stopped", muted=False, session_id=None))
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        address = f"http://127.0.0.1:{listener.getsockname()[1]}/healthz"
+        monkeypatch.setenv("TUBER_NATIVE_PROGRAM_STATUS_URL", address)
+        server = uvicorn.Server(uvicorn.Config(bridge.app, lifespan="off", ws="none", log_level="error"))
+        serving = asyncio.create_task(server.serve(sockets=[listener]))
+        try:
+            async with asyncio.timeout(5):
+                while not server.started:
+                    if serving.done():
+                        serving.result()
+                    await asyncio.sleep(.01)
+            assert (await observed_live_status(runtime))["native_program"] == {"state": "idle"}
+            assert bridge.app.state.program_publisher is None
+        finally:
+            server.should_exit = True
+            await serving
 
 
 class Client:

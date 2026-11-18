@@ -13,7 +13,7 @@ from pydantic import Field, ValidationInfo, field_validator, model_validator
 from ..api_providers import APIProvider
 from ..compaction import ContextWindowExceeded
 from ..generation_meter import budgeted_call
-from ..http_api import response_json
+from ..http_api import InferenceQueueBusy, response_json
 from ..live.game_livestream import PvZAdapter, StardewValleyAdapter
 from ..models import StrictModel
 from ..responses_provider import ResponsesClient
@@ -275,17 +275,21 @@ async def bound_owner(runtime, character):
 
 async def observed_live_status(runtime):
     result = {}
-    if os.getenv("TUBER_NATIVE_PROGRAM_STATUS") == "1":
+    address = os.getenv("TUBER_NATIVE_PROGRAM_STATUS_URL", "").strip()
+    if address:
         state = "unavailable"
         try:
+            url = httpx.URL(address)
+            if url.scheme not in {"http", "https"} or not url.host or url.userinfo or url.fragment:
+                raise ValueError("Invalid native program status URL")
             async with asyncio.timeout(1.5), httpx.AsyncClient(trust_env=False, follow_redirects=False) as client:
-                health = await response_json(client, "GET", "http://omni-media:8080/healthz")
+                health = await response_json(client, "GET", str(url))
                 program = health.get("native_program")
                 if health.get("process") == "ready" and isinstance(program, dict):
                     reported = program.get("state")
                     if reported in ("idle", "starting", "publishing", "stopping"):
                         state = reported
-        except (TimeoutError, ValueError, httpx.HTTPError):
+        except (TimeoutError, ValueError, InferenceQueueBusy, httpx.InvalidURL, httpx.HTTPError):
             pass
         result["native_program"] = {"state": state}
     session = runtime.live
