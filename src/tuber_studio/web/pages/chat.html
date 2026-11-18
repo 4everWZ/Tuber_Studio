@@ -1,7 +1,7 @@
 <section data-section="chat" class="operator-chat" hidden>
   <header class="operator-chat-heading">
     <div class="chat-agent-identity">
-      <img id="chat-agent-avatar" alt="" hidden>
+      <button type="button" id="chat-pet" aria-label="为角色宠物选表情" title="换个表情" hidden><img id="chat-agent-avatar" alt=""></button>
       <h1 id="operator-chat-title">与大肥鱼对话</h1>
     </div>
     <div class="operator-chat-heading-actions">
@@ -9,6 +9,8 @@
       <div id="operator-chat-more" class="operator-chat-popup">
         <button id="operator-chat-more-toggle" class="operator-chat-icon" type="button" aria-label="更多对话操作" aria-expanded="false" aria-controls="operator-chat-more-panel"><span aria-hidden="true">···</span></button>
         <div id="operator-chat-more-panel" class="operator-chat-menu operator-chat-menu-end" hidden>
+          <button id="private-call-open" type="button" hidden>私有语音通话</button>
+          <button id="chat-pet-toggle" type="button">隐藏角色宠物</button>
           <button id="operator-chat-clear" type="button">清空私聊</button>
         </div>
       </div>
@@ -75,3 +77,13 @@
     </div>
   </form>
 </section>
+<dialog id="private-call-dialog" aria-labelledby="private-call-title">
+  <h2 id="private-call-title">私有语音通话</h2>
+  <p>声音只送往私聊推理服务，不接入直播、不写入聊天记录。建议佩戴耳机。</p>
+  <p id="private-call-state" role="status">尚未开始通话</p>
+  <div class="actions">
+    <button id="private-call-start" type="button">开始通话</button>
+    <button id="private-call-end" type="button">关闭</button>
+  </div>
+</dialog>
+<script type="module" src="/static/modules/private-call.js"></script>

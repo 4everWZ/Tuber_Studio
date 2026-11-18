@@ -83,6 +83,69 @@
       ],
       "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/actions.png",
       "note": "图集帧 14（行优先，从 0 编号），裁去透明外边后等比缩放，居中放置于 384×384 透明 PNG。"
+    },
+    {
+      "id": "motion-dance",
+      "title": "摇摆一下",
+      "path": "motion-dance.gif",
+      "emotions": [
+        "cheerful"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-dance.png",
+      "note": "原动作图集按帧 [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31]（行优先，从 0 编号）裁切，缩放为 256×256 透明循环 GIF，每帧 90 ms。"
+    },
+    {
+      "id": "motion-eat",
+      "title": "开饭啦",
+      "path": "motion-eat.gif",
+      "emotions": [
+        "cheerful",
+        "excited"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-eat.png",
+      "note": "原动作图集按帧 [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31]（行优先，从 0 编号）裁切，缩放为 256×256 透明循环 GIF，每帧 110 ms。"
+    },
+    {
+      "id": "motion-jump",
+      "title": "蹦起来",
+      "path": "motion-jump.gif",
+      "emotions": [
+        "excited"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-jump.png",
+      "note": "原动作图集按帧 [0, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31]（行优先，从 0 编号）裁切，缩放为 256×256 透明循环 GIF，每帧 80 ms。"
+    },
+    {
+      "id": "motion-sleep",
+      "title": "困了，晚安",
+      "path": "motion-sleep.gif",
+      "emotions": [
+        "idle"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-sleep.png",
+      "note": "原动作图集按帧 [1, 3, 5, 7, 9, 11, 13, 17, 19, 21, 23, 25, 27, 29, 31]（行优先，从 0 编号）裁切，缩放为 256×256 透明循环 GIF，每帧 160 ms。"
+    },
+    {
+      "id": "motion-sneak",
+      "title": "悄悄偷吃",
+      "path": "motion-sneak.gif",
+      "emotions": [
+        "shy",
+        "cheerful"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-sneak.png",
+      "note": "原动作图集按帧 [1, 3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25, 27, 29, 13, 31]（行优先，从 0 编号）裁切，缩放为 256×256 透明循环 GIF，每帧 100 ms。"
+    },
+    {
+      "id": "motion-walk",
+      "title": "这就来",
+      "path": "motion-walk.gif",
+      "emotions": [
+        "idle",
+        "cheerful"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-walk.png",
+      "note": "原动作图集按帧 [0, 16, 5, 6, 22, 10, 26, 13, 14, 30]（行优先，从 0 编号）裁切，缩放为 256×256 透明循环 GIF，每帧 100 ms。"
     }
   ]
 }

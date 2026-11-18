@@ -28,9 +28,14 @@ def test_catalog_requires_admin_and_exposes_shared_reaction_pack(client, setting
     listing = client.get("/api/memes").json()
     assert listing["max_file_bytes"] == MAX_BYTES
     assert listing["character_id"] == "whale"
-    assert len(listing["items"]) == 14
+    assert len(listing["items"]) == 20
     assert sum(item["enabled"] and item["mime_type"] == "image/png" for item in listing["items"]) == 8
-    asset = next(item for item in listing["items"] if item["animated"])
+    new_clips = [item for item in listing["items"] if item["enabled"] and item["animated"]]
+    assert {item["title"] for item in new_clips} == {"摇摆一下", "开饭啦", "蹦起来", "困了，晚安", "悄悄偷吃", "这就来"}
+    for clip in new_clips:
+        preview = client.get(f"/api/memes/{clip['asset_id']}/preview")
+        assert preview.status_code == 200 and preview.headers["content-type"] == "image/gif"
+    asset = next(item for item in listing["items"] if item["animated"] and not item["enabled"])
     assert not asset["enabled"]
     assert "path" not in asset
     identity = asset["asset_id"]

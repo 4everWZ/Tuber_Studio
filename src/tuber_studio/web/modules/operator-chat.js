@@ -29,7 +29,7 @@ function requestId() {
   return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
 }
 
-export function initOperatorChat(api, { applyAutomationStatus, getAutomationStatus } = {}) {
+export function initOperatorChat(api, { applyAutomationStatus, getAutomationStatus, setPet, refreshAutomation } = {}) {
   const feed = $("operator-chat-feed"), timeline = $("operator-chat-timeline");
   const older = $("operator-chat-older"), historyNote = $("operator-chat-history-note");
   const form = $("operator-chat-form"), input = $("operator-chat-input"), send = $("operator-chat-send");
@@ -229,6 +229,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   }
 
   function reset() {
+    setPet?.(null);
     epoch++;
     inFlight?.controller.abort();
     inFlight = null;
@@ -267,10 +268,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
       const follow = first || nearEnd();
       scope = nextScope;
       $("operator-chat-title").textContent = result.character;
-      const avatar = $("chat-agent-avatar");
-      avatar.hidden = !result.avatar;
-      if (result.avatar && avatar.getAttribute("src") !== result.avatar) avatar.src = result.avatar;
-      else if (!result.avatar) avatar.removeAttribute("src");
+      setPet?.(result);
       for (const turn of result.turns) {
         const section = mountTurn(turn);
         if (section || first) feed.append(section || turns.get(turn.request_id).section);
@@ -314,14 +312,16 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
 
   async function refreshCards() {
     if (!active || cardRefreshPending) return;
-    const automation = getAutomationStatus?.();
-    if (scope && automation?.character?.id && (scope.split("/").slice(0, 2).join("/") !== `${automation.character.id}/${automation.character.version ?? ""}` ||
-        (automation.account_id && scope.split("/")[2] !== String(automation.account_id)))) {
-      await refresh();
-      return;
-    }
-    if (automation) syncAutomationCards(automation);
+    void taskActivity.refreshAttention().catch(() => {});
     const bounds = timeline.getBoundingClientRect();
+    if ([...turns.values()].some(entry => {
+      if (entry.turn.card?.type !== "operation_control") return false;
+      const rect = entry.section.getBoundingClientRect();
+      return rect.top < bounds.bottom && rect.bottom > bounds.top;
+    })) {
+      await refreshAutomation?.();
+      if (active && getAutomationStatus?.()) syncAutomationCards(getAutomationStatus());
+    }
     const visible = [...turns.values()].filter(entry => {
       if (!entry.turn.memory_dependent && !entry.card?.needsRefresh?.()) return false;
       const rect = entry.section.getBoundingClientRect();

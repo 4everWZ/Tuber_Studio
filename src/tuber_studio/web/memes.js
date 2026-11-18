@@ -33,7 +33,7 @@ export class MemeGallery {
   constructor(root, api, notify, onChange = () => {}) {
     this.root = root; this.api = api; this.notify = notify; this.onChange = onChange; this.items = []; this.pending = false; this.loading = false; this.sequence = 0;
     root.innerHTML = `<article class="panel meme-library"><div class="panel-heading"><h2>表情包图库</h2><button data-meme-refresh type="button">刷新图库</button></div><p class="hint">私信、动态和角色共用这个图库。</p><p data-meme-state class="hint" role="status"></p><div data-meme-grid class="meme-grid"></div>
-      <details class="meme-upload"><summary>导入表情包</summary><form data-meme-upload><fieldset data-meme-upload-fields class="meme-fields"><div class="form-grid"><label>名称<input name="title" maxlength="120" required></label><label>图片文件<input name="file" type="file" accept="image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp" required></label></div><p class="hint">PNG、JPEG、GIF 或 WebP；最多8 MiB，宽高不超过4096，最多300帧。GIF按原文件保存。</p><fieldset class="meme-emotions"><legend>情绪（至少一项）</legend>${Object.entries(memeEmotions).map(([key, name]) => `<label><input type="checkbox" name="emotion" value="${key}"${key === "idle" ? " checked" : ""}>${name}</label>`).join("")}</fieldset><div class="form-grid"><label>来源作者<input name="author" maxlength="300" required placeholder="实际作者或权利人"></label><label>许可名称<input name="license_name" maxlength="300" required placeholder="实际许可或授权名称"></label></div><div class="form-grid"><label>来源链接（可选）<input name="source_url" type="url"></label><label>许可链接（可选）<input name="license_url" type="url"></label></div><label>来源备注（可选）<textarea name="source_note" rows="2" maxlength="2000"></textarea></label><label>许可备注（可选）<textarea name="license_note" rows="2" maxlength="2000"></textarea></label><div class="actions"><button type="submit" class="primary">上传到图库</button></div></fieldset></form></details><p data-meme-feedback class="hint" role="status"></p></article>`;
+      <details class="meme-upload"><summary>导入表情包</summary><form data-meme-upload><fieldset data-meme-upload-fields class="meme-fields"><div class="form-grid"><label>名称<input name="title" maxlength="120" required></label><label>图片文件<input name="file" type="file" accept="image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp" required></label></div><p class="hint">PNG、JPEG、GIF 或 WebP；最多8 MiB，宽高不超过4096，最多300帧。GIF按原文件保存。</p><fieldset class="meme-emotions"><legend>情绪（至少一项）</legend>${Object.entries(memeEmotions).map(([key, name]) => `<label><input type="checkbox" name="emotion" value="${key}"${key === "idle" ? " checked" : ""}>${name}</label>`).join("")}</fieldset><div class="form-grid"><label>来源作者<input name="author" maxlength="300" required placeholder="实际作者或权利人"></label><label>许可名称<input name="license_name" maxlength="300" required placeholder="实际许可或授权名称"></label></div><div class="form-grid"><label>来源链接（可选）<input name="source_url" type="url"></label><label>许可链接（可选）<input name="license_url" type="url"></label></div><label>来源版本（可选）<input name="source_revision" maxlength="160" placeholder="提交 SHA 或素材包版本"></label><label>来源备注（可选）<textarea name="source_note" rows="2" maxlength="2000"></textarea></label><label>许可备注（可选）<textarea name="license_note" rows="2" maxlength="2000"></textarea></label><div class="actions"><button type="submit" class="primary">上传到图库</button></div></fieldset></form></details><p data-meme-feedback class="hint" role="status"></p></article>`;
     this.$ = selector => root.querySelector(selector);
     this.$("[data-meme-refresh]").onclick = () => this.refresh();
     this.$("[data-meme-upload]").onsubmit = event => { event.preventDefault(); this.upload(); };
@@ -79,7 +79,7 @@ export class MemeGallery {
     const emotions = Array.from(form.querySelectorAll('[name="emotion"]:checked'), item => item.value);
     if (!emotions.length) { this.feedback("请至少选择一种情绪。", true); return; }
     const body = {title: form.elements.title.value.trim(), emotions,
-      source: {kind: "user_upload", author: form.elements.author.value.trim(), url: form.elements.source_url.value.trim(), revision: "", note: form.elements.source_note.value.trim()},
+      source: {kind: "user_upload", author: form.elements.author.value.trim(), url: form.elements.source_url.value.trim(), revision: form.elements.source_revision.value.trim(), note: form.elements.source_note.value.trim()},
       license: {name: form.elements.license_name.value.trim(), url: form.elements.license_url.value.trim(), note: form.elements.license_note.value.trim()}};
     await this.action(async () => {
       body.content_base64 = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("图片文件读取失败，请重新选择。")); reader.onload = () => { const result = typeof reader.result === "string" ? reader.result.split(",", 2)[1] : null; if (!result) reject(new Error("图片文件未能读取为有效内容。")); else resolve(result); }; reader.readAsDataURL(file); });
@@ -89,7 +89,9 @@ export class MemeGallery {
 }
 
 export class MemePicker {
-  constructor(api, onSelect, {title = "选择私信表情包", description = "显示图库中已启用的图片。选图后仍需审核，最终仅发送这一张图片。"} = {}) {
+  constructor(api, onSelect, {title = "选择私信表情包", description = "显示图库中已启用的图片。选图后仍需审核，最终仅发送这一张图片。", accept = () => true, emptyText = "图库没有可用表情包，请先在图库启用或导入图片。"} = {}) {
+    this.accept = accept;
+    this.emptyText = emptyText;
     this.api = api; this.onSelect = onSelect; this.sequence = 0; this.pending = false;
     const headingId = `meme-picker-heading-${++memePickerCount}`;
     this.dialog = document.createElement("dialog"); this.dialog.className = "meme-picker"; this.dialog.setAttribute("aria-labelledby", headingId);
@@ -109,8 +111,8 @@ export class MemePicker {
     try {
       const value = await this.api("/api/memes");
       if (request !== this.sequence || !this.dialog.open) return;
-      const items = (value.items || []).filter(item => item.enabled && !item.missing);
-      this.$("[data-picker-state]").textContent = items.length ? `${items.length} 张可用图片` : "图库没有可用表情包，请先在图库启用或导入图片。";
+      const items = (value.items || []).filter(item => item.enabled && !item.missing && this.accept(item));
+      this.$("[data-picker-state]").textContent = items.length ? `${items.length} 张可用图片` : this.emptyText;
       for (const asset of items) {
         const button = memeElement("button", null, "meme-choice"); button.type = "button"; button.setAttribute("aria-pressed", String(asset.asset_id === this.selected)); button.setAttribute("aria-label", `选用${asset.title}`);
         button.append(memePreview(asset), memeElement("strong", asset.title), memeElement("small", asset.license?.name || "许可未提供"));
