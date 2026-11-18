@@ -1,0 +1,30 @@
+{
+  "run": "first real run",
+  "source": "ordinary authenticated gateway",
+  "platform_writes": 0,
+  "source_quote": "Global Working Rules\n\nLead with the answer, conclusion, or actionable result.",
+  "revision": 2,
+  "verified_findings": [
+    3
+  ],
+  "body": "**古装宫廷宝座全景**\n选材理由：此帧完整呈现了核心场景：中央的金色宝座与两侧蓝色官服侍从，能直接用于展示宫廷权力结构，符合11-14秒该片段的视觉重心。字幕提及收视率数据，可作为后续解说的视觉锚点。\n主帧：BV1Hy4y1J7xH · 单帧采样 · 分 P 2 · 13.52 秒 · <https://www.bilibili.com/video/BV1Hy4y1J7xH/?p=2&t=13>\n覆盖：仅核实所列采样时点；连续画面及音轨均未经该画面回执核实。\n\n当轮取材窗口与观测覆盖：\n- 第 1 项 · BV1Hy4y1J7xH P2 · 连续取材入点 11 秒、出点 14 秒（不含），保存 75 个连续原帧。私有短片不含音轨。\n- 第 1 项 · BV1Hy4y1J7xH P2 · 请求抽样范围 [11, 14) 秒。内容语义仅观察 3 帧，实际时点为 11.44、12.48、13.52 秒。\n- 第 1 项的工具回执：此区间未取得可公开读取的字幕。\n- 第 1 项的工具回执：画面内容按时点抽样描述；未听审原片音轨。",
+  "items": [
+    {
+      "title": "古装宫廷宝座全景",
+      "rationale": "此帧完整呈现了核心场景：中央的金色宝座与两侧蓝色官服侍从，能直接用于展示宫廷权力结构，符合11-14秒该片段的视觉重心。字幕提及收视率数据，可作为后续解说的视觉锚点。",
+      "sources": [
+        "c6dedd4e-3745-55cf-9ae9-8e4da16e4bac:3"
+      ],
+      "primary_frame": "c6dedd4e-3745-55cf-9ae9-8e4da16e4bac:3"
+    }
+  ],
+  "assessment": "偏好进入最终编辑。标题先描述场景，理由先写宝座与侍从，再说怎么用，未体现结论先行。",
+  "forget_attempt": "同一条目的另一旧修订触发冲突；未取得此轮第二份提纲。",
+  "voice": {
+    "status": "unverified",
+    "session_created": true,
+    "sent_pcm_seconds": 0,
+    "committed_user_audio_items": 0,
+    "final_transcript_events": 0
+  }
+}

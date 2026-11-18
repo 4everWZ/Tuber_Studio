@@ -362,3 +362,22 @@ async def test_confirmed_voice_correction_rechecks_target_and_revision(owner, mo
     revisions = (await client.get(f"/api/daily-memory/organized/{identity}/revisions", params={"scope":scope})).json()["revisions"]
     assert [r["source_key"] for r in revisions[:2]] == [now["source_key"],old["source_key"]]
     assert [r["note"] for r in revisions[:2]] == [new, NOTE]
+
+async def test_real_replay_forgets_a_merged_preference_once_using_its_observed_revision(owner, monkeypatch):
+    from evaluations import owner_memory_video as rehearsal
+
+    client, _ = owner
+    identity = await save(client)
+    first = (await client.post(MEM+".get", json={"id":identity})).json()
+    (await client.patch(f"/api/daily-memory/organized/{identity}", json={"note":"修订一次。"})).raise_for_status()
+    second = (await client.post(MEM+".get", json={"id":identity})).json()
+    attempts = []
+    async def remove(device, port, login, method, path):
+        attempts.append(path)
+        (await client.request(method,path)).raise_for_status()
+    monkeypatch.setattr(rehearsal, "device_call", remove)
+    with pytest.raises(RuntimeError, match="已核实的修订之外"):
+        await rehearsal.forget_current(client,0,"","",[first])
+    assert not attempts
+    assert await rehearsal.forget_current(client,0,"","",[second,first]) == {identity:second["revision"]}
+    assert attempts == [f"/api/daily-memory/organized/{identity}?expected_revision={second['revision']}"]

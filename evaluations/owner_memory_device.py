@@ -24,7 +24,7 @@ from tuber_studio.config import ROOT, Settings
 
 
 CONFIRMED = "Group related points and separate distinct concerns. Use headings and lists when they improve readability."
-AUTO = "Lead with the answer, conclusion, or actionable result."
+AUTO = "以后写直播素材提纲，每个标题都用问句，以问号结尾。"
 SEARCH = "/api/agent/memory.search"
 
 # The remote client gets its own Studio cookie and verifies access is denied before authentication.
@@ -127,23 +127,28 @@ async def run(device, live, voice_wav):
                     client = await stack.enter_async_context(httpx.AsyncClient(base_url=local, trust_env=False, timeout=180))
                     (await client.post("/api/auth", json={"token":token})).raise_for_status()
                     record("stage", "independent_device_authenticated")
-                    if voice_wav and (await client.get("/api/chat/private-call")).raise_for_status().json()["configured"]:
-                        from evaluations.owner_memory_voice import voice_probe
-                        report["final_user_transcript"] = await voice_probe(playwright, os.getenv("CHROMIUM_EXECUTABLE"),
-                                                                          local, token, voice_wav)
-                    elif config:
-                        from evaluations.owner_memory_voice import service_probe
+                    async def correct_voice(target):
+                        from evaluations.owner_memory_voice import VOICE_RULE, live_voice_binding, spoken_rule, voice_probe
                         try:
-                            report["final_user_transcript"] = await service_probe(config, Path(directory), voice_wav)
+                            speech = voice_wav or await asyncio.to_thread(spoken_rule, Path(directory), VOICE_RULE)
+                            async with live_voice_binding(config):
+                                result = await voice_probe(playwright, os.getenv("CHROMIUM_EXECUTABLE"), local,
+                                                           token, speech, target, VOICE_RULE)
                         except (OSError, subprocess.SubprocessError, ValueError, httpx.HTTPError) as error:
-                            report["final_user_transcript"] = {"status":"unverified", "reason":type(error).__name__}
-                    else:
-                        report["final_user_transcript"] = {"status":"unverified", "reason":"ordinary_service_binding_missing"}
-                    record("stage", "final_transcript_checked")
+                            result = {"status":"unverified", "reason":type(error).__name__}
+                        record("final_user_transcript", result)
+                        if isinstance(result.get("correction"), dict):
+                            updated = (await device_call(device, port, token, "POST", "/api/agent/memory.get",
+                                                         {"id":target["id"]}))["value"]
+                            assert updated["revision"] == result["correction"]["revision"]
+                            assert updated["quote"] == result["bound_final_transcript"]
+                            record("voice_cross_device_revision", updated)
+                            return updated
                     if config:
                         from evaluations.owner_memory_video import compare
-                        report["video"] = await compare(client, runtime, port, device, token, row, record)
+                        report["video"] = await compare(client, runtime, port, device, token, row, record, correct_voice)
                     else:
+                        report["final_user_transcript"] = {"status":"unverified", "reason":"ordinary_service_binding_missing"}
                         report["video"] = {"status":"unverified", "reason":"ordinary_service_binding_missing" if live else "device_only"}
                         await device_call(device, port, token, "DELETE", f"/api/daily-memory/organized/{row['id']}?expected_revision={row['revision']}")
                     assert not (await client.post(SEARCH, json={"query":CONFIRMED})).json()["items"]

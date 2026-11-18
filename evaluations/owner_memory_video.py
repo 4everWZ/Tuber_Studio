@@ -4,47 +4,32 @@ import asyncio
 from uuid import uuid4
 
 from evaluations.owner_memory_device import AUTO, SEARCH, device_call
-from tuber_studio.generation_meter import budgeted_call
-from tuber_studio.models import StrictModel
 
 BV = "BV1Hy4y1J7xH"
 GOAL = (f"私下为直播写一份 P2 素材提纲，只读取 {BV} 的 11 到 14 秒，取一个实际画面，给出标题、选用理由和覆盖缺口。"
-        "按号主对结论与结构的偏好组织；没有相应偏好时先描述画面，再给建议。先别发。")
+        "按号主已有的标题偏好组织。没有相应偏好时，使用不带末尾标点的简短名词标题。先别发。")
 SELECTION = {"bvid": BV, "ranges": [{"part": 2, "start": 11, "end": 14}]}
 
 
-class OrderEvidence(StrictModel):
-    recommendation: str
-    observation: str
+async def forget_current(client, port, device, login, sources):
+    latest = {}
+    for source in sources:
+        row = latest.get(source["id"])
+        if row is None or source["revision"] > row["revision"]:
+            latest[source["id"]] = source
+    for identity, expected in latest.items():
+        current = (await client.post("/api/agent/memory.get", json={"id":identity})).raise_for_status().json()
+        if current["revision"] != expected["revision"]:
+            raise RuntimeError("偏好在本次已核实的修订之外发生变化；未执行撤回")
+        await device_call(device, port, login, "DELETE",
+                          f"/api/daily-memory/organized/{identity}?expected_revision={current['revision']}")
+    return {identity:row["revision"] for identity,row in latest.items()}
 
 
-async def first_content(runtime, item):
-    """Ask for literal, independently checkable spans without telling the reader which edition it is."""
-    text = item["title"] + "\n" + item["rationale"]
-    messages = [{"role":"system","content":"逐字摘取第一处具体的选用建议或可执行结论，以及第一处具体画面观察。"
-                 "两个字段各取一个最短、完整、互不重叠的原文片段。没有则留空，不改写。"},
-                {"role":"user","content":text}]
-    provider = runtime.llm
-    async with runtime.operator_generation("background"):
-        output = await budgeted_call(provider, lambda: provider.generate_json(
-            messages, OrderEvidence.model_json_schema(), max_tokens=512), messages, max_tokens=512)
-    quotes = OrderEvidence.model_validate(output)
-    positions = [text.find(term) if term and text.count(term) == 1 else -1
-                 for term in (quotes.recommendation, quotes.observation)]
-    r, o = positions
-    order = "unverified"
-    if min(positions) >= 0:
-        if r + len(quotes.recommendation) <= o:
-            order = "recommendation_first"
-        elif o + len(quotes.observation) <= r:
-            order = "observation_first"
-    return {"order":order, **quotes.model_dump()}
-
-
-async def compare(client, runtime, port, device, login, confirmed, record):
+async def compare(client, runtime, port, device, login, confirmed, record, correct_voice):
     # Reproduce a standing instruction supplied by the owner, with its original scope.
     identity = str(uuid4())
-    original = "Global Working Rules\n\n" + AUTO
+    original = AUTO
     (await client.post("/api/chat/intelligent", json={"request_id": identity, "message": original,
                                                      "intent": {"action": "chat"}})).raise_for_status()
     record("stage", "organizing_owner_chat_turn")
@@ -77,15 +62,22 @@ async def compare(client, runtime, port, device, login, confirmed, record):
         before = await edition("before")
         record("before", before)
         assert auto["id"] in {row["id"] for row in before["citations"]}
-        for row in (auto, confirmed):
-            await device_call(device, port, login, "DELETE", f"/api/daily-memory/organized/{row['id']}?expected_revision={row['revision']}")
+        updated = await correct_voice(auto)
+        if updated:
+            corrected = await edition("voice_corrected")
+            record("voice_corrected", corrected)
+            record("voice_style_observed", all(i["title"].endswith(("。",".")) for i in corrected["items"])
+                   and any(c["id"] == updated["id"] and c["revision"] == updated["revision"] for c in corrected["citations"]))
+        removed = await forget_current(client, port, device, login, [auto, confirmed] + ([updated] if updated else []))
+        record("forgotten_revisions", removed)
         after = await edition("after")
         record("after", after)
-        assert not after["citations"] and before["body"] != after["body"]
-        first = await first_content(runtime, before["items"][0])
-        second = await first_content(runtime, after["items"][0])
-        return {"automatic_source":auto["source_key"], "original":AUTO, "before":before, "after":after,
-                "order_evidence":{"before":first, "after":second}, "semantic_status":
-                "observed" if (first["order"],second["order"]) == ("recommendation_first","observation_first") else "unverified"}
+        assert not after["citations"]
+        before_titles = [i["title"] for i in before["items"]]
+        after_titles = [i["title"] for i in after["items"]]
+        question_titles = all(t.endswith(("?", "？")) for t in before_titles)
+        default_titles = all(not t.endswith(tuple("？?。.!！")) for t in after_titles)
+        return {"input":"owner-authorized isolated QA preference", "original":AUTO, "before_titles":before_titles,
+                "after_titles":after_titles, "semantic_status":"observed" if question_titles and default_titles else "unverified"}
     finally:
         await tasks.close()

@@ -38,6 +38,8 @@ ws.onmessage = async ({data}) => {
     if (offset < audio.length) audio.copy(block, 0, offset, offset + chunk);
     send({type:"input_audio_buffer.append",format:"pcm16",sample_rate_hz:16000,audio:block.toString("base64")});
     sent++;
+    if (offset < audio.length && offset + chunk >= audio.length)
+      send({type:"input_audio_buffer.commit",final:true,create_response:false});
     await sleep(1000);
   }
   await sleep(4000); done();
