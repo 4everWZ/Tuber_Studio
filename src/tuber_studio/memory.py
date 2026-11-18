@@ -254,17 +254,26 @@ class GroundedMemory:
             raise ValueError("Memory requires an explicit character ID and version")
         return character_id, version
 
-    def retrieve(self, scope, character, question, limit=3, max_chars=1800):
+    def retrieve(self, scope, character, question, limit=3, max_chars=1800, *, event_id=None):
         character_id, version = self._identity(character)
         requested = required_slots(question)
         result = {"question": question, "required_slots": requested, "evidence": []}
         if limit <= 0 or max_chars <= 0:
             return result
-        rows = self.store.all(
-            "SELECT * FROM grounded_memory WHERE scope=? AND character_id=? AND character_version=? "
-            "AND kind NOT IN ('derived_reply','grounded_reply','operator_private') ORDER BY id DESC LIMIT 200",
-            (scope, character_id, version),
+        query = ("SELECT * FROM grounded_memory WHERE scope=? AND character_id=? AND character_version=? "
+                 "AND kind NOT IN ('derived_reply','grounded_reply','operator_private') ")
+        identity = (scope, character_id, version)
+        tokens = ([event_id] if event_id is not None else
+                  list(dict.fromkeys(re.findall(r"[A-Za-z0-9_][A-Za-z0-9_.:/#-]*", question))))
+        exact = []
+        for offset in range(0, len(tokens), 200):
+            batch = tokens[offset:offset + 200]
+            marks = ",".join("?" for _ in batch)
+            exact.extend(self.store.all(query + f"AND event_id IN ({marks})", (*identity, *batch)))
+        rows = exact if exact or event_id is not None else self.store.all(
+            query + "ORDER BY id DESC LIMIT 200", identity,
         )
+        exact_ids = {row["id"] for row in exact}
         if self.source_filter is not None:
             rows = [row for row in rows if self.source_filter(row)]
         sources = [(row, json.loads(row["facts"])) for row in rows]
@@ -276,7 +285,7 @@ class GroundedMemory:
             re.I,
         )
         source_mentioned = any(
-            row["event_id"] in question
+            row["id"] in exact_ids
             or any(
                 len(value) >= 2 and value.casefold() in question.casefold()
                 for fact in facts
@@ -303,12 +312,12 @@ class GroundedMemory:
             overlap = len(terms & _terms(row["text"]))
             # Matching occurred facts outrank a more recent plan or viewer query.
             score = (
-                60 * (row["event_id"] in question)
+                60 * (row["id"] in exact_ids)
                 + entity_matches * 20
                 + len({f["slot"] for f in relevant}) * 6
                 + min(overlap, 5)
             )
-            if not score or (not requested and not entity_matches and overlap < 2):
+            if not score or (not requested and not entity_matches and overlap < 2 and row["id"] not in exact_ids):
                 continue
             scored.append((score, row["id"], row, relevant if requested else facts))
         # For factual follow-ups, bind slots to one corresponding source event.

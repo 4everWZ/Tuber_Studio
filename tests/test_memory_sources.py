@@ -1,0 +1,135 @@
+import sqlite3
+import time
+
+import pytest
+from fastapi.testclient import TestClient
+
+from tuber_studio.agent.memory_organizer import MemorySuggestion
+from tuber_studio.app import create_app
+from tuber_studio.daily_memory import DailyMemoryService, MemoryChanged
+from tuber_studio.memory import GroundedMemory
+from tuber_studio.store import dump
+
+
+A = ("100", "whale", 1)
+B = ("200", "whale", 2)
+
+
+def save(memory, scope, key, quote, at, existing=None):
+    decision = MemorySuggestion(action="add", existing_id=None, headline="汇报", note=quote, tags=["汇报"])
+    source = {"key": key, "text": quote, "kind": "private", "private_owner": "studio-owner", "at": at}
+    with memory.store.db:
+        return memory.save_organized(scope, source, decision, existing)
+
+
+def test_portable_sources_revisions_and_atomic_forgetting(store):
+    memory = DailyMemoryService(store)
+    memory.private_owner = "studio-owner"
+    assert save(memory, A, "turn:first", "汇报先说结论", 1)
+    first, = memory.organized(B)
+    assert save(memory, B, "turn:second", "汇报先说风险", 2, first)
+    latest, = memory.organized(A)
+    assert save(memory, B, "turn:second", "汇报先说风险", 5)
+    assert not save(memory, B, "turn:second", "以其他文字冒充原话", 5)
+    assert memory.organized(B)[0]["revision"] == latest["revision"]
+    assert latest["revision"] > first["revision"] and latest["id"] == first["id"]
+    assert [(row["source_key"], row["note"]) for row in memory.revisions(B, latest["id"])] == [
+        ("turn:second", "汇报先说风险"), ("turn:first", "汇报先说结论"),
+    ]
+    assert memory.lookup_source(B, "operator", "turn:first")[0]["quote"] == "汇报先说结论"
+    assert memory.lookup_source(A, "operator", "turn:second")[0]["quote"] == "汇报先说风险"
+    assert not memory.lookup_source(B, "live", "turn:second")
+    memory.private_owner = "other"
+    assert not memory.lookup_source(A, "operator", "turn:first")
+    assert memory.change_organized(A, first["id"], delete=True) is None
+    memory.private_owner = "studio-owner"
+    with pytest.raises(MemoryChanged):
+        memory.change_organized(B, first["id"], delete=True, expected_revision=first["revision"])
+
+    grounded = GroundedMemory(store)
+    for scope, event in [(A, "first"), (A, "unrelated"), (B, "second")]:
+        grounded.record("operator:" + dump([scope[0], scope[1]]), {"id": scope[1], "version": scope[2]},
+                        "operator:" + event, "user", "原话")
+    store.execute("CREATE TRIGGER reject_forgetting BEFORE DELETE ON daily_highlights "
+                  "BEGIN SELECT RAISE(ABORT,'fault'); END")
+    with pytest.raises(sqlite3.IntegrityError, match="fault"):
+        memory.change_organized(B, first["id"], delete=True)
+    assert not memory.source_deleted(A, "turn:first", "studio-owner")
+    assert len(store.all("SELECT id FROM grounded_memory")) == 3
+    store.execute("DROP TRIGGER reject_forgetting")
+    memory.change_organized(B, first["id"], delete=True, expected_revision=latest["revision"])
+    assert store.all("SELECT event_id FROM grounded_memory") == [{"event_id": "operator:unrelated"}]
+    assert not store.all("SELECT * FROM memory_sources") and not store.all("SELECT * FROM memory_source_aliases")
+    assert not store.all("SELECT * FROM memory_revisions")
+    # Rebuilding the organizer's per-account cursor cannot undo an owner's deletion.
+    store.execute("DELETE FROM memory_organization")
+    reopened = DailyMemoryService(store)
+    reopened.private_owner = "studio-owner"
+    for scope in [A, B]:
+        assert not save(reopened, scope, "turn:first", "汇报先说结论", 1)
+        assert not reopened.lookup_source(scope, "operator", "turn:second")
+    assert save(reopened, B, "turn:new", "汇报先说结论", 3)
+
+
+def test_exact_grounded_event_precedes_recent_window_and_obeys_source_filter(store):
+    allowed = True
+    grounded = GroundedMemory(store, source_filter=lambda row: allowed)
+    char = {"id": A[1], "version": 1}
+    grounded.record("room", char, "entry:old", "user", "一段原话")
+    for i in range(205):
+        grounded.record("room", char, f"noise:{i}", "user", "后来的消息")
+    for evidence in (grounded.retrieve("room", char, "查 entry:old"),
+                     grounded.retrieve("room", char, "", event_id="entry:old")):
+        assert [row["text"] for row in evidence["evidence"]] == ["一段原话"]
+    assert not grounded.retrieve("other", char, "", event_id="entry:old")["evidence"]
+    allowed = False
+    assert not grounded.retrieve("room", char, "entry:old")["evidence"]
+
+
+def test_exact_public_aliases_only_disclose_the_shared_original(store):
+    memory = DailyMemoryService(store)
+    bv = "BV1d8pU6xEZX"
+    key = f"thread:{bv}:40"
+    quote = "第三只企鹅"
+    link = f"https://www.bilibili.com/video/{bv}#reply40"
+    source = {"key": key, "text": quote, "kind": "experience", "at": 1, "source_kind": "comment",
+              "anchor": {"resource": bv, "root_id": "40", "comment_id": "40"},
+              "references": [{"href": link, "text": quote, "author_uid": "51"}]}
+    decision = MemorySuggestion(action="add", existing_id=None, headline=quote, note=quote, tags=[])
+    with store.db:
+        assert memory.save_organized(A, source, decision, None)
+    item, = memory.organized(A)
+    memory.change_organized(A, item["id"], note="私有补充")
+    for key in [key, bv, link, "51"]:
+        match, = memory.lookup_source(A, "comment", key)
+        assert match["quote"] == quote and "私有补充" not in str(match)
+        assert not memory.lookup_source(B, "comment", key)
+    assert memory.recall_organized(A, "dynamic", "刚才说的", participant="51")[0]["id"] == item["id"]
+    memory.change_organized(A, item["id"], owner_only=True)
+    assert not memory.lookup_source(A, "comment", bv)
+    assert not memory.recall_organized(A, "dynamic", bv)
+
+
+def test_clear_chat_cleans_portable_turn_origin_and_preserves_durable_note(settings):
+    app = create_app(settings)
+    with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
+        runtime = app.state.runtime
+        memory, db = runtime.daily_memory, runtime.store.db
+        app.state.browsing.discovery.remember_account("200")
+        scope = ("100", runtime.character["id"], runtime.character["version"])
+        mode = "operator:" + dump(list(scope[:2]))
+        result = {"private_owner": memory.private_owner, "owner_source": memory.private_owner, "account_id": "100"}
+        runtime.store.execute("INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)",
+                              ("old", *scope[1:], "汇报先说风险", dump(result), time.time()))
+        runtime.context.window(mode, runtime.character)
+        runtime.context.memory.record(mode, runtime.character, "operator:old", "user", "汇报先说风险")
+        source = {"kind": "private", "text": "汇报先说风险", "at": 1, "key": "turn:old",
+                  "private_owner": memory.private_owner}
+        decision = MemorySuggestion(action="add", existing_id=None, headline="汇报", note=source["text"], tags=[])
+        assert memory.save_organized(("200", *scope[1:]), source, decision, None)
+        assert not db.in_transaction
+        assert runtime.store.one("SELECT account FROM memory_sources")["account"] == "100"
+        client.delete("/api/chat/intelligent").raise_for_status()
+        assert not runtime.store.one("SELECT id FROM grounded_memory WHERE event_id='operator:old'")
+        assert not runtime.context.existing(mode, runtime.character)
+        assert memory.lookup_source(scope, "operator", "turn:old")[0]["quote"] == source["text"]

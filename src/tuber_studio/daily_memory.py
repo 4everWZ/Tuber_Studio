@@ -10,6 +10,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .store import dump as dump_memory
+from . import memory_sources
 
 ANECDOTE_CATEGORIES = ("comment_anecdote", "live_highlight", "community_meme")
 HIGHLIGHT_CATEGORIES = (*ANECDOTE_CATEGORIES, "public_incident")
@@ -158,6 +159,7 @@ class DailyMemoryService:
         self.private_owner = None
         if store is None:
             return
+        store.db.create_function("memory_title_key", 1, self._title_key, deterministic=True)
         columns = {row[1] for row in store.db.execute("PRAGMA table_info(daily_highlights)")}
         for name, definition in (("incident_key", "TEXT"), ("public_sources", "TEXT NOT NULL DEFAULT '[]'"),
                                  ("source_evidence", "TEXT")):
@@ -174,7 +176,10 @@ class DailyMemoryService:
                               (json.dumps(proof, ensure_ascii=False), row["id"]))
         # Explicitly withdrawn public experiences share the legacy status. Only
         # promote automatically organized or source-verified distilled memories.
-        store.execute(
+        memory_sources.migrate(self)
+
+    def _upgrade_pending(self):
+        self.store.db.execute(
             """UPDATE daily_highlights SET status='active' WHERE status='pending_review'
                AND CASE WHEN json_valid(source_evidence) THEN
                  (json_extract(source_evidence,'$.memory_kind') IN ('private','experience')
@@ -222,7 +227,12 @@ class DailyMemoryService:
             return proof
         return self._legacy_source_evidence(row)
 
-    def organized(self, scope, *, limit=100, item_id=None, unclassified=False, recall=None, exact_title=None):
+    @staticmethod
+    def _title_key(title):
+        return re.sub(r"\W", "", title).casefold()
+
+    def organized(self, scope, *, limit=100, item_id=None, unclassified=False, recall=None, exact_title=None,
+                  candidate_for=None):
         private_unclassified = (
             "COALESCE(json_extract(source_evidence,'$.memory_kind'),'')='private' "
             "AND json_extract(source_evidence,'$.scene') IS NULL "
@@ -232,6 +242,10 @@ class DailyMemoryService:
         owner = self.private_owner if not recall or recall[0] == "operator" else None
         parameters = [scope[1], self.private_owner, scope[2], scope[0], owner, item_id, item_id,
                       int(unclassified), exact_title, exact_title]
+        if candidate_for:
+            key, kind, signature, quote = candidate_for
+            query = "AND (source_ref=? OR (?='private' AND (quote=? OR memory_title_key(headline)=?))) "
+            parameters.extend((key, kind, quote, signature))
         if recall is not None:
             channel, keywords, resource, thread = recall
             document = ("lower(headline || ' ' || quote || ' ' || anecdote || ' ' || tags)" if channel == "operator"
@@ -244,12 +258,12 @@ class DailyMemoryService:
                 parameters.extend((resource, str(thread)))
             if not alternatives:
                 return []
-            query = "AND status='active' AND (" + " OR ".join(alternatives) + ") "
+            query += "AND status='active' AND (" + " OR ".join(alternatives) + ") "
         rows = self.store.all(
             "SELECT * FROM daily_highlights WHERE character_id=? AND CASE WHEN json_valid(source_evidence) THEN "
-            "(json_extract(source_evidence,'$.private_owner') IS NULL OR json_extract(source_evidence,'$.private_owner')=?) AND "
+            "(json_extract(source_evidence,'$.private_owner') IS NULL OR owner_principal=?) AND "
             "json_extract(source_evidence,'$.memory_kind') IS NOT NULL AND ((character_version=? AND "
-            "json_extract(source_evidence,'$.operation_account_id')=?) OR (json_extract(source_evidence,'$.private_owner')=? "
+            "json_extract(source_evidence,'$.operation_account_id')=?) OR (owner_principal=? "
             "AND json_extract(source_evidence,'$.memory_kind')='private' AND json_extract(source_evidence,'$.scene') IS NULL)) END "
             "AND (? IS NULL OR id=?) "
             f"AND CASE WHEN json_valid(source_evidence) THEN ({private_unclassified}) = ? END "
@@ -386,6 +400,12 @@ class DailyMemoryService:
         return current
 
     def save_organized(self, scope, source, decision, existing):
+        db = self.store.db
+        with memory_sources.memory_transaction(db):
+            db.execute("UPDATE daily_highlights SET id=id WHERE 0")
+            return self._save_organized(scope, source, decision, existing)
+
+    def _save_organized(self, scope, source, decision, existing):
         key = source["key"]
         kind = source["kind"]
         if kind not in {"private", "experience"}:
@@ -395,27 +415,47 @@ class DailyMemoryService:
         if (not note or kind == "experience" and source.get("source_kind") not in _ORIGINAL_PUBLIC_SOURCE_KINDS
                 or any(contains_memory_credential(text) for text in (quote, decision.headline, note, *decision.tags))):
             return False
-        rows = self.organized(scope)
         tags = sorted({tag.strip()[:24] for tag in decision.tags if tag.strip()})
         headline = decision.headline.strip()
-        signature = re.sub(r"\W", "", headline).casefold()
+        signature = self._title_key(headline)
         target = source.get("scene")
         owner = source.get("private_owner") if (
-            kind == "private" and not target and decision.summary_kind == "preference"
+            kind == "private" and not target
             and source.get("private_owner") == self.private_owner
         ) else None
+        if source.get("private_owner") and source["private_owner"] != self.private_owner:
+            return False
+        if kind == "private" and (turn := memory_sources.original_turn(self.store.db, scope[1], key)):
+            origin = (turn["account"], scope[1], turn["character_version"])
+            if (turn["message"] != quote or turn["owner"] and turn["owner"] != self.private_owner
+                    or origin != scope and not (owner and owner == turn["owner"])):
+                return False
+            scope = origin
+        if self.source_deleted(scope, key, owner):
+            return False
+        if existing:
+            current = self.organized(scope, item_id=existing["id"])
+            if not current or current[0]["revision"] != existing["revision"]:
+                return False
+        if kind == "private":
+            previous = self.store.one(
+                "SELECT s.quote FROM memory_source_aliases a JOIN memory_sources s USING(item_id,source_key) "
+                "JOIN daily_highlights h ON h.id=s.item_id WHERE a.alias=? AND s.source_key=? AND s.character=? "
+                "AND h.owner_principal IS ? AND json_extract(h.source_evidence,'$.scene') IS ? "
+                "AND (? IS NOT NULL OR (s.account=? AND s.version=?))",
+                (key, key, scope[1], owner, target, owner, scope[0], scope[2]),
+            )
+            if previous:
+                return previous["quote"] == quote
         if existing and existing["proof"].get("private_owner") != owner:
             existing = None
-        for row in rows:
+        for row in self.organized(scope, limit=-1, candidate_for=(key, kind, signature, quote)):
             if row["memory_kind"] != kind:
                 continue
             if row["proof"].get("scene") != target or row["proof"].get("private_owner") != owner:
                 continue
-            if row["source_ref"] == key or kind == "private" and (
-                row["quote"] == quote or re.sub(r"\W", "", row["headline"]).casefold() == signature
-            ):
-                existing = row
-                break
+            existing = row
+            break
         if existing:
             latest = self.organized(scope, item_id=existing["id"])
             if not latest or latest[0]["status"] == "archived" or latest[0]["memory_kind"] != kind:
@@ -429,6 +469,18 @@ class DailyMemoryService:
                 # Keep the reviewed text and permissions, with the latest verified sources.
                 proof = existing["proof"]
                 previous = proof["memory_source"]
+                if key != existing["source_ref"] or not previous.get("references"):
+                    return False
+                incoming = {"kind": source["source_kind"], "references": source.get("references", []),
+                            "thread": source.get("anchor")}
+                projection = self._public_memory_projection(proof | {"quote": quote}, incoming)
+                if scope[0] and not projection:
+                    return False
+                if projection and quote != existing["quote"]:
+                    # A thread groups several original comments. The permalink identifies each quote.
+                    memory_sources.record_source(self.store.db, existing["id"], scope,
+                                                 projection["references"][0]["href"], quote,
+                                                 projection=projection, thread=incoming["thread"])
                 first, *other = previous["references"]
                 references = {item["href"]: item for item in [*other, *source["references"]]
                               if item["href"] != first["href"]}
@@ -466,73 +518,137 @@ class DailyMemoryService:
         at = time.time()
         fields = (headline, quote, note, dump_memory(tags), dump_memory(proof), at)
         if existing:
+            item_id = existing["id"]
             self.store.db.execute(
                 "UPDATE daily_highlights SET headline=?,quote=?,anecdote=?,tags=?,source_evidence=?,updated_at=? WHERE id=?",
                 (*fields, existing["id"]),
             )
         else:
-            self.store.db.execute(
+            cursor = self.store.db.execute(
                 "INSERT INTO daily_highlights(character_id,character_version,highlight_date,category,source_ref,source_user,"
-                "status,created_at,headline,quote,anecdote,tags,source_evidence,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "status,created_at,headline,quote,anecdote,tags,source_evidence,updated_at,owner_principal) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (scope[1], scope[2], self.business_date(source["at"]), "community_meme", source_ref,
-                 "号主" if kind == "private" else "", "active", at, *fields),
+                 "号主" if kind == "private" else "", "active", at, *fields, owner),
             )
+            item_id = cursor.lastrowid
+        memory_sources.record_source(self.store.db, item_id, scope, key, quote,
+                                     projection=self._public_memory_projection(proof, proof["memory_source"]),
+                                     thread=source.get("anchor"))
         return True
 
-    def change_organized(self, scope, item_id, *, owner_only=None, headline=None, note=None, delete=False):
+    def source_deleted(self, scope, key, owner):
+        return bool(self.store.one(
+            "SELECT 1 FROM memory_source_tombstones WHERE owner=? AND character=? AND source_key=? "
+            "UNION ALL SELECT 1 FROM memory_organization WHERE account=? AND character=? AND version=? "
+            "AND source=? AND status='deleted' LIMIT 1", (owner, scope[1], key, *scope, key),
+        ))
+
+    def lookup_source(self, scope, channel, source_key):
+        """Return exact, currently authorized original quotes. An absent source yields []."""
+        if channel not in ("operator", *MEMORY_CHANNELS) or not self.preference(scope)["enabled"]:
+            return []
+        matches = self.store.all(
+            "SELECT s.item_id,s.source_key,s.quote FROM memory_source_aliases a JOIN memory_sources s "
+            "USING(item_id,source_key) JOIN daily_highlights h ON h.id=s.item_id "
+            "WHERE a.alias=? AND h.character_id=? AND h.status='active' AND "
+            "((h.owner_principal IS NULL AND h.character_version=? AND "
+            "json_extract(h.source_evidence,'$.operation_account_id')=?) OR h.owner_principal=?) "
+            "ORDER BY s.item_id DESC,s.source_key",
+            (source_key, scope[1], scope[2], scope[0], self.private_owner if channel == "operator" else None),
+        )
+        result = []
+        for match in matches:
+            rows = self.organized(scope, item_id=match["item_id"])
+            if not rows or rows[0]["status"] != "active" or contains_memory_credential(match["quote"]):
+                continue
+            row, = rows
+            if channel != "operator":
+                public = row["public_memory"]
+                if (channel not in row["channels"] or not public or match["source_key"] != row["source"]["key"] or
+                        not any(ref["text"] == match["quote"] for ref in public["references"])):
+                    continue
+            result.append({"id": row["id"], "revision": row["revision"],
+                           "source_key": match["source_key"], "quote": match["quote"]})
+        return result
+
+    def revisions(self, scope, item_id):
+        """Management view. Older databases start their history at the observed revision."""
+        if not self.organized(scope, item_id=item_id):
+            return []
+        return self.store.all(
+            "SELECT revision,updated_at,headline,note,source_key,status,owner_only FROM memory_revisions "
+            "WHERE item_id=? ORDER BY revision DESC", (item_id,),
+        )
+
+    def change_organized(self, scope, item_id, *, owner_only=None, headline=None, note=None, delete=False,
+                         expected_revision=None):
+        db = self.store.db
+        with memory_sources.memory_transaction(db):
+            # Acquire the write lock before reading visibility and the displayed revision.
+            db.execute("UPDATE daily_highlights SET id=id WHERE id=?", (item_id,))
+            return self._change_organized(scope, item_id, owner_only, headline, note, delete, expected_revision)
+
+    def _change_organized(self, scope, item_id, owner_only, headline, note, delete, expected_revision):
         rows = self.organized(scope, item_id=item_id)
         if not rows:
             return None
         row, = rows
+        if expected_revision is not None and row["revision"] != expected_revision:
+            raise MemoryChanged("记忆版本已变化，请重新读取")
         proof = row["proof"]
         if headline is not None and not headline.strip() or note is not None and not note.strip():
             raise ValueError("记忆标题和内容不能为空")
         if any(contains_memory_credential(text) for text in (headline, note)):
             raise ValueError("记忆不能保存凭据")
-        with self.store.db:
-            if delete:
-                keys = {row["source_ref"], row["source"]["key"]}
-                if row["memory_kind"] == "private":
-                    keys.update(proof.get("preference_sources", []))
-                    if not proof.get("scene"):
-                        keys.add("private:" + re.sub(r"\W", "", row["headline"]).casefold())
-                    keys.add(f"deleted-preference:{item_id}")
-                self.store.db.executemany(
-                    "INSERT INTO memory_organization VALUES(?,?,?,?,?,'deleted',?) "
-                    "ON CONFLICT(account,character,version,source) DO UPDATE SET status='deleted',updated_at=excluded.updated_at",
-                    [(*scope, key, "", time.time()) for key in keys],
-                )
-                self.store.db.execute("DELETE FROM daily_highlights WHERE id=?", (item_id,))
-                if row["memory_kind"] == "private":
-                    context_scope = "operator:" + dump_memory([scope[0], scope[1]])
-                    self.store.db.execute(
-                        "DELETE FROM context_history_audit WHERE window_key IN "
-                        "(SELECT key FROM context_windows WHERE mode=? AND character_id=? AND character_version=?)",
-                        (context_scope, scope[1], scope[2]),
-                    )
-                    self.store.db.execute("DELETE FROM context_windows WHERE mode=? AND character_id=? AND character_version=?",
-                                          (context_scope, scope[1], scope[2]))
-                    self.store.db.executemany(
-                        "DELETE FROM grounded_memory WHERE scope=? AND character_id=? AND character_version=? "
-                        "AND event_id=?",
-                        [(context_scope, scope[1], scope[2], "operator:" + key.removeprefix("turn:"))
-                         for key in keys if key.startswith("turn:")],
-                    )
-                return {"id": item_id, "deleted": True}
-            if owner_only is not None:
-                if not row["public_memory"] or row["status"] != "active":
-                    raise ValueError("只有已保存且有公开来源的经历可以切换共享")
-                proof["owner_only"] = owner_only
-            if note is not None:
-                proof["owner_edit_at"] = time.time()
-            if headline is not None:
-                proof["owner_headline_confirmed"] = True
-            proof.pop("channels", None)
-            self.store.db.execute(
-                "UPDATE daily_highlights SET headline=?,anecdote=?,source_evidence=?,updated_at=? WHERE id=?",
-                (headline or row["headline"], note or row["anecdote"], dump_memory(proof), time.time(), item_id),
-            )
+        if delete:
+            self._forget_sources(scope, row)
+            self.store.db.execute("DELETE FROM daily_highlights WHERE id=?", (item_id,))
+            return {"id": item_id, "deleted": True}
+        if owner_only is not None:
+            if not row["public_memory"] or row["status"] != "active":
+                raise ValueError("只有已保存且有公开来源的经历可以切换共享")
+            proof["owner_only"] = owner_only
+        if note is not None:
+            proof["owner_edit_at"] = time.time()
+        if headline is not None:
+            proof["owner_headline_confirmed"] = True
+        proof.pop("channels", None)
+        self.store.db.execute(
+            "UPDATE daily_highlights SET headline=?,anecdote=?,source_evidence=?,updated_at=? WHERE id=?",
+            (headline or row["headline"], note or row["anecdote"], dump_memory(proof), time.time(), item_id),
+        )
         return self.organized(scope, item_id=item_id)[0]
+
+    def _forget_sources(self, scope, row):
+        db = self.store.db
+        keys = set(row["proof"].get("preference_sources", [])) | {row["source_ref"], row["source"]["key"]}
+        owner = row["owner_principal"]
+        origins = {}
+        for source in self.store.all("SELECT * FROM memory_sources WHERE item_id=?", (row["id"],)):
+            origins[source["source_key"]] = (source["account"], source["character"], source["version"])
+        legacy_scope = (row["proof"]["operation_account_id"], scope[1], row["character_version"])
+        for key in keys | origins.keys():
+            if owner:
+                db.execute("INSERT OR IGNORE INTO memory_source_tombstones VALUES(?,?,?)", (owner, scope[1], key))
+                if key not in origins:
+                    continue  # Stable key is known, historical account is not.
+            origin = origins.get(key, legacy_scope)
+            db.execute("INSERT INTO memory_organization VALUES(?,?,?,?,?,'deleted',?) "
+                       "ON CONFLICT(account,character,version,source) DO UPDATE SET status='deleted',updated_at=excluded.updated_at",
+                       (*origin, key, "", time.time()))
+            if row["memory_kind"] == "private":
+                memory_sources.invalidate_turn(db, origin, key)
+        if row["memory_kind"] == "private" and memory_sources.has_table(db, "operator_chat_turns"):
+            # A later chat on another account can have consumed this note.
+            for turn in self.store.all(
+                "SELECT t.request_id,t.character_version,json_extract(t.result,'$.account_id') AS account "
+                "FROM operator_chat_turns t WHERE t.character_id=? AND EXISTS (SELECT 1 FROM "
+                "json_each(t.result,'$.organized_memory.organized_memory') r WHERE json_extract(r.value,'$.id')=?)",
+                (scope[1], row["id"]),
+            ):
+                memory_sources.invalidate_turn(db, (turn["account"], scope[1], turn["character_version"]),
+                                               "turn:" + turn["request_id"])
 
     def live_preferences(self, scope):
         if not self.preference(scope)["enabled"]:
@@ -556,7 +672,17 @@ class DailyMemoryService:
         matched = []
         keywords = self._extract_recall_keywords(text)
         search = sorted(keywords, key=lambda word: (-len(word), word))[:18]
-        for row in self.organized(scope, recall=(channel, search, resource, thread)):
+        candidates = self.organized(scope, recall=(channel, search, resource, thread), limit=-1)
+        keys = set(re.findall(r"BV[A-Za-z0-9]{10}|(?:turn|event|thread):[A-Za-z0-9_:/#.-]+", text))
+        if resource:
+            keys.add(f"thread:{resource}:{thread}" if thread else resource)
+        if participant:
+            keys.add(str(participant))
+        exact = {item["id"] for key in keys for item in self.lookup_source(scope, channel, key)}
+        present = {row["id"] for row in candidates}
+        for item_id in exact - present:
+            candidates.extend(self.organized(scope, item_id=item_id))
+        for row in candidates:
             if row["status"] != "active" or channel != "operator" and channel not in row["channels"]:
                 continue
             if channel == "operator" and (row := self.owner_projection(row)) is None:
@@ -571,23 +697,31 @@ class DailyMemoryService:
                 if not public:
                     continue  # Scene rules are added independently below.
                 subject = public["text"]
-                row = row | {"headline": "公开经历", "anecdote": subject, "quote": subject, "tags": "[]",
-                             "source": row["source"] | {"references": public["references"]}}
+                row = {key: row[key] for key in ("id", "revision", "updated_at", "memory_kind", "public_memory")} | {
+                    "headline": "公开经历", "anecdote": subject, "quote": subject, "tags": "[]", "proof": {},
+                    "source": {"references": public["references"]},
+                }
             score = self._score_highlight_match(row, keywords, text)
             if channel == "comment" and anchor and not same_thread:
                 continue
-            if specific_experiences and row["memory_kind"] == "experience" and not same_thread:
+            exact_match = row["id"] in exact
+            if specific_experiences and row["memory_kind"] == "experience" and not same_thread and not exact_match:
                 if row["headline"] not in text and not any(len(word) >= 3 and word in subject for word in keywords):
                     continue
-            if same_thread or score >= 3:
-                matched.append((20 * same_thread + 5 * same_person + score, row))
+            if same_thread or exact_match or score >= 3:
+                matched.append((20 * same_thread + 10 * exact_match + 5 * same_person + score, row))
         relevant = [row for _, row in sorted(matched, key=lambda item: -item[0]) if not row["proof"].get("scene")]
-        return (self.live_preferences(scope) + relevant)[:4] if channel == "live" else relevant[:3]
+        if channel == "live":
+            rules = [{key: row[key] for key in ("id", "revision", "updated_at", "headline", "anecdote")}
+                     for row in self.live_preferences(scope)]
+            return (rules + relevant)[:4]
+        return relevant[:3]
 
     def validate_organized(self, scope, channel, refs):
         for item in refs:
             rows = self.organized(scope, item_id=item["id"])
             if (not rows or rows[0]["updated_at"] != item["updated_at"] or rows[0]["status"] != "active"
+                    or "revision" in item and rows[0]["revision"] != item["revision"]
                     or channel != "operator" and channel not in rows[0]["channels"]):
                 raise MemoryChanged("生成使用的记忆已变更，请重试")
             row, = rows
@@ -597,7 +731,7 @@ class DailyMemoryService:
 
     @staticmethod
     def organized_reference(row):
-        return {"id": row["id"], "updated_at": row["updated_at"],
+        return {"id": row["id"], "updated_at": row["updated_at"], "revision": row["revision"],
                 "public_projection": _PUBLIC_PROJECTION_VERSION}
 
     def record_public_incident(
@@ -1080,7 +1214,6 @@ class DailyMemoryService:
             WHERE character_id = ? AND character_version = ?
               AND status IN ('active', 'archived')
             ORDER BY highlight_date DESC, id DESC
-            LIMIT 100
             """,
             (character_id, character_version),
         )

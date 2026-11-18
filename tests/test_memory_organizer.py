@@ -582,29 +582,26 @@ async def test_public_organizer_saves_one_experience_from_legacy_receipt(setting
         runtime.store.close()
 
 
-def test_migrate_organized_memory_without_restoring_revoked_public_experience(settings):
-    app = create_app(settings)
-    runtime = app.state.runtime
-    store = runtime.store
-    scope = runtime.memory_organizer.scope()
-    memory = runtime.daily_memory
-    try:
-        source = {"key": "thread:legacy", "kind": "experience", "source_kind": "comment",
-                  "at": time.time(), "text": "第三只企鹅",
-                  "references": [{"href": "https://www.bilibili.com/video/BV1d8pU6xEZX#reply40", "text": "第三只企鹅"}]}
-        proposal = MemorySuggestion(action="add", existing_id=None, headline="企鹅", note="第三只企鹅", tags=["企鹅"])
-        with store.db:
-            memory.save_organized(scope, source, proposal, None)
-        saved, = memory.organized(scope)
-        revoked = memory.record_highlight(
-            scope[1], scope[2], memory.business_date(time.time()), "community_meme",
-            "已撤销的经历", "以前公开过的经历", "以前公开过的经历",
-            source_ref="operator-public:revoked", operator_confirmed=True,
-        )
-        store.execute("UPDATE daily_highlights SET status='pending_review' WHERE id IN (?,?)", (saved["id"], revoked))
-        migrated = DailyMemoryService(store)
-        assert migrated.organized(scope) == [saved]
-        assert migrated.organized(scope)[0]["channels"] == []  # Unbound account.
-        assert store.one("SELECT status FROM daily_highlights WHERE id=?", (revoked,))["status"] == "pending_review"
-    finally:
-        store.close()
+def test_migrate_organized_memory_without_restoring_revoked_public_experience(store):
+    scope = ("", "whale", 1)
+    # A pre-migration DB has JSON evidence, no source ledger or integer revision.
+    store.execute("ALTER TABLE daily_highlights ADD COLUMN source_evidence TEXT")
+    quote = "第三只企鹅"
+    key = "thread:legacy"
+    proof = {"version": 1, "kind": "viewer", "confirmed_by": "source_match", "source_ref": key,
+             "quote": quote, "memory_kind": "experience", "operation_account_id": "",
+             "memory_source": {"key": key, "kind": "comment", "at": 1, "references": []}}
+    insert = ("INSERT INTO daily_highlights(character_id,character_version,highlight_date,category,headline,quote,"
+              "anecdote,source_ref,status,created_at,updated_at,source_evidence,tags) "
+              "VALUES('whale',1,'2026-10-01','community_meme','企鹅',?,?,?,'pending_review',1,1,?,'[]')")
+    saved = store.execute(insert, (quote, quote, key, json.dumps(proof))).lastrowid
+    revoked = store.execute(insert, (quote, quote, "operator-public:revoked", None)).lastrowid
+    memory = DailyMemoryService(store)
+    item, = memory.organized(scope)
+    assert item["id"] == saved and item["status"] == "active" and not item["channels"]
+    assert memory.lookup_source(scope, "operator", key)[0]["quote"] == quote
+    assert store.one("SELECT status FROM daily_highlights WHERE id=?", (revoked,))["status"] == "pending_review"
+    store.execute("UPDATE daily_highlights SET status='pending_review' WHERE id=?", (saved,))
+    reopened = DailyMemoryService(store)
+    assert reopened.organized(scope)[0]["status"] == "pending_review"
+    assert not reopened.lookup_source(scope, "operator", key)

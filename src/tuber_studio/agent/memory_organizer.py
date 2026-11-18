@@ -10,6 +10,7 @@ import httpx
 from pydantic import Field, create_model
 
 from ..daily_memory import contains_memory_credential
+from ..memory_sources import install_chat_cleanup, memory_transaction
 from ..generation_meter import budgeted_call
 from ..models import StrictModel
 from ..operation_continuations import content_hash
@@ -48,15 +49,10 @@ class MemoryOrganizer:
         self.error = None
         self.status_scope = None
         self.next_run = 0
-        self.store.execute(
-            "CREATE TABLE IF NOT EXISTS memory_organization ("
-            "account TEXT, character TEXT, version INTEGER, source TEXT, "
-            "revision TEXT, status TEXT, updated_at REAL, "
-            "PRIMARY KEY(account,character,version,source))"
-        )
 
     def start(self):
         if not self.worker or self.worker.done():
+            install_chat_cleanup(self.store.db)
             self.worker = asyncio.create_task(self._loop())
 
     async def close(self):
@@ -122,6 +118,8 @@ class MemoryOrganizer:
             "key='memory_preference:'||json_extract(t.result,'$.account_id')||':'||t.character_id "
             "AND json_extract(value,'$.enabled')=0))) "
             "AND COALESCE(json_extract(t.result,'$.memory_intent'),'chat')='chat' "
+            "AND NOT EXISTS (SELECT 1 FROM memory_source_tombstones d WHERE d.owner=json_extract(t.result,'$.owner_source') "
+            "AND d.character=t.character_id AND d.source_key='turn:'||t.request_id) "
             "AND NOT EXISTS (SELECT 1 FROM memory_organization p WHERE p.account=json_extract(t.result,'$.account_id') "
             "AND p.character=t.character_id AND p.version=t.character_version AND p.source='turn:'||t.request_id) "
             "ORDER BY t.created_at,t.request_id LIMIT 4",
@@ -279,7 +277,7 @@ class MemoryOrganizer:
         if scope != self.scope() or preference != runtime.daily_memory.preference(scope):
             self.status = "waiting"
             return 0
-        with self.store.db:
+        with memory_transaction(self.store.db):
             for number, source in enumerate(sources, 1):
                 key = f"source_{number}"
                 self._apply(scope, source, decisions.get(key), supplied.get(key, []), visible)
@@ -310,6 +308,8 @@ class MemoryOrganizer:
             if not current or current["message"] != source["text"]:
                 return
             saved = json.loads(current["result"])
+            if self.runtime.daily_memory.source_deleted(scope, source["key"], saved.get("owner_source")):
+                return
             if not is_chat_turn(saved):
                 decision = None
             elif saved.get("private") and saved.get("owner_source"):
@@ -322,7 +322,7 @@ class MemoryOrganizer:
                                  "AND version=? AND source=?", (*scope, source["key"]))
         deleted = history and history["status"] == "deleted"
         processed = history and history["revision"] == source["revision"]
-        if deleted and source["kind"] == "private":
+        if (deleted or processed) and not source.get("progress_key"):
             return
         status = "skipped"
         if decision and decision.action != "skip" and not (deleted or processed):
