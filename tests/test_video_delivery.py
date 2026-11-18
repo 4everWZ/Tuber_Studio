@@ -439,7 +439,9 @@ async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, mon
     assert selected.gaps == [] and "另一窗口" not in render_private_delivery(selected, evidence)[1]
 
 
-async def test_failed_window_after_narrowing_keeps_good_item_and_reads_an_unused_interval(runtime, store, monkeypatch, reviewed_window):
+@pytest.mark.parametrize("with_overview", [False, True])
+async def test_failed_window_after_narrowing_keeps_good_item_and_reads_an_unused_interval(runtime, store, monkeypatch, reviewed_window,
+                                                                                        with_overview):
     good, bad = short_read("kept", 7), short_read("bad", 13)
     for step in (good, bad):
         step["result"]["part_duration"] = 20
@@ -448,6 +450,12 @@ async def test_failed_window_after_narrowing_keeps_good_item_and_reads_an_unused
     task = {"goal": f"从 {BV} P2 选两段", "steps": [good, bad], "plan": {
         "prior_goals": [], "requested_video_read": "此前已宽窗转短窗", "retained_candidates": [saved],
         "candidate": selection(primary="bad:1").model_dump()}}
+    full_caption = "演播室侧面。右下角有频道水印。屏字写本节目制作团队，画面中央是署名卡。"
+    if with_overview:
+        overview = reading(frame(8), frame(3), frame(18) | {"text": full_caption})
+        task["steps"].append(overview)
+        task["plan"]["window_reviews"] = {"bad": {"clip": bad["result"]["clip"], "coverage": {"uncovered": []},
+            "observations": [{"basis": "主体为剧情对白，虽有频道水印。"}], "screening_version": 4, "accepted": False}}
 
     async def editor(messages, schema, **kwargs):
         props = schema["properties"]
@@ -457,6 +465,13 @@ async def test_failed_window_after_narrowing_keeps_good_item_and_reads_an_unused
             key = json.loads(messages[-1]["content"])["candidate_primary"]
             assert not key.startswith("kept:")
             return {"decision": "另取材料", "primary_frame": None, "rationale": "当前材料不合适。"}
+        if "samples" in props:
+            packet = json.loads(messages[-1]["content"])
+            candidates = packet["untried_observations"]
+            assert set(candidates) == {"v:2", "v:3"} and candidates["v:3"]["observation"] == full_caption
+            assert packet["rejected_windows"][0]["last_observation"] == "主体为剧情对白，虽有频道水印。"
+            return {"samples": {"v:2": {"material": "布景", "priority": "备选"},
+                                "v:3": {"material": "片外署名", "priority": "优先补读"}}, "first": "v:3"}
         if "start" in props:
             assert not any(p["minimum"] <= 13 <= p["maximum"] for p in props["start"]["anyOf"])
             return {"read": "kept", "start": 0}
@@ -467,7 +482,8 @@ async def test_failed_window_after_narrowing_keeps_good_item_and_reads_an_unused
     with pytest.raises(AdditionalVideoRead) as again:
         await tasks.edit_delivery(task, evidence_index(task["steps"]))
     assert again.value.retained == [saved] and again.value.exclude == ["bad:1"]
-    assert again.value.windows == [{"bvid": BV, "part": 2, "start": 0, "end": 3}]
+    start = 16 if with_overview else 0
+    assert again.value.windows == [{"bvid": BV, "part": 2, "start": start, "end": start + 3}]
     repeated = bad | {"id": "same-window-new-call"}
     assert evidence_index([good, bad, repeated]).discovery_progress() == evidence_index([good, bad]).discovery_progress()
 

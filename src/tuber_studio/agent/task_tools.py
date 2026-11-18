@@ -226,6 +226,30 @@ class WindowProbe(StrictModel):
     start: float = Field(ge=0)
 
 
+class DiscoveryAssessment(StrictModel):
+    material: str = Field(min_length=1, description="结合整帧描述和屏字判断素材片类，用号主任务相关的简短描述。")
+    priority: Literal["优先补读", "备选", "不适合"]
+
+
+def unexplored_samples(evidence, reads, starts, seconds):
+    """Bind each overview observation to a still available window that contains its actual sample."""
+    by_part = {(s["arguments"]["bvid"], s["arguments"]["part"]): key for key, s in reads.items() if key in starts}
+    proposals = {}
+    for key, point in evidence.points.items():
+        region = by_part.get((point.bvid, point.part))
+        coverage = evidence.video_coverage[key.rsplit(":", 1)[0]]
+        if not region or point.medium != "单帧采样" or coverage.get("clip"):
+            continue
+        center = math.floor(point.seconds - seconds / 2)
+        for low, high in starts[region]:
+            start = max(low, min(center, high))
+            if start <= point.seconds < start + seconds:
+                proposals[key] = {"window": {"bvid": point.bvid, "part": point.part, "start": start, "end": start + seconds},
+                                  "cid": point.cid, "seconds": point.seconds, "observation": evidence.observations[key]}
+                break
+    return proposals
+
+
 def attempted_windows(task):
     windows = []
     for step in task.get("steps", ()):
@@ -813,18 +837,49 @@ def create_task_runtime(runtime, store, browsing):
         schema["properties"]["read"]["enum"] = list(starts)
         ranges = sorted({tuple(pair) for intervals in starts.values() for pair in intervals})
         schema["properties"]["start"] = {"anyOf": [{"type": "number", "minimum": lo, "maximum": hi} for lo, hi in ranges]}
-        observed = [(p.bvid, p.part, p.seconds, evidence.observations[k]) for k, p in evidence.points.items()
-                    if p.medium == "单帧采样" and not any(c["bvid"] == p.bvid and c["part"] == p.part and
-                                                      c["start"] <= p.seconds < c["end"] for c in clips)]
+        proposals = unexplored_samples(evidence, reads, starts, seconds)
         rejected = [{"range": [r["clip"]["start"], r["clip"]["end"]], "part": r["clip"]["part"], "bvid": r["clip"]["bvid"],
-                     "uncovered": r["coverage"]["uncovered"], "caption_topics": [t["topic"] for t in r.get("caption_topics", [])],
+                     "uncovered_state_count": len(r["coverage"]["uncovered"]),
+                     "caption_topics": list(dict.fromkeys(t["topic"] for t in r.get("caption_topics", []))),
                      "last_observation": next((o["basis"] for o in reversed(r["observations"]) if o.get("basis")), "")}
                     for r in reviews.values() if r.get("screening_version") == WINDOW_REVIEW_VERSION and not r["accepted"]]
+        goals = [*task["plan"]["prior_goals"], task["goal"]]
+        region_context = {k: {"part": p.part, "bvid": p.bvid, "seconds": p.seconds, "observation": evidence.observations[k]}
+                          for k, p in evidence.points.items() if p.medium == "单帧采样" and k not in proposals and
+                          any(b["end"] - b["start"] > 10 for b in evidence.video_coverage[k.rsplit(":", 1)[0]]["requested_ranges"]
+                              if b.get("part") == p.part and b.get("end") is not None and b.get("start") is not None)}
+        accepted = [{"clip": r["clip"], "observed_topics": [t["topic"] for t in r["caption_topics"]]}
+                    for r in reviews.values() if accepted_window(r, r["clip"], strict=False)]
+        exploration = {"goals": goals, "untried_observations": proposals, "other_overview_observations": region_context,
+                       "accepted_windows": accepted, "rejected_windows": rejected}
+        if proposals:
+            assessment = DiscoveryAssessment.model_json_schema()
+            ranking = {"type": "object", "properties": {"samples": {"type": "object", "properties": {
+                k: assessment for k in proposals}, "required": list(proposals), "additionalProperties": False},
+                "first": {"anyOf": [{"type": "string", "enum": list(proposals)}, {"type": "null"}]}},
+                "required": ["samples", "first"], "additionalProperties": False}
+            ranked = await request_json([{"role": "system", "content": "为补读取材逐项比较未试主帧。根据各帧完整观察和屏字判断主体片类，"
+                "区分片头署名、片外资料、叙事等；叙事中的水印不能替整帧定类。结合此前拒收的实际范围和原因，"
+                "优先调查与目标相符且内容类型不同的材料；多次相邻拒收后换一个有观察依据的内容区。"
+                "first 填最高优先级中的一个证据 ID，全部不合适时填 null。判断只用于补读，整段需另行审查。"},
+                {"role": "user", "content": dump(exploration)}],
+                ranking, max_tokens=runtime.settings.data["llm"]["max_tokens"])
+            if set(ranked["samples"]) != proposals.keys():
+                raise DelegationError("补读提案没有覆盖所列实际观察。")
+            priorities = {k: DiscoveryAssessment.model_validate(v).priority for k, v in ranked["samples"].items()}
+            preferred = {k for k, p in priorities.items() if p == "优先补读"} or {k for k, p in priorities.items() if p == "备选"}
+            if preferred:
+                if ranked["first"] not in preferred:
+                    raise DelegationError("所选补读提案与实际主帧评级不一致。")
+                return [proposals[ranked["first"]]["window"]]
+            if ranked["first"] is not None:
+                raise DelegationError("补读提案选择了已评为不适合的主帧。")
         probe = WindowProbe.model_validate(await request_json([
             {"role": "system", "content": "按当前目标选一个已有授权的分P和一个新的短窗入点。已保存的短片不能重复使用。"
-             "为开场或不涉及剧情的取材，可优先调查节目片头、导语等位置；是否可用仍须读回。"},
-            {"role": "user", "content": dump({"goal": task["goal"], "duration_seconds": seconds, "available_start_ranges": starts,
-                "unused_samples": observed, "rejected_windows": rejected,
+             "根据概览主帧与实际审查结果判断不同内容区。连续几个相邻短窗已因叙事不合用时，转向更有依据的区域。"
+             "未覆盖所有画面变化只说明尚未审清。可在合适的素材类型附近提出新的未读区间；新窗仍需独立查证。"},
+            {"role": "user", "content": dump(exploration | {"duration_seconds": seconds, "available_start_ranges": starts,
+                "assessed_samples": ranked["samples"] if proposals else {},
                 "reads": {key: {"part": s["arguments"]["part"], "duration": s["result"]["part_duration"],
                                 "saved_clip": evidence.video_coverage[key].get("clip")} for key, s in reads.items() if key in starts}})}],
             schema, max_tokens=runtime.settings.data["llm"]["max_tokens"]))
@@ -858,6 +913,8 @@ def create_task_runtime(runtime, store, browsing):
         async def next_windows(candidate, pool, seconds, count):
             nominated = discovery_windows(candidate, pool, seconds, count)
             new = [p for p in nominated if not any(overlaps(p, a) for a in attempts)]
+            if new and any(r.get("screening_version") == WINDOW_REVIEW_VERSION and not r["accepted"] for r in window_reviews.values()):
+                return await propose_window(task, evidence, seconds, window_reviews) or new
             return new or await propose_window(task, evidence, seconds, window_reviews)
 
         async def window_usable(key, *, keep=False):
