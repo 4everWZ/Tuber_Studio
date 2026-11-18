@@ -10,3 +10,5 @@
 | 回退 | 单独注入 WHEP 503，形象会话关闭，下一条回复以原生语音播放并收到回执。模拟可撤回记忆票据时使用原生播放，未创建新的 Avatar 会话。 |
 
 复跑命令为 `python tests/browser/run_private_call.py --whep`。本记录验证 Studio 的传输与播放；实际两张原稿的质量判定另见[原稿实测](ditto-master-mouth-20261118.md)。
+
+记忆票据测试记录的是首版行为。加入记忆变更订阅后的实测见[原画通话与跨端记忆撤回](private-rig-memory-20261119.md)。

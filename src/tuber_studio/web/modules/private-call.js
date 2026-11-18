@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 import { PrivatePlayback } from "./private-call-playback.js";
 import { portraitPlayback } from "./private-call-whep.js";
+import { guardCall } from "./private-call-guard.js";
 import { CallAvatar } from "./private-call-avatar.js";
 import { FinalUtterances, showHandoff } from "./private-call-handoff.js";
 
@@ -79,9 +80,10 @@ async function capture(call, identity) {
   status.textContent = `正在与${identity}私聊 · 麦克风已开启`;
 }
 
-async function begin() {
+async function begin(previous = null) {
   if (current) return;
   const call = {abort: new AbortController(), utterances: new FinalUtterances(), send(event) {
+    if (this.invalidated && event.type === "playback.ack") return;
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(event));
   }};
   current = call;
@@ -95,10 +97,32 @@ async function begin() {
     if (current !== call) return;
     const config = await api("/api/chat/private-call/ticket", {method: "POST", signal: call.abort.signal});
     if (current !== call) return;
+    if (previous && config.call_scope !== previous.scope) {
+      finish(call, "角色或授权已变化，请重新开始通话"); return;
+    }
+    function invalidate(reason) {
+      if (current !== call) return;
+      call.invalidated = true;
+      const muted = !!call.playback?.muted;
+      call.send({type: "response.cancel"});
+      call.send({type: "output_audio_buffer.clear"});
+      finish(call, "通话记忆已变化，正在重新连接");
+      if (reason === "changed" && dialog.open && !workspace.hidden) {
+        void begin({scope: config.call_scope, muted});
+      } else status.textContent = "记忆或授权暂时无法核对，通话已结束";
+    }
+    if (config.memory_use) {
+      call.guard = await guardCall(call, config.memory_use, invalidate);
+      if (current !== call) return;
+    }
     const url = new URL(config.socket);
     url.search = new URLSearchParams({ticket: config.ticket, duplex: "1", autostart: "0"});
-    call.playback = portraitPlayback(call, url, config.memory_use) ||
+    call.playback = portraitPlayback(call, url) ||
       new PrivatePlayback(call.context, event => call.send(event));
+    if (previous?.muted) {
+      call.playback.setMuted(true);
+      mute.textContent = "恢复播放"; mute.setAttribute("aria-pressed", "true");
+    }
     call.socket = new WebSocket(url);
     if (!call.playback.gateway) void avatar.load(config, call.abort.signal);
     mute.hidden = false;
@@ -149,7 +173,7 @@ open.onclick = () => {
   status.textContent = "尚未开始通话";
   dialog.showModal();
 };
-start.onclick = begin;
+start.onclick = () => begin();
 end.onclick = () => { finish(current, "通话已结束"); dialog.close(); };
 dialog.addEventListener("close", () => finish(current, "通话已结束"));
 function leave() { finish(current, "通话已结束"); if (dialog.open) dialog.close(); }

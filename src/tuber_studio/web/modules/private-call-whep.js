@@ -36,16 +36,10 @@ new MutationObserver(async () => {
 
 const release = path => path && fetch(path, {method: "DELETE", keepalive: true}).catch(() => {});
 
-export function portraitPlayback(call, url, memoryUse) {
+export function portraitPlayback(call, url) {
   select.disabled = true;
   call.abort.signal.addEventListener("abort", () => { select.disabled = false; }, {once: true});
   if (!selection || !select.value) return null;
-  // Revocable speech must pass the private call's chunk check before playback.
-  if (memoryUse) {
-    caption.textContent = "本次通话引用了可撤回的记忆，使用逐段核验的语音播放";
-    call.abort.signal.addEventListener("abort", () => { caption.textContent = ""; }, {once: true});
-    return null;
-  }
   url.searchParams.set("avatar", "1");
   return new PortraitPlayback(call, select.value, selection);
 }
@@ -93,7 +87,7 @@ class PortraitPlayback {
     try {
       if (!event.avatar_available || !event.source_session_id) throw Error();
       const joined = await api(base, {method: "POST", body: {profile: this.profile,
-        selection: this.selection, source_session_id: event.source_session_id}});
+        selection: this.selection, source_session_id: event.source_session_id, guard: this.call.guard}});
       const path = base + "/" + joined.handle;
       if (this.closed || this.failed) { await release(path); return; }
       this.path = path;
@@ -135,6 +129,8 @@ class PortraitPlayback {
     peer?.close();
     video.onplaying = video.onpause = video.onwaiting = null;
     video.pause();
+    video.muted = true;
+    video.srcObject?.getTracks().forEach(track => track.stop());
     video.srcObject = null;
     video.hidden = true;
     const location = this.location;

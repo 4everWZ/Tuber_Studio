@@ -43,7 +43,8 @@ async page => {
     const id = await speech();
     const heard = await until(s => s.played_by_response[id] > 200 && s.avatars[index]?.ack.played_ms > 0, "playback ack");
     const row = heard.avatars[index];
-    if (row.avatar !== "portrait_" + (index ? "b" : "a").repeat(32) || !row.source || row.peers !== 1)
+    const expected = process.env.STUDIO_TEST_RIG_DIR ? ["regular", "q"][index] : "portrait_" + (index ? "b" : "a").repeat(32);
+    if (row.avatar !== expected || !row.source || row.peers !== 1)
       throw Error("source or profile binding");
     await page.getByRole("button", {name: "播放静音"}).click();
     const muted = await speech();
@@ -73,19 +74,54 @@ async page => {
   const continued = await speech();
   await until(s => s.played_by_response[continued] > 0 && s.avatars[2].state === "closed", "native fallback");
   await page.getByRole("button", {name: "挂断"}).click();
-  await page.route("**/api/chat/private-call/ticket", async route => {
-    const reply = await route.fetch();
-    await route.fulfill({json: {...await reply.json(), memory_use: {ids: [1], stamp: "fixture"}, memory_citations: []}});
+  await page.unroute("**/api/chat/private-call/avatars/*/whep");
+  const studio = await page.evaluate(() => location.origin);
+  const request = async (method, path, data) => (await page.request.fetch(studio + path,
+    {method, data, failOnStatusCode: true})).json();
+  const old = "开场时我喜欢讲海底厨房。", updated = "开场时我喜欢讲蓝色灯塔。";
+  const pref = await request("GET", "/api/daily-memory/preferences");
+  await request("PUT", "/api/daily-memory/preferences", {enabled:true, scope: pref.scope});
+  const note = {source:"settings", text:old};
+  const {stamp} = await request("POST", "/api/agent/memory.propose", note);
+  const {id: memoryId} = await request("POST", "/api/agent/memory/confirm", {...note, stamp});
+  const hit = await request("POST", "/api/agent/memory.get", {id:memoryId});
+  const prompts = [], controls = [];
+  page.on("websocket", ws => {
+    if (!ws.url().includes("/v1/realtime?")) return;
+    ws.on("framesent", ({payload}) => {
+      const e = JSON.parse(payload);
+      if (e.type === "session.update") prompts.push(e.session.instructions);
+      if (["response.cancel","output_audio_buffer.clear","session.close"].includes(e.type)) controls.push(e.type);
+    });
   });
-  await page.route("**/api/agent/memory/validate", route => route.fulfill({json: {ok: true}}));
   await page.getByRole("button", {name: "更多对话操作"}).click();
   await page.getByRole("button", {name: "私有语音通话"}).click();
   await page.getByRole("combobox", {name: "通话形象", exact: true}).selectOption("q");
+  await page.locator("#private-call-topic").fill(hit.source_key);
   await page.getByRole("button", {name: "开始通话"}).click();
-  await page.getByText(/使用逐段核验的语音播放/).waitFor();
+  await page.getByLabel("实时通话形象").waitFor();
   await page.getByText(/麦克风已开启/).waitFor();
+  await until(s => s.avatars[3]?.ack.played_ms > 0, "guarded subscription");
   const privateReply = await speech();
-  await until(s => s.played_by_response[privateReply] > 0 && s.avatars.length === 3, "memory-aware playback");
+  const first = await until(s => s.played_by_response[privateReply] > 0, "memory-aware playback");
+  if (!prompts[0]?.includes(old)) throw Error("preference absent");
+  await page.evaluate(() => { window.oldTracks = document.querySelector("#private-call-dialog video").srcObject.getTracks(); });
+  await request("PATCH", "/api/daily-memory/organized/" + memoryId + "?expected_revision=" + hit.revision, {note: updated});
+  const reopened = await until(s => s.avatars[3].state === "closed" && !s.avatars[3].peers &&
+    s.avatars[4]?.ack.played_ms > 0, "reopened after revision");
+  const revisionChecks = {newSource: first.avatars[3].source !== reopened.avatars[4].source,
+    newNote: prompts[1]?.includes(updated), oldNoteRemoved: !prompts[1]?.includes(old),
+    clear: controls.includes("output_audio_buffer.clear"), cancel: controls.includes("response.cancel"),
+    tracksEnded: await page.evaluate(() => window.oldTracks.every(t=>t.readyState === "ended"))};
+  if (!Object.values(revisionChecks).every(Boolean)) throw Error("correction: " + JSON.stringify(revisionChecks));
+  const next = await speech();
+  await until(s => s.played_by_response[next] > 0, "revised preference playback");
+  await request("DELETE", "/api/daily-memory/organized/" + memoryId + "?expected_revision=" + (hit.revision + 1));
+  await until(s => s.avatars[4].state === "closed" && !s.avatars[4].peers &&
+    s.avatars[5]?.ack.played_ms > 0, "reopened after removal");
+  if (prompts[2]?.includes(updated) || prompts[2]?.includes(old)) throw Error("removed memory survived");
+  const clean = await speech();
+  await until(s => s.played_by_response[clean] > 0, "playback after removal");
   await page.getByRole("button", {name: "挂断"}).click();
-  return {results, subscriptions, fallback: true, memoryUsesNativeAudio: true};
+  return {results, subscriptions, fallback: true, memoryCorrectionAndRemoval: true};
 }

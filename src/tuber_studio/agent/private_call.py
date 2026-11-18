@@ -16,6 +16,7 @@ from fastapi import Depends, HTTPException
 
 from ..config import validate_api_key
 from ..http_api import endpoint
+from ..operation_continuations import content_hash
 
 
 def private_service():
@@ -81,6 +82,7 @@ def register_private_call(app, runtime, require_admin):
         if service is None:
             raise HTTPException(503, "尚未配置独立的私聊语音服务")
         origin, token = service
+        grant = runtime.tasks.scope()
         try:
             ticket = await mint_ticket(origin, token)
         except httpx.HTTPStatusError as error:
@@ -89,10 +91,13 @@ def register_private_call(app, runtime, require_admin):
             raise HTTPException(502, "语音服务未签发私聊票据，请核对应用凭据与服务地址") from None
         except (httpx.RequestError, ValueError):
             raise HTTPException(502, "私聊语音服务不可用") from None
+        if runtime.tasks.scope() != grant:
+            raise HTTPException(409, "角色或授权已变化，请重新开始通话")
         character = runtime.character
         return {
             "socket": origin.replace("http", "ws", 1) + "/v1/realtime",
             "ticket": ticket,
+            "call_scope": content_hash(grant),
             "character": character["name"],
             "avatar": call_avatar(runtime.settings, character),
             "instructions": "\n".join(text for text in (

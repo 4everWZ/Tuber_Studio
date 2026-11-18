@@ -41,7 +41,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gateway-repo", type=Path, default=ROOT.parent / "omni-avatar-api")
     parser.add_argument("--whep", action="store_true")
+    parser.add_argument("--rig-dir", type=Path, help="Exercise registered regular/model.inp and q/model.inp on WHEP")
     args = parser.parse_args()
+    if args.rig_dir:
+        args.whep = True
+        for name in ("regular", "q"):
+            if not (args.rig_dir / name / "model.inp").is_file():
+                parser.error("Both real rig files must exist")
     repo = args.gateway_repo.resolve()
     engine_python = repo / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     base = 18865 if args.whep else 18765
@@ -68,10 +74,12 @@ def main():
                 env["CHROMIUM_EXECUTABLE"] = str(max(browsers, key=lambda binary: binary.stat().st_mtime))
         origin = f"http://127.0.0.1:{base + 1}"
         if args.whep:
+            env["STUDIO_TEST_RIG_DIR"] = str(args.rig_dir.resolve()) if args.rig_dir else ""
             (runtime / "private-call-avatars.json").write_text(json.dumps({
                 "character_id": "whale", "origin": origin, "profiles": {
-                    key: {"avatar_id": "portrait_" + char * 32, "accepted": True}
-                    for key, char in (("original", "a"), ("q", "b"))}}))
+                    key: {"avatar_id": rig if args.rig_dir else "portrait_" + char * 32,
+                          "driver": "inochi2d" if args.rig_dir else "ditto", "accepted": True}
+                    for key, rig, char in (("original", "regular", "a"), ("q", "q", "b"))}}))
         env.update(STUDIO_TEST_WHEP=str(int(args.whep)), TUBER_RUNTIME=folder, TUBER_CONFIG=str(target), TUBER_PRIVATE_REALTIME_ORIGIN=origin,
                    TUBER_PRIVATE_REALTIME_TOKEN_FILE=str(token))
         for command, port, paths in (
