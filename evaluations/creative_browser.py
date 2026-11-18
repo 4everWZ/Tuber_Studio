@@ -160,28 +160,32 @@ async def send(page, message):
 
 
 async def edition(page, origin, task, revision, directory, timeout):
-    async with asyncio.timeout(timeout):
-        while True:
-            response = await page.request.get(f"{origin}/api/agent/tasks/{task}")
-            require(response.ok, "无法读取原任务")
-            data = await response.json()
-            require(data["id"] == task and data["revision"] <= revision, "任务引用或修订号错位")
-            if data["revision"] == revision and data["status"] in {
-                "completed",
-                "cancelled",
-                "failed",
-                "needs_input",
-                "awaiting_approval",
-            }:
-                write(directory / f"r{revision}.json", data)
-                require(data["status"] == "completed", f"原任务 r{revision} 为 {data['status']}")
-                artifact = data.get("artifact") or {}
-                require(
-                    artifact.get("task_revision") == revision and artifact.get("task_id") == task,
-                    f"缺原任务 r{revision} 的成果",
-                )
-                return data
-            await asyncio.sleep(1)
+    data = None
+    deadline = asyncio.timeout(timeout)
+    try:
+        async with deadline:
+            while True:
+                response = await page.request.get(f"{origin}/api/agent/tasks/{task}")
+                require(response.ok, "无法读取原任务")
+                data = await response.json()
+                require(data["id"] == task and data["revision"] <= revision, "任务引用或修订号错位")
+                if data["revision"] == revision and data["status"] in {
+                    "completed", "cancelled", "failed", "needs_input", "awaiting_approval",
+                }:
+                    write(directory / f"r{revision}.json", data)
+                    require(data["status"] == "completed", f"原任务 r{revision} 为 {data['status']}")
+                    artifact = data.get("artifact") or {}
+                    require(artifact.get("task_revision") == revision and artifact.get("task_id") == task,
+                            f"缺原任务 r{revision} 的成果")
+                    return data
+                await asyncio.sleep(1)
+    except TimeoutError as error:
+        if not deadline.expired():
+            raise
+        state = data["status"] if data else "尚未读到任务"
+        if data is not None:
+            write(directory / f"r{revision}-pending.json", data)
+        raise Mismatch(f"等待原任务 {task} 的 r{revision} 达到 {timeout} 秒，最后读到的状态为 {state}") from error
 
 
 async def anchor(page):
