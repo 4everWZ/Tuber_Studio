@@ -1,7 +1,7 @@
 import { node, safeMessage } from "./core.js?v=20261105.32";
 import { citations, rememberButton } from "./owner-memory.js";
 import { memoryGroupNames, memoryVisibility } from "./personalization.js?v=20261116.1";
-import { renderAssistantAnswer } from "./operator-chat-answer.js";
+import { renderArtifact, renderAssistantAnswer } from "./operator-chat-answer.js";
 import { operationControlCard } from "./operator-chat-control.js?v=20261113.12";
 
 const statuses = {
@@ -347,6 +347,26 @@ function experienceCard(root, initial) {
 
 export function createOperatorCard(root, turn, context) {
   const { type, data } = turn.card;
+  if (type === "history_artifact") {
+    const details = node("details"), body = node("div");
+    details.append(node("summary", `查看引用原稿 · r${data.task_revision} v${data.edition}`), body);
+    details.ontoggle = async () => {
+      body.replaceChildren();
+      if (!details.open) return;
+      try {
+        const edition = await context.api(`${context.path}/turns/${turn.request_id}/artifact`);
+        if (details.open && details.isConnected) {
+          const text = node("div");
+          renderArtifact(text, edition.body);
+          body.replaceChildren(node("small", edition.author === "owner" ? "号主编辑" : "角色交付", "hint"), text);
+        }
+      } catch (error) {
+        body.textContent = safeMessage(error.message);
+      }
+    };
+    root.append(details);
+    return { update() {} };
+  }
   if (type === "agent_task") {
     const open = button("查看任务");
     const status = node("p", "", "hint");
