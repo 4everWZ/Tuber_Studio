@@ -247,11 +247,11 @@ async def public_https_address(url):
     return host, address
 
 
-async def fetch_excerpt(value, *, allow_url=None):
+async def fetch_excerpt(value, *, allow_url=None, exact_source=False):
     if not 1 <= len(value) <= MAX_URL or any(c.isspace() or c == "\\" for c in value):
         raise ValueError("网页地址格式无效")
     url = source_url(value)
-    try_readme = True
+    try_readme = not exact_source
     async with (
         asyncio.timeout(FETCH_TIMEOUT),
         httpx.AsyncClient(
@@ -289,6 +289,8 @@ async def fetch_excerpt(value, *, allow_url=None):
                     try_readme = False
                     continue
                 if response.status_code in REDIRECTS and (location := response.headers.get("location")):
+                    if exact_source:
+                        raise ValueError("跟进授权不包含重定向目标")
                     url = source_url(resource.join(location))
                     continue
                 response.raise_for_status()

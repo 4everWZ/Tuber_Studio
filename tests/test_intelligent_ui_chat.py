@@ -101,6 +101,68 @@ def test_assistant_rejects_invalid_tool_payload_before_dispatch(settings, monkey
         assert not app.state.store.one("SELECT 1 FROM browsing_rounds")
 
 
+async def test_semantic_task_cards_bind_clarified_steering_without_approval(settings, monkeypatch):
+    app = create_app(settings, adapter=ControlledPlatform())
+    runtime = app.state.runtime
+    path = "/api/chat/intelligent"
+    ids = [str(uuid4()) for _ in range(4)]
+    texts = ["给下场暖场留两段可选的，别发", "这周的选题也备一份", "第二段换成轻松点的", "我是指暖场那份"]
+
+    async def decide(messages, schema, **options):
+        content = messages[-1]["content"]
+        packet = json.loads(content) if content.startswith("{") else {"message": content}
+        index = texts.index(packet["message"])
+        actions = schema["properties"]["action"]["enum"]
+        assert {"chat", "agent_task", "steer_task", "clarify"} <= set(actions)
+        if index < 2:
+            return {"action": "agent_task"}
+        assert [card["id"] for card in packet["recent_task_cards"]] == [ids[1], ids[0]]
+        if index == 2:
+            return {"action": "steer_task"}
+        assert packet["clarification"]["request"] == texts[2]
+        return {"action": "steer_task", "reference": ids[0], "clarification_id": packet["clarification"]["id"]}
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", decide, raising=False)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        for index, (identity, message) in enumerate(zip(ids, texts)):
+            payload = {"message": message, "request_id": identity}
+            response = await client.post(path, json=payload)
+            assert response.status_code == 200, response.text
+            if index == 2:
+                assert response.json()["card"] is None
+                assert runtime.tasks.current(ids[0])["revision"] == 1
+        task = response.json()["card"]["data"]
+        assert task["id"] == ids[0] and task["revision"] == 2 and task["steps"] == []
+        assert all(text in task["goal"] for text in [texts[0], texts[2], texts[3]])
+        assert runtime.tasks.current(ids[1])["revision"] == 1
+        assert (await client.post(path, json=payload)).json()["card"]["data"]["revision"] == 2
+
+
+async def test_chat_steer_rejects_concurrent_revision_and_non_card_tasks(settings, monkeypatch):
+    app = create_app(settings, adapter=ControlledPlatform())
+    tasks = app.state.runtime.tasks
+    identity, hidden = str(uuid4()), str(uuid4())
+    tasks.create(hidden, "不在对话里的另一项交办")
+
+    async def decide(messages, schema, **options):
+        assert hidden not in str(messages)
+        await tasks.control(identity, 1, "steer", goal="另一端的新要求")
+        return {"action": "steer_task", "reference": identity}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", decide, raising=False)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        path = "/api/chat/intelligent"
+        result = await client.post(path, json={"request_id": identity, "message": "准备提纲", "intent": {"action": "agent_task"}})
+        assert result.status_code == 200, result.text
+        changed = await client.post(path, json={"request_id": str(uuid4()), "message": "留一段就好"})
+        assert changed.status_code == 409
+        assert tasks.current(identity)["goal"] == "另一端的新要求"
+        unbound = await client.post(path, json={"request_id": str(uuid4()), "message": "改一下",
+                                               "intent": {"action": "steer_task", "reference": hidden}})
+        assert unbound.json()["card"] is None
+        assert tasks.current(hidden)["revision"] == 1
+
+
 @pytest.mark.parametrize("change", ["account", "character", "memory"])
 def test_assistant_rechecks_private_scope_before_delivery(settings, monkeypatch, change):
     app = create_app(settings, adapter=ControlledPlatform())
@@ -509,7 +571,6 @@ def test_live_proposal_runs_existing_control_once_and_demo_shortcut_remains_avai
             return {"action": "stop"}
 
         monkeypatch.setattr(runtime.llm, "generate_json", model)
-        runtime.inference.status["mode"] = "live"
         runtime.operations_waiting = lambda: True
         stopped = client.post(path, json={"request_id": str(uuid4()), "message": "停一下"})
         assert stopped.json()["card"]["data"]["state"] == "stopped"

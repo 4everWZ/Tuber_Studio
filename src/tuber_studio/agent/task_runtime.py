@@ -14,9 +14,12 @@ from uuid import UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..http_api import InferenceQueueBusy
+from ..http_api import InferenceBudgetExceeded, InferenceQueueBusy
 from ..store import dump
-from .task_delivery import LABELS, deliver_from_receipts
+from .creative_workspace import CreativeWorkspace
+from . import task_delegation
+from .task_delivery import LABELS, DelegationError, deliver_from_receipts
+from .task_identity import TaskIdentity
 
 MAX_STEPS = 8
 log = logging.getLogger(__name__)
@@ -99,6 +102,10 @@ class Tool:
     # Stops can be replayed after interruption. Look up the same domain operation by its step ID.
     stop: Callable[[str, dict], Awaitable[dict | None]] | None = None
     review: Callable[[BaseModel], dict] | None = None
+    parallel_read: bool = False
+    reusable: bool = False
+    own_deadline: bool = False
+    responses_only: bool = False
 
 
 class TaskRuntime:
@@ -107,6 +114,10 @@ class TaskRuntime:
     def __init__(self, store, scope, decide, make_plan=None):
         self.store, self.scope, self.decide = store, scope, decide
         self.make_plan = make_plan
+        self.responses_client = lambda: None
+        self.requires_responses = lambda: False
+        self.edit_delivery = None
+        self.parallel_reads = 2
         self.tools: dict[str, Tool] = {}
         self.wake = asyncio.Event()
         self.controls = asyncio.Lock()
@@ -128,6 +139,10 @@ class TaskRuntime:
             self.store.execute("ALTER TABLE agent_tasks ADD COLUMN plan TEXT")
         if "plan_cursor" not in columns:
             self.store.execute("ALTER TABLE agent_tasks ADD COLUMN plan_cursor INTEGER NOT NULL DEFAULT 0")
+        self.identity = scope if isinstance(scope, TaskIdentity) else None
+        if self.identity:
+            self.identity.install()
+        self.workspace = CreativeWorkspace(store)
 
     def register(self, name: str, tool: Tool):
         if name in self.tools:
@@ -142,7 +157,7 @@ class TaskRuntime:
     def _deliver(self, task):
         required = {name for name in _TOOL_NAME.findall(task["goal"])
                     if name in self.tools and self.tools[name].review is None}
-        if task["plan"] is not None:
+        if isinstance(task["plan"], list):
             skipped = {item["tool"] for item in task["plan"][:task["plan_cursor"]]
                        if item.get("skipped")}
             required -= skipped
@@ -158,36 +173,54 @@ class TaskRuntime:
 
     def view(self, task):
         result = {key: task[key] for key in ("id", "goal", "revision", "status", "steps", "message", "due", "updated")}
-        if result["status"] == "completed":
+        if result["status"] == "completed" and not task_delegation.uses_responses(task):
             verified, result["message"] = self._deliver(task)
             if not verified:
                 result["status"] = "failed"
         return result
 
-    def current(self, identity):
+    def executable(self, identity):
         row = self.store.one("SELECT * FROM agent_tasks WHERE id=? AND scope=?", (identity, dump(self.scope())))
         return self._decode(row) if row else None
 
+    def visible_scopes(self):
+        if self.identity:
+            return ("(SELECT scope FROM agent_task_scopes WHERE principal=? AND character_id=?)",
+                    self.identity.reader())
+        return "(?)", (dump(self.scope()),)
+
+    def current(self, identity):
+        scopes, params = self.visible_scopes()
+        row = self.store.one(f"SELECT * FROM agent_tasks WHERE id=? AND scope IN {scopes}", (identity, *params))
+        return self._decode(row) if row else None
+
     def activity(self):
+        scopes, params = self.visible_scopes()
         rows = self.store.all(
-            "SELECT * FROM agent_tasks WHERE scope=? "
-            "ORDER BY updated DESC,id DESC LIMIT 50", (dump(self.scope()),)
+            f"SELECT * FROM agent_tasks WHERE scope IN {scopes} "
+            "ORDER BY updated DESC,id DESC LIMIT 50", params
         )
         return [{key: task[key] for key in ("id", "goal", "revision", "status", "due", "updated")}
                 for task in (self.view(self._decode(row)) for row in rows)]
 
-    def create(self, identity, goal, *, due=None, source_key=None):
+    def create(self, identity, goal, *, due=None, source_key=None, creative_goal_id=None, attachments=()):
         scope, now = dump(self.scope()), time.time()
         key = dump([source_key, goal, due])
+        inputs = [{"id": str(uuid5(UUID(identity), f"attachment:{index}")), "revision": 0,
+                   "tool": "owner_attachment", "arguments": {}, "result": attachment}
+                  for index, attachment in enumerate(attachments)]
+        plan = dump({"backend": "responses", "prior_goals": []}) if inputs else None
         due = now if due is None else due
         self.store.execute(
             "INSERT OR IGNORE INTO agent_tasks"
-            "(id,scope,goal,revision,status,steps,message,source_key,due,created,updated) "
-            "VALUES (?,?,?,1,?,'[]','',?,?,?,?)",
-            (identity, scope, goal, "scheduled" if due > now else "queued", key, due, now, now),
+            "(id,scope,goal,revision,status,steps,message,source_key,due,created,updated,creative_goal_id,plan) "
+            "VALUES (?,?,?,1,?,?,'',?,?,?,?,?,?)",
+            (identity, scope, goal, "scheduled" if due > now else "queued", dump(inputs), key, due, now, now,
+             creative_goal_id, plan),
         )
-        task = self.current(identity)
-        if not task or task["source_key"] != key:
+        task = self.executable(identity)
+        if (not task or task["source_key"] != key or
+                [step for step in task["steps"] if step["tool"] == "owner_attachment"] != inputs):
             raise ValueError("该请求编号已用于另一项任务")
         self.wake.set()
         return task
@@ -200,6 +233,8 @@ class TaskRuntime:
         task = self.current(identity)
         if not task:
             raise LookupError(identity)
+        if self.scope() != task["scope"]:
+            raise ValueError("原任务的执行授权已失效，历史仍可查看；请重新交办")
         if task["revision"] != revision:
             raise ValueError("任务已更新，请刷新后重试")
         status = task["status"]
@@ -222,8 +257,9 @@ class TaskRuntime:
         }
         if status not in allowed[action]:
             raise ValueError("任务当前无法执行此操作")
-        pending = task["steps"][-1] if task["steps"] and "result" not in task["steps"][-1] else None
-        tool = self.tools.get(pending["tool"]) if pending else None
+        pending = [item for item in self._current_steps(task) if "result" not in item]
+        stops = [item["id"] for item in pending if self.tools[item["tool"]].stop
+                 and status != "awaiting_approval"]
         final_status = "cancelled" if action == "cancel" else "queued"
         final_message = "任务已停止。" if action == "cancel" else ""
         due = time.time()
@@ -231,12 +267,17 @@ class TaskRuntime:
             final_status, due = "scheduled", task["due"]
         change = {"status": final_status, "message": final_message, "revision": revision + 1,
                   "goal": goal or task["goal"], "due": due, "plan": None, "plan_cursor": 0}
-        if tool and tool.stop and status != "awaiting_approval":
+        if task_delegation.uses_responses(task):
+            change["plan"] = {"backend": "responses", "prior_goals": [*task["plan"]["prior_goals"], task["goal"]],
+                              "previous_delivery": task["plan"].get("previous_delivery")}
+            if task["status"] == "completed":
+                change["plan"]["previous_delivery"] = task["message"]
+        if stops:
             # Persist the control and original step together before interrupting its coroutine.
             change.update(status="waiting", message="正在核对关联操作的停止结果。",
-                          pending_control=dump({"status": final_status, "message": final_message}))
+                          pending_control=dump({"status": final_status, "message": final_message, "stops": stops}))
         elif pending:
-            change["steps"] = task["steps"][:-1]
+            change["steps"] = [item for item in task["steps"] if item not in pending]
         updated = self._save(task, **change)
         if not updated:
             raise ValueError("任务已更新，请刷新后重试")
@@ -255,23 +296,28 @@ class TaskRuntime:
     async def _finish_control(self, task):
         if self.scope() != task["scope"]:
             return
-        pending = task["steps"][-1]
+        control = json.loads(task["pending_control"])
+        stops = control.pop("stops", [task["steps"][-1]["id"]])
+        steps = []
         try:
-            tool = self.tools[pending["tool"]]
-            if not tool.stop:
-                raise ValueError("No stop handler is registered")
-            stop_context = (pending.get("checkpoint") or {}) | (pending.get("approval") or {})
-            async with asyncio.timeout(20):
-                # The step ID also locates submissions made before their checkpoint was written.
-                receipt = await tool.stop(pending["id"], stop_context)
+            for pending in task["steps"]:
+                if "result" in pending:
+                    steps.append(pending)
+                elif pending["id"] in stops:
+                    tool = self.tools[pending["tool"]]
+                    stop_context = (pending.get("checkpoint") or {}) | (pending.get("approval") or {})
+                    async with asyncio.timeout(20):
+                        receipt = await tool.stop(pending.get("resource_id", pending["id"]), stop_context)
+                    if receipt is not None:
+                        stopped = pending | {"result": receipt}
+                        if tool.reusable and control["status"] == "queued" and receipt.get("status") == "cancelled":
+                            stopped["paused_for_steer"] = True
+                        steps.append(stopped)
         except Exception as error:
             log.warning("Agent tool %s stop failed: %s", pending["tool"], type(error).__name__)
             self._save(task, message="关联操作的停止结果待核对。", due=time.time() + 30)
             return
-        steps = task["steps"][:-1]
-        if receipt is not None:
-            steps = [*steps, pending | {"result": receipt}]
-        self._save(task, **json.loads(task["pending_control"]), steps=steps, pending_control=None, due=time.time())
+        self._save(task, **control, steps=steps, pending_control=None, due=time.time())
 
     def _save(self, task, **changes):
         changes["updated"] = max(time.time(), math.nextafter(task["updated"], math.inf))
@@ -280,10 +326,18 @@ class TaskRuntime:
         if changes.get("plan") is not None:
             changes["plan"] = dump(changes["plan"])
         query = "UPDATE agent_tasks SET " + ",".join(f"{key}=?" for key in changes)
-        return self.store.execute(
-            query + " WHERE id=? AND revision=? AND updated=?",
-            (*changes.values(), task["id"], task["revision"], task["updated"]),
-        ).rowcount == 1
+        with self.store.db as database:
+            applied = database.execute(
+                query + " WHERE id=? AND revision=? AND updated=?",
+                (*changes.values(), task["id"], task["revision"], task["updated"]),
+            ).rowcount == 1
+            if applied and changes.get("status") == "completed" and changes.get("message"):
+                self.workspace.record_delivery(database, task, changes["message"])
+            if applied and changes.get("status") in {"completed", "failed", "awaiting_approval", "needs_input"}:
+                self.workspace.notify(database, task["id"], changes["updated"])
+            elif applied and changes.get("status") and changes["status"] != task["status"]:
+                database.execute("DELETE FROM creative_attention WHERE task_id=?", (task["id"],))
+            return applied
 
     def start(self):
         self.worker = asyncio.create_task(self._work())
@@ -297,6 +351,8 @@ class TaskRuntime:
     async def _work(self):
         while True:
             self.wake.clear()
+            if followups := getattr(self, "followups", None):
+                await followups.tick()
             async with self.controls:
                 row = self.store.one(
                     "SELECT * FROM agent_tasks WHERE scope=? AND status IN ('queued','running','waiting','scheduled') "
@@ -323,16 +379,21 @@ class TaskRuntime:
             else:
                 await self._step(task)
         except InferenceQueueBusy as busy:
-            fresh = self.current(task["id"])
+            fresh = self.executable(task["id"])
             if fresh and fresh["revision"] == task["revision"]:
                 self._save(fresh, status="waiting", due=time.time() + busy.retry_after,
                            message="等待推理资源，已保存任务进度。")
         except Exception as error:
             log.warning("Agent task %s failed: %s", task["id"], type(error).__name__)
-            fresh = self.current(task["id"])
+            fresh = self.executable(task["id"])
             if fresh and fresh["revision"] == task["revision"]:
                 _, delivery = self._deliver(fresh)
-                self._save(fresh, status="failed", message="任务未完成。\n\n" + delivery)
+                reason = "后台请求超出服务预算。" if isinstance(error, InferenceBudgetExceeded) else "任务未完成。"
+                if isinstance(error, DelegationError):
+                    reason = str(error)
+                elif task_delegation.uses_responses(fresh) and "candidate" in fresh["plan"]:
+                    reason = "前台未能完成选材；已保留候选材料，尚未交付。"
+                self._save(fresh, status="failed", message=reason + "\n\n" + delivery)
 
     async def _prepare_plan(self, task, tools):
         plan = await self.make_plan(task["goal"], tools)
@@ -388,11 +449,17 @@ class TaskRuntime:
         if not task:
             return
         steps = task["steps"]
+        if task_delegation.uses_responses(task):
+            await task_delegation.advance(self, task)
+            return
+        if task["plan"] is None and not steps and (self.requires_responses() or self.responses_client() is not None):
+            self._save(task, plan={"backend": "responses", "prior_goals": []}, status="queued", due=time.time())
+            return
         step = steps[-1] if steps and "result" not in steps[-1] else None
         if step is None:
             tools = {name: {"description": tool.description, "arguments": tool.arguments.model_json_schema(),
                             "requires_approval": tool.review is not None}
-                     for name, tool in self.tools.items()}
+                     for name, tool in self.tools.items() if not tool.responses_only}
             current_steps = self._current_steps(task)
             used = len(current_steps)
             planned = None
@@ -425,27 +492,30 @@ class TaskRuntime:
                 return
             task = self.current(task["id"])
 
+        step, status, due = await self._invoke(task, step, self._current_steps(task), task["goal"])
+        if self.scope() == task["scope"]:
+            changes = {"plan_cursor": task["plan_cursor"] + 1} if "result" in step and task["plan"] is not None else {}
+            self._save(task, status=status, steps=[*task["steps"][:-1], step], due=due, **changes)
+
+    async def _invoke(self, task, step, context, goal):
         tool = self.tools[step["tool"]]
         try:
             arguments = tool.arguments.model_validate(step["arguments"])
             if tool.review and not step.get("approved"):
                 step = step | {"approval": tool.review(arguments)}
-                self._save(task, status="awaiting_approval", steps=[*task["steps"][:-1], step])
-                return
-            receipts = tuple(item for item in task["steps"] if item["revision"] == task["revision"] and "result" in item)
-            request = ToolRequest(step["id"], task["goal"], task["scope"], step.get("checkpoint"),
+                return step, "awaiting_approval", time.time()
+            receipts = tuple(item for item in context if "result" in item)
+            request = ToolRequest(step.get("resource_id", step["id"]), goal, task["scope"], step.get("checkpoint"),
                                   step.get("approval"), receipts)
-            async with asyncio.timeout(20):
+            async with asyncio.timeout(None if tool.own_deadline else 20):
                 result = await tool.run(request, arguments)
+        except InferenceQueueBusy as busy:
+            return step, "waiting", time.time() + busy.retry_after
+        except InferenceBudgetExceeded:
+            result = {"error": "后台请求超出服务预算。"}
         except Exception as error:
             log.info("Agent tool %s failed: %s", step["tool"], type(error).__name__)
             result = {"error": "工具调用失败，参数无效或数据暂时不可用。"}
-        if self.scope() != task["scope"]:
-            return
         if isinstance(result, ToolWait):
-            step = step | {"checkpoint": result.checkpoint}
-            self._save(task, status="waiting", steps=[*task["steps"][:-1], step], due=time.time() + result.delay)
-        else:
-            step = {key: value for key, value in step.items() if key != "checkpoint"} | {"result": result}
-            changes = {"plan_cursor": task["plan_cursor"] + 1} if task["plan"] is not None else {}
-            self._save(task, status="queued", steps=[*task["steps"][:-1], step], due=time.time(), **changes)
+            return step | {"checkpoint": result.checkpoint}, "waiting", time.time() + result.delay
+        return {key: value for key, value in step.items() if key != "checkpoint"} | {"result": result}, "queued", time.time()

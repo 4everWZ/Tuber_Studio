@@ -1,5 +1,6 @@
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
 import { renderAssistantAnswer } from "./operator-chat-answer.js";
+import { mountFollowup } from "./goal-followup.js";
 
 const base = "/api/agent/tasks";
 const states = {
@@ -72,6 +73,7 @@ export function initTaskActivity(api, requestId) {
     toggle.setAttribute("aria-expanded", "false");
     content.replaceChildren();
     editing = false;
+    if (!restore) toggle.textContent = "活动";
     if (restore) toggle.focus();
   }
 
@@ -101,8 +103,12 @@ export function initTaskActivity(api, requestId) {
       const key = JSON.stringify(value);
       if (key === viewKey) return;
       viewKey = key;
-      if (selection) renderTask(value);
-      else renderList(value.tasks);
+      if (selection) {
+        renderTask(value);
+        if (value.attention != null) {
+          await api(`${base}/${selection}/attention?updated=${encodeURIComponent(value.attention)}`, { method: "DELETE" });
+        }
+      } else renderList(value.tasks, value.goals || [], value.attention || []);
     } catch (error) {
       if (current === version) status(safeMessage(error.message));
     } finally {
@@ -111,10 +117,24 @@ export function initTaskActivity(api, requestId) {
     }
   }
 
-  function renderList(tasks) {
+  function renderList(tasks, goals, notices) {
     const schedule = button("预约任务");
     schedule.onclick = showScheduleForm;
-    content.replaceChildren(schedule);
+    const upload = button("用文本附件交办");
+    upload.onclick = showAttachmentForm;
+    content.replaceChildren(schedule, upload);
+    if (notices.length) content.append(node("h3", "给号主的更新", "chat-activity-group"));
+    for (const item of notices) {
+      const link = button(`${states[item.status]} · ${item.goal}`);
+      link.onclick = () => open(item.id);
+      content.append(link);
+    }
+    if (goals.length) content.append(node("h3", "长期创作目标", "chat-activity-group"));
+    for (const goal of goals) {
+      const item = button(goal.title + (goal.closed ? " · 已结束" : ""));
+      item.onclick = () => open(goal.id);
+      content.append(item);
+    }
     for (const [heading, group] of [
       ["需要处理", tasks.filter(task => needsAttention.has(task.status))],
       ["进行中", tasks.filter(task => stoppable.has(task.status) && task.status !== "scheduled" && !needsAttention.has(task.status))],
@@ -135,6 +155,52 @@ export function initTaskActivity(api, requestId) {
       content.append(node("h3", heading, "chat-activity-group"), list);
     }
     if (!tasks.length) content.append(node("p", "你交办的工作会出现在这里。", "hint"));
+  }
+
+  function showAttachmentForm() {
+    editing = true;
+    const form = node("form", null, "chat-task-steer");
+    const field = node("label", "希望用这些材料做什么？"), goal = node("textarea");
+    const filesLabel = node("label", "私有附件（最多三份 UTF-8 文本，每份最多 8000 字符）");
+    const files = node("input"), submit = node("button", "交办"), back = button("返回活动");
+    files.type = "file";
+    files.accept = ".md,.txt";
+    files.multiple = true;
+    files.required = true;
+    goal.required = true;
+    goal.maxLength = 2000;
+    submit.type = "submit";
+    back.onclick = () => open();
+    field.append(goal);
+    filesLabel.append(files);
+    form.append(field, filesLabel, node("p", "材料只供当前角色与后台创作使用。这项任务不能访问网页或平台。", "hint"), submit, back);
+    content.replaceChildren(form);
+    goal.focus();
+    let previous;
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const current = version, selected = Array.from(files.files);
+      const objective = goal.value.trim();
+      submit.disabled = true;
+      try {
+        if (!objective || !selected.length || selected.length > 3) throw new Error("请填写任务并选择一到三份文本。");
+        const attachments = await Promise.all(selected.map(async file => {
+          if (!/\.(md|txt)$/.test(file.name) || file.size > 32000) throw new Error("仅支持小型 Markdown 或 TXT 文件。");
+          const text = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
+          if (!text.trim() || Array.from(text).length > 8000) throw new Error("文本为空或超过 8000 字符。");
+          return { name: file.name, text };
+        }));
+        if (current !== version) return;
+        const payload = { goal: objective, attachments }, key = JSON.stringify(payload);
+        if (previous?.key !== key) previous = { key, id: requestId() };
+        const task = await api(base, { method: "POST", body: { ...payload, request_id: previous.id } });
+        if (current === version) open(task.id);
+      } catch (error) {
+        if (current === version) status(safeMessage(error.message));
+      } finally {
+        submit.disabled = false;
+      }
+    };
   }
 
   function showScheduleForm() {
@@ -186,7 +252,7 @@ export function initTaskActivity(api, requestId) {
     const state = node("p", task.status === "scheduled" ? `已预约 · ${timeLabel(task.due)}` : states[task.status], "hint");
     state.setAttribute("role", "status");
     const result = node("div", null, "chat-task-result");
-    if (task.message) {
+    if (task.message && (!task.artifact || task.status !== "completed")) {
       renderAssistantAnswer(result, { reply_format: "markdown", reply_text: task.message });
       if (["completed", "failed"].includes(task.status) && task.steps.some(step => step.result)) {
         result.prepend(node("p", "按工具回执交付", "hint"));
@@ -239,6 +305,7 @@ export function initTaskActivity(api, requestId) {
       input.focus();
     };
     content.replaceChildren(back, title, state, result, steps, adjust, stop);
+    renderWorkspace(task);
     if (task.status === "awaiting_approval") {
       const step = task.steps.at(-1);
       const action = node("p", `${step.approval.target} · ${step.approval.text || step.arguments.action}`);
@@ -246,6 +313,89 @@ export function initTaskActivity(api, requestId) {
       confirm.onclick = () => apply(task, { action: "approve", step_id: step.id }, confirm);
       content.append(action, confirm);
     }
+  }
+
+  function renderWorkspace(task) {
+    const path = `${base}/${task.id}`;
+    async function change(url, method, body, control) {
+      const current = version;
+      control.disabled = true;
+      try {
+        const updated = await api(url, { method, body });
+        if (current === version) open(updated.id);
+      } catch (error) {
+        if (current === version) status(safeMessage(error.message));
+      } finally {
+        control.disabled = false;
+      }
+    }
+    function editor(label, initial, limit, save) {
+      editing = true;
+      const form = node("form", null, "chat-task-steer");
+      const field = node("label", label), input = node("textarea");
+      input.required = true;
+      input.rows = 6;
+      input.maxLength = limit;
+      input.value = initial;
+      const submit = node("button", "保存"), dismiss = button("返回");
+      submit.type = "submit";
+      dismiss.onclick = () => open(task.id);
+      field.append(input);
+      form.append(field, submit, dismiss);
+      form.onsubmit = event => {
+        event.preventDefault();
+        if (input.value.trim()) save(input.value.trim(), submit);
+      };
+      content.replaceChildren(form);
+      input.focus();
+    }
+    const goal = task.creative_goal;
+    mountFollowup(goal, content, api, value => { editing = value; });
+    if (!goal) {
+      const track = button("设为长期创作目标");
+      track.onclick = () => change(path + "/goal", "PUT", undefined, track);
+      content.append(track);
+    } else {
+      content.append(node("h3", goal.title), node("p", goal.closed ? "长期目标已结束" : "长期目标 · 执行记录", "hint"));
+      for (const run of goal.runs) {
+        if (run.id === task.id) continue;
+        const item = button(run.goal + " · " + states[run.status]);
+        item.onclick = () => open(run.id);
+        content.append(item);
+      }
+      if (!goal.closed) {
+        const next = button("交办下一项工作"), finish = button("结束长期目标");
+        next.onclick = () => {
+          const identity = requestId();
+          editor("新任务要求", "", 2000, (text, submit) => change(base, "POST", {
+            request_id: identity, goal: text, creative_goal_id: goal.id,
+          }, submit));
+        };
+        finish.onclick = () => change(`${base}/${goal.id}/goal/close`, "POST", undefined, finish);
+        content.append(next, finish);
+      }
+    }
+    const artifact = task.artifact;
+    if (!artifact) return;
+    const card = node("section", null, "chat-task-result");
+    card.append(node("h3", "私有成果"), node("small", `任务 r${artifact.task_revision} · 成果 v${artifact.edition}`, "hint"));
+    const body = node("div");
+    renderAssistantAnswer(body, { reply_format: "markdown", reply_text: artifact.body });
+    const edit = button("编辑成果");
+    edit.onclick = () => editor("私有成果正文", artifact.body, 64000, (text, submit) => change(
+      path + "/artifact", "PATCH", { task_revision: artifact.task_revision, edition: artifact.edition, body: text }, submit,
+    ));
+    const download = button("下载 Markdown");
+    download.onclick = () => {
+      const url = URL.createObjectURL(new Blob([artifact.body], { type: "text/markdown;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `工坊成果-${task.id}-r${artifact.task_revision}-v${artifact.edition}.md`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    card.append(body, edit, download);
+    content.append(card);
   }
 
   async function apply(task, change, control) {
@@ -267,5 +417,17 @@ export function initTaskActivity(api, requestId) {
   toggle.onclick = () => panel.hidden ? open() : close();
   closeButton.onclick = () => close();
   panel.onkeydown = event => { if (event.key === "Escape") close(); };
-  return { open, close };
+  let counting = false;
+  async function refreshAttention() {
+    if (counting) return;
+    const current = version;
+    counting = true;
+    try {
+      const { count } = await api("/api/agent/attention");
+      if (current === version) toggle.textContent = count ? `活动 · ${count} 项更新` : "活动";
+    } finally {
+      counting = false;
+    }
+  }
+  return { open, close, refreshAttention };
 }

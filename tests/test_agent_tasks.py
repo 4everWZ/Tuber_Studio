@@ -187,7 +187,11 @@ async def test_chat_delegates_across_existing_services_and_cancels_video(setting
         continued = (await owner.get(activity_url)).json()
         assert continued["message"] == "**自主运营**\n- 未启动"
         app.state.browsing.discovery.remember_account("200")
-        assert (await owner.get(activity_url)).status_code == 404
+        assert (await owner.get(activity_url)).json()["steps"] == continued["steps"]
+        rejected = await owner.patch(activity_url, json={
+            "revision": continued["revision"], "action": "steer", "goal": "按旧授权再做一次",
+        })
+        assert rejected.status_code == 409 and "授权已失效" in rejected.json()["detail"]
 
 
 async def test_live_status_reports_native_program_separately_in_tasks_and_chat(settings, monkeypatch):

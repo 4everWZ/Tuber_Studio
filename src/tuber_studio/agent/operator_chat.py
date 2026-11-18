@@ -75,7 +75,15 @@ _SCENE_ACTIONS = (
     (r"游戏|星露谷|植物大战僵尸|存档|种作物|种向日葵|浇水|砍树|接管", ("game_status", "game_handoff")),
     (r"停[止掉下了]|先停|暂停|结束|下播|关掉", ("stop",)),
     (r"号主|主人|B\s*站.*(?:账号|主页)|(?:账号|主页).*B\s*站", ("owner_profile",)),
-    (r"交办|后台|做完.{0,5}(?:告诉|通知|发给)|搜(?:索|集|一下)|调研|查.{0,10}(?:网页|资料)|做.{0,4}研究", ("agent_task",)),
+)
+
+_TASK_ROUTING = (
+    "当场能答就 chat。需要持续推进、取材核对、分头处理或稍后交付的新目标选 agent_task。"
+    "对已有交办改口或补充要求选 steer_task，reference 填对应任务卡的 id；"
+    "最近任务卡按最近出现顺序排列，只有能明确对应号主指代时才能引用。"
+    "指代不明、缺少对象或难以区分新旧任务时选 clarify，把具体问题填入 topic。"
+    "若号主正在回答上轮澄清，clarification_id 填该轮 id，保留原要求；换话题时不填。"
+    "改口不是审批或直接执行对外动作。"
 )
 
 
@@ -114,10 +122,11 @@ class ChatIntent(StrictModel):
         "video_activity", "dynamic", "edit_dynamic", "browse", "full_video", "public_experiences", "remember_event",
         "operation_control", "start_operations", "live_status", "start_live", "stop", "resume_video", "video_details",
         "recall_experience", "inspect_video_frame", "live_handoff", "live_preference", "forget_memory", "memory_summary",
-        "game_status", "game_handoff", "live_history", "owner_profile", "agent_task",
+        "game_status", "game_handoff", "live_history", "owner_profile", "agent_task", "steer_task",
     ]
     topic: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     reference: Annotated[str, StringConstraints(max_length=90)] | None = None
+    clarification_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
     position: int | None = Field(default=None, ge=1, le=3, strict=True)
     part: int | None = Field(default=None, ge=1, strict=True)
     seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
@@ -157,6 +166,7 @@ class AssistantDecision(ChatIntent):
         actions = properties.pop("action")
         available = {"chat"}
         if not chat_only:
+            available.update(("agent_task", "steer_task"))
             for pattern, names in _SCENE_ACTIONS:
                 if re.search(pattern, message, re.I):
                     available.update(names)
@@ -226,6 +236,7 @@ class PendingChat:
 
 
 _NONCANCELLABLE_ACTIONS = {
+    "agent_task", "steer_task",
     "browse", "full_video", "inspect_video_frame", "stop", "resume_video", "game_handoff",
     "dynamic", "edit_dynamic", "remember_event", "forget_memory", "live_preference", "live_handoff",
 }
@@ -319,12 +330,12 @@ class OperatorChat:
     def _generation_slot(self):
         return self.runtime.operator_generation()
 
-    async def _intent(self, message):
+    async def _intent(self, message, task_context):
         return await self._model(
             "识别当前消息的明确查询或任务。普通对话选 chat。"
             "查询事件原话、作者或回执时，用 position 填已显示序号，或在 topic 填明确标题和原话。"
-            "有明确分 P 或时码时填 part、seconds、end_seconds。不要猜引文或任务 ID。",
-            {"message": message}, ChatIntent,
+            "有明确分 P 或时码时填 part、seconds、end_seconds。不要猜引文或任务 ID。" + _TASK_ROUTING,
+            {"message": message, **task_context}, ChatIntent,
         )
 
     def _assistant_history(self, char, account, *, discussion=False, full_turns=False):
@@ -382,6 +393,26 @@ class OperatorChat:
         )
         return row["type"] if row else None
 
+    def _task_context(self, char, account):
+        rows = self.store.all(
+            "SELECT json_extract(result,'$.card.data.id') AS id FROM operator_chat_turns "
+            "WHERE character_id=? AND character_version=? AND json_extract(result,'$.account_id')=? "
+            "AND json_extract(result,'$.card.type')='agent_task' GROUP BY id ORDER BY MAX(created_at) DESC,id LIMIT 4",
+            (char["id"], char["version"], account),
+        )
+        cards = [{key: task[key] for key in ("id", "goal", "revision", "status")}
+                 for row in rows if (task := self.runtime.tasks.current(row["id"]))]
+        context = {"recent_task_cards": cards} if cards else {}
+        last = self.store.one(
+            "SELECT request_id,result FROM operator_chat_turns WHERE character_id=? AND character_version=? "
+            "AND json_extract(result,'$.account_id')=? ORDER BY created_at DESC,request_id DESC LIMIT 1",
+            (char["id"], char["version"], account),
+        )
+        if last and (prior := json.loads(last["result"])).get("clarification_request"):
+            context["clarification"] = {"id": last["request_id"], "request": prior["clarification_request"],
+                                        "question": prior["reply_text"]}
+        return context
+
     def _source_followup(self, message, char, account):
         """Resolve unambiguous read projections directly on the displayed source."""
         if re.search(r"不(?:用|要|必)|先别|如果", message) or not re.search(r"[？?]|什么|谁|吗|没", message):
@@ -394,7 +425,7 @@ class OperatorChat:
             return None
         return ChatIntent(action=actions.pop(), position=_ORDINALS[ordinal[1]] if ordinal else None)
 
-    async def _assistant(self, data, request_id, char, account, emit):
+    async def _assistant(self, data, request_id, char, account, emit, task_context):
         started = time.monotonic()
         stage_times = {"preparing": started}
         stage = "preparing"
@@ -450,8 +481,7 @@ class OperatorChat:
                         "用 position 指定序号，topic 可填明确原话、标题或主题。分 P 与时码用 part、seconds、end_seconds。"
                         "叫停运营或直播时 reference 填 operations 或 live。直播交接注明 video、discussion 或 game，"
                         "动态引用私聊注明 discussion。live_preference 处理长期直播习惯。"
-                        "owner_profile 查询角色绑定的 B 站号主。agent_task 委派需搜索、浏览网页或多步完成的工作。"
-                        "不要猜旧事件、任务 ID 或结果。"
+                        "owner_profile 查询角色绑定的 B 站号主。不要猜旧事件、任务 ID 或结果。" + _TASK_ROUTING
                     )
                 messages = [*role, {"role": "system", "content": instruction}]
                 if notes:
@@ -459,7 +489,8 @@ class OperatorChat:
                         {"topic": entry["headline"], "note": entry["anecdote"]} for entry in notes
                     ])})
                 history = self._assistant_history(char, account, full_turns=uses_model_card)
-                current = {"role": "user", "content": data.message}
+                current = {"role": "user", "content": dump({**task_context, "message": data.message})
+                           if task_context else data.message}
 
                 def deliver(text):
                     nonlocal first_text
@@ -561,7 +592,7 @@ class OperatorChat:
             result = result | {"memory_dependent": True}
         result = {key: value for key, value in result.items()
                   if key not in {"submission", "binding", "account_id", "memory", "confirmations", "organized_memory",
-                                 "memory_intent", "assistant_context"}}
+                                 "memory_intent", "assistant_context", "clarification_request"}}
         card = result.get("card")
         if card is None:
             return result
@@ -755,16 +786,19 @@ class OperatorChat:
                 ):
                     raise HTTPException(409, "该请求已绑定其他对话")
                 return self._visible(result)
-            intent = data.intent or (ChatIntent(action="full_video") if data.video_selection else
-                                     self._source_followup(data.message, char, account))
+            intent = data.intent or (ChatIntent(action="full_video") if data.video_selection else None)
+            semantic_assistant = hasattr(self.runtime.llm, "generate_assistant_json")
+            if intent is None and not semantic_assistant:
+                intent = self._source_followup(data.message, char, account)
             decision, audit = None, None
-            if (intent is None or intent.action == "chat") and hasattr(self.runtime.llm, "generate_assistant_json"):
-                decision, audit = await self._assistant(data, request_id, char, account, emit)
+            task_context = self._task_context(char, account) if intent is None or intent.action == "steer_task" else {}
+            if (intent is None or intent.action == "chat") and semantic_assistant:
+                decision, audit = await self._assistant(data, request_id, char, account, emit, task_context)
                 if intent is not None and decision.action != "chat":
                     raise HTTPException(503, "这轮未生成可用的对话回复，可以重试。")
                 intent = decision
             elif intent is None:
-                intent = await self._intent(data.message)
+                intent = await self._intent(data.message, task_context)
             self._check_scope(char, account)
             if decision and decision.action == "chat":
                 result = {"reply_text": decision.reply_markdown.strip(), "reply_format": "markdown",
@@ -799,7 +833,7 @@ class OperatorChat:
                     events, tasks, focus = self._references(char)
                 else:
                     events, tasks, focus = {}, {}, None
-                result = await self._action(intent, char, request_id, data, events, tasks, focus)
+                result = await self._action(intent, char, request_id, data, events, tasks, focus, task_context)
             self._check_scope(char, account, account_may_resolve=True)
             if decision and decision.action == "chat":
                 event = {"event_id": "operator:" + request_id, "text": data.message,
@@ -855,7 +889,7 @@ class OperatorChat:
         if self.runtime.character != char or (account != self._account() and (account or not account_may_resolve)):
             raise HTTPException(409, "账号或角色已切换，请重新发送")
 
-    async def _action(self, intent, char, request_id, data, events, tasks, focus):
+    async def _action(self, intent, char, request_id, data, events, tasks, focus, task_context):
         kind, topic, reference = intent.action, intent.topic, intent.reference
         if intent.position is not None and kind in _EVENT_ACTIONS:
             reference = next((key for key, (index, _) in events.items() if index == intent.position), "")
@@ -879,8 +913,14 @@ class OperatorChat:
                 reference = matching[0]
         if data.video_selection and kind != "full_video":
             raise HTTPException(400, "视频范围只能用于指定视频任务")
+        request = data.message
+        if intent.clarification_id:
+            prior = task_context.get("clarification", {})
+            if prior.get("id") != str(intent.clarification_id):
+                raise HTTPException(409, "引用的澄清已变化，请重新说明要求。")
+            request = prior["request"] + "\n号主补充：" + request
         if kind == "clarify":
-            return {"reply_text": topic or "你指的是哪一件事？", "card": None}
+            return {"reply_text": topic or "你指的是哪一件事？", "card": None, "clarification_request": request}
         if kind == "clock":
             current = operator_facts.now(self.browsing)
             return {"reply_text": current.strftime("现在是 %H:%M（%Z）。"), "card": None}
@@ -896,10 +936,22 @@ class OperatorChat:
             return {"reply_text": f"查到了，角色绑定的 B 站号主是 {profile['name']}（UID {profile['uid']}）。",
                     "card": {"type": "owner_profile", "data": profile}}
         if kind == "agent_task":
-            task = self.runtime.tasks.create(request_id, data.message, source_key=request_id)
+            task = self.runtime.tasks.create(request_id, request, source_key=request_id)
             return {"reply_text": "我会继续处理，进度和结果可以在活动里查看。", "card": {
                 "type": "agent_task", "data": {"id": task["id"]},
             }}
+        if kind == "steer_task":
+            target = next((card for card in task_context.get("recent_task_cards", []) if card["id"] == reference), None)
+            if target is None:
+                return {"reply_text": "你想调整哪项交办？请说一下原任务的目标。", "card": None,
+                        "clarification_request": request}
+            try:
+                task = await self.runtime.tasks.control(
+                    reference, target["revision"], "steer", goal=target["goal"] + "\n号主改口：" + request,
+                )
+            except (ValueError, LookupError) as error:
+                raise HTTPException(409, "这项任务已变化，请查看最新任务卡后再改口。") from error
+            return {"reply_text": "已更新这项交办的要求。", "card": {"type": "agent_task", "data": {"id": task["id"]}}}
         if kind == "live_handoff":
             return await self._live_handoff(intent, char, request_id, data.message, tasks)
         if kind == "live_preference":

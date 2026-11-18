@@ -4,6 +4,10 @@ import json
 import re
 from urllib.parse import urlsplit
 
+from pydantic import Field
+
+from ..models import StrictModel
+
 LABELS = {
     "web_search": "检索候选来源", "web_page": "读取网页", "bilibili_owner": "B 站号主",
     "operation_status": "自主运营", "today_activity": "当日运营事件", "inspect_video": "视频取材",
@@ -43,6 +47,61 @@ def _materials(items):
             label = f"分 P {item['part']} · {item['seconds']} 秒" + (f" · {label}" if label else "")
         materials.append(" · ".join(part for part in (label, text, _source(item.get("url"))) if part))
     return materials
+
+
+class CreativeItem(StrictModel):
+    title: str = Field(min_length=1, max_length=240)
+    rationale: str = Field(min_length=1, max_length=1200)
+    sources: list[str] = Field(min_length=1)
+
+
+class PrivateDelivery(StrictModel):
+    items: list[CreativeItem]
+    gaps: list[str]
+
+
+class DelegationError(ValueError):
+    """A diagnostic safe to show without exposing provider payloads."""
+
+
+def evidence_index(steps):
+    evidence = {}
+    for step in steps:
+        result = step.get("result") or {}
+        tool = step["tool"]
+        if tool == "owner_attachment":
+            body = result["text"]
+            for offset in range(0, len(body), 800):
+                label = f"{_text(result['name'])} · 字符 {offset + 1}–{min(offset + 800, len(body))}"
+                evidence[f"{step['id']}:{offset}"] = f"{label}：{_text(body[offset:offset + 800])}"
+            continue
+        if tool in {"web_search", "delegate_text"}:
+            continue
+        if tool == "inspect_video" and result.get("status") in {"completed", "partial"}:
+            for index, item in enumerate(result.get("findings", []), 1):
+                if (_source(item.get("url")) and type(item.get("part")) is int
+                        and type(item.get("seconds")) in {int, float} and item.get("text")):
+                    coverage = VIEWING.get(result.get("viewing"))
+                    evidence[f"{step['id']}:{index}"] = " · ".join(filter(None, [coverage, *_materials([item])]))
+        elif result and not result.get("error"):
+            lines, verified = _describe(tool, result)
+            if verified:
+                evidence[step["id"]] = " · ".join(line for line in lines if line)
+    return evidence
+
+
+def render_private_delivery(product, evidence):
+    blocks = []
+    for item in product.items:
+        if any(source not in evidence for source in item.sources):
+            raise DelegationError("交付引用了没有回执的来源。")
+        blocks.append("\n".join([f"**{_text(item.title)}**", f"选材理由：{_text(item.rationale)}",
+                                 *(f"- {evidence[source]}" for source in dict.fromkeys(item.sources))]))
+    if product.gaps:
+        blocks.append("未核实或未覆盖：\n" + "\n".join(f"- {_text(gap)}" for gap in product.gaps))
+    if not blocks:
+        raise DelegationError("交付缺少材料或缺口说明。")
+    return bool(product.items), "\n\n".join(blocks)
 
 
 def _describe(tool, result):
