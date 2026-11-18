@@ -348,6 +348,8 @@ async def test_only_front_editor_can_complete_saved_candidate(runtime, settings,
         assert "Omni选定" in body and "worker-text" not in body and len(requests) == 2
     else:
         assert final["status"] == "failed" and "worker-text" not in final["message"]
+        assert "**" not in final["message"]
+        assert any(step["tool"] == "live_status" and step.get("result") for step in final["steps"])
 
 
 @pytest.mark.parametrize("mode", ["many", "mixed", "busy", "budget"])

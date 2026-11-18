@@ -529,13 +529,17 @@ class TaskRuntime:
                         "steps": [s for s in fresh["steps"] if s["tool"] == "owner_attachment"],
                         "plan": {"backend": "responses", "prior_goals": []}})
                     return
-                _, delivery = self._deliver(fresh)
                 reason = "后台请求超出服务预算。" if isinstance(error, InferenceBudgetExceeded) else "任务未完成。"
                 if isinstance(error, DelegationError):
                     reason = str(error)
                 elif task_delegation.uses_responses(fresh) and "candidate" in fresh["plan"]:
                     reason = "前台未能完成选材；已保留候选材料，尚未交付。"
-                self._save(fresh, status="failed", message=reason + "\n\n" + delivery)
+                if task_delegation.uses_responses(fresh):
+                    # Unedited source excerpts can reveal the plot behind a spoiler-free brief.
+                    self._save(fresh, status="failed", message=reason)
+                else:
+                    _, delivery = self._deliver(fresh)
+                    self._save(fresh, status="failed", message=reason + "\n\n" + delivery)
 
     async def _prepare_plan(self, task, tools):
         plan = await self.make_plan(task["goal"], tools)
