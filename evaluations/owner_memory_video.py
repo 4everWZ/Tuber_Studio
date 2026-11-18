@@ -5,6 +5,7 @@ import re
 from uuid import uuid4
 
 from evaluations.owner_memory_device import AUTO, SEARCH, device_call
+from evaluations.owner_memory_editor_trace import editor_requests
 from tuber_studio.agent.title_form import frame_observations, meets_form, read_title, title_words
 from tuber_studio.generation_meter import budgeted_call
 from tuber_studio.http_api import InferenceBudgetExceeded, InferenceQueueBusy
@@ -98,9 +99,15 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
     tasks = runtime.tasks
     edit = tasks.edit_delivery
     phase_for_task = {}
+    editor_calls = {}
     async def audited_edit(task, evidence):
+        phase = phase_for_task[task["id"]]
+        def publish(receipt):
+            editor_calls.setdefault(phase, []).append(receipt)
+            record(phase + "_editor_requests", editor_calls[phase])
         try:
-            return await edit(task, evidence)
+            with editor_requests(runtime.llm, task["goal"], runtime.character["name"], publish):
+                return await edit(task, evidence)
         except Exception as error:
             if audit := task["plan"].get("editor_memory", {}).get("review"):
                 record(phase_for_task[task["id"]] + "_rejected_writing",
