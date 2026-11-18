@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from .agent.api import register_agent_api
 from .agent.operator_chat import register_operator_chat
 from .agent.private_call import register_private_call
+from .agent.reply_operations import register_reply_operations
 from .agent.task_api import register_task_api
 from .agent.task_tools import create_task_runtime
 from .auth_sessions import (
@@ -231,6 +232,7 @@ def create_app(
     register_operator_chat(app, runtime, store, browsing, dynamics, require_admin)
     register_private_call(app, runtime, require_admin)
     register_task_api(app, runtime.tasks, require_admin)
+    register_reply_operations(app, runtime.tasks, comments, messages, require_admin)
     register_model_api(app, settings, runtime, require_admin)
     register_operations_api(app, store, account, comments, browsing, dynamics, require_admin)
     register_message_api(app, messages, require_admin)

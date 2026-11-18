@@ -1016,7 +1016,7 @@ class Comments:
             reconcile=lambda token, prepared: self._reconcile(draft_id),
         )
 
-    async def _reconcile(self, draft_id):
+    async def _reconcile(self, draft_id, *, guard=None):
         feedback = FeedbackPublication(self.runtime, self.store, self.operations)
 
         async def read(row, attempt):
@@ -1028,13 +1028,21 @@ class Comments:
                 return {"status": "check_failed", "reason": "account_unavailable"}
             if account != row["binding"]["account_id"]:
                 return {"status": "check_failed", "reason": "account_changed"}
-            return await self.adapter.reconcile_publication(
+            if guard:
+                guard(row, attempt)
+            adapter, credential = self.adapter, dict(self.credentials)
+            result = await adapter.reconcile_publication(
                 row["binding"]["target"],
                 author_uid=account,
                 text=row["feedback"]["sent_payload"].get("text", ""),
                 started_at=attempt["started_at"],
                 receipt=attempt["receipt"],
             )
+            if guard:
+                if self.adapter is not adapter or self.credentials != credential:
+                    raise ValueError("核对期间账号连接已变化")
+                guard(row, attempt)
+            return result
 
         def commit(receipt, verification):
             self.store.execute(
@@ -1083,7 +1091,10 @@ class Comments:
             policy.get("business_timezone", "Asia/Taipei"),
         )
 
-    async def publish(self, draft_id, automatic=False, *, authorization_epoch=None):
+    async def publish(self, draft_id, automatic=False, *, authorization_epoch=None, submission=None):
+        if submission is not None:
+            submission.check()
+            return await self._publish_once(draft_id, submission=submission)
         feedback = FeedbackPublication(self.runtime, self.store, self.operations)
         confirmed = None if automatic else self.store.one("SELECT text FROM drafts WHERE id=?", (draft_id,))
         return await feedback.submit(
@@ -1114,6 +1125,7 @@ class Comments:
         revision_ticket=None,
         binding=None,
         body_hash=None,
+        submission=None,
     ):
         await self._refresh_draft_identity(draft_id, automatic, authorization_epoch)
         async with self.publish_lock:
@@ -1124,6 +1136,9 @@ class Comments:
                 raise ValueError("未配置B站账号写入凭证；草稿可人工审核复制")
             row = self._draft_source(draft_id)
             allowed = {"pending_review"} if automatic else {"approved", "copied"}
+            if submission:
+                allowed = allowed | {"pending_review"}
+                submission.check()
             if not row or row["status"] not in allowed:
                 raise ValueError("当前草稿状态不能发布，或已发布／结果未确认")
             validate_comment_body(row["text"], recipient_name=row["display_name"] or "")
@@ -1145,6 +1160,8 @@ class Comments:
             if row["account_id"] and row["account_id"] != account_id:
                 raise ValueError("该草稿属于其他账号，不能由当前账号发送")
             adapter, credential = self.adapter, dict(self.credentials)
+            if submission and not hasattr(adapter, "read_video_thread"):
+                raise ValueError("当前适配器无法核验原评论和号主回复")
             if hasattr(adapter, "read_video_thread"):
                 target = {"bvid": row["video_id"], "root": row["thread_id"],
                           "parent": row["platform_comment_id"]}
@@ -1159,6 +1176,8 @@ class Comments:
                 ):
                     raise ValueError("原始评论或作者已变化，保留草稿")
                 if matched := operator_reply(thread["items"], target, account_id):
+                    if submission:
+                        submission.check()
                     changed = self.store.execute(
                         "UPDATE drafts SET status='operator_replied',answer_check=json_set(COALESCE(answer_check,'{}'),"
                         "'$.account_reply',json(?)),error=NULL,updated_at=? WHERE id=? AND text=? AND status=?",
@@ -1198,6 +1217,11 @@ class Comments:
             ):
                 raise ValueError("发送前原始绑定或正文已变化")
             token = None
+
+            def admit(ticket):
+                self._reserve_daily_video_reply(ticket, row, account_id)
+                if submission:
+                    submission.admit(ticket, actual_binding, {"text": row["text"]})
 
             def before_send():
                 nonlocal token
@@ -1248,9 +1272,11 @@ class Comments:
                     binding=actual_binding,
                     content_hash=content_hash({"text": row["text"]}),
                     revision_ticket=revision_ticket,
-                    admission_hook=lambda ticket: self._reserve_daily_video_reply(ticket, row, account_id),
+                    admission_hook=admit,
                 )
 
+            if submission:
+                submission.check()
             attempt = self.store.execute(
                 "INSERT INTO publish_attempts(draft_id,started_at,status) VALUES(?,?,'sending')",
                 (draft_id, time.time()),

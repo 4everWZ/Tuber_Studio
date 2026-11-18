@@ -107,7 +107,7 @@ class DirectMessages:
         self.worker = self.poller = None
         self.closed = False
         self.changed = asyncio.Event()
-        self.send_lock, self.sync_lock = asyncio.Lock(), asyncio.Lock()
+        self.sync_lock = asyncio.Lock()
         self.error, self.last_sync = None, None
         self.enabled_at = self.store.get("message_enabled_at", time.time())
         self.started_at = int(time.time())
@@ -1701,7 +1701,7 @@ class DirectMessages:
             reconcile=lambda token, prepared: self._reconcile(identity),
         )
 
-    async def _reconcile(self, identity):
+    async def _reconcile(self, identity, *, guard=None):
         feedback = FeedbackPublication(self.runtime, self.store, self.operations)
 
         async def read(row, attempt):
@@ -1715,13 +1715,21 @@ class DirectMessages:
                 return {"status": "check_failed", "reason": "account_unavailable"}
             payload = row["feedback"]["sent_payload"]
             target = row["binding"]["target"] | {"message_kind": payload.get("message_kind", "text")}
-            return await adapter.reconcile_publication(
+            if guard:
+                guard(row, attempt)
+            credential = dict(self.comments.credentials)
+            result = await adapter.reconcile_publication(
                 target,
                 author_uid=row["binding"]["account_id"],
                 text=payload.get("text", ""),
                 started_at=attempt["started_at"],
                 receipt=attempt["receipt"],
             )
+            if guard:
+                if self.adapter is not adapter or self.comments.credentials != credential:
+                    raise ValueError("核对期间私信账号连接已变化")
+                guard(row, attempt)
+            return result
 
         def commit(receipt, verification):
             encoded = json.dumps(receipt, ensure_ascii=False)
@@ -1754,10 +1762,12 @@ class DirectMessages:
 
         return await feedback.reconcile("messages", identity, read, commit)
 
-    async def send(self, identity, *, automatic=False, authorization_epoch=None, _conversation_owned=False):
+    async def send(self, identity, *, automatic=False, authorization_epoch=None, _conversation_owned=False, submission=None):
         draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         if not draft:
             raise ValueError("私信草稿不存在")
+        if submission:
+            submission.check()
         if draft["status"] == "publish_uncertain":
             reconciled = await self._reconcile(identity)
             if reconciled is None:
@@ -1766,15 +1776,28 @@ class DirectMessages:
         self.operations.assert_review_writable(
             draft["account_id"] or self.display_account_id() or self.operations.policy()["account_id"]
         )
-        if draft["status"] not in ({"pending_review"} if automatic else {"approved", "copied"}):
+        allowed = {"pending_review"} if automatic else {"approved", "copied"}
+        if submission:
+            allowed.add("pending_review")
+        if draft["status"] not in allowed:
             raise ValueError("私信尚未审核、已发送或暂不满足联系条件，不能发送")
         if not _conversation_owned:
             scope = (draft["account_id"], draft["character_id"], "dm:" + draft["platform"], draft["platform_user_id"])
             async with self.runtime.conversation_turn(scope):
-                return await self.send(identity, automatic=automatic, authorization_epoch=authorization_epoch, _conversation_owned=True)
+                return await self.send(identity, automatic=automatic, authorization_epoch=authorization_epoch,
+                                       _conversation_owned=True, submission=submission)
         if not await self._refresh_conversation_inbox(draft):
+            if submission:
+                raise ValueError("原会话尚未同步完整，须重新核对")
             self._requeue_changed_conversation(draft, automatic)
             raise MessageInputChanged("私信历史仍在补齐，已保留进度，暂未发送")
+        if submission:
+            character = self.store.character(draft["character_id"], draft["character_version"])
+            identity_now = await self.runtime.refresh_identity(character, draft["account_id"])
+            if json.loads(draft.get("answer_check") or "{}").get("generation_identity") != identity_now:
+                raise ValueError("账号身份已变化，请重新准备并审核私信")
+            submission.check()
+            return await self._send_once(identity, submission=submission)
         if self._merge_incoming(identity, automatic=automatic):
             if not self.queue.full():
                 self._schedule(identity, automatic)
@@ -1828,14 +1851,18 @@ class DirectMessages:
         revision_ticket=None,
         binding=None,
         body_hash=None,
+        submission=None,
     ):
-        async with self.send_lock:
+        destination = self.store.one("SELECT account_id,platform,platform_user_id FROM dm_drafts WHERE id=?", (identity,))
+        if not destination:
+            raise ValueError("私信草稿不存在")
+        async with self.runtime.conversation_turn(("dm_send", *destination.values())):
             draft = self.store.one("SELECT account_id FROM dm_drafts WHERE id=?", (identity,))
             if draft:
                 self.operations.assert_review_writable(
                     draft["account_id"] or self.display_account_id() or self.operations.policy()["account_id"]
                 )
-            if self._merge_incoming(identity, automatic=automatic):
+            if not submission and self._merge_incoming(identity, automatic=automatic):
                 if not self.queue.full():
                     self._schedule(identity, automatic)
                 raise MessageInputChanged("发送前收到新来信，已合并重新准备")
@@ -1844,7 +1871,11 @@ class DirectMessages:
             if automatic and not policy["auto_send"]:
                 raise ValueError("自动发送私信已关闭，保留草稿")
             row = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
-            if not row or row["status"] not in ({"pending_review"} if automatic else {"approved", "copied"}):
+            allowed = {"pending_review"} if automatic else {"approved", "copied"}
+            if submission:
+                submission.check()
+                allowed.add("pending_review")
+            if not row or row["status"] not in allowed:
                 raise ValueError("私信尚未审核、已发送或结果待核对，不能发送")
             if automatic and json.loads(row["answer_check"] or "{}").get("output", {}).get("needs_review"):
                 raise ValueError("正文诊断尚待审核，未自动发送")
@@ -1930,6 +1961,8 @@ class DirectMessages:
             previous, now = row["status"], time.time()
             token = None
             credential = dict(self.comments.credentials)
+            if submission:
+                submission.check()
             attempt = self.store.execute(
                 "INSERT INTO dm_attempts(draft_id,platform_user_id,started_at,status) VALUES(?,?,?,'sending')",
                 (identity, row["platform_user_id"], now),
@@ -1941,6 +1974,8 @@ class DirectMessages:
 
                 def authorized(*, reserve=True):
                     nonlocal token
+                    if submission:
+                        submission.check(publishing=True)
                     audit = json.loads(row.get("answer_check") or "{}")
                     if not image:
                         self.runtime.validate_memory_delivery(audit)
@@ -1949,7 +1984,7 @@ class DirectMessages:
                         raise MessageInputChanged("会话出现新发言，暂未提交私信")
                     if generated != runtime_identity(self.runtime, character, row["account_id"]):
                         raise MessageIdentityChanged("提交前账号资料已更新，按最新身份重新准备")
-                    if row["source_kind"] == "message" and self._newer_incoming(row, source):
+                    if not submission and row["source_kind"] == "message" and self._newer_incoming(row, source):
                         raise MessageInputChanged("提交前收到新来信，重新合并回复")
                     policy = self.policy()
                     if image:
@@ -2019,6 +2054,7 @@ class DirectMessages:
                             binding=actual_binding,
                             content_hash=content_hash(payload),
                             revision_ticket=revision_ticket,
+                            admission_hook=(lambda ticket: submission.admit(ticket, actual_binding, payload)) if submission else None,
                         )
                     return True
 
@@ -2043,6 +2079,9 @@ class DirectMessages:
                 if token:
                     self.operations.finish(token, "rejected")
                 self.store.execute("UPDATE dm_drafts SET status=? WHERE id=?", (previous, identity))
+                if submission:
+                    self.store.execute("UPDATE dm_attempts SET status='cancelled',error='会话已变化，未提交' WHERE id=?", (attempt,))
+                    raise
                 if isinstance(error, MessageIdentityChanged):
                     self.store.execute("UPDATE dm_drafts SET status='queued',proposed_text='',outreach_check=NULL,resume_pending=1,error=NULL WHERE id=?", (identity,))
                 elif not self._merge_incoming(identity, automatic=automatic):

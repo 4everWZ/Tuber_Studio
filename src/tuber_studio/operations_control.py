@@ -260,6 +260,22 @@ class OperationsControl:
                 automatic=automatic, channel=channel, account_id=account_id, character=character, epoch=epoch
             )
             previous = None
+            # An unresolved turn blocks later sends to that inbox, including other entry points.
+            if channel == "messages" and recipient and db.execute(
+                "SELECT 1 FROM operation_write_attempts WHERE account_id=? AND channel='messages' "
+                "AND recipient=? AND resolved_status IN ('sending','uncertain') LIMIT 1",
+                (str(account_id), str(recipient)),
+            ).fetchone():
+                raise ValueError("同一私信会话有在途或待核对的发送")
+            target = (binding or {}).get("target", {})
+            if channel == "comments" and target.get("root") not in (None, "", "0", 0) and db.execute(
+                "SELECT 1 FROM operation_write_attempts w JOIN operation_write_bindings b ON b.root_token=w.root_token "
+                "WHERE w.account_id=? AND w.channel='comments' AND w.resolved_status IN ('sending','uncertain') "
+                "AND json_extract(b.binding_json,'$.target.root')=? "
+                "AND json_extract(b.binding_json,'$.target.resource_type')=? LIMIT 1",
+                (str(account_id), str(target["root"]), target.get("resource_type")),
+            ).fetchone():
+                raise ValueError("同一评论楼有在途或待核对的发送")
             if revision_ticket is not None:
                 previous = self.revisions.validate_ticket(
                     revision_ticket,
