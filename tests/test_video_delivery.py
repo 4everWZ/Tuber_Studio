@@ -443,8 +443,11 @@ async def test_real_image_inventory_and_caption_do_not_inherit_worker_plot(runti
         assert result.items[0].rationale == "画面依据：一人站在椅子旁。剪辑安排：用在开场，我会用这一镜引出布景话题。"
 
 
-async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, monkeypatch, reviewed_window):
-    async def synthetic_image(*_):
+@pytest.mark.parametrize("usable", [True, False])
+async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, monkeypatch, reviewed_window, usable):
+    async def synthetic_image(_dir, _task, _evidence, key):
+        if key.startswith("new:"):
+            return {"type": "image_url", "image_url": {"url": "fixture:" + key}}
         return None
 
     monkeypatch.setattr("tuber_studio.agent.task_tools.clip_review_image", synthetic_image)
@@ -461,6 +464,7 @@ async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, mon
 
     screen = task_tools.screen_clip_window
     screened = {}
+    ranked_batches = []
 
     async def capture(media, goal, generate, budget, inherited):
         screened[media[1]["start"]] = inherited
@@ -473,15 +477,42 @@ async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, mon
             return {"previous_no_spoilers": True}
         if "audience_change" in schema["properties"]:
             return {"audience_change": "继续沿用", "explicit_release_quote": ""}
-        packet = json.loads(messages[-1]["content"])
+        props = schema["properties"]
+        content = messages[-1]["content"]
+        if "decision" in props:
+            assert screened[0] is True
+            ids = [json.loads(header["text"])["id"] for header in content[1::2]]
+            assert ids == ["new:1", "new:2", "new:3"]
+            assert [image["image_url"]["url"] for image in content[2::2]] == ["fixture:" + k for k in ids]
+            if not usable:
+                return {"decision": "另取材料", "rationale": "本窗构图不适合开场。", "primary_frame": None}
+            return {"decision": "采用", "rationale": "以椅子开场。", "primary_frame": ids[0]}
+        if "labels" in props:
+            return {"labels":["座椅"],"details":["左侧有一把椅子"],"screen_text":[]}
+        if "opening" in props:
+            return {"opening":"以椅子开场。","main":"在讲解时插入。","transition":"切入下一段。"}
+        if "anchor" in props:
+            return {k:v["enum"][0] for k,v in props.items()}
+        if "title_action" in props:
+            return {"title_action":"沿用观察原句","fact":props["fact"]["enum"][0]}
+        if "alternatives" in props:
+            return {"alternatives":dict.fromkeys(json.loads(content),[])}
+        if "work_claims" in props:
+            return {"work_claims":dict.fromkeys(json.loads(content),[])}
+        if props and all("含具体影视作品名称或将画面归属特定影片剧集" in v.get("enum", ()) for v in props.values()):
+            return dict.fromkeys(props, "构图、物件、外观或服装")
+        if isinstance(content, list):
+            binding = props["field_basis"]["properties"]
+            return {"supported":True,"field_basis":{p:{"source":"new:1","observation":"左侧有一把椅子","claim":"编辑用途"} for p in binding}}
+        packet = json.loads(content)
         if "上一版" in packet:
             return {"ordered_actions": ["保留整项原文", "另读新窗口再替换"]}
         if "候选窗口" in packet:
-            assert set(packet["候选窗口"]) == {"new"}
-            return {"windows": ["new"]}
-        if "candidate_primary" in packet:
-            assert packet["candidate_primary"] == "new:1" and "另一窗口尚未采用" not in str(packet)
-            return {"decision": "采用", "rationale": "以椅子开场。", "primary_frame": "new:1"}
+            keys = list(packet["候选窗口"])
+            ranked_batches.append(keys)
+            if len(keys) > 1:
+                raise task_tools.ContextWindowExceeded("fixture window budget")
+            return {"windows": keys}
         if "coordinate" in packet:
             return {"title": "新开场", "rationale": "以椅子开场。"}
         if "candidate" in packet:
@@ -496,11 +527,20 @@ async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, mon
     with pytest.raises(AdditionalVideoRead):
         await tasks.edit_delivery(task, evidence_index(task["steps"]))
     task["steps"].extend([short_read("overlap", 12, revision=2), short_read("new", 0, revision=2)])
+    if usable:
+        task["steps"].append(short_read("spare", 73, revision=2))
+    task["plan"]["excluded_video_frames"] = ["new:1"]  # Legacy text-only rejection, no screening receipt.
     evidence = evidence_index(task["steps"])
     selected = await tasks.edit_delivery(task, evidence)
-    assert selected.items[0] == old.items[0] and selected.items[1].primary_frame == "new:1"
+    assert selected.items[0] == old.items[0]
     assert screened == {11: True, 0: True}
-    assert selected.gaps == [] and "另一窗口" not in render_private_delivery(selected, evidence)[1]
+    assert "另一窗口" not in render_private_delivery(selected, evidence)[1]
+    if usable:
+        assert selected.items[1].primary_frame == "new:1" and selected.gaps == []
+        assert ranked_batches == [["new", "spare"], ["new"], ["spare"]]
+    else:
+        assert len(selected.items) == 1 and any("仍缺 1 项" in gap for gap in selected.gaps)
+        assert selected._window_reviews["new"]["editorial_choice"]["rationale"] == "本窗构图不适合开场。"
 
 
 @pytest.mark.parametrize("with_overview", [False, True])
