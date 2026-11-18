@@ -3,7 +3,7 @@ import pytest
 
 from tuber_studio.agent import public_sources
 from tuber_studio.agent.task_delivery import evidence_index
-from tuber_studio.web_fetch import read_excerpt
+from tuber_studio.web_fetch import programme_credit_text, read_excerpt
 
 
 async def test_source_is_bound_to_requested_part(monkeypatch):
@@ -44,3 +44,25 @@ async def test_programme_credits_are_literal_fields_on_cctv_only():
     other_page = await excerpt("example.org")
     assert other_page["excerpt"] == "选集"
     assert "programme_credits" not in other_page
+
+
+@pytest.mark.parametrize("host,album,expected", [
+    ("tv.cctv.com", "VIDA100", "节目名：春江；节目类型：电视剧；导演：导演甲"),
+    ("tv.cctv.com", "VIDE100", None),
+    ("example.org", "VIDA100", None),
+])
+async def test_archive_programme_cites_album_fields_only(host, album, expected):
+    body = """<title>春江_CCTV节目官网-电视剧_央视网(cctv.com)</title>
+    <div class="text_mod"><h3>春江</h3><p><span>导演：</span>导演甲</p><p>剧情简介</p></div>
+    <div class="text_mod"><h3>另一节目</h3><p><span>导演：</span>导演乙</p></div>
+    <p><span>导演：</span>访客留言</p>"""
+    response = httpx.Response(200, headers={"content-type": "text/html"}, content=body.encode())
+    url = httpx.URL(f"https://{host}/2012/12/03/{album}.shtml")
+    page = await read_excerpt(url, response)
+    assert page.get("programme_credits") == expected
+    if expected:
+        sources = evidence_index([{"id": "page", "tool": "web_page", "result": page}])
+        assert sources.display_source("page") == f"{expected} <{url}>"
+        historical = {key: value for key, value in page.items() if key != "programme_credits"}
+        assert programme_credit_text(historical) == "节目名：春江；节目类型：电视剧"
+        assert not programme_credit_text(historical | {"excerpt": ""})

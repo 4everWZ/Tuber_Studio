@@ -240,6 +240,74 @@ class CCTVProgramPage(PageText):
         super().handle_data(data)
 
 
+def is_cctv_archive(url):
+    return (url.scheme == "https" and url.host == "tv.cctv.com" and not url.userinfo and url.port is None
+            and bool(re.fullmatch(r"/\d{4}/\d{2}/\d{2}/VIDA[A-Za-z0-9]+\.shtml", url.path)))
+
+
+def archive_title_fields(title):
+    match = re.fullmatch(r"([^；;<>]{1,120}?)_CCTV节目官网-([^_；;<>]{1,24})_央视网\(cctv\.com\)", title)
+    return {"节目名": match[1], "节目类型": match[2]} if match else {}
+
+
+def programme_credit_text(receipt):
+    if receipt.get("programme_credits"):
+        return receipt["programme_credits"]
+    # Earlier read receipts retained the catalogue title even without parsed credits.
+    if receipt.get("excerpt") and not receipt.get("error") and is_cctv_archive(httpx.URL(receipt.get("url") or "")):
+        fields = archive_title_fields(receipt.get("title") or "")
+        return "；".join(f"{k}：{v}" for k, v in fields.items())
+    return ""
+
+
+class CCTVArchivePage(PageText):
+    """Read the dated album template's heading and labelled credits together."""
+
+    def __init__(self):
+        super().__init__()
+        self.detail_depth = 0
+        self.field_tag = None
+        self.parts = []
+        self.heading = ""
+        self.directors = {}
+
+    def handle_starttag(self, tag, attrs):
+        super().handle_starttag(tag, attrs)
+        if tag == "div":
+            if self.detail_depth:
+                self.detail_depth += 1
+            elif "text_mod" in (dict(attrs).get("class") or "").split():
+                self.detail_depth = 1
+                self.heading = ""
+        if self.detail_depth and tag in ("h3", "p"):
+            self.field_tag, self.parts = tag, []
+
+    def handle_data(self, data):
+        if self.field_tag and not self.hidden:
+            self.parts.append(data)
+        super().handle_data(data)
+
+    def handle_endtag(self, tag):
+        if self.detail_depth and tag == self.field_tag:
+            text = "".join(self.parts).strip()
+            if tag == "h3":
+                self.heading = text
+            elif self.heading and (match := re.fullmatch(r"导演\s*[：:]\s*([^；;<>\n]{1,100})", text)):
+                self.directors[self.heading] = match[1].strip()
+            self.field_tag = None
+        if tag == "div" and self.detail_depth:
+            self.detail_depth -= 1
+        super().handle_endtag(tag)
+
+    def credits(self, title):
+        fields = archive_title_fields(title)
+        if not fields:
+            return ""
+        if director := self.directors.get(fields["节目名"]):
+            fields["导演"] = director
+        return "；".join(f"{k}：{v}" for k, v in fields.items())
+
+
 def public_ip(value):
     address = ipaddress.ip_address(value)
     if not address.is_global or address.is_multicast or address.is_reserved:
@@ -340,14 +408,20 @@ async def read_excerpt(url, response):
     title = ""
     metadata = {}
     if "html" in media:
-        is_cctv_program = url.host == "tv.cctv.com" and url.path.startswith("/v/")
-        page = CCTVProgramPage() if is_cctv_program else PageText()
+        if url.host == "tv.cctv.com" and url.path.startswith("/v/"):
+            page = CCTVProgramPage()
+        elif is_cctv_archive(url):
+            page = CCTVArchivePage()
+        else:
+            page = PageText()
         page.feed(content)
         page.close()
         title, content = " ".join(page.title), " ".join(page.body)
         if isinstance(page, CCTVProgramPage) and page.credits:
             metadata["programme_credits"] = "；".join(
                 f"{label}：{page.credits[key]}" for key, label in page.fields.items() if key in page.credits)
+        if isinstance(page, CCTVArchivePage) and (credits := page.credits(title)):
+            metadata["programme_credits"] = credits
     content = " ".join(content.split())
     if not content:
         raise ValueError("网页没有返回可读文本")

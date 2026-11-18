@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 from pydantic import Field, PrivateAttr, model_validator
 
 from ..models import StrictModel
+from ..web_fetch import programme_credit_text
 
 LABELS = {
     "inbox_received": "定向来信入库回执",
@@ -441,7 +442,7 @@ def evidence_index(steps):
                     if has_clips:
                         evidence.video_byline[step["id"]] = " · ".join(filter(None, (
                             _text(result.get("title")), _source(result["url"]))))
-                    if credits := _text(result.get("programme_credits")):
+                    if credits := _text(programme_credit_text(result)):
                         evidence.video_byline[step["id"]] = f"{credits} {_source(result['url'])}"
                     if result.get("source_kind") == "bilibili_public_metadata":
                         # The adapter keeps its public byline and part metadata before the synopsis field.
