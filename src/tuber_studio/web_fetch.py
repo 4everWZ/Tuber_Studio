@@ -219,6 +219,21 @@ class PageText(HTMLParser):
             (self.title if self.in_title else self.body).append(data.strip())
 
 
+class CCTVProgramPage(PageText):
+    """The programme page fills its visible credits from these literal fields."""
+
+    fields = {"video_album_title": "节目名", "play_director": "导演"}
+
+    def handle_data(self, data):
+        if self.hidden == ["script"]:
+            for key, value in re.findall(
+                r"(?m)^\s*var[ \t]+(video_album_title|play_director)[ \t]*=[ \t]*'([^'\\\r\n<>]{1,160})'[ \t]*;",
+                data,
+            ):
+                self.body.append(f"{self.fields[key]}：{value.strip()}")
+        super().handle_data(data)
+
+
 def public_ip(value):
     address = ipaddress.ip_address(value)
     if not address.is_global or address.is_multicast or address.is_reserved:
@@ -318,7 +333,8 @@ async def read_excerpt(url, response):
     content = raw.decode(response.encoding or "utf-8", errors="replace")
     title = ""
     if "html" in media:
-        page = PageText()
+        is_cctv_program = url.host == "tv.cctv.com" and url.path.startswith("/v/")
+        page = CCTVProgramPage() if is_cctv_program else PageText()
         page.feed(content)
         page.close()
         title, content = " ".join(page.title), " ".join(page.body)
