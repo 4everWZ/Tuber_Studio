@@ -71,6 +71,9 @@ class PrivateDelivery(StrictModel):
     items: list[CreativeItem]
     gaps: list[str]
     _field_sources: dict = PrivateAttr(default_factory=dict)
+    _frame_reviews: dict = PrivateAttr(default_factory=dict)
+    _window_reviews: dict = PrivateAttr(default_factory=dict)
+    _locked_fields: set[str] = PrivateAttr(default_factory=set)
 
 
 class DelegationError(ValueError):
@@ -80,13 +83,17 @@ class DelegationError(ValueError):
 class AdditionalVideoRead(DelegationError):
     """The requested revision requires a new, authorized reading before editing."""
 
-    def __init__(self, message, exclude=(), retained=(), *, sources=False, video=True, windows=()):
+    def __init__(self, message, exclude=(), retained=(), *, sources=False, video=True, windows=(), lookup=None, reviews=None,
+                 frames=None):
         super().__init__(message)
         self.exclude = list(exclude)
         self.retained = list(retained)
         self.sources = sources
         self.video = video
         self.windows = list(windows)
+        self.lookup = lookup
+        self.reviews = reviews
+        self.frames = frames
 
 
 class EditorialCorrection(DelegationError):
@@ -96,6 +103,8 @@ class EditorialCorrection(DelegationError):
         super().__init__("前台要求按回执修正选材文字。")
         self.draft = product.model_dump()
         self.issues = issues
+        self.frame_reviews = product._frame_reviews
+        self.window_reviews = product._window_reviews
 
 
 def editorial_fields(product):
@@ -208,6 +217,14 @@ class EvidenceIndex(dict):
             original = first.setdefault(citation, key)
             sources[key] = citation if original == key else {"same_receipt_text_as": original}
         return sources
+
+    def discovery_progress(self):
+        # Reissued calls have new IDs. Equal coordinates and equal coverage are the same progress.
+        bounds = {(read["bvid"], r["part"], r["start"], r["end"], bool(read.get("clip")))
+                  for read in self.video_coverage.values() for r in read["requested_ranges"]
+                  if all(k in r for k in ("part", "start", "end"))}
+        points = {(p.bvid, p.part, p.cid or "", p.seconds, p.medium) for p in self.points.values()}
+        return {"ranges": [list(row) for row in sorted(bounds)], "samples": [list(row) for row in sorted(points)]}
 
     def display_source(self, key):
         point = self.points.get(key)
@@ -324,6 +341,8 @@ def _physical_clip(result, bounds, samples):
 
 def evidence_index(steps):
     evidence = EvidenceIndex()
+    steps = list(steps)
+    has_clips = any(s["tool"] == "inspect_video" and (s.get("result") or {}).get("clip") for s in steps)
     for step in steps:
         result = step.get("result") or {}
         tool = step["tool"]
@@ -366,6 +385,10 @@ def evidence_index(steps):
                 evidence[step["id"]] = " · ".join(line for line in lines if line)
                 if tool == "web_page":
                     evidence.read_pages.add(result["url"])
+                    # A clip cites a document for provenance. Its page body can disclose the plot.
+                    if has_clips:
+                        evidence.video_byline[step["id"]] = " · ".join(filter(None, (
+                            _text(result.get("title")), _source(result["url"]))))
                     if credits := _text(result.get("programme_credits")):
                         evidence.video_byline[step["id"]] = f"{credits} {_source(result['url'])}"
                     if result.get("source_kind") == "bilibili_public_metadata":
@@ -460,8 +483,10 @@ def _previous_rendered_items(task, evidence):
         item = CreativeItem(title=title, rationale=rationale, sources=sources, primary_frame=primary)
         _, rendered = render_private_delivery(PrivateDelivery(items=[item], gaps=[]), old)
         current = rendered.split("\n\n", 1)[0]
-        original = "\n".join([*current.splitlines()[:4], *(f"- {old[key]}" for key in sources[1:])])
-        if block in (current, original):
+        # Earlier renderers could mix a compact byline with a verbatim source excerpt.
+        if len(lines) == 3 + len(sources) and lines[:4] == current.splitlines()[:4] and all(
+                line in {f"- {old[key]}", f"- {old.display_source(key)}"}
+                for line, key in zip(lines[4:], sources[1:], strict=True)):
             rows.append(item.model_dump())
     return rows
 
@@ -489,13 +514,19 @@ def render_private_delivery(product, evidence):
             if clip and point.cid == clip["cid"] and clip["start"] <= point.seconds < clip["end"]:
                 windows.append(f"- 第 {len(blocks) + 1} 项 · {point.bvid} P{point.part} · 连续取材入点 {clip['start']:g} 秒、"
                                f"出点 {clip['end']:g} 秒（不含），保存 {clip['frames']} 个连续原帧。私有短片不含音轨。")
+                review = product._window_reviews.get(primary.rsplit(":", 1)[0], {})
+                if review.get("accepted") and review["clip"] == clip:
+                    times = "、".join(f"{s['seconds']:g}" for s in review["observations"])
+                    windows.append(f"- 第 {len(blocks) + 1} 项 · 逐帧检测画面及下方屏字变化；"
+                                   f"Omni 审读代表帧 {times} 秒，检测到的状态均有代表帧。")
             if interval:
                 samples = sorted({t for _, part, t, medium in read["samples"] if part == point.part and
                                   medium == "单帧采样" and interval[0] <= t < interval[1]})
                 if samples:
                     windows.append(f"- 第 {len(blocks) + 1} 项 · {point.bvid} P{point.part} · "
                                    f"请求抽样范围 [{interval[0]:g}, {interval[1]:g}) 秒。"
-                                   f"内容语义仅观察 {len(samples)} 帧，实际时点为 {'、'.join(map(str, samples))} 秒。")
+                                   f"{'初读取材观察' if product._window_reviews.get(primary.rsplit(':', 1)[0], {}).get('accepted') else '内容语义仅观察'}"
+                                   f" {len(samples)} 帧，实际时点为 {'、'.join(map(str, samples))} 秒。")
             for gap in read["read_gaps"]:
                 windows.append(f"- 第 {len(blocks) + 1} 项的工具回执：{_text(gap)}")
         lines.extend(f"- {evidence.display_source(source) if primary else evidence[source]}"

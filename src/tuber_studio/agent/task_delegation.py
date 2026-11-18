@@ -102,7 +102,8 @@ def model_input(task, context):
                                            "previous_items_by_primary_frame": previous_frame_items(task, evidence),
                                            "pages_without_body_receipts": evidence.unread_pages,
                                            "saved_evidence": evidence_index([
-                                               step for step in context if step["revision"] != task["revision"] or step.get("discovery_window")]),
+                                               step for step in context if step["revision"] != task["revision"]
+                                               or step.get("discovery_window") or step.get("source_document")]),
                                            "new_clip_receipts": {step["id"]: evidence.video_coverage.get(step["id"])
                                                                  for step in context if step.get("discovery_window")
                                                                  and step["revision"] == task["revision"]},
@@ -177,10 +178,21 @@ async def advance(runtime, task):
             if runtime.scope() == task["scope"]:
                 plan = {k: v for k, v in task["plan"].items() if k not in {"candidate", "editor_draft", "editor_issues"}}
                 if request.video:
-                    plan.update(requested_video_read=str(request), excluded_video_frames=request.exclude,
-                                retained_candidates=request.retained)
+                    plan.update(requested_video_read=str(request),
+                                excluded_video_frames=list(dict.fromkeys([*plan.get("excluded_video_frames", []), *request.exclude])))
+                    if not request.windows:
+                        plan["discovery_evidence"] = evidence.discovery_progress()
+                    if request.retained:
+                        plan["retained_candidates"] = request.retained
+                    elif request.exclude:
+                        plan["retained_candidates"] = [i for i in plan.get("retained_candidates", ())
+                                                       if i.get("primary_frame") not in plan["excluded_video_frames"]]
                 if request.sources:
                     plan["requested_source_read"] = str(request)
+                if request.reviews is not None:
+                    plan["window_reviews"] = request.reviews
+                if request.frames is not None:
+                    plan["frame_reviews"] = request.frames
                 steps = list(task["steps"])
                 tool = private_tools(runtime.tools, context).get("inspect_video")
                 for args in request.windows:
@@ -190,12 +202,32 @@ async def advance(runtime, task):
                     if not any(step["id"] == key for step in steps):
                         steps.append({"tool": "inspect_video", "id": key, "revision": task["revision"],
                                       "arguments": tool.arguments.model_validate(args).model_dump(), "discovery_window": True})
+                search = private_tools(runtime.tools, context).get("web_search")
+                if request.lookup:
+                    plan["source_lookup_query"] = request.lookup["query"]
+                page = private_tools(runtime.tools, context).get("web_page")
+                if request.sources and page and page.parallel_read and not page.review and hasattr(runtime, "unread_web_addresses"):
+                    requested = runtime.unread_web_addresses("\n".join([*plan["prior_goals"], task["goal"]]), ())
+                    attempted = {s["arguments"].get("web_fetch") for s in context if s["tool"] == "web_page"}
+                    for url in requested:
+                        if url not in attempted:
+                            args = page.arguments.model_validate({"web_fetch": url}).model_dump()
+                            steps.append({"id": str(uuid5(UUID(task["id"]), f"{task['revision']}:source-page:{url}")),
+                                          "tool": "web_page", "arguments": args, "revision": task["revision"], "source_document": True})
+                if request.lookup and search and search.parallel_read and not search.review:
+                    args = search.arguments.model_validate(request.lookup).model_dump()
+                    if not any(s["tool"] == "web_search" and s["arguments"] == args for s in context):
+                        steps.append({"id": str(uuid5(UUID(task["id"]), f"{task['revision']}:source:{dump(args)}")),
+                                      "tool": "web_search", "arguments": args, "revision": task["revision"], "question_search": True})
+                if len(steps) > len(task["steps"]) and (request.windows or not request.video):
+                    plan["resume_candidate"] = task["plan"]["candidate"]
                 runtime._save(task, status="queued", due=time.time(), message=str(request), plan=plan, steps=steps)
             return
         except EditorialCorrection as correction:
             if runtime.scope() == task["scope"]:
                 runtime._save(task, status="queued", due=time.time(), message=str(correction),
-                              plan=task["plan"] | {"editor_draft": correction.draft, "editor_issues": correction.issues})
+                              plan=task["plan"] | {"editor_draft": correction.draft, "editor_issues": correction.issues,
+                                                   "frame_reviews": correction.frame_reviews, "window_reviews": correction.window_reviews})
             return
         if runtime.scope() != task["scope"]:
             return
@@ -205,7 +237,20 @@ async def advance(runtime, task):
         plan = task["plan"] | {"selected": product.model_dump()}
         if product._field_sources:
             plan["selected_field_sources"] = product._field_sources
-        runtime._save(task, status="completed" if verified else "failed", message=delivery, plan=plan)
+        if product._frame_reviews:
+            plan["frame_reviews"] = product._frame_reviews
+        if product._window_reviews:
+            plan["window_reviews"] = product._window_reviews
+        steps = list(task["steps"])
+        selected_reads = {i.primary_frame.rsplit(":", 1)[0] for i in product.items if i.primary_frame}
+        for index, step in enumerate(steps):
+            review = product._window_reviews.get(step["id"], {})
+            if step["id"] in selected_reads and review.get("accepted") and "caption_topics" in review:
+                record = {k: review[k] for k in ("clip", "coverage", "caption_topics", "usage", "accepted")}
+                record["observations"] = [{k: obs[k] for k in ("frame", "seconds", "scene", "captions", "screen_text")}
+                                          for obs in review["observations"]]
+                steps[index] = step | {"accepted_clip_review": record}
+        runtime._save(task, status="completed" if verified else "failed", message=delivery, plan=plan, steps=steps)
         return
     pending = [step for step in current if "result" not in step]
     if pending:
@@ -213,6 +258,25 @@ async def advance(runtime, task):
         if any(step["tool"] == "inspect_video" and not permits(bound, step["arguments"]) for step in pending):
             raise DelegationError("视频、分P或时段超出了号主给定的来源。")
         await run_pending(runtime, task, pending, context)
+        return
+    # A single official catalogue match completes the foreground's source lookup by opening the actual document.
+    page = private_tools(runtime.tools, context).get("web_page")
+    if page and page.parallel_read and not page.review and hasattr(runtime, "unread_web_addresses"):
+        addresses = runtime.unread_web_addresses(task["goal"], context)
+        for step in current:
+            if not step.get("question_search") or step["arguments"].get("catalog") != "央视节目库":
+                continue
+            links = (step.get("result") or {}).get("links", [])
+            key = str(uuid5(UUID(task["id"]), f"source-page:{step['id']}"))
+            if len(links) == 1 and links[0] in addresses and not any(s["id"] == key for s in current):
+                args = page.arguments.model_validate({"web_fetch": links[0]}).model_dump()
+                runtime._save(task, status="queued", due=time.time(), steps=[*task["steps"], {
+                    "id": key, "tool": "web_page", "revision": task["revision"], "arguments": args, "source_document": True}])
+                return
+    if "resume_candidate" in task["plan"]:
+        plan = task["plan"].copy()
+        plan["candidate"] = plan.pop("resume_candidate")
+        runtime._save(task, plan=plan, status="queued", due=time.time(), message="补充取材已结束，前台按实际回执继续选材。")
         return
     client = runtime.responses_client()
     if client is None:
@@ -249,7 +313,8 @@ async def advance(runtime, task):
             if tool["name"] == "delegate_text":
                 tool["parameters"]["properties"]["sources"]["items"]["enum"] = list(evidence)
     tools.extend([submission, function("ask_owner", "向号主询问完成委派所缺的资料。", Clarification)])
-    reply = await client(input=model_input(task, context), tools=tools, tool_choice="required")
+    nominate = task["plan"].get("nominate_current_samples", False)
+    reply = await client(input=model_input(task, context), tools=[submission] if nominate else tools, tool_choice="required")
     if runtime.scope() != task["scope"]:
         return
     calls = reply.calls
@@ -257,8 +322,16 @@ async def advance(runtime, task):
     if not calls or len(ids) != len(calls) or ids.intersection(step.get("call_id") for step in current):
         raise DelegationError("Responses 未返回完整、唯一的函数调用。")
     name = calls[0].name
+    if nominate and (len(calls) != 1 or name != "submit_materials"):
+        raise DelegationError("后台没有按本轮委派提交实际材料。")
     if len(calls) == 1 and name == "ask_owner":
         question = Clarification.model_validate(calls[0].arguments).question
+        if (evidence.points and "inspect_video" in allowed and getattr(runtime, "can_nominate_video", None)
+                and await runtime.can_nominate_video(task, question)):
+            if runtime.scope() == task["scope"]:
+                runtime._save(task, plan=task["plan"] | {"nominate_current_samples": True},
+                              status="queued", due=time.time(), message="按委托从已取回的资料中提名候选。")
+            return
         search = allowed.get("web_search")
         review = getattr(runtime, "review_source_question", None)
         if search and search.parallel_read and not search.review and review and not any(s.get("question_search") for s in current):
@@ -287,8 +360,9 @@ async def advance(runtime, task):
                     "arguments": call.arguments, "invalid_call": True, "result": {"error": str(error)}}
             runtime._save(task, status="queued", due=time.time(), message=str(error), steps=[*task["steps"], step])
             return
+        plan = {k: v for k, v in task["plan"].items() if k != "nominate_current_samples"}
         runtime._save(task, status="queued", message="材料已就绪，等待前台选材。", due=time.time(),
-                      plan=task["plan"] | {"candidate": product.model_dump()})
+                      plan=plan | {"candidate": product.model_dump()})
         return
     steps = []
     for call in calls:

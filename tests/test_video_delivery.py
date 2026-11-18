@@ -20,10 +20,14 @@ from tuber_studio.agent.task_delivery import (
     render_private_delivery,
 )
 from tuber_studio.agent.task_tools import (
+    check_work_attribution,
+    cited_programme_names,
     clip_review_image,
     create_task_runtime,
     discovery_windows,
     sampled_video_findings,
+    screen_clip_window,
+    video_provenance,
 )
 
 BV = "BV1234567890"
@@ -110,6 +114,68 @@ def test_physical_clip_is_distinct_from_semantic_sampling(alter):
             render_private_delivery(selection("window:3", primary="window:1"), evidence)
 
 
+async def test_source_lookup_uses_the_work_named_by_public_metadata(runtime, store, monkeypatch):
+    read = reading(frame(11))
+    read["result"]["part_duration"] = 300
+    origin = page("upload")
+    origin["result"].update(title="《例作》节目合辑", source_kind="bilibili_public_metadata",
+                            url=f"https://www.bilibili.com/video/{BV}/?p=2")
+    task = {"goal": "找两段可用素材，查原出处", "steps": [read, origin],
+            "plan": {"prior_goals": [], "candidate": selection(primary="v:1").model_dump()}}
+
+    async def model(messages, schema, **kwargs):
+        if "requested_count" in schema["properties"]:
+            return {"requested_count": 2, "usage": "直播取材", "playable": True, "trace_origin": True}
+        assert schema["properties"]["title"]["enum"] == ["例作"]
+        return {"title": "例作", "kind": "影视节目"}
+
+    monkeypatch.setattr(runtime.llm, "generate_json", model)
+    tasks = create_task_runtime(runtime, store, None)
+    with pytest.raises(AdditionalVideoRead) as research:
+        await tasks.edit_delivery(task, evidence_index(task["steps"]))
+    assert research.value.lookup == {"query": "例作", "catalog": "央视节目库"}
+    assert research.value.sources and research.value.windows
+
+
+def test_clip_cites_unstructured_document_without_displaying_its_synopsis():
+    steps = [short_read("v", 7), page("credits"), page("archive")]
+    steps[1]["result"]["programme_credits"] = "示例作品 · 公开署名"
+    steps[2]["result"].update(title="节目档案", excerpt="档案中记有剧情结局。")
+    index = evidence_index(steps)
+    item = selection("credits", "archive", primary="v:1")
+    _, body = render_private_delivery(item, index)
+    assert index["archive"] != index.display_source("archive")
+    assert "节目档案" in body and "公开署名" in body and "剧情结局" not in body
+    assert "剧情结局" in render_private_delivery(selection("archive"), index)[1]
+    prior = body.replace(index.display_source("archive"), index["archive"])
+    task = {"revision": 2, "steps": steps, "plan": {"previous_delivery": prior}}
+    assert previous_frame_items(task, index)["v:1"]["rationale"] == item.items[0].rationale
+
+
+def test_opened_unrelated_document_cannot_fulfil_the_video_origin_request():
+    upload, unrelated, archive = page("upload"), page("map"), page("archive")
+    upload["result"].update(title="《示例影片》评论", source_kind="bilibili_public_metadata",
+                            url=f"https://www.bilibili.com/video/{BV}/?p=2")
+    unrelated["result"].update(title="游戏地图下载")
+    archive["result"].update(title="节目档案", programme_credits="作品：示例影片；导演：示例作者")
+    steps = [upload, unrelated, archive]
+    assert video_provenance(steps, evidence_index(steps)) == (["《示例影片》评论"], ["示例影片"], ["upload"], ["archive"])
+
+
+def test_work_name_requires_cited_credit_and_can_never_identify_the_frame():
+    archived, other = page("official"), page("other")
+    archived["result"]["programme_credits"] = "节目名：示例作品；导演：示例作者"
+    other["result"]["excerpt"] = "文字里出现了《另一个名字》。"
+    names = cited_programme_names([archived, other], ["official", "other"])
+    assert names == {"示例作品"} and cited_programme_names([archived, other], ["other"]) == set()
+    plain = {"work_names": [], "work_reference": "无作品引用"}
+    assert check_work_attribution("宝座旁站着谁？", plain, names) is None
+    assert check_work_attribution("这是《另一个名字》的画面吗？", plain, names)
+    credit = {"work_names": ["示例作品"], "work_reference": "仅提节目资料"}
+    assert check_work_attribution("节目资料列有《示例作品》。", credit, names) is None
+    assert check_work_attribution("这是示例作品中的一幕。", credit | {"work_reference": "断言镜头或人物归属某作品或集"}, names)
+
+
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="requires local video decoder")
 async def test_review_decodes_actual_primary_pts_and_checks_receipt_ownership(tmp_path):
     key = str(uuid4())
@@ -131,7 +197,125 @@ async def test_review_decodes_actual_primary_pts_and_checks_receipt_ownership(tm
         await clip_review_image(tmp_path, {"steps": [read]}, evidence, key + ":1")
 
 
-async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, monkeypatch):
+@pytest.fixture
+def reviewed_window(monkeypatch):
+    # Isolate caption/revision tests. Separate tests decode and review the full clip.
+    def media(_directory, _task, evidence, key):
+        return None, evidence.video_coverage[key.rsplit(":", 1)[0]]["clip"]
+
+    async def reviewed(media, *_):
+        clip = media[1]
+        return {"clip": clip, "observations": [{"seconds": clip["start"]}], "caption_topics": [], "accepted": True}
+
+    monkeypatch.setattr("tuber_studio.agent.task_tools.saved_review_media", media)
+    monkeypatch.setattr("tuber_studio.agent.task_tools.screen_clip_window", reviewed)
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="requires video decoder")
+@pytest.mark.parametrize("tail", ["已读且符合", "已读但不符合", "无法读清", "已被视觉误判符合的叙事"])
+async def test_window_gate_reviews_changed_tail_pixels(tmp_path, tail):
+    file = tmp_path / "two-colours.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+                    "color=red:s=96x64:r=25:d=3,drawbox=color=blue:t=fill:enable='gte(t,2)'",
+                    "-c:v", "libx264", str(file)], check=True)
+    seen = []
+
+    async def review(messages, schema, **kwargs):
+        content = messages[-1]["content"]
+        if "usage" in schema["properties"]:
+            return {"usage": "仅无剧透素材"}
+        if "1" in schema["properties"]:
+            assert json.loads(content) == {"待标注原句": {"1": "测试字幕"}}
+            return {"1": {"topic": "播出及制作资料", "story_fact": "测试" if tail == "已被视觉误判符合的叙事" else ""}}
+        coordinate = json.loads(content[0]["text"])
+        seen.append(coordinate["seconds"])
+        jpeg = base64.b64decode(content[1]["image_url"]["url"].split(",")[1])
+        with Image.open(io.BytesIO(jpeg)) as picture:
+            red, _, blue = picture.getpixel((10, 10))
+        verdict = "已读且符合" if tail == "已被视觉误判符合的叙事" else tail
+        return {"scene": "符合要求", "captions": verdict if blue > red else "无烧录字幕",
+                "screen_text": "测试字幕" if blue > red else "", "basis": "按当前实际颜色标记测试状态。"}
+
+    result = await screen_clip_window((file, {"start": 7, "end": 10, "frames": 75}), "整段无剧透", review, 512)
+    assert result["coverage"]["scanned_frames"] == 75 and seen[0] == 7 and any(t >= 9 for t in seen)
+    assert result["accepted"] == (tail == "已读且符合")
+    if result["accepted"]:
+        assert seen[-1] == pytest.approx(9.96)
+
+
+async def test_uncovered_subtitle_change_cannot_use_single_frame_approval(monkeypatch):
+    async def incomplete(*args, **kwargs):
+        return {"coverage": {"complete": False, "scanned_frames": 75, "samples": [{"frame": 0}],
+                             "uncovered": [{"start": 2, "end": 3}]}, "images": [{}]}
+
+    monkeypatch.setattr("tuber_studio.agent.task_tools.review_clip_window", incomplete)
+    result = await screen_clip_window((None, {"start": 0, "end": 3, "frames": 75}), "不要透露剧情", None, 512)
+    assert not result["accepted"] and not result["observations"]
+
+
+@pytest.mark.parametrize("invented_title", [False, True])
+async def test_real_image_inventory_and_caption_do_not_inherit_worker_plot(runtime, store, monkeypatch, invented_title, reviewed_window):
+    read = short_read("read", 1)
+    read["result"]["findings"][0]["text"] = "后台推测的登基剧情"
+    evidence = evidence_index([read])
+    task = {"goal": "取一段画面", "steps": [read], "plan": {"prior_goals": [], "candidate": selection(primary="read:1").model_dump()}}
+
+    async def pixels(*_):
+        return {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,test"}}
+
+    async def omni(messages, schema, **kwargs):
+        props = schema["properties"]
+        if "requested_count" in props:
+            return {"requested_count": 1, "usage": "讲解构图", "playable": True, "trace_origin": False}
+        if "decision" in props:
+            return {"decision": "采用", "primary_frame": "read:1", "rationale": "可以看构图"}
+        content = messages[-1]["content"]
+        if "opening" in props:
+            assert json.loads(content)["号主交办"] == task["goal"] and "后台推测" not in content
+            return {"opening": "我会用这一镜引出布景话题。", "main": "在讲解时插入。", "transition": "先停一下旁白。"}
+        if set(props) == {"title"}:
+            assert "enum" not in props["title"]
+            assert json.loads(content) == {"构图锚点": "座椅旁站着一人", "可见细节": "一人站在椅子旁", "写作偏好": []}
+            return {"title": "这是登基仪式吗？" if invented_title else "椅子旁站着谁？"}
+        assert isinstance(content, list) and "后台推测" not in str(content)
+        if "labels" in props:
+            assert content[0]["type"] == "image_url" and [p["type"] for p in content] == ["image_url", "text"]
+            return {"labels": ["座椅旁站着一人"], "details": ["一人站在椅子旁"], "screen_text": []}
+        if "items.0.title" in props:
+            assert props["items.0.title"] == {"type": "string"}
+            assert "fixed_title_anchors" in content[0]["text"] and "座椅旁站着一人" in content[0]["text"]
+            return {"items.0.title": "一人站在椅子旁。"}
+        if "anchor" in props:
+            assert props["anchor"]["enum"] == ["座椅旁站着一人"]
+            assert props["detail"]["enum"] == ["一人站在椅子旁"]
+            return {"anchor": "座椅旁站着一人", "detail": "一人站在椅子旁",
+                    "use": "用在开场，我会用这一镜引出布景话题。"}
+        assert "title_fact_anchor" in str(content) and any(v["type"] == "image_url" for v in content)
+        if invented_title and "登基仪式" in content[0]["text"]:
+            return {"supported": False, "issues": [{"field": "items.0.title", "quote": "登基仪式", "reason": "引用未支持该断言"}]}
+        return {"supported": True, "field_basis": {f"items.0.{p}": {"source": "read:1", "observation": "一人站在椅子旁",
+                "claim": "编辑用途", "work_names": [], "work_reference": "无作品引用"} for p in ["title", "rationale"]}}
+
+    monkeypatch.setattr("tuber_studio.agent.task_tools.clip_review_image", pixels)
+    monkeypatch.setattr(runtime.llm, "generate_json", omni)
+    tasks = create_task_runtime(runtime, store, None)
+    if invented_title:
+        with pytest.raises(EditorialCorrection) as correction:
+            await tasks.edit_delivery(task, evidence)
+        assert set(correction.value.issues) == {"items.0.title"}
+        task["plan"].update(editor_draft=correction.value.draft, editor_issues=correction.value.issues,
+                            frame_reviews=correction.value.frame_reviews, window_reviews=correction.value.window_reviews)
+        revised = await tasks.edit_delivery(task, evidence)
+        assert revised.items[0].title == "一人站在椅子旁。"
+        assert revised._frame_reviews["read:1"]["title_anchor"] == ["座椅旁站着一人"]
+    else:
+        result = await tasks.edit_delivery(task, evidence)
+        assert result._frame_reviews["read:1"]["title_anchor"] == ["座椅旁站着一人"]
+        assert result.items[0].title == "椅子旁站着谁？"
+        assert result.items[0].rationale == "画面依据：一人站在椅子旁。剪辑安排：用在开场，我会用这一镜引出布景话题。"
+
+
+async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, monkeypatch, reviewed_window):
     async def synthetic_image(*_):
         return None
 
@@ -175,9 +359,46 @@ async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, mon
     assert selected.gaps == [] and "另一窗口" not in render_private_delivery(selected, evidence)[1]
 
 
+async def test_failed_window_after_narrowing_keeps_good_item_and_reads_an_unused_interval(runtime, store, monkeypatch, reviewed_window):
+    good, bad = short_read("kept", 7), short_read("bad", 13)
+    for step in (good, bad):
+        step["result"]["part_duration"] = 20
+    saved = selection(primary="kept:1").items[0].model_dump()
+    saved["title"] = "首段已核对的原文"
+    task = {"goal": f"从 {BV} P2 选两段", "steps": [good, bad], "plan": {
+        "prior_goals": [], "requested_video_read": "此前已宽窗转短窗", "retained_candidates": [saved],
+        "candidate": selection(primary="bad:1").model_dump()}}
+
+    async def editor(messages, schema, **kwargs):
+        props = schema["properties"]
+        if "requested_count" in props:
+            return {"requested_count": 2, "usage": "讲解构图", "playable": True, "trace_origin": False}
+        if "decision" in props:
+            key = json.loads(messages[-1]["content"])["candidate_primary"]
+            assert not key.startswith("kept:")
+            return {"decision": "另取材料", "primary_frame": None, "rationale": "当前材料不合适。"}
+        if "start" in props:
+            assert not any(p["minimum"] <= 13 <= p["maximum"] for p in props["start"]["anyOf"])
+            return {"read": "kept", "start": 0}
+        pytest.fail(f"unexpected call: {list(props)}")
+
+    monkeypatch.setattr(runtime.llm, "generate_json", editor)
+    tasks = create_task_runtime(runtime, store, None)
+    with pytest.raises(AdditionalVideoRead) as again:
+        await tasks.edit_delivery(task, evidence_index(task["steps"]))
+    assert again.value.retained == [saved] and again.value.exclude == ["bad:1"]
+    assert again.value.windows == [{"bvid": BV, "part": 2, "start": 0, "end": 3}]
+    repeated = bad | {"id": "same-window-new-call"}
+    assert evidence_index([good, bad, repeated]).discovery_progress() == evidence_index([good, bad]).discovery_progress()
+
+
 @pytest.mark.parametrize(("quote", "unverified_effect"), [("左侧有一把椅子", False), ("河南治水", False), ("左侧有一把椅子", True)])
-async def test_saved_clip_omni_decides_each_item_and_displays_attribution(runtime, store, monkeypatch, quote, unverified_effect):
+async def test_saved_clip_omni_decides_each_item_and_displays_attribution(runtime, store, monkeypatch, quote, unverified_effect, reviewed_window):
     read = short_read("window", 0)
+    async def no_pixels(*args):
+        return None
+
+    monkeypatch.setattr("tuber_studio.agent.task_tools.clip_review_image", no_pixels)
     for point in read["result"]["findings"]:
         point["cid"] = "321"
     read["result"]["clip"]["cid"] = "321"
