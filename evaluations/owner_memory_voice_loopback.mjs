@@ -30,7 +30,8 @@ const server = http.createServer(async (req,res) => {
 server.on("upgrade",(req,down,head) => {
   const url = new URL(req.url, "http://127.0.0.1");
   if (req.method !== "GET" || url.pathname !== "/v1/realtime" || !tickets.delete(url.searchParams.get("ticket")) ||
-      [...url.searchParams.keys()].some(k=>!["ticket","duplex","autostart"].includes(k))) { down.destroy(); return; }
+      (url.searchParams.has("input_transcription") && url.searchParams.get("input_transcription") !== "explicit") ||
+      [...url.searchParams.keys()].some(k=>!["ticket","duplex","autostart","input_transcription"].includes(k))) { down.destroy(); return; }
   const remote = new URL("/v1/realtime", root);
   remote.search = url.search;
   const upstream = (root.protocol === "https:" ? https : http).request(remote, {headers:{

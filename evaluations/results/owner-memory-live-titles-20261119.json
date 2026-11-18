@@ -1,0 +1,110 @@
+{
+  "stage": "finished",
+  "platform_writes": 0,
+  "confirmation": {
+    "browser": "156.0.8078.4",
+    "quote": "Group related points and separate distinct concerns. Use headings and lists when they improve readability.",
+    "revision": 1
+  },
+  "independent_device": {
+    "architecture": "x86_64",
+    "fresh_authenticated_session": true,
+    "read_after_page_close": true,
+    "forget_visible_on_original_client": true
+  },
+  "video": {
+    "input": "owner-authorized isolated QA preference",
+    "original": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+    "before_titles": [
+      "宝座前站着的人是谁？"
+    ],
+    "after_titles": [
+      "古宫宝座"
+    ],
+    "semantic_status": "observed"
+  },
+  "forgotten_revisions": {
+    "1": 2
+  },
+  "final_user_transcript": {
+    "status": "unverified",
+    "session_created": true,
+    "capabilities": {
+      "implementation_level": "model_native_duplex",
+      "chunk_period_ms": 1000,
+      "supports_input_append": true
+    },
+    "commit_requested": true,
+    "ui_status": "正在与大肥鱼私聊 · 麦克风已开启",
+    "service_events": {
+      "session.created": 1,
+      "session.updated": 1,
+      "input_audio_buffer.speech_started": 1,
+      "response.listen": 20,
+      "response.created": 1,
+      "conversation.item.added": 2,
+      "conversation.item.created": 2,
+      "response.output_item.added": 1,
+      "response.content_part.added": 1,
+      "response.speak": 1,
+      "response.output_audio.delta": 2,
+      "response.output_audio_transcript.delta": 2,
+      "playback.acknowledged": 9,
+      "response.output_audio.done": 1,
+      "response.output_audio_transcript.done": 1,
+      "response.content_part.done": 1,
+      "response.output_item.done": 1,
+      "conversation.item.done": 2,
+      "response.done": 1,
+      "rate_limits.updated": 1,
+      "input_audio_buffer.speech_stopped": 1,
+      "input_audio_buffer.committed": 1,
+      "session.heartbeat_ack": 1
+    },
+    "sent_pcm_seconds": 22,
+    "committed_user_audio_items": 1,
+    "final_transcript_events": 0,
+    "speaker": "synthetic Mandarin QA speech"
+  },
+  "automatic": [
+    {
+      "id": 1,
+      "revision": 2,
+      "note": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+      "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。"
+    }
+  ],
+  "before": {
+    "body": "**宝座前站着的人是谁？**\n选材理由：画面中站立的人物穿着传统服饰，背景是装饰华丽的宫殿，中央有铺着黄色坐垫的金色龙椅，符合庄重氛围的宫廷场景，与号主偏好以问句结尾的标题风格一致。此画面能直观呈现场景主体，适合作为素材提纲的切入点。缺口方面，该区间尚未获取字幕，且未听审原片音轨。\n主帧：BV1Hy4y1J7xH · 单帧采样 · 分 P 2 · 11.44 秒 · <https://www.bilibili.com/video/BV1Hy4y1J7xH/?p=2&t=11>\n覆盖：仅核实所列采样时点；连续画面及音轨均未经该画面回执核实。\n\n当轮取材窗口与观测覆盖：\n- 第 1 项 · BV1Hy4y1J7xH P2 · 连续取材入点 11 秒、出点 14 秒（不含），保存 75 个连续原帧。私有短片不含音轨。\n- 第 1 项 · BV1Hy4y1J7xH P2 · 请求抽样范围 [11, 14) 秒。内容语义仅观察 3 帧，实际时点为 11.44、12.48、13.52 秒。\n- 第 1 项的工具回执：此区间未取得可公开读取的字幕。\n- 第 1 项的工具回执：画面内容按时点抽样描述；未听审原片音轨。",
+    "citations": [
+      {
+        "id": 1,
+        "revision": 2,
+        "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。"
+      }
+    ],
+    "transport": {
+      "status": "completed",
+      "tools": [
+        "inspect_video",
+        "submit_materials"
+      ],
+      "video_findings": [
+        3
+      ]
+    }
+  },
+  "after": {
+    "body": "**古宫宝座**\n选材理由：第13秒画面完整呈现古装宫廷核心场景，两侧官员对称站立强化了权力中心感，可作为该片段的代表性画面。选用理由是此帧信息量大且符合宫廷题材的典型视觉符号。缺口在于缺少对应字幕，且未听审音频。\n主帧：BV1Hy4y1J7xH · 单帧采样 · 分 P 2 · 13.52 秒 · <https://www.bilibili.com/video/BV1Hy4y1J7xH/?p=2&t=13>\n覆盖：仅核实所列采样时点；连续画面及音轨均未经该画面回执核实。\n\n当轮取材窗口与观测覆盖：\n- 第 1 项 · BV1Hy4y1J7xH P2 · 连续取材入点 11 秒、出点 14 秒（不含），保存 75 个连续原帧。私有短片不含音轨。\n- 第 1 项 · BV1Hy4y1J7xH P2 · 请求抽样范围 [11, 14) 秒。内容语义仅观察 3 帧，实际时点为 11.44、12.48、13.52 秒。\n- 第 1 项的工具回执：此区间未取得可公开读取的字幕。\n- 第 1 项的工具回执：画面内容按时点抽样描述；未听审原片音轨。",
+    "citations": [],
+    "transport": {
+      "status": "completed",
+      "tools": [
+        "inspect_video"
+      ],
+      "video_findings": [
+        3
+      ]
+    }
+  }
+}

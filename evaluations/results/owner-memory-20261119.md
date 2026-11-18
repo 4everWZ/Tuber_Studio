@@ -8,10 +8,15 @@ Windows 上的 Chromium 156.0.8078.4 登录隔离工坊，在设置页预览并�
 | 私有视频提纲 | 隔离传输经过任务 API、匿名分 P 取帧、视觉读取、Responses 取材和最终 Omni 编辑入口。偏好只随私有编辑请求传递。第一版使用问句标题，打开历史成果、忘记、改口再取材后，第二版使用陈述标题。在途删除阻止了第一版落库。此项使用可控的推理与视频传输。 |
 | 最终用户转写 | Chromium 协议夹具覆盖已提交的用户音频、最终转写、点击确认和跨端读回。更正场景在同一条目上产生新版本及新原话，另一客户端核对了当前版本，旧确认返回 412。真实服务最终转写单独记录。 |
 | 真实 Omni 初次回放 | 已确认自动整理和 3 条 P2 取材。第一版引用了号主的结论先行偏好，实际先写画面再给建议，语义未通过。撤回时旧修订触发冲突。保留了[原始提纲与判读](owner-memory-live-before-20261119.json)。 |
+| 真实 Omni 问句标题对照 | 号主确认设置来源后，通过文字对话给出“每个标题都用问句，以问号结尾”。另一台 x86_64 设备读到自动整理的 v2。工坊对同一 BV 的 P2、11–14 秒完成两次私有取材。第一份标题为「宝座前站着的人是谁？」；对端按 v2 忘记后，同一交办的标题为「古宫宝座」，引用为空。两份成品均从另一设备读回。平台写入 0。[实际正文与取材回执摘要](owner-memory-live-titles-20261119.json) |
+| 部署中的原生双工 | Chromium 发送 22 秒 PCM，服务确认一个用户音频条目，返回了助手语音及助手字幕，最终用户转写事件为 0。该轮没有触发语音更正。输入为号主授权 QA 句子的中文合成发音。 |
 
 运行独立设备验收需可用的 SSH 客户端别名及对端 Python 3。设置普通网关连接后，`--live` 使用相同 BV、P2 和时间区间各创建一项任务，并输出前后两份实际成果以便检查文字。普通 token 也可为原生 Realtime 签发一次性票据。结构对照使用号主授权的隔离 QA 问句标题偏好，并以合成语音朗读改为陈述句的要求，`--voice-wav` 可指定获准发送的语音。每次回放在本地 tmp 下输出独立 result.json，分别记录最终转写与两份成果。
 
 ```sh
 uv run --locked python -m evaluations.owner_memory_device --device <ssh-alias> --live --voice-wav <speech.wav>
+uv run --locked python -m evaluations.owner_memory_device --device <ssh-alias> --live --gateway-checkout ../omni-avatar-api
 uv run --locked pytest -q tests/test_owner_memory_entries.py
 ```
+
+`--gateway-checkout` 只对私聊使用本地签票网关和远端普通应用连接，用于在部署前验证显式转认。录音要经过产品的开始、结束与确认操作；报告分别记录原生 final 数量、一次转认回包、所选条目的版本，以及独立设备读回的原话。

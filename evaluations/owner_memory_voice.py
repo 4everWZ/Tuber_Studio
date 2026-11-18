@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import secrets
 import wave
 import math
 from collections import Counter
@@ -33,6 +34,31 @@ def spoken_rule(directory, sentence):
     subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
                    env=tool_env() | {"QA_WAVE":str(speech), "QA_SENTENCE":sentence}, check=True, capture_output=True, timeout=20)
     return speech
+
+
+@asynccontextmanager
+async def checkout_binding(config, checkout):
+    if checkout is None:
+        yield config
+        return
+    checkout = checkout.resolve(strict=True)
+    python = checkout / (".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python")
+    key = secrets.token_urlsafe(32)
+    server = await asyncio.create_subprocess_exec(str(python), str(Path(__file__).with_name("owner_memory_gateway.py")),
+        cwd=checkout, env=tool_env() | {"PYTHONPATH":str(checkout)}, stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+    try:
+        server.stdin.write(json.dumps([*config, key]).encode() + b"\n")
+        await server.stdin.drain()
+        port = int(await asyncio.wait_for(server.stdout.readline(), 10))
+        yield f"http://127.0.0.1:{port}", key
+    finally:
+        server.stdin.close()
+        try:
+            await asyncio.wait_for(server.wait(), 5)
+        except TimeoutError:
+            server.kill()
+            await server.wait()
 
 
 @asynccontextmanager
@@ -69,7 +95,7 @@ async def voice_probe(playwright, executable, origin, login, audio, target, expe
             const out = ctx.createMediaStreamDestination(), src = ctx.createBufferSource();
             const bytes = Uint8Array.from(atob(window.qaSpeech), ch=>ch.charCodeAt(0));
             src.buffer = await ctx.decodeAudioData(bytes.buffer);
-            src.connect(out); await ctx.resume(); src.start(ctx.currentTime + 0.5);
+            src.connect(out); await ctx.resume(); window.qaStartSpeech = () => src.start(ctx.currentTime + 0.2);
             window.qaCapture = {ctx, out, src}; return out.stream;
           };""")
         page = await context.new_page()
@@ -81,13 +107,18 @@ async def voice_probe(playwright, executable, origin, login, audio, target, expe
             if json.loads(raw).get("type") == "input_audio_buffer.append":
                 sent_seconds += 1
         commits, user_parts, finals = set(), set(), {}
+        started, selected = set(), {}
         def frame(raw):
             event = json.loads(raw)
             kind = event.get("type", "")
             counts[kind] += 1
             if kind == "session.created":
                 caps = event.get("session",{}).get("capabilities",{})
-                capabilities.update({k:caps.get(k) for k in ("implementation_level","chunk_period_ms","supports_input_append")})
+                capabilities.update({k:caps.get(k) for k in ("implementation_level","chunk_period_ms","supports_input_append","gateway_input_transcription")})
+            if kind == "gateway.input_transcription.started":
+                started.add(event["capture_id"])
+            if kind == "gateway.input_transcription.completed" and event.get("source") == "explicit_user_audio":
+                selected[event["capture_id"]] = event
             if kind == "input_audio_buffer.committed":
                 commits.add(event.get("item_id"))
             if kind in {"conversation.item.created", "conversation.item.added", "conversation.item.done"}:
@@ -112,35 +143,56 @@ async def voice_probe(playwright, executable, origin, login, audio, target, expe
         with wave.open(str(audio), "rb") as wav:
             end_second = math.ceil(wav.getnframes() / wav.getframerate() + 1)
         committed_manually = False
+        requested = False
         try:
+            await page.wait_for_function("typeof window.qaStartSpeech === 'function'", timeout=30000)
+            if capabilities.get("gateway_input_transcription"):
+                await page.get_by_role("button", name="转认下一句").click()
+                await page.get_by_role("button", name="结束并转认这句").wait_for()
+                requested = True
+            start_second = sent_seconds
+            await page.evaluate("window.qaStartSpeech()")
             # Submit only after an actual speech buffer has crossed the browser WS.
             for _ in range(150):
-                if counts["conversation.item.input_audio_transcription.completed"]:
+                if not requested and counts["conversation.item.input_audio_transcription.completed"]:
                     break
-                if sent_seconds >= end_second:
+                if sent_seconds >= start_second + end_second:
+                    if requested:
+                        await page.get_by_role("button", name="结束并转认这句").click()
                     await page.locator("#private-call-finish-utterance").click(timeout=3000)
                     committed_manually = True
                     break
                 await asyncio.sleep(.2)
-            await quote.wait_for(timeout=15000)
+            if requested:
+                quote = page.locator("#private-call-utterances > div").filter(has_text="所选录音的转写").locator("blockquote").first
+            await quote.wait_for(timeout=60000 if requested else 15000)
         except BrowserTimeout:
             return {"status":"unverified", "session_created":bool(counts["session.created"]),
                     "capabilities":capabilities, "commit_requested":committed_manually, "ui_status":await page.locator("#private-call-state").inner_text(),
-                    "service_events":dict(counts),
+                    "service_events":dict(counts), "explicit_requested":requested,
+                    "selection_status":await page.locator("#private-call-transcribe-state").inner_text(),
                     "sent_pcm_seconds":sent_seconds, "committed_user_audio_items":len(commits), "final_transcript_events":len(finals)}
         transcript = await quote.inner_text()
-        assert any(key in user_parts and key[0] in commits and text == transcript for key,text in finals.items())
+        if requested:
+            capture_id, = started
+            wire = selected[capture_id]
+            assert 0 < wire["samples"] <= 240000 and wire["transcript"] == transcript
+        else:
+            assert any(key in user_parts and key[0] in commits and text == transcript for key,text in finals.items())
         report = {"status":"observed", "source":"speech WAV through Chromium capture",
+                  "protocol":"explicit_user_audio" if requested else "native_user_final", "service_events":dict(counts),
+                  "explicit_samples":wire["samples"] if requested else None, "final_transcript_events":len(finals),
                   "bound_final_transcript":transcript, "committed_user_audio_items":len(commits)}
         normalize = lambda text: re.sub(r"[^\w]", "", text.casefold())
         if normalize(transcript) == normalize(expected):
-            await page.get_by_label("更正本次引用的偏好").select_option(str(target["id"]))
+            row = quote.locator("..")
+            await row.get_by_label("更正本次引用的偏好").select_option(str(target["id"]))
             async def confirm(dialog):
                 assert target["note"] in dialog.message and transcript in dialog.message
                 await dialog.accept()
             page.once("dialog", confirm)
             async with page.expect_response(lambda r: r.url.endswith("/api/agent/memory/confirm")) as response:
-                await page.get_by_role("button", name="确认用这句话更正").click()
+                await row.get_by_role("button", name="确认用这句话更正").click()
             result = await response.value
             assert result.ok
             report["correction"] = await result.json()

@@ -59,7 +59,7 @@ async def device_call(device, port, login, method, path, data=None):
     return json.loads(result.stdout)
 
 
-async def run(device, live, voice_wav):
+async def run(device, live, voice_wav, gateway_checkout=None):
     from evaluations.omni_chat_loop import connection
     from contextlib import AsyncExitStack
 
@@ -128,12 +128,14 @@ async def run(device, live, voice_wav):
                     (await client.post("/api/auth", json={"token":token})).raise_for_status()
                     record("stage", "independent_device_authenticated")
                     async def correct_voice(target):
-                        from evaluations.owner_memory_voice import VOICE_RULE, live_voice_binding, spoken_rule, voice_probe
+                        from evaluations.owner_memory_voice import VOICE_RULE, checkout_binding, live_voice_binding, spoken_rule, voice_probe
                         try:
                             speech = voice_wav or await asyncio.to_thread(spoken_rule, Path(directory), VOICE_RULE)
-                            async with live_voice_binding(config):
+                            async with checkout_binding(config, gateway_checkout) as voice_service, live_voice_binding(voice_service):
                                 result = await voice_probe(playwright, os.getenv("CHROMIUM_EXECUTABLE"), local,
                                                            token, speech, target, VOICE_RULE)
+                            result["gateway"] = "local service checkout, deployed ordinary Omni upstream" if gateway_checkout else "deployed service"
+                            result["speaker"] = "supplied WAV" if voice_wav else "synthetic Mandarin QA speech"
                         except (OSError, subprocess.SubprocessError, ValueError, httpx.HTTPError) as error:
                             result = {"status":"unverified", "reason":type(error).__name__}
                         record("final_user_transcript", result)
@@ -168,6 +170,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", required=True)
     parser.add_argument("--live", action="store_true")
+    parser.add_argument("--gateway-checkout", type=Path, help="use the independent gateway checkout for voice only")
     parser.add_argument("--voice-wav", type=Path, help="speech fixture authorized for private Realtime input")
     args = parser.parse_args()
-    print(json.dumps(asyncio.run(run(args.device, args.live, args.voice_wav)), ensure_ascii=False, indent=2))
+    print(json.dumps(asyncio.run(run(args.device, args.live, args.voice_wav, args.gateway_checkout)), ensure_ascii=False, indent=2))
