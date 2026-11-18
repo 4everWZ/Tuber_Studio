@@ -322,6 +322,39 @@ def bind_delivery_schema(items, item_schema, evidence):
         props["sources"]["minItems"] = 1
 
 
+NON_NARRATIVE = ("仅频道、作者或节目题名与标识", "播出及制作资料", "评论收视或表演", "没有事件的布景描述")
+WINDOW_REVIEW_VERSION = 4
+NO_SPOILERS = "仅无剧透素材"
+PROGRAMME_CONTEXT = "只谈片外的节目、制作、传播或可见形式"
+
+
+def accepted_window(review, clip, strict):
+    if (review.get("screening_version") != WINDOW_REVIEW_VERSION or review.get("clip") != clip
+            or review.get("usage") not in {NO_SPOILERS, "允许讲述剧情或无此限制"} or review.get("accepted") is not True):
+        return False
+    coverage = review.get("coverage") or {}
+    observations = review.get("observations") or []
+    samples = coverage.get("samples") or []
+    if (not coverage.get("complete") or coverage.get("uncovered") != [] or coverage.get("scanned_frames") != clip["frames"]
+            or coverage.get("start") != clip["start"] or coverage.get("end") != clip["end"]
+            or not observations or observations[0].get("frame") != 0 or observations[-1].get("frame") != clip["frames"] - 1
+            or [(o.get("frame"), o.get("seconds")) for o in observations] != [(s["frame"], s["seconds"]) for s in samples]
+            or any(o.get("scene") != "符合要求" or o.get("captions") not in {"无烧录字幕", "已读且符合"}
+                   or not isinstance(o.get("screen_text"), str)
+                   or o["captions"] == "已读且符合" and not o["screen_text"].strip() for o in observations)):
+        return False
+    topics = review.get("caption_topics")
+    if not isinstance(topics, list) or any(not isinstance(t, dict) or not t.get("text") for t in topics):
+        return False
+    if {o["screen_text"].strip() for o in observations if o["screen_text"].strip()} != {t["text"] for t in topics}:
+        return False
+    if strict or review.get("usage") == NO_SPOILERS:
+        return review.get("usage") == NO_SPOILERS and all(
+            t.get("topic") in NON_NARRATIVE and t.get("subject") == PROGRAMME_CONTEXT and
+            "story_fact" in t and t["story_fact"] is None for t in topics)
+    return True
+
+
 def _physical_clip(result, bounds, samples):
     clip = result.get("clip")
     if not isinstance(clip, dict) or not bounds or clip.get("audio") != "visual_only":
@@ -511,11 +544,13 @@ def render_private_delivery(product, evidence):
             read = evidence.video_coverage[primary.rsplit(":", 1)[0]]
             interval = read.get("explicit_interval")
             clip = read.get("clip")
+            reviewed = False
             if clip and point.cid == clip["cid"] and clip["start"] <= point.seconds < clip["end"]:
                 windows.append(f"- 第 {len(blocks) + 1} 项 · {point.bvid} P{point.part} · 连续取材入点 {clip['start']:g} 秒、"
                                f"出点 {clip['end']:g} 秒（不含），保存 {clip['frames']} 个连续原帧。私有短片不含音轨。")
                 review = product._window_reviews.get(primary.rsplit(":", 1)[0], {})
-                if review.get("accepted") and review["clip"] == clip:
+                reviewed = accepted_window(review, clip, strict=False)
+                if reviewed:
                     times = "、".join(f"{s['seconds']:g}" for s in review["observations"])
                     windows.append(f"- 第 {len(blocks) + 1} 项 · 逐帧检测画面及下方屏字变化；"
                                    f"Omni 审读代表帧 {times} 秒，检测到的状态均有代表帧。")
@@ -525,7 +560,7 @@ def render_private_delivery(product, evidence):
                 if samples:
                     windows.append(f"- 第 {len(blocks) + 1} 项 · {point.bvid} P{point.part} · "
                                    f"请求抽样范围 [{interval[0]:g}, {interval[1]:g}) 秒。"
-                                   f"{'初读取材观察' if product._window_reviews.get(primary.rsplit(':', 1)[0], {}).get('accepted') else '内容语义仅观察'}"
+                                   f"{'初读取材观察' if reviewed else '内容语义仅观察'}"
                                    f" {len(samples)} 帧，实际时点为 {'、'.join(map(str, samples))} 秒。")
             for gap in read["read_gaps"]:
                 windows.append(f"- 第 {len(blocks) + 1} 项的工具回执：{_text(gap)}")

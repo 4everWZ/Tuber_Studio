@@ -29,11 +29,16 @@ from .handoff import PublicText, handoff_text, supplied_private_fragments, video
 from .public_sources import fetch_task_source
 from .public_video import clip_path, read_public_part, save_clip
 from .task_delivery import (
+    NO_SPOILERS,
+    NON_NARRATIVE,
+    PROGRAMME_CONTEXT,
+    WINDOW_REVIEW_VERSION,
     AdditionalVideoRead,
     CreativeItem,
     DelegationError,
     EditorialCorrection,
     PrivateDelivery,
+    accepted_window,
     bind_delivery_schema,
     correct_editorial_fields,
     editorial_fields,
@@ -98,9 +103,9 @@ def check_work_attribution(text, extracted, source_names):
         raise DelegationError("作品名审查没有对应字段原文。")
     names = set(mentioned) | set(re.findall(r"《([^《》]+)》", text))
     mode = extracted.get("work_reference")
-    if mode not in {"无作品引用", "仅提节目资料", "断言镜头或人物归属某作品或集"}:
+    if mode not in {"无作品引用", "仅提节目资料", "另有未经署名核实的作品名", "断言镜头或人物归属某作品或集"}:
         raise DelegationError("缺少作品归属的审查回执。")
-    if names - source_names:
+    if names - source_names or mode == "另有未经署名核实的作品名" or mode == "仅提节目资料" and not names:
         return "该作品名没有本项引用的节目署名字段支持；请依据构图重新表述。"
     if mode == "断言镜头或人物归属某作品或集":
         return "来源字段可核节目名，无法鉴定镜头或人物归属；请仅写本帧可见事实。"
@@ -179,8 +184,7 @@ class WindowObservation(StrictModel):
     basis: str = Field(min_length=1, description="针对画面、可读屏字和本次用途，写出这一判断的依据。")
 
 
-_NON_NARRATIVE = ("仅频道、作者或节目题名与标识", "播出及制作资料", "评论收视或表演", "没有事件的布景描述")
-_CAPTION_TOPICS = (*_NON_NARRATIVE, "故事内的人物、动作、对话或反应", "故事事件的起因、经过、结局或分析", "含义不清或混合")
+_CAPTION_TOPICS = (*NON_NARRATIVE, "故事内的人物、动作、对话或反应", "故事事件的起因、经过、结局或分析", "含义不清或混合")
 
 
 class EditingUses(StrictModel):
@@ -351,12 +355,12 @@ async def clip_review_image(runtime_dir, task, evidence, primary):
     return {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(image).decode()}}
 
 
-async def screen_clip_window(media, goal, generate, budget):
+async def screen_clip_window(media, goal, generate, budget, inherit_no_spoilers=False):
     path, clip = media
     result = await review_clip_window(path, start=clip["start"], end=clip["end"], expected_frames=clip["frames"], max_images=12)
     coverage, images = result["coverage"], result["images"]
     samples = coverage["samples"]
-    receipt = {"clip": clip, "coverage": coverage, "observations": [], "accepted": False}
+    receipt = {"clip": clip, "coverage": coverage, "observations": [], "accepted": False, "screening_version": WINDOW_REVIEW_VERSION}
     if (not coverage["complete"] or coverage["uncovered"] or coverage["scanned_frames"] != clip["frames"]
             or coverage.get("start") != clip["start"] or coverage.get("end") != clip["end"]
             or not samples or len(samples) != len(images)
@@ -373,37 +377,42 @@ async def screen_clip_window(media, goal, generate, budget):
         if (observation.scene != "符合要求" or observation.captions not in {"无烧录字幕", "已读且符合"}
                 or observation.captions == "已读且符合" and not observation.screen_text.strip()):
             return receipt
+    return await classify_clip_captions(receipt, goal, generate, budget, inherit_no_spoilers)
+
+
+async def classify_clip_captions(receipt, goal, generate, budget, inherit_no_spoilers):
     # The OCR model can transcribe a plot event correctly and still call the clip suitable.
     # Classify each actual distinct line independently of that visual verdict.
     lines = dict(enumerate(dict.fromkeys(o["screen_text"].strip() for o in receipt["observations"] if o["screen_text"].strip()), 1))
-    allowed = ("仅无剧透素材", "允许讲述剧情或无此限制")
-    usage = await generate([{"role": "system", "content": "仅确定号主对这批素材的剧情披露要求。"},
+    allowed = (NO_SPOILERS, "允许讲述剧情或无此限制")
+    usage = {"usage": NO_SPOILERS} if inherit_no_spoilers else await generate([{"role": "system", "content": "仅确定号主对这批素材的剧情披露要求。"},
                             {"role": "user", "content": goal}],
                            {"type": "object", "properties": {"usage": {"type": "string", "enum": list(allowed)}},
                             "required": ["usage"], "additionalProperties": False}, max_tokens=budget)
     if usage.get("usage") not in allowed:
         raise DelegationError("未确定当前交办的剧情披露范围。")
+    subjects = (PROGRAMME_CONTEXT, "提及片中人物或所讲世界中发生的事", "混合或无法辨明")
     field = {"type": "object", "properties": {"topic": {"type": "string", "enum": list(_CAPTION_TOPICS)},
-             "story_fact": {"type": "string", "description": "摘录所讲故事或历史中发生的事、人物反应或台词。问句所预设的事件也摘录。仅谈节目制作或标识时填空。"}},
-             "required": ["story_fact", "topic"], "additionalProperties": False}
+             "subject": {"type": "string", "enum": list(subjects)}}, "required": ["topic", "subject"], "additionalProperties": False}
     schema = {"type": "object", "properties": {str(k): field for k in lines},
               "required": list(map(str, lines)), "additionalProperties": False}
-    topics = await generate([{"role": "system", "content": "为屏幕上的原句做内容标注。先摘出故事世界或历史事件中的事实，"
-        "再判定整句谈论的主体。仅片名、署名或频道名本身归标识。对故事的导入、分析或提问按所讲事件归类。"},
+    topics = await generate([{"role": "system", "content": "标注字幕的叙述层次。片外是节目本身的制作、播出、收视和观众评价，"
+        "这些可以有时间和动作，但不是片中世界的事实。片内是作品讲述的人物和事件；提问、假设或评论中提到的片内事件也标出。"
+        "例：‘观众称它是年度佳作’是节目评价，谈片外；‘今年重映’是播出资料，谈片外。"
+        "‘桥断后村民去了哪儿’提及故事中‘桥断’，应标事件；‘他推开门’标人物动作。"},
         {"role": "user", "content": dump({"待标注原句": lines})}], schema, max_tokens=budget) if lines else {}
     if set(topics) != set(map(str, lines)):
         raise DelegationError("字幕分类未逐条绑定实际审读原文。")
     receipt["caption_topics"] = []
     for k, line in lines.items():
         entry = topics[str(k)]
-        if (not isinstance(entry, dict) or entry.get("topic") not in _CAPTION_TOPICS or
-                not isinstance(fact := entry.get("story_fact"), str) or fact not in line):
+        if not isinstance(entry, dict) or entry.get("topic") not in _CAPTION_TOPICS or entry.get("subject") not in subjects:
             receipt["classification_gap"] = "字幕审查未能引用该行实际原文。"
             return receipt
-        receipt["caption_topics"].append({"text": line, "topic": entry["topic"], "story_fact": fact})
+        receipt["caption_topics"].append({"text": line, **entry, "story_fact": None if entry["subject"] == subjects[0] else line})
     receipt["usage"] = usage["usage"]
     receipt["accepted"] = receipt["usage"] != allowed[0] or all(
-        item["topic"] in _NON_NARRATIVE and not item["story_fact"].strip() for item in receipt["caption_topics"])
+        item["topic"] in NON_NARRATIVE and item["story_fact"] is None for item in receipt["caption_topics"])
     return receipt
 
 
@@ -810,7 +819,7 @@ def create_task_runtime(runtime, store, browsing):
         rejected = [{"range": [r["clip"]["start"], r["clip"]["end"]], "part": r["clip"]["part"], "bvid": r["clip"]["bvid"],
                      "uncovered": r["coverage"]["uncovered"], "caption_topics": [t["topic"] for t in r.get("caption_topics", [])],
                      "last_observation": next((o["basis"] for o in reversed(r["observations"]) if o.get("basis")), "")}
-                    for r in reviews.values() if not r["accepted"]]
+                    for r in reviews.values() if r.get("screening_version") == WINDOW_REVIEW_VERSION and not r["accepted"]]
         probe = WindowProbe.model_validate(await request_json([
             {"role": "system", "content": "按当前目标选一个已有授权的分P和一个新的短窗入点。已保存的短片不能重复使用。"
              "为开场或不涉及剧情的取材，可优先调查节目片头、导语等位置；是否可用仍须读回。"},
@@ -840,6 +849,7 @@ def create_task_runtime(runtime, store, browsing):
         uses = {}
         window_reviews = dict(task["plan"].get("window_reviews", {}))
         screening_goal = "\n".join(dict.fromkeys([*prior, task["goal"]]))
+        inherited = None
         attempts = attempted_windows(task)
         # Historical receipts may lack part duration. Responses may explore once per new body of video evidence.
         ask_for_discovery = (not any((s.get("result") or {}).get("part_duration") for s in task.get("steps", ()))
@@ -851,26 +861,46 @@ def create_task_runtime(runtime, store, browsing):
             return new or await propose_window(task, evidence, seconds, window_reviews)
 
         async def window_usable(key, *, keep=False):
+            nonlocal inherited
             read = key.rsplit(":", 1)[0]
             clip = evidence.video_coverage[read].get("clip")
             if not clip:
                 return True
+            if inherited is None:
+                inherited = False
+                if prior:
+                    strict_before = any(s["id"] in evidence.video_coverage and
+                                        (s.get("accepted_clip_review") or {}).get("usage") == NO_SPOILERS for s in task.get("steps", ()))
+                    if not strict_before:
+                        prior_policy = await request_json([
+                            {"role": "system", "content": "只读原始委托与此前改口。此前是否要求素材避免透露剧情？"},
+                            {"role": "user", "content": dump(prior)}], {"type": "object",
+                            "properties": {"previous_no_spoilers": {"type": "boolean"}}, "required": ["previous_no_spoilers"],
+                            "additionalProperties": False}, max_tokens=budget)
+                        strict_before = prior_policy["previous_no_spoilers"] is True
+                    if strict_before:
+                        latest = task["goal"].rsplit("\n号主改口：", 1)[-1]
+                        change = await request_json([{"role": "system", "content": "原任务明确不剧透。只有号主在本轮明确撤销这条限制，"
+                            "才引用撤销的原话。调整镜头、开场、排序、长度或文风都沿用原受众限制。"},
+                            {"role": "user", "content": latest}], {"type": "object", "properties": {
+                                "audience_change": {"type": "string", "enum": ["继续沿用", "明确撤销"]},
+                                "explicit_release_quote": {"type": "string"}}, "required": ["audience_change", "explicit_release_quote"],
+                                "additionalProperties": False}, max_tokens=budget)
+                        quote = change.get("explicit_release_quote") or ""
+                        inherited = not (change.get("audience_change") == "明确撤销" and quote.strip() and quote in latest)
             if keep and key in retained:
                 previous = next((s.get("accepted_clip_review") for s in task.get("steps", ()) if s["id"] == read), None)
-                if (previous and previous["clip"] == clip and previous["usage"] == "仅无剧透素材" and previous["accepted"]
-                        and all("story_fact" in t for t in previous["caption_topics"])
-                        and previous["coverage"]["complete"] and not previous["coverage"]["uncovered"]):
+                if previous and accepted_window(previous, clip, inherited) and previous["usage"] == NO_SPOILERS:
                     window_reviews[read] = previous | {"goal": screening_goal}
                     return True
             cached = window_reviews.get(read)
-            if (not cached or cached["clip"] != clip or cached["goal"] != screening_goal
-                    or cached["accepted"] and ("caption_topics" not in cached or
-                                               any("story_fact" not in t for t in cached["caption_topics"]))):
+            if (not cached or cached.get("screening_version") != WINDOW_REVIEW_VERSION or cached["clip"] != clip or cached["goal"] != screening_goal
+                    or cached["accepted"] and not accepted_window(cached, clip, inherited)):
                 media = saved_review_media(runtime.settings.runtime, task, evidence, key)
                 if media is None:
                     raise DelegationError("整段取材缺少本任务的原件。")
-                window_reviews[read] = await screen_clip_window(media, screening_goal, request_json, budget) | {"goal": screening_goal}
-            return window_reviews[read]["accepted"]
+                window_reviews[read] = await screen_clip_window(media, screening_goal, request_json, budget, inherited) | {"goal": screening_goal}
+            return accepted_window(window_reviews[read], clip, inherited)
 
         async def pixel_choices(key, slot):
             if slot not in uses:
@@ -880,7 +910,8 @@ def create_task_runtime(runtime, store, browsing):
                      "每项一句，只写剪辑师能控制的安排。构图与屏字另有实物回执。"},
                     {"role": "user", "content": dump({"号主交办": task["goal"].rsplit("\n号主改口：", 1)[-1],
                         "正在编排的素材位置": slot,
-                        "本次编辑问题": "已经取到片子了。分别想好开场、讲述中间和转场的剪法，便于一会儿结合画面选一种。"})}],
+                        "本项操作": "编排这项新换入的镜头" if replacements else "编排本项所选的镜头",
+                        "本次编辑问题": "只给这一镜安排时间线。分别想好开场、讲述中间和转场的剪法，便于结合画面选一种。"})}],
                     EditingUses.model_json_schema(), max_tokens=budget)
                 proposals = EditingUses.model_validate(proposal)
                 uses[slot] = [f"用在开场，{proposals.opening}", f"用在讲述中间，{proposals.main}", f"用作转场，{proposals.transition}"]
@@ -926,7 +957,9 @@ def create_task_runtime(runtime, store, browsing):
                     windows = await propose_window(task, evidence, seconds, window_reviews)
                     if windows or ask_for_discovery:
                         raise AdditionalVideoRead("请在号主授权范围内另读一个此前未读的短窗，依据新回执重新提交材料。", windows=windows)
-        excluded = task["plan"].get("excluded_video_frames", [])
+        excluded = [key for key in task["plan"].get("excluded_video_frames", ())
+                    if not (old := window_reviews.get(key.rsplit(":", 1)[0]))
+                    or old.get("screening_version") == WINDOW_REVIEW_VERSION]
         if excluded:
             pool = pool.unused_video_material([k for k in excluded if k in evidence.points], original=evidence)
         sources = pool.prompt_sources()
@@ -1181,7 +1214,7 @@ def create_task_runtime(runtime, store, browsing):
                             rationale = pixel_rationale(choices, caption_reply)
                             inventories[reply.primary_frame]["title_anchor"] = [caption_reply["anchor"]]
                             title = await request_json([
-                                {"role": "system", "content": f"你是{character['name']}。根据给你的构图锚点与一个已核对的细节，"
+                                {"role": "system", "content": "为号主编辑画面素材标题。根据给你的构图锚点与一个已核对的细节，"
                                  "拟一个简短的中文标题。按号主选定的写作偏好组织句式，标题中每一项事实都要有材料支持。"},
                                 {"role": "user", "content": dump({"构图锚点": caption_reply["anchor"], "可见细节": caption_reply["detail"],
                                     "写作偏好": task.get("owner_writing_preferences", [])})}],
@@ -1300,11 +1333,19 @@ def create_task_runtime(runtime, store, browsing):
                                "required": ["source", "claim", "observation"], "additionalProperties": False}
                                for path, keys in clip_basis.items()}
                     if image:
-                        for specification in binding.values():
+                        for path, specification in binding.items():
+                            item = product.items[int(path.split(".")[1])]
+                            credits = cited_programme_names(task.get("steps", ()), item.sources)
+                            exact_names = sorted({n for n in credits if n in editable[path]} | set(re.findall(r"《([^《》]+)》", editable[path])))
+                            name_list = {"type": "array", "items": {"type": "string"}, "uniqueItems": True}
+                            if exact_names:
+                                name_list["items"]["enum"] = exact_names
+                            else:
+                                name_list["maxItems"] = 0
                             specification["properties"].update(
-                                work_names={"type": "array", "items": {"type": "string"},
-                                            "description": "逐字提取字段提及的作品名，包括没有书名号者；没有则填空数组。"},
-                                work_reference={"type": "string", "enum": ["无作品引用", "仅提节目资料", "断言镜头或人物归属某作品或集"]})
+                                work_names=name_list, work_reference={"type": "string",
+                                    "description": "其它未加书名号、未有本项署名支持的作品名也须标出。", "enum": [
+                                        "无作品引用", "仅提节目资料", "另有未经署名核实的作品名", "断言镜头或人物归属某作品或集"]})
                             specification["required"].extend(["work_names", "work_reference"])
                     review_schema["properties"]["field_basis"] = {"type": "object", "properties": binding,
                         "required": list(binding), "additionalProperties": False}

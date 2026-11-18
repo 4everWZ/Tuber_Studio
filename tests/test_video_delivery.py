@@ -20,8 +20,10 @@ from tuber_studio.agent.task_delivery import (
     render_private_delivery,
 )
 from tuber_studio.agent.task_tools import (
+    accepted_window,
     check_work_attribution,
     cited_programme_names,
+    classify_clip_captions,
     clip_review_image,
     create_task_runtime,
     discovery_windows,
@@ -74,6 +76,43 @@ def test_discovery_uses_actual_nominations_in_disjoint_bounded_windows():
     assert discovery_windows(candidate, evidence, 15, 2) == []
 
 
+async def test_responses_nominates_scoped_video_samples_without_replaying_unrelated_html(runtime, store, monkeypatch):
+    read = reading(frame(11), frame(29))
+    read["result"]["part_duration"] = 300
+    origin = page("source")
+    origin["result"].update(title="公开节目资料", excerpt="网页导航和剧情简介。")
+
+    def worker(payload):
+        assert [t["name"] for t in payload["tools"]] == ["submit_materials"]
+        item_schema = payload["tools"][0]["parameters"]["properties"]["items"]["items"]
+        assert item_schema["properties"]["primary_frame"] == {"type": "string", "enum": ["v:1", "v:2"]}
+        packet = json.loads(payload["input"][1]["content"])
+        assert packet["samples"]["v:1"]["seconds"] == 11 and packet["samples"]["v:2"]["part"] == 2
+        assert packet["documents"]["source"]["title"] == "公开节目资料" and "剧情简介" not in str(packet)
+        if not packet["submission_errors"]:
+            empty = {"title": "待调查", "rationale": "只有查询线索", "sources": [], "primary_frame": None}
+            return [call("submit_materials", {"items": [empty], "gaps": []}, "missing")]
+        assert "items.0" in packet["submission_errors"][0]
+        return [call("submit_materials", selection("source", primary="v:1").model_dump(), "nomination")]
+
+    requests = gateway(runtime.settings, monkeypatch, worker)
+    tasks = create_task_runtime(runtime, store, None)
+
+    async def nominate(*args):
+        return True
+
+    tasks.can_nominate_video = nominate
+    identity = str(uuid4())
+    task = tasks.create(identity, f"为 {BV} P2 选两个镜头")
+    search = {"id": "search", "revision": 1, "tool": "web_search", "arguments": {"query": "节目资料"},
+              "result": {"results": [{"url": origin["result"]["url"]}]}}
+    tasks._save(task, plan={"backend": "responses", "prior_goals": []}, steps=[read, search, origin])
+    await tasks._advance(tasks.current(identity))
+    assert tasks.current(identity)["steps"][-1]["invalid_call"] and not tasks.current(identity)["plan"].get("candidate")
+    await tasks._advance(tasks.current(identity))
+    assert len(requests) == 2 and tasks.current(identity)["plan"]["candidate"]["items"][0]["primary_frame"] == "v:1"
+
+
 async def test_playable_request_returns_to_collection_but_single_frame_can_finish(runtime, store, monkeypatch):
     read = reading(frame(11))
     read["result"]["part_duration"] = 300
@@ -109,6 +148,9 @@ def test_physical_clip_is_distinct_from_semantic_sampling(alter):
     assert ("保存 75 个连续原帧" in body) == (alter is None)
     if not alter:
         assert "出点 14 秒（不含）" in body and "私有短片不含音轨" in body
+        legacy = selection(primary="window:1")
+        legacy._window_reviews["window"] = {"accepted": True, "clip": evidence.video_coverage["window"]["clip"]}
+        assert render_private_delivery(legacy, evidence)[1] == body
         assert render_private_delivery(selection("window:2", primary="window:1"), evidence)[0]
         with pytest.raises(DelegationError):
             render_private_delivery(selection("window:3", primary="window:1"), evidence)
@@ -205,7 +247,11 @@ def reviewed_window(monkeypatch):
 
     async def reviewed(media, *_):
         clip = media[1]
-        return {"clip": clip, "observations": [{"seconds": clip["start"]}], "caption_topics": [], "accepted": True}
+        samples = [{"frame": 0, "seconds": clip["start"]}, {"frame": clip["frames"] - 1, "seconds": clip["end"] - 0.04}]
+        return {"clip": clip, "coverage": {"complete": True, "uncovered": [], "scanned_frames": clip["frames"], "samples": samples,
+                                          "start": clip["start"], "end": clip["end"]},
+                "observations": [s | {"scene": "符合要求", "captions": "无烧录字幕", "screen_text": ""} for s in samples],
+                "caption_topics": [], "usage": "仅无剧透素材", "accepted": True, "screening_version": 4}
 
     monkeypatch.setattr("tuber_studio.agent.task_tools.saved_review_media", media)
     monkeypatch.setattr("tuber_studio.agent.task_tools.screen_clip_window", reviewed)
@@ -226,7 +272,8 @@ async def test_window_gate_reviews_changed_tail_pixels(tmp_path, tail):
             return {"usage": "仅无剧透素材"}
         if "1" in schema["properties"]:
             assert json.loads(content) == {"待标注原句": {"1": "测试字幕"}}
-            return {"1": {"topic": "播出及制作资料", "story_fact": "测试" if tail == "已被视觉误判符合的叙事" else ""}}
+            subject = "提及片中人物或所讲世界中发生的事" if tail == "已被视觉误判符合的叙事" else "只谈片外的节目、制作、传播或可见形式"
+            return {"1": {"topic": "播出及制作资料", "subject": subject}}
         coordinate = json.loads(content[0]["text"])
         seen.append(coordinate["seconds"])
         jpeg = base64.b64decode(content[1]["image_url"]["url"].split(",")[1])
@@ -241,6 +288,23 @@ async def test_window_gate_reviews_changed_tail_pixels(tmp_path, tail):
     assert result["accepted"] == (tail == "已读且符合")
     if result["accepted"]:
         assert seen[-1] == pytest.approx(9.96)
+        assert accepted_window(result, result["clip"], True)
+        assert not accepted_window(result | {"screening_version": 1}, result["clip"], True)
+    if tail == "已被视觉误判符合的叙事":
+        contradictory = result | {"accepted": True, "usage": "允许讲述剧情或无此限制"}
+        assert not accepted_window(contradictory, result["clip"], True)
+        assert not accepted_window(result | {"accepted": True}, result["clip"], False)
+
+
+async def test_opening_revision_inherits_spoiler_restriction_even_when_new_message_omits_it():
+    receipt = {"observations": [{"screen_text": "城门倒了"}]}
+
+    async def audit(messages, schema, **kwargs):
+        assert set(schema["properties"]) == {"1"}
+        return {"1": {"topic": "故事事件的起因、经过、结局或分析", "subject": "提及片中人物或所讲世界中发生的事"}}
+
+    result = await classify_clip_captions(receipt, "保留第一段，第二段换成适合开场的", audit, 512, True)
+    assert result["usage"] == "仅无剧透素材" and not result["accepted"]
 
 
 async def test_uncovered_subtitle_change_cannot_use_single_frame_approval(monkeypatch):
@@ -321,15 +385,30 @@ async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, mon
 
     monkeypatch.setattr("tuber_studio.agent.task_tools.clip_review_image", synthetic_image)
     first, second = short_read("a", 11), short_read("b", 35)
+    first["accepted_clip_review"] = {"clip": first["result"]["clip"], "usage": "允许讲述剧情或无此限制", "accepted": True}
     old = PrivateDelivery(items=[selection(primary=key).items[0] for key in ["a:1", "b:1"]],
                           gaps=["另一窗口尚未采用。"])
     candidate = old.model_dump()
     goal = "保留第一段原文，另读开场三秒。"
     task = {"revision": 2, "steps": [first, second], "goal": goal, "plan": {
-        "candidate": candidate, "prior_goals": ["选两段"], "previous_selection": candidate}}
+        "candidate": candidate, "prior_goals": ["选两段不剧透的"], "previous_selection": candidate}}
     tasks = create_task_runtime(runtime, store, None)
+    from tuber_studio.agent import task_tools
+
+    screen = task_tools.screen_clip_window
+    screened = {}
+
+    async def capture(media, goal, generate, budget, inherited):
+        screened[media[1]["start"]] = inherited
+        return await screen(media, goal, generate, budget, inherited)
+
+    monkeypatch.setattr(task_tools, "screen_clip_window", capture)
 
     async def editor(messages, schema, **kwargs):
+        if "previous_no_spoilers" in schema["properties"]:
+            return {"previous_no_spoilers": True}
+        if "audience_change" in schema["properties"]:
+            return {"audience_change": "继续沿用", "explicit_release_quote": ""}
         packet = json.loads(messages[-1]["content"])
         if "上一版" in packet:
             return {"ordered_actions": ["保留整项原文", "另读新窗口再替换"]}
@@ -356,6 +435,7 @@ async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, mon
     evidence = evidence_index(task["steps"])
     selected = await tasks.edit_delivery(task, evidence)
     assert selected.items[0] == old.items[0] and selected.items[1].primary_frame == "new:1"
+    assert screened == {11: True, 0: True}
     assert selected.gaps == [] and "另一窗口" not in render_private_delivery(selected, evidence)[1]
 
 
