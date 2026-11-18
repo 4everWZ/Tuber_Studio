@@ -5,6 +5,7 @@ from typing import Annotated
 from pydantic import Field, StringConstraints
 
 from ..models import StrictModel
+from ..cooperation import applicable_chat_memory
 from ..operation_continuations import content_hash
 from .owner_memory_use import MemoryUse as MemoryUse, check_use as check_use, read_stamp as read_stamp
 
@@ -30,12 +31,12 @@ def history_preference(runtime, enabled=None):
     return value
 
 
-def private_rows(runtime, query):
+def private_rows(runtime, query, *, inspection=False):
     memory = runtime.daily_memory
     scope = runtime.memory_organizer.scope()
     if not memory.preference(scope)["enabled"] or not query.strip():
         return []
-    matched = memory.recall_organized(scope, "operator", query, specific_experiences=True)
+    matched = memory.recall_organized(scope, "operator", query, specific_experiences=True, manual_inspection=inspection)
     indexed = {}
     for hit in memory.lookup_source(scope, "operator", query):
         rows = memory.organized(scope, item_id=hit["id"])
@@ -43,7 +44,7 @@ def private_rows(runtime, query):
             indexed[row["id"]] = row | {"exact_source": hit}
     for item in matched:
         indexed.setdefault(item["id"], item)
-    return list(indexed.values())[:8]
+    return [row for row in indexed.values() if inspection or applicable_chat_memory(row)][:8]
 
 
 def citation(row):

@@ -48,7 +48,7 @@ def register_owner_memory(app, runtime, chat, require_admin):
 
     @app.post("/api/agent/memory.search", dependencies=deps)
     async def search(data: Search):
-        return {"items": [citation(row) for row in private_rows(runtime, data.query)]}
+        return {"items": [citation(row) for row in private_rows(runtime, data.query, inspection=True)]}
 
     @app.post("/api/agent/memory.get", dependencies=deps)
     async def get(data: SourceLookup):
@@ -132,7 +132,7 @@ def register_owner_memory(app, runtime, chat, require_admin):
                 key = "confirmed_voice:" + content_hash([origin.ticket_hash, origin.capture_id])
             at = time.time()
         source = {"kind": "private", "key": key, "text": data.text, "at": at,
-                  "private_owner": memory.private_owner}
+                  "private_owner": memory.private_owner, "owner_confirmed": True}
         stamp = content_hash([runtime.tasks.scope(), pref, key, data.text,
                               data.correction.model_dump() if target else None])
         return scope, source, stamp, target
@@ -169,6 +169,16 @@ def register_owner_memory(app, runtime, chat, require_admin):
                 existing = memory.lookup_source(scope, "operator", source["key"])
             if not existing or existing[0]["quote"] != data.text:
                 raise HTTPException(409, "来源已变化，请重新读取")
+            if data.source == "turn":
+                # An old automatic entry can share this key. Confirm only its current source,
+                # never promote an earlier alias or a record from another owner.
+                runtime.store.db.execute(
+                    "UPDATE daily_highlights SET source_evidence=json_set(source_evidence,'$.owner_confirmed',1),"
+                    "updated_at=? WHERE id=? AND owner_principal=? AND quote=? AND status='active' "
+                    "AND json_extract(source_evidence,'$.memory_source.key')=? "
+                    "AND json_extract(source_evidence,'$.owner_confirmed') IS NULL",
+                    (time.time(), existing[0]["id"], memory.private_owner, data.text, source["key"]),
+                )
             if data.voice_origin:
                 voice_origin.save(runtime.store.db, existing[0]["id"], source["key"], data.voice_origin)
             return {"id": existing[0]["id"]}

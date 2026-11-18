@@ -61,7 +61,8 @@ async def device_call(device, port, login, method, path, data=None):
     return json.loads(result.stdout)
 
 
-async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, reviewed_receipt=None, timeout_seconds=1440):
+async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, reviewed_receipt=None,
+              timeout_seconds=1440, check_cooperation=False):
     from evaluations.omni_chat_loop import connection
     from contextlib import AsyncExitStack
 
@@ -70,6 +71,8 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
     deadline = asyncio.get_running_loop().time() + timeout_seconds
     token = secrets.token_urlsafe(32)
     config = connection(os.environ) if live else None
+    if check_cooperation and not config:
+        raise ValueError("Chat admission replay requires an ordinary application binding")
     if voice_only and not config:
         raise ValueError("Independent voice replay requires an ordinary application binding")
     first_note = AUTO if voice_only else CONFIRMED
@@ -123,6 +126,12 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                         await asyncio.sleep(.05)
                 async with AsyncExitStack() as stack:
                     await stack.enter_async_context(asyncio.timeout_at(deadline))
+                    from tuber_studio.agent.memory_organizer import admission_receipt
+                    admission = {}
+                    def save_judgment(source_key, judgment):
+                        admission.setdefault(source_key, []).append(judgment)
+                        record("chat_admission_judgments", admission)
+                    stack.callback(admission_receipt.reset, admission_receipt.set(save_judgment))
                     playwright = await stack.enter_async_context(async_playwright())
                     browser = await playwright.chromium.launch(executable_path=os.getenv("CHROMIUM_EXECUTABLE"))
                     stack.push_async_callback(browser.close)
@@ -130,6 +139,12 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                     stack.push_async_callback(context.close)
                     await context.route("**/*", lambda route: route.continue_() if route.request.url.startswith(local+"/") else route.abort())
                     assert (await context.request.post(local+"/api/auth", data={"token":token})).ok
+                    if check_cooperation:
+                        from evaluations.owner_memory_cooperation import verify_chat_admission
+                        record("stage", "checking_ordinary_chat_preferences")
+                        async with httpx.AsyncClient(base_url=local, trust_env=False, timeout=180) as qa:
+                            (await qa.post("/api/auth", json={"token": token})).raise_for_status()
+                            await verify_chat_admission(qa, runtime, device, port, token, deadline, record)
                     page = await context.new_page()
                     await page.goto(local + "/#personalization")
                     await page.locator("#owner-memory-statement").fill(first_note)
@@ -233,6 +248,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", required=True)
     parser.add_argument("--live", action="store_true")
+    parser.add_argument("--check-cooperation", action="store_true", help="check new-chat automatic preference admission before the edition replay")
     parser.add_argument("--voice-only", action="store_true", help="confirm the authorized speech independently of video research")
     parser.add_argument("--gateway-checkout", type=Path, help="use the independent gateway checkout for voice only")
     parser.add_argument("--voice-wav", type=Path, help="speech fixture authorized for private Realtime input")
@@ -241,7 +257,7 @@ if __name__ == "__main__":
     parser.add_argument("--timeout-seconds", type=int, default=1440, help="total replay deadline, including admission waits")
     args = parser.parse_args()
     result = asyncio.run(run(args.device, args.live, args.voice_wav, args.gateway_checkout, args.voice_only,
-                             args.reviewed_receipt, args.timeout_seconds))
+                             args.reviewed_receipt, args.timeout_seconds, args.check_cooperation))
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result.get("acceptance_passed") is False:
         raise SystemExit(1)

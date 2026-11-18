@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from .store import dump as dump_memory
 from . import memory_sources
+from .cooperation import applicable_chat_memory, bound_statement
 
 ANECDOTE_CATEGORIES = ("comment_anecdote", "live_highlight", "community_meme")
 HIGHLIGHT_CATEGORIES = (*ANECDOTE_CATEGORIES, "public_incident")
@@ -48,6 +49,8 @@ def _organized_note(source, decision):
     quote = source["text"].strip()
     if source.get("scene") == "live":
         return decision.note.strip()
+    if "cooperation_rule" in source:
+        return bound_statement(source["text"], source["cooperation_rule"]) or ""
     if len(quote) <= 150:
         return quote
     if source["kind"] == "experience":
@@ -236,7 +239,8 @@ class DailyMemoryService:
         private_unclassified = (
             "COALESCE(json_extract(source_evidence,'$.memory_kind'),'')='private' "
             "AND json_extract(source_evidence,'$.scene') IS NULL "
-            "AND json_extract(source_evidence,'$.summary_kind') IS NULL"
+            "AND json_extract(source_evidence,'$.summary_kind') IS NULL "
+            "AND json_extract(source_evidence,'$.inspection_only') IS NULL"
         )
         query = ""
         owner = self.private_owner if not recall or recall[0] == "operator" else None
@@ -329,7 +333,7 @@ class DailyMemoryService:
             organized = self.organized(scope)
         groups = {"preference": [], "decision": [], "experience": []}
         for row in organized:
-            if row["status"] != "active":
+            if row["status"] != "active" or row["proof"].get("inspection_only"):
                 continue
             if (row := self.owner_projection(row)) is None:
                 continue
@@ -363,11 +367,11 @@ class DailyMemoryService:
             return "live_rule"
         return "shared" if row["channels"] else "owner"
 
-    def resolve_legacy_private(self, scope, row, decision):
+    def resolve_legacy_private(self, scope, row, decision, *, reviewed_chat=False, rule=None):
         current = self.organized(scope, item_id=row["id"], unclassified=True)
         if not current or current[0]["updated_at"] != row["updated_at"]:
             return
-        note = _organized_note({"text": row["quote"], "kind": "private"}, decision) if decision else ""
+        note = bound_statement(row["quote"], rule) if rule else ""
         if not decision or decision.action == "skip" or not note or not decision.headline.strip():
             # Preserve the original chat and prevent this source from being saved again.
             proof = row["proof"]
@@ -378,9 +382,16 @@ class DailyMemoryService:
                     "WHERE memory_organization.status!='deleted'",
                     (*scope, key, "", time.time()),
                 )
-            self.store.db.execute("DELETE FROM daily_highlights WHERE id=?", (row["id"],))
+            if reviewed_chat:
+                self.store.db.execute(
+                    "UPDATE daily_highlights SET source_evidence=json_set(source_evidence,'$.inspection_only',1),"
+                    "updated_at=? WHERE id=?", (time.time(), row["id"]),
+                )
+            else:
+                self.store.db.execute("DELETE FROM daily_highlights WHERE id=?", (row["id"],))
             return
-        proof = row["proof"] | {"summary_kind": decision.summary_kind, "owner_provenance": _OWNER_PROVENANCE_VERSION}
+        proof = row["proof"] | {"summary_kind": decision.summary_kind, "owner_provenance": _OWNER_PROVENANCE_VERSION,
+                                "cooperation_rule": rule}
         self.store.db.execute(
             "UPDATE daily_highlights SET headline=?,anecdote=?,tags=?,source_evidence=?,updated_at=? WHERE id=?",
             (decision.headline.strip(), note, dump_memory(decision.tags), dump_memory(proof),
@@ -529,6 +540,10 @@ class DailyMemoryService:
                 if existing:
                     proof["operation_account_id"] = existing["proof"]["operation_account_id"]
             proof["summary_kind"] = decision.summary_kind
+            if source.get("owner_confirmed"):
+                proof["owner_confirmed"] = True
+            if "cooperation_rule" in source:
+                proof["cooperation_rule"] = source["cooperation_rule"]
             previous = existing["proof"].get("preference_sources", [source_ref]) if existing else []
             proof["preference_sources"] = list(dict.fromkeys([*previous, key]))
         if target:
@@ -705,6 +720,8 @@ class DailyMemoryService:
             if row["status"] != "active" or channel != "operator" and channel not in row["channels"]:
                 continue
             if channel == "operator" and (row := self.owner_projection(row)) is None:
+                continue
+            if channel == "operator" and not manual_inspection and not applicable_chat_memory(row):
                 continue
             anchor = row["source"].get("thread") or {}
             same_thread = bool(thread and resource == anchor.get("resource") and str(thread) == anchor.get("root_id"))

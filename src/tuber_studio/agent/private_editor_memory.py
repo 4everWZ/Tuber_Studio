@@ -3,6 +3,7 @@
 from pydantic import Field
 
 from ..daily_memory import MemoryChanged
+from ..cooperation import collaboration_text
 from ..generation_meter import budgeted_call
 from ..models import StrictModel
 from ..store import dump
@@ -33,26 +34,38 @@ def connect_private_editor(runtime):
         scope = runtime.memory_organizer.scope()
         memory = runtime.daily_memory
         if not memory.private_owner or not memory.preference(scope)["enabled"]:
+            if snapshot := plan.get("editor_memory"):
+                check_use(runtime, MemoryUse.model_validate(snapshot["memory_use"]))
             return await editor(task, evidence)
+
+        def qualified_snapshot(snapshot):
+            use = MemoryUse.model_validate(snapshot["memory_use"])
+            check_use(runtime, use)
+            rows = [memory.organized(scope, item_id=i)[0] for i in use.ids]
+            if not all(correctable_preference(row, memory.private_owner) and collaboration_text(row) for row in rows):
+                return {}
+            return {row["id"]: row for row in rows}
+
+        if plan.get("editor_memory") and not qualified_snapshot(plan["editor_memory"]):
+            for key in ("editor_memory", "editor_draft", "editor_issues", "retained_candidates"):
+                plan.pop(key, None)
         private_plan = plan.copy()
         inherited = {}
-        previous = plan.get("private_previous_edition")
+        previous = private_plan.pop("private_previous_edition", None)
         if previous:
-            previous_use = MemoryUse.model_validate(previous["memory_use"])
             try:
-                check_use(runtime, previous_use)
+                inherited = qualified_snapshot(previous)
             except MemoryChanged:
                 pass
-            else:
+            if inherited:
                 private_plan.update(previous["fields"])
-                inherited = {identity: memory.organized(scope, item_id=identity)[0] for identity in previous_use.ids}
         request = task | {"plan": private_plan}
         # Scope and provenance limit access before a private model selects by editorial purpose.
         matches = private_rows(runtime, task["goal"])
         recent = memory.organized(scope, limit=48)
         candidates = dict(inherited)
         for row in [*matches, *recent]:
-            if correctable_preference(row, memory.private_owner):
+            if correctable_preference(row, memory.private_owner) and collaboration_text(row):
                 if len(candidates) < 8:
                     candidates.setdefault(row["id"], row)
             if len(candidates) == 8:
@@ -81,10 +94,10 @@ def connect_private_editor(runtime):
         format_rules, discarded = [], []
         for row in candidates:
             edited = row["proof"].get("owner_edit_at", 0) > row["source"]["at"]
-            owner_text = row["anecdote"] if edited else row["quote"]
+            owner_text = collaboration_text(row)
             messages = [{"role":"system","content":instruction},
-                        {"role":"user","content":dump({"goal":task["goal"], "writing_preference":row["anecdote"],
-                                                       "owner_quote":owner_text})}]
+                        {"role":"user","content":dump({"goal":task["goal"], "writing_preference":owner_text,
+                              "owner_quote":owner_text})}]
             selection = WritingSelection.model_validate(await generate(messages, schema, selection_use))
             if selection.applies:
                 notes[row["id"]] = owner_text

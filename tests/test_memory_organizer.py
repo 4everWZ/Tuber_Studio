@@ -232,11 +232,19 @@ async def test_switch_blocks_inflight_recall_and_discards_inflight_organization(
 class OrganizerModel:
     async def generate_json(self, messages, schema, *, max_tokens):
         items = {}
-        for item in json.loads(messages[1]["content"]):
+        packet = json.loads(messages[1]["content"])
+        if schema["title"] == "RoutineReviews":
+            return {key: {"meaning": "号主本人的持续协作约定", "scope_supported": True,
+                          "practice_supported": True, "same_agreement": True} for key in packet}
+        for item in packet:
             existing = item["existing"]
             items[item["key"]] = {"action": "update" if existing else "add",
                           "existing_id": existing[0]["id"] if existing else None, "headline": "运营汇报顺序",
                           "note": item["original"], "tags": ["运营汇报"]}
+            if item["kind"] == "private":
+                text = item["original"]
+                items[item["key"]]["routine"] = {"statement": text, "scope_quote": "以后",
+                                                 "practice_quote": text.split("以后", 1)[1]}
         return items
 
 
@@ -251,6 +259,8 @@ async def test_organization_cannot_create_memory_from_assistant_output(settings)
 
     class UnreliableOrganizer(OrganizerModel):
         async def generate_json(self, messages, schema, *, max_tokens):
+            if schema["title"] == "RoutineReviews":
+                return await super().generate_json(messages, schema, max_tokens=max_tokens)
             inputs = json.loads(messages[-1]["content"])
             assert [item["original"] for item in inputs] == [owner_statement]
             decisions = await super().generate_json(messages, schema, max_tokens=max_tokens)
@@ -301,6 +311,8 @@ async def test_shared_memory_keeps_owner_correction_after_two_client_restart(set
             return getattr(self.provider, name)
 
         async def generate_json(self, messages, schema, *, max_tokens):
+            if schema["title"] == "RoutineReviews":
+                return await super().generate_json(messages, schema, max_tokens=max_tokens)
             packet = json.loads(messages[-1]["content"])
             organized_sources.extend(item["original"] for item in packet)
             assert false_reply not in messages[-1]["content"]
