@@ -120,7 +120,7 @@ class TaskRuntime:
         self.responses_client = lambda: None
         self.requires_responses = lambda: False
         self.edit_delivery = None
-        self.parallel_reads = 2
+        self.read_parallelism = lambda: 2
         self.tools: dict[str, Tool] = {}
         self.wake = asyncio.Event()
         self.controls = asyncio.Lock()

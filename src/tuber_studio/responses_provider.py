@@ -14,6 +14,7 @@ class ResponsesConfig(StrictModel):
     model: str = Field(min_length=1)
     max_output_tokens: int = Field(default=2048, gt=0, strict=True)
     timeout_seconds: float = Field(default=120, gt=0, allow_inf_nan=False)
+    parallel_reads: int = Field(default=2, ge=1, strict=True)
 
     @field_validator("base_url")
     @classmethod

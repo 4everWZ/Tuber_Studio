@@ -90,7 +90,7 @@ def model_input(task, context):
 
 async def run_pending(runtime, task, pending, context):
     goal = "\n".join([*task["plan"]["prior_goals"], task["goal"]])
-    slots = asyncio.Semaphore(runtime.parallel_reads)
+    slots = asyncio.Semaphore(runtime.read_parallelism())
 
     async def run(step):
         async with slots:

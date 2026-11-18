@@ -74,6 +74,9 @@ export function readProviderPayload(settings) {
     if (!backgroundBase || !backgroundModel) throw new Error("请完整填写后台服务地址和模型别名。");
     if (backgroundKey && clearBackground) throw new Error("后台凭据不能同时填写和清除。");
     payload.responses = { base_url: backgroundBase, model: backgroundModel };
+    if ($("background-parallel")) {
+      payload.responses.parallel_reads = boundedInteger("background-parallel", "并行取材数", 1, Number.MAX_SAFE_INTEGER);
+    }
     if (backgroundKey) payload.credentials.responses = backgroundKey;
     if (clearBackground) payload.clear_credentials.push("responses");
   }
@@ -254,6 +257,7 @@ function providerFormFromSettings(settings, status) {
   if ($("background-base")) {
     $("background-base").value = settings?.responses?.base_url || "";
     $("background-model").value = settings?.responses?.model || "";
+    if ($("background-parallel")) $("background-parallel").value = settings?.responses?.parallel_reads ?? 2;
     $("background-key").value = "";
     $("background-clear").checked = false;
   }

@@ -371,6 +371,7 @@ def create_task_runtime(runtime, store, browsing):
         return TaskDecision.model_validate(await request_json(messages, schema))
 
     tasks = TaskRuntime(store, scope, decide, make_plan)
+    tasks.read_parallelism = lambda: (runtime.settings.data.get("responses") or {}).get("parallel_reads", 2)
 
     async def respond(**options):
         async with ResponsesClient.from_settings(runtime.settings) as client:

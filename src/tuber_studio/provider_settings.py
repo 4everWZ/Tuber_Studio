@@ -12,7 +12,7 @@ from .providers import VoiceService, public_error
 from .video_vision import ApiVideoEvidenceProvider
 
 FIELDS = {
-    "responses": {"base_url", "model", "max_output_tokens", "timeout_seconds"},
+    "responses": {"base_url", "model", "max_output_tokens", "timeout_seconds", "parallel_reads"},
     "llm": {"kind", "base_url", "model", "context_tokens", "native_context_tokens", "operations_max_tokens",
             "enable_thinking", "live_thinking_tokens", "structured_output"},
     "tts": {"kind", "base_url", "model", "voice"},
