@@ -1,0 +1,118 @@
+import asyncio
+import base64
+import io
+import json
+from uuid import uuid4
+
+import httpx
+import pytest
+from PIL import Image
+
+from evaluations import creative_video_loop as replay
+from tuber_studio import http_api
+
+
+def test_decode_original_fixture_and_fail_closed_transport():
+    archive = replay.Archive()
+    duration, frames = replay.decode_clip(archive.clips["/media/p2.gif"])
+    assert duration == 12 and [seconds for seconds, _ in frames] == [0, 4, 9]
+    assert replay.decode_clip(archive.clips["/media/p1.gif"])[0] == 2
+    for method, url in [("POST", replay.SOURCE), ("GET", "https://other.invalid/media/p2.gif")]:
+        with pytest.raises(replay.ReplayMismatch):
+            archive.serve(httpx.Request(method, url))
+
+
+async def test_no_configuration_opens_no_clients(monkeypatch):
+    monkeypatch.setattr(http_api, "inference_transport", lambda *_: pytest.fail("unexpected client"))
+    assert (await replay.run({}))["status"] == "skipped"
+
+
+def function(name, args):
+    return {"type": "function_call", "call_id": str(uuid4()), "name": name, "arguments": json.dumps(args)}
+
+
+@pytest.mark.parametrize("interval", [{}, {"start": 0, "end": 300}])
+async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monkeypatch, interval):
+    seen = []
+    edits = []
+
+    def gateway(request):
+        assert request.url.host == "workstation.invalid" and request.method in {"GET", "POST"}
+        body = json.loads(request.content) if request.content else {}
+        path = request.url.path
+        if path == "/v1/models":
+            result = {"data": [{"id": "omni-default", "max_model_len": 32768}]}
+        elif path == "/v1/chat/prompt_tokens":
+            result = {"count": 128}
+        elif path == "/llm/v1/responses":
+            assert {tool["name"] for tool in body["tools"]} == {"inspect_video", "web_page", "submit_materials", "ask_owner"}
+            brief = json.loads(body["input"][1]["content"])
+            evidence = brief["saved_evidence"].copy()
+            for item in body["input"]:
+                if item.get("type") == "function_call_output":
+                    evidence.update(json.loads(item["output"])["evidence"])
+            if not evidence:
+                calls = [function("inspect_video", {"bvid": replay.BV, "part": 2, **interval}),
+                         function("web_page", {"web_fetch": replay.SOURCE})]
+            else:
+                page = next(key for key, value in evidence.items() if replay.SOURCE in value)
+                names = ["triangle"] if brief["prior_goals"] else ["triangle", "square"]
+                items = [{"title": shape, "rationale": "适合引入主题", "sources": [
+                    next(key for key, value in evidence.items() if shape in value), page]} for shape in names]
+                calls = [function("submit_materials", {"items": items, "gaps": ["只有一个合格镜头"] if len(items) == 1 else []})]
+            result = {"status": "completed", "id": str(uuid4()), "output": calls}
+        elif path == "/v1/chat/completions":
+            content = body["messages"][-1]["content"]
+            if isinstance(content, list):
+                encoded = next(item["image_url"]["url"] for item in content if item["type"] == "image_url")
+                with Image.open(io.BytesIO(base64.b64decode(encoded.split(",")[1]))) as frame:
+                    pixel = frame.convert("RGB").getpixel((160, 100))
+                color, shape = {(255, 255, 0): ("yellow", "triangle"), (0, 0, 255): ("blue", "square"),
+                                (255, 0, 0): ("red", "circle")}[pixel]
+                decision = {"color": color, "shape": shape}
+                seen.append(shape)
+            elif content == replay.REQUEST:
+                decision = {"action": "agent_task"}
+            else:
+                packet = json.loads(content)
+                if "candidate" in packet:
+                    decision = packet["candidate"]
+                    edits.append(len(decision["items"]))
+                else:
+                    assert packet["message"] == replay.CHANGE and edits == [2]
+                    decision = {"action": "steer_task", "reference": packet["recent_task_cards"][0]["id"]}
+            result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(decision)}}],
+                      "usage": {"prompt_tokens": 128}}
+        else:
+            pytest.fail(f"unexpected route: {path}")
+        return httpx.Response(200, json=result)
+
+    monkeypatch.setattr(http_api, "inference_transport", lambda base: httpx.MockTransport(gateway))
+    async with asyncio.timeout(15):
+        report = await replay.run({"OMNI_GATEWAY_URL": "https://workstation.invalid", "OMNI_STUDIO_TOKEN": uuid4().hex})
+    assert report["status"] == "passed" and report["platform_writes"] == 0
+    assert [edition["selected_seconds"] for edition in report["editions"]] == [[0, 4], [0]]
+    assert seen == ["triangle", "square", "circle"] and edits == [2, 1]
+
+
+@pytest.mark.parametrize("fault", ["duplicate", "spoiler", "missing_origin", "no_gap", "wrong_pts", "wrong_cid",
+                                   "invented_time", "invented_origin", "spoiler_in_prose"])
+def test_evidence_oracle_rejects_invalid_second_edition(fault):
+    seconds = 9 if fault == "spoiler" else 0
+    link = f"https://www.bilibili.com/video/{replay.BV}/?p=2&t={seconds}"
+    frame = {"seconds": seconds, "part": 2, "cid": "local-p2", "text": "yellow triangle",
+             "url": link, "kind": "实际解码画面"}
+    if fault == "wrong_pts":
+        frame["url"] = link + "7"
+    if fault == "wrong_cid":
+        frame["cid"] = "local-p1"
+    video = {"id": "v", "call_id": "read", "tool": "inspect_video", "result": {"status": "completed", "findings": [frame]}}
+    page = {"id": "w", "call_id": "page", "tool": "web_page", "result": {"url": replay.SOURCE, "excerpt": replay.NOTE}}
+    item = {"title": "triangle", "rationale": "开场", "sources": ["v:1"] if fault == "missing_origin" else ["v:1", "w"]}
+    item["rationale"] = {"invented_time": "看 00:17 的画面", "invented_origin": "原作见 https://other.invalid/",
+                         "spoiler_in_prose": "后来会出现红色圆形"}.get(fault, item["rationale"])
+    product = {"items": [item, item] if fault == "duplicate" else [item], "gaps": [] if fault == "no_gap" else ["不足两段"]}
+    task = {"status": "completed", "revision": 2, "steps": [video, page], "plan": {"candidate": product, "selected": product},
+            "message": "\n".join(replay.evidence_index([video, page]).values())}
+    with pytest.raises(replay.ReplayMismatch):
+        replay.validate_delivery(task, {"task_revision": 2, "body": task["message"]}, {seconds: {"color": "yellow", "shape": "triangle"}})
