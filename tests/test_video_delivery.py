@@ -388,6 +388,8 @@ async def test_real_image_inventory_and_caption_do_not_inherit_worker_plot(runti
         if "decision" in props:
             return {"decision": "采用", "primary_frame": "read:1", "rationale": "可以看构图"}
         content = messages[-1]["content"]
+        if "alternatives" in props:
+            return {"alternatives":{path:[] for path in json.loads(content)}}
         if "work_claims" in props:
             fields = json.loads(content)
             assert all(k.startswith("items.0.") for k in fields)

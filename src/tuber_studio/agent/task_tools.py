@@ -66,6 +66,7 @@ from .task_runtime import (
 from .task_video_scope import permits, video_binding
 from .title_form import grounded_options, meets_form, read_title, verified_title_fields
 from .visual_identity import check_people, check_screen_title, extract_people, person_credits
+from .visual_specificity import review_visual_specificity, shared_visual_facts
 
 
 class Search(StrictModel):
@@ -1098,6 +1099,7 @@ def create_task_runtime(runtime, store, browsing):
         inventories = dict(task["plan"].get("frame_reviews", {}))
         images = {}
         uses = {}
+        specificity_checked = {}
         retry_incomplete_previews(task["plan"])
         window_reviews = dict(task["plan"].get("window_reviews", {}))
         screening_goal = "\n".join(dict.fromkeys([*prior, task["goal"]]))
@@ -1177,7 +1179,8 @@ def create_task_runtime(runtime, store, browsing):
             image = images[key]
             if image and key not in inventories:
                 observed = await request_json([{"role": "system", "content": "请用简体中文。你只看这一张图，不知道节目或情节。"
-                    "为静帧建立可见内容清单。用位置、颜色、物件、服装形状命名构图，屏字保留原文。只写能用手指指出的事实，不给人物安上剧中身份，"
+                    "为静帧建立可见内容清单。用位置、颜色、形状和相互关系描述构图，屏字保留原文。"
+                    "若多种器物、材质或身份都符合外观，用那些解释下都成立的称呼。只写能用手指指出的事实，不给人物安上剧中身份，"
                     "不从静态姿势推定事件、谈话或意图。读不清的字略过。"},
                     {"role": "user", "content": [image, {"type": "text", "text": "用中文列出这张图的构图、可见细节和屏字。"}]}],
                     VisibleFrame.model_json_schema(), max_tokens=budget)
@@ -1195,6 +1198,10 @@ def create_task_runtime(runtime, store, browsing):
                 schema["properties"]["requested_form"] = {"type":"string","enum":["名词短语","陈述句","问句","不限"]}
                 schema["properties"]["form_quote"] = {"type":"string","description":"逐字摘录号主明确规定标题句式的指令；未规定填空。"}
                 schema["required"].extend(["requested_form","form_quote"])
+            if "画面具体称呼" in rejected_relations:
+                schema["properties"]["wording_instruction"] = {"type": "string", "description":
+                    "若号主要求改写观察原句的措辞、风格或句式，逐字引该项指令。仅要求选材或调整用途时填空。"}
+                schema["required"].append("wording_instruction")
             choice = await request_json([{"role":"system","content":"为这张主帧编辑素材标题。根据号主要求，判断给出的哪条"
                 "观察本身可以直接作为标题，或是否需要另拟句式。选逐字沿用将直接采用所选原句。"
                 "requested_form 只按当轮交办与已选的写作约定。没有约定时选不限；完整的可见构图原句可以直接作标题。"},
@@ -1203,7 +1210,16 @@ def create_task_runtime(runtime, store, browsing):
             anchor = selected_title({"use_fact":choice["fact"]}, facts)
             title = anchor
             defect = None
-            if choice["title_action"] == "另拟标题":
+            instructions = [task["goal"], *(str(p) for p in task.get("owner_writing_preferences", []))]
+            wording = choice.get("wording_instruction", "").strip()
+            allow_reword = "画面具体称呼" not in rejected_relations
+            if not allow_reword and choice["title_action"] == "另拟标题" and wording and any(wording in t for t in instructions):
+                forms = ["指定标题文字、文风或句式", "选择、更换、使用素材或其它要求"]
+                check = await request_json([{"role":"system","content":"仅判断这句原话的直接对象。要求某个镜头适合某用途属于选择素材。"},
+                    {"role":"user","content":wording}], {"type":"object","properties":{"target":{"type":"string","enum":forms}},
+                    "required":["target"],"additionalProperties":False},max_tokens=budget)
+                allow_reword = check["target"] == forms[0]
+            if choice["title_action"] == "另拟标题" and allow_reword:
                 title_packet = {"选定的事实锚点":anchor, "号主本次交办":task["goal"],
                                 "写作偏好":task.get("owner_writing_preferences", [])}
                 reply = await request_json([{"role":"system","content":"为已经核图选定的事实拟标题，按号主要求组织句式。"
@@ -1227,7 +1243,6 @@ def create_task_runtime(runtime, store, browsing):
                     {"type":"object","properties":{"fact":{"type":"string","enum":facts}},
                      "required":["fact"],"additionalProperties":False},max_tokens=budget)
                 title = anchor = selected_title({"use_fact":selected["fact"]}, facts)
-            instructions = [task["goal"], *(str(p) for p in task.get("owner_writing_preferences", []))]
             expected = await requested_title_form(choice, instructions, request_json, budget)
             if expected:
                 async def assess(messages, schema):
@@ -1433,6 +1448,7 @@ def create_task_runtime(runtime, store, browsing):
             repair_choices = {}
             title_facts = {}
             missing_anchors = {}
+            shared_details = {}
             for path in pending:
                 parts = path.split(".")
                 if parts[0] != "items":
@@ -1441,11 +1457,24 @@ def create_task_runtime(runtime, store, browsing):
                 if key and (image := await inspect_primary(key)):
                     repair.setdefault("observed_by_field", {})[path] = inventories[key]
                     repair_images.extend([{"type": "text", "text": path}, image])
+                    disputed_names = [c for r in receipts if r["primary_frame"] == key and r["field"] == path
+                                      for c in r["claims"] if c.get("relation") == "画面具体称呼"]
+                    if disputed_names and key not in shared_details:
+                        shared_details[key] = await shared_visual_facts(
+                            image, key, evidence.observations[key], inventories[key]["details"],
+                            list(dict.fromkeys(c["term"] for c in disputed_names)),
+                            request_json, budget)
+                        inventories[key] = inventories[key] | {"details": list(dict.fromkeys(
+                            [*inventories[key]["details"], *shared_details[key]]))}
                     if parts[2] == "title":
                         disputed = {c.get("target") or c.get("person") for r in receipts if r["primary_frame"] == key
                                     for c in r["claims"] if c.get("issue")}
                         facts = [v for v in dict.fromkeys([*inventories[key]["labels"], *inventories[key]["details"]])
                                  if not any(name and name in v for name in disputed)]
+                        if disputed_names:
+                            facts = [v for v in shared_details[key] if v in facts]
+                            if not facts:
+                                raise DelegationError("主帧复读未给出可区分的画面依据。")
                         title_facts[path] = facts
                         if facts and any(r["field"] == path for r in receipts):
                             observations = [v for v in inventories[key]["details"] if v in facts]
@@ -1465,6 +1494,8 @@ def create_task_runtime(runtime, store, browsing):
                                     "title": title_schema}}
                     elif parts[2] == "rationale":
                         options = await pixel_choices(key, int(parts[1]) + 1)
+                        if disputed_names:
+                            options["detail"] = shared_details[key]
                         rejected_phrases = []
                         for receipt in receipts:
                             if receipt["field"] != path or receipt["primary_frame"] != key:
@@ -1504,6 +1535,14 @@ def create_task_runtime(runtime, store, browsing):
                 fixed[path] = selected_title(fixed[path], facts)
             for path, choices in repair_choices.items():
                 fixed[path] = pixel_rationale(choices, fixed[path])
+                key = draft["items"][int(path.split(".")[1])].get("primary_frame")
+                if key in shared_details and choices["detail"] and all(d in shared_details[key] for d in choices["detail"]):
+                    if draft_fields[path].partition("。剪辑安排：")[2] == fixed[path].partition("。剪辑安排：")[2]:
+                        specificity_checked[path] = (key, fixed[path])
+            for path in title_facts:
+                key = draft["items"][int(path.split(".")[1])].get("primary_frame")
+                if fixed[path] in shared_details.get(key, ()):
+                    specificity_checked[path] = (key, fixed[path])
             product = correct_editorial_fields(draft, correction, fixed)
         else:
             clip_candidates = candidate["items"]
@@ -1729,6 +1768,16 @@ def create_task_runtime(runtime, store, browsing):
                 verdict = VideoGroundingReview.model_validate(reply)
                 if clip_basis and image:
                     attribution_fields = {path: fields[path] for path in clip_basis}
+                    visual_fields = {p: t for p, t in attribution_fields.items()
+                                     if p not in locked_fields and (not correction or p in correction)
+                                     and specificity_checked.get(p) != (primary, t)}
+                    if visual_fields:
+                        disputed = await review_visual_specificity(visual_fields, image, primary,
+                            evidence.observations[primary], request_json, budget)
+                        for path, row in disputed.items():
+                            product._attribution_reviews.append(row)
+                            issues[path] = " ".join(f"「{c['term']}」{c['issue']} 可见：{c['observation']}" for c in row["claims"])
+                            rejected.append(f"{path} 画面缺少区分具体称呼的依据")
                     works = set().union(*(cited_programme_names(task.get("steps", ()), product.items[int(p.split(".")[1])].sources)
                                           for p in attribution_fields))
                     for path, text in attribution_fields.items():

@@ -154,6 +154,8 @@ async def test_verified_title_goes_verbatim_to_the_final_image_review(runtime, s
         props = schema["properties"]
         if "person_subject" in props:
             return {"person_subject": "地点、构图或物件"}
+        if "alternatives" in props:
+            return {"alternatives":{path:[] for path in json.loads(messages[-1]["content"])}}
         assert "items.0.title" not in props, "Already approved title was requested from the model again"
         if "requested_count" in props:
             return {"requested_count":1, "usage":"解释画面", "playable":True, "trace_origin":False}
