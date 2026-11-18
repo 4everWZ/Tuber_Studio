@@ -59,6 +59,8 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                 names = ["triangle"] if brief["prior_goals"] else ["triangle", "square"]
                 items = [{"title": shape, "rationale": "适合引入主题", "sources": [
                     next(key for key, value in evidence.items() if shape in value), page]} for shape in names]
+                for item in items:
+                    item["primary_frame"] = item["sources"][0]
                 calls = [function("submit_materials", {"items": items, "gaps": ["只有一个合格镜头"] if len(items) == 1 else []})]
             result = {"status": "completed", "id": str(uuid4()), "output": calls}
         elif path == "/v1/chat/completions":
@@ -78,6 +80,9 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                 if "candidate" in packet:
                     decision = packet["candidate"]
                     edits.append(len(decision["items"]))
+                elif "items_to_verify" in packet:
+                    assert all(len(item["evidence"]) == 2 for item in packet["items_to_verify"])
+                    decision = {"supported": True}
                 else:
                     assert packet["message"] == replay.CHANGE and edits == [2]
                     decision = {"intent": "revise", "reference": packet["recent_task_cards"][0]["id"]}

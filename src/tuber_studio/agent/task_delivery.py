@@ -1,10 +1,12 @@
 """Private task delivery built only from persisted tool receipts."""
 
 import json
+import math
 import re
-from urllib.parse import urlsplit
+from dataclasses import dataclass
+from urllib.parse import parse_qs, urlsplit
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ..models import StrictModel
 
@@ -53,7 +55,16 @@ def _materials(items):
 class CreativeItem(StrictModel):
     title: str = Field(min_length=1, max_length=240)
     rationale: str = Field(min_length=1, max_length=1200)
-    sources: list[str] = Field(min_length=1)
+    sources: list[str] = Field(description="本项引用的证据 ID。指定主帧时可只列补充来源。")
+    primary_frame: str | None = Field(default=None, description="本项主画面的单个证据 ID；纯文字项填 null。")
+
+    @model_validator(mode="after")
+    def include_primary_citation(self):
+        if self.primary_frame is not None and self.primary_frame not in self.sources:
+            self.sources = [self.primary_frame, *self.sources]
+        if not self.sources:
+            raise ValueError("交付项至少需要一个证据 ID。")
+        return self
 
 
 class PrivateDelivery(StrictModel):
@@ -65,8 +76,90 @@ class DelegationError(ValueError):
     """A diagnostic safe to show without exposing provider payloads."""
 
 
+@dataclass(frozen=True)
+class VideoPoint:
+    bvid: str
+    part: int
+    cid: str | None
+    seconds: float
+    medium: str
+    window: tuple[float, float] | None
+
+    def supports(self, other):
+        if not self.cid or (self.bvid, self.part, self.cid) != (other.bvid, other.part, other.cid):
+            return False
+        return self.seconds == other.seconds or (
+            self.window is not None and self.window == other.window
+        )
+
+    def citation(self, item):
+        coverage = self.medium
+        if self.window:
+            coverage += f"（抽样窗 {self.window[0]}–{self.window[1]} 秒）"
+        # Older domain receipts sometimes linked only to the part. Deep-link to the actual sample.
+        link = f"https://www.bilibili.com/video/{self.bvid}/?p={self.part}&t={int(self.seconds)}"
+        return " · ".join([self.bvid, coverage, *_materials([item | {"url": link}])])
+
+
+class EvidenceIndex(dict):
+    """The JSON view is the citable text. Validation uses the original receipt fields."""
+
+    def __init__(self):
+        super().__init__()
+        self.points: dict[str, VideoPoint] = {}
+
+
+def _time(value):
+    return type(value) in (int, float) and math.isfinite(value) and value >= 0
+
+
+def _video_point(item, step, result):
+    if not _source(item.get("url")) or not _text(item.get("text")):
+        return None
+    url = urlsplit(item["url"])
+    match = re.fullmatch(r"/video/(BV[A-Za-z0-9]{10})/?", url.path)
+    part, seconds = item.get("part"), item.get("seconds")
+    if url.netloc != "www.bilibili.com" or not match or type(part) is not int or part < 1 or not _time(seconds):
+        return None
+    bvid = match[1]
+    query = parse_qs(url.query)
+    arguments = step.get("arguments") or {}
+    if (query.get("p", ["1"]) != [str(part)] or query.get("t", [str(int(seconds))]) != [str(int(seconds))]
+            or arguments.get("part") not in (None, part)
+            or any(binding.get("bvid", bvid) != bvid for binding in
+                   (arguments, result.get("selection") or {}))):
+        return None
+    cid = str(item["cid"]) if item.get("cid") else None
+    if item.get("kind") in {"字幕", "公开字幕抽样"} or result.get("viewing") == "subtitles_only":
+        medium = "字幕时点"
+    elif item.get("kind") in {"画面", "实际视频帧"} or result.get("viewing") == "visual_only":
+        medium = "单帧采样"
+    else:
+        medium = "类型未核实的时点资料"
+    window = item.get("sample_window")
+    bounds = None
+    if (medium == "单帧采样" and cid and isinstance(window, dict) and _time(window.get("start")) and _time(window.get("end"))
+            and window["start"] <= seconds < window["end"]):
+        bounds = (window["start"], window["end"])
+    return VideoPoint(bvid, part, cid, seconds, medium, bounds)
+
+
+def bind_delivery_schema(items, item_schema, evidence):
+    if not evidence:
+        items["maxItems"] = 0
+        return
+    props = item_schema["properties"]
+    props["sources"]["items"]["enum"] = list(evidence)
+    frames = [key for key, point in evidence.points.items() if point.medium == "单帧采样"]
+    if frames:
+        props["primary_frame"]["anyOf"][0]["enum"] = frames
+    else:
+        props["primary_frame"] = {"type": "null"}
+        props["sources"]["minItems"] = 1
+
+
 def evidence_index(steps):
-    evidence = {}
+    evidence = EvidenceIndex()
     for step in steps:
         result = step.get("result") or {}
         tool = step["tool"]
@@ -80,10 +173,10 @@ def evidence_index(steps):
             continue
         if tool == "inspect_video" and result.get("status") in {"completed", "partial"}:
             for index, item in enumerate(result.get("findings", []), 1):
-                if (_source(item.get("url")) and type(item.get("part")) is int
-                        and type(item.get("seconds")) in {int, float} and item.get("text")):
-                    coverage = VIEWING.get(result.get("viewing"))
-                    evidence[f"{step['id']}:{index}"] = " · ".join(filter(None, [coverage, *_materials([item])]))
+                if point := _video_point(item, step, result):
+                    key = f"{step['id']}:{index}"
+                    evidence.points[key] = point
+                    evidence[key] = point.citation(item)
         elif result and not result.get("error"):
             lines, verified = _describe(tool, result)
             if verified:
@@ -91,13 +184,43 @@ def evidence_index(steps):
     return evidence
 
 
+def primary_frame(item, evidence):
+    if any(source not in evidence for source in item.sources):
+        raise DelegationError("交付引用了没有回执的来源。")
+    points = evidence.points
+    timed = [key for key in dict.fromkeys(item.sources) if key in points]
+    frames = [key for key in timed if points[key].medium == "单帧采样"]
+    primary = item.primary_frame
+    if primary is None:
+        if len(frames) > 1:
+            raise DelegationError("多个采样画面须指定一个主帧，并核对同窗回执。")
+        if not frames:
+            if len(timed) > 1 and any(points[key].medium != "字幕时点" for key in timed):
+                raise DelegationError("时点资料的类型未经核实，无法作为同一项视频选材。")
+            return None
+        primary = frames[0]
+    if primary not in frames:
+        raise DelegationError("主帧须是本项引用的实际画面回执。")
+    if any(not points[primary].supports(points[key]) for key in timed if key != primary):
+        raise DelegationError("同项视频证据须来自主帧时点或同一已核实的抽样窗。")
+    return primary
+
+
 def render_private_delivery(product, evidence):
     blocks = []
+    used = set()
     for item in product.items:
-        if any(source not in evidence for source in item.sources):
-            raise DelegationError("交付引用了没有回执的来源。")
-        blocks.append("\n".join([f"**{_text(item.title)}**", f"选材理由：{_text(item.rationale)}",
-                                 *(f"- {evidence[source]}" for source in dict.fromkeys(item.sources))]))
+        primary = primary_frame(item, evidence)
+        lines = [f"**{_text(item.title)}**", f"选材理由：{_text(item.rationale)}"]
+        if primary:
+            point = evidence.points[primary]
+            identity = (point.bvid, point.part, point.seconds)
+            if identity in used:
+                raise DelegationError("不同选材重复使用了同一主帧。")
+            used.add(identity)
+            lines.extend([f"主帧：{evidence[primary]}", "覆盖：仅核实所列采样时点；连续画面及音轨均未经该画面回执核实。"])
+        lines.extend(f"- {evidence[source]}" for source in dict.fromkeys(item.sources) if source != primary)
+        blocks.append("\n".join(lines))
     if product.gaps:
         blocks.append("未核实或未覆盖：\n" + "\n".join(f"- {_text(gap)}" for gap in product.gaps))
     if not blocks:
@@ -148,7 +271,7 @@ def _describe(tool, result):
     if tool == "inspect_video":
         done = result.get("status") == "completed"
         details = _materials(result.get("findings", []))
-        note = "已取得抽样片段。" if done and details else "没有足以交付的取材片段。"
+        note = "已取得时点取材回执。" if done and details else "没有足以交付的取材片段。"
         viewing = result.get("viewing")
         coverage = VIEWING.get(viewing, _text(viewing)) if isinstance(viewing, str) else ""
         return [note, coverage, _source(result.get("url")), *details], bool(done and details)

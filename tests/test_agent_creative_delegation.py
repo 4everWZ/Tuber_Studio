@@ -177,6 +177,8 @@ async def test_bound_part_reaches_domain_and_only_selected_evidence_returns(sett
     platform = ControlledPlatform()
     app = create_app(settings, adapter=platform)
     async def edit(messages, schema, *, max_tokens):
+        if "supported" in schema["properties"]:
+            return {"supported": True}
         return json.loads(messages[1]["content"])["candidate"]
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", edit)
