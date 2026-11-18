@@ -11,6 +11,7 @@ from ..models import StrictModel
 from ..store import dump
 from .private_code import private_tools
 from .task_delivery import (
+    AdditionalVideoRead,
     DelegationError,
     EditorialCorrection,
     PrivateDelivery,
@@ -91,11 +92,12 @@ def model_input(task, context):
         "每项视频选材用 primary_frame 指定一个画面；sources 可另引独立出处或有同窗回执的采样点。"
         "单帧只支持该时点的画面，音轨和连续性要有各自的观察依据。"
         "逐项检查函数回执，成功读取的资料直接复用；补读号主要求核对但尚未读到正文的来源。"
-        "inspect_video 的区间为左闭右开，读取指定时点须让结束秒晚于该时点。"
+        "inspect_video 的区间为左闭右开，按交付时长分别取短片，end=start+所需秒数。"
         "证据不足就写 gaps，不凑数；须号主补充时调用 ask_owner。不要用普通消息代替工具或交付。"
     )}, {"role": "user", "content": dump({"prior_goals": task["plan"]["prior_goals"], "goal": task["goal"],
                                            "video_selection": task["plan"].get("video_selection"),
-                                           "previous_delivery": task["plan"].get("previous_delivery"),
+                                           "requested_video_read": task["plan"].get("requested_video_read"),
+                                           "previous_delivery": evidence.referenced_body(task["plan"].get("previous_delivery")),
                                            "previous_items_by_primary_frame": previous_frame_items(task, evidence),
                                            "pages_without_body_receipts": evidence.unread_pages,
                                            "saved_evidence": evidence_index([
@@ -108,8 +110,21 @@ def model_input(task, context):
         batch = list(group)
         history.extend({"type": "function_call", "call_id": step["call_id"], "name": step["tool"],
                         "arguments": dump(step["arguments"])} for step in batch)
-        history.extend({"type": "function_call_output", "call_id": step["call_id"],
-                        "output": dump({"receipt": step["result"], "evidence": evidence_index([step])})} for step in batch)
+        for step in batch:
+            sources = evidence_index([step])
+            receipt = step["result"]
+            if sources and step["tool"] == "inspect_video":
+                findings = []
+                for index, finding in enumerate(receipt["findings"], 1):
+                    key = f"{step['id']}:{index}"
+                    if key in sources:
+                        finding = {k: v for k, v in finding.items() if k not in {"text", "url", "kind"}} | {"evidence_id": key}
+                    findings.append(finding)
+                receipt = receipt | {"findings": findings}
+            elif sources and step["tool"] == "web_page":
+                receipt = {k: v for k, v in receipt.items() if k != "excerpt"} | {"excerpt_evidence_id": step["id"]}
+            history.append({"type": "function_call_output", "call_id": step["call_id"],
+                            "output": dump({"receipt": receipt, "evidence": sources})})
     return history
 
 
@@ -153,6 +168,12 @@ async def advance(runtime, task):
         evidence = evidence_index(context)
         try:
             product = await runtime.edit_delivery(task, evidence)
+        except AdditionalVideoRead as request:
+            if runtime.scope() == task["scope"]:
+                plan = {k: v for k, v in task["plan"].items() if k not in {"candidate", "editor_draft", "editor_issues"}}
+                runtime._save(task, status="queued", due=time.time(), message=str(request),
+                              plan=plan | {"requested_video_read": str(request), "excluded_video_frames": request.exclude})
+            return
         except EditorialCorrection as correction:
             if runtime.scope() == task["scope"]:
                 runtime._save(task, status="queued", due=time.time(), message=str(correction),
@@ -164,6 +185,8 @@ async def advance(runtime, task):
         for item in product.items:
             item.primary_frame = primary_frame(item, evidence)
         plan = task["plan"] | {"selected": product.model_dump()}
+        if product._field_sources:
+            plan["selected_field_sources"] = product._field_sources
         runtime._save(task, status="completed" if verified else "failed", message=delivery, plan=plan)
         return
     pending = [step for step in current if "result" not in step]
@@ -194,6 +217,15 @@ async def advance(runtime, task):
     items = submission["parameters"]["properties"]["items"]
     evidence = evidence_index(context)
     bind_delivery_schema(items, items["items"], evidence)
+    if any(s["tool"] == "submit_materials" and s.get("invalid_call") for s in current) and evidence.points:
+        # Repair an invalid grouping with one primary image per candidate. Nonvisual sources stay available.
+        sources = items["items"]["properties"]["sources"]
+        supplemental = [key for key in evidence if key not in evidence.points or evidence.points[key].medium == "字幕时点"]
+        if supplemental:
+            sources["items"]["enum"] = supplemental
+        else:
+            sources["maxItems"] = 0
+        sources["description"] = "此处只填独立文字出处。视频选材的单个画面只填 primary_frame。"
     if evidence:
         for tool in tools:
             if tool["name"] == "delegate_text":
@@ -213,7 +245,17 @@ async def advance(runtime, task):
         return
     if len(calls) == 1 and name == "submit_materials":
         product = PrivateDelivery.model_validate(calls[0].arguments)
-        render_private_delivery(product, evidence)
+        try:
+            render_private_delivery(product, evidence)
+        except DelegationError as error:
+            if any(s["tool"] == name and s.get("invalid_call") for s in current):
+                raise
+            call = calls[0]
+            step = {"id": str(uuid5(UUID(task["id"]), f"{task['revision']}:{call.call_id}")), "tool": name,
+                    "revision": task["revision"], "call_id": call.call_id, "response_id": reply.id,
+                    "arguments": call.arguments, "invalid_call": True, "result": {"error": str(error)}}
+            runtime._save(task, status="queued", due=time.time(), message=str(error), steps=[*task["steps"], step])
+            return
         runtime._save(task, status="queued", message="材料已就绪，等待前台选材。", due=time.time(),
                       plan=task["plan"] | {"candidate": product.model_dump()})
         return

@@ -5,9 +5,11 @@ import pytest
 from test_agent_creative_delegation import call, gateway
 
 from tuber_studio.agent.task_delivery import (
+    AdditionalVideoRead,
     DelegationError,
     PrivateDelivery,
     evidence_index,
+    previous_frame_items,
     render_private_delivery,
 )
 from tuber_studio.agent.task_tools import create_task_runtime, sampled_video_findings
@@ -34,6 +36,105 @@ def page(key):
 def selection(*sources, primary=None):
     return PrivateDelivery.model_validate({"items": [{"title": "开场", "rationale": "我会用这个构图引出话题。",
                                                      "sources": sources, "primary_frame": primary}], "gaps": []})
+
+
+def short_read(key, start, *, clip=True, revision=1):
+    read = reading(*(frame(start + delta) for delta in (0.44, 1.48, 2.52)))
+    bounds = {"part": 2, "start": start, "end": start + 3}
+    read.update(id=key, revision=revision, arguments={"bvid": BV, **bounds})
+    read["result"]["selection"]["ranges"] = [bounds]
+    if clip:
+        read["result"]["clip"] = {"bvid": BV, **bounds, "cid": "part-two", "frames": 75, "audio": "visual_only"}
+    return read
+
+
+@pytest.mark.parametrize("alter", [None, {"cid": "elsewhere"}, {"end": 15}, {"part": 1}, {"frames": 1}, {"audio": "unknown"}])
+def test_physical_clip_is_distinct_from_semantic_sampling(alter):
+    read = short_read("window", 11)
+    if alter:
+        read["result"]["clip"].update(alter)
+    evidence = evidence_index([read])
+    _, body = render_private_delivery(selection(primary="window:1"), evidence)
+    assert "内容语义仅观察 3 帧" in body and "11.44、12.48、13.52" in body
+    assert ("保存 75 个连续原帧" in body) == (alter is None)
+    if not alter:
+        assert "出点 14 秒（不含）" in body and "私有短片不含音轨" in body
+        assert render_private_delivery(selection("window:2", primary="window:1"), evidence)[0]
+        with pytest.raises(DelegationError):
+            render_private_delivery(selection("window:3", primary="window:1"), evidence)
+
+
+async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, monkeypatch):
+    first, second = short_read("a", 11), short_read("b", 35)
+    old = PrivateDelivery(items=[selection(primary=key).items[0] for key in ["a:1", "b:1"]],
+                          gaps=["另一窗口尚未采用。"])
+    candidate = old.model_dump()
+    goal = "保留第一段原文，另读开场三秒。"
+    task = {"revision": 2, "steps": [first, second], "goal": goal, "plan": {
+        "candidate": candidate, "prior_goals": ["选两段"], "previous_selection": candidate}}
+    tasks = create_task_runtime(runtime, store, None)
+
+    async def editor(messages, schema, **kwargs):
+        packet = json.loads(messages[-1]["content"])
+        if "上一版" in packet:
+            return {"ordered_actions": ["保留整项原文", "另读新窗口再替换"]}
+        if "candidate" in packet:
+            assert "另一窗口尚未采用" not in str(packet)
+            assert set(packet["evidence"]) == {"new:1", "new:2", "new:3"}
+            return selection(primary="new:1").model_dump()
+        assert packet["field_visual_sources"]
+        return {"supported": True, "field_basis": {p: {"source": keys[0], "observation": "椅子"}
+                                                   for p, keys in packet["field_visual_sources"].items()}}
+
+    monkeypatch.setattr(runtime.llm, "generate_json", editor)
+    with pytest.raises(AdditionalVideoRead):
+        await tasks.edit_delivery(task, evidence_index(task["steps"]))
+    task["steps"].extend([short_read("overlap", 12, revision=2), short_read("new", 0, revision=2)])
+    evidence = evidence_index(task["steps"])
+    selected = await tasks.edit_delivery(task, evidence)
+    assert selected.items[0] == old.items[0] and selected.items[1].primary_frame == "new:1"
+    assert selected.gaps == [] and "另一窗口" not in render_private_delivery(selected, evidence)[1]
+
+
+@pytest.mark.parametrize("quote", ["椅子", "河南治水"])
+async def test_saved_clip_omni_decides_each_item_and_displays_attribution(runtime, store, monkeypatch, quote):
+    read = short_read("window", 0)
+    for point in read["result"]["findings"]:
+        point["cid"] = "321"
+    read["result"]["clip"]["cid"] = "321"
+    origin = page("origin")
+    origin["result"].update(title="例片", url=f"https://www.bilibili.com/video/{BV}/?p=2",
+                            source_kind="bilibili_public_metadata",
+                            excerpt="投稿《例片》，UP 主：示例作者。合集 P2《开场》，CID 321，时长 90 秒。投稿简介：剧情结局。")
+    evidence = evidence_index([read, origin])
+    candidate = selection("origin", primary="window:1")
+    candidate.gaps = ["旧的未选用窗口"]
+    task = {"goal": "要无剧透的画面", "plan": {"prior_goals": [], "candidate": candidate.model_dump()}}
+    calls = []
+
+    async def editor(messages, schema, **kwargs):
+        packet = json.loads(messages[-1]["content"])
+        calls.append(packet)
+        if "candidate_primary" in packet:
+            assert packet["candidate_primary"] == "window:1"
+            assert "示例作者" in packet["item_evidence"]["origin"] and "剧情结局" not in str(packet)
+            assert "旧的未选用窗口" not in str(packet)
+            return {"decision": "采用", "primary_frame": "window:2", "title": "画中的椅子", "rationale": "从画面左侧的椅子引出布景。"}
+        assert packet["field_visual_sources"] == dict.fromkeys(["items.0.title", "items.0.rationale"], ["window:2"])
+        return {"supported": True, "field_basis": {p: {"source": "window:2", "observation": quote}
+                                                   for p in packet["field_visual_sources"]}}
+
+    monkeypatch.setattr(runtime.llm, "generate_json", editor)
+    tasks = create_task_runtime(runtime, store, None)
+    if quote == "河南治水":
+        with pytest.raises(DelegationError, match="回执原文"):
+            await tasks.edit_delivery(task, evidence)
+        return
+    result = await tasks.edit_delivery(task, evidence)
+    assert result._field_sources["items.0.title"] == {"source": "window:2", "observation": quote}
+    _, body = render_private_delivery(result, evidence)
+    assert len(calls) == 2 and "示例作者" in body and "剧情结局" not in body and not result.gaps
+    assert "来源摘录" not in body and "左侧有一把椅子" not in body
 
 
 @pytest.mark.parametrize("primary", [None, "v:1", "v:2"])
@@ -112,7 +213,7 @@ async def test_front_and_reviewer_share_scoped_media_and_unread_page_receipts(ru
         assert packet["pages_without_body_receipts"] == ["https://example.org/p2"]
         coverage = packet["video_read_coverage"]["v"]
         assert coverage["requested_ranges"] == read["result"]["selection"]["ranges"]
-        assert coverage["samples"] == [{"id": "v:1", "part": 2, "seconds": 11, "medium": "单帧采样"}]
+        assert coverage["samples"] == [[1, 2, 11, "单帧采样"]]
         assert coverage["read_gaps"] == read["result"]["gaps"]
         inspected.append("candidate" in packet)
         return product if "candidate" in packet else {"supported": True, "issues": []}
@@ -141,7 +242,9 @@ async def test_keep_original_frame_item_and_review_only_rendered_fields(runtime,
             assert keep["properties"]["keep_previous"]["enum"] == ["v:1"]
             return {"items": [{"keep_previous": "v:1"}, replacement], "gaps": []}
         props = schema["$defs"]["EditorialIssue"]["properties"]
-        assert "items.0.rationale" in props["field"]["enum"]
+        index = packet["items_to_verify"][0]["index"]
+        assert f"items.{index}.rationale" in props["field"]["enum"]
+        assert all(path.startswith(f"items.{index}.") for path in props["field"]["enum"])
         assert not any("v:2" in key or "gap_evidence" in key for key in props["field"]["enum"])
         assert "画面不能判断实际声音" in props["reason"]["enum"]
         if bad_review:
@@ -171,6 +274,19 @@ def test_legacy_subtitle_points_remain_citable_and_old_part_links_get_actual_tim
         render_private_delivery(selection("v:2", primary="v:1"), evidence)
 
 
+def test_legacy_retention_requires_verbatim_render_and_unambiguous_visible_receipts():
+    steps = [reading(frame(11)), page("origin")]
+    evidence = evidence_index(steps)
+    initial = selection("origin", primary="v:1")
+    initial.items[0].title = "[原题]"
+    _, body = render_private_delivery(initial, evidence)
+    task = {"revision": 2, "steps": steps, "plan": {"previous_delivery": body}}
+    assert previous_frame_items(task, evidence) == {"v:1": initial.items[0].model_dump()}
+    assert previous_frame_items(task, evidence_index(steps[1:])) == {}
+    altered = task | {"plan": {"previous_delivery": body.replace("仅核实所列采样时点", "连续观看")}}
+    assert previous_frame_items(altered, evidence) == {}
+
+
 @pytest.mark.parametrize("fault", ["backend_mix", "editor_mix", "unheard_audio", "unheard_gap", "correct_reason", "still_wrong"])
 async def test_invalid_video_delivery_cannot_complete(runtime, settings, store, monkeypatch, fault):
     def worker(payload):
@@ -180,7 +296,9 @@ async def test_invalid_video_delivery_cannot_complete(runtime, settings, store, 
         product = selection("v:1", "a", primary="v:1")
         if fault == "backend_mix":
             product.items[0].sources.append("v:2")
-        return [call("submit_materials", product.model_dump(), "submit")]
+        retry = any(entry.get("type") == "function_call_output" and json.loads(entry["output"])["receipt"].get("error")
+                    for entry in payload["input"])
+        return [call("submit_materials", product.model_dump(), "submit2" if retry else "submit")]
 
     gateway(settings, monkeypatch, worker)
     reviews = []
@@ -195,6 +313,8 @@ async def test_invalid_video_delivery_cannot_complete(runtime, settings, store, 
             assert fault != "backend_mix"
             assert schema["$defs"]["CreativeItem"]["properties"]["primary_frame"]["anyOf"][0]["enum"] == ["v:1", "v:2"]
             item = packet["candidate"]["items"][0]
+            assert "title" not in item and "rationale" not in item
+            item.update(title="开场", rationale="我会用这个构图引出话题。")
             if fault == "editor_mix":
                 item["sources"].append("v:2")
             elif fault == "unheard_gap":
@@ -202,11 +322,15 @@ async def test_invalid_video_delivery_cannot_complete(runtime, settings, store, 
             else:
                 item["rationale"] = "片中一片寂静，适合开场。"
             return packet["candidate"]
+        if not packet["items_to_verify"]:
+            assert packet["gaps"] == ["只录到静默，无法核对台词。"]
+            reviews.append(packet["gaps"])
+            return {"supported": False}
         review = packet["items_to_verify"][0]
         assert set(review["evidence"]) == {"v:1", "a"}
         if fault == "unheard_gap":
-            assert packet["gaps"] == ["只录到静默，无法核对台词。"]
-        elif fault == "correct_reason" and reviews:
+            return {"supported": True}
+        if fault == "correct_reason" and reviews:
             assert review["rationale"] == "我想用椅子的构图开场。"
         else:
             assert "一片寂静" in review["rationale"]
@@ -225,6 +349,9 @@ async def test_invalid_video_delivery_cannot_complete(runtime, settings, store, 
     tasks._save(task, steps=[reading(frame(11), frame(210)), page("a")], plan={"backend": "responses", "prior_goals": []})
     await tasks._advance(tasks.current(identity))
     pending = tasks.current(identity)
+    if fault == "backend_mix":
+        assert pending["steps"][-1]["invalid_call"] and pending["status"] == "queued"
+        await tasks._advance(pending)
     if fault != "backend_mix":
         assert pending["status"] == "queued" and "candidate" in pending["plan"]
         await tasks._advance(pending)

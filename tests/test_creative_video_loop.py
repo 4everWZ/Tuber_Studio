@@ -79,7 +79,15 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                 packet = json.loads(content)
                 if "candidate" in packet:
                     decision = packet["candidate"]
+                    for item in decision["items"]:
+                        frame = packet["evidence"][item["primary_frame"]]
+                        item["title"] = next(shape for shape in ("triangle", "square") if shape in frame)
+                        item["rationale"] = "我会用这个图形引入主题。"
+                    if len(decision["items"]) == 1:
+                        decision["gaps"] = ["本轮符合改口要求的只有一个镜头。"]
                     edits.append(len(decision["items"]))
+                elif "上一版" in packet:
+                    decision = {"ordered_actions": ["其它编辑"] * len(packet["上一版"])}
                 elif "items_to_verify" in packet:
                     assert all(len(item["evidence"]) == 2 for item in packet["items_to_verify"])
                     decision = {"supported": True}
