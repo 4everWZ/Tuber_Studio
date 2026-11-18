@@ -340,6 +340,7 @@ test("private policy loads and saves while the inbox page is hidden", async t =>
     $: get, root: { closest: () => ({ hidden: true }) }, policyFeedback: make(),
     policyRoot: { closest: () => settingsHidden ? { hidden: true } : null },
     refreshRequest: 0, userSignature: "[]", draftView: "pending",
+    replyChecks: new Map(), delegateButton: make(),
     renderEditor() {}, renderPrivateContinuations() {},
     async conversation() { assert.fail("settings should not load a hidden conversation"); },
     async api(path, options) {
