@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from itertools import count
 from uuid import uuid4
 
 import httpx
@@ -175,6 +176,82 @@ async def test_existing_worker_ticks_without_consulting_chat_or_planner(store):
         assert "游戏进行中" in tasks.workspace.latest(child["id"])["body"]
     finally:
         await tasks.close()
+
+
+async def test_attention_compares_last_periodic_receipts_for_this_goal(store, monkeypatch):
+    tasks = runtime(store)
+    service = GoalFollowups(tasks)
+    identity, other_goal = root(tasks), root(tasks)
+    day = 86400
+    now = stamp("2026-11-18T09:00:00+08:00")
+    excerpt = "第一版"
+    pages = ["https://example.org/one", "https://example.org/two"]
+    checks = count()
+
+    async def read(page, *, exact_source):
+        if not excerpt:
+            raise ValueError("读取失败")
+        return {"url": page, "excerpt": excerpt, "checked_at": next(checks)}
+
+    async def activity(request, args):
+        return {"date": str(next(checks)), "events": []}
+
+    tasks.register("today_activity", Tool("今日运营", StrictModel, activity))
+    monkeypatch.setattr(goal_followups, "fetch_excerpt", read)
+    grant = schedule(tasks, states=["today_activity"], pages=pages)
+    service.configure(identity, grant, now - 1)
+    await service.tick(now)
+    baseline = next(run["id"] for run in tasks.workspace.runs(identity) if run["id"] != identity)
+    store.execute("UPDATE agent_tasks SET source_key=NULL WHERE id=?", (baseline,))
+    service.configure(other_goal, grant, now)
+    excerpt = "另一个目标的观测"
+    await service.tick(now + day)
+    await service.tick(now + day)
+    service.disable(other_goal)
+    other_ids = {run["id"] for run in tasks.workspace.runs(other_goal)}
+    assert not other_ids.intersection(row["task_id"] for row in store.all("SELECT task_id FROM creative_attention"))
+    manual = tasks.create(str(uuid4()), "周期跟进 · 手动交办", creative_goal_id=identity)
+    assert tasks._save(manual, status="cancelled")
+    service.configure(identity, schedule(tasks, states=["today_activity"], pages=list(reversed(pages))), now + day + 1)
+    for offset, excerpt in enumerate(["另一个目标的观测", "", "", "已恢复", "已恢复"], start=2):
+        await service.tick(now + offset * day)
+    attention = store.all("""
+        SELECT due,status FROM agent_tasks JOIN creative_attention ON task_id=id
+        WHERE creative_goal_id=? ORDER BY due
+    """, (identity,))
+    assert attention == [{"due": now + day, "status": "completed"},
+                         {"due": now + 3 * day, "status": "failed"},
+                         {"due": now + 5 * day, "status": "completed"}]
+
+
+async def test_failed_attention_write_rolls_back_receipt_delivery_and_cursor(store, monkeypatch):
+    tasks = runtime(store)
+    service = GoalFollowups(tasks)
+    identity = root(tasks)
+    start = stamp("2026-11-18T09:00:00+08:00")
+    excerpt = "初始观测"
+
+    async def read(page, *, exact_source):
+        return {"url": page, "excerpt": excerpt}
+
+    monkeypatch.setattr(goal_followups, "fetch_excerpt", read)
+    service.configure(identity, schedule(tasks), start - 1)
+    await service.tick(start)
+    due = service.get(identity)["next_due"]
+    excerpt = "有变化"
+    with monkeypatch.context() as patch:
+        def reject(db, task_id, updated):
+            assert db.in_transaction
+            raise RuntimeError("attention fixture")
+
+        patch.setattr(tasks.workspace, "notify", reject)
+        with pytest.raises(RuntimeError, match="attention fixture"):
+            await service.tick(due)
+    assert service.get(identity)["next_due"] == due and len(tasks.workspace.runs(identity)) == 2
+    assert len(store.all("SELECT task_id FROM creative_editions")) == 1
+    await service.tick(due)
+    await service.tick(due)
+    assert len(store.all("SELECT task_id FROM creative_attention")) == 1
 
 
 async def test_exact_page_does_not_read_substitutions_or_redirect_targets(monkeypatch):

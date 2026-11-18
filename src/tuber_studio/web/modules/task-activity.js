@@ -281,7 +281,8 @@ export function initTaskActivity(api, requestId) {
     }
     const adjust = button(task.status === "needs_input" ? "补充要求" : "调整任务");
     const stop = button("停止任务");
-    stop.hidden = !stoppable.has(task.status);
+    stop.hidden = task.can_control === false || !stoppable.has(task.status);
+    adjust.hidden = task.can_control === false;
     stop.onclick = () => apply(task, { action: "cancel" }, stop);
     adjust.onclick = () => {
       editing = true;
@@ -305,8 +306,9 @@ export function initTaskActivity(api, requestId) {
       input.focus();
     };
     content.replaceChildren(back, title, state, result, steps, adjust, stop);
+    if (task.can_control === false) content.append(node("p", "原执行授权已失效。记录与成果仍可查看；如需继续，请重新交办。", "hint"));
     renderWorkspace(task);
-    if (task.status === "awaiting_approval") {
+    if (task.can_control !== false && task.status === "awaiting_approval") {
       const step = task.steps.at(-1);
       const action = node("p", `${step.approval.target} · ${step.approval.text || step.arguments.action}`);
       const confirm = button(step.tool === "live_handoff" ? "确认交接给本场直播" : "确认执行这个动作");

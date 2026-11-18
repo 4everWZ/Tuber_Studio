@@ -74,6 +74,12 @@ async def test_private_goal_and_editions_survive_control_restart_and_scope_switc
         assert len(tasks.workspace.runs(root)) == 2
         assert (await client.post(f"{base}/{root}/goal/close")).status_code == 409
         assert tasks._save(tasks.current(child), status="completed", message="P2 · 01:20")
+        assert (await client.get("/api/agent/attention")).json()["count"] == 1
+        stamp = (await client.get(f"{base}/{child}")).json()["attention"]
+        await client.delete(f"{base}/{child}/attention", params={"updated": stamp - 1})
+        assert (await client.get("/api/agent/attention")).json()["count"] == 1
+        await client.delete(f"{base}/{child}/attention", params={"updated": stamp})
+        assert (await client.get("/api/agent/attention")).json()["count"] == 0
         edit = {"task_revision": 1, "edition": 1, "body": "开场：P2 · 01:20"}
         edited = await client.patch(f"{base}/{child}/artifact", json=edit)
         assert edited.json()["artifact"]["edition"] == 2

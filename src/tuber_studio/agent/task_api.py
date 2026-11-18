@@ -68,6 +68,7 @@ def register_task_api(app, tasks, require_admin):
             project["runs"] = [run for run in tasks.workspace.runs(root) if tasks.current(run["id"])]
         notice = tasks.store.one("SELECT updated FROM creative_attention WHERE task_id=?", (task["id"],))
         return tasks.view(task) | {"creative_goal": project, "artifact": tasks.workspace.latest(task["id"]),
+                                   "can_control": task["scope"] == tasks.scope(),
                                    "attention": notice["updated"] if notice else None}
 
     def notices():

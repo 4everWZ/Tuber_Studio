@@ -19,6 +19,43 @@ from .task_delivery import deliver_from_receipts
 from .task_runtime import ToolRequest
 
 StatusSource = Literal["live_status", "game_status", "operation_status", "today_activity"]
+FOLLOWUP_SOURCE = dump("goal_followup")
+
+
+def observations(steps):
+    by_source = {}
+    for step in steps:
+        name, result = step["tool"], step["result"]
+        page = step["arguments"].get("web_fetch", "")
+        if result.get("error"):
+            value = {"error": result["error"]}
+        elif name == "today_activity":
+            value = sorted(json.dumps(event, sort_keys=True) for event in result.get("events", []))
+        else:
+            fields = {
+                "web_page": ("url", "title", "excerpt", "truncated"),
+                "live_status": ("state", "session_id", "muted", "native_program"),
+                "game_status": ("simulated", "game", "state"),
+                "operation_status": ("state", "account_id", "started_at"),
+            }[name]
+            value = {key: result[key] for key in fields if key in result}
+        by_source[name, page] = value
+    return by_source
+
+
+def previous_observation(db, goal_id):
+    """Use the original periodic receipt even if the owner later steered its task."""
+    for prior in db.execute("""
+        SELECT id,source_key,due,steps,status,revision FROM agent_tasks
+        WHERE creative_goal_id=? AND (source_key=? OR source_key IS NULL)
+        ORDER BY rowid DESC
+    """, (goal_id, FOLLOWUP_SOURCE)):
+        if prior["source_key"] is None and prior["id"] != str(uuid5(UUID(goal_id), f"followup:{int(prior['due'])}")):
+            continue
+        steps = [step for step in json.loads(prior["steps"]) if step["revision"] == 1]
+        success = prior["status"] == "completed" if prior["revision"] == 1 else deliver_from_receipts(steps, 1)[0]
+        return success, observations(steps)
+    return None
 
 
 class FollowupGrant(StrictModel):
@@ -170,14 +207,19 @@ class GoalFollowups:
                                (next_due, row["goal_id"], row["grant_id"], row["next_due"]))
             if not moved.rowcount:
                 return
+            previous = previous_observation(db, row["goal_id"])
             label = datetime.fromtimestamp(slot, ZoneInfo(grant.timezone)).strftime("%Y-%m-%d %H:%M")
             inserted = db.execute("""
-                INSERT OR IGNORE INTO agent_tasks(id,scope,goal,revision,status,steps,message,due,created,updated,creative_goal_id)
-                VALUES(?,?,?,1,?,?,?,?,?,?,?)
+                INSERT OR IGNORE INTO agent_tasks(id,scope,goal,revision,status,steps,message,due,created,updated,creative_goal_id,source_key)
+                VALUES(?,?,?,1,?,?,?,?,?,?,?,?)
             """, (run_id, scope, f"周期跟进 · {label}", "completed" if success else "failed", dump(steps),
-                  body, slot, now, now, row["goal_id"]))
-            if success and inserted.rowcount:
+                  body, slot, now, now, row["goal_id"], FOLLOWUP_SOURCE))
+            if not inserted.rowcount:
+                return
+            if success:
                 self.tasks.workspace.record_delivery(db, {"id": run_id, "revision": 1}, body)
+            if previous is not None and previous != (success, observations(steps)):
+                self.tasks.workspace.notify(db, run_id, now)
 
 
 def register_goal_followups(app, tasks, require_admin):
