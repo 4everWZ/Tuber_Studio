@@ -135,7 +135,7 @@ async def test_agent_model_deadline_starts_after_background_admission(settings, 
 
 
 async def test_chat_delegates_across_existing_services_and_cancels_video(settings, monkeypatch):
-    monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS", raising=False)
+    monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS_URL", raising=False)
     platform = ControlledPlatform()
     app = create_app(settings, adapter=platform)
     tasks = app.state.runtime.tasks
@@ -194,14 +194,28 @@ async def test_chat_delegates_across_existing_services_and_cancels_video(setting
         assert rejected.status_code == 409 and "授权已失效" in rejected.json()["detail"]
 
 
-async def test_live_status_reports_native_program_separately_in_tasks_and_chat(settings, monkeypatch):
+@pytest.mark.parametrize("value, expected", [("", None), ("   ", None), ("ftp://bridge.test", "unavailable"),
+                                             ("https://user:secret@bridge.test", "unavailable")])
+async def test_live_status_without_usable_endpoint_makes_no_request(settings, monkeypatch, value, expected):
     monkeypatch.setenv("TUBER_NATIVE_PROGRAM_STATUS", "1")
+    monkeypatch.setenv("TUBER_NATIVE_PROGRAM_STATUS_URL", value)
+    def unexpected(*args, **kwargs):
+        pytest.fail("Unconfigured or invalid status URL attempted a request")
+    monkeypatch.setattr(task_tools, "response_json", unexpected)
+    app = create_app(settings, adapter=ControlledPlatform())
+    result = await task_tools.observed_live_status(app.state.runtime)
+    assert result["state"] == "stopped"
+    assert result.get("native_program") == ({"state": expected} if expected else None)
+
+
+async def test_live_status_reports_native_program_separately_in_tasks_and_chat(settings, monkeypatch):
+    monkeypatch.setenv("TUBER_NATIVE_PROGRAM_STATUS_URL", "https://bridge.example.test/custom/status")
     app = create_app(settings, adapter=ControlledPlatform())
     live_tool = app.state.runtime.tasks.tools["live_status"]
     bridge_state = "publishing"
 
     async def health(client, method, address):
-        assert method == "GET" and address == "http://omni-media:8080/healthz"
+        assert method == "GET" and address == "https://bridge.example.test/custom/status"
         assert "authorization" not in client.headers
         if bridge_state is None:
             raise httpx.ConnectError("bridge offline")

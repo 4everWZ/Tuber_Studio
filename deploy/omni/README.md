@@ -54,7 +54,7 @@ docker compose -f deploy/omni/app-compose.yml --profile media up -d --build --wa
 
 示例媒体桥地址为 `omni-media:8080`，同网络也可通过 `tuber-avatar` 访问。示例宿主机健康检查地址为 `http://127.0.0.1:9080/healthz`。渲染读取仓库已有的鲸鱼娘 GIF。OBS 和浏览器独立认证，示例播放路径为 `/program/whep`，观看用户为 `tuber-viewer`。
 
-现行 Core 通过 Compose 网络的 `http://omni-media:8080/healthz` 查看节目状态，并在 Chats 和 Agent 工具里另列平台直播状态。替换媒体服务时，需为该状态接口提供相同网络地址及兼容响应，或用 `TUBER_NATIVE_PROGRAM_STATUS=0` 关闭查询。媒体状态未取到时显示暂不可查。
+需要在对话和 Agent 工具里查看原生节目时，设置 `TUBER_NATIVE_PROGRAM_STATUS_URL` 为 Core 可达的完整 HTTP(S) 状态地址。本示例启用媒体桥时可填 `http://omni-media:8080/healthz`。其他部署使用其媒体服务提供的只读端点；留空仅显示工坊直播状态。旧布尔开关不再启用查询。Core 匿名 GET 该地址，读取 `process: ready` 及 `native_program.state`，未取到兼容状态时显示暂不可查。推理网关的健康状态和平台开播回执各自独立。
 
 ## 按需 Remotion
 

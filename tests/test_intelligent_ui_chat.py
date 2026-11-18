@@ -136,7 +136,7 @@ async def test_chat_lifecycle_separates_live_status_from_persistent_work(setting
         assert options["on_content"] is None
         return {"action": tool}
 
-    monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS", raising=False)
+    monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS_URL", raising=False)
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
         identity = str(uuid4())
@@ -176,7 +176,7 @@ async def test_nonchat_acknowledgement_is_neither_streamed_nor_saved(settings, m
             on_content(chunk)
         return decision
 
-    monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS", raising=False)
+    monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS_URL", raising=False)
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
     path = "/api/chat/intelligent"
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
