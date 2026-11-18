@@ -164,6 +164,9 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                         record("forgotten_revisions", await forget_current(client, port, device, token, [updated]))
                     elif config:
                         from evaluations.owner_memory_video import compare
+                        from evaluations.owner_memory_budget import load_capacity, wire_receipts
+                        record("responses_capacity", await load_capacity(config, settings.data["responses"]["model"]))
+                        stack.enter_context(wire_receipts(record))
                         if reviewed_receipt:
                             from evaluations.owner_memory_receipt import reviewed_read
                             origin, replay = reviewed_read(*reviewed_receipt)

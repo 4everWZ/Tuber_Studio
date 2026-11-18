@@ -1,6 +1,7 @@
 """Read back and independently grade three private editions of the same video task."""
 
 import asyncio
+import re
 from uuid import uuid4
 
 from evaluations.owner_memory_device import AUTO, SEARCH, device_call
@@ -110,8 +111,11 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
         other = (await device_call(device, port, login, "GET", "/api/agent/tasks/"+task_id))["value"]
         assert other["artifact"]["body"] == response["artifact"]["body"]
         plan = tasks.current(task_id)["plan"]
-        result = {"body":other["artifact"]["body"], "citations":other.get("memory_citations", []),
-                  "editor_review":plan.get("editor_memory", {}).get("review"), "items":plan["selected"]["items"],
+        body = other["artifact"]["body"]
+        headings = re.findall(r"^\*\*(.+?)\*\*\r?\n选材理由：", body, re.MULTILINE)
+        visible_items = [item | {"title":heading} for item,heading in zip(plan["selected"]["items"], headings, strict=True)]
+        result = {"body":body, "citations":other.get("memory_citations", []),
+                  "editor_review":plan.get("editor_memory", {}).get("review"), "items":visible_items,
                   "independent_device_body_matched":True}
         record(phase, result)
         result["measurement"] = await measure_edition(result["items"], plan.get("frame_reviews", {}), phase, grader)

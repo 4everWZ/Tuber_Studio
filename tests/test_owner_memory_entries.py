@@ -299,6 +299,15 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
         return {"supported": True, "issues": []}
 
     monkeypatch.setattr(state.runtime.llm,"generate_json",editor)
+    audits = []
+    edit_delivery = tasks.edit_delivery
+    async def observe_editor(task, evidence):
+        try:
+            return await edit_delivery(task, evidence)
+        finally:
+            if review := task["plan"].get("editor_memory", {}).get("review"):
+                audits.append(review)
+    tasks.edit_delivery = observe_editor
     async def edition():
         nonlocal task_id
         task_id = str(uuid4())
@@ -317,6 +326,13 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
         assert first["status"] == "failed" and first["artifact"] is None
         if scenario != "withdrawn":
             assert repairs == [first_title] and "写作约定" in first["message"]
+        if scenario == "label_with_period":
+            first_attempt, repaired_attempt = audits[-1]["attempts"]
+            for attempt in (first_attempt, repaired_attempt):
+                reading = attempt["titles"]["items.0.title"]
+                assert reading["title"] == first_title and reading["literal_checks_passed"]
+                assert reading["form"] == "名词短语" and "陈述句" in reading["expected"].values()
+                assert reading["observation"] in reading["observations"]
         return
     assert first["status"] == "completed" and good_title in first["artifact"]["body"]
     assert repairs == [first_title]
