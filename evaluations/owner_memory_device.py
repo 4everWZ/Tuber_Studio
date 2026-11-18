@@ -61,10 +61,13 @@ async def device_call(device, port, login, method, path, data=None):
     return json.loads(result.stdout)
 
 
-async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, reviewed_receipt=None):
+async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, reviewed_receipt=None, timeout_seconds=1440):
     from evaluations.omni_chat_loop import connection
     from contextlib import AsyncExitStack
 
+    if timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be positive")
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
     token = secrets.token_urlsafe(32)
     config = connection(os.environ) if live else None
     if voice_only and not config:
@@ -90,6 +93,7 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
         else:
             pending.replace(output)
     record("stage", "starting")
+    record("run_timeout_seconds", timeout_seconds)
     with tempfile.TemporaryDirectory(dir=ROOT / "tmp", ignore_cleanup_errors=True) as directory, patch.dict(os.environ, {"TUBER_ADMIN_TOKEN": token}):
         settings = Settings(runtime=Path(directory))
         if config:
@@ -118,6 +122,7 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                             serving.result()
                         await asyncio.sleep(.05)
                 async with AsyncExitStack() as stack:
+                    await stack.enter_async_context(asyncio.timeout_at(deadline))
                     playwright = await stack.enter_async_context(async_playwright())
                     browser = await playwright.chromium.launch(executable_path=os.getenv("CHROMIUM_EXECUTABLE"))
                     stack.push_async_callback(browser.close)
@@ -184,7 +189,7 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                             origin, replay = reviewed_read(*reviewed_receipt)
                             stack.enter_context(patch("tuber_studio.agent.task_tools.read_public_part", replay))
                             record("material_origin", origin)
-                        report["video"] = await compare(client, runtime, port, device, token, row, record, correct_voice)
+                        report["video"] = await compare(client, runtime, port, device, token, row, record, correct_voice, deadline)
                     else:
                         report["final_user_transcript"] = {"status":"unverified", "reason":"ordinary_service_binding_missing"}
                         report["video"] = {"status":"unverified", "reason":"ordinary_service_binding_missing" if live else "device_only"}
@@ -198,6 +203,9 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                     record("stage", "closing_clients")
             except Exception as error:
                 last = traceback.extract_tb(error.__traceback__)[-1]
+                if isinstance(error, TimeoutError) and "deadline_diagnostic" not in report:
+                    record("deadline_diagnostic", {"stage":report["stage"], "run_timeout_seconds":timeout_seconds,
+                                                   "total_expired":asyncio.get_running_loop().time() >= deadline})
                 record("failed_at", {"stage":report["stage"], "exception":type(error).__name__,
                                      "file":Path(last.filename).name, "function":last.name, "line":last.lineno,
                                      "winerror":getattr(error, "winerror", None)})
@@ -230,8 +238,10 @@ if __name__ == "__main__":
     parser.add_argument("--voice-wav", type=Path, help="speech fixture authorized for private Realtime input")
     parser.add_argument("--reviewed-receipt", nargs=2, metavar=("QA_RUNTIME", "STEP_ID"),
                         help="reuse an exact completed public-video read and its clip for all three editions")
+    parser.add_argument("--timeout-seconds", type=int, default=1440, help="total replay deadline, including admission waits")
     args = parser.parse_args()
-    result = asyncio.run(run(args.device, args.live, args.voice_wav, args.gateway_checkout, args.voice_only, args.reviewed_receipt))
+    result = asyncio.run(run(args.device, args.live, args.voice_wav, args.gateway_checkout, args.voice_only,
+                             args.reviewed_receipt, args.timeout_seconds))
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result.get("acceptance_passed") is False:
         raise SystemExit(1)

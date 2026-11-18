@@ -59,3 +59,5 @@ uv run --locked pytest -q tests/test_owner_memory_entries.py
 ```
 
 `--gateway-checkout` 只对私聊使用本地签票网关和远端普通应用连接，用于在部署前验证显式转认。录音要经过产品的开始、结束与确认操作；报告分别记录原生 final 数量、一次转认回包、所选条目的版本，以及独立设备读回的原话。
+
+完整回放默认总期限为 1440 秒，可用 `--timeout-seconds` 设置。号主话轮保存一次。整理该话轮或独立判读标题时遇到网关准入 429，按每次回包的 `Retry-After` 等待并重试当前操作。报告的 `queue_waits` 记录操作、等待秒数和剩余时间。剩余时间不足以等到下次准入时写入 `deadline_diagnostic`；预算错误立即结束该次调用并记录原因。

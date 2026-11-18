@@ -7,6 +7,7 @@ from uuid import uuid4
 from evaluations.owner_memory_device import AUTO, SEARCH, device_call
 from tuber_studio.agent.title_form import frame_observations, meets_form, read_title, title_words
 from tuber_studio.generation_meter import budgeted_call
+from tuber_studio.http_api import InferenceBudgetExceeded, InferenceQueueBusy
 
 BV = "BV1Hy4y1J7xH"
 GOAL = (f"请只读取 {BV} P2 的 11 到 14 秒，用其中最接近 13.5 秒的已核实画面给我写一项私有直播文字提纲。"
@@ -58,14 +59,39 @@ async def forget_current(client, port, device, login, sources):
     return {identity:row["revision"] for identity,row in latest.items()}
 
 
-async def compare(client, runtime, port, device, login, confirmed, record, correct_voice):
+async def await_admission(operation, call, deadline, receipts, record):
+    loop = asyncio.get_running_loop()
+    while True:
+        if loop.time() >= deadline:
+            record("deadline_diagnostic", {"operation": operation, "reason": "run deadline expired"})
+            raise TimeoutError("等待网关准入已到总期限")
+        try:
+            async with asyncio.timeout_at(deadline):
+                return await call()
+        except InferenceQueueBusy as busy:
+            remaining = max(0, deadline - loop.time())
+            wait = {"operation":operation, "retry_after":busy.retry_after, "remaining_seconds":remaining}
+            receipts.append(wait)
+            record("queue_waits", receipts)
+            if busy.retry_after >= remaining:
+                record("deadline_diagnostic", wait | {"reason":"Retry-After exceeds remaining run time"})
+                raise TimeoutError("总期限内无法按网关 Retry-After 再次准入") from busy
+            await asyncio.sleep(busy.retry_after)
+        except InferenceBudgetExceeded as error:
+            record("budget_diagnostic", {"operation":operation, "message":str(error)})
+            raise
+
+
+async def compare(client, runtime, port, device, login, confirmed, record, correct_voice, deadline):
+    queue_receipts = []
     # Reproduce a standing instruction supplied by the owner, with its original scope.
     identity = str(uuid4())
     original = AUTO
     (await client.post("/api/chat/intelligent", json={"request_id": identity, "message": original,
                                                      "intent": {"action": "chat"}})).raise_for_status()
+    record("saved_owner_turn", {"source_key":"turn:"+identity, "quote":original})
     record("stage", "organizing_owner_chat_turn")
-    await runtime.memory_organizer.run_once()
+    await await_admission("organize turn:"+identity, runtime.memory_organizer.run_once, deadline, queue_receipts, record)
     found = (await device_call(device, port, login, "POST", SEARCH, {"query": "turn:" + identity}))["value"]["items"]
     record("automatic_lookup", {"source_key":"turn:"+identity, "items":found, "state":runtime.memory_organizer.state()})
     auto, = [row for row in found if row["source_key"] == "turn:" + identity and AUTO in row["quote"]]
@@ -84,10 +110,12 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
     tasks.start()
     record("video_request", {"goal":GOAL, "selection":SELECTION})
     async def grader(messages, schema):
-        async with runtime.operator_generation("background"):
-            limit = min(runtime.settings.data["llm"]["max_tokens"], 1024)
-            return await budgeted_call(runtime.llm, lambda: runtime.llm.generate_json(messages, schema, max_tokens=limit),
-                                       messages, max_tokens=limit)
+        async def read():
+            async with runtime.operator_generation("background"):
+                limit = min(runtime.settings.data["llm"]["max_tokens"], 1024)
+                return await budgeted_call(runtime.llm, lambda: runtime.llm.generate_json(messages, schema, max_tokens=limit),
+                                           messages, max_tokens=limit)
+        return await await_admission("independent_title_reading", read, deadline, queue_receipts, record)
     async def edition(phase):
         task_id = str(uuid4())
         phase_for_task[task_id] = phase
