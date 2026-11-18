@@ -115,18 +115,25 @@ class MemoryOrganizer:
         # The original operator text is the only eligible private source.
         account, character, version = scope
         private = self.store.all(
-            "SELECT t.request_id,t.message,t.created_at,t.result FROM operator_chat_turns t "
-            "WHERE t.character_id=? AND t.character_version=? AND json_extract(t.result,'$.account_id')=? "
+            "SELECT t.request_id,t.message,t.created_at,t.result,t.character_version FROM operator_chat_turns t "
+            "WHERE t.character_id=? AND COALESCE(json_extract(t.result,'$.owner_source')=?,1) "
+            "AND ((t.character_version=? AND json_extract(t.result,'$.account_id')=?) "
+            "OR (json_extract(t.result,'$.owner_source')=? AND NOT EXISTS (SELECT 1 FROM kv WHERE "
+            "key='memory_preference:'||json_extract(t.result,'$.account_id')||':'||t.character_id "
+            "AND json_extract(value,'$.enabled')=0))) "
             "AND COALESCE(json_extract(t.result,'$.memory_intent'),'chat')='chat' "
-                "AND NOT EXISTS (SELECT 1 FROM memory_organization p WHERE p.account=? AND p.character=? "
-            "AND p.version=? AND p.source='turn:'||t.request_id) "
+            "AND NOT EXISTS (SELECT 1 FROM memory_organization p WHERE p.account=json_extract(t.result,'$.account_id') "
+            "AND p.character=t.character_id AND p.version=t.character_version AND p.source='turn:'||t.request_id) "
             "ORDER BY t.created_at,t.request_id LIMIT 4",
-            (character, version, account, *scope),
+            (character, self.runtime.daily_memory.private_owner, version, account, self.runtime.daily_memory.private_owner),
         )
         for turn in private:
+            saved = json.loads(turn["result"])
+            origin = (saved["account_id"], character, turn["character_version"])
             yield {"key": "turn:" + turn["request_id"], "kind": "private", "text": turn["message"],
                    "at": turn["created_at"], "revision": turn["request_id"],
-                   "temporary": not is_chat_turn(json.loads(turn["result"])) or contains_memory_credential(turn["message"])}
+                   "origin": origin, "preference": self.runtime.daily_memory.preference(origin),
+                   "temporary": not is_chat_turn(saved) or contains_memory_credential(turn["message"])}
         if not account:
             return
         public = self.store.all(
@@ -222,6 +229,8 @@ class MemoryOrganizer:
             if source["kind"] == "unavailable":
                 continue
             candidates = [row for row in visible.values() if row["memory_kind"] == source["kind"]]
+            if source.get("origin", scope) != scope:
+                candidates = [row for row in candidates if row["proof"].get("private_owner") == memory.private_owner]
             candidates.sort(key=lambda row: -runtime.daily_memory.memory_match(row, source["text"]))
             if source["kind"] == "experience":
                 candidates = [row for row in candidates if row["source_ref"] == source["key"]]
@@ -278,6 +287,10 @@ class MemoryOrganizer:
         return len(sources)
 
     def _apply(self, scope, source, decision, supplied, visible):
+        if "origin" in source:
+            scope = source["origin"]
+            if source["preference"] != self.runtime.daily_memory.preference(scope):
+                return
         if decision and decision.action != "skip":
             original = source["text"].strip()
             tags = [tag.strip() for tag in decision.tags if tag.strip() and tag.strip() in original]
@@ -296,8 +309,11 @@ class MemoryOrganizer:
             )
             if not current or current["message"] != source["text"]:
                 return
-            if not is_chat_turn(json.loads(current["result"])):
+            saved = json.loads(current["result"])
+            if not is_chat_turn(saved):
                 decision = None
+            elif saved.get("private") and saved.get("owner_source"):
+                source = source | {"private_owner": saved["owner_source"]}
         elif source["kind"] == "experience":
             current = self._public_source(scope, source["anchor"], source["at"])
             if not current or current["revision"] != source["revision"]:

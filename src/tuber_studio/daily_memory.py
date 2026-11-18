@@ -155,6 +155,7 @@ SCAFFOLDING_WORDS = {
 class DailyMemoryService:
     def __init__(self, store):
         self.store = store
+        self.private_owner = None
         if store is None:
             return
         columns = {row[1] for row in store.db.execute("PRAGMA table_info(daily_highlights)")}
@@ -228,7 +229,9 @@ class DailyMemoryService:
             "AND json_extract(source_evidence,'$.summary_kind') IS NULL"
         )
         query = ""
-        parameters = [scope[1], scope[2], scope[0], item_id, item_id, int(unclassified), exact_title, exact_title]
+        owner = self.private_owner if not recall or recall[0] == "operator" else None
+        parameters = [scope[1], self.private_owner, scope[2], scope[0], owner, item_id, item_id,
+                      int(unclassified), exact_title, exact_title]
         if recall is not None:
             channel, keywords, resource, thread = recall
             document = ("lower(headline || ' ' || quote || ' ' || anecdote || ' ' || tags)" if channel == "operator"
@@ -243,9 +246,11 @@ class DailyMemoryService:
                 return []
             query = "AND status='active' AND (" + " OR ".join(alternatives) + ") "
         rows = self.store.all(
-            "SELECT * FROM daily_highlights WHERE character_id=? AND character_version=? "
-            "AND CASE WHEN json_valid(source_evidence) THEN json_extract(source_evidence,'$.memory_kind') END IS NOT NULL "
-            "AND CASE WHEN json_valid(source_evidence) THEN json_extract(source_evidence,'$.operation_account_id') END=? "
+            "SELECT * FROM daily_highlights WHERE character_id=? AND CASE WHEN json_valid(source_evidence) THEN "
+            "(json_extract(source_evidence,'$.private_owner') IS NULL OR json_extract(source_evidence,'$.private_owner')=?) AND "
+            "json_extract(source_evidence,'$.memory_kind') IS NOT NULL AND ((character_version=? AND "
+            "json_extract(source_evidence,'$.operation_account_id')=?) OR (json_extract(source_evidence,'$.private_owner')=? "
+            "AND json_extract(source_evidence,'$.memory_kind')='private' AND json_extract(source_evidence,'$.scene') IS NULL)) END "
             "AND (? IS NULL OR id=?) "
             f"AND CASE WHEN json_valid(source_evidence) THEN ({private_unclassified}) = ? END "
             "AND (? IS NULL OR headline=?) "
@@ -395,10 +400,16 @@ class DailyMemoryService:
         headline = decision.headline.strip()
         signature = re.sub(r"\W", "", headline).casefold()
         target = source.get("scene")
+        owner = source.get("private_owner") if (
+            kind == "private" and not target and decision.summary_kind == "preference"
+            and source.get("private_owner") == self.private_owner
+        ) else None
+        if existing and existing["proof"].get("private_owner") != owner:
+            existing = None
         for row in rows:
             if row["memory_kind"] != kind:
                 continue
-            if row["proof"].get("scene") != target:
+            if row["proof"].get("scene") != target or row["proof"].get("private_owner") != owner:
                 continue
             if row["source_ref"] == key or kind == "private" and (
                 row["quote"] == quote or re.sub(r"\W", "", row["headline"]).casefold() == signature
@@ -411,6 +422,8 @@ class DailyMemoryService:
                 return False
             existing = latest[0]
             if kind == "private" and source["at"] <= existing["proof"].get("owner_edit_at", 0):
+                return False
+            if owner and source["at"] < existing["source"]["at"]:
                 return False
             if kind == "experience":
                 # Keep the reviewed text and permissions, with the latest verified sources.
@@ -439,6 +452,11 @@ class DailyMemoryService:
             if scope[0] and not self._public_memory_projection(proof, proof["memory_source"]):
                 return False
         if kind == "private":
+            if owner:
+                proof["private_owner"] = owner
+                proof["memory_source"]["scope"] = list(scope)
+                if existing:
+                    proof["operation_account_id"] = existing["proof"]["operation_account_id"]
             proof["summary_kind"] = decision.summary_kind
             previous = existing["proof"].get("preference_sources", [source_ref]) if existing else []
             proof["preference_sources"] = list(dict.fromkeys([*previous, key]))

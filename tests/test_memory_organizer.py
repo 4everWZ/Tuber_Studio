@@ -380,6 +380,49 @@ async def test_shared_memory_keeps_owner_correction_after_two_client_restart(set
         await assert_transcript_is_not_recall(second, runtime, initial_turn, token)
 
 
+async def test_bound_collaboration_preference_can_be_corrected_across_bindings(settings, monkeypatch):
+    app = create_app(settings)
+    runtime = app.state.runtime
+    memory, organizer = runtime.daily_memory, runtime.memory_organizer
+    runtime.llm = OrganizerModel()
+    original = runtime.character
+    discovery = app.state.browsing.discovery
+    discovery.remember_account("100")
+    initial_scope = organizer.scope()
+
+    async def chat(*args, **kwargs):
+        return {"action": "chat", "reply_markdown": "记下了。"}
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", chat, raising=False)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        async def tell(text):
+            result = await client.post("/api/chat/intelligent", json={"request_id": str(uuid4()), "message": text})
+            result.raise_for_status()
+
+        await tell("以后运营汇报先说结论")
+        discovery.remember_account("200")
+        runtime.store.save_character(original)
+        assert await organizer.run_once() == 1
+        first, = memory.organized(initial_scope)
+        scope = organizer.scope()
+        assert scope != initial_scope
+        assert memory.recall_organized(scope, "operator", "运营汇报")[0]["id"] == first["id"]
+        await tell("我改主意了，以后运营汇报先说风险")
+        assert await organizer.run_once() == 1
+        latest, = memory.organized(scope)
+        assert latest["id"] == first["id"] and latest["quote"].endswith("先说风险")
+        assert latest["source"]["scope"] == list(scope) and latest["proof"]["operation_account_id"] == "100"
+        for channel in ("live", "comment", "direct_message"):
+            assert not memory.recall_organized(scope, channel, "运营汇报")
+        runtime.store.save_character(original | {"id": "another"})
+        runtime.store.activate("another")
+        assert not memory.organized(organizer.scope())
+        assert not memory.change_organized(organizer.scope(), first["id"], note="不应修改")
+        runtime.store.activate(original["id"])
+        assert memory.change_organized(organizer.scope(), first["id"], delete=True)["deleted"]
+        assert not memory.organized(initial_scope)
+
+
 async def test_private_memory_updates_after_worker_restart_and_stays_private(settings):
     app = create_app(settings)
     runtime = app.state.runtime

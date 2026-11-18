@@ -245,6 +245,8 @@ _NONCANCELLABLE_ACTIONS = {
 class OperatorChat:
     def __init__(self, runtime, store, browsing, dynamics):
         self.runtime, self.store, self.browsing, self.dynamics = runtime, store, browsing, dynamics
+        self.private_owner = runtime.tasks.identity.principal
+        runtime.daily_memory.private_owner = self.private_owner
         self.lock = asyncio.Lock()
         self.pending = {}
         store.execute(
@@ -339,11 +341,17 @@ class OperatorChat:
         )
 
     def _assistant_history(self, char, account, *, discussion=False, full_turns=False):
+        bindings = [char["id"], self.private_owner, char["version"], account]
+        portable = ""
+        if not discussion:
+            portable = " OR json_extract(result,'$.private_owner')=?"
+            bindings.append(self.private_owner)
         rows = self.store.all(
-            "SELECT message,result FROM operator_chat_turns WHERE character_id=? AND character_version=? "
-            "AND json_extract(result,'$.account_id')=? "
+            "SELECT message,result,character_version FROM operator_chat_turns WHERE character_id=? AND "
+            "COALESCE(json_extract(result,'$.owner_source')=?,1) AND "
+            "((character_version=? AND json_extract(result,'$.account_id')=?)" + portable + ") "
             "ORDER BY created_at DESC,request_id DESC" + ("" if full_turns else " LIMIT 4"),
-            (char["id"], char["version"], account),
+            bindings,
         )
         pairs = []
         for row in rows:
@@ -359,6 +367,8 @@ class OperatorChat:
             message = row["message"]
             if not full_turns:
                 message, reply = message[:320], reply[:420]
+            if row["character_version"] != char["version"] or saved.get("account_id") != account:
+                message = "此前私聊（不代表当前运营账号身份或授权）：" + message
             pairs.append(({"role": "user", "content": message}, {"role": "assistant", "content": reply}))
         return [message for pair in reversed(pairs) for message in pair]
 
@@ -401,14 +411,15 @@ class OperatorChat:
             (char["id"], char["version"], account),
         )
         cards = [{key: task[key] for key in ("id", "goal", "revision", "status")}
-                 for row in rows if (task := self.runtime.tasks.current(row["id"]))]
+                 for row in rows if (task := self.runtime.tasks.executable(row["id"]))]
         context = {"recent_task_cards": cards} if cards else {}
         last = self.store.one(
             "SELECT request_id,result FROM operator_chat_turns WHERE character_id=? AND character_version=? "
             "AND json_extract(result,'$.account_id')=? ORDER BY created_at DESC,request_id DESC LIMIT 1",
             (char["id"], char["version"], account),
         )
-        if last and (prior := json.loads(last["result"])).get("clarification_request"):
+        if (last and (prior := json.loads(last["result"])).get("clarification_request")
+                and prior.get("execution_scope") == self.runtime.tasks.scope()):
             context["clarification"] = {"id": last["request_id"], "request": prior["clarification_request"],
                                         "question": prior["reply_text"]}
         return context
@@ -592,7 +603,8 @@ class OperatorChat:
             result = result | {"memory_dependent": True}
         result = {key: value for key, value in result.items()
                   if key not in {"submission", "binding", "account_id", "memory", "confirmations", "organized_memory",
-                                 "memory_intent", "assistant_context", "clarification_request"}}
+                                 "memory_intent", "assistant_context", "clarification_request", "private_owner",
+                                 "owner_source", "execution_scope"}}
         card = result.get("card")
         if card is None:
             return result
@@ -696,40 +708,52 @@ class OperatorChat:
     def _turn(self, request_id):
         return self.store.one("SELECT * FROM operator_chat_turns WHERE request_id=?", (request_id,))
 
-    def current_turn(self, request_id):
+    def current_turn(self, request_id, *, read_only=False):
         row = self._turn(request_id)
         char = self.runtime.character
-        if row is None or (row["character_id"], row["character_version"]) != (char["id"], char["version"]):
+        if row is None or row["character_id"] != char["id"]:
             raise HTTPException(404, "找不到当前角色的这段对话")
+        saved = json.loads(row["result"])
+        if saved.get("owner_source", self.private_owner) != self.private_owner:
+            raise HTTPException(404, "找不到当前号主的这段对话")
+        if read_only and saved.get("private_owner") == self.private_owner:
+            return row
+        if row["character_version"] != char["version"]:
+            raise HTTPException(404, "找不到当前角色的这段对话")
+        if not read_only and saved.get("account_id") != self._account():
+            raise HTTPException(409, "请切换到当时的账号进行操作。")
+        if not read_only and "execution_scope" in saved and saved["execution_scope"] != self.runtime.tasks.scope():
+            raise HTTPException(409, "这张卡的执行授权已变化，请重新提出操作。")
         return row
 
     def visible_turn(self, row):
         result = json.loads(row["result"])
         card = result.get("card") or {}
-        if result.get("account_id") not in {None, self._account()} and (
-            card or result.get("memory") or result.get("organized_memory")
-        ):
+        message = row["message"]
+        if result.get("account_id") != self._account() and result.get("private_owner") != self.private_owner:
+            message = ""
             result = {"reply_text": "请切换到当时的账号查看来源和任务。", "card": None}
-            if card.get("type") == "video_activity":
-                result["card"] = card
-            elif card.get("type") == "video_browsing":
-                return {"request_id": row["request_id"], "message": row["message"], **result,
-                        "card": {"type": "video_browsing", "data": {"status": "unavailable"}}}
+            if card.get("type") in {"video_activity", "video_browsing"}:
+                unavailable = {"available": False} if card["type"] == "video_activity" else {"status": "unavailable"}
+                return {"request_id": row["request_id"], "message": message, **result,
+                        "card": {"type": card["type"], "data": unavailable}}
         return {
-            "request_id": row["request_id"], "message": row["message"],
+            "request_id": row["request_id"], "message": message,
             **self._visible(result, historical=True),
         }
 
     def history(self, limit, before):
         char = self.runtime.character
-        scope = (char["id"], char["version"])
+        scope = (char["id"], self.private_owner, char["version"], self.private_owner)
         boundary, cursor = "", ()
         if before:
-            anchor = self.current_turn(before)
+            anchor = self.current_turn(before, read_only=True)
             boundary = " AND (created_at,request_id)<(?,?)"
             cursor = (anchor["created_at"], anchor["request_id"])
         rows = self.store.all(
-            "SELECT * FROM operator_chat_turns WHERE character_id=? AND character_version=? "
+            "SELECT * FROM operator_chat_turns WHERE character_id=? AND "
+            "COALESCE(json_extract(result,'$.owner_source')=?,1) AND "
+            "(character_version=? OR json_extract(result,'$.private_owner')=?) "
             + boundary + " ORDER BY created_at DESC,request_id DESC LIMIT ?", (*scope, *cursor, limit + 1),
         )
         avatar = next((entry["url"] for entry in self.runtime.settings.assets(char)
@@ -780,6 +804,7 @@ class OperatorChat:
                 if (
                     (row["character_id"], row["character_version"]) != (char["id"], char["version"])
                     or row["message"] != data.message
+                    or result.get("owner_source", self.private_owner) != self.private_owner
                     or result.get("account_id", account) != account
                     or result.get("submission", {"intent": None, "video_selection":
                         ((result.get("card") or {}).get("data") or {}).get("selection")}) != submission
@@ -843,6 +868,14 @@ class OperatorChat:
                     "operator_chat", memory_kind="operator_private",
                 )
             result |= {"account_id": self._account(), "submission": submission, "memory_intent": intent.action}
+            if result.get("clarification_request") or (result.get("card") or {}).get("type") in {
+                "video_browsing", "live_confirmation", "operation_control",
+            }:
+                result["execution_scope"] = self.runtime.tasks.scope()
+            if intent.action == "chat" and result.get("private"):
+                result["owner_source"] = self.private_owner
+                if not result.get("organized_memory"):
+                    result["private_owner"] = self.private_owner
             self.store.execute(
                 "INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)",
                 (request_id, char["id"], char["version"], data.message, dump(result), time.time()),
@@ -1508,7 +1541,9 @@ class OperatorChat:
                 db.execute("DELETE FROM grounded_memory WHERE scope IN (?,?) AND character_id=?",
                            (scope, legacy_scope, char["id"]))
                 db.execute("DELETE FROM operator_chat_turns WHERE character_id=? "
-                           "AND COALESCE(json_extract(result,'$.account_id'),?)=?", (char["id"], self._account(), self._account()))
+                           "AND COALESCE(json_extract(result,'$.owner_source')=?,1) "
+                           "AND (COALESCE(json_extract(result,'$.account_id'),'')=? OR json_extract(result,'$.private_owner')=?)",
+                           (char["id"], self.private_owner, self._account(), self.private_owner))
         return {"ok": True}
 
     def _experience_rows(self, *, item_id=None, limit=50):
@@ -1610,7 +1645,7 @@ def register_operator_chat(app, runtime, store, browsing, dynamics, require_admi
 
     @app.get("/api/chat/intelligent/turns/{request_id}", dependencies=deps)
     async def get_turn(request_id: UUID):
-        return service.visible_turn(service.current_turn(str(request_id)))
+        return service.visible_turn(service.current_turn(str(request_id), read_only=True))
 
     @app.get("/api/chat/intelligent/turns/{request_id}/inspection-image", dependencies=deps)
     async def inspection_image(request_id: UUID):

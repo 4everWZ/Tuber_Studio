@@ -163,6 +163,56 @@ async def test_chat_steer_rejects_concurrent_revision_and_non_card_tasks(setting
         assert tasks.current(hidden)["revision"] == 1
 
 
+async def test_bound_private_chat_survives_version_and_account_but_not_role_switch(settings, monkeypatch):
+    app = create_app(settings, adapter=ControlledPlatform())
+    runtime, discovery = app.state.runtime, app.state.browsing.discovery
+    store, path = runtime.store, "/api/chat/intelligent"
+    prompts = []
+
+    async def decide(messages, schema, **options):
+        prompts.append(messages)
+        return {"action": "chat", "reply_markdown": "后来它游回来了。"}
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", decide, raising=False)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        discovery.remember_account("100")
+        original = runtime.character
+        turn_id, task_id, hidden = (str(uuid4()) for _ in range(3))
+        async def send(identity, text, action=None):
+            return (await client.post(path, json={"request_id": identity, "message": text,
+                                      **({"intent": {"action": action}} if action else {})})).raise_for_status().json()
+
+        await send(turn_id, "小海龟去了哪里？")
+        await send(task_id, "仅为旧账号准备便笺", "agent_task")
+        store.execute("INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)", (
+            hidden, original["id"], original["version"], "没有绑定的记录", '{"private":true}', time.time()))
+        discovery.remember_account("200")
+        await send(str(uuid4()), "它还记得回去的路吗？")
+        assert "小海龟去了哪里" in str(prompts[-1])
+        assert "仅为旧账号准备便笺" not in str(prompts[-1]) and "没有绑定的记录" not in str(prompts[-1])
+        discovery.remember_account("100")
+        await send(str(uuid4()), "刚才那份还在吗？")
+        assert "仅为旧账号准备便笺" not in str(prompts[-1])
+        expired = await client.post(path, json={"request_id": str(uuid4()), "message": "改一下",
+                                                "intent": {"action": "steer_task", "reference": task_id}})
+        assert expired.raise_for_status().json()["card"] is None
+        discovery.remember_account("200")
+        store.save_character(original)
+        assert runtime.character["version"] != original["version"]
+        assert (await client.get(path + "/turns/" + turn_id)).json()["message"] == "小海龟去了哪里？"
+        assert (await client.get(path + "/turns/" + hidden)).status_code == 404
+        assert (await client.get(path + "/turns/" + task_id)).status_code == 404
+        stale = await client.post(path, json={"request_id": str(uuid4()), "message": "换个重点",
+                                              "intent": {"action": "steer_task", "reference": task_id}})
+        assert stale.json()["card"] is None and runtime.tasks.current(task_id)["revision"] == 1
+        page = (await client.get(path)).json()
+        assert turn_id in [turn["request_id"] for turn in page["turns"]]
+        store.save_character(original | {"id": "another"})
+        store.activate("another")
+        assert (await client.get(path + "/turns/" + turn_id)).status_code == 404
+        assert not (await client.get(path)).json()["turns"]
+
+
 @pytest.mark.parametrize("change", ["account", "character", "memory"])
 def test_assistant_rechecks_private_scope_before_delivery(settings, monkeypatch, change):
     app = create_app(settings, adapter=ControlledPlatform())
