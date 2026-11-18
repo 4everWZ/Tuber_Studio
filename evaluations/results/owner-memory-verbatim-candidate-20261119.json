@@ -1,0 +1,682 @@
+{
+  "run": "v8ylicf6",
+  "material_origin": {
+    "mode": "reused_verified_public_read",
+    "task_id": "06b1ee8d-40f4-4756-8ca0-e91bd68f34bc",
+    "step_id": "840ec0bf-e632-5856-a442-1b7045296a31",
+    "selection": {
+      "bvid": "BV1Hy4y1J7xH",
+      "ranges": [
+        {
+          "part": 2,
+          "start": 11,
+          "end": 14
+        }
+      ]
+    },
+    "cid": "301983263",
+    "clip_frames": 75
+  },
+  "owner_chat_quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+  "voice": {
+    "speaker": "synthetic Mandarin QA speech",
+    "protocol": "explicit_user_audio",
+    "explicit_samples": 128000,
+    "bound_final_transcript": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "owner_confirmed_text": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "preview_edited_by_authorized_qa": false
+  },
+  "voice_readback": {
+    "id": 1,
+    "revision": 3,
+    "quote": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "voice_origin": {
+      "machine_text": "以后直播提纲的标题都用陈述句，以句号结尾。",
+      "capture_id": "bIlIQUyKynt0YMwcF6Voha7F",
+      "samples": 128000,
+      "owner_edited": false
+    }
+  },
+  "request": {
+    "goal": "请只读取 BV1Hy4y1J7xH P2 的 11 到 14 秒，用其中最接近 13.5 秒的已核实画面给我写一项私有直播文字提纲。交付标题、选用理由和覆盖缺口。有画面即可成稿，缺少字幕或音轨就标明。标题沿用已约定的写法，未约定时用末尾无标点的简短名词标题。先别发。",
+    "selection": {
+      "bvid": "BV1Hy4y1J7xH",
+      "ranges": [
+        {
+          "part": 2,
+          "start": 11,
+          "end": 14
+        }
+      ]
+    }
+  },
+  "independent_device": {
+    "architecture": "x86_64",
+    "fresh_authenticated_session": true,
+    "read_after_page_close": true,
+    "forget_visible_on_original_client": true
+  },
+  "before": {
+    "status": "completed",
+    "body": "**画面中央是一个装饰华丽的金色宝座，为什么它是视觉焦点？**\n选材理由：画面依据：画面中央是一个装饰华丽的金色宝座。剪辑安排：用在开场，开场时插入这一镜，作为引入段落的视觉支撑，随后配合第一句介绍语音出现。\n主帧：BV1Hy4y1J7xH · 单帧采样 · 分 P 2 · 13.52 秒 · <https://www.bilibili.com/video/BV1Hy4y1J7xH/?p=2&t=13>\n覆盖：仅核实所列采样时点；连续画面及音轨均未经该画面回执核实。\n\n当轮取材窗口与观测覆盖：\n- 第 1 项 · BV1Hy4y1J7xH P2 · 连续取材入点 11 秒、出点 14 秒（不含），保存 75 个连续原帧。私有短片不含音轨。\n- 第 1 项 · 逐帧检测画面及下方屏字变化；Omni 审读代表帧 11、12.24、13.96 秒，检测到的状态均有代表帧。\n- 第 1 项 · BV1Hy4y1J7xH P2 · 请求抽样范围 [11, 14) 秒。初读取材观察 3 帧，实际时点为 11.44、12.48、13.52 秒。\n- 第 1 项的工具回执：此区间未取得可公开读取的字幕。\n- 第 1 项的工具回执：画面内容按时点抽样描述；未听审原片音轨。",
+    "citations": [
+      {
+        "id": 1,
+        "revision": 2,
+        "headline": "直播",
+        "note": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+        "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+        "source_key": "turn:2cd37930-d977-4d9a-9b22-90c798e8736c"
+      }
+    ],
+    "editor_review": {
+      "preference_ids": [
+        1
+      ],
+      "format_checks": 1,
+      "format_rules": [
+        {
+          "id": 1,
+          "revision": 2,
+          "source": "turn:2cd37930-d977-4d9a-9b22-90c798e8736c",
+          "check": {
+            "field": "title",
+            "operation": "ends_with",
+            "value": "？"
+          },
+          "start": 12,
+          "end": 24,
+          "quote": "标题都用问句，以问号结尾"
+        }
+      ],
+      "discarded_format_suggestions": [
+        {
+          "id": 1,
+          "revision": 2,
+          "source": "turn:2cd37930-d977-4d9a-9b22-90c798e8736c",
+          "suggested": {
+            "field": "title",
+            "operation": "starts_with",
+            "value": "关于"
+          },
+          "reason": "号主原文没有可核对的字段、操作与值跨度"
+        },
+        {
+          "id": 1,
+          "revision": 2,
+          "source": "turn:2cd37930-d977-4d9a-9b22-90c798e8736c",
+          "suggested": {
+            "field": "rationale",
+            "operation": "contains",
+            "value": "画面"
+          },
+          "reason": "号主原文没有可核对的字段、操作与值跨度"
+        },
+        {
+          "id": 1,
+          "revision": 2,
+          "source": "turn:2cd37930-d977-4d9a-9b22-90c798e8736c",
+          "suggested": {
+            "field": "gap",
+            "operation": "contains",
+            "value": "无"
+          },
+          "reason": "号主原文没有可核对的字段、操作与值跨度"
+        }
+      ],
+      "attempts": [
+        {
+          "titles": {
+            "items.0.title": {
+              "form": "问句",
+              "core": "为什么它是视觉焦点",
+              "supported": true,
+              "observation": "画面中央是一个装饰华丽的金色宝座",
+              "answer": "因为画面中央是一个装饰华丽的金色宝座",
+              "core_bound": true,
+              "answer_bound": false,
+              "grounded": true,
+              "title": "画面中央是一个装饰华丽的金色宝座，为什么它是视觉焦点？",
+              "observations": [
+                "画面中央是一个装饰华丽的金色宝座",
+                "宝座周围摆放着蓝色和白色的石像或装饰物",
+                "一名身穿传统服饰的人物站在宝座右侧",
+                "室内装饰以深色调为主，带有复杂的雕花和图案",
+                "宫廷场景",
+                "皇帝宝座",
+                "古代服饰人物",
+                "很快就创造了16.7%的收视奇迹",
+                "史君说剧 bilibili"
+              ],
+              "expected": {
+                "1": "问句"
+              },
+              "writing_review_issues": [],
+              "literal_checks_passed": true
+            }
+          },
+          "submitted_titles": [
+            "画面中央是一个装饰华丽的金色宝座，为什么它是视觉焦点？"
+          ],
+          "failed_fields": {}
+        }
+      ],
+      "alternatives": {},
+      "repaired_fields": [],
+      "title_readings": {
+        "items.0.title": {
+          "form": "问句",
+          "core": "为什么它是视觉焦点",
+          "supported": true,
+          "observation": "画面中央是一个装饰华丽的金色宝座",
+          "answer": "因为画面中央是一个装饰华丽的金色宝座",
+          "core_bound": true,
+          "answer_bound": false,
+          "grounded": true,
+          "title": "画面中央是一个装饰华丽的金色宝座，为什么它是视觉焦点？",
+          "observations": [
+            "画面中央是一个装饰华丽的金色宝座",
+            "宝座周围摆放着蓝色和白色的石像或装饰物",
+            "一名身穿传统服饰的人物站在宝座右侧",
+            "室内装饰以深色调为主，带有复杂的雕花和图案",
+            "宫廷场景",
+            "皇帝宝座",
+            "古代服饰人物",
+            "很快就创造了16.7%的收视奇迹",
+            "史君说剧 bilibili"
+          ],
+          "expected": {
+            "1": "问句"
+          },
+          "writing_review_issues": [],
+          "literal_checks_passed": true
+        }
+      }
+    },
+    "items": [
+      {
+        "title": "画面中央是一个装饰华丽的金色宝座，为什么它是视觉焦点？",
+        "rationale": "画面依据：画面中央是一个装饰华丽的金色宝座。剪辑安排：用在开场，开场时插入这一镜，作为引入段落的视觉支撑，随后配合第一句介绍语音出现。",
+        "sources": [
+          "40454f84-5f70-5582-a87c-7cf06266956f:3"
+        ],
+        "primary_frame": "40454f84-5f70-5582-a87c-7cf06266956f:3"
+      }
+    ],
+    "primary_points": [
+      {
+        "part": 2,
+        "cid": "301983263",
+        "seconds": 13.52
+      }
+    ],
+    "independent_device_body_matched": true,
+    "measurement": {
+      "items": [
+        {
+          "title": "画面中央是一个装饰华丽的金色宝座，为什么它是视觉焦点？",
+          "ending": "？",
+          "punctuation_matches": true,
+          "expected_form": "问句",
+          "reading": {
+            "form": "问句",
+            "core": "为什么它是视觉焦点",
+            "supported": true,
+            "observation": "画面中央是一个装饰华丽的金色宝座",
+            "answer": "因为画面中央是一个装饰华丽的金色宝座",
+            "core_bound": true,
+            "answer_bound": false,
+            "grounded": true
+          },
+          "form_matches": true,
+          "frame_observations": [
+            "画面中央是一个装饰华丽的金色宝座",
+            "宝座周围摆放着蓝色和白色的石像或装饰物",
+            "一名身穿传统服饰的人物站在宝座右侧",
+            "室内装饰以深色调为主，带有复杂的雕花和图案",
+            "宫廷场景",
+            "皇帝宝座",
+            "古代服饰人物",
+            "很快就创造了16.7%的收视奇迹",
+            "史君说剧 bilibili"
+          ]
+        }
+      ],
+      "passed": true,
+      "requested_frame": true
+    }
+  },
+  "voice_corrected": {
+    "status": "failed",
+    "body": null,
+    "items": [],
+    "citations": [],
+    "measurement": {
+      "passed": false,
+      "items": []
+    },
+    "message": "成品仍未满足本轮写作约定：items.0.title（约定 #1）。尚未交付。"
+  },
+  "voice_editor_diagnostic": {
+    "preference_ids": [
+      1
+    ],
+    "format_checks": 1,
+    "format_rules": [
+      {
+        "id": 1,
+        "revision": 3,
+        "source": "confirmed_voice:5ae0547306446be1dbb8cdebbf450893eb2ff81de296e6cc5232017afb0e21c5",
+        "check": {
+          "field": "title",
+          "operation": "ends_with",
+          "value": "。"
+        },
+        "start": 7,
+        "end": 20,
+        "quote": "标题都用陈述句，以句号结尾"
+      }
+    ],
+    "discarded_format_suggestions": [
+      {
+        "id": 1,
+        "revision": 3,
+        "source": "confirmed_voice:5ae0547306446be1dbb8cdebbf450893eb2ff81de296e6cc5232017afb0e21c5",
+        "suggested": {
+          "field": "title",
+          "operation": "starts_with",
+          "value": "大肥鱼直播片段"
+        },
+        "reason": "号主原文没有可核对的字段、操作与值跨度"
+      }
+    ],
+    "attempts": [
+      {
+        "titles": {
+          "items.0.title": {
+            "form": "陈述句",
+            "core": "画面中央是一个装饰华丽的金色宝座",
+            "supported": true,
+            "observation": "画面中央是一个装饰华丽的金色宝座",
+            "answer": "画面中央是一个装饰华丽的金色宝座",
+            "core_bound": true,
+            "answer_bound": true,
+            "grounded": true,
+            "title": "画面中央是一个装饰华丽的金色宝座",
+            "observations": [
+              "画面中央是一个装饰华丽的金色宝座",
+              "宝座周围摆放着蓝色和白色的石像或装饰物",
+              "一名身穿传统服饰的人物站在宝座右侧",
+              "室内装饰以深色调为主，带有复杂的雕花和图案",
+              "宫廷场景",
+              "皇帝宝座",
+              "古代服饰人物",
+              "很快就创造了16.7%的收视奇迹",
+              "史君说剧 bilibili"
+            ],
+            "expected": {
+              "1": "陈述句"
+            },
+            "writing_review_issues": [
+              1
+            ],
+            "literal_checks_passed": false
+          }
+        },
+        "submitted_titles": [
+          "画面中央是一个装饰华丽的金色宝座"
+        ],
+        "failed_fields": {
+          "items.0.title": [
+            1
+          ]
+        }
+      },
+      {
+        "titles": {
+          "items.0.title": {
+            "form": "陈述句",
+            "core": "画面中央是一个装饰华丽的金色宝座",
+            "supported": true,
+            "observation": "画面中央是一个装饰华丽的金色宝座",
+            "answer": "画面中央是一个装饰华丽的金色宝座",
+            "core_bound": true,
+            "answer_bound": true,
+            "grounded": true,
+            "title": "画面中央是一个装饰华丽的金色宝座",
+            "observations": [
+              "画面中央是一个装饰华丽的金色宝座",
+              "宝座周围摆放着蓝色和白色的石像或装饰物",
+              "一名身穿传统服饰的人物站在宝座右侧",
+              "室内装饰以深色调为主，带有复杂的雕花和图案",
+              "宫廷场景",
+              "皇帝宝座",
+              "古代服饰人物",
+              "很快就创造了16.7%的收视奇迹",
+              "史君说剧 bilibili"
+            ],
+            "expected": {
+              "1": "陈述句"
+            },
+            "writing_review_issues": [
+              1
+            ],
+            "literal_checks_passed": false
+          }
+        },
+        "submitted_titles": [
+          "画面中央是一个装饰华丽的金色宝座"
+        ],
+        "failed_fields": {
+          "items.0.title": [
+            1
+          ]
+        }
+      }
+    ],
+    "alternatives": {
+      "items.0.title": {
+        "fact": "画面中央是一个装饰华丽的金色宝座",
+        "candidates": [
+          {
+            "title": "画面中央是一个装饰华丽的金色宝座。",
+            "evidence_span": "画面中央是一个装饰华丽的金色宝座",
+            "anchor_matches": true,
+            "literal_checks_passed": true,
+            "reading": {
+              "form": "陈述句",
+              "core": "画面中央是一个装饰华丽的金色宝座",
+              "supported": true,
+              "observation": "画面中央是一个装饰华丽的金色宝座",
+              "answer": "画面中央是一个装饰华丽的金色宝座",
+              "core_bound": true,
+              "answer_bound": true,
+              "grounded": true
+            }
+          },
+          {
+            "title": "装饰华丽的金色宝座位于画面中央。",
+            "evidence_span": "画面中央是一个装饰华丽的金色宝座",
+            "anchor_matches": true,
+            "literal_checks_passed": true,
+            "reading": null
+          },
+          {
+            "title": "一个装饰华丽的金色宝座出现在画面中央。",
+            "evidence_span": "画面中央是一个装饰华丽的金色宝座",
+            "anchor_matches": true,
+            "literal_checks_passed": true,
+            "reading": null
+          }
+        ],
+        "chosen": "画面中央是一个装饰华丽的金色宝座。"
+      }
+    }
+  },
+  "after": {
+    "status": "completed",
+    "body": "**大肥鱼的宫廷场景，画面中央是一个装饰华丽的金色宝座**\n选材理由：画面依据：画面中央是一个装饰华丽的金色宝座。剪辑安排：用在开场，开场时插入这一镜，作为引入段落的视觉支撑，随后配合第一句介绍语音出现。\n主帧：BV1Hy4y1J7xH · 单帧采样 · 分 P 2 · 13.52 秒 · <https://www.bilibili.com/video/BV1Hy4y1J7xH/?p=2&t=13>\n覆盖：仅核实所列采样时点；连续画面及音轨均未经该画面回执核实。\n\n当轮取材窗口与观测覆盖：\n- 第 1 项 · BV1Hy4y1J7xH P2 · 连续取材入点 11 秒、出点 14 秒（不含），保存 75 个连续原帧。私有短片不含音轨。\n- 第 1 项 · 逐帧检测画面及下方屏字变化；Omni 审读代表帧 11、12.24、13.96 秒，检测到的状态均有代表帧。\n- 第 1 项 · BV1Hy4y1J7xH P2 · 请求抽样范围 [11, 14) 秒。初读取材观察 3 帧，实际时点为 11.44、12.48、13.52 秒。\n- 第 1 项的工具回执：此区间未取得可公开读取的字幕。\n- 第 1 项的工具回执：画面内容按时点抽样描述；未听审原片音轨。",
+    "citations": [],
+    "editor_review": null,
+    "items": [
+      {
+        "title": "大肥鱼的宫廷场景，画面中央是一个装饰华丽的金色宝座",
+        "rationale": "画面依据：画面中央是一个装饰华丽的金色宝座。剪辑安排：用在开场，开场时插入这一镜，作为引入段落的视觉支撑，随后配合第一句介绍语音出现。",
+        "sources": [
+          "661c0728-4320-57ed-8f75-3a7a4b0d9541:3"
+        ],
+        "primary_frame": "661c0728-4320-57ed-8f75-3a7a4b0d9541:3"
+      }
+    ],
+    "primary_points": [
+      {
+        "part": 2,
+        "cid": "301983263",
+        "seconds": 13.52
+      }
+    ],
+    "independent_device_body_matched": true,
+    "measurement": {
+      "items": [
+        {
+          "title": "大肥鱼的宫廷场景，画面中央是一个装饰华丽的金色宝座",
+          "ending": "",
+          "punctuation_matches": true,
+          "expected_form": "名词短语",
+          "reading": {
+            "form": "陈述句",
+            "core": "画面中央是一个装饰华丽的金色宝座",
+            "supported": true,
+            "observation": "画面中央是一个装饰华丽的金色宝座",
+            "answer": "画面中央是一个装饰华丽的金色宝座",
+            "core_bound": true,
+            "answer_bound": true,
+            "grounded": true
+          },
+          "form_matches": false,
+          "frame_observations": [
+            "画面中央是一个装饰华丽的金色宝座",
+            "宝座周围摆放着蓝色和白色的石像或装饰物",
+            "一名身穿传统服饰的人物站在宝座右侧",
+            "室内装饰以深色调为主，带有复杂的雕花和图案",
+            "宫廷场景",
+            "皇帝宝座",
+            "古代服饰人物",
+            "很快就创造了16.7%的收视奇迹",
+            "史君说剧 bilibili"
+          ]
+        }
+      ],
+      "passed": false,
+      "requested_frame": true
+    }
+  },
+  "forget": {
+    "1": 3
+  },
+  "manual_review": {
+    "before": "后半句在询问为什么，前半句所指的金色座椅在主帧中央。视觉焦点是构图讨论，没有观众注意力实测。",
+    "voice_corrected": "原稿和修稿都包含判断谓语“是”，主帧支持位置和颜色。已选候选的完整句号在下游重写中丢失，未交付。",
+    "after": "无记忆引用、无句末标点。逗号后的文字仍含完整的判断谓语“是”，且“大肥鱼的”将角色与该场景关联，主帧没有这一依据。"
+  },
+  "responses_capacity": {
+    "id": "llm-default",
+    "max_model_len": 262144
+  },
+  "responses_receipts": [
+    {
+      "requested_output_tokens": 4096,
+      "model": "llm-default",
+      "input_bytes": 1835,
+      "tools_bytes": 1866,
+      "tool_names": [
+        "inspect_video",
+        "submit_materials",
+        "ask_owner"
+      ],
+      "http_status": 200,
+      "status": "completed",
+      "incomplete_details": null,
+      "usage": {
+        "input_tokens": 1236,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "input_tokens_per_turn": [],
+          "cached_tokens_per_turn": []
+        },
+        "output_tokens": 373,
+        "output_tokens_details": {
+          "reasoning_tokens": 226,
+          "tool_output_tokens": 0,
+          "output_tokens_per_turn": [],
+          "tool_output_tokens_per_turn": []
+        },
+        "total_tokens": 1609
+      }
+    },
+    {
+      "requested_output_tokens": 4096,
+      "model": "llm-default",
+      "input_bytes": 4839,
+      "tools_bytes": 2117,
+      "tool_names": [
+        "inspect_video",
+        "submit_materials",
+        "ask_owner"
+      ],
+      "http_status": 200,
+      "status": "completed",
+      "incomplete_details": null,
+      "usage": {
+        "input_tokens": 2642,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "input_tokens_per_turn": [],
+          "cached_tokens_per_turn": []
+        },
+        "output_tokens": 645,
+        "output_tokens_details": {
+          "reasoning_tokens": 412,
+          "tool_output_tokens": 0,
+          "output_tokens_per_turn": [],
+          "tool_output_tokens_per_turn": []
+        },
+        "total_tokens": 3287
+      }
+    },
+    {
+      "requested_output_tokens": 4096,
+      "model": "llm-default",
+      "input_bytes": 1835,
+      "tools_bytes": 1866,
+      "tool_names": [
+        "inspect_video",
+        "submit_materials",
+        "ask_owner"
+      ],
+      "http_status": 200,
+      "status": "completed",
+      "incomplete_details": null,
+      "usage": {
+        "input_tokens": 1236,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "input_tokens_per_turn": [],
+          "cached_tokens_per_turn": []
+        },
+        "output_tokens": 449,
+        "output_tokens_details": {
+          "reasoning_tokens": 372,
+          "tool_output_tokens": 0,
+          "output_tokens_per_turn": [],
+          "tool_output_tokens_per_turn": []
+        },
+        "total_tokens": 1685
+      }
+    },
+    {
+      "requested_output_tokens": 4096,
+      "model": "llm-default",
+      "input_bytes": 4466,
+      "tools_bytes": 2117,
+      "tool_names": [
+        "inspect_video",
+        "submit_materials",
+        "ask_owner"
+      ],
+      "http_status": 200,
+      "status": "completed",
+      "incomplete_details": null,
+      "usage": {
+        "input_tokens": 2494,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "input_tokens_per_turn": [],
+          "cached_tokens_per_turn": []
+        },
+        "output_tokens": 830,
+        "output_tokens_details": {
+          "reasoning_tokens": 328,
+          "tool_output_tokens": 0,
+          "output_tokens_per_turn": [],
+          "tool_output_tokens_per_turn": []
+        },
+        "total_tokens": 3324
+      }
+    },
+    {
+      "requested_output_tokens": 4096,
+      "model": "llm-default",
+      "input_bytes": 1835,
+      "tools_bytes": 1866,
+      "tool_names": [
+        "inspect_video",
+        "submit_materials",
+        "ask_owner"
+      ],
+      "http_status": 200,
+      "status": "completed",
+      "incomplete_details": null,
+      "usage": {
+        "input_tokens": 1236,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "input_tokens_per_turn": [],
+          "cached_tokens_per_turn": []
+        },
+        "output_tokens": 272,
+        "output_tokens_details": {
+          "reasoning_tokens": 195,
+          "tool_output_tokens": 0,
+          "output_tokens_per_turn": [],
+          "tool_output_tokens_per_turn": []
+        },
+        "total_tokens": 1508
+      }
+    },
+    {
+      "requested_output_tokens": 4096,
+      "model": "llm-default",
+      "input_bytes": 4466,
+      "tools_bytes": 2117,
+      "tool_names": [
+        "inspect_video",
+        "submit_materials",
+        "ask_owner"
+      ],
+      "http_status": 200,
+      "status": "completed",
+      "incomplete_details": null,
+      "usage": {
+        "input_tokens": 2546,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "input_tokens_per_turn": [],
+          "cached_tokens_per_turn": []
+        },
+        "output_tokens": 835,
+        "output_tokens_details": {
+          "reasoning_tokens": 607,
+          "tool_output_tokens": 0,
+          "output_tokens_per_turn": [],
+          "tool_output_tokens_per_turn": []
+        },
+        "total_tokens": 3381
+      }
+    }
+  ],
+  "semantic_status": "unverified",
+  "acceptance_passed": false,
+  "platform_writes": 0,
+  "teardown": {
+    "remaining_http_tasks": 0,
+    "open_connections": 0,
+    "server_exited": true
+  }
+}
