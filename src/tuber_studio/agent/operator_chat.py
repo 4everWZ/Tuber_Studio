@@ -39,7 +39,7 @@ from .memory_organizer import MemorySuggestion
 from .owner_memory import citation, history_preference, private_rows
 from .owner_memory_api import register_owner_memory
 from .private_memory_writer import connect_private_writer
-from .task_history import TaskHistory
+from .task_history import TaskHistory, reason_reply, select_reason_lines
 from .task_tools import bound_owner, observed_live_status
 
 _BV = re.compile(r"(?:https://www\.bilibili\.com/video/)?(BV[0-9A-Za-z]{10})/?")
@@ -154,7 +154,7 @@ class ChatTurn(StrictModel):
 
 
 class CardTurnIntent(StrictModel):
-    intent: Literal["discuss", "revise", "new_work", "use_tool", "clarify"]
+    intent: Literal["recall_reason", "discuss", "revise", "new_work", "use_tool", "clarify"]
     reference: str | None
     read_original: bool = Field(default=False, strict=True)
     topic: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
@@ -616,7 +616,7 @@ class OperatorChat:
                         if provider is not self.runtime.llm:
                             raise HTTPException(409, "推理模型已切换，可重新发送")
                         self.runtime.validate_memory_delivery(audit)
-                        if routed.intent != "discuss":
+                        if routed.intent not in {"discuss", "recall_reason"}:
                             if routed.intent == "use_tool":
                                 decision = await self._select_direct_tool(provider, data, role, history,
                                                                           maximum, report)
@@ -645,6 +645,24 @@ class OperatorChat:
                             if artifact:
                                 decoder = None
                             audit = (audit or {}) | {"task_history": discussed}
+                            if routed.intent == "recall_reason":
+                                editions = [artifact] if artifact else []
+                                if selected.get("original_edition"):
+                                    alternate = selected["artifact"] if routed.read_original else selected["original_edition"]
+                                    other = self.task_history.read(routed.reference, alternate)
+                                    if other and other.get("delivery"):
+                                        editions.append(other["delivery"])
+                                source, excerpts = await select_reason_lines(provider, data.message, editions, report)
+                                if source:
+                                    discussed["artifact"] = {k: source[k] for k in ("task_revision", "edition")}
+                                check_delivery_scope()
+                                validate_history()
+                                self.runtime.validate_memory_delivery(audit)
+                                if provider is not self.runtime.llm:
+                                    raise HTTPException(409, "推理模型已切换，可重新发送")
+                                discussed["reason_excerpts"] = excerpts
+                                stage = "validated"
+                                return ChatIntent(action="chat", reference=routed.reference), audit
                             current["content"] = dump({"task": facts, "message": data.message})
                         messages.append({"role": "system", "content": "这是只读交谈。本轮没有新交办或修改，"
                                          "按附带版本回答。选材理由只引用记录中的理由，区分号主原话和编辑说明；"
@@ -717,10 +735,11 @@ class OperatorChat:
     async def _classify_card_turn(self, provider, current, cards, history, maximum, report, *, read_only=False):
         schema = CardTurnIntent.for_cards(cards)
         if read_only:
-            schema["properties"]["intent"]["enum"] = ["discuss"]
+            schema["properties"]["intent"]["enum"] = ["discuss", "recall_reason"]
         prefix = [{"role": "system", "content": (
             "判断号主本轮想要的工作状态变化，只输出意图，不替角色答话。intent 与 reference 独立："
-            "discuss 是询问、讨论已有成果或普通闲聊，不要求任务变化；可指向任务，也可为 null。"
+            "recall_reason 回查当时作出选择、决定或修改的依据，即使原稿可能没写也走原文核对。"
+            "discuss 是其它讨论、询问状态、现在的看法或普通闲聊；可指向任务，也可为 null。"
             "revise 是要求同一目标按新要求继续，或修改它的交付物；任务已完成、没有新增资料都不妨碍改口。"
             "new_work 是另立独立交办；use_tool 是当场领域操作；只有目标、指代或要求确实不清楚才 clarify，"
             "在 topic 写需要号主澄清的问题。reference 只选明确指向的卡。history_task_cards 是只读检索命中，"
@@ -734,11 +753,13 @@ class OperatorChat:
             messages = [*prefix, *history, current]
         value = await provider.generate_assistant_json(messages, schema, max_tokens=maximum, on_content=None, on_stage=report)
         routed = CardTurnIntent.model_validate(value)
+        if routed.intent == "recall_reason" and not routed.reference:
+            return CardTurnIntent(intent="clarify", reference=None, topic="你想核对哪一份成果的理由？")
         if (routed.intent == "discuss" and "read_original" not in value and any(
             c["id"] == routed.reference and c.get("original_edition") for c in cards
         )):
             return CardTurnIntent(intent="clarify", reference=None, topic="你想看角色交付的原稿，还是后来的编辑版？")
-        if read_only and routed.intent != "discuss":
+        if read_only and routed.intent not in {"discuss", "recall_reason"}:
             raise ValueError("明确的私聊只可引用任务")
         if routed.reference is not None and not any(card["id"] == routed.reference for card in cards):
             return CardTurnIntent(intent="clarify", reference=None, topic="你指的是哪项交办？")
@@ -1053,11 +1074,19 @@ class OperatorChat:
                 intent = await self._intent(data.message, task_context)
             self._check_scope(char, account)
             if decision and decision.action == "chat":
-                result = {"reply_text": decision.reply_markdown.strip(), "reply_format": "markdown",
-                          "card": None, "private": True, "assistant_context": True}
+                ref = (audit or {}).get("task_history") or {}
+                if "reason_excerpts" in ref:
+                    facts = self.task_history.read(ref["task_id"], ref["artifact"])
+                    if not facts:
+                        raise HTTPException(409, "引用的成果已变化，请重新查看")
+                    reply, formatting = reason_reply(facts.get("delivery"), ref["reason_excerpts"]), "plain"
+                else:
+                    reply, formatting = decision.reply_markdown.strip(), "markdown"
+                result = {"reply_text": reply, "reply_format": formatting, "card": None, "private": True,
+                          "assistant_context": True}
                 if decision.reference:
                     result["task_reference"] = decision.reference
-                    if audit and (ref := audit.get("task_history")):
+                    if ref:
                         result["task_artifact"] = ref["artifact"]
                 if audit:
                     if memory_audit := {k: v for k, v in audit.items() if k != "task_history"}:

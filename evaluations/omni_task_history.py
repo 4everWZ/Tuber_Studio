@@ -38,7 +38,7 @@ def require(condition, check):
 async def exercise(directory, root, token, env):
     report = {}
     phase = "before"
-    wire = {"before": [], "after": []}
+    wire = {"before": [], "gap": [], "after": []}
     denied = []
     clarified = set()
     send = httpx.AsyncHTTPTransport.handle_async_request
@@ -111,9 +111,9 @@ async def exercise(directory, root, token, env):
         require(runtime.tasks.current(task_id) and not runtime.tasks.executable(task_id), "read_only_scope")
         require(task_id not in [t["id"] for t in (await client.get("/api/agent/tasks")).json()["tasks"]], "outside_activity")
 
-        async def ask():
+        async def ask(question=QUESTION):
             identity = str(uuid4())
-            response = await client.post(CHAT, json={"request_id": identity, "message": QUESTION})
+            response = await client.post(CHAT, json={"request_id": identity, "message": question})
             require(response.is_success, f"{phase}_chat_http_{response.status_code}")
             return identity, response.json()
 
@@ -125,13 +125,25 @@ async def exercise(directory, root, token, env):
         require(card["data"] == {"task_revision": 1, "edition": 1},
                 "wrong_edition/" + str(card["data"].get("edition")))
         reply = answer["reply_text"]
-        require("木鱼" in reply and any(word in reply for word in ("报幕", "主持", "节目名")), "grounded_reason")
         source = f"{CHAT}/turns/{identity}/artifact"
         original = (await client.get(source)).raise_for_status().json()
         require(original["body"] == ORIGINAL and original["author"] == "agent", "open_original")
+        require(answer["reply_format"] == "plain" and reply == "角色交付稿 r1 v1原文\n第 2 行：" +
+                original["body"].splitlines()[1], "verbatim_reason_only")
         require(any(path == "chat/completions" and "两声木鱼" in payload for path, payload in wire["before"]),
                 "original_reached_real_model")
         report["before"] = {"task_revision": 1, "edition": 1, "reply": reply}
+
+        phase = "gap"
+        gap_id, gap = await ask(f"只看任务 {task_id} 的 r1 v2，当时为什么这样选？")
+        gap_source = (await client.get(f"{CHAT}/turns/{gap_id}/artifact")).raise_for_status().json()
+        require(gap_source["edition"] == 2 and gap_source["body"] == EDIT, "gap_edition")
+        if gap["reply_text"] != "号主编辑稿 r1 v2里没有可核对的对应理由。" or gap["reply_format"] != "plain":
+            return {"status": "failed", "check": "missing_reason_gap", "reply": gap["reply_text"],
+                    "reply_format": gap["reply_format"]}
+        require(any(p == "chat/completions" and EDIT in body for p, body in wire[phase])
+                and all("两声木鱼" not in body for _, body in wire[phase]), "gap_isolation")
+        report["gap"] = {"edition": 2, "reply": gap["reply_text"]}
 
         pref = (await client.get(PREF)).raise_for_status().json()
         result = (await client.put(PREF, json={"enabled": pref["enabled"], "scope": pref["scope"],

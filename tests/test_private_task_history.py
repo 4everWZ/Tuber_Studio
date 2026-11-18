@@ -55,7 +55,7 @@ async def test_old_edition_from_private_chat_is_openable_and_read_only(studio, m
              "source": f"当时为什么采纳 <{URL}>？", "phrase": "之前为什么想留出报幕的时间？",
              "video_url": f"https://www.bilibili.com/video/{BV} 的选段呢？",
              "project": "秋季直播当时为了报幕的时间怎么选？"}[anchor]
-    routed = "discuss"
+    routed = "recall_reason"
 
     async def generate(messages, schema, **kwargs):
         packet = json.loads(messages[-1]["content"])
@@ -64,9 +64,11 @@ async def test_old_edition_from_private_chat_is_openable_and_read_only(studio, m
             assert candidate["artifact"] == {"task_revision": 1, "edition": 1}
             assert REASON not in str(messages)
             return {"intent": routed, "reference": task}
-        delivery = packet["task"]["delivery"]
-        assert delivery == {"author": "agent", "task_revision": 1, "edition": 1, "body": ORIGINAL}
-        return {"action": "chat", "reply_markdown": REASON}
+        assert schema["title"] == "ReasonSelection"
+        assert packet["versions"][0]["source"][1] == {"line": 2, "text": "选材理由：" + REASON}
+        assert schema["properties"]["lines"]["items"]["enum"] == [2]
+        assert kwargs["on_content"] is None
+        return {"edition": 1, "evidence": "recorded", "lines": [2]}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
     turn_id = str(uuid4())
@@ -75,7 +77,8 @@ async def test_old_edition_from_private_chat_is_openable_and_read_only(studio, m
         request["creative_goal_id"] = root
     explicit = {"intent": {"action": "chat"}} if anchor == "id" else {}
     answer = (await client.post(CHAT, json=request | explicit)).raise_for_status().json()
-    assert answer["reply_text"] == REASON and answer["card"]["type"] == "history_artifact"
+    assert answer["reply_text"] == "角色交付稿 r1 v1原文\n第 2 行：选材理由：" + REASON
+    assert answer["reply_format"] == "plain" and answer["card"]["type"] == "history_artifact"
     original = f"{CHAT}/turns/{turn_id}/artifact"
     assert (await client.get(original)).raise_for_status().json()["body"] == ORIGINAL
     monkeypatch.setattr(runtime.live, "state", "live")
@@ -111,13 +114,13 @@ async def test_history_boundaries_on_model_input_and_stream_delivery(studio, mon
     async def generate(messages, schema, **kw):
         seen.append(messages)
         if schema["title"] == "CardTurnIntent":
-            return {"intent": "discuss", "reference": task}
+            return {"intent": "recall_reason", "reference": task}
         if revoke:
-            assert ORIGINAL in json.loads(messages[-1]["content"])["task"]["delivery"]["body"]
+            assert REASON in messages[-1]["content"] and schema["title"] == "ReasonSelection"
             history_preference(runtime, False)
-            if kw.get("on_content"):
-                kw["on_content"](json.dumps({"action": "chat", "reply_markdown": REASON}))
-        return {"action": "chat", "reply_markdown": REASON if revoke else "好呀"}
+            assert kw["on_content"] is None
+            return {"edition": 1, "evidence": "recorded", "lines": [2]}
+        return {"action": "chat", "reply_markdown": "好呀"}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
 
@@ -152,9 +155,9 @@ async def test_chromium_chat_opens_original_edition_and_source(studio, monkeypat
     async def generate(messages, schema, **kwargs):
         if schema["title"] == "CardTurnIntent":
             assert task in schema["properties"]["reference"]["anyOf"][0]["enum"]
-            return {"intent": "discuss", "reference": task}
-        delivery = json.loads(messages[-1]["content"])["task"]["delivery"]
-        return {"action": "chat", "reply_markdown": delivery["body"].splitlines()[1]}
+            return {"intent": "recall_reason", "reference": task}
+        assert schema["title"] == "ReasonSelection"
+        return {"edition": 1, "evidence": "recorded", "lines": [2]}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
     opened = []
@@ -182,6 +185,8 @@ async def test_chromium_chat_opens_original_edition_and_source(studio, monkeypat
             await page.locator("#operator-chat-send").click()
             summary = page.get_by_text("查看引用原稿 · r1 v1", exact=True)
             await summary.click(timeout=15000)
+            visible_reply = page.locator(".operator-chat-turn .operator-chat-reply").last
+            assert await visible_reply.text_content() == "角色交付稿 r1 v1原文\n第 2 行：选材理由：" + REASON
             link = page.get_by_role("link", name=URL, exact=True)
             await link.wait_for()
             assert await link.get_attribute("href") == URL
@@ -257,10 +262,39 @@ async def test_reason_question_can_open_the_agent_original_after_an_owner_edit(s
             assert card["matched_edition"]["author"] == "owner"
             assert not card["matched_edition"]["has_rationale"] and card["original_edition"]["has_rationale"]
             assert REASON not in str(packet)
-            return {"intent": "discuss", "reference": task, "read_original": True}
-        assert packet["task"]["delivery"]["body"] == ORIGINAL
-        return {"action": "chat", "reply_markdown": REASON}
+            return {"intent": "recall_reason", "reference": task, "read_original": False}
+        assert {v["edition"] for v in packet["versions"]} == {1, 2}
+        return {"edition": 1, "evidence": "recorded", "lines": [2]}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", choose, raising=False)
     result = await client.post(CHAT, json={"request_id": str(uuid4()), "message": "我上次为什么选那段？"})
     assert result.raise_for_status().json()["card"]["data"] == {"task_revision": 1, "edition": 1}
+
+
+@pytest.mark.parametrize(("edition", "state", "numbers", "expected"), [
+    (1, "recorded", [2, 3], "角色交付稿 r1 v1里没有可核对的对应理由。"),
+    (1, "missing", [2], "角色交付稿 r1 v1里没有可核对的对应理由。"),
+    (2, "recorded", [1], "号主编辑稿 r1 v2原文\n第 1 行：我选择尾声，因为台词在这里才说完。"),
+])
+async def test_only_verified_reason_lines_from_the_selected_version(studio, monkeypatch, edition, state, numbers, expected):
+    client, runtime = studio
+    task_id = str(uuid4())
+    task = runtime.tasks.create(task_id, "节目素材")
+    with runtime.store.db as db:
+        runtime.tasks.workspace.record_delivery(db, task, ORIGINAL)
+    (await client.patch(f"{TASKS}/{task_id}/artifact", json={"task_revision": 1, "edition": 1,
+                        "body": "我选择尾声，因为台词在这里才说完。"})).raise_for_status()
+
+    async def select(messages, schema, **options):
+        assert options["on_content"] is None
+        if schema["title"] == "CardTurnIntent":
+            return {"intent": "recall_reason", "reference": task_id}
+        assert schema["title"] == "ReasonSelection"
+        assert schema["properties"]["edition"]["enum"] == [edition]
+        return {"edition": edition, "evidence": state, "lines": numbers}
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", select, raising=False)
+    response = await client.post(CHAT, json={"request_id": str(uuid4()), "message": f"{task_id} r1 v{edition} 为什么这样选？"})
+    answer = response.raise_for_status().json()
+    assert answer["reply_text"] == expected
+    assert answer["reply_format"] == "plain" and answer["card"]["data"]["edition"] == edition
