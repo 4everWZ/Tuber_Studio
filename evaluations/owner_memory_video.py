@@ -69,12 +69,14 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
     auto, = [row for row in found if row["source_key"] == "turn:" + identity and AUTO in row["quote"]]
     tasks = runtime.tasks
     edit = tasks.edit_delivery
+    phase_for_task = {}
     async def audited_edit(task, evidence):
         try:
             return await edit(task, evidence)
         except Exception as error:
             if audit := task["plan"].get("editor_memory", {}).get("review"):
-                record("rejected_writing", {"task_id":task["id"], "message":str(error), "review":audit})
+                record(phase_for_task[task["id"]] + "_rejected_writing",
+                       {"task_id":task["id"], "message":str(error), "review":audit})
             raise
     tasks.edit_delivery = audited_edit
     tasks.start()
@@ -86,6 +88,7 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
                                        messages, max_tokens=limit)
     async def edition(phase):
         task_id = str(uuid4())
+        phase_for_task[task_id] = phase
         result = await client.post("/api/agent/tasks", json={"request_id":task_id, "goal": GOAL, "video_selection": SELECTION})
         result.raise_for_status()
         record("stage", "generating_" + phase)
@@ -106,7 +109,8 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
                          for f in r.get("findings",[]) if f.get("kind") == "实际视频帧"]})
         if response["status"] != "completed" or not response["artifact"]:
             record(phase + "_diagnostic", task_diagnostic(tasks.current(task_id)))
-            raise RuntimeError(f"Private video {phase} ended in {response['status']}; see task diagnostic")
+            return {"status":response["status"], "body":None, "items":[], "citations":[],
+                    "measurement":{"passed":False, "items":[]}, "message":response["message"]}
         assert any(s["tool"] == "inspect_video" and s["result"].get("findings") for s in response["steps"])
         other = (await device_call(device, port, login, "GET", "/api/agent/tasks/"+task_id))["value"]
         assert other["artifact"]["body"] == response["artifact"]["body"]
@@ -114,16 +118,25 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
         body = other["artifact"]["body"]
         headings = re.findall(r"^\*\*(.+?)\*\*\r?\n选材理由：", body, re.MULTILINE)
         visible_items = [item | {"title":heading} for item,heading in zip(plan["selected"]["items"], headings, strict=True)]
-        result = {"body":body, "citations":other.get("memory_citations", []),
+        points = {f"{step['id']}:{index}":{key:f[key] for key in ("part","cid","seconds")}
+                  for step in response["steps"] if step["tool"] == "inspect_video"
+                  for index,f in enumerate((step.get("result") or {}).get("findings", []), 1)
+                  if f.get("kind") == "实际视频帧" and f.get("cid") and f.get("part") == 2 and 11 <= f["seconds"] < 14}
+        primary = [points.get(item["primary_frame"]) for item in visible_items]
+        result = {"status":"completed", "body":body, "citations":other.get("memory_citations", []),
                   "editor_review":plan.get("editor_memory", {}).get("review"), "items":visible_items,
-                  "independent_device_body_matched":True}
+                  "primary_points":primary, "independent_device_body_matched":True}
         record(phase, result)
         result["measurement"] = await measure_edition(result["items"], plan.get("frame_reviews", {}), phase, grader)
+        nearest = min(points.values(), key=lambda p:abs(p["seconds"] - 13.5), default=None)
+        result["measurement"]["requested_frame"] = len(primary) == 1 and nearest is not None and primary[0] == nearest
+        result["measurement"]["passed"] &= result["measurement"]["requested_frame"]
         return result
     try:
         before = await edition("before")
         record("before", before)
-        assert any(c["id"] == auto["id"] and c["revision"] == auto["revision"] for c in before["citations"])
+        if before["status"] == "completed":
+            assert any(c["id"] == auto["id"] and c["revision"] == auto["revision"] for c in before["citations"])
         updated = await correct_voice(auto)
         voice_observed = False
         if updated:
@@ -139,9 +152,11 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
         assert not after["citations"]
         before_titles = [i["title"] for i in before["items"]]
         after_titles = [i["title"] for i in after["items"]]
-        observed = before["measurement"]["passed"] and voice_observed and after["measurement"]["passed"]
+        same_frame = bool(updated and before.get("primary_points") and
+                          before["primary_points"] == corrected.get("primary_points") == after.get("primary_points"))
+        observed = before["measurement"]["passed"] and voice_observed and after["measurement"]["passed"] and same_frame
         return {"input":"owner-authorized isolated QA preference", "original":AUTO, "before_titles":before_titles,
-                "after_titles":after_titles, "semantic_status":"observed" if observed else "unverified"}
+                "after_titles":after_titles, "same_frame":same_frame, "semantic_status":"observed" if observed else "unverified"}
     finally:
         await tasks.close()
         tasks.edit_delivery = edit
