@@ -24,7 +24,7 @@ from . import operator_facts
 from .dynamic_publication import register_dynamic_publication
 from .handoff import PublicText, handoff_text, supplied_private_fragments, video_findings
 from .public_sources import fetch_task_source
-from .public_video import read_public_part
+from .public_video import read_public_part, save_clip
 from .task_delivery import (
     DelegationError,
     EditorialCorrection,
@@ -586,7 +586,9 @@ def create_task_runtime(runtime, store, browsing):
     async def video(request, args):
         if not request.scope[0]:
             async with asyncio.timeout(360):
-                return await read_public_part(request, args, browsing.evidence.visual, lambda: tasks.scope() == request.scope)
+                return await read_public_part(request, args, browsing.evidence.visual,
+                                              lambda: tasks.scope() == request.scope,
+                                              getattr(runtime.settings, "runtime", None))
         async with asyncio.timeout(20):
             return await account_video(request, args)
 
@@ -643,10 +645,23 @@ def create_task_runtime(runtime, store, browsing):
         if ranges:
             materials = [item for item in materials if ranges[0]["start"] <= item["seconds"] < ranges[0]["end"]]
         status = "partial" if limits and finding["status"] == "completed" else finding["status"]
+        clip = {}
+        if (args.end is not None and ranges and ranges[0]["end"] - ranges[0]["start"] <= 10
+                and status in {"completed", "partial"} and hasattr(browsing.adapter, "video_stream_clip")):
+            try:
+                metadata = await browsing._read(browsing.adapter.video_metadata, args.bvid)
+                part = next((item for item in metadata["parts"] if item["page"] == args.part), None)
+                cids = {str(item["cid"]) for item in materials if item.get("cid")}
+                if (part and metadata["bvid"] == args.bvid and cids == {str(part["cid"])}
+                        and tasks.scope() == request.scope):
+                    clip = await save_clip(browsing.adapter, metadata, part, ranges[0]["start"], ranges[0]["end"],
+                                           request, lambda: tasks.scope() == request.scope, runtime.settings.runtime)
+            except (ValueError, TimeoutError, httpx.HTTPError) as error:
+                clip = {"clip_error": f"未取得该窗口的连续画面（{type(error).__name__}）。"}
         return {"status": status, "request_id": request.id, "viewing": coverage.get("viewing"), **limits,
                 "selection": selection, "findings": materials,
                 "comments": finding["comments"], "error": finding["error"],
-                "url": f"https://www.bilibili.com/video/{args.bvid}"}
+                "url": f"https://www.bilibili.com/video/{args.bvid}" + (f"/?p={args.part}" if args.part else ""), **clip}
 
     async def stop_video(identity, checkpoint):
         if browsing.repo.round(identity):

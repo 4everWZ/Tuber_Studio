@@ -288,6 +288,19 @@ export function initTaskActivity(api, requestId) {
       details.append(node("summary", `${label} · ${summary}`));
       const result = step.result;
       if (result) {
+        if (step.tool === "inspect_video" && result.clip) {
+          const clip = result.clip;
+          const preview = node("details");
+          preview.append(node("summary", `查看 P${clip.part} · ${clip.start}–${clip.end} 秒画面`));
+          const video = node("video");
+          video.controls = true;
+          video.preload = "none";
+          video.playsInline = true;
+          video.style.maxWidth = "100%";
+          video.src = `${base}/${encodeURIComponent(task.id)}/clips/${encodeURIComponent(step.id)}`;
+          preview.append(video, node("p", `${clip.frames} 个连续原帧 · 仅画面`, "hint"));
+          item.append(preview);
+        }
         if (step.tool === "private_code" && typeof result.text === "string" && result.name) {
           const download = button(`下载 ${result.name}`);
           download.onclick = () => downloadText(result.name, result.text);

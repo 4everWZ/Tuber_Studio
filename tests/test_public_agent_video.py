@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+import httpx
 
 from tuber_studio.agent import public_video
 from tuber_studio.agent.task_runtime import ToolRequest
@@ -31,6 +32,11 @@ async def test_private_anonymous_video_uses_only_requested_part(settings, monkey
             calls.append(timestamp)
             return {"id": str(timestamp), "cid": cid, "actual_time": timestamp, "presentation_end": timestamp + 0.04}
 
+        async def video_stream_clip(self, meta, *, cid, start, end):
+            assert (meta["bvid"], cid, start, end) == (BV, "27", 4, 10)
+            return {"cid": cid, "start": start, "end": end, "frames": 150, "audio": "visual_only",
+                    "movie": b"fixture clip bytes"}
+
         async def close(self):
             pass
 
@@ -53,5 +59,16 @@ async def test_private_anonymous_video_uses_only_requested_part(settings, monkey
             assert len(calls) == 3 and len(result["findings"]) == 4
             assert all(row["cid"] == "27" and "?p=2&t=" in row["url"] for row in result["findings"])
             assert result["findings"][0]["text"] == "区间内" and result["status"] == "partial"
+            task = tasks.create(str(uuid4()), "私有素材")
+            step = {"id": request.id, "revision": 1, "tool": "inspect_video", "result": result}
+            tasks._save(task, steps=[step])
+            monkeypatch.setenv("TUBER_ADMIN_TOKEN", "fixture-owner")
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as device:
+                path = f"/api/agent/tasks/{task['id']}/clips/{request.id}"
+                assert (await device.get(path)).status_code == 401
+                device.headers["Authorization"] = "Bearer fixture-owner"
+                assert (await device.get(path)).content == b"fixture clip bytes"
+                other = tasks.create(str(uuid4()), "另一个目标")
+                assert (await device.get(path.replace(task["id"], other["id"]))).status_code == 404
     finally:
         app.state.store.close()

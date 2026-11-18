@@ -1,6 +1,9 @@
 """Private research on an explicitly selected public video without a platform account."""
 
 import time
+import tempfile
+from pathlib import Path
+from uuid import UUID
 
 import httpx
 
@@ -9,7 +12,33 @@ from ..platforms.bilibili import PlatformReadError
 from ..platforms.bilibili_browsing import BrowsingAdapter
 
 
-async def read_public_part(request, selection, vision, granted):
+def clip_path(runtime_dir, step_id):
+    return Path(runtime_dir) / "browsing" / "private-clips" / (str(UUID(step_id)) + ".mp4")
+
+
+async def save_clip(adapter, metadata, part, start, end, request, granted, runtime_dir):
+    try:
+        clip = await adapter.video_stream_clip(metadata, cid=part["cid"], start=start, end=end)
+        if not granted():
+            return {"error": "任务授权已变化。"}
+        movie = clip.pop("movie")
+        dest = clip_path(runtime_dir, request.id)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        staged = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=dest.parent, delete=False) as file:
+                staged = Path(file.name)
+                file.write(movie)
+            staged.replace(dest)
+        finally:
+            if staged:
+                staged.unlink(missing_ok=True)
+        return {"clip": {"bvid": metadata["bvid"], "part": part["page"], **clip}}
+    except (PlatformReadError, httpx.HTTPError, TimeoutError, OSError) as error:
+        return {"clip_error": f"该窗口未保存连续画面（{type(error).__name__}）。"}
+
+
+async def read_public_part(request, selection, vision, granted, runtime_dir=None):
     if selection.part is None:
         return {"error": "匿名视频取材需要指定分 P。"}
     adapter = BrowsingAdapter()
@@ -75,7 +104,15 @@ async def read_public_part(request, selection, vision, granted):
                 gaps.append(f"请求 {target:.2f} 秒处未取得可用画面（{type(error).__name__}）。")
         if not granted():
             return {"error": "任务授权已变化。"}
-        gaps.append("画面按时点抽样，未连续观看或听审音轨。")
+        clip_receipt = {}
+        if (runtime_dir is not None and selection.end is not None and end - start <= 10
+                and hasattr(adapter, "video_stream_clip")):
+            clip_receipt = await save_clip(adapter, metadata, part, start, end, request, granted, runtime_dir)
+            if "error" in clip_receipt:
+                return clip_receipt
+            if "clip_error" in clip_receipt:
+                gaps.append(clip_receipt["clip_error"])
+        gaps.append("画面内容按时点抽样描述；未听审原片音轨。")
         if selection.end is not None and end < selection.end:
             gaps.append(f"该分 P 实际时长 {end:g} 秒，之后没有素材。")
         coverage = {(True, True): "partial", (True, False): "subtitles_only", (False, True): "visual_only",
@@ -83,6 +120,6 @@ async def read_public_part(request, selection, vision, granted):
         return {"status": "partial", "request_id": request.id, "viewing": coverage[has_subtitles, bool(visual_count)],
             "findings": findings, "gaps": gaps,
             "selection": {"bvid": selection.bvid, "ranges": [{"part": selection.part, "start": start, "end": end}]},
-            "url": url, "part_duration": part["duration"], "error": None}
+            "url": url, "part_duration": part["duration"], "error": None, **clip_receipt}
     finally:
         await adapter.close()

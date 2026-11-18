@@ -170,7 +170,7 @@ async def _timestamps(decoder, media):
         raise _error("视频帧没有可核验的呈现时间") from None
 
 
-async def extract_frame(reader, decoder, track, target):
+async def track_index(reader, track):
     segment_base = track.get("SegmentBase") or track.get("segment_base") or {}
     init_left, init_right = _range(segment_base.get("Initialization", segment_base.get("initialization")))
     index_left, index_right = _range(segment_base.get("indexRange", segment_base.get("index_range")))
@@ -179,6 +179,11 @@ async def extract_frame(reader, decoder, track, target):
     header = await reader.read(0, index_right)
     initialization = header[:init_right + 1]
     segments, duration = _segments(header[index_left:], index_left)
+    return initialization, segments, duration
+
+
+async def extract_frame(reader, decoder, track, target):
+    initialization, segments, duration = await track_index(reader, track)
     target = Fraction(str(target))
     if not 0 <= target < duration:
         raise _error("目标时间不在视频轨的可播放范围内")
@@ -220,13 +225,49 @@ async def extract_frame(reader, decoder, track, target):
     return {"actual_time": float(at), "presentation_end": float(end_at), "width": width, "height": height, "image": image}
 
 
+async def extract_clip(reader, decoder, track, start, end):
+    """Decode every presentation interval and encode only frames inside the authorized window."""
+    init, segments, duration = await track_index(reader, track)
+    start, end = Fraction(str(start)), Fraction(str(end))
+    if not 0 <= start < end <= duration or end-start > 10:
+        raise _error("短片须在当前分 P 的连续十秒以内")
+    first = await reader.read(*segments[0][1:])
+    first_frames, rate = await _timestamps(decoder, init + first)
+    origin = first_frames[0][0] * rate
+    left = max(i for i, seg in enumerate(segments) if seg[0] <= start)
+    right = max(i for i, seg in enumerate(segments) if seg[0] < end)
+    chunks = [init]
+    for i in range(max(0,left-1), min(len(segments),right+2)):
+        chunks.append(first if i == 0 else await reader.read(*segments[i][1:]))
+    media = b"".join(chunks)
+    frames, check_rate = await _timestamps(decoder, media)
+    if rate != check_rate:
+        raise _error("播放流的帧时基已变化")
+    kept = [(pts, ticks) for pts, ticks in frames if pts*rate-origin >= start and (pts+ticks)*rate-origin <= end]
+    if (len(kept) < 2 or any(ticks <= 0 for _,ticks in kept)
+            or any(pts+ticks != other for (pts,ticks),(other,_) in zip(kept,kept[1:]))):
+        raise _error("所选窗口缺少连续、可核实的原帧时标")
+    first_pts, last_end = kept[0][0], sum(kept[-1])
+    filtergraph = (f"trim=start_pts={first_pts}:end_pts={last_end},setpts=PTS-STARTPTS,"
+                   "scale=w='min(960,iw)':h='min(540,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2")
+    movie = await decoder._run([
+        decoder.ffmpeg,"-nostdin","-v","error","-threads","1","-filter_threads","1","-copyts",
+        "-protocol_whitelist","pipe","-f","mov","-i","pipe:0","-map","0:v:0","-an","-sn","-dn",
+        "-vf",filtergraph,"-fps_mode","passthrough","-c:v","libx264","-threads","1","-preset","veryfast",
+        "-pix_fmt","yuv420p","-crf","20","-movflags","+empty_moov+frag_keyframe+default_base_moof",
+        "-f","mp4","pipe:1",
+    ],media,8*1024*1024)
+    return {"start":float(first_pts*rate-origin),"end":float(last_end*rate-origin),
+            "frames":len(kept),"audio":"visual_only","movie":movie}
+
+
 class StreamFrameSampler:
     def __init__(self, adapter, decoder):
         self.adapter = adapter
         self.decoder = decoder
         self.gate = asyncio.Semaphore(1)
 
-    async def frame(self, metadata, cid, target):
+    async def _read(self, metadata, cid, target, extract):
         part = next((item for item in metadata["parts"] if str(item["cid"]) == str(cid)), None)
         if not part or type(target) not in {int, float} or not math.isfinite(target) or not 0 <= target < part["duration"]:
             raise _error("目标时码超出已核验分 P")
@@ -254,10 +295,16 @@ class StreamFrameSampler:
                     raise _error("当前播放授权未提供可跳转的 DASH AVC 视频轨")
                 track = max(compatible, key=lambda item: item["height"])
                 reader = RangeReader(self.adapter, track.get("baseUrl") or track.get("base_url"), MAX_STREAM_BYTES)
-                frame = await extract_frame(reader, self.decoder, track, target)
+                result = await extract(reader, self.decoder, track)
         except TimeoutError:
             raise _error("精确取帧达到 8 秒期限") from None
+        return result | {"cid": str(cid), "bytes_read": reader.used, "elapsed_seconds": round(time.monotonic()-started,3)}
+
+    async def frame(self, metadata, cid, target):
+        frame = await self._read(metadata, cid, target, lambda reader, decoder, track: extract_frame(reader, decoder, track, target))
         digest = hashlib.sha256(frame["image"]).hexdigest()[:16]
-        return frame | {"id": f"{cid}:stream:{digest}:{round(frame['actual_time'] * 1000000)}", "cid": str(cid),
-                        "kind": "stream", "requested_time": target, "bytes_read": reader.used,
-                        "elapsed_seconds": round(time.monotonic() - started, 3)}
+        return frame | {"id": f"{cid}:stream:{digest}:{round(frame['actual_time'] * 1000000)}",
+                        "kind": "stream", "requested_time": target}
+
+    async def clip(self, metadata, cid, start, end):
+        return await self._read(metadata, cid, start, lambda reader, decoder, track: extract_clip(reader, decoder, track, start, end))

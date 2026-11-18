@@ -5,6 +5,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import Field, PositiveInt, field_validator
 
 from ..models import StrictModel
@@ -14,6 +15,7 @@ from .goal_followups import register_goal_followups
 from .operator_chat import VideoSelection
 from .private_browser import register_private_browser
 from .private_code import CodeFile, run_code
+from .public_video import clip_path
 from .task_runtime import Tool
 
 
@@ -163,6 +165,17 @@ def register_task_api(app, tasks, require_admin):
             "SELECT task_revision,edition,author,created FROM creative_editions WHERE task_id=? "
             "ORDER BY task_revision DESC,edition DESC", (task["id"],),
         )
+
+    @app.get("/api/agent/tasks/{identity}/clips/{step_id}", dependencies=deps)
+    async def read_clip(identity: UUID, step_id: UUID):
+        task = visible(identity)
+        if not any(step["id"] == str(step_id) and step["tool"] == "inspect_video" and
+                   (step.get("result") or {}).get("clip") for step in task["steps"]):
+            raise HTTPException(404, "此任务没有这段已核实的画面")
+        path = clip_path(app.state.runtime.settings.runtime, str(step_id))
+        if not path.is_file():
+            raise HTTPException(404, "此工作区未保留这段短片文件")
+        return FileResponse(path, media_type="video/mp4", headers={"Cache-Control": "private, no-store"})
 
     @app.get("/api/agent/tasks/{identity}/artifacts/{revision}/{edition}", dependencies=deps)
     async def read_artifact(identity: UUID, revision: PositiveInt, edition: PositiveInt):

@@ -96,7 +96,7 @@ class BrowsingAdapter(BilibiliAdapter):
         return await self._frame_sampler.frames(metadata, count, cid=cid, timestamps=timestamps, windows=windows,
                                                sparse_range=sparse_range, known_times=known_times)
 
-    async def video_stream_frame(self, metadata, *, cid, timestamp):
+    def _stream_reader(self):
         from .bilibili_frames import FrameSampler
         from .bilibili_stream_frame import StreamFrameSampler
 
@@ -104,7 +104,13 @@ class BrowsingAdapter(BilibiliAdapter):
             self._frame_sampler = FrameSampler(self)
         if self._stream_sampler is None:
             self._stream_sampler = StreamFrameSampler(self, self._frame_sampler.decoder)
-        return await self._stream_sampler.frame(metadata, cid, timestamp)
+        return self._stream_sampler
+
+    async def video_stream_frame(self, metadata, *, cid, timestamp):
+        return await self._stream_reader().frame(metadata, cid, timestamp)
+
+    async def video_stream_clip(self, metadata, *, cid, start, end):
+        return await self._stream_reader().clip(metadata, cid, start, end)
 
     async def close(self):
         if self._frame_sampler is not None:
