@@ -48,6 +48,7 @@
               <input id="llm-base-url" type="url" placeholder="http://127.0.0.1:8000/v1" autocomplete="off" aria-describedby="llm-endpoint-help">
             </label>
             <p id="llm-endpoint-help" class="hint">支持任意本地工作站 (如 vLLM, Ollama, llama-server) 或外部兼容端点；Base URL 通常以 /v1 结尾。</p>
+              <label class="check-field"><input id="omni-video-service" type="checkbox">这是工坊 Omni 服务：读取模型卡窗口，视频取材使用同一图文端点</label>
 
             <div class="form-grid" style="margin-top:10px;">
               <label>上下文窗口（tokens）<input id="llm-context-tokens" type="number" min="4096" step="1" placeholder="留空用模型上限" aria-describedby="llm-capacity-help"></label>

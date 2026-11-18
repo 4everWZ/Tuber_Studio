@@ -7,6 +7,7 @@ function syncModelSelectWithInput() {
 }
 
 function formUsesModelCard(settings) {
+  if ($("omni-video-service")?.checked && $("llm-kind").value === "openai_compatible") return true;
   const llm = settings?.llm;
   return llm?.context_source === "model_card"
     && $("llm-kind").value === llm.kind
@@ -51,6 +52,7 @@ export function readProviderPayload(settings) {
     if (context > native) throw new Error("上下文窗口超过模型原生 / 服务声明上限。");
     Object.assign(payload.llm, { context_tokens: context, native_context_tokens: native });
   }
+  if (llmKind === "openai_compatible" && $("omni-video-service")?.checked) payload.use_omni_video = true;
   if ((llmKind === "llama_cpp" || modelCard) && $("llm-enable-thinking")) {
     payload.llm.enable_thinking = $("llm-enable-thinking").checked;
     if (llmKind === "llama_cpp" && $("llm-live-thinking-tokens")) {
@@ -243,6 +245,11 @@ function providerFormFromSettings(settings, status) {
     if (el) el.value = String(value);
   });
   if ($("llm-enable-thinking")) $("llm-enable-thinking").checked = llm.enable_thinking !== false;
+  if ($("omni-video-service")) {
+    const visual = settings.video_vision;
+    $("omni-video-service").checked = visual?.adapter === "omni" && visual.enabled &&
+      visual.base_url === llm.base_url && visual.model === llm.model;
+  }
   $("llm-key").value = "";
   if ($("background-base")) {
     $("background-base").value = settings?.responses?.base_url || "";

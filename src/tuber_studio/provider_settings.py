@@ -53,8 +53,10 @@ def _voice_only(body):
 
 
 def proposal(settings, body):
-    if not isinstance(body, dict) or set(body) - {*FIELDS, "credentials", "clear_credentials"}:
+    if not isinstance(body, dict) or set(body) - {*FIELDS, "credentials", "clear_credentials", "use_omni_video"}:
         raise ValueError("未知Provider设置字段")
+    if "use_omni_video" in body and (body["use_omni_video"] is not True or "llm" not in body):
+        raise ValueError("Omni 图文接入须明确指定聊天端点")
     data = copy.deepcopy(settings.data)
     keys = dict(settings.provider_keys)
     credentials, clear = body.get("credentials", {}), body.get("clear_credentials", [])
@@ -109,6 +111,17 @@ def proposal(settings, body):
             and name not in clear
         ):
             raise ValueError("更换API地址时须重新填写或明确清除对应Key，避免旧凭证发送到新服务")
+    if body.get("use_omni_video"):
+        model = data["llm"]
+        if model["kind"] != "openai_compatible":
+            raise ValueError("Omni 图文须使用兼容的 Chat 端点")
+        model.update(context_source="model_card", structured_output="structural_tag", prompt_token_endpoint=True)
+        old_video = data.get("video_vision") or {}
+        same = old_video.get("adapter") == "omni" and all(old_video.get(key) == model[key] for key in ("base_url", "model"))
+        data["video_vision"] = (old_video if same else {}) | {
+            "enabled": True, "adapter": "omni", "base_url": model["base_url"], "model": model["model"],
+            "enable_thinking": model.get("enable_thinking", True),
+        }
     settings._validate(data)
     return data, keys
 
@@ -155,7 +168,10 @@ async def apply_settings(runtime, body):
         if model_update:
             vision = VisionService(data["vision"], staged.endpoint_key("vision"))
             created.append(vision)
-            if getattr(runtime, "browsing", None) and data.get("video_vision") != settings.data.get("video_vision"):
+            if getattr(runtime, "browsing", None) and data.get("video_vision") and (
+                data["video_vision"] != settings.data.get("video_vision") or
+                staged.video_vision_key() != settings.video_vision_key()
+            ):
                 visual_config = data["video_vision"]
                 video = ApiVideoEvidenceProvider(
                     runtime, visual_config, api_key=staged.video_vision_key()
