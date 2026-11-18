@@ -7,6 +7,7 @@ import pytest
 
 from tuber_studio.api_providers import APIProvider
 from tuber_studio.compaction import ContextWindowExceeded
+from tuber_studio.http_api import InferenceBudgetExceeded
 from tuber_studio.providers import DemoProvider, LlamaCppProvider
 
 SCHEMA = {
@@ -222,7 +223,8 @@ async def test_incomplete_or_untrusted_output_never_becomes_a_task_result(
     providers, kind, finish, content, extra
 ):
     provider, _ = await providers(kind, finish=finish, content=content, message_extra=extra)
-    with pytest.raises(ValueError):
+    error = InferenceBudgetExceeded if kind == "api" and finish == "length" else ValueError
+    with pytest.raises(error):
         await provider.generate_json(MESSAGES, SCHEMA, max_tokens=32)
 
 

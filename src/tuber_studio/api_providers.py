@@ -11,7 +11,7 @@ from typing import Protocol
 from .compaction import ContextWindowExceeded, IncompleteCompaction
 from .config import uses_broker_llm
 from .generation_meter import reserve_generation, settle_generation
-from .http_api import api_client, inference_model_card, models_health, response_json
+from .http_api import InferenceBudgetExceeded, api_client, inference_model_card, models_health, response_json
 from .image_preprocessing import prepare_image
 from .llama_sampling import LlamaCppSampling, llama_cpp_sampling
 from .operation_identity import provider_identity_messages
@@ -197,6 +197,8 @@ class APIProvider:
         if choice.get("finish_reason") not in ({"stop", "length"} if probe else {"stop"}):
             if summary:
                 raise IncompleteCompaction("API摘要未完整结束；原上下文保留")
+            if choice.get("finish_reason") == "length":
+                raise InferenceBudgetExceeded(f"API回复未完整结束（finish_reason=length），本次输出额度为 {budget} tokens。")
             raise ValueError(f"API回复未完整结束（finish_reason={choice.get('finish_reason')}）；未提交草稿")
         message = choice.get("message", {})
         if not isinstance(message, dict) or message.get("tool_calls") or message.get("function_call"):
