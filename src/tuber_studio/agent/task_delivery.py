@@ -9,6 +9,7 @@ from pydantic import Field
 from ..models import StrictModel
 
 LABELS = {
+    "inbox_received": "定向来信入库回执",
     "web_search": "检索候选来源", "web_page": "读取网页", "bilibili_owner": "B 站号主",
     "operation_status": "自主运营", "today_activity": "当日运营事件", "inspect_video": "视频取材",
     "live_status": "直播状态", "live_handoff": "节目交接", "game_status": "模拟游戏", "game_action": "模拟游戏动作",
@@ -105,6 +106,9 @@ def render_private_delivery(product, evidence):
 
 
 def _describe(tool, result):
+    if tool == "inbox_received":
+        return [f"UID {result['sender_uid']} 的来信已进入账号 {result['account_id']} 的收件箱。",
+                f"消息 ID：{result['message_id']} · 收件箱条目：{result['inbox_id']}"], True
     if tool == "inspect_dynamic_draft":
         lines = ["这是草稿，不是发布回执。", _text(result.get("target")), _text(result.get("text"))]
         for source in result.get("sources", []):

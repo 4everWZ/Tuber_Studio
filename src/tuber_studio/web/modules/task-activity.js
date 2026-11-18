@@ -1,6 +1,7 @@
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
 import { renderAssistantAnswer } from "./operator-chat-answer.js";
 import { mountFollowup } from "./goal-followup.js";
+import { mountGoalEvents } from "./goal-events.js";
 
 const base = "/api/agent/tasks";
 const states = {
@@ -372,6 +373,7 @@ export function initTaskActivity(api, requestId) {
     }
     const goal = task.creative_goal;
     mountFollowup(goal, content, api, value => { editing = value; });
+    mountGoalEvents(goal, content, api, value => { editing = value; });
     if (!goal) {
       const track = button("设为长期创作目标");
       track.onclick = () => change(path + "/goal", "PUT", undefined, track);

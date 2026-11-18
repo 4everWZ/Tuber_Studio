@@ -370,6 +370,8 @@ class TaskRuntime:
             self.wake.clear()
             if followups := getattr(self, "followups", None):
                 await followups.tick()
+            if events := getattr(self, "goal_events", None):
+                events.tick()
             async with self.controls:
                 row = self.store.one(
                     "SELECT * FROM agent_tasks WHERE scope=? AND status IN ('queued','running','waiting','scheduled') "

@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException
 from pydantic import Field, field_validator
 
 from ..models import StrictModel
+from .goal_events import register_goal_events
 from .goal_followups import register_goal_followups
 
 
@@ -53,6 +54,7 @@ class EditionEdit(StrictModel):
 
 def register_task_api(app, tasks, require_admin):
     register_goal_followups(app, tasks, require_admin)
+    register_goal_events(app, tasks, require_admin)
     deps = [Depends(require_admin)]
 
     def visible(identity):

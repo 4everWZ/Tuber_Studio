@@ -4,6 +4,7 @@
 
 - [业务部署、服务连接与数据恢复](guides/deployment.md)
 - [对话、视频、评论、私信与动态](guides/operations.md)
+- [长期目标：跟踪指定 UID 的来信](guides/goal-event-tracking.md)
 - [角色卡、音色与形象](guides/characters.md)
 - 角色素材 · [历史语料与来源](../tools/training/README.md)
 - 直播 · [工作台与点歌](guides/live/workbench.md) · [可选 Live2D](guides/live/avatar.md)
