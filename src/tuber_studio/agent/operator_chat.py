@@ -36,10 +36,10 @@ from .handoff import (
     video_findings,
 )
 from .memory_organizer import MemorySuggestion
-from .task_tools import bound_owner, observed_live_status
 from .owner_memory import citation, history_preference, private_rows
 from .owner_memory_api import register_owner_memory
 from .private_memory_writer import connect_private_writer
+from .task_tools import bound_owner, observed_live_status
 
 _BV = re.compile(r"(?:https://www\.bilibili\.com/video/)?(BV[0-9A-Za-z]{10})/?")
 _MENTIONED_BV = re.compile(r"(?<![0-9A-Za-z])BV[0-9A-Za-z]{10}(?![0-9A-Za-z])")
@@ -139,7 +139,6 @@ class ChatTurn(StrictModel):
     message: Text
     video_selection: VideoSelection | None = None
     intent: ChatIntent | None = None
-
     temporary: bool = False
     window: list[TemporaryMessage] = Field(default_factory=list, max_length=8)
 
@@ -150,6 +149,7 @@ class ChatTurn(StrictModel):
         if self.temporary and (self.video_selection or self.intent and self.intent.action != "chat"):
             raise ValueError("临时对话只接受聊天消息")
         return self
+
 
 class CardTurnIntent(StrictModel):
     intent: Literal["discuss", "revise", "new_work", "use_tool", "clarify"]
@@ -365,10 +365,10 @@ class OperatorChat:
         )
 
     def _assistant_history(self, char, account, *, discussion=False, full_turns=False):
-        bindings = [char["id"], self.private_owner, char["version"], account]
-        portable = ""
         if not history_preference(self.runtime)["history_enabled"]:
             return []
+        bindings = [char["id"], self.private_owner, char["version"], account]
+        portable = ""
         if not discussion:
             portable = " OR json_extract(result,'$.private_owner')=?"
             bindings.append(self.private_owner)
@@ -387,11 +387,11 @@ class OperatorChat:
                 continue
             if not discussion and not saved.get("assistant_context"):
                 continue
-            reply = saved.get("reply_text", "")
-            if not reply:
             origin = (saved.get("account_id", account), char["id"], row["character_version"])
             if self.runtime.daily_memory.source_deleted(origin, "turn:" + row["request_id"], self.private_owner):
                 continue
+            reply = saved.get("reply_text", "")
+            if not reply:
                 continue
             message = row["message"]
             if not full_turns:
@@ -582,7 +582,9 @@ class OperatorChat:
                         raise HTTPException(409, "推理模型已切换，可重新发送")
                     maximum = max(1024, min(4096, getattr(provider, "config", {}).get("max_tokens", 1024)))
                     if cards:
+                        validate_history()
                         routed = await self._classify_card_turn(provider, current, cards, history, maximum, report)
+                        validate_history()
                         self._check_scope(char, account)
                         if provider is not self.runtime.llm:
                             raise HTTPException(409, "推理模型已切换，可重新发送")
@@ -595,9 +597,8 @@ class OperatorChat:
                                 self.runtime.validate_memory_delivery(audit)
                             else:
                                 action = {"revise": "steer_task", "new_work": "agent_task", "clarify": "clarify"}[routed.intent]
-                        validate_history()
                                 decision = ChatIntent(action=action, **routed.model_dump(exclude={"intent"}))
-                        validate_history()
+                            validate_history()
                             stage = "validated"
                             return decision, audit
                         current = {"role": "user", "content": data.message}
@@ -611,7 +612,6 @@ class OperatorChat:
                             current["content"] = dump({"task": facts, "message": data.message})
                         messages.append({"role": "system", "content": "这是只读交谈。本轮没有新交办或修改，"
                                          "用当前角色的口吻回答；任务状态和已交付内容以附带记录为准。"})
-                            validate_history()
                     if uses_model_card:
                         messages = await self._fit_assistant_history(
                             provider, messages, history, current, None if plain else schema, maximum,
@@ -640,6 +640,7 @@ class OperatorChat:
                         decision = ChatIntent.model_validate(lifecycle.model_dump(exclude={"reply_markdown"}))
                     check_delivery_scope()
                     self.runtime.validate_memory_delivery(audit)
+                validate_history()
                 stage = "validated"
                 return decision, audit
         except ContextWindowExceeded as error:
@@ -658,7 +659,6 @@ class OperatorChat:
                 finish = None
             incomplete = getattr(provider, "last_content", None) if finish == "length" else None
             if isinstance(incomplete, str):
-                validate_history()
                 longest_space = max((len(run[0]) for run in re.finditer(r"\s+", incomplete)), default=0)
                 logger.info("operator assistant incomplete nonspace_chars=%s longest_space=%s request_id=%s",
                             sum(not char.isspace() for char in incomplete), longest_space, request_id)
@@ -737,6 +737,21 @@ class OperatorChat:
                 return {"reply_text": "这条公开经历当前不可引用。", "card": None}
         if memory or (audit and audit.get("organized_memory")):
             result = result | {"memory_dependent": True}
+        if audit and audit.get("organized_memory"):
+            scope = self.runtime.memory_organizer.scope()
+            citations = []
+            service = self.runtime.daily_memory
+            for ref in audit["organized_memory"]:
+                rows = service.organized(scope, item_id=ref["id"])
+                if not rows or not (projected := service.owner_projection(rows[0])):
+                    continue
+                if key := ref.get("source_key"):
+                    match = next((s for s in service.lookup_source(scope, "operator", key) if s["id"] == ref["id"]), None)
+                    if not match:
+                        continue
+                    projected = projected | {"exact_source": match}
+                citations.append(citation(projected))
+            result = result | {"memory_citations": citations}
         result = {key: value for key, value in result.items()
                   if key not in {"submission", "binding", "account_id", "memory", "confirmations", "organized_memory",
                                  "memory_intent", "assistant_context", "clarification_request", "private_owner",
@@ -763,21 +778,6 @@ class OperatorChat:
             return result | {"card": card | {"data": {
                 "request_id": edit["request_id"], "original": json.loads(edit["original"])["text"],
                 "caption": edit["outgoing"], "status": edit["status"], "error": edit["error"],
-        if audit and audit.get("organized_memory"):
-            scope = self.runtime.memory_organizer.scope()
-            citations = []
-            service = self.runtime.daily_memory
-            for ref in audit["organized_memory"]:
-                rows = service.organized(scope, item_id=ref["id"])
-                if not rows or not (projected := service.owner_projection(rows[0])):
-                    continue
-                if key := ref.get("source_key"):
-                    match = next((s for s in service.lookup_source(scope, "operator", key) if s["id"] == ref["id"]), None)
-                    if not match:
-                        continue
-                    projected = projected | {"exact_source": match}
-                citations.append(citation(projected))
-            result = result | {"memory_citations": citations}
                 "url": f"https://www.bilibili.com/opus/{edit['platform_id']}",
             }}}
         if card["type"] == "video_browsing":
@@ -1095,6 +1095,11 @@ class OperatorChat:
                 except TimeoutError:
                     yield ": keepalive\n\n"
                     continue
+                if name == "done" and value.get("memory_dependent") and not data.temporary:
+                    try:
+                        value = self.visible_turn(self.current_turn(request_id, read_only=True))
+                    except HTTPException:
+                        name, value = "error", {"status": 409, "message": "当前对话或引用已变化。"}
                 yield encode_event(name, value)
                 if name in {"done", "error"}:
                     break
@@ -1124,11 +1129,6 @@ class OperatorChat:
                         key = f"{request_id}/source-{index + 1}"
                         events[key] = (0, event | {"reference": key})
                         matching.append(key)
-                if name == "done" and value.get("memory_dependent") and not data.temporary:
-                    try:
-                        value = self.visible_turn(self.current_turn(request_id, read_only=True))
-                    except HTTPException:
-                        name, value = "error", {"status": 409, "message": "当前对话或引用已变化。"}
             if matching:
                 reference = matching[0] if len(matching) == 1 else ""
         if kind in _TASK_REFERENCE_ACTIONS and kind != "stop" and reference is None:
@@ -1839,6 +1839,8 @@ class OperatorChat:
 
 def register_operator_chat(app, runtime, store, browsing, dynamics, require_admin):
     service = OperatorChat(runtime, store, browsing, dynamics)
+    connect_private_writer(runtime)
+    register_owner_memory(app, runtime, service, require_admin)
     deps = [Depends(require_admin)]
 
     @app.get("/api/chat/intelligent", dependencies=deps)
@@ -1868,8 +1870,6 @@ def register_operator_chat(app, runtime, store, browsing, dynamics, require_admi
     @app.post("/api/chat/intelligent/stream", dependencies=deps)
     async def stream(data: ChatTurn):
         return StreamingResponse(service.stream(data), media_type="text/event-stream",
-    connect_private_writer(runtime)
-    register_owner_memory(app, runtime, service, require_admin)
                                  headers={"X-Accel-Buffering": "no"})
 
     @app.post("/api/chat/intelligent/turns/{request_id}/stop-generation", dependencies=deps)
