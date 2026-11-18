@@ -66,6 +66,14 @@ async def run(device, live, voice_wav):
     token = secrets.token_urlsafe(32)
     config = connection(os.environ) if live else None
     report = {"platform_writes": 0, "source": "owner-supplied AGENTS.md / Global Working Rules"}
+    output = Path(tempfile.mkdtemp(dir=ROOT / "tmp", prefix="owner-memory-evidence-")) / "result.json"
+    print("Evidence:", output.relative_to(ROOT), flush=True)
+    def record(name, value):
+        report[name] = value
+        pending = output.with_suffix(".writing")
+        pending.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        pending.replace(output)
+    record("stage", "starting")
     with tempfile.TemporaryDirectory(dir=ROOT / "tmp", ignore_cleanup_errors=True) as directory, patch.dict(os.environ, {"TUBER_ADMIN_TOKEN": token}):
         settings = Settings(runtime=Path(directory))
         if config:
@@ -109,6 +117,7 @@ async def run(device, live, voice_wav):
                     await page.get_by_role("button", name="保存私有记忆").click()
                     await page.locator("#owner-memory-save").get_by_text("已保存").wait_for()
                     await page.close()
+                    record("stage", "confirmed_in_chromium")
                     remote = await device_call(device, port, token, "POST", SEARCH, {"query": CONFIRMED})
                     row, = remote["value"]["items"]
                     assert row["quote"] == CONFIRMED and row["source_key"].startswith("settings:")
@@ -117,20 +126,29 @@ async def run(device, live, voice_wav):
                                                       "read_after_page_close":True})
                     client = await stack.enter_async_context(httpx.AsyncClient(base_url=local, trust_env=False, timeout=180))
                     (await client.post("/api/auth", json={"token":token})).raise_for_status()
+                    record("stage", "independent_device_authenticated")
                     if voice_wav and (await client.get("/api/chat/private-call")).raise_for_status().json()["configured"]:
                         from evaluations.owner_memory_voice import voice_probe
                         report["final_user_transcript"] = await voice_probe(playwright, os.getenv("CHROMIUM_EXECUTABLE"),
                                                                           local, token, voice_wav)
+                    elif config:
+                        from evaluations.owner_memory_voice import service_probe
+                        try:
+                            report["final_user_transcript"] = await service_probe(config, Path(directory), voice_wav)
+                        except (OSError, subprocess.SubprocessError, ValueError, httpx.HTTPError) as error:
+                            report["final_user_transcript"] = {"status":"unverified", "reason":type(error).__name__}
                     else:
-                        report["final_user_transcript"] = {"status": "unverified", "reason": "requires speech WAV and ordinary Realtime binding"}
+                        report["final_user_transcript"] = {"status":"unverified", "reason":"ordinary_service_binding_missing"}
+                    record("stage", "final_transcript_checked")
                     if config:
                         from evaluations.owner_memory_video import compare
-                        report["video"] = await compare(client, runtime, port, device, token, row)
+                        report["video"] = await compare(client, runtime, port, device, token, row, record)
                     else:
                         report["video"] = {"status":"unverified", "reason":"ordinary_service_binding_missing" if live else "device_only"}
                         await device_call(device, port, token, "DELETE", f"/api/daily-memory/organized/{row['id']}?expected_revision={row['revision']}")
                     assert not (await client.post(SEARCH, json={"query":CONFIRMED})).json()["items"]
                     report["independent_device"]["forget_visible_on_original_client"] = True
+                    record("stage", "finished")
             finally:
                 server.should_exit = True
                 await serving

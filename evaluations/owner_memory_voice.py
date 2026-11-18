@@ -50,3 +50,58 @@ async def voice_probe(playwright, executable, origin, login, audio):
                 "bound_final_transcript":transcript, "committed_user_audio_items":len(commits)}
     finally:
         await browser.close()
+
+async def service_probe(config, directory, speech=None):
+    """Use an owner-authorized sentence, without treating a synthetic speaker as proof of identity."""
+    import base64
+    import os
+    import subprocess
+    from pathlib import Path
+    from urllib.parse import urlencode
+
+    from tuber_studio.agent.private_call import mint_ticket
+    from evaluations.owner_memory_device import AUTO
+
+    # Only the Studio process can mint. No gateway credentials are inherited by the audio/WS probes.
+    env = {k: os.environ[k] for k in ("PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "LOCALAPPDATA") if k in os.environ}
+    if speech is None:
+        speech = directory / "owner-rule.wav"
+        script = ("Add-Type -AssemblyName System.Speech\n"
+                  "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer\n"
+                  "try { $s.SetOutputToWaveFile($env:QA_WAVE); $s.Speak($env:QA_SENTENCE) } finally { $s.Dispose() }")
+        subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                       env=env | {"QA_WAVE":str(speech), "QA_SENTENCE":AUTO}, check=True, capture_output=True, timeout=20)
+        source = "synthetic reading of the owner's AGENTS.md sentence"
+    else:
+        source = "authorized speech WAV"
+    raw = subprocess.run(["ffmpeg","-v","error","-nostdin","-i",str(speech),"-t","12","-ac","1","-ar","16000",
+                          "-f","s16le","pipe:1"], env=env, check=True, capture_output=True, timeout=20).stdout
+    if not raw:
+        raise ValueError("empty speech fixture")
+    root, token = config
+    ticket = await mint_ticket(root, token)
+    url = root.replace("http","ws",1) + "/v1/realtime?" + urlencode({"ticket":ticket,"autostart":"0","duplex":"1"})
+    import asyncio
+    ws = await asyncio.to_thread(subprocess.run, ["node", str(Path(__file__).with_name("owner_memory_realtime.mjs"))],
+                                 input=json.dumps({"socket":url,"pcm":base64.b64encode(raw).decode()}).encode(),
+                                 env=env, check=True, capture_output=True, timeout=65)
+    return json.loads(ws.stdout) | {"input_source":source, "transport":"ordinary gateway ticket / native Realtime"}
+
+
+if __name__ == "__main__":
+    import argparse
+    import asyncio
+    import os
+    import tempfile
+    from pathlib import Path
+
+    from evaluations.omni_chat_loop import ROOT, connection
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--voice-wav", type=Path)
+    args = parser.parse_args()
+    service = connection(os.environ)
+    if not service:
+        parser.error("OMNI_GATEWAY_URL and an ordinary Studio token are required")
+    with tempfile.TemporaryDirectory(dir=ROOT/"tmp", prefix="owner-voice-") as scratch:
+        print(json.dumps(asyncio.run(service_probe(service, Path(scratch), args.voice_wav)), ensure_ascii=False))
