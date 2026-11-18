@@ -63,6 +63,13 @@ class TaskIdentity:
             BEGIN UPDATE agent_task_authority SET binding=NULL; END
         """)
         db.execute("""
+            CREATE TRIGGER IF NOT EXISTS agent_task_card_edit AFTER UPDATE OF config ON character_versions
+            WHEN OLD.config IS NOT NEW.config AND NEW.character_id=(
+                SELECT json_extract(value,'$') FROM kv WHERE key='active_character')
+                AND NEW.version=(SELECT active_version FROM characters WHERE id=NEW.character_id)
+            BEGIN UPDATE agent_task_authority SET binding=NULL; END
+        """)
+        db.execute("""
             CREATE TRIGGER IF NOT EXISTS agent_task_version_switch BEFORE UPDATE OF active_version ON characters
             WHEN OLD.active_version<>NEW.active_version AND OLD.id=(
                 SELECT json_extract(value,'$') FROM kv WHERE key='active_character')
@@ -73,8 +80,12 @@ class TaskIdentity:
         return self.principal, self.character()
 
     def grant_current(self, scope):
-        epoch = self.store.one("SELECT epoch FROM agent_task_authority WHERE singleton=1")["epoch"]
-        return len(scope) == 6 and scope[-2:] == [self.principal, epoch]
+        if len(scope) != 6 or scope[-2] != self.principal:
+            return False
+        return bool(self.store.one(
+            "SELECT 1 AS current FROM agent_task_authority WHERE singleton=1 AND epoch=? AND binding=?",
+            (scope[-1], dump(scope[:-2])),
+        ))
 
     def __call__(self):
         binding = self.binding()

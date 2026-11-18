@@ -79,6 +79,7 @@ async def test_task_history_is_not_an_execution_grant(store, switch):
         with pytest.raises(LookupError):
             await tasks.control(identity, 1, "approve", step_id=step)
         store.activate("whale")
+    assert not tasks.can_control(tasks.current(identity))
     assert tasks.current(identity)["steps"] == pending
     assert [item["id"] for item in tasks.activity()] == [identity]
     assert tasks.executable(identity) is None
