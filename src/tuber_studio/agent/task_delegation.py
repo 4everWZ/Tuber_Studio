@@ -141,6 +141,12 @@ async def run_pending(runtime, task, pending, context):
 
 
 async def advance(runtime, task):
+    browser = getattr(runtime, "private_browser", None)
+    if browser and any(s["tool"] == "owner_browser_grant" for s in task["steps"]):
+        state = browser.state(task["id"])
+        if state["mode"] == "owner":
+            runtime._save(task, status="waiting", due=time.time() + 2, message="号主正在接管阅读页。")
+            return
     current = runtime._current_steps(task)
     context = visible_steps(runtime, task)
     if "candidate" in task["plan"]:
@@ -172,7 +178,12 @@ async def advance(runtime, task):
         runtime._save(task, status="waiting", due=time.time() + 30, message="等待后台 Responses 服务连接。")
         return
     allowed = private_tools(runtime.tools, context)
+    if browser:
+        allowed = browser.menu(task, allowed)
     tools = [function(name, tool.description, tool.arguments) for name, tool in allowed.items()]
+    if browser:
+        browser.bind(task, tools)
+        allowed = {tool["name"]: allowed[tool["name"]] for tool in tools}
     if "web_page" in allowed and hasattr(runtime, "unread_web_addresses"):
         goal = "\n".join([*task["plan"]["prior_goals"], task["goal"]])
         addresses = runtime.unread_web_addresses(goal, context)

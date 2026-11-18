@@ -2,6 +2,7 @@ import { $, node, safeMessage } from "./core.js?v=20261105.32";
 import { renderArtifact, renderAssistantAnswer } from "./operator-chat-answer.js";
 import { mountFollowup } from "./goal-followup.js";
 import { mountGoalEvents } from "./goal-events.js";
+import { browserTaskForm, mountTaskBrowser } from "./task-browser.js";
 
 const base = "/api/agent/tasks";
 const states = {
@@ -135,7 +136,9 @@ export function initTaskActivity(api, requestId) {
     schedule.onclick = showScheduleForm;
     const upload = button("用文本附件交办");
     upload.onclick = showAttachmentForm;
-    content.replaceChildren(schedule, upload);
+    const browser = button("用浏览器交办");
+    browser.onclick = () => browserTaskForm(content, api, requestId, open, value => { editing = value; });
+    content.replaceChildren(schedule, upload, browser);
     if (notices.length) content.append(node("h3", "给号主的更新", "chat-activity-group"));
     for (const item of notices) {
       const link = button(`${states[item.status]} · ${item.goal}`);
@@ -330,6 +333,7 @@ export function initTaskActivity(api, requestId) {
     content.replaceChildren(back, title, state, result, steps, adjust, stop);
     if (task.can_control === false && !task.creative_goal?.closed) content.append(node("p", "原执行授权已失效。记录与成果仍可查看；如需继续，请重新交办。", "hint"));
     renderWorkspace(task);
+    mountTaskBrowser(task, content, api, open, value => { editing = value; });
     if (task.can_control !== false && task.status === "awaiting_approval") {
       const step = task.steps.at(-1);
       const action = node("p", `${step.approval.target} · ${step.approval.text || step.arguments.action}`);

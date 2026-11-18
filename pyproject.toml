@@ -15,6 +15,7 @@ dependencies = [
     "cryptography>=44,<50",
     "qrcode>=8,<9",
     "quickjs-ng>=0.17,<1",
+    "playwright>=1.58,<2",
 ]
 
 [dependency-groups]

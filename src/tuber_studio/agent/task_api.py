@@ -12,6 +12,7 @@ from ..store import dump
 from .goal_events import register_goal_events
 from .goal_followups import register_goal_followups
 from .operator_chat import VideoSelection
+from .private_browser import register_private_browser
 from .private_code import CodeFile, run_code
 from .task_runtime import Tool
 
@@ -35,6 +36,7 @@ class TaskCreate(StrictModel):
     creative_goal_id: UUID | None = None
     attachments: list[TextAttachment] = Field(default_factory=list, max_length=3)
     allow_code: bool = Field(default=False, strict=True)
+    browser_sources: list[str] | None = Field(default=None, min_length=1, max_length=6)
     video_selection: VideoSelection | None = None
 
     @field_validator("goal")
@@ -64,6 +66,7 @@ class GoalStop(StrictModel):
 
 
 def register_task_api(app, tasks, require_admin):
+    register_private_browser(app, tasks, require_admin)
     tasks.register("private_code", Tool(
         "在获准的隔离 QuickJS 中变换私有附件。script 是同步函数体，files 为 {name,text} 数组，"
         "返回完整文件字符串并指定输出文件名。没有网络、磁盘或宿主命令。", CodeFile, run_code,
@@ -144,7 +147,8 @@ def register_task_api(app, tasks, require_admin):
             return detail(tasks.create(str(body.request_id), body.goal, due=body.run_at,
                                        creative_goal_id=root, source_key=["goal", root] if root else None,
                                        attachments=[item.model_dump() for item in body.attachments],
-                                       video_selection=body.video_selection, allow_code=body.allow_code))
+                                       video_selection=body.video_selection, allow_code=body.allow_code,
+                                       browser_sources=body.browser_sources))
         except ValueError as error:
             raise HTTPException(409, str(error)) from error
 

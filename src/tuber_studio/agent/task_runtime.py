@@ -222,7 +222,7 @@ class TaskRuntime:
                 for task in (self.view(self._decode(row)) for row in rows)]
 
     def create(self, identity, goal, *, due=None, source_key=None, creative_goal_id=None, attachments=(),
-               video_selection=None, allow_code=False):
+               video_selection=None, allow_code=False, browser_sources=None):
         scope, now = dump(self.scope()), time.time()
         if creative_goal_id:
             project = self.workspace.goal(creative_goal_id)
@@ -236,6 +236,13 @@ class TaskRuntime:
         if allow_code:
             inputs.append({"id": str(uuid5(UUID(identity), "code-grant")), "revision": 0, "tool": "owner_code_grant",
                            "arguments": {}, "result": {"runtime": "QuickJS", "purpose": "当前任务的私有文件计算"}})
+        if browser_sources is not None:
+            from .browser_document import source_list
+            if inputs or selection:
+                raise ValueError("交互浏览器使用独立的私有任务")
+            inputs.append({"id": str(uuid5(UUID(identity), "browser-grant")), "revision": 0,
+                           "tool": "owner_browser_grant", "arguments": {},
+                           "result": {"sources": source_list(browser_sources), "revision": 1}})
         plan = dump({"backend": "responses", "prior_goals": [], **selection}) if inputs or selection else None
         due = now if due is None else due
         self.store.execute(
@@ -247,7 +254,8 @@ class TaskRuntime:
         )
         task = self.executable(identity)
         if (not task or task["source_key"] != key or
-                [step for step in task["steps"] if step["tool"] in {"owner_attachment", "owner_code_grant"}] != inputs):
+                [step for step in task["steps"] if step["tool"] in {"owner_attachment", "owner_code_grant"}
+                 or step["tool"] == "owner_browser_grant" and step["id"] == str(uuid5(UUID(identity), "browser-grant"))] != inputs):
             raise ValueError("该请求编号已用于另一项任务")
         self.wake.set()
         return task
@@ -414,6 +422,8 @@ class TaskRuntime:
             self.worker.cancel()
             await asyncio.gather(self.worker, return_exceptions=True)
             self.worker = None
+        if browser := getattr(self, "private_browser", None):
+            await browser.close()
 
     async def _work(self):
         while True:

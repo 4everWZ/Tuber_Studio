@@ -331,7 +331,7 @@ def _describe(tool, result):
     if tool == "web_search":
         sources = [source for link in result.get("links", []) if (source := _source(link))]
         return (["候选链接，待读取正文核验。", *sources] if sources else ["未找到候选来源。"]), bool(sources)
-    if tool == "web_page":
+    if tool in {"web_page", "private_browser"}:
         origin, excerpt = _source(result.get("url")), _text(result.get("excerpt"))
         coverage = "来源摘录，内容有截断。" if result.get("truncated") else "来源摘录。"
         return [coverage, _text(result.get("title")), origin, excerpt], bool(origin and excerpt)
