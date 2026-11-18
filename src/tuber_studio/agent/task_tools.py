@@ -532,6 +532,12 @@ def create_task_runtime(runtime, store, browsing):
                                               "pages_without_body_receipts": evidence.unread_pages,
                                               "video_read_coverage": evidence.video_coverage,
                                               "candidate": candidate, "evidence": sources})}]
+        if task.get("owner_writing_preferences"):
+            messages[0]["content"] += (
+                "\n按 owner_writing_preferences 中与目标有关的呈现约定撰写实际标题和理由。"
+                "号主本次明确改口优先；仅在没有相关约定时使用号主给的备用格式。"
+                "这些偏好只影响私有交付的表达，不是视频事实或引用来源。"
+            )
         schema = PrivateDelivery.model_json_schema()
         bind_delivery_schema(schema["properties"]["items"], schema["$defs"]["CreativeItem"], pool)
         if replacements:

@@ -14,6 +14,12 @@ let current;
 const topic = byId("private-call-topic"), temporary = byId("private-call-temporary");
 temporary.onchange = () => { topic.disabled = temporary.checked; };
 const avatar = new CallAvatar(byId("private-call-avatar"), byId("private-call-avatar-fallback"));
+const finishUtterance = byId("private-call-finish-utterance");
+finishUtterance.onclick = () => {
+  if (!current?.stream || finishUtterance.disabled) return;
+  current.commitNextChunk = true;
+  finishUtterance.disabled = true;
+};
 const mute = byId("private-call-mute");
 mute.onclick = () => {
   const playback = current?.playback;
@@ -41,6 +47,7 @@ function finish(call, message) {
   mute.textContent = "播放静音";
   mute.setAttribute("aria-pressed", "false");
   byId("private-call-utterances").replaceChildren();
+  finishUtterance.hidden = finishUtterance.disabled = true;
   byId("private-call-citations").replaceChildren();
   temporary.disabled = false;
   topic.disabled = temporary.checked;
@@ -82,6 +89,13 @@ async function capture(call, identity) {
     if (call.socket.bufferedAmount > 128000) { finish(call, "网络积压，通话已结束"); return; }
     const audio = btoa(String.fromCharCode(...new Uint8Array(data)));
     call.send({type: "input_audio_buffer.append", format: "pcm16", sample_rate_hz: 16000, audio});
+    // Seal after the next whole capture unit so the last syllables reach the gateway.
+    if (call.commitNextChunk) {
+      call.commitNextChunk = false;
+      call.send({type: "input_audio_buffer.commit", final: true, create_response: false});
+    } else if (!call.ephemeral) {
+      finishUtterance.hidden = finishUtterance.disabled = false;
+    }
   };
   status.textContent = `正在与${identity}私聊 · 麦克风已开启`;
 }
@@ -101,7 +115,7 @@ async function begin(previous = null) {
     call.context = new AudioContext({sampleRate: 16000});
     await call.context.resume();
     if (current !== call) return;
-    const ephemeral = temporary.checked;
+    const ephemeral = call.ephemeral = temporary.checked;
     temporary.disabled = topic.disabled = true;
     const config = await api("/api/chat/private-call/ticket", {method: "POST", signal: call.abort.signal,
       body: {temporary: ephemeral, topic: ephemeral ? "" : topic.value.trim()}});
