@@ -10,8 +10,22 @@ from .http_api import endpoint
 from .inference_profiles import LLM_MODELS, VISION_ROUTES
 from .inference_validation import project_wav
 from .llama_sampling import live_thinking_budget
+from .responses_provider import ResponsesConfig
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+class _EndpointKey(str):
+    """Carry the original route through copies of the settings transaction's key map."""
+
+    def __new__(cls, value, base_url):
+        validate_api_key(value)
+        instance = super().__new__(cls, value)
+        instance.base_url = endpoint(base_url) if base_url else None
+        return instance
+
+    def __getnewargs__(self):
+        return str(self), self.base_url
 
 
 def normalize_broker_llm(data):
@@ -81,18 +95,26 @@ class Settings:
         self.credentials_path = self.runtime / "provider-credentials.json"
         if self.credentials_path.is_symlink():
             raise ValueError("API凭证文件不能使用符号链接")
-        self.provider_keys = (
+        saved_keys = (
             json.loads(self.credentials_path.read_text(encoding="utf-8"))
             if self.credentials_path.exists()
             else {}
         )
-        if not isinstance(self.provider_keys, dict) or set(self.provider_keys) - {"llm", "tts", "vision"}:
+        if not isinstance(saved_keys, dict) or set(saved_keys) - {"llm", "tts", "vision", "responses"}:
             raise ValueError("API凭证文件格式无效")
-        for value in self.provider_keys.values():
-            validate_api_key(value)
+        self._provider_keys = {}
+        for name, entry in saved_keys.items():
+            if isinstance(entry, str):
+                self._provider_keys[name] = _EndpointKey(entry, None)
+            elif isinstance(entry, dict) and set(entry) == {"key", "base_url"}:
+                self._provider_keys[name] = _EndpointKey(entry["key"], entry["base_url"])
+            else:
+                raise ValueError("API凭证文件格式无效")
 
     def _validate(self, data=None):
         data = self.data if data is None else data
+        if "responses" in data:
+            ResponsesConfig.model_validate(data["responses"])
         llm, tts = data["llm"], data["tts"]
         if llm["kind"] not in {"llama_cpp", "openai_compatible", "demo"} or tts["kind"] not in {
             "gpt_sovits",
@@ -153,17 +175,42 @@ class Settings:
 
         validate_days(data["conversation_retention_days"])
 
+    def _key_base(self, name):
+        base = self.data.get(name, {}).get("base_url", "")
+        if name == "vision" and not base:
+            base = self.data.get("video_vision", {}).get("base_url", "")
+        return base.rstrip("/")
+
+    @property
+    def provider_keys(self):
+        return self._provider_keys
+
+    @provider_keys.setter
+    def provider_keys(self, keys):
+        for name, value in keys.items():
+            if not isinstance(value, _EndpointKey):
+                keys[name] = _EndpointKey(value, self._key_base(name))
+        self._provider_keys = keys
+
+    def _key_for(self, name, base):
+        value = self.provider_keys.get(name)
+        if value is not None and not isinstance(value, _EndpointKey):
+            value = self.provider_keys[name] = _EndpointKey(value, self._key_base(name))
+        return str(value) if value and base and value.base_url == base.rstrip("/") else None
+
     def provider_key(self, name):
-        return self.provider_keys.get(name)
+        return self._key_for(name, self._key_base(name))
 
     def endpoint_key(self, name):
         """A paired node credential is scoped to its exact configured routes."""
         base = self.data.get(name, {}).get("base_url", "")
-        return self.broker_key_for(base) or self.provider_key(name)
+        return self.broker_key_for(base) or (self.provider_key(name) if base else None)
 
     def video_vision_key(self):
         base = self.data.get("video_vision", {}).get("base_url", "")
-        return self.broker_key_for(base) or self.provider_key("vision")
+        return self.broker_key_for(base) or self._key_for("vision", base) or (
+            self.provider_key("llm") if base and base.rstrip("/") == self._key_base("llm") else None
+        )
 
     def broker_key_for(self, base_url):
         broker = self.data.get("inference_broker", {})
@@ -178,7 +225,7 @@ class Settings:
     def public_data(self):
         return redact_credentials(self.data) | {
             "provider_credentials": {
-                key: bool(self.provider_keys.get(key)) for key in ("llm", "tts", "vision")
+                key: bool(self.provider_key(key)) for key in ("llm", "tts", "vision", "responses")
             }
         }
 
@@ -188,7 +235,11 @@ class Settings:
         atomic_json(self.path, data)
 
     def save_keys(self, keys):
-        atomic_json(self.credentials_path, keys, private=True)
+        records = {}
+        for name, value in keys.items():
+            bound = value if isinstance(value, _EndpointKey) else _EndpointKey(value, self._key_base(name))
+            records[name] = {"base_url": bound.base_url, "key": str(bound)}
+        atomic_json(self.credentials_path, records, private=True)
 
     def _secret(self, name: str) -> str:
         path = self.runtime / name

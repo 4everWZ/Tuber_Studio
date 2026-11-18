@@ -131,7 +131,7 @@ async def test_omni_video_uses_real_frame_transport_and_verified_identity(omni_p
     assert all("thinking_budget_tokens" not in request and "reasoning_format" not in request for request in requests)
 
 
-@pytest.mark.parametrize("mismatch", ["checkpoint", "checkpoint_root_verified", "window"])
+@pytest.mark.parametrize("mismatch", ["checkpoint", "window"])
 async def test_omni_video_refuses_unverified_identity_before_generation(omni_provider, mismatch):
     value, health, registry, requests = omni_provider
     if mismatch == "window":
@@ -161,6 +161,15 @@ async def test_omni_video_cannot_continue_when_verified_model_card_window_change
     assert not value.capabilities()["available"]
 
 
+async def test_unpinned_omni_observes_frames_without_deployment_health(omni_provider):
+    value, health, _, requests = omni_provider
+    value.config.model_revision = ""
+    health.clear()
+    result = await value.analyze_video_evidence({"id": "video-1"}, META, FRAMES[:1], "画面", deadline=time.time() + 10)
+    assert requests and result["frame_observations"] == {"first": "一张红色轮廓的图"}
+    assert result["provenance"] == {"alias": "omni-default", "max_model_len": 40960}
+
+
 async def test_omni_visual_failure_is_reported_as_missing_evidence(omni_provider):
     value, health, _, requests = omni_provider
     health["state"] = "unavailable"
@@ -179,21 +188,32 @@ async def test_omni_comment_attachments_use_same_schema_and_identity(omni_provid
 
 
 def test_compose_omni_vision_default_uses_only_its_scoped_service_key(tmp_path, monkeypatch):
-    from deploy.omni.core_entrypoint import GATEWAY_BASE, ComposeSettings
+    from deploy.omni.core_entrypoint import ComposeSettings
 
     token_file = tmp_path / "gateway.token"
     token_file.write_text("scoped-compose-key", encoding="utf-8")
     monkeypatch.setenv("OMNI_GATEWAY_TOKEN_FILE", str(token_file))
+    monkeypatch.setenv("OMNI_GATEWAY_URL", "https://inference.example/service/")
+    monkeypatch.setenv("OMNI_LLM_MODEL_ALIAS", "workers")
     monkeypatch.setenv("TUBER_RUNTIME", str(tmp_path))
     monkeypatch.setenv("TUBER_CONFIG", str(tmp_path / "studio.json"))
     monkeypatch.setenv("TUBER_CORE_MODE", "omni")
     settings = ComposeSettings()
     vision = VideoVisionConfig.model_validate(settings.data["video_vision"])
-    assert vision.adapter == "omni" and vision.enabled and vision.base_url == GATEWAY_BASE
+    assert vision.adapter == "omni" and vision.enabled and vision.base_url == "https://inference.example/service/v1"
+    assert not vision.model_revision
+    assert settings.data["responses"] == {"model": "workers", "base_url": "https://inference.example/service/llm/v1"}
+    assert settings.provider_key("responses") == settings.provider_key("llm") == "scoped-compose-key"
+    settings.data["responses"]["base_url"] = vision.base_url
+    settings.data["llm"]["base_url"] = "https://other.example/v1"
+    assert settings.provider_key("responses") is None and settings.provider_key("llm") is None
     assert settings.video_vision_key() == "scoped-compose-key"
-    settings.provider_keys["vision"] = "separate-vision-key"
+    settings.data["vision"]["base_url"] = "https://vision.example/v1"
+    settings.provider_keys = {"vision": "separate-vision-key"}
     assert settings.endpoint_key("vision") == "separate-vision-key"
     settings.data["video_vision"]["base_url"] = "https://other.example/v1"
+    assert settings.video_vision_key() is None
+    settings.data["video_vision"]["base_url"] = settings.data["vision"]["base_url"]
     assert settings.video_vision_key() == "separate-vision-key"
 
 

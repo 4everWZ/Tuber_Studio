@@ -14,7 +14,7 @@ docker compose -f deploy/omni/app-compose.yml up -d --build --wait tuber-core
 curl --fail http://127.0.0.1:9020/healthz
 ```
 
-Core 通过受认证的 Chat Completions 接入网关。先核对网关 `GET /healthz` 和 `GET /v1/models` 的服务、别名、模型与实报 `max_model_len`，再用 `POST /v1/chat/prompt_tokens` 和实际生成检查计数、普通回复、SSE 及结构化结果。窗口包含已渲染输入和生成输出，Chats 思考默认开启并可调整。示例配置使用 JSON Schema 的紧凑结构约束，继续由 Core 校验完整输出。视频取帧与评论附件使用经验证的视觉能力，`OMNI_VISION_CHECKPOINT` 可为示例网关指定应核对的版本。朗读合成使用独立的语音 Provider。Core 的 `/healthz` 检查应用与数据库启动。 [能力与验收](../../docs/specs/foundation/omni-deployment.md#接入验收与切换)
+通过 `OMNI_GATEWAY_URL` 指定服务根地址（不带 `/v1`）。Omni 前台使用 `OMNI_MODEL_ALIAS`，后台使用 `OMNI_LLM_MODEL_ALIAS`。工作站与 Core 在不同机器时使用 Core 可达的工作站地址；不需要在 Core 安装引擎。用应用凭据验证 Chat、模型卡实报窗口、真实图文输入和后台 `/llm/v1/responses` 函数结果回传。只得到健康响应不代表 Agent 已接通。朗读合成使用单独配置的语音 Provider。 [能力与验收](../../docs/specs/foundation/omni-deployment.md#接入验收与切换)
 
 `core-data` 是 Core 独占的持久卷，保存、备份和迁移步骤沿用 [部署指南](../../docs/guides/deployment.md)。复用已有业务数据时须保有 `studio.json` 及权威写入者记录，`TUBER_CORE_HOSTNAME` 需和迁移时登记的目标一致。初次建卷可用 `TUBER_CORE_MODE=demo` 运行离线演示，或用 `TUBER_CORE_MODE=existing` 要求已有配置。切换已存在的配置通过工作台及部署准入完成。
 

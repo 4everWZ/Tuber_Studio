@@ -3,6 +3,7 @@
 import asyncio
 import ipaddress
 import json
+import os
 from urllib.parse import urlsplit
 
 import httpx
@@ -21,6 +22,10 @@ class InferenceQueueBusy(RuntimeError):
     def __init__(self, retry_after):
         self.retry_after = retry_after
         super().__init__("等待共享推理网关准入")
+
+
+class InferenceBudgetExceeded(ValueError):
+    """This request cannot fit even when the gateway is idle."""
 
 
 class InferenceTransport(httpx.AsyncHTTPTransport):
@@ -87,6 +92,9 @@ def endpoint(value):
             )
         except ValueError:
             local = host in {"localhost", "host.docker.internal", "jetson", "omni-gateway"} or host.endswith(".local")
+            if not local and "." not in host and host.replace("-", "").isalnum():
+                managed = urlsplit(os.getenv("OMNI_GATEWAY_URL", ""))
+                local = managed.scheme == "http" and (host, parsed.port) == (managed.hostname, managed.port)
         if not local:
             raise ValueError("公网API须使用HTTPS；本地服务可使用HTTP")
     return value.rstrip("/")
@@ -105,32 +113,41 @@ def api_client(config, api_key=None):
     )
 
 
+async def _bounded_body(response, limit):
+    data = bytearray()
+    async for chunk in response.aiter_bytes():
+        data.extend(chunk)
+        if len(data) > limit:
+            raise ValueError("API响应超过允许大小")
+    return bytes(data)
+
+
+async def check_response_status(response):
+    if response.status_code in {400, 429}:
+        try:
+            error = json.loads(await _bounded_body(response, 2_000_000)).get("error", {})
+        except (ValueError, AttributeError):
+            error = {}
+        code = error.get("code") if isinstance(error, dict) else None
+        if response.status_code == 400:
+            if code in ("context_length_exceeded", "context_window_exceeded"):
+                raise ContextWindowExceeded("API报告上下文超窗；保留原始记录")
+            if code == "request_budget_exceeded":
+                raise InferenceBudgetExceeded("请求超过推理服务准入预算；请调整输入或输出额度")
+        if response.status_code == 429 and code == "gateway_busy":
+            value = response.headers.get("Retry-After", "1")
+            seconds = int(value) if value.isascii() and value.isdecimal() and len(value) < 10 else 1
+            raise InferenceQueueBusy(max(1, seconds))
+    response.raise_for_status()
+
+
 async def response_bytes(client, method, path, *, payload=None, timeout=None, limit=2_000_000):
     options = {"json": payload} if payload is not None else {}
     if timeout is not None:
         options["timeout"] = timeout
     async with client.stream(method, path, **options) as response:
-        data = bytearray()
-        async for chunk in response.aiter_bytes():
-            data.extend(chunk)
-            if len(data) > limit:
-                raise ValueError("API响应超过允许大小")
-        if response.status_code in {400, 429}:
-            try:
-                error = json.loads(data).get("error", {})
-            except (ValueError, AttributeError):
-                error = {}
-            if response.status_code == 400 and isinstance(error, dict) and error.get("code") in {
-                "context_length_exceeded",
-                "context_window_exceeded",
-            }:
-                raise ContextWindowExceeded("API报告上下文超窗；保留原始记录")
-            if (response.status_code == 429 and response.request.url.host == "omni-gateway"
-                    and isinstance(error, dict) and error.get("code") == "gateway_busy"):
-                value = response.headers.get("Retry-After", "1")
-                raise InferenceQueueBusy(max(1, min(30, int(value))) if value.isdecimal() and len(value) < 5 else 1)
-        response.raise_for_status()
-        return bytes(data)
+        await check_response_status(response)
+        return await _bounded_body(response, limit)
 
 
 async def response_json(client, method, path, *, payload=None, timeout=None):

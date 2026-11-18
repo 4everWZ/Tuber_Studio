@@ -16,7 +16,7 @@ import httpx
 
 from .compaction import ContextWindowExceeded, IncompleteCompaction, approx_token_count
 from .generation_meter import reserve_generation, settle_generation
-from .http_api import api_client, inference_transport, models_health, response_bytes
+from .http_api import api_client, check_response_status, inference_transport, models_health, response_bytes
 from .llama_sampling import live_thinking_budget, llama_cpp_sampling, supports_live_thinking_budget
 from .models import OperationReply, Reply
 from .operation_identity import BILIBILI_OWNER_INSTRUCTION, bilibili_owner_context, provider_identity_messages
@@ -198,7 +198,7 @@ class LlamaCppProvider:
         await self.ensure_capacity()
         return {"available": True, "detail": response.json(), "server_context_tokens": self.server_tokens}
 
-    async def ensure_capacity(self, *, allow_warmup=True):
+    async def ensure_capacity(self, *, require_ready=True):
         try:
             window = self.config["context_tokens"]
             native = self.config.get("native_context_tokens", 131072)
@@ -208,14 +208,9 @@ class LlamaCppProvider:
                 raise ValueError("配置超出该模型原生上下文；请先验证并配置支持更长窗口的模型")
             timeout = httpx.Timeout(20, connect=5) if self.uses_broker else 5
             response = await self.client.get("/props", timeout=timeout)
-            if response.status_code == 503 and self.uses_broker:
-                if not allow_warmup:
-                    self._assistant_capacity = None
-                    return False
-                model = {"model": self.config["model"]} if self.broker_model_routing else {}
-                warmup = await self.client.post("/warmup", json=model, timeout=httpx.Timeout(120, connect=5))
-                warmup.raise_for_status()
-                response = await self.client.get("/props", timeout=timeout)
+            if response.status_code == 503 and self.uses_broker and not require_ready:
+                self._assistant_capacity = None
+                return False
             response.raise_for_status()
             properties = response.json()
             self.is_sleeping = properties.get("is_sleeping", False)
@@ -245,7 +240,7 @@ class LlamaCppProvider:
 
     async def prepare_assistant_capacity(self):
         if not self._assistant_capacity_current():
-            await self.ensure_capacity(allow_warmup=False)
+            await self.ensure_capacity(require_ready=False)
 
     async def _token_count(self, messages, *, enable_thinking=None):
         # Count the actual chat template, including role delimiters, rather than estimating Chinese characters.
@@ -564,7 +559,7 @@ def chat_stream_payload(payload):
 
 
 async def read_chat_stream(response, on_content):
-    response.raise_for_status()
+    await check_response_status(response)
     if "text/event-stream" not in response.headers.get("content-type", ""):
         raise ValueError("推理服务没有返回模型流")
     chunks, usage, finish = [], {}, None

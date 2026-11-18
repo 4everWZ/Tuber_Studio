@@ -11,6 +11,8 @@ services:
     init: true
     environment:
       TUBER_CORE_MODE: ${TUBER_CORE_MODE:-omni}
+      OMNI_GATEWAY_URL: ${OMNI_GATEWAY_URL:-http://omni-gateway:8000}
+      OMNI_LLM_MODEL_ALIAS: ${OMNI_LLM_MODEL_ALIAS:-llm-default}
       OMNI_MODEL_ALIAS: ${OMNI_MODEL_ALIAS:-omni-default}
       OMNI_VISION_CHECKPOINT: ${OMNI_VISION_CHECKPOINT:-}
       TUBER_NATIVE_PROGRAM_STATUS: ${TUBER_NATIVE_PROGRAM_STATUS:-1}
@@ -38,7 +40,7 @@ services:
     restart: unless-stopped
     init: true
     environment:
-      OMNI_GATEWAY_URL: http://omni-gateway:8000
+      OMNI_GATEWAY_URL: ${OMNI_GATEWAY_URL:-http://omni-gateway:8000}
       OMNI_GATEWAY_TOKEN_FILE: /run/secrets/omni_gateway_media
       OMNI_PROGRAM_PRIORITY: '1'
       OMNI_MODEL_ALIAS: ${OMNI_MODEL_ALIAS:-omni-default}
@@ -72,7 +74,7 @@ services:
     image: ${TUBER_CORE_IMAGE:-tuber-studio-core:local}
     command: ["python", "/opt/tuber/check_batch.py"]
     environment:
-      OMNI_GATEWAY_MODE_URL: http://omni-gateway:8000/api/mode
+      OMNI_GATEWAY_MODE_URL: ${OMNI_GATEWAY_URL:-http://omni-gateway:8000}/api/mode
       OMNI_GATEWAY_TOKEN_FILE: /run/secrets/omni_gateway_remotion
     secrets: [omni_gateway_remotion]
     networks: [omni]
@@ -86,8 +88,8 @@ services:
       remotion-admission:
         condition: service_completed_successfully
     environment:
-      OMNI_GATEWAY_URL: http://omni-gateway:8000
-      OMNI_GATEWAY_MODE_URL: http://omni-gateway:8000/api/mode
+      OMNI_GATEWAY_URL: ${OMNI_GATEWAY_URL:-http://omni-gateway:8000}
+      OMNI_GATEWAY_MODE_URL: ${OMNI_GATEWAY_URL:-http://omni-gateway:8000}/api/mode
       OMNI_GATEWAY_TOKEN_FILE: /run/secrets/omni_gateway_remotion
       OMNI_MODEL_ALIAS: ${OMNI_MODEL_ALIAS:-omni-default}
       REMOTION_INPUT_DIR: /input
@@ -105,7 +107,7 @@ services:
 
 networks:
   omni:
-    external: true
+    external: ${TUBER_OMNI_EXTERNAL_NETWORK:-true}
     name: ${TUBER_OMNI_NETWORK:-tuber-omni}
 
 volumes:

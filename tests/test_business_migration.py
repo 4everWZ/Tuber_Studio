@@ -118,10 +118,11 @@ def test_snapshot_restore_keeps_business_identity_credentials_cache_and_unknown_
 
 
 def test_omni_profile_switch_is_confined_to_staged_business_data(settings, monkeypatch):
-    from deploy.omni.core_entrypoint import GATEWAY_BASE, stage_omni
+    from deploy.omni.core_entrypoint import stage_omni
 
     runtime = settings.runtime
     monkeypatch.setenv("TUBER_RUNTIME", str(runtime))
+    monkeypatch.setenv("OMNI_GATEWAY_URL", "https://studio.example/proxy")
     monkeypatch.delenv("TUBER_CONFIG", raising=False)
     settings.save_public(settings.data)
     settings.save_keys({"tts": "retained-provider-key"})
@@ -132,7 +133,7 @@ def test_omni_profile_switch_is_confined_to_staged_business_data(settings, monke
     stage_omni()
     value = json.loads(settings.path.read_text(encoding="utf-8"))
     assert (value["llm"]["kind"], value["llm"]["base_url"], value["llm"]["model"]) == (
-        "openai_compatible", GATEWAY_BASE, "omni-default",
+        "openai_compatible", "https://studio.example/proxy/v1", "omni-default",
     )
     assert value["video_vision"]["adapter"] == "omni"
     assert value["tts"] == settings.data["tts"]
@@ -163,7 +164,7 @@ def test_staged_omni_retires_legacy_profiles_and_keeps_paired_tts(settings, monk
     assert restored.data["llm"]["structured_output"] == "structural_tag"
     assert restored.data["tts"]["base_url"] == base + "/tts"
     assert restored.endpoint_key("tts") == "fixture-paired-token"
-    assert restored.provider_key("llm") == "old-local-key"
+    assert restored.provider_key("llm") is None
     assert restored.broker_key_for(base + "/llm") is None
 
 

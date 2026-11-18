@@ -10,10 +10,15 @@ from uvicorn.config import LOGGING_CONFIG
 
 from tuber_studio.app import create_app
 from tuber_studio.config import Settings, validate_api_key
+from tuber_studio.http_api import endpoint
 from tuber_studio.runtime_authority import acquire_business_writer, read_business_authority
 
-GATEWAY_BASE = "http://omni-gateway:8000/v1"
-DEFAULT_MODEL_CHECKPOINT = "927faefa0bce96e557945e106f3b3d8b4d39f4b2"
+def gateway_root():
+    return endpoint(os.getenv("OMNI_GATEWAY_URL", "http://127.0.0.1:8000"))
+
+
+def responses_profile(root):
+    return {"base_url": root + "/llm/v1", "model": os.getenv("OMNI_LLM_MODEL_ALIAS", "llm-default")}
 
 
 def configure_omni_llm(llm):
@@ -25,18 +30,21 @@ def configure_omni_llm(llm):
 
 
 def configure_model(data, *, omni):
+    root = gateway_root()
     data["inference_broker"]["enabled"] = False
     data["llm"].update(
-        kind="openai_compatible" if omni else "demo", base_url=GATEWAY_BASE,
+        kind="openai_compatible" if omni else "demo", base_url=root + "/v1",
         model=os.environ.get("OMNI_MODEL_ALIAS", "omni-default"),
     )
     if omni:
         data.pop("work_mode_profiles", None)
         configure_omni_llm(data["llm"])
         data["video_vision"] = {
-            "enabled": True, "adapter": "omni", "base_url": GATEWAY_BASE, "model": data["llm"]["model"],
-            "model_revision": os.environ.get("OMNI_VISION_CHECKPOINT") or DEFAULT_MODEL_CHECKPOINT,
+            "enabled": True, "adapter": "omni", "base_url": root + "/v1", "model": data["llm"]["model"],
         }
+        if pin := os.getenv("OMNI_VISION_CHECKPOINT"):
+            data["video_vision"]["model_revision"] = pin
+        data["responses"] = responses_profile(root)
 
 
 class ComposeSettings(Settings):
@@ -53,24 +61,26 @@ class ComposeSettings(Settings):
             self.save_public(self.data)
         key_file = os.environ.get("OMNI_GATEWAY_TOKEN_FILE")
         self.gateway_key = Path(key_file).read_text(encoding="utf-8").strip() if key_file else ""
+        root = gateway_root()
+        self.omni_base = root + "/v1"
+        self.responses_base = root + "/llm/v1"
         llm = self.data["llm"]
-        uses_gateway = llm["kind"] == "openai_compatible" and llm["base_url"].rstrip("/") == GATEWAY_BASE
+        uses_gateway = llm["kind"] == "openai_compatible" and llm["base_url"].rstrip("/") == self.omni_base
         if uses_gateway:
             configure_omni_llm(llm)
-        if self._uses_gateway_vision():
-            self.data["video_vision"]["model_revision"] = (
-                os.environ.get("OMNI_VISION_CHECKPOINT") or DEFAULT_MODEL_CHECKPOINT
-            )
-        if self.gateway_key or uses_gateway or self._uses_gateway_vision():
+            self.data.setdefault("responses", responses_profile(root))
+        if self.gateway_key or uses_gateway or self._uses_gateway_vision() or self._uses_gateway_responses():
             validate_api_key(self.gateway_key)
 
     def provider_key(self, name):
         # Diagnostics and hot config reload use this method too. Do not let a
         # saved address change send the service-managed key to another endpoint.
+        if name == "responses" and self._uses_gateway_responses():
+            return self.gateway_key
         if (
             name == "llm"
             and self.data["llm"]["kind"] == "openai_compatible"
-            and self.data["llm"]["base_url"].rstrip("/") == GATEWAY_BASE
+            and self.data["llm"]["base_url"].rstrip("/") == self.omni_base
             and self.gateway_key
         ):
             return self.gateway_key
@@ -81,8 +91,11 @@ class ComposeSettings(Settings):
         return (
             vision.get("enabled")
             and vision.get("adapter") == "omni"
-            and vision.get("base_url", "").rstrip("/") == GATEWAY_BASE
+            and vision.get("base_url", "").rstrip("/") == self.omni_base
         )
+
+    def _uses_gateway_responses(self):
+        return self.data.get("responses", {}).get("base_url", "").rstrip("/") == self.responses_base
 
     def video_vision_key(self):
         if self._uses_gateway_vision():

@@ -33,6 +33,11 @@ def wait_for_worker_start():
 @pytest.fixture
 def settings(tmp_path):
     config = Settings(runtime=tmp_path)
+    legacy = json.loads((ROOT / "tests/fixtures/legacy-node-profile.json").read_text(encoding="utf-8"))
+    config.data.update(legacy)
+    config.data.pop("responses", None)
+    config.data.pop("video_vision", None)
+    config.inference_token = config._secret("inference-token")
     # Controlled providers in this fixture use the 128K profile and its compaction thresholds.
     config.data["llm"].update(
         kind="demo", model="MiniCPM5-2B", context_tokens=131072, native_context_tokens=131072,

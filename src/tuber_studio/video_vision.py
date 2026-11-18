@@ -65,8 +65,6 @@ class VideoVisionConfig(StrictModel):
             raise ValueError("视觉输出预算没有留下输入空间")
         if self.enabled and not self.model.strip():
             raise ValueError("启用视觉须指定真实模型ID")
-        if self.enabled and self.adapter == "omni" and not re.fullmatch("[0-9a-f]{40}", self.model_revision):
-            raise ValueError("Omni 视觉须指定完整的 checkpoint 版本")
         if self.frame_strategy == "joint" and self.max_frames > 8:
             raise ValueError("联合视觉请求最多使用八帧")
         if any(
@@ -197,23 +195,7 @@ class ApiVideoEvidenceProvider:
     async def _omni_properties(self):
         client = self.api.client
         timeout = min(20, self.config.timeout_seconds)
-        health, registry = await asyncio.gather(
-            response_json(client, "GET", client.base_url.copy_with(path="/healthz"), timeout=timeout),
-            response_json(client, "GET", "models", timeout=timeout),
-        )
-        model = health.get("model")
-        version = health.get("engine_version")
-        if (
-            health.get("state") != "ready"
-            or health.get("alias") != self.config.model
-            or not isinstance(model, str) or not model.strip()
-            or health.get("configured_model") != model
-            or health.get("checkpoint") != self.config.model_revision
-            or health.get("checkpoint_root_verified") is not True
-            or not isinstance(version, str) or not version.strip()
-            or self.config.runtime_revision and version != self.config.runtime_revision
-        ):
-            raise VideoVisionAdmissionRequired("Omni 网关实报的模型、checkpoint 或引擎版本与视觉配置不符")
+        registry = await response_json(client, "GET", "models", timeout=timeout)
         cards = registry.get("data")
         if not isinstance(cards, list):
             raise VideoVisionAdmissionRequired("Omni 网关未报告视觉模型窗口")
@@ -221,13 +203,19 @@ class ApiVideoEvidenceProvider:
                        if isinstance(card, dict) and card.get("id") == self.config.model), None)
         if type(window) is not int or window < 4096 or self.config.max_output_tokens >= window:
             raise VideoVisionAdmissionRequired("Omni 模型未提供可核验的视觉窗口或输出预算未留下输入空间")
-        return {
-            "context_tokens": window,
-            "provenance": {key: health.get(key) for key in (
-                "alias", "model", "checkpoint", "checkpoint_source", "checkpoint_root_verified",
-                "engine_version", "engine_version_source",
-            )} | {"max_model_len": window},
-        }
+        provenance = {"alias": self.config.model, "max_model_len": window}
+        pins = {"checkpoint": self.config.model_revision, "engine_version": self.config.runtime_revision}
+        if any(pins.values()):
+            path = client.base_url.path.rstrip("/").removesuffix("/v1") + "/healthz"
+            health = await response_json(client, "GET", client.base_url.copy_with(path=path), timeout=timeout)
+            if health.get("alias", self.config.model) != self.config.model or any(
+                value and health.get(key) != value for key, value in pins.items()
+            ):
+                raise VideoVisionAdmissionRequired("Omni 视觉服务未确认配置锁定的版本")
+            provenance.update({key: health[key] for key in (
+                "model", "checkpoint", "checkpoint_source", "checkpoint_root_verified", "engine_version", "engine_version_source",
+            ) if key in health})
+        return {"context_tokens": window, "provenance": provenance}
 
     def _record_omni_observation(self, properties, frame_count):
         if self.config.adapter == "omni":
