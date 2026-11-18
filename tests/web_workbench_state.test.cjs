@@ -377,6 +377,7 @@ test("private background refresh clears externally completed selection but prese
     let calls = 0;
     Object.assign(panel, { value: { ...value, drafts: [{ ...value.drafts[0], status: "approved" }] }, selected: 1, dirty,
       draftView: "pending", refreshRequest: 0, edits: new Map(), $: get, memeCache: new Map(), continuation: { render() {} },
+      replyChecks: new Map(), delegateButton: get("[data-delegate]"),
       root: { closest: () => null, querySelectorAll: () => [] },
       api: async () => { calls++; return value; }, render() { this.renderEditor(); }, async conversation() {}, closeImagePicker() {} });
     get("[data-text]").value = dirty ? "本地未保存私信" : "服务器记录正文";
@@ -397,6 +398,7 @@ test("private waiting and generation states show progress without review or send
   const { MessagesPanel } = await import("../src/tuber_studio/web/messages.js");
   const panel = Object.create(MessagesPanel.prototype), review = [make(), make(), make()];
   Object.assign(panel, { selected: 1, dirty: false, draftView: "pending", $: get, memeCache: new Map(),
+    replyChecks: new Map(), delegateButton: make(),
     continuation: { render() {} }, root: { querySelectorAll: query => query === '[data-review]' ? review : [] } });
   const cases = [
     ["waiting", "awaiting_content", "等待符合联系目的的正文"],
