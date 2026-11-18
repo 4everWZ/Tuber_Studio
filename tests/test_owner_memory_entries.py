@@ -266,7 +266,8 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
             assert not words.endswith(("？", "。")) and note not in str(packet)
             form, core = {"左侧有一把椅子":("陈述句","有一把椅子"), "椅子放在哪里":("问句","哪里")
                          }.get(words, ("名词短语","椅子"))
-            return {"form":form, "core":core, "supported":True, "observation":packet["observations"][0]}
+            return {"form":form, "core":core, "supported":True, "observation":packet["observations"][0],
+                    "answer":"左侧" if form == "问句" else ""}
         if "delivery_fields" in packet:
             assert packet["writing_preference"] == note
             title = packet["delivery_fields"]["items.0.title"]

@@ -64,7 +64,8 @@ async def test_three_edition_measurement_separates_form_punctuation_and_groundin
     async def read(messages, schema):
         packet = json.loads(messages[-1]["content"])
         assert packet == {"title_words":title.rstrip("。？"), "observations":["宝座在中央"]}
-        return {"form":form, "core":core, "supported":True, "observation":observation}
+        return {"form":form, "core":core, "supported":True, "observation":observation,
+                "answer":"中央" if form == "问句" else ""}
 
     report = await measure_edition([{"title":title,"primary_frame":"frame"}], {"frame":{"details":["宝座在中央"]}}, phase, read)
     assert report["items"][0]["punctuation_matches"] is punctuation
@@ -79,13 +80,31 @@ async def test_editor_selects_a_sentence_against_one_observation_for_the_origina
         data = json.loads(messages[-1]["content"])
         if "verified_observation" in data:
             assert data["verified_observation"] == fact
-            return {"titles":["书桌右侧的白色台灯。","台灯在书桌右侧。","书桌右侧有一盏白色台灯。"]}
+            return {"options":[{"evidence_span":"位于书桌右侧","title":t} for t in
+                               ("书桌右侧的白色台灯。","台灯在书桌右侧。","书桌右侧有一盏白色台灯。")]}
         assert data["observations"] == [fact] and "writing_preference" not in data
         phrase = data["title_words"].endswith("台灯")
         return {"form":"名词短语" if phrase else "陈述句", "core":"台灯" if phrase else "在书桌右侧",
-                "observation":fact, "supported":True}
+                "observation":fact, "supported":True, "answer":""}
     review = await grounded_options(fact, "标题用陈述句，以句号结尾。", "陈述句",
                                     [FormatCheck(field="title", operation="ends_with",value="。")], call)
     assert review["chosen"] == "台灯在书桌右侧。"
     assert review["candidates"][0]["reading"]["form"] == "名词短语"
     assert review["candidates"][1]["reading"]["grounded"]
+
+
+async def test_anchored_question_candidate_must_ask_for_a_visible_answer():
+    from tuber_studio.agent.title_form import grounded_options
+
+    fact = "左侧有一盏红色台灯"
+    async def call(messages, schema):
+        packet = json.loads(messages[-1]["content"])
+        if "verified_observation" in packet:
+            return {"options":[{"evidence_span":"台灯","title":"这是谁的台灯？"},
+                               {"evidence_span":"红色","title":"左侧的台灯是什么颜色？"}]}
+        ownership = "谁" in packet["title_words"]
+        return {"form":"问句","core":"谁" if ownership else "什么颜色","observation":fact,
+                "supported":True,"answer":"" if ownership else "红色"}
+    options = await grounded_options(fact, "标题用问句", "问句", [], call)
+    assert not options["candidates"][0]["reading"]["answer_bound"]
+    assert options["chosen"] == "左侧的台灯是什么颜色？"

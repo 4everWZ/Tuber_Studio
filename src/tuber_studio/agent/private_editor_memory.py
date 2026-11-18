@@ -106,6 +106,9 @@ def connect_private_editor(runtime):
             return await editor(request, evidence)
         use = MemoryUse(ids=[row["id"] for row in rows], stamp=read_stamp(runtime, rows))
         plan["editor_memory"] = {"memory_use": use.model_dump(), "memory_citations": [citation(r) for r in rows]}
+        audit = {"preference_ids":list(notes), "format_checks":len(checks), "format_rules":format_rules,
+                 "discarded_format_suggestions":discarded, "attempts":[], "alternatives":{}}
+        plan["editor_memory"]["review"] = audit
         try:
             directions = [{"owner_preference":note, "title_form":forms[k], "editor_guidance":form_instruction(forms[k])}
                           if k in forms else {"owner_preference":note} for k,note in notes.items()]
@@ -118,9 +121,6 @@ def connect_private_editor(runtime):
             async def call(messages, schema):
                 return await generate(messages, schema, use)
 
-            audit = {"preference_ids":list(notes), "format_checks":len(checks), "format_rules":format_rules,
-                     "discarded_format_suggestions":discarded, "attempts":[], "alternatives":{}}
-            plan["editor_memory"]["review"] = audit
             async def verify(draft):
                 readings = {}
                 attempt = {"titles":readings, "submitted_titles":[item.title for item in draft.items]}

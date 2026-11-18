@@ -1,0 +1,200 @@
+{
+  "run": "enezvbgu",
+  "source_text": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+  "source_key": "turn:de6aed83-da08-4846-8cad-11ab60e5caed",
+  "revision": 2,
+  "executed_rules": [
+    {
+      "id": 1,
+      "revision": 2,
+      "source": "turn:de6aed83-da08-4846-8cad-11ab60e5caed",
+      "check": {
+        "field": "title",
+        "operation": "ends_with",
+        "value": "？"
+      },
+      "start": 12,
+      "end": 24,
+      "quote": "标题都用问句，以问号结尾"
+    }
+  ],
+  "rejected_suggestions": [
+    {
+      "id": 1,
+      "revision": 2,
+      "source": "turn:de6aed83-da08-4846-8cad-11ab60e5caed",
+      "suggested": {
+        "field": "title",
+        "operation": "starts_with",
+        "value": "关于"
+      },
+      "reason": "号主原文没有可核对的字段、操作与值跨度"
+    },
+    {
+      "id": 1,
+      "revision": 2,
+      "source": "turn:de6aed83-da08-4846-8cad-11ab60e5caed",
+      "suggested": {
+        "field": "rationale",
+        "operation": "contains",
+        "value": "画面"
+      },
+      "reason": "号主原文没有可核对的字段、操作与值跨度"
+    },
+    {
+      "id": 1,
+      "revision": 2,
+      "source": "turn:de6aed83-da08-4846-8cad-11ab60e5caed",
+      "suggested": {
+        "field": "gap",
+        "operation": "contains",
+        "value": "无"
+      },
+      "reason": "号主原文没有可核对的字段、操作与值跨度"
+    }
+  ],
+  "before_editor_review": [
+    {
+      "titles": {
+        "items.0.title": {
+          "form": "名词短语",
+          "core": "宫廷场景",
+          "supported": true,
+          "observation": "画面中央是一个装饰华丽的金色宝座",
+          "core_bound": true,
+          "grounded": true,
+          "title": "宫廷场景",
+          "observations": [
+            "画面中央是一个装饰华丽的金色宝座",
+            "宝座周围摆放着蓝色和白色的石像或装饰物",
+            "一名身穿传统服饰的人物站在宝座右侧",
+            "室内装饰以深色调为主，带有复杂的雕花和图案",
+            "宫廷场景",
+            "皇帝宝座",
+            "古代服饰人物",
+            "很快就创造了16.7%的收视奇迹",
+            "史君说剧 bilibili"
+          ],
+          "expected": {
+            "1": "问句"
+          },
+          "writing_review_issues": [
+            1
+          ],
+          "literal_checks_passed": false
+        }
+      },
+      "submitted_titles": [
+        "宫廷场景"
+      ],
+      "failed_fields": {
+        "items.0.title": [
+          1
+        ]
+      }
+    }
+  ],
+  "alternatives": {
+    "items.0.title": {
+      "fact": "画面中央是一个装饰华丽的金色宝座",
+      "candidates": [
+        {
+          "title": "画面中央是一个装饰华丽的金色宝座，这是什么场景？",
+          "literal_checks_passed": true,
+          "reading": {
+            "form": "名词短语",
+            "core": "装饰华丽的金色宝座",
+            "supported": true,
+            "observation": "画面中央是一个装饰华丽的金色宝座",
+            "core_bound": true,
+            "grounded": true
+          }
+        },
+        {
+          "title": "画面中央是一个装饰华丽的金色宝座，这是谁的宝座？",
+          "literal_checks_passed": true,
+          "reading": {
+            "form": "问句",
+            "core": "这是谁的宝座",
+            "supported": true,
+            "observation": "画面中央是一个装饰华丽的金色宝座",
+            "core_bound": true,
+            "grounded": true
+          }
+        },
+        {
+          "title": "画面中央是一个装饰华丽的金色宝座，这是哪里的宝座？",
+          "literal_checks_passed": true,
+          "reading": null
+        }
+      ],
+      "chosen": "画面中央是一个装饰华丽的金色宝座，这是谁的宝座？"
+    }
+  },
+  "withheld": "前台核对未通过：items.0.title 作品署名或镜头归属未经核实；items.0.rationale 作品署名或镜头归属未经核实",
+  "backend": [
+    {
+      "requested_output_tokens": 4096,
+      "model": "llm-default",
+      "input_bytes": 1835,
+      "tools_bytes": 1866,
+      "tool_names": [
+        "inspect_video",
+        "submit_materials",
+        "ask_owner"
+      ],
+      "http_status": 200,
+      "status": "completed",
+      "incomplete_details": null,
+      "usage": {
+        "input_tokens": 1236,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "input_tokens_per_turn": [],
+          "cached_tokens_per_turn": []
+        },
+        "output_tokens": 197,
+        "output_tokens_details": {
+          "reasoning_tokens": 124,
+          "tool_output_tokens": 0,
+          "output_tokens_per_turn": [],
+          "tool_output_tokens_per_turn": []
+        },
+        "total_tokens": 1433
+      }
+    },
+    {
+      "requested_output_tokens": 4096,
+      "model": "llm-default",
+      "input_bytes": 4466,
+      "tools_bytes": 2117,
+      "tool_names": [
+        "inspect_video",
+        "submit_materials",
+        "ask_owner"
+      ],
+      "http_status": 200,
+      "status": "completed",
+      "incomplete_details": null,
+      "usage": {
+        "input_tokens": 2507,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "input_tokens_per_turn": [],
+          "cached_tokens_per_turn": []
+        },
+        "output_tokens": 586,
+        "output_tokens_details": {
+          "reasoning_tokens": 384,
+          "tool_output_tokens": 0,
+          "output_tokens_per_turn": [],
+          "tool_output_tokens_per_turn": []
+        },
+        "total_tokens": 3093
+      }
+    }
+  ],
+  "platform_writes": 0
+}
