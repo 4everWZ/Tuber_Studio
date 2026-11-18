@@ -93,8 +93,8 @@ async def test_incomplete_budget_is_reported_even_with_a_partial_function_call(m
 
     monkeypatch.setattr("tuber_studio.responses_provider.response_json", transport)
     async with ResponsesClient({"base_url": "https://api.example/llm/v1", "model": "worker"}) as client:
-        with pytest.raises(InferenceBudgetExceeded):
-            await client.create("read", tools=[TOOL])
+        with pytest.raises(InferenceBudgetExceeded, match="317 token"):
+            await client.create("read", tools=[TOOL], max_output_tokens=317)
 
 
 @pytest.mark.parametrize("stream", [False, True])

@@ -529,8 +529,8 @@ class TaskRuntime:
                         "steps": [s for s in fresh["steps"] if s["tool"] == "owner_attachment"],
                         "plan": {"backend": "responses", "prior_goals": []}})
                     return
-                reason = "后台请求超出服务预算。" if isinstance(error, InferenceBudgetExceeded) else "任务未完成。"
-                if isinstance(error, DelegationError):
+                reason = "任务未完成。"
+                if isinstance(error, (DelegationError, InferenceBudgetExceeded)):
                     reason = str(error)
                 elif task_delegation.uses_responses(fresh) and "candidate" in fresh["plan"]:
                     reason = "前台未能完成选材；已保留候选材料，尚未交付。"
@@ -665,8 +665,8 @@ class TaskRuntime:
                 result = await tool.run(request, arguments)
         except InferenceQueueBusy as busy:
             return step, "waiting", time.time() + busy.retry_after
-        except InferenceBudgetExceeded:
-            result = {"error": "后台请求超出服务预算。"}
+        except InferenceBudgetExceeded as error:
+            result = {"error": str(error)}
         except Exception as error:
             log.info("Agent tool %s failed: %s", step["tool"], type(error).__name__)
             if tool.checkpoint_submission and step.get("checkpoint"):

@@ -364,13 +364,16 @@ async def test_only_front_editor_can_complete_saved_candidate(runtime, settings,
         assert any(step["tool"] == "live_status" and step.get("result") for step in final["steps"])
 
 
-@pytest.mark.parametrize("mode", ["many", "mixed", "busy", "budget"])
+@pytest.mark.parametrize("mode", ["many", "mixed", "busy", "budget", "incomplete"])
 async def test_native_admission_is_not_an_eight_step_plan(runtime, settings, store, monkeypatch, mode):
     def model(payload):
         if mode == "busy":
             return httpx.Response(429, headers={"Retry-After": "4"}, json={"error": {"code": "gateway_busy"}})
         if mode == "budget":
             return httpx.Response(400, json={"error": {"code": "request_budget_exceeded"}})
+        if mode == "incomplete":
+            return httpx.Response(200, json={"id": "partial", "status": "incomplete", "output": [],
+                                             "incomplete_details": {"reason": "max_output_tokens"}})
         calls = [call("web_search", {"query": f"主题{number}"}, str(number)) for number in range(9)]
         if mode == "mixed":
             calls.append(call("live_handoff", {"text": "不要播"}, "write"))
@@ -392,7 +395,9 @@ async def test_native_admission_is_not_an_eight_step_plan(runtime, settings, sto
         else:
             assert task["status"] == "failed"
             if mode == "budget":
-                assert "预算" in task["message"]
+                assert "准入预算" in task["message"]
+            elif mode == "incomplete":
+                assert "1300 token" in task["message"]
 
 
 async def test_steer_reuses_original_video_operation_even_if_last_sibling_has_finished(settings, monkeypatch):

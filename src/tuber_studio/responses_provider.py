@@ -44,14 +44,14 @@ class ResponseTurn:
     raw: dict
 
 
-def _turn(data, allowed):
+def _turn(data, allowed, output_budget):
     identity, output = data.get("id"), data.get("output")
     if not isinstance(identity, str) or not identity.strip() or not isinstance(output, list):
         raise ValueError("Responses 未返回有效的 ID 和输出列表")
     incomplete = data.get("incomplete_details")
     if (data.get("status") == "incomplete" and isinstance(incomplete, dict)
             and incomplete.get("reason") == "max_output_tokens"):
-        raise InferenceBudgetExceeded("后台 Responses 已用完本轮思考和输出额度。")
+        raise InferenceBudgetExceeded(f"后台 Responses 已用完本轮思考和输出的 {output_budget} token 额度。")
     if data.get("status") != "completed" or data.get("error"):
         raise ValueError("Responses 未完整结束；不得执行工具或交付结果")
     calls, text, seen = [], [], set()
@@ -128,7 +128,7 @@ class ResponsesClient:
             payload["instructions"] = instructions
         if tool_choice is not None:
             payload["tool_choice"] = tool_choice
-        return _turn(await response_json(self.client, "POST", "responses", payload=payload), names)
+        return _turn(await response_json(self.client, "POST", "responses", payload=payload), names, budget)
 
     async def submit_results(self, turn, outputs, **options):
         if not turn.calls or {call.call_id for call in turn.calls} != outputs.keys():
