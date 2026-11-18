@@ -237,5 +237,45 @@
       "open_connections": 0,
       "server_exited": true
     }
+  },
+  "after_explicit_literal_check": {
+    "implementation": "a3c287d",
+    "stage": "failed",
+    "phase": "generating_before",
+    "message": "成品仍未满足本轮写作约定：items.0.title（约定 #1）。尚未交付。",
+    "citations_before_task": [
+      {
+        "id": 1,
+        "revision": 2,
+        "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。"
+      }
+    ],
+    "frames": [
+      {
+        "part": 2,
+        "cid": "301983263",
+        "seconds": 11.44,
+        "kind": "实际视频帧"
+      },
+      {
+        "part": 2,
+        "cid": "301983263",
+        "seconds": 12.48,
+        "kind": "实际视频帧"
+      },
+      {
+        "part": 2,
+        "cid": "301983263",
+        "seconds": 13.52,
+        "kind": "实际视频帧"
+      }
+    ],
+    "editions_delivered": 0,
+    "platform_writes": 0,
+    "teardown": {
+      "remaining_http_tasks": 0,
+      "open_connections": 0,
+      "server_exited": true
+    }
   }
 }
