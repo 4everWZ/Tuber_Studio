@@ -12,6 +12,8 @@ import secrets
 import socket
 import subprocess
 import tempfile
+import time
+import traceback
 from pathlib import Path
 from unittest.mock import patch
 
@@ -76,7 +78,17 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
         report[name] = value
         pending = output.with_suffix(".writing")
         pending.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-        pending.replace(output)
+        # A live Windows reader can temporarily open the snapshot without FILE_SHARE_DELETE.
+        for delay in (0.02, 0.05, 0.1, 0.2, 0.4):
+            try:
+                pending.replace(output)
+                break
+            except PermissionError as error:
+                if getattr(error, "winerror", None) not in {5, 32, 33}:
+                    raise
+                time.sleep(delay)
+        else:
+            pending.replace(output)
     record("stage", "starting")
     with tempfile.TemporaryDirectory(dir=ROOT / "tmp", ignore_cleanup_errors=True) as directory, patch.dict(os.environ, {"TUBER_ADMIN_TOKEN": token}):
         settings = Settings(runtime=Path(directory))
@@ -185,7 +197,10 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                             report.get("voice_style_observed") is True and report["video"]["semantic_status"] == "observed"))
                     record("stage", "closing_clients")
             except Exception as error:
-                record("failed_at", {"stage":report["stage"], "exception":type(error).__name__})
+                last = traceback.extract_tb(error.__traceback__)[-1]
+                record("failed_at", {"stage":report["stage"], "exception":type(error).__name__,
+                                     "file":Path(last.filename).name, "function":last.name, "line":last.lineno,
+                                     "winerror":getattr(error, "winerror", None)})
                 raise
             finally:
                 report["teardown"] = {"remaining_http_tasks":len(server.server_state.tasks),

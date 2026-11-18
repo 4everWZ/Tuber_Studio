@@ -1,0 +1,159 @@
+{
+  "run": "2fv0d32r",
+  "material_origin": {
+    "mode": "reused_verified_public_read",
+    "task_id": "06b1ee8d-40f4-4756-8ca0-e91bd68f34bc",
+    "step_id": "840ec0bf-e632-5856-a442-1b7045296a31",
+    "selection": {
+      "bvid": "BV1Hy4y1J7xH",
+      "ranges": [
+        {
+          "part": 2,
+          "start": 11,
+          "end": 14
+        }
+      ]
+    },
+    "cid": "301983263",
+    "clip_frames": 75
+  },
+  "eventual_stage": "failed",
+  "error": {
+    "stage": "generating_voice_corrected",
+    "exception": "PermissionError"
+  },
+  "independent_reading": {
+    "source": "BV1Hy4y1J7xH P2, sealed 11–14 s clip, inspected 13.52 s pixels",
+    "visible": "画面中部是带黄色坐垫和金色装饰的座椅，人物在其右侧。",
+    "finding": "原稿提到中央金色宝座，其字面没有命名影视作品、集号或将镜头归属到作品。归属审稿错误地将可见构图当成作品实体。"
+  },
+  "before": {
+    "withheld": "前台核对未通过：items.0.title 作品署名或镜头归属未经核实；items.0.rationale 作品署名或镜头归属未经核实",
+    "first_reviewed_draft": {
+      "items": [
+        {
+          "title": "画面中央是一个装饰华丽的金色宝座，为什么它是视觉中心？",
+          "rationale": "画面依据：画面中央是一个装饰华丽的金色宝座。剪辑安排：用在开场，开场时插入这一镜，作为引入段落的视觉支撑，随后配合第一句介绍语音出现。",
+          "sources": [
+            "4e3da633-182d-5705-8161-d4b702aa39df:3"
+          ],
+          "primary_frame": "4e3da633-182d-5705-8161-d4b702aa39df:3"
+        }
+      ],
+      "gaps": []
+    },
+    "attribution_rejections": [
+      {
+        "field": "items.0.title",
+        "text": "画面中央是一个装饰华丽的金色宝座，为什么它是视觉中心？",
+        "primary_frame": "4e3da633-182d-5705-8161-d4b702aa39df:3",
+        "claims": [
+          {
+            "phrase": "画面中央是一个装饰华丽的金色宝座",
+            "target": "画面中央是一个装饰华丽的金色宝座",
+            "relation": "断言镜头或人物的作品或集归属",
+            "issue": "引用的节目署名无法鉴定镜头或人物的作品或集归属。",
+            "matching_programme_pages": [],
+            "other_programme_pages": []
+          }
+        ],
+        "pages": []
+      },
+      {
+        "field": "items.0.rationale",
+        "text": "画面依据：画面中央是一个装饰华丽的金色宝座。剪辑安排：用在开场，开场时插入这一镜，作为引入段落的视觉支撑，随后配合第一句介绍语音出现。",
+        "primary_frame": "4e3da633-182d-5705-8161-d4b702aa39df:3",
+        "claims": [
+          {
+            "phrase": "画面依据：画面中央是一个装饰华丽的金色宝座",
+            "target": "画面中央是一个装饰华丽的金色宝座",
+            "relation": "提及节目资料",
+            "issue": "本项引用的已读节目署名未支持所写作品名。",
+            "matching_programme_pages": [],
+            "other_programme_pages": []
+          }
+        ],
+        "pages": []
+      },
+      {
+        "field": "items.0.title",
+        "text": "宫廷场景",
+        "primary_frame": "4e3da633-182d-5705-8161-d4b702aa39df:3",
+        "claims": [
+          {
+            "phrase": "宫廷场景",
+            "target": "宫廷场景",
+            "relation": "断言镜头或人物的作品或集归属",
+            "issue": "引用的节目署名无法鉴定镜头或人物的作品或集归属。",
+            "matching_programme_pages": [],
+            "other_programme_pages": []
+          }
+        ],
+        "pages": []
+      },
+      {
+        "field": "items.0.rationale",
+        "text": "画面依据：画面中央是一个装饰华丽的金色宝座。剪辑安排：用在开场，开场时插入这一镜，作为引入段落的视觉支撑，随后配合第一句介绍语音出现。",
+        "primary_frame": "4e3da633-182d-5705-8161-d4b702aa39df:3",
+        "claims": [
+          {
+            "phrase": "画面中央是一个装饰华丽的金色宝座。",
+            "target": "宫廷场景",
+            "relation": "提及节目资料",
+            "issue": "审核未能逐字定位该主张，归属判断尚未核实。",
+            "matching_programme_pages": [],
+            "other_programme_pages": []
+          }
+        ],
+        "pages": []
+      }
+    ],
+    "rules": [
+      {
+        "id": 1,
+        "revision": 2,
+        "source": "turn:40d7f8a0-8e0c-4790-82b3-51ab13c50cd8",
+        "check": {
+          "field": "title",
+          "operation": "ends_with",
+          "value": "？"
+        },
+        "start": 12,
+        "end": 24,
+        "quote": "标题都用问句，以问号结尾"
+      }
+    ]
+  },
+  "voice": {
+    "ordinary_binding": "local service checkout, deployed ordinary Omni upstream",
+    "speaker": "synthetic Mandarin QA speech",
+    "protocol": "explicit_user_audio",
+    "machine_text": "好的，以后直播提纲的标题都用陈述句，以句号结尾。",
+    "confirmed_text": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "samples": 128000,
+    "other_device_quote": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "other_device_revision": 3,
+    "withheld": "前台核对未通过：items.0.title 作品署名或镜头归属未经核实；items.0.rationale 作品署名或镜头归属未经核实",
+    "rules": [
+      {
+        "id": 1,
+        "revision": 3,
+        "source": "confirmed_voice:988f4ef504e9736fc451960a6525efca7fb2b46fd9b0e6c6f150f148309c2e42",
+        "check": {
+          "field": "title",
+          "operation": "ends_with",
+          "value": "。"
+        },
+        "start": 7,
+        "end": 20,
+        "quote": "标题都用陈述句，以句号结尾"
+      }
+    ]
+  },
+  "platform_writes": 0,
+  "teardown": {
+    "remaining_http_tasks": 0,
+    "open_connections": 0,
+    "server_exited": true
+  }
+}

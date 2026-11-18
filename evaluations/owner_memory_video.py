@@ -35,6 +35,8 @@ async def measure_edition(items, frames, phase, call):
 
 def task_diagnostic(task):
     return {"status":task["status"], "message":task["message"], "revision":task["revision"],
+            "reviewed_draft":task["plan"].get("editor_draft"), "field_issues":task["plan"].get("editor_issues"),
+            "attribution_rejections":task["plan"].get("attribution_rejections", []),
             "steps":[{"tool":step["tool"], "arguments":step.get("arguments"),
                       "result":{k:v for k,v in (step.get("result") or {}).items()
                                 if k in {"status","error","gaps","viewing","selection","findings","clip_error"}}}
