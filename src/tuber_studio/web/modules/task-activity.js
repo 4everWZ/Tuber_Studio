@@ -1,5 +1,5 @@
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
-import { renderAssistantAnswer } from "./operator-chat-answer.js";
+import { renderArtifact, renderAssistantAnswer } from "./operator-chat-answer.js";
 import { mountFollowup } from "./goal-followup.js";
 import { mountGoalEvents } from "./goal-events.js";
 
@@ -412,7 +412,7 @@ export function initTaskActivity(api, requestId) {
     const card = node("section", null, "chat-task-result");
     card.append(node("h3", "私有成果"), node("small", `任务 r${artifact.task_revision} · 成果 v${artifact.edition}`, "hint"));
     const body = node("div");
-    renderAssistantAnswer(body, { reply_format: "markdown", reply_text: artifact.body });
+    renderArtifact(body, artifact.body);
     const edit = button("编辑成果");
     edit.onclick = () => editor("私有成果正文", artifact.body, 64000, (text, submit) => change(
       path + "/artifact", "PATCH", { task_revision: artifact.task_revision, edition: artifact.edition, body: text }, submit,
@@ -427,6 +427,31 @@ export function initTaskActivity(api, requestId) {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     };
     card.append(body, edit, download);
+    if (artifact.edition > 1 || artifact.task_revision > 1) {
+      const history = node("details"), reading = node("div");
+      history.append(node("summary", "历史成果"), reading);
+      history.ontoggle = async () => {
+        if (!history.open || reading.childElementCount) return;
+        try {
+          const versions = await api(path + "/artifacts");
+          for (const entry of versions) {
+            if (entry.task_revision === artifact.task_revision && entry.edition === artifact.edition) continue;
+            const details = node("details"), text = node("div");
+            details.append(node("summary", `任务 r${entry.task_revision} · 成果 v${entry.edition}`), text);
+            details.ontoggle = async () => {
+              if (!details.open || text.childElementCount) return;
+              try {
+                const saved = await api(`${path}/artifacts/${entry.task_revision}/${entry.edition}`);
+                renderArtifact(text, saved.body);
+              } catch (error) { text.textContent = safeMessage(error.message); }
+            };
+            reading.append(details);
+          }
+          if (!reading.childElementCount) reading.textContent = "当前为首份成果。";
+        } catch (error) { reading.textContent = safeMessage(error.message); }
+      };
+      card.append(history);
+    }
     content.append(card);
   }
 

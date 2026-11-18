@@ -144,6 +144,23 @@ def register_task_api(app, tasks, require_admin):
     async def get(identity: UUID):
         return detail(visible(identity))
 
+    @app.get("/api/agent/tasks/{identity}/artifacts", dependencies=deps)
+    async def artifact_history(identity: UUID):
+        task = visible(identity)
+        return tasks.store.all(
+            "SELECT task_revision,edition,author,created FROM creative_editions WHERE task_id=? "
+            "ORDER BY task_revision DESC,edition DESC", (task["id"],),
+        )
+
+    @app.get("/api/agent/tasks/{identity}/artifacts/{revision}/{edition}", dependencies=deps)
+    async def read_artifact(identity: UUID, revision: PositiveInt, edition: PositiveInt):
+        task = visible(identity)
+        result = tasks.store.one("SELECT * FROM creative_editions WHERE task_id=? AND task_revision=? AND edition=?",
+                                 (task["id"], revision, edition))
+        if result is None:
+            raise HTTPException(404, "找不到这个成果版本")
+        return result
+
     @app.put("/api/agent/tasks/{identity}/goal", dependencies=deps)
     async def promote(identity: UUID):
         task = visible(identity)

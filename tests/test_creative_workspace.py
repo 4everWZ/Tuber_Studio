@@ -83,6 +83,10 @@ async def test_private_goal_and_editions_survive_control_restart_and_scope_switc
         edit = {"task_revision": 1, "edition": 1, "body": "开场：P2 · 01:20"}
         edited = await client.patch(f"{base}/{child}/artifact", json=edit)
         assert edited.json()["artifact"]["edition"] == 2
+        versions = f"{base}/{child}/artifacts"
+        assert [row["edition"] for row in (await client.get(versions)).json()] == [2, 1]
+        assert (await client.get(versions + "/1/1")).json()["body"] == "P2 · 01:20"
+        assert (await client.get(versions + "/2/1")).status_code == 404
         assert tasks.current(child)["message"] == "P2 · 01:20"
         assert (await client.patch(f"{base}/{child}/artifact", json=edit)).status_code == 409
         await tasks.control(root, 1, "cancel")
@@ -90,6 +94,8 @@ async def test_private_goal_and_editions_survive_control_restart_and_scope_switc
         assert (await client.post(f"{base}/{root}/goal/close")).json()["creative_goal"]["closed"]
         assert (await client.post(base, json=payload | {"request_id": str(uuid4())})).status_code == 409
         scope[1] = "other"
+        assert (await client.get(versions)).status_code == 404
+        assert (await client.get(versions + "/1/1")).status_code == 404
         assert (await client.get(base)).json()["goals"] == []
         assert (await client.get(f"{base}/{child}")).status_code == 404
         assert (await client.patch(f"{base}/{child}/artifact", json=edit)).status_code == 404

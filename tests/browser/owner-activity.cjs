@@ -22,6 +22,7 @@ async function owner(browser) {
     return route.abort();
   });
   const page = await context.newPage();
+  page.on("pageerror", error => console.error("Studio page error", error.message));
   page.setDefaultTimeout(20000);
   assert.equal((await context.cookies()).length, 0);
   await page.goto(origin);
@@ -118,7 +119,8 @@ async function run(browser) {
   const body = panel.getByLabel("私有成果正文");
   const original = await body.inputValue();
   assert.ok(original.includes("平台已确认该动态发布"));
-  await body.fill(original + "\n\n" + artifactEdit);
+  const source = "https://www.bilibili.com/video/BV1d8pU6xEZX/?p=2&t=35";
+  await body.fill(original + "\n\n" + artifactEdit + "\n\n<" + source + ">");
   const updated = await patch(null, () => panel.getByRole("button", { name: "保存", exact: true }).click(), "/artifact");
   assert.equal(updated.artifact.edition, 2);
   await panel.getByText(artifactEdit, { exact: true }).waitFor();
@@ -133,6 +135,13 @@ async function run(browser) {
   await restored.getByRole("button", { name: "查看任务" }).click();
   await panel.getByText(artifactEdit, { exact: true }).waitFor();
   await panel.getByText("任务 r2 · 成果 v2", { exact: true }).waitFor();
+  const sourceLink = panel.locator(`a[href="${source}"]`);
+  assert.equal(await sourceLink.getAttribute("target"), "_blank");
+  await panel.getByText("历史成果", { exact: true }).click();
+  await panel.getByText("任务 r2 · 成果 v1", { exact: true }).click();
+  const previous = panel.locator("details[open] details[open]");
+  await previous.getByText(/平台已确认该动态发布/).first().waitFor();
+  assert.equal(await previous.getByText(artifactEdit, { exact: true }).count(), 0);
   const final = await observation(page);
   assert.deepEqual(final.requests.map(r => r.path), ["/x/dynamic/feed/draw/upload_bfs", "/x/dynamic/feed/create/dyn"]);
   assert.ok(final.requests.every(r => r.host === "platform.example.test" && r.uid === "100"));

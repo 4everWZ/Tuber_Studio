@@ -2,6 +2,22 @@ import markdownit from "../vendor/markdown-it-15.0.3.mjs";
 import { node } from "./core.js";
 
 const markdown = markdownit({ html: false }).disable(["link", "image", "autolink"]);
+const artifactMarkdown = markdownit({ html: false }).disable(["link", "image"]);
+artifactMarkdown.validateLink = value => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch { return false; }
+};
+artifactMarkdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
+  tokens[index].attrSet("target", "_blank");
+  tokens[index].attrSet("rel", "noopener noreferrer");
+  return renderer.renderToken(tokens, index, options);
+};
+
+export function renderArtifact(root, body) {
+  root.innerHTML = artifactMarkdown.render(normalizeTableRules(body));
+}
 const labels = { comment: "原评论", subtitle: "字幕", visual: "画面观察", reply: "回复记录" };
 const replyLabels = {
   confirmed: "已送达的回复", uncertain: "送达待核对", owner_replied: "号主代回",
