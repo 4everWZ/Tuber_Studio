@@ -1,5 +1,6 @@
 import { api } from "./api.js";
 import { PrivatePlayback } from "./private-call-playback.js";
+import { portraitPlayback } from "./private-call-whep.js";
 import { CallAvatar } from "./private-call-avatar.js";
 import { FinalUtterances, showHandoff } from "./private-call-handoff.js";
 
@@ -96,9 +97,10 @@ async function begin() {
     if (current !== call) return;
     const url = new URL(config.socket);
     url.search = new URLSearchParams({ticket: config.ticket, duplex: "1", autostart: "0"});
+    call.playback = portraitPlayback(call, url, config.memory_use) ||
+      new PrivatePlayback(call.context, event => call.send(event));
     call.socket = new WebSocket(url);
-    call.playback = new PrivatePlayback(call.context, event => call.send(event));
-    void avatar.load(config, call.abort.signal);
+    if (!call.playback.gateway) void avatar.load(config, call.abort.signal);
     mute.hidden = false;
     const animate = () => {
       if (current !== call) return;
@@ -116,6 +118,7 @@ async function begin() {
       if (current !== call) return;
       try {
         const event = JSON.parse(data);
+        if (event.type === "gateway.session.created") { void call.playback.gateway?.(event); return; }
         if (event.type === "error") throw Error("服务未接受本次通话");
         if (event.type === "session.created" && !call.ready) {
           const caps = event.session?.capabilities;

@@ -22,8 +22,9 @@ const {chromium} = require(require.resolve("playwright", {
   try {
     const page=await browser.newPage();
     await page.route("**/*",route=>new URL(route.request().url()).hostname==="127.0.0.1"?route.continue():route.abort());
-    await page.goto("http://127.0.0.1:18765");
-    const scenario=eval("("+fs.readFileSync("tests/browser/private-call.playwright.js","utf8")+")");
+    const whep=process.env.STUDIO_TEST_WHEP==="1";
+    await page.goto("http://127.0.0.1:"+(whep?18865:18765));
+    const scenario=eval("("+fs.readFileSync("tests/browser/"+(whep?"private-whep":"private-call")+".playwright.js","utf8")+")");
     console.log(JSON.stringify(await scenario(page)));
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1});
@@ -39,10 +40,12 @@ def stop(process):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gateway-repo", type=Path, default=ROOT.parent / "omni-avatar-api")
+    parser.add_argument("--whep", action="store_true")
     args = parser.parse_args()
     repo = args.gateway_repo.resolve()
     engine_python = repo / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    for port in (18765, 18766, 18767):
+    base = 18865 if args.whep else 18765
+    for port in range(base, base + (4 if args.whep else 3)):
         with socket.socket() as check:
             check.bind(("127.0.0.1", port))
     tmp = ROOT / "tmp"
@@ -63,11 +66,17 @@ def main():
             browsers = list(cache.glob("chromium_headless_shell-*/*/chrome-headless-shell.exe"))
             if browsers:
                 env["CHROMIUM_EXECUTABLE"] = str(max(browsers, key=lambda binary: binary.stat().st_mtime))
-        env.update(TUBER_RUNTIME=folder, TUBER_CONFIG=str(target), TUBER_PRIVATE_REALTIME_ORIGIN="http://127.0.0.1:18766",
+        origin = f"http://127.0.0.1:{base + 1}"
+        if args.whep:
+            (runtime / "private-call-avatars.json").write_text(json.dumps({
+                "character_id": "whale", "origin": origin, "profiles": {
+                    key: {"avatar_id": "portrait_" + char * 32, "accepted": True}
+                    for key, char in (("original", "a"), ("q", "b"))}}))
+        env.update(STUDIO_TEST_WHEP=str(int(args.whep)), TUBER_RUNTIME=folder, TUBER_CONFIG=str(target), TUBER_PRIVATE_REALTIME_ORIGIN=origin,
                    TUBER_PRIVATE_REALTIME_TOKEN_FILE=str(token))
         for command, port, paths in (
-            ([str(engine_python), "tests/browser/private_call_fixture.py"], 18766, str(repo)),
-            ([sys.executable, "-m", "tuber_studio", "--port", "18765"], 18765, str(ROOT / "src")),
+            ([str(engine_python), "tests/browser/private_call_fixture.py"], base + 1, str(repo)),
+            ([sys.executable, "-m", "tuber_studio", "--port", str(base)], base, str(ROOT / "src")),
         ):
             process = subprocess.Popen(command, cwd=ROOT, env=env | {"PYTHONPATH": paths})
             cleanup.callback(stop, process)

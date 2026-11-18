@@ -34,6 +34,8 @@ CI 分别运行锁定项目环境的 Python 测试和可选点歌组件的 Node 
 
 可选的私有语音需配置浏览器可达的 `TUBER_PRIVATE_REALTIME_ORIGIN`（HTTPS，开发时可用回环 HTTP）和业务主机上的 `TUBER_PRIVATE_REALTIME_TOKEN_FILE`。文件只放专用于私聊的普通应用凭据。没有配置时不展示通话入口；点击开始后才签发短时票据并请求麦克风。直播、Avatar 媒体和真实播完记录分别验收。
 
+私聊 WHEP 使用同一普通应用身份及本地验收配置。常规、Q 版两份形象同时就绪后，通话框才显示选择器。[实时 Avatar 配置与隔离验收](private-avatar-call.md)
+
 本地新安装使用回环网关 `http://127.0.0.1:8000`：前台聊天和视频视觉走 `/v1`（`omni-default`），后台任务走 `/llm/v1`（`llm-default`），窗口读取模型卡。语音默认预录，不启动推理节点。工作站在其他主机时，分别配置可达的服务地址和凭据；已有 `studio.json` 不会被示例覆盖。
 
 Tuber Studio 运行业务、工作台和平台工具，通过受认证的 API 接入已部署的 Omni 推理与 Avatar 服务。Core 可以运行在选定的业务主机上，浏览器和 OBS 使用各自可达的业务与媒体入口。工坊不训练模型、不下载或装载推理权重。模型及渲染资产由独立的 `omni-avatar-api` 服务管理，业务数据库、平台凭据和管理会话由 Core 管理。 [数据归属](../specs/foundation/distributed-runtime.md) · [服务接入](../../deploy/omni/README.md)

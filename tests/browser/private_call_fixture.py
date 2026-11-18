@@ -8,6 +8,7 @@ import asyncio
 import base64
 import json
 import math
+import os
 import struct
 
 from aiohttp import web
@@ -15,11 +16,14 @@ from services.gateway.app import Config, create_app
 
 
 async def main():
+    whep = os.getenv("STUDIO_TEST_WHEP") == "1"
+    base = 18865 if whep else 18765
+    rate = 24000 if whep else 16000
     observations = {"input": 0, "played": 0, "closed": 0, "played_by_response": {}}
     connections = set()
-    silence = bytes(16000)
-    tone = b"".join(struct.pack("<h", round(9000 * math.sin(index * math.tau * 220 / 16000)))
-                    for index in range(32000))
+    silence = bytes(rate)
+    tone = b"".join(struct.pack("<h", round(9000 * math.sin(index * math.tau * 220 / rate)))
+                    for index in range(2 * rate))
     sound = base64.b64encode(silence + tone + silence).decode()
     sequence = 0
 
@@ -33,7 +37,7 @@ async def main():
         else:
             sequence += 1
             await socket.send_json({"type": "response.output_audio.delta", "response_id": f"voice-{sequence}",
-                                    "item_id": "test-item", "format": "pcm16", "sample_rate_hz": 16000, "delta": sound})
+                                    "item_id": "test-item", "format": "pcm16", "sample_rate_hz": rate, "delta": sound})
         return web.json_response({"sequence": sequence})
 
     async def realtime(request):
@@ -66,6 +70,8 @@ async def main():
                 assert message["response_id"].startswith("voice-") and message["item_id"] == "test-item"
                 observations["played"] = message["played_ms"]
                 observations["played_by_response"][message["response_id"]] = message["played_ms"]
+            elif message["type"] == "output_audio_buffer.clear":
+                await socket.send_json({"type": "output_audio_buffer.cleared", "response_id": f"voice-{sequence}"})
             elif message["type"] == "session.close":
                 observations["closed"] += 1
                 break
@@ -73,14 +79,26 @@ async def main():
         return socket
 
     async def results(request):
+        if whep:
+            observations["avatars"] = [{"state": s.state, "source": s.source, "avatar": s.avatar_id,
+                                         "generation": s.generation, "peers": len(s.peers), "ack": s.last_ack}
+                                        for s in avatar["service"].sessions.values()]
         return web.json_response(observations)
 
     engine = web.Application()
     engine.add_routes([web.get("/v1/realtime", realtime), web.get("/observations", results),
                        web.post("/stimulus/{kind:speech|interrupt}", stimulus)])
-    gateway = create_app(Config(engine_url="http://127.0.0.1:18767", model="fixture", checkpoint="fixture",
+    apps = []
+    avatar_options = {}
+    if whep:
+        from private_whep_fixture import avatar_app
+        avatar = avatar_app()
+        apps.append((avatar, base + 3))
+        avatar_options = {"avatar_url": f"http://127.0.0.1:{base + 3}", "avatar_token": "internal-fixture"}
+    gateway = create_app(Config(engine_url=f"http://127.0.0.1:{base + 2}", model="fixture", checkpoint="fixture",
+        **avatar_options,
         tokens=("private-call-fixture",), admin_token="not-an-application-token", engine_token="engine-fixture"))
-    for app, port in ((engine, 18767), (gateway, 18766)):
+    for app, port in [*apps, (engine, base + 2), (gateway, base + 1)]:
         runner = web.AppRunner(app, access_log=None)
         await runner.setup()
         await web.TCPSite(runner, "127.0.0.1", port).start()
