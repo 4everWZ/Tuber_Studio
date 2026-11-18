@@ -11,7 +11,12 @@ from test_browsing import BV, ControlledPlatform
 
 from tuber_studio import http_api
 from tuber_studio.agent import task_tools
-from tuber_studio.agent.task_delivery import CreativeItem, PrivateDelivery, evidence_index, render_private_delivery
+from tuber_studio.agent.task_delivery import (
+    CreativeItem,
+    PrivateDelivery,
+    evidence_index,
+    render_private_delivery,
+)
 from tuber_studio.api_providers import APIProvider
 from tuber_studio.app import create_app
 
@@ -38,6 +43,35 @@ def gateway(settings, monkeypatch, reply):
 
     monkeypatch.setattr(http_api, "inference_transport", lambda base_url: httpx.MockTransport(handle))
     return requests
+
+
+@pytest.mark.parametrize("repeat", [True, False])
+async def test_bad_tool_arguments_return_a_diagnostic_without_execution(runtime, store, monkeypatch, repeat):
+    turns = []
+
+    def model(payload):
+        outputs = [item for item in payload["input"] if item.get("type") == "function_call_output"]
+        if outputs:
+            receipt = json.loads(outputs[-1]["output"])
+            assert not receipt["evidence"] and receipt["receipt"]["issues"][0]["field"] == "web_fetch"
+            if not repeat:
+                return [call("ask_owner", {"question": "要核对哪个公开页面？"}, "clarify")]
+        turns.append(1)
+        return [call("web_page", {}, f"bad-{len(turns)}")]
+
+    gateway(runtime.settings, monkeypatch, model)
+    tasks = task_tools.create_task_runtime(runtime, store, None)
+    identity = str(uuid4())
+    tasks.create(identity, "帮我核对并保存页面摘要")
+    tasks.start()
+    try:
+        expected = "failed" if repeat else "needs_input"
+        await until(lambda: tasks.current(identity)["status"] == expected)
+        task = tasks.current(identity)
+        assert len(task["steps"]) == (2 if repeat else 1)
+        assert all(step.get("invalid_call") for step in task["steps"])
+    finally:
+        await tasks.close()
 
 
 async def test_responses_parallel_checkpoint_child_isolation_and_steering(runtime, settings, store, monkeypatch):

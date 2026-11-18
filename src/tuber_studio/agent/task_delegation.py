@@ -5,7 +5,7 @@ import time
 from itertools import groupby
 from uuid import UUID, uuid5
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from ..models import StrictModel
 from ..store import dump
@@ -25,6 +25,10 @@ def visible_steps(runtime, task):
     bound = video_binding(task)
     context = []
     for step in task["steps"]:
+        if step.get("invalid_call"):
+            if step["revision"] == task["revision"]:
+                context.append(step)
+            continue
         if step["tool"] == "owner_attachment":
             context.append(step)
             continue
@@ -174,7 +178,20 @@ async def advance(runtime, task):
         tool = allowed[call.name]
         if len(calls) > 1 and (tool.review or not tool.parallel_read):
             raise DelegationError("并行委派只允许独立读取。")
-        arguments = tool.arguments.model_validate(call.arguments).model_dump(mode="json")
+        try:
+            arguments = tool.arguments.model_validate(call.arguments).model_dump(mode="json")
+        except ValidationError as error:
+            problems = [{"field": ".".join(map(str, entry["loc"])), "reason": entry["msg"]}
+                        for entry in error.errors(include_input=False, include_context=False)]
+            feedback = {"error": "函数参数未通过校验，本批次未执行。", "tool": call.name, "issues": problems}
+            rejected = [{"id": str(uuid5(UUID(task["id"]), f"{task['revision']}:{item.call_id}")),
+                         "call_id": item.call_id, "response_id": reply.id, "revision": task["revision"],
+                         "tool": item.name, "arguments": item.arguments, "invalid_call": True, "result": feedback}
+                        for item in calls]
+            repeated = bool(current and current[-1].get("invalid_call"))
+            runtime._save(task, steps=[*task["steps"], *rejected], status="failed" if repeated else "queued",
+                          message="后台连续返回无效工具参数，已保存诊断。" if repeated else feedback["error"], due=time.time())
+            return
         if call.name == "inspect_video" and not permits(video_binding(task), arguments):
             raise DelegationError("视频、分P或时段超出了号主给定的来源。")
         if any(step["tool"] == call.name and step["arguments"] == arguments for step in steps):

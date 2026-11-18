@@ -5,14 +5,14 @@ from dataclasses import dataclass
 
 from pydantic import Field, field_validator
 
-from .http_api import api_client, endpoint, response_json
+from .http_api import InferenceBudgetExceeded, api_client, endpoint, response_json
 from .models import StrictModel
 
 
 class ResponsesConfig(StrictModel):
     base_url: str
     model: str = Field(min_length=1)
-    max_output_tokens: int = Field(default=2048, gt=0, strict=True)
+    max_output_tokens: int = Field(default=4096, gt=0, strict=True)
     timeout_seconds: float = Field(default=120, gt=0, allow_inf_nan=False)
     parallel_reads: int = Field(default=2, ge=1, strict=True)
 
@@ -48,6 +48,10 @@ def _turn(data, allowed):
     identity, output = data.get("id"), data.get("output")
     if not isinstance(identity, str) or not identity.strip() or not isinstance(output, list):
         raise ValueError("Responses 未返回有效的 ID 和输出列表")
+    incomplete = data.get("incomplete_details")
+    if (data.get("status") == "incomplete" and isinstance(incomplete, dict)
+            and incomplete.get("reason") == "max_output_tokens"):
+        raise InferenceBudgetExceeded("后台 Responses 已用完本轮思考和输出额度。")
     if data.get("status") != "completed" or data.get("error"):
         raise ValueError("Responses 未完整结束；不得执行工具或交付结果")
     calls, text, seen = [], [], set()

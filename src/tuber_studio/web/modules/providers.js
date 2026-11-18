@@ -77,6 +77,9 @@ export function readProviderPayload(settings) {
     if ($("background-parallel")) {
       payload.responses.parallel_reads = boundedInteger("background-parallel", "并行取材数", 1, Number.MAX_SAFE_INTEGER);
     }
+    if ($("background-budget")) {
+      payload.responses.max_output_tokens = boundedInteger("background-budget", "后台思考与输出额度", 1, Number.MAX_SAFE_INTEGER);
+    }
     if (backgroundKey) payload.credentials.responses = backgroundKey;
     if (clearBackground) payload.clear_credentials.push("responses");
   }
@@ -258,6 +261,7 @@ function providerFormFromSettings(settings, status) {
     $("background-base").value = settings?.responses?.base_url || "";
     $("background-model").value = settings?.responses?.model || "";
     if ($("background-parallel")) $("background-parallel").value = settings?.responses?.parallel_reads ?? 2;
+    if ($("background-budget")) $("background-budget").value = settings?.responses?.max_output_tokens ?? 4096;
     $("background-key").value = "";
     $("background-clear").checked = false;
   }

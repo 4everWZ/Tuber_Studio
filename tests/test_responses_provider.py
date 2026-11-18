@@ -13,7 +13,6 @@ from tuber_studio.http_api import InferenceBudgetExceeded, InferenceQueueBusy, e
 from tuber_studio.providers import read_chat_stream
 from tuber_studio.responses_provider import ResponsesClient
 
-
 TOOL = {"type": "function", "name": "lookup", "description": "Read the status of a ticket.",
         "parameters": {"type": "object", "properties": {"ticket": {"type": "string"}}, "required": ["ticket"],
                        "additionalProperties": False}}
@@ -84,6 +83,17 @@ async def test_invalid_turn_exposes_no_executable_call(response, monkeypatch):
     monkeypatch.setattr("tuber_studio.responses_provider.response_json", transport)
     async with ResponsesClient({"base_url": "https://api.example/llm/v1", "model": "worker"}) as client:
         with pytest.raises(ValueError):
+            await client.create("read", tools=[TOOL])
+
+
+async def test_incomplete_budget_is_reported_even_with_a_partial_function_call(monkeypatch):
+    async def transport(*args, **kwargs):
+        return completed([call_item("partial", "A")]) | {
+            "status": "incomplete", "incomplete_details": {"reason": "max_output_tokens"}}
+
+    monkeypatch.setattr("tuber_studio.responses_provider.response_json", transport)
+    async with ResponsesClient({"base_url": "https://api.example/llm/v1", "model": "worker"}) as client:
+        with pytest.raises(InferenceBudgetExceeded):
             await client.create("read", tools=[TOOL])
 
 
