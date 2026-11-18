@@ -2,12 +2,14 @@
 
 English · [简体中文](README.zh-CN.md)
 
-Tuber Studio is a self-hosted AI character workbench for Bilibili community operations and live production. It brings source material, character responses, draft review and platform receipts into one workspace. The included character is Da-Fei-Yu, a Q-style whale girl. You can create a character with your own voice, artwork and settings.
+Tuber Studio is a self-hosted creative partner for a channel owner. Ask Da-Fei-Yu to research material, keep chatting while she works, then open the private result and tell her which part to change. Studio keeps the goals, sources, editions and platform receipts. A separate workstation provides Omni inference and Avatar through an API. You can also use your own character, artwork and voice.
 
-![Da-Fei-Yu talking](assets/whale/talking.gif)
+![Da-Fei-Yu chat pet](assets/whale/talking.gif)
 
 ## What you can do
 
+- **Prepare a private brief.** Research a particular video part and its public sources. Open the result from chat, play saved excerpts, review older editions or continue from another device. [Operator guide](docs/guides/operations.md)
+- **Set a working preference.** See which owner statement supports it, change it or withdraw it. Text chat, private calls and background editing use preferences relevant to their work. [Memory design](docs/specs/foundation/runtime-and-characters.md)
 - **Work through Bilibili comments.** Read or import comments, organize them by thread and generate replies in character. Review and edit drafts before authorizing a submission, then check the platform receipt.
 - **Run community operations.** Start video browsing, comments, direct messages and posts from one workspace. Watching uses available captions and sampled frames. The app checks comment invitations against platform user IDs before preparing a direct message. Review and send permissions are configured per channel.
 - **Edit the active character.** Operations, operator chat and live production use the selected character card. Create, edit or activate cards in the character workspace. Saving updates the selected card in place. Direct messages and posts share the sticker library.
