@@ -96,6 +96,9 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
     found = (await device_call(device, port, login, "POST", SEARCH, {"query": "turn:" + identity}))["value"]["items"]
     record("automatic_lookup", {"source_key":"turn:"+identity, "items":found, "state":runtime.memory_organizer.state()})
     auto, = [row for row in found if row["source_key"] == "turn:" + identity and AUTO in row["quote"]]
+    preserved = (await client.post("/api/agent/memory.get", json={"id":confirmed["id"]})).raise_for_status().json()
+    record("independent_preferences", {"manual": preserved, "automatic": auto})
+    assert auto["id"] != confirmed["id"] and preserved == confirmed
     tasks = runtime.tasks
     edit = tasks.edit_delivery
     phase_for_task = {}

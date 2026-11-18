@@ -47,19 +47,45 @@ def corroborates(text, rule, review):
                 and review.scope_supported and review.practice_supported and review.same_agreement)
 
 
+def with_scope_context(text, rule):
+    """Bind the qualifying clause around the selected words, bounded by the instruction itself."""
+    start, stop = rule["scope_span"]
+    left, right = rule["statement_span"]
+    practice_start, practice_stop = rule["practice_span"]
+    if practice_start >= start:
+        right = min(right, max(stop, practice_start))
+    if practice_stop <= stop:
+        left = max(left, min(start, practice_stop))
+    delimiters = "，,。.：:；;！？!?\n"
+    while start > left and text[start - 1] not in delimiters:
+        start -= 1
+    while stop < right and text[stop] not in delimiters:
+        stop += 1
+    if [start, stop] == rule["practice_span"]:
+        start, stop = rule["scope_span"]
+    return rule | {"scope_span": [start, stop], "proposed_scope_span": rule["scope_span"]}
+
+
 def bound_statement(text, rule):
     """Validate persisted ranges against the complete owner quote on read."""
     if not isinstance(rule, dict):
         return None
-    for field in ("statement_span", "scope_span", "practice_span"):
+    fields = ["statement_span", "scope_span", "practice_span"]
+    if "proposed_scope_span" in rule:
+        fields.append("proposed_scope_span")
+    for field in fields:
         bounds = rule.get(field)
         if (not isinstance(bounds, list) or len(bounds) != 2 or not all(type(i) is int for i in bounds)
                 or not 0 <= bounds[0] < bounds[1] <= len(text)):
             return None
     statement = text[slice(*rule["statement_span"])]
-    proposal = RoutineProposal(statement=statement, scope_quote=text[slice(*rule["scope_span"])],
+    original_scope = rule.get("proposed_scope_span", rule["scope_span"])
+    proposal = RoutineProposal(statement=statement, scope_quote=text[slice(*original_scope)],
                                practice_quote=text[slice(*rule["practice_span"])])
-    return statement if locate_rule(text, proposal) == rule else None
+    verified = locate_rule(text, proposal)
+    if verified and "proposed_scope_span" in rule:
+        verified = with_scope_context(text, verified)
+    return statement if verified == rule else None
 
 
 def active_owner_text(row):

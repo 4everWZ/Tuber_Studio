@@ -7,13 +7,13 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 
 from tuber_studio.app import create_app
-from tuber_studio.agent.memory_organizer import MemorySuggestion, PrivateSuggestion, SkipPrivateTurn
+from tuber_studio.agent.memory_organizer import MemorySuggestion, OwnerUtterance
 from tuber_studio.agent.owner_memory import private_rows, read_stamp
 from tuber_studio.agent.private_editor_memory import connect_private_editor
-from tuber_studio.cooperation import RoutineProposal, RoutineReview, bound_statement, corroborates, locate_rule
+from tuber_studio.cooperation import RoutineProposal, RoutineReview, bound_statement, corroborates, locate_rule, with_scope_context
 
 
 SCOPE = "咱俩对稿有个默契"
@@ -34,28 +34,37 @@ async def test_private_chat_admission_requires_independent_original_evidence(set
     runtime = app.state.runtime
     provider = runtime.llm
     originals = {}
+    memory = runtime.daily_memory
+    owner_scope = runtime.memory_organizer.scope()
+    confirmed = "Group related points and separate distinct concerns."
+    # Both entries may have the same editing topic while specifying independent practices.
+    manual = {"kind": "private", "key": "settings:formatting", "text": confirmed, "at": time.time(),
+              "private_owner": memory.private_owner, "owner_confirmed": True}
+    assert memory.save_organized(owner_scope, manual, MemorySuggestion(action="add", existing_id=None,
+                                 headline="对稿", note=confirmed, tags=[]), None)
+    baseline, = memory.organized(owner_scope)
 
     class OvereagerOrganizer:
         async def generate_json(self, messages, schema, **kwargs):
-            packet = json.loads(messages[-1]["content"])
-            if schema["title"] == "RoutineReviews":
-                assert {item["original"] for item in packet.values()} == set(EXAMPLES) - {ONE_OFF}
-                for item in packet.values():
-                    assert (item["scope_quote"], item["practice_quote"]) == EXAMPLES[item["original"]][:2]
-                return {key: {"meaning": EXAMPLES[item["original"]][2], "scope_supported": item["original"] == RULE,
-                              "practice_supported": True, "same_agreement": item["original"] == RULE}
-                        for key, item in packet.items()}
-            result = {}
-            for item in packet:
-                quote = item["original"]
-                if quote == ONE_OFF:
-                    result[item["key"]] = {"action": "skip"}
-                    continue
+            if schema["title"] == "OwnerUtterance":
+                quote = messages[-1]["content"]
+                assert len(messages) == 2 and "冷泡茶" not in messages[0]["content"]
                 scope, practice, _ = EXAMPLES[quote]
-                result[item["key"]] = {"action": "add", "headline": quote, "note": quote,
-                                       "existing_id": None, "tags": [], "summary_kind": "preference",
-                                       "statement": quote, "scope_quote": scope, "practice_quote": practice}
-            return result
+                return {"statement": quote, "scope_quote": "咱俩" if quote == RULE else scope,
+                        "practice_quote": practice, "meaning": "当前事项" if quote == ONE_OFF else "持续合作方式"}
+            packet = json.loads(messages[-1]["content"])
+            if schema["title"] == "ChangeOfPractice":
+                assert packet == {"original": confirmed, "new": RULE}
+                # The deployed model judged unrelated layout/title preferences to be a replacement.
+                return {"relation": "新做法取代原做法", "common_reference": "排版",
+                        "old_value": confirmed, "new_value": PRACTICE}
+            quote = packet["original"]
+            assert quote != ONE_OFF
+            if quote == RULE:
+                assert packet["scope_quote"] == SCOPE
+            return {"meaning": EXAMPLES[quote][2], "scope_supported": quote == RULE,
+                    "practice_supported": True, "same_agreement": quote == RULE, "existing_id": baseline["id"],
+                    "summary_kind":"preference", "topic_quote":"对稿", "replaces_source":None}
 
     try:
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://localhost",
@@ -70,10 +79,12 @@ async def test_private_chat_admission_requires_independent_original_evidence(set
             assert await runtime.memory_organizer.run_once() == len(EXAMPLES)
             assert await runtime.memory_organizer.run_once() == 0
             rows = runtime.daily_memory.organized(runtime.memory_organizer.scope())
-            row, = rows
+            row, = [r for r in rows if r["id"] != baseline["id"]]
+            assert memory.organized(owner_scope, item_id=baseline["id"]) == [baseline]
             assert row["quote"] == RULE
             stored = row["proof"]["cooperation_rule"]
             assert bound_statement(RULE, stored) == RULE
+            assert RULE[slice(*stored["proposed_scope_span"])] == "咱俩"
             assert RULE[slice(*stored["scope_span"])] == SCOPE and RULE[slice(*stored["practice_span"])] == PRACTICE
             for quote, source in originals.items():
                 status = runtime.store.one("SELECT status FROM memory_organization WHERE source=?", (source,))["status"]
@@ -86,18 +97,25 @@ async def test_private_chat_admission_requires_independent_original_evidence(set
         runtime.store.close()
 
 
-def test_vutxt9a6_add_requires_all_original_evidence_and_skip_needs_no_slots():
-    decision = TypeAdapter(PrivateSuggestion | SkipPrivateTurn)
-    assert isinstance(decision.validate_python({"action": "skip"}), SkipPrivateTurn)
-    for quote in (RULE, GREETING):
-        common = {"existing_id": None, "headline": quote, "note": quote, "tags": []}
-        for action in ("add", "update"):
-            original = common | {"action": action}
-            for missing in ({"routine": None}, {}, {"statement": quote, "scope_quote": "", "practice_quote": quote}):
-                with pytest.raises(ValidationError):
-                    decision.validate_python(original | missing)
-    accepted = dict(common, action="add", note=RULE, headline=SCOPE, statement=RULE, scope_quote=SCOPE, practice_quote=PRACTICE)
-    assert locate_rule(RULE, decision.validate_python(accepted))
+def test_private_interpretation_cannot_return_an_unevidenced_storage_action():
+    for invalid in ({"action": "add", "routine": None}, {"action": "skip"}):
+        with pytest.raises(ValidationError):
+            OwnerUtterance.model_validate(invalid)
+
+
+@pytest.mark.parametrize("quote,fragment,practice,expected", [
+    (RULE, "咱俩", PRACTICE, SCOPE),
+    ("老规矩每回对稿疑处圈红。", "每回", "疑处圈红", "老规矩每回对稿"),
+    ("疑处圈红是咱们对稿的习惯。", "咱们", "疑处圈红", "是咱们对稿的习惯"),
+])
+def test_qualifying_clause_and_original_model_span_are_both_bound(quote, fragment, practice, expected):
+    words = RoutineProposal(statement=quote, scope_quote=fragment, practice_quote=practice)
+    original = locate_rule(quote, words)
+    expanded = with_scope_context(quote, original)
+    assert quote[slice(*expanded["scope_span"])] == expected
+    assert quote[slice(*expanded["proposed_scope_span"])] == fragment
+    assert bound_statement(quote, original) == bound_statement(quote, expanded) == quote
+    assert bound_statement(quote, expanded | {"scope_span": expanded["statement_span"]}) is None
 
 
 def test_binding_rejects_unsupported_ambiguous_and_overlapping_source_spans():

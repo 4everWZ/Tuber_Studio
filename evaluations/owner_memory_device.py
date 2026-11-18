@@ -140,7 +140,9 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                     await context.route("**/*", lambda route: route.continue_() if route.request.url.startswith(local+"/") else route.abort())
                     assert (await context.request.post(local+"/api/auth", data={"token":token})).ok
                     if check_cooperation:
+                        from evaluations.owner_memory_budget import admission_wire
                         from evaluations.owner_memory_cooperation import verify_chat_admission
+                        stack.enter_context(admission_wire(runtime.llm, record))
                         record("stage", "checking_ordinary_chat_preferences")
                         async with httpx.AsyncClient(base_url=local, trust_env=False, timeout=180) as qa:
                             (await qa.post("/api/auth", json={"token": token})).raise_for_status()

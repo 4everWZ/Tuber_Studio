@@ -231,19 +231,25 @@ async def test_switch_blocks_inflight_recall_and_discards_inflight_organization(
 
 class OrganizerModel:
     async def generate_json(self, messages, schema, *, max_tokens):
+        if schema["title"] == "OwnerUtterance":
+            text = messages[-1]["content"]
+            return {"meaning": "持续合作方式", "statement": text, "scope_quote": "以后",
+                    "practice_quote": text.split("以后", 1)[1]}
+        packet = json.loads(messages[-1]["content"])
+        if schema["title"] == "ChangeOfPractice":
+            return {"relation": "新做法取代原做法", "common_reference": "运营汇报",
+                    "old_value": packet["original"], "new_value": packet["new"]}
+        if schema["title"] == "AgreementReview":
+            existing = packet["existing"]
+            return {"meaning": "号主本人的持续协作约定", "scope_supported": True, "practice_supported": True,
+                    "same_agreement": True, "topic_quote": "运营汇报", "existing_id": existing[0]["id"] if existing else None,
+                    "replaces_source": None, "summary_kind": "preference"}
         items = {}
-        packet = json.loads(messages[1]["content"])
-        if schema["title"] == "RoutineReviews":
-            return {key: {"meaning": "号主本人的持续协作约定", "scope_supported": True,
-                          "practice_supported": True, "same_agreement": True} for key in packet}
         for item in packet:
             existing = item["existing"]
             items[item["key"]] = {"action": "update" if existing else "add",
                           "existing_id": existing[0]["id"] if existing else None, "headline": "运营汇报顺序",
                           "note": item["original"], "tags": ["运营汇报"]}
-            if item["kind"] == "private":
-                text = item["original"]
-                items[item["key"]].update(statement=text, scope_quote="以后", practice_quote=text.split("以后", 1)[1])
         return items
 
 
@@ -258,13 +264,12 @@ async def test_organization_cannot_create_memory_from_assistant_output(settings)
 
     class UnreliableOrganizer(OrganizerModel):
         async def generate_json(self, messages, schema, *, max_tokens):
-            if schema["title"] == "RoutineReviews":
-                return await super().generate_json(messages, schema, max_tokens=max_tokens)
-            inputs = json.loads(messages[-1]["content"])
-            assert [item["original"] for item in inputs] == [owner_statement]
-            decisions = await super().generate_json(messages, schema, max_tokens=max_tokens)
-            decisions["source_1"].update(note=false_inference, headline=false_claim, tags=["两千个视频", "汇报"])
-            return decisions
+            result = await super().generate_json(messages, schema, max_tokens=max_tokens)
+            if schema["title"] == "OwnerUtterance":
+                assert messages[-1]["content"] == owner_statement
+            elif schema["title"] == "AgreementReview":
+                result["topic_quote"] = false_inference
+            return result
 
     runtime.llm = UnreliableOrganizer()
     try:
@@ -310,15 +315,10 @@ async def test_shared_memory_keeps_owner_correction_after_two_client_restart(set
             return getattr(self.provider, name)
 
         async def generate_json(self, messages, schema, *, max_tokens):
-            if schema["title"] == "RoutineReviews":
-                return await super().generate_json(messages, schema, max_tokens=max_tokens)
-            packet = json.loads(messages[-1]["content"])
-            organized_sources.extend(item["original"] for item in packet)
+            if schema["title"] == "OwnerUtterance":
+                organized_sources.append(messages[-1]["content"])
             assert false_reply not in messages[-1]["content"]
-            decisions = await super().generate_json(messages, schema, max_tokens=max_tokens)
-            for decision in decisions.values():
-                decision.update(headline="运营汇报", note=false_reply)
-            return decisions
+            return await super().generate_json(messages, schema, max_tokens=max_tokens)
 
         async def generate_assistant_json(self, messages, schema, *, max_tokens, on_content, on_stage):
             return {"action": "chat", "reply_markdown": false_reply}

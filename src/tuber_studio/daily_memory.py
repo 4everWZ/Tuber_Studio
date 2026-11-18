@@ -482,6 +482,9 @@ class DailyMemoryService:
         for row in self.organized(scope, limit=-1, candidate_for=(key, kind, signature, quote)):
             if row["memory_kind"] != kind:
                 continue
+            if source.get("cooperation_rule") and row["quote"] != quote:
+                # A shared topic label cannot override the organizer's verified correction target.
+                continue
             if row["proof"].get("scene") != target or row["proof"].get("private_owner") != owner:
                 continue
             existing = row

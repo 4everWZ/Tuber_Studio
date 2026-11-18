@@ -39,7 +39,10 @@ async def verify_chat_admission(client, runtime, device, port, token, deadline, 
             quote = case["owner_quote"]
             assert row["quote"] == quote and bound_statement(quote, rule)
             case.update(rule=rule, scope_quote=quote[slice(*rule["scope_span"])],
-                        practice_quote=quote[slice(*rule["practice_span"])])
+                        practice_quote=quote[slice(*rule["practice_span"])],
+                        proposed_scope_quote=quote[slice(*rule["proposed_scope_span"])])
+            record("cooperation_admission", receipts)
+            assert case["scope_quote"] == "咱俩对稿有个默契"
             # Keep the following three editions independent of this additional QA preference.
             await forget_current(client, port, device, token, [row])
         record("cooperation_admission", receipts)
