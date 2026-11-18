@@ -152,6 +152,17 @@ async function run(browser) {
   assert.ok(!final.posts[1].receipt);
   assert.deepEqual(final.denied_connections, []);
   assert.deepEqual(blocked, []);
+  await panel.getByRole("button", {name: "全部活动"}).click();
+  await panel.getByRole("button", {name: "用文本附件交办"}).click();
+  await panel.getByLabel("希望用这些材料做什么？").fill("合计输入数据");
+  await panel.locator('input[type="file"]').setInputFiles({name: "输入.json", mimeType: "application/json", buffer: Buffer.from("[3,4,5]")});
+  await panel.getByRole("checkbox").check();
+  await panel.getByRole("button", {name: "交办", exact: true}).click();
+  const received = page.waitForEvent("download");
+  await panel.getByRole("button", {name: "下载 合计.txt"}).click();
+  const download = await received;
+  assert.equal(download.suggestedFilename(), "合计.txt");
+  assert.equal(await require("node:fs/promises").readFile(await download.path(), "utf8"), "12");
   console.log(JSON.stringify({ chromium: browser.version(), taskId, revision: steered.revision,
     edition: updated.artifact.edition, target, before, after, platform: final.requests,
     drafts: final.posts, ledgerAttempts: final.attempts, externalConnections: final.denied_connections.length,

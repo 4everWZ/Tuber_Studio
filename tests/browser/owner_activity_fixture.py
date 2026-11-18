@@ -70,7 +70,14 @@ class Platform:
 async def scripted_response(*, input, **kwargs):
     goal = json.loads(input[1]["content"])["goal"]
     outputs = [json.loads(item["output"]) for item in input if item.get("type") == "function_call_output"]
-    if "先核对" in goal and not outputs:
+    if goal == "合计输入数据" and not outputs:
+        call = FunctionCall(str(uuid4()), "private_code", {
+            "name": "合计.txt", "script": "return String(JSON.parse(files[0].text).reduce((a,b)=>a+b,0))"})
+    elif goal == "合计输入数据":
+        call = FunctionCall(str(uuid4()), "submit_materials", {"items": [
+            {"title": "计算合计", "rationale": "供号主核对输入数据。", "sources": list(outputs[-1]["evidence"])}
+        ], "gaps": []})
+    elif "先核对" in goal and not outputs:
         call = FunctionCall(str(uuid4()), "inspect_dynamic_draft", {"post_id": 1})
     elif "先核对" in goal:
         assert outputs[-1]["receipt"]["sources"][0]["receipt_id"] == "77"

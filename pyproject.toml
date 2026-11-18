@@ -14,6 +14,7 @@ dependencies = [
     "tzdata>=2025.1",
     "cryptography>=44,<50",
     "qrcode>=8,<9",
+    "quickjs-ng>=0.17,<1",
 ]
 
 [dependency-groups]

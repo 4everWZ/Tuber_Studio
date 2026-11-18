@@ -14,6 +14,7 @@ const tools = {
   live_handoff: "交接直播素材", game_action: "执行模拟游戏动作",
   inspect_dynamic_draft: "核对动态草稿", publish_dynamic_draft: "发布指定动态", delegate_text: "委派文本工作",
   owner_attachment: "号主提供的私有附件",
+  owner_code_grant: "已允许本次隔离计算", private_code: "处理私有文件",
 };
 const stoppable = new Set(["queued", "scheduled", "running", "waiting", "needs_input", "awaiting_approval"]);
 const needsAttention = new Set(["needs_input", "awaiting_approval"]);
@@ -44,6 +45,15 @@ function button(label) {
   const element = node("button", label);
   element.type = "button";
   return element;
+}
+
+function downloadText(filename, text, mime = "text/plain;charset=utf-8") {
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function appendSource(target, value, name = value) {
@@ -164,19 +174,23 @@ export function initTaskActivity(api, requestId) {
     editing = true;
     const form = node("form", null, "chat-task-steer");
     const field = node("label", "希望用这些材料做什么？"), goal = node("textarea");
-    const filesLabel = node("label", "私有附件（最多三份 UTF-8 文本，每份最多 8000 字符）");
+    const filesLabel = node("label", "私有附件（最多三份 UTF-8 文本、数据或字幕，每份最多 8000 字符）");
     const files = node("input"), submit = node("button", "交办"), back = button("返回活动");
     files.type = "file";
-    files.accept = ".md,.txt";
+    files.accept = ".md,.txt,.csv,.json,.srt,.vtt";
     files.multiple = true;
     files.required = true;
+    const codeLabel = node("label"), code = node("input");
+    code.type = "checkbox";
+    code.onchange = () => { files.required = !code.checked; };
+    codeLabel.append(code, document.createTextNode("允许本次在隔离环境中运行 JavaScript 计算并生成文件"));
     goal.required = true;
     goal.maxLength = 2000;
     submit.type = "submit";
     back.onclick = () => open();
     field.append(goal);
     filesLabel.append(files);
-    form.append(field, filesLabel, node("p", "材料只供当前角色与后台创作使用。这项任务不能访问网页或平台。", "hint"), submit, back);
+    form.append(field, filesLabel, codeLabel, node("p", "材料只供当前角色与后台创作使用。这项任务不能访问网页或平台。", "hint"), submit, back);
     content.replaceChildren(form);
     goal.focus();
     let previous;
@@ -186,15 +200,15 @@ export function initTaskActivity(api, requestId) {
       const objective = goal.value.trim();
       submit.disabled = true;
       try {
-        if (!objective || !selected.length || selected.length > 3) throw new Error("请填写任务并选择一到三份文本。");
+        if (!objective || (!selected.length && !code.checked) || selected.length > 3) throw new Error("请填写任务并选择附件或启用隔离计算。");
         const attachments = await Promise.all(selected.map(async file => {
-          if (!/\.(md|txt)$/.test(file.name) || file.size > 32000) throw new Error("仅支持小型 Markdown 或 TXT 文件。");
+          if (!/\.(md|txt|csv|json|srt|vtt)$/.test(file.name) || file.size > 32000) throw new Error("请选择小型文本、CSV、JSON 或字幕文件。");
           const text = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
           if (!text.trim() || Array.from(text).length > 8000) throw new Error("文本为空或超过 8000 字符。");
           return { name: file.name, text };
         }));
         if (current !== version) return;
-        const payload = { goal: objective, attachments }, key = JSON.stringify(payload);
+        const payload = { goal: objective, attachments, allow_code: code.checked }, key = JSON.stringify(payload);
         if (previous?.key !== key) previous = { key, id: requestId() };
         const task = await api(base, { method: "POST", body: { ...payload, request_id: previous.id } });
         if (current === version) open(task.id);
@@ -271,6 +285,11 @@ export function initTaskActivity(api, requestId) {
       details.append(node("summary", `${label} · ${summary}`));
       const result = step.result;
       if (result) {
+        if (step.tool === "private_code" && typeof result.text === "string" && result.name) {
+          const download = button(`下载 ${result.name}`);
+          download.onclick = () => downloadText(result.name, result.text);
+          item.append(download);
+        }
         const description = result.error || result.spoken || result.message || result.excerpt || result.state?.summary;
         if (typeof description === "string" && description) details.append(node("p", description));
         if (result.url) appendSource(details, result.url, result.title || result.name || "打开来源");
@@ -418,14 +437,8 @@ export function initTaskActivity(api, requestId) {
       path + "/artifact", "PATCH", { task_revision: artifact.task_revision, edition: artifact.edition, body: text }, submit,
     ));
     const download = button("下载 Markdown");
-    download.onclick = () => {
-      const url = URL.createObjectURL(new Blob([artifact.body], { type: "text/markdown;charset=utf-8" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `工坊成果-${task.id}-r${artifact.task_revision}-v${artifact.edition}.md`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    };
+    download.onclick = () => downloadText(`工坊成果-${task.id}-r${artifact.task_revision}-v${artifact.edition}.md`,
+      artifact.body, "text/markdown;charset=utf-8");
     card.append(body, edit, download);
     if (artifact.edition > 1 || artifact.task_revision > 1) {
       const history = node("details"), reading = node("div");
