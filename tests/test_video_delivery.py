@@ -1,18 +1,30 @@
+import base64
+import io
 import json
+import shutil
+import subprocess
 from uuid import uuid4
 
 import pytest
+from PIL import Image
 from test_agent_creative_delegation import call, gateway
 
+from tuber_studio.agent.public_video import clip_path
 from tuber_studio.agent.task_delivery import (
     AdditionalVideoRead,
     DelegationError,
+    EditorialCorrection,
     PrivateDelivery,
     evidence_index,
     previous_frame_items,
     render_private_delivery,
 )
-from tuber_studio.agent.task_tools import create_task_runtime, sampled_video_findings
+from tuber_studio.agent.task_tools import (
+    clip_review_image,
+    create_task_runtime,
+    discovery_windows,
+    sampled_video_findings,
+)
 
 BV = "BV1234567890"
 
@@ -48,6 +60,40 @@ def short_read(key, start, *, clip=True, revision=1):
     return read
 
 
+def test_discovery_uses_actual_nominations_in_disjoint_bounded_windows():
+    read = reading(frame(0), frame(1), frame(28))
+    read["result"]["selection"]["ranges"][0]["end"] = 30
+    candidate = {"items": [{"primary_frame": k, "sources": [k]} for k in ["v:1", "v:2", "v:3"]]}
+    evidence = evidence_index([read])
+    assert discovery_windows(candidate, evidence, 3, 2) == [
+        {"bvid": BV, "part": 2, "start": 0, "end": 3}, {"bvid": BV, "part": 2, "start": 26, "end": 29}]
+    assert discovery_windows(candidate, evidence, 15, 2) == []
+
+
+async def test_playable_request_returns_to_collection_but_single_frame_can_finish(runtime, store, monkeypatch):
+    read = reading(frame(11))
+    read["result"]["part_duration"] = 300
+    evidence = evidence_index([read])
+    candidate = selection(primary="v:1").model_dump()
+    task = {"goal": "准备本次交付", "steps": [read], "plan": {"prior_goals": [], "candidate": candidate}}
+    playable = True
+
+    async def model(messages, schema, **kwargs):
+        if "requested_count" in schema["properties"]:
+            return {"requested_count": 1, "usage": "展示构图", "playable": playable, "trace_origin": playable}
+        if "supported" in schema["properties"]:
+            return {"supported": True}
+        return candidate
+
+    monkeypatch.setattr(runtime.llm, "generate_json", model)
+    tasks = create_task_runtime(runtime, store, None)
+    with pytest.raises(AdditionalVideoRead) as research:
+        await tasks.edit_delivery(task, evidence)
+    assert research.value.sources and research.value.windows == [{"bvid": BV, "part": 2, "start": 9, "end": 12}]
+    playable = False
+    assert (await tasks.edit_delivery(task, evidence)).items[0].primary_frame == "v:1"
+
+
 @pytest.mark.parametrize("alter", [None, {"cid": "elsewhere"}, {"end": 15}, {"part": 1}, {"frames": 1}, {"audio": "unknown"}])
 def test_physical_clip_is_distinct_from_semantic_sampling(alter):
     read = short_read("window", 11)
@@ -64,7 +110,32 @@ def test_physical_clip_is_distinct_from_semantic_sampling(alter):
             render_private_delivery(selection("window:3", primary="window:1"), evidence)
 
 
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="requires local video decoder")
+async def test_review_decodes_actual_primary_pts_and_checks_receipt_ownership(tmp_path):
+    key = str(uuid4())
+    read = short_read(key, 11)
+    read["result"]["request_id"] = key
+    destination = clip_path(tmp_path, key)
+    destination.parent.mkdir(parents=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+                    "color=red:s=32x32:r=25:d=3,drawbox=color=blue:t=fill:enable='gte(t,1)'",
+                    "-c:v", "libx264", "-movflags", "+empty_moov+frag_keyframe", str(destination)], check=True)
+    evidence = evidence_index([read])
+    for suffix, channel in [(1, 0), (2, 2)]:
+        content = await clip_review_image(tmp_path, {"steps": [read]}, evidence, f"{key}:{suffix}")
+        jpg = base64.b64decode(content["image_url"]["url"].split(",")[1])
+        with Image.open(io.BytesIO(jpg)) as image:
+            assert image.convert("RGB").getpixel((12, 12))[channel] > 240
+    read["result"]["request_id"] = str(uuid4())
+    with pytest.raises(DelegationError, match="本任务"):
+        await clip_review_image(tmp_path, {"steps": [read]}, evidence, key + ":1")
+
+
 async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, monkeypatch):
+    async def synthetic_image(*_):
+        return None
+
+    monkeypatch.setattr("tuber_studio.agent.task_tools.clip_review_image", synthetic_image)
     first, second = short_read("a", 11), short_read("b", 35)
     old = PrivateDelivery(items=[selection(primary=key).items[0] for key in ["a:1", "b:1"]],
                           gaps=["另一窗口尚未采用。"])
@@ -78,12 +149,20 @@ async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, mon
         packet = json.loads(messages[-1]["content"])
         if "上一版" in packet:
             return {"ordered_actions": ["保留整项原文", "另读新窗口再替换"]}
+        if "候选窗口" in packet:
+            assert set(packet["候选窗口"]) == {"new"}
+            return {"windows": ["new"]}
+        if "candidate_primary" in packet:
+            assert packet["candidate_primary"] == "new:1" and "另一窗口尚未采用" not in str(packet)
+            return {"decision": "采用", "rationale": "以椅子开场。", "primary_frame": "new:1"}
+        if "coordinate" in packet:
+            return {"title": "新开场", "rationale": "以椅子开场。"}
         if "candidate" in packet:
             assert "另一窗口尚未采用" not in str(packet)
             assert set(packet["evidence"]) == {"new:1", "new:2", "new:3"}
             return selection(primary="new:1").model_dump()
         assert packet["field_visual_sources"]
-        return {"supported": True, "field_basis": {p: {"source": keys[0], "observation": "椅子"}
+        return {"supported": True, "field_basis": {p: {"source": keys[0], "observation": "左侧有一把椅子", "claim": "编辑用途"}
                                                    for p, keys in packet["field_visual_sources"].items()}}
 
     monkeypatch.setattr(runtime.llm, "generate_json", editor)
@@ -96,8 +175,8 @@ async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, mon
     assert selected.gaps == [] and "另一窗口" not in render_private_delivery(selected, evidence)[1]
 
 
-@pytest.mark.parametrize("quote", ["椅子", "河南治水"])
-async def test_saved_clip_omni_decides_each_item_and_displays_attribution(runtime, store, monkeypatch, quote):
+@pytest.mark.parametrize(("quote", "unverified_effect"), [("左侧有一把椅子", False), ("河南治水", False), ("左侧有一把椅子", True)])
+async def test_saved_clip_omni_decides_each_item_and_displays_attribution(runtime, store, monkeypatch, quote, unverified_effect):
     read = short_read("window", 0)
     for point in read["result"]["findings"]:
         point["cid"] = "321"
@@ -113,27 +192,38 @@ async def test_saved_clip_omni_decides_each_item_and_displays_attribution(runtim
     calls = []
 
     async def editor(messages, schema, **kwargs):
+        if "requested_count" in schema["properties"]:
+            return {"requested_count": 1, "usage": "无剧透画面", "playable": True, "trace_origin": False}
         packet = json.loads(messages[-1]["content"])
         calls.append(packet)
         if "candidate_primary" in packet:
             assert packet["candidate_primary"] == "window:1"
             assert "示例作者" in packet["item_evidence"]["origin"] and "剧情结局" not in str(packet)
             assert "旧的未选用窗口" not in str(packet)
-            return {"decision": "采用", "primary_frame": "window:2", "title": "画中的椅子", "rationale": "从画面左侧的椅子引出布景。"}
+            return {"decision": "采用", "primary_frame": "window:2", "rationale": "从画面左侧的椅子引出布景。"}
+        if "coordinate" in packet:
+            assert "observations_in_read" not in packet and packet["observation"] == "左侧有一把椅子"
+            return {"title": "画中的椅子", "rationale": "能提升点击率。" if unverified_effect else "从画面左侧的椅子引出布景。"}
         assert packet["field_visual_sources"] == dict.fromkeys(["items.0.title", "items.0.rationale"], ["window:2"])
-        return {"supported": True, "field_basis": {p: {"source": "window:2", "observation": quote}
+        return {"supported": True, "field_basis": {p: {"source": "window:2", "observation": quote,
+            "claim": "无据的事实或成效" if unverified_effect and p.endswith(".rationale") else "编辑用途"}
                                                    for p in packet["field_visual_sources"]}}
 
     monkeypatch.setattr(runtime.llm, "generate_json", editor)
     tasks = create_task_runtime(runtime, store, None)
+    if unverified_effect:
+        with pytest.raises(EditorialCorrection) as patch:
+            await tasks.edit_delivery(task, evidence)
+        assert set(patch.value.issues) == {"items.0.rationale"}
+        return
     if quote == "河南治水":
         with pytest.raises(DelegationError, match="回执原文"):
             await tasks.edit_delivery(task, evidence)
         return
     result = await tasks.edit_delivery(task, evidence)
-    assert result._field_sources["items.0.title"] == {"source": "window:2", "observation": quote}
+    assert result._field_sources["items.0.title"] == {"source": "window:2", "observation": quote, "claim": "编辑用途"}
     _, body = render_private_delivery(result, evidence)
-    assert len(calls) == 2 and "示例作者" in body and "剧情结局" not in body and not result.gaps
+    assert len(calls) == 3 and "示例作者" in body and "剧情结局" not in body and not result.gaps
     assert "来源摘录" not in body and "左侧有一把椅子" not in body
 
 

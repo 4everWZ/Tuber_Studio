@@ -97,13 +97,18 @@ def model_input(task, context):
     )}, {"role": "user", "content": dump({"prior_goals": task["plan"]["prior_goals"], "goal": task["goal"],
                                            "video_selection": task["plan"].get("video_selection"),
                                            "requested_video_read": task["plan"].get("requested_video_read"),
+                                           "requested_source_read": task["plan"].get("requested_source_read"),
                                            "previous_delivery": evidence.referenced_body(task["plan"].get("previous_delivery")),
                                            "previous_items_by_primary_frame": previous_frame_items(task, evidence),
                                            "pages_without_body_receipts": evidence.unread_pages,
                                            "saved_evidence": evidence_index([
-                                               step for step in context if step["revision"] != task["revision"]]),
+                                               step for step in context if step["revision"] != task["revision"] or step.get("discovery_window")]),
+                                           "new_clip_receipts": {step["id"]: evidence.video_coverage.get(step["id"])
+                                                                 for step in context if step.get("discovery_window")
+                                                                 and step["revision"] == task["revision"]},
                                            "saved_searches": [step["result"] for step in context
-                                                             if step["revision"] != task["revision"]
+                                                             if (step["revision"] != task["revision"] or step.get("question_search"))
+                                                             and step.get("result")
                                                              and step["tool"] == "web_search"]})}]
     current = [step for step in context if step["revision"] == task["revision"] and "call_id" in step and "result" in step]
     for _, group in groupby(current, key=lambda step: step["response_id"]):
@@ -171,8 +176,21 @@ async def advance(runtime, task):
         except AdditionalVideoRead as request:
             if runtime.scope() == task["scope"]:
                 plan = {k: v for k, v in task["plan"].items() if k not in {"candidate", "editor_draft", "editor_issues"}}
-                runtime._save(task, status="queued", due=time.time(), message=str(request),
-                              plan=plan | {"requested_video_read": str(request), "excluded_video_frames": request.exclude})
+                if request.video:
+                    plan.update(requested_video_read=str(request), excluded_video_frames=request.exclude,
+                                retained_candidates=request.retained)
+                if request.sources:
+                    plan["requested_source_read"] = str(request)
+                steps = list(task["steps"])
+                tool = private_tools(runtime.tools, context).get("inspect_video")
+                for args in request.windows:
+                    if not tool or tool.review or not tool.parallel_read or not permits(video_binding(task), args):
+                        raise DelegationError("补读短窗超出当前视频读取授权。") from request
+                    key = str(uuid5(UUID(task["id"]), f"{task['revision']}:clip:{dump(args)}"))
+                    if not any(step["id"] == key for step in steps):
+                        steps.append({"tool": "inspect_video", "id": key, "revision": task["revision"],
+                                      "arguments": tool.arguments.model_validate(args).model_dump(), "discovery_window": True})
+                runtime._save(task, status="queued", due=time.time(), message=str(request), plan=plan, steps=steps)
             return
         except EditorialCorrection as correction:
             if runtime.scope() == task["scope"]:
@@ -241,6 +259,19 @@ async def advance(runtime, task):
     name = calls[0].name
     if len(calls) == 1 and name == "ask_owner":
         question = Clarification.model_validate(calls[0].arguments).question
+        search = allowed.get("web_search")
+        review = getattr(runtime, "review_source_question", None)
+        if search and search.parallel_read and not search.review and review and not any(s.get("question_search") for s in current):
+            args = await review(task, question, context)
+            if runtime.scope() != task["scope"]:
+                return
+            if args and not any(s["tool"] == "web_search" and s["arguments"] == args for s in context):
+                step = {"id": str(uuid5(UUID(task["id"]), f"{task['revision']}:question:{calls[0].call_id}")),
+                        "tool": "web_search", "revision": task["revision"], "arguments": search.arguments.model_validate(args).model_dump(),
+                        "question_search": True}
+                runtime._save(task, status="queued", due=time.time(), steps=[*task["steps"], step],
+                              message="前台已根据公开资料继续核对出处。")
+                return
         runtime._save(task, status="needs_input", message=question)
         return
     if len(calls) == 1 and name == "submit_materials":
@@ -261,12 +292,15 @@ async def advance(runtime, task):
         return
     steps = []
     for call in calls:
-        tool = allowed[call.name]
-        if len(calls) > 1 and (tool.review or not tool.parallel_read):
-            raise DelegationError("并行委派只允许独立读取。")
         step = {"id": str(uuid5(UUID(task["id"]), f"{task['revision']}:{call.call_id}")),
                 "call_id": call.call_id, "response_id": reply.id, "revision": task["revision"],
                 "tool": call.name, "arguments": call.arguments}
+        if call.name in {"submit_materials", "ask_owner"}:
+            steps.append(step | {"invalid_call": True, "result": {"error": "须在读取结束后单独提交一次完整候选或问题。"}})
+            continue
+        tool = allowed[call.name]
+        if len(calls) > 1 and (tool.review or not tool.parallel_read):
+            raise DelegationError("并行委派只允许独立读取。")
         try:
             arguments = tool.arguments.model_validate(call.arguments).model_dump(mode="json")
         except ValidationError as error:

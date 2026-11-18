@@ -74,7 +74,11 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                 decision = {"color": color, "shape": shape}
                 seen.append(shape)
             elif content == replay.REQUEST:
-                decision = {"action": "agent_task"}
+                if "requested_count" in body["messages"][0]["content"]:
+                    decision = {"requested_count": 2, "usage": "列出形状、理由和时码", "playable": False,
+                                "trace_origin": True, "clip_seconds": None}
+                else:
+                    decision = {"action": "agent_task"}
             else:
                 packet = json.loads(content)
                 if "candidate" in packet:

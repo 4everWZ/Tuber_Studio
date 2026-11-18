@@ -1,6 +1,7 @@
 """Composition of existing studio services with private Agent task capabilities."""
 
 import asyncio
+import base64
 import math
 import os
 import re
@@ -16,15 +17,16 @@ from ..generation_meter import budgeted_call
 from ..http_api import InferenceQueueBusy, response_json
 from ..live.game_livestream import PvZAdapter, StardewValleyAdapter
 from ..models import StrictModel
+from ..platforms.bilibili_frames import FfmpegTiles
 from ..responses_provider import ResponsesClient
 from ..store import dump
 from ..web_fetch import WebFetchRequest, fetch_excerpt, source_url
-from ..web_search import search_public_web
+from ..web_search import search_broadcast_programmes, search_public_web
 from . import operator_facts
 from .dynamic_publication import register_dynamic_publication
 from .handoff import PublicText, handoff_text, supplied_private_fragments, video_findings
 from .public_sources import fetch_task_source
-from .public_video import read_public_part, save_clip
+from .public_video import clip_path, read_public_part, save_clip
 from .task_delivery import (
     AdditionalVideoRead,
     CreativeItem,
@@ -55,6 +57,11 @@ from .task_runtime import (
 
 class Search(StrictModel):
     query: str = Field(min_length=2, max_length=160)
+    catalog: Literal["综合网页", "央视节目库"] | None = Field(default=None, description="按查证对象选公开检索库，节目用节目名查询。")
+
+
+class ResearchQuestion(StrictModel):
+    search: Search | None = Field(description="仍能按现有资料自主查证时填一项具体检索；确实仅能由号主补充时填 null。")
 
 
 class Video(StrictModel):
@@ -88,7 +95,8 @@ class EditorialIssue(StrictModel):
     field: str
     quote: str = Field(min_length=1)
     reason: Literal["引用未支持该断言", "单帧外推连续画面", "画面不能判断实际声音",
-                    "网页出处外推画面身份或集号", "披露剧情", "选段画面披露剧情", "与取材覆盖回执矛盾", "与改口指定保留的原文矛盾"]
+                    "网页出处外推画面身份或集号", "披露剧情", "选段画面披露剧情", "未经核实的运营效果",
+                    "与可见屏字矛盾", "与取材覆盖回执矛盾", "与改口指定保留的原文矛盾"]
 
 
 class VideoGroundingReview(StrictModel):
@@ -103,8 +111,99 @@ class RetainedVideoRevision(StrictModel):
 class ClipDecision(StrictModel):
     decision: Literal["采用", "另取材料", "材料不足"]
     primary_frame: str | None
-    title: str
     rationale: str = Field(min_length=1)
+
+
+class ClipCaption(StrictModel):
+    title: str = Field(min_length=1, max_length=240)
+    rationale: str = Field(min_length=1, max_length=1200)
+
+
+class ClipBrief(StrictModel):
+    requested_count: int | None = Field(description="号主明确要求的独立素材数量；没有指定则填 null。", ge=1)
+    usage: str = Field(description="号主要求的选材用途和取舍标准。")
+    playable: bool = Field(description="目标要交付可使用的片段或短片时为 true；仅问画面或文字资料为 false。")
+    trace_origin: bool = Field(description="是否要求另查原出处或独立节目资料。")
+    clip_seconds: float | None = Field(default=None, gt=0, description="号主明确指定的单个窗口秒数，未指定填 null。")
+
+
+class WindowOrder(StrictModel):
+    windows: list[str] = Field(description="按最新改口的优先顺序选出可继续核对的实际窗口 ID。")
+
+
+def discovery_windows(candidate, evidence, seconds, target):
+    """Turn actual nominated sample times into disjoint reads inside the observed source bounds."""
+    windows = []
+    if seconds > 10:
+        return windows
+    keys = [key for item in candidate["items"] for key in [item.get("primary_frame"), *item["sources"]] if key]
+    for key in dict.fromkeys(keys):
+        point = evidence.points.get(key)
+        if not point or point.medium != "单帧采样":
+            continue
+        read = evidence.video_coverage[key.rsplit(":", 1)[0]]
+        if read.get("clip"):
+            continue
+        for bounds in read["requested_ranges"]:
+            if (bounds["part"] != point.part or not bounds["start"] <= point.seconds < bounds["end"]
+                    or bounds["end"] - bounds["start"] < seconds):
+                continue
+            start = max(bounds["start"], min(math.floor(point.seconds - seconds / 2), bounds["end"] - seconds))
+            end = start + seconds
+            if not any(w["bvid"] == point.bvid and w["part"] == point.part and w["start"] < end and start < w["end"]
+                       for w in windows):
+                windows.append({"bvid": point.bvid, "part": point.part, "start": start, "end": end})
+            break
+        if len(windows) >= target:
+            break
+    return windows
+
+
+def clip_options(proposed, evidence):
+    options = []
+    seen = set()
+    origins = {}
+    for item in proposed:
+        point = evidence.points[item["primary_frame"]]
+        origins.setdefault((point.bvid, point.part, point.cid), []).extend(k for k in item["sources"] if k not in evidence.points)
+    for item in [*proposed, *({"primary_frame": k} for k in evidence.points)]:
+        key = item["primary_frame"]
+        point = evidence.points[key]
+        clip = evidence.video_coverage[key.rsplit(":", 1)[0]].get("clip")
+        if not clip or point.medium != "单帧采样" or not clip["start"] <= point.seconds < clip["end"]:
+            continue
+        media = (point.bvid, point.part, point.cid)
+        window = (*media, clip["start"], clip["end"])
+        if media in origins and window not in seen and point.cid == clip["cid"]:
+            seen.add(window)
+            options.append({"primary_frame": key, "sources": item.get("sources", [key, *dict.fromkeys(origins[media])])})
+    return options
+
+
+async def clip_review_image(runtime_dir, task, evidence, primary):
+    read_id = primary.rsplit(":", 1)[0]
+    clip = evidence.video_coverage[read_id].get("clip")
+    if not clip:
+        return None
+    steps = {s["id"]: s for s in task.get("steps", []) if s["tool"] == "inspect_video"}
+    if read_id not in steps:
+        return None
+    media_id = (steps[read_id].get("result") or {}).get("request_id", read_id)
+    if media_id not in steps or evidence.video_coverage.get(media_id, {}).get("clip") != clip:
+        raise DelegationError("待核对主帧没有本任务的短片文件回执。")
+    path = clip_path(runtime_dir, media_id)
+    delta = evidence.points[primary].seconds - clip["start"]
+    if not path.is_file() or path.stat().st_size > 8 * 1024 * 1024 or not 0 <= delta < clip["end"] - clip["start"]:
+        raise DelegationError("已保存短片无法在对应入出点读回主帧。")
+    decoder = FfmpegTiles()
+    # Fragmented MP4 may carry a nonzero first PTS. Match an actual normalized presentation time.
+    image = await decoder._run([decoder.ffmpeg, "-v", "error", "-threads", "1", "-protocol_whitelist", "pipe",
+                               "-f", "mov", "-i", "pipe:0", "-vf", f"setpts=PTS-STARTPTS,select=lt(abs(t-{delta:.9f})\\,0.000001)",
+                               "-frames:v", "1", "-an", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"],
+                               await asyncio.to_thread(path.read_bytes), 1024 * 1024)
+    if not image:
+        raise DelegationError("短片中没有落在主帧实际时码的画面。")
+    return {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(image).decode()}}
 
 
 def sampled_video_findings(finding, part):
@@ -459,6 +558,22 @@ def create_task_runtime(runtime, store, browsing):
     tasks.responses_client = lambda: respond if runtime.settings.data.get("responses") else None
     tasks.requires_responses = lambda: runtime.settings.data["llm"]["kind"] != "demo"
 
+    async def review_source_question(task, question, context):
+        pages = [s["result"]["title"] for s in context if s["tool"] == "web_page"
+                 and (s.get("result") or {}).get("source_kind") == "bilibili_public_metadata"]
+        searches = [s["arguments"] for s in context if s["tool"] == "web_search"]
+        if not pages:
+            return None
+        decision = ResearchQuestion.model_validate(await request_json([
+            {"role": "system", "content": "核对后台是否真的需要号主补资料。已取得公开标题时可按节目名称检索相关官方节目目录。"
+             "查原出处可以分别交付已核实的作品资料和未核实的镜头归属。只在现有资料可支持不同查询时请求检索。"},
+            {"role": "user", "content": dump({"goal": task["goal"], "proposed_question": question,
+                                               "public_page_titles": pages, "attempted_searches": searches})}],
+            ResearchQuestion.model_json_schema(), max_tokens=runtime.settings.data["llm"]["max_tokens"]))
+        return decision.search.model_dump() if decision.search else None
+
+    tasks.review_source_question = review_source_question
+
     async def edit_delivery(task, evidence):
         character = runtime.character
         retained = previous_frame_items(task, evidence)
@@ -497,6 +612,38 @@ def create_task_runtime(runtime, store, browsing):
         if pool.points:
             sources.update(pool.video_byline)
         candidate = task["plan"]["candidate"]
+        if saved := task["plan"].get("retained_candidates"):
+            candidate = candidate | {"items": [*saved, *candidate["items"]]}
+        brief = None
+        missing_origin = False
+        public_reads = [s for s in task.get("steps", []) if s["tool"] == "inspect_video"
+                        and s["id"] in pool.video_coverage and (s.get("result") or {}).get("part_duration")]
+        if not prior and not correction and public_reads and pool.points:
+            brief = ClipBrief.model_validate(await request_json([
+                {"role": "system", "content": "只按号主交办确定交付形式、数量与出处查证要求。"},
+                {"role": "user", "content": task["goal"]}], ClipBrief.model_json_schema(), max_tokens=budget))
+            missing_origin = brief.trace_origin and not any(source_url(url).host != "www.bilibili.com"
+                                                            for url in pool.read_pages)
+            short = [key for key, p in pool.points.items() if p.medium == "单帧采样"
+                     and pool.video_coverage[key.rsplit(":", 1)[0]].get("clip")]
+            needs = []
+            if missing_origin and not task["plan"].get("requested_source_read"):
+                needs.append("检索并打开与节目相关的独立原出处，综合检索无结果时选择合适的公开资料库。")
+            if brief.playable and not short and not task["plan"].get("requested_video_read"):
+                needs.append("宽范围采样仅发现候选。请在所选分P内分别读取不超过10秒的明确短窗以取得可播放画面。")
+            if needs:
+                windows = discovery_windows(candidate, pool, brief.clip_seconds or 3, brief.requested_count or len(candidate["items"]))
+                raise AdditionalVideoRead(" ".join(needs), sources=missing_origin, video=brief.playable and not short,
+                                          windows=windows if brief.playable and not short else ())
+            if brief.playable:
+                if not short:
+                    return PrivateDelivery(items=[], gaps=["已取得部分采样点，尚未取得可播放的连续短片。",
+                        *(["尚未查得独立原出处正文。"] if missing_origin else [])])
+                pages = [s["id"] for s in task["steps"] if s["tool"] == "web_page" and s["id"] in pool]
+                seeds = [i for i in candidate["items"] if i.get("primary_frame") in short and set(i["sources"]) <= pool.keys()]
+                named = {i["primary_frame"] for i in seeds}
+                seeds.extend({"primary_frame": k, "sources": [k, *pages]} for k in short if k not in named)
+                candidate = {"items": clip_options(seeds, pool), "gaps": []}
         if evidence.points:
             visual_candidates = any(evidence.points.get(key) and evidence.points[key].medium == "单帧采样"
                                     for item in candidate["items"] for key in item["sources"])
@@ -508,6 +655,31 @@ def create_task_runtime(runtime, store, browsing):
                 if any(key in evidence.points and evidence.points[key].medium == "单帧采样" for key in item["sources"]) else item
                 for item in candidate["items"] if set(item["sources"]) <= pool.keys()],
                 "gaps": [] if visual_candidates or replacements else candidate["gaps"]}
+        physical_revision = replacements and all(evidence.video_coverage[k.rsplit(":", 1)[0]].get("clip") for k in replacements)
+        if physical_revision and not correction:
+            pages = [s["id"] for s in task.get("steps", []) if s["tool"] == "web_page" and s["id"] in pool]
+            seeds = [i for i in candidate["items"] if i.get("primary_frame") in pool.points]
+            seeds.extend({"primary_frame": k, "sources": [k, *pages]} for k in pool.points)
+            options = {i["primary_frame"].rsplit(":", 1)[0]: i for i in clip_options(seeds, pool)}
+            if options:
+                ordering = WindowOrder.model_json_schema()
+                ordering["properties"]["windows"]["items"]["enum"] = list(options)
+                ordered = WindowOrder.model_validate(await request_json([
+                    {"role": "system", "content": "按号主最新改口挑选优先检查的替换窗口，可读入出点及每个实际采样。"},
+                    {"role": "user", "content": dump({"改口": task["goal"].rsplit("\n号主改口：", 1)[-1],
+                        "候选窗口": {s: {"clip": pool.video_coverage[s]["clip"],
+                            "observations": [pool.observations[k] for k in pool.points if k.rsplit(":", 1)[0] == s]}
+                            for s in options}})}], ordering, max_tokens=budget))
+                if not set(ordered.windows) <= options.keys():
+                    raise DelegationError("所选替换窗口没有短片回执。")
+                candidate["items"] = [options[k] for k in dict.fromkeys(ordered.windows)]
+            else:
+                candidate["items"] = []
+                if not task["plan"].get("requested_video_read"):
+                    prior_clip = evidence.video_coverage[replacements[0].rsplit(":", 1)[0]]["clip"]
+                    seconds = prior_clip["end"] - prior_clip["start"]
+                    windows = discovery_windows(task["plan"]["candidate"], pool, seconds, len(replacements))
+                    raise AdditionalVideoRead("原版为连续短片。请在授权范围补读一个新的可播放窗口。", windows=windows)
         messages = [{"role": "system", "content": (
             "你以当前角色身份向号主交付私有创作成果。独立判断实际证据是否满足目标与最新改口，"
             "不要把后台候选当作完成证明。为每项选材写标题和自己的选择理由，sources 只填对应证据 ID；"
@@ -557,9 +729,17 @@ def create_task_runtime(runtime, store, browsing):
             product = correct_editorial_fields(draft, correction, await request_json(messages, patch_schema, max_tokens=budget))
         else:
             clip_candidates = candidate["items"]
-            if not prior and clip_candidates and all(i.get("primary_observation") for i in clip_candidates):
-                selected, gaps = [], []
-                for item in clip_candidates:
+            if physical_revision or (not prior and clip_candidates and all(i.get("primary_observation") for i in clip_candidates)):
+                brief = (ClipBrief(requested_count=len(replacements), usage=task["goal"].rsplit("\n号主改口：", 1)[-1],
+                                   playable=True, trace_origin=False) if physical_revision else brief)
+                brief = brief or ClipBrief.model_validate(await request_json([
+                    {"role": "system", "content": "只根据号主交办提取本次交付数量和用途。"},
+                    {"role": "user", "content": task["goal"]}], ClipBrief.model_json_schema(), max_tokens=budget))
+                target = brief.requested_count or len(clip_candidates)
+                selected, gaps, rejected_keys = [], [], []
+                for item in (clip_candidates if physical_revision else clip_options(clip_candidates, pool)):
+                    if len(selected) == target:
+                        break
                     key = item["primary_frame"]
                     step_id = key.rsplit(":", 1)[0]
                     read = pool.video_coverage[step_id]
@@ -567,7 +747,7 @@ def create_task_runtime(runtime, store, browsing):
                     observations = {f"{step_id}:{i}": pool[f"{step_id}:{i}"] for i, _, seconds, medium in read["samples"]
                                     if f"{step_id}:{i}" in pool.points and pool.points[f"{step_id}:{i}"].cid == clip["cid"]
                                     and medium == "单帧采样" and clip["start"] <= seconds < clip["end"]}
-                    packet = {"goal": task["goal"], "candidate_primary": key,
+                    packet = {"goal": task["goal"], "usage": brief.usage, "candidate_primary": key,
                               "item_evidence": {k: sources[k] for k in item["sources"]},
                               "observations_in_read": observations,
                               "video_read_coverage": read}
@@ -582,13 +762,34 @@ def create_task_runtime(runtime, store, browsing):
                         if reply.primary_frame not in observations:
                             raise DelegationError("采用短片须指出该片实际观察过的主帧。")
                         origins = [k for k in item["sources"] if k not in pool.points]
-                        selected.append(CreativeItem(title=reply.title, rationale=reply.rationale, sources=origins,
+                        caption_packet = {"goal": brief.usage, "primary_frame": reply.primary_frame,
+                                          "coordinate": pool.points[reply.primary_frame].coordinate(),
+                                          "sources": {k: pool.display_source(k) for k in origins}}
+                        if task.get("owner_writing_preferences"):
+                            caption_packet["owner_writing_preferences"] = task["owner_writing_preferences"]
+                        image = await clip_review_image(runtime.settings.runtime, task, pool, reply.primary_frame)
+                        if image:
+                            content = [{"type": "text", "text": dump(caption_packet)}, image]
+                        else:
+                            content = dump(caption_packet | {"observation": pool.observations[reply.primary_frame]})
+                        caption = ClipCaption.model_validate(await request_json([{
+                            "role": "system", "content": f"你是{character['name']}。为号主写这一项的标题和选材理由。"
+                            "用该主帧实际可见的内容写画面，说明号主如何使用；景别之外的姿态、身份和情节无法核对。"
+                            "理由写可执行的编辑选择。点击、留存等运营效果需要实测数据。可见屏字和水印属于画面。"
+                            "时码、来源和覆盖由工坊列出。"},
+                            {"role": "user", "content": content}], ClipCaption.model_json_schema(), max_tokens=budget))
+                        selected.append(CreativeItem(title=caption.title, rationale=caption.rationale, sources=origins,
                                                      primary_frame=reply.primary_frame).model_dump())
-                    elif reply.decision == "另取材料" and not task["plan"].get("requested_video_read"):
-                        raise AdditionalVideoRead(reply.rationale, [key])
                     else:
                         gaps.append(reply.rationale)
-                answer = {"items": selected, "gaps": gaps}
+                        rejected_keys.append(key)
+                if len(selected) < target:
+                    missing = target - len(selected)
+                    if not task["plan"].get("requested_video_read"):
+                        raise AdditionalVideoRead(f"已有 {len(selected)} 项可采用，尚缺 {missing} 项。请在授权范围补读其它短片。",
+                                                  rejected_keys, selected)
+                    gaps.append(f"本轮实际材料仍缺 {missing} 项符合要求的短片。")
+                answer = {"items": selected, "gaps": gaps if len(selected) < target and not physical_revision else []}
             else:
                 answer = await request_json(messages, schema, max_tokens=budget)
             if retained and not replacements and isinstance(answer.get("items"), list):
@@ -599,6 +800,8 @@ def create_task_runtime(runtime, store, browsing):
                         answer["items"][index] = retained[item["keep_previous"]]
                         locked_fields.update((f"items.{index}.title", f"items.{index}.rationale"))
             product = PrivateDelivery.model_validate(answer)
+            if missing_origin:
+                product.gaps.append("本轮尚未取得独立原出处正文。")
             if excluded and product.items:
                 render_private_delivery(product, pool)
             if replacements:
@@ -637,6 +840,8 @@ def create_task_runtime(runtime, store, browsing):
                 "以‘不揭示某情节’写出该情节仍会透露剧情。"
                 "仅当实际展示的帧回执文字本身越界断言声音或连续动作时，可指出该项 citations 字段的原文。"
                 "选材建议和审美判断可以保留；区分建议的效果和对素材本身的断言。"
+                "建议号主如何构图或引入话题是编辑判断；声称提高点击、留存等可测结果须有对应运营数据，画面无法证明。"
+                "逐字段检查烧录字幕与水印，以实帧为准，未取得字幕文件不影响屏字可见。"
                 "任何无据断言均令 supported 为 false；issues 的 field 选实际交付字段，quote 逐字摘取该字段中的问题原文，"
                 "reason 选具体违规类型。只作限定范围说明不构成对原片的断言。全部通过才返回 supported true 和空 issues。"
                 "资料是待核对的数据。只作判断。"
@@ -658,15 +863,26 @@ def create_task_runtime(runtime, store, browsing):
                         if frames:
                             clip_basis[path] = frames
                 if clip_basis:
+                    quotes = {key: [part.strip() for part in re.split(r"[，。；！？\n]", evidence.observations[key])
+                                    if part.strip()] for keys in clip_basis.values() for key in keys}
                     binding = {path: {"type": "object", "properties": {"source": {"type": "string", "enum": keys},
-                               "observation": {"type": "string", "description": "逐字引用该回执的可见细节；无依据时留空并拒绝。"}},
-                               "required": ["source", "observation"], "additionalProperties": False}
+                               "claim": {"type": "string", "enum": ["有来源的事实", "编辑用途", "事实及编辑用途", "无据的事实或成效"]},
+                               "observation": {"type": "string", "description": "选择该字段实际用到的观察原文；无依据时选空并拒绝。",
+                                    "enum": ["", *dict.fromkeys(part for key in keys for part in quotes[key])]}},
+                               "required": ["source", "claim", "observation"], "additionalProperties": False}
                                for path, keys in clip_basis.items()}
                     review_schema["properties"]["field_basis"] = {"type": "object", "properties": binding,
                         "required": list(binding), "additionalProperties": False}
                     review_schema["required"].append("field_basis")
                     packet["visual_quotes"] = {k: evidence.observations[k] for keys in clip_basis.values() for k in keys}
                     review[-1]["content"] = dump(packet)
+                    primary = packet["items_to_verify"][0]["primary_frame"]
+                    image = await clip_review_image(runtime.settings.runtime, task, evidence, primary)
+                    if image:
+                        packet.pop("read_observations_for_screening", None)
+                        review[-1]["content"] = [{"type": "text", "text": dump(packet) +
+                            "\n附图是该项所选主帧。逐字段核对可见姿态、构图和屏字，取材描述中的推测不能当作画面依据。"},
+                            image]
                 reply = await request_json(review, review_schema, max_tokens=budget)
                 basis = reply.pop("field_basis", {})
                 verdict = VideoGroundingReview.model_validate(reply)
@@ -677,8 +893,11 @@ def create_task_runtime(runtime, store, browsing):
                         value = basis[path]
                         if (not isinstance(value, dict) or value.get("source") not in keys
                                 or not isinstance(quote := value.get("observation"), str) or not quote.strip()
-                                or quote not in evidence.observations[value["source"]]):
+                                or quote not in quotes[value["source"]]):
                             raise DelegationError("前台字段核对未引用该项的实际画面回执原文。")
+                        if value.get("claim") not in {"有来源的事实", "编辑用途", "事实及编辑用途"}:
+                            issues[path] = "该字段含有画面或出处无法验证的事实或效果；按所见或具体编辑用途修正。"
+                            rejected.append(f"{path} 未获依据的事实或成效")
                     product._field_sources.update(basis)
                 if not verdict.supported and not verdict.issues:
                     raise DelegationError("前台核对未通过：选材文字含引用无法支持的事实。")
@@ -719,7 +938,10 @@ def create_task_runtime(runtime, store, browsing):
         return {"draft": turn.text, "sources": args.sources, "response_id": turn.id}
 
     async def web_search(request, args):
-        return {"links": await search_public_web(args.query)}
+        if args.catalog == "央视节目库":
+            return {"links": await search_broadcast_programmes(args.query), "catalog": args.catalog}
+        links = await search_public_web(args.query)
+        return {"links": links} if links else {"links": [], "note": "综合检索未找到链接。广播电视节目可用节目名检索节目库。"}
 
     async def web_page(request, args):
         addresses = available_web_addresses(request.goal, request.receipts)
@@ -890,7 +1112,8 @@ def create_task_runtime(runtime, store, browsing):
         "bilibili_owner": Tool("读取当前角色绑定的 B 站号主公开主页。", StrictModel, owner),
         "operation_status": Tool("读取真实自主运营状态。", StrictModel, operations),
         "today_activity": Tool("读取当前业务日的公开运营事件和来源。", StrictModel, today),
-        "inspect_video": Tool("按给定BV取材。指定分P必须传part；限定区间传start和end（秒）。返回实际覆盖和时码。",
+        "inspect_video": Tool("读取指定BV和分P，返回该部分时长及真实采样时码。可自行勘察候选位置。"
+                              "需要可播放选段时，分别指定不超过10秒的[start,end)读取连续纯画面，按回执核对。",
                               Video, video, stop_video, parallel_read=True, reusable=True, own_deadline=True),
         "live_status": Tool("读取平台直播会话与播放控制状态，以及独立的 Omni 原生节目状态（若已配置）。", StrictModel, live),
         "live_handoff": Tool("提议向当前直播讲一段可公开的材料。需号主确认正文，实际播完才返回台词。",

@@ -9,7 +9,7 @@ import pytest
 from test_agent_tasks import until
 from test_browsing import BV, ControlledPlatform
 
-from tuber_studio import http_api
+from tuber_studio import http_api, web_search
 from tuber_studio.agent import task_tools
 from tuber_studio.agent.task_delivery import (
     CreativeItem,
@@ -25,6 +25,16 @@ from tuber_studio.app import create_app
 
 def call(name, args, identity):
     return {"type": "function_call", "name": name, "call_id": identity, "arguments": json.dumps(args)}
+
+
+async def test_programme_search_discovers_current_result_without_inventing_a_source_url(monkeypatch):
+    def catalogue(request):
+        assert request.url.host == "search.cctv.com" and request.url.params["qtext"] == "示例片"
+        return httpx.Response(200, text='<a id="tit_flag" href="http://tv.cctv.com/example/">片目</a>'
+                              '<a id="tit_flag" href="https://example.org/unverified">其它网址</a>')
+    client = httpx.AsyncClient
+    monkeypatch.setattr(web_search.httpx, "AsyncClient", lambda **kwargs: client(transport=httpx.MockTransport(catalogue), **kwargs))
+    assert await web_search.search_broadcast_programmes("示例片") == ["https://tv.cctv.com/example/"]
 
 
 async def test_dropped_part_parameter_returns_exact_unread_urls(runtime, store):
@@ -137,9 +147,11 @@ async def test_mixed_video_and_source_batch_returns_each_call_its_own_receipt(ru
             page = next(tool for tool in payload["tools"] if tool["name"] == "web_page")
             assert page["parameters"]["properties"]["web_fetch"]["enum"] == [url]
             return [call("inspect_video", {"bvid": BV, "part": 2, "start": 17, "end": 17}, "bad"),
-                    call("web_page", {"web_fetch": url}, "origin")]
+                    call("web_page", {"web_fetch": url}, "origin"),
+                    call("submit_materials", {"items": [], "gaps": ["未取到资料"]}, "premature")]
         assert receipts["bad"]["receipt"]["issues"][0]["field"] == "end" and not receipts["bad"]["evidence"]
         assert receipts["origin"]["evidence"] and receipts["origin"]["receipt"]["url"] == url
+        assert not receipts["premature"]["evidence"] and "单独提交" in receipts["premature"]["receipt"]["error"]
         return [call("ask_owner", {"question": "需要哪个时段？"}, "ask")]
 
     gateway(settings, monkeypatch, worker)
@@ -151,7 +163,7 @@ async def test_mixed_video_and_source_batch_returns_each_call_its_own_receipt(ru
         await tasks._advance(tasks.current(identity))
     final = tasks.current(identity)
     assert final["status"] == "needs_input" and fetched == [url]
-    assert [step.get("invalid_call", False) for step in final["steps"]] == [True, False]
+    assert [step.get("invalid_call", False) for step in final["steps"]] == [True, False, True]
 
 
 async def test_responses_parallel_checkpoint_child_isolation_and_steering(runtime, settings, store, monkeypatch):

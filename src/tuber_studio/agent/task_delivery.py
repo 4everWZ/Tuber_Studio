@@ -80,9 +80,13 @@ class DelegationError(ValueError):
 class AdditionalVideoRead(DelegationError):
     """The requested revision requires a new, authorized reading before editing."""
 
-    def __init__(self, message, exclude=()):
+    def __init__(self, message, exclude=(), retained=(), *, sources=False, video=True, windows=()):
         super().__init__(message)
         self.exclude = list(exclude)
+        self.retained = list(retained)
+        self.sources = sources
+        self.video = video
+        self.windows = list(windows)
 
 
 class EditorialCorrection(DelegationError):
@@ -228,7 +232,7 @@ class EvidenceIndex(dict):
         for key in previous:
             point = original.points[key]
             bounds = original.video_coverage[key.rsplit(":", 1)[0]].get("explicit_interval")
-            if bounds:
+            if bounds and bounds[1] - bounds[0] <= 10:
                 intervals.append((point.bvid, point.part, point.cid, *bounds))
         subset = EvidenceIndex()
         for key, text in self.items():
