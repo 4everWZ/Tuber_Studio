@@ -21,7 +21,7 @@
 | 领域动作与收件人 | 号主可指定动态草稿，在评论或私信工作台勾选草稿后可直接交给大肥鱼。每条审批绑定实际对象、正文或配图，断线后按原提交查领域回执。 [限定回复](../guides/selected-replies.md) · [动态规范](../specs/operations/dynamic-operations.md) | 真实模型对运营指令的选择另行验收。 |
 | 常驻调度与跨端 | 支持一次预约及[周期跟进](../../src/tuber_studio/agent/goal_followups.py)：按本地日／周时间重读授权来源，错过多期合并，夏令时缺失时刻跳过、重复时刻只取第一次。长期目标可独立跟踪指定 UID 的来信和指定公开评论楼的首次入库事件，去重后进入私有提醒。关闭目标或执行 epoch 变化后停用。 [事件跟踪](../guides/goal-event-tracking.md) | 扩展其他受限领域来源、按资源调度与主动调研；跟踪不执行外部动作。共享记忆继续保留原始来源。 |
 | 连接器、文件与委派 | 私有附件可独立交办并按明确授权执行受限计算。成果可以编辑、下载。公开 HTTPS 文档可在独立 Chromium 阅读页交办、接管、交回和终止。 [浏览器指南](../guides/private-browser.md) · [隔离验收](../../evaluations/results/private-browser-20261119.md) | 扩展连接器、文件格式与隔离工作区；不得授予工作站 Shell。 |
-| 私有通话与 Avatar | 两套原画绑定均已在隔离浏览器通话中播放。号主可以确认最终转写、更正指定偏好。 [原画绑定](../../evaluations/results/original-avatar-rigs-20261119.md) · [通话撤回](../../evaluations/results/private-rig-memory-20261119.md) | 两套分别按工作站实呈帧率、音画偏差和共驻负载准入。 |
+| 私有通话与 Avatar | 常规与 Q 版原画均能在工坊通话。已修复长静默后的弱音脉冲误张口，浏览器实际收听并在挂断时结算已播时长。号主可以确认最终转写、更正指定偏好。 [原画与真实语音](../../evaluations/results/windows-local-avatar-placement-20261119.md) · [通话撤回](../../evaluations/results/private-rig-memory-20261119.md) | 工作站到桌面的 20 分钟混跑中，常规与 Q 的实呈分别为 24.99、24.30 fps，峰值 RTP 偏差 460、4880 ms。正式双形象选择仍待两套在目标网络达到 160 ms 门槛。 [逐层发送、接收与播放实测](../../evaluations/results/inochi-whep-master-rigs-20261119.md) |
 | 直播与游戏 | 演出页播完才写入台词，跳过保持取消。星露谷在隔离存档完成播种、状态读回与人工接管。 [播放回执](../../evaluations/results/live-handoff-ended-20261119.md) · [星露谷实机](../../evaluations/results/stardew-device-20261119.md) | 植物大战僵尸实机需要可启动的授权安装。直播平台开播及持续负载单独验收。 |
 
 | 顺序 | 实施入口 | 通过条件 |
