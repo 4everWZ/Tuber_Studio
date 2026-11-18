@@ -59,12 +59,15 @@ async def device_call(device, port, login, method, path, data=None):
     return json.loads(result.stdout)
 
 
-async def run(device, live, voice_wav, gateway_checkout=None):
+async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False):
     from evaluations.omni_chat_loop import connection
     from contextlib import AsyncExitStack
 
     token = secrets.token_urlsafe(32)
     config = connection(os.environ) if live else None
+    if voice_only and not config:
+        raise ValueError("Independent voice replay requires an ordinary application binding")
+    first_note = AUTO if voice_only else CONFIRMED
     report = {"platform_writes": 0, "source": "owner-supplied AGENTS.md / Global Working Rules"}
     output = Path(tempfile.mkdtemp(dir=ROOT / "tmp", prefix="owner-memory-evidence-")) / "result.json"
     print("Evidence:", output.relative_to(ROOT), flush=True)
@@ -111,18 +114,18 @@ async def run(device, live, voice_wav, gateway_checkout=None):
                     assert (await context.request.post(local+"/api/auth", data={"token":token})).ok
                     page = await context.new_page()
                     await page.goto(local + "/#personalization")
-                    await page.locator("#owner-memory-statement").fill(CONFIRMED)
+                    await page.locator("#owner-memory-statement").fill(first_note)
                     async def confirm(dialog):
-                        assert CONFIRMED in dialog.message
+                        assert first_note in dialog.message
                         await dialog.accept()
                     page.once("dialog", confirm)
                     await page.get_by_role("button", name="保存私有记忆").click()
                     await page.locator("#owner-memory-save").get_by_text("已保存").wait_for()
                     await page.close()
                     record("stage", "confirmed_in_chromium")
-                    remote = await device_call(device, port, token, "POST", SEARCH, {"query": CONFIRMED})
+                    remote = await device_call(device, port, token, "POST", SEARCH, {"query": first_note})
                     row, = remote["value"]["items"]
-                    assert row["quote"] == CONFIRMED and row["source_key"].startswith("settings:")
+                    assert row["quote"] == first_note and row["source_key"].startswith("settings:")
                     report.update(confirmation={"browser":browser.version, "quote":row["quote"], "revision":row["revision"]},
                                   independent_device={"architecture":remote["arch"], "fresh_authenticated_session":True,
                                                       "read_after_page_close":True})
@@ -151,16 +154,26 @@ async def run(device, live, voice_wav, gateway_checkout=None):
                                 assert updated["voice_origin"]["owner_edited"] == result["preview_edited_by_authorized_qa"]
                             record("voice_cross_device_revision", updated)
                             return updated
-                    if config:
+                    if voice_only:
+                        record("stage", "confirming_selected_voice")
+                        updated = await correct_voice(row)
+                        if not updated:
+                            raise RuntimeError("Independent voice correction did not complete")
+                        from evaluations.owner_memory_video import forget_current
+                        record("forgotten_revisions", await forget_current(client, port, device, token, [updated]))
+                    elif config:
                         from evaluations.owner_memory_video import compare
                         report["video"] = await compare(client, runtime, port, device, token, row, record, correct_voice)
                     else:
                         report["final_user_transcript"] = {"status":"unverified", "reason":"ordinary_service_binding_missing"}
                         report["video"] = {"status":"unverified", "reason":"ordinary_service_binding_missing" if live else "device_only"}
                         await device_call(device, port, token, "DELETE", f"/api/daily-memory/organized/{row['id']}?expected_revision={row['revision']}")
-                    assert not (await client.post(SEARCH, json={"query":CONFIRMED})).json()["items"]
+                    assert not (await client.post(SEARCH, json={"query":first_note})).json()["items"]
                     report["independent_device"]["forget_visible_on_original_client"] = True
                     record("stage", "closing_clients")
+            except Exception as error:
+                record("failed_at", {"stage":report["stage"], "exception":type(error).__name__})
+                raise
             finally:
                 report["teardown"] = {"remaining_http_tasks":len(server.server_state.tasks),
                                       "open_connections":len(server.server_state.connections)}
@@ -174,6 +187,8 @@ async def run(device, live, voice_wav, gateway_checkout=None):
                     cleanup.push_async_callback(runtime.llm.close)
                     cleanup.push_async_callback(runtime.memory_organizer.close)
                 report["teardown"]["server_exited"] = serving.done()
+                if "failed_at" in report:
+                    record("stage", "failed")
     record("stage", "finished")
     return report
 
@@ -182,7 +197,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", required=True)
     parser.add_argument("--live", action="store_true")
+    parser.add_argument("--voice-only", action="store_true", help="confirm the authorized speech independently of video research")
     parser.add_argument("--gateway-checkout", type=Path, help="use the independent gateway checkout for voice only")
     parser.add_argument("--voice-wav", type=Path, help="speech fixture authorized for private Realtime input")
     args = parser.parse_args()
-    print(json.dumps(asyncio.run(run(args.device, args.live, args.voice_wav, args.gateway_checkout)), ensure_ascii=False, indent=2))
+    print(json.dumps(asyncio.run(run(args.device, args.live, args.voice_wav, args.gateway_checkout, args.voice_only)), ensure_ascii=False, indent=2))

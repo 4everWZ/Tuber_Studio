@@ -52,7 +52,14 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
                 await asyncio.sleep(.5)
         record(phase + "_transport", {"status":response["status"], "tools":[s["tool"] for s in response["steps"]],
                "video_findings":[len(s.get("result",{}).get("findings",[])) for s in response["steps"] if s["tool"]=="inspect_video"]})
-        assert response["status"] == "completed" and response["artifact"]
+        if response["status"] != "completed" or not response["artifact"]:
+            current = tasks.current(task_id)
+            record(phase + "_diagnostic", {"status":response["status"], "message":response.get("message",current["message"]),
+                   "steps":[{"tool":s["tool"], "arguments":s.get("arguments"),
+                             "result":{k:v for k,v in (s.get("result") or {}).items()
+                                       if k in {"status","error","gaps","viewing","selection","findings","clip_error"}}}
+                            for s in current["steps"]]})
+            raise RuntimeError(f"Private video {phase} ended in {response['status']}; see task diagnostic")
         assert any(s["tool"] == "inspect_video" and s["result"].get("findings") for s in response["steps"])
         other = (await device_call(device, port, login, "GET", "/api/agent/tasks/"+task_id))["value"]
         assert other["artifact"]["body"] == response["artifact"]["body"]
