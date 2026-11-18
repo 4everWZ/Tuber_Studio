@@ -1221,7 +1221,7 @@ class Comments:
             def admit(ticket):
                 self._reserve_daily_video_reply(ticket, row, account_id)
                 if submission:
-                    submission.admit(ticket, actual_binding, {"text": row["text"]})
+                    submission.admit(ticket, actual_binding, {"text": row["text"]}, attempt)
 
             def before_send():
                 nonlocal token

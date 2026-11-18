@@ -47,8 +47,10 @@ class ReplyOperations:
             CREATE TABLE IF NOT EXISTS agent_reply_selections(
                 id TEXT PRIMARY KEY, scope TEXT NOT NULL, policy_epoch INTEGER NOT NULL, items TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS agent_reply_attempts(
-                step_id TEXT PRIMARY KEY, approval_hash TEXT NOT NULL, token TEXT UNIQUE NOT NULL);
+                step_id TEXT PRIMARY KEY, approval_hash TEXT NOT NULL, token TEXT UNIQUE NOT NULL, domain_attempt_id INTEGER);
         """)
+        if "domain_attempt_id" not in {row["name"] for row in self.store.all("PRAGMA table_info(agent_reply_attempts)")}:
+            self.store.execute("ALTER TABLE agent_reply_attempts ADD COLUMN domain_attempt_id INTEGER")
 
     def snapshot(self, target, scope, *, publishing=False):
         channel, identity = target["channel"], target["draft_id"]
@@ -72,6 +74,7 @@ class ReplyOperations:
                 raise ValueError("所选来源与原视频评论不符")
             binding = service._publication_binding(row, scope[0], character)
             sources = [row["platform_comment_id"]]
+            source_hash = binding["source"]["content_sha256"]
             destination = f"公开评论 {row['video_id']} 楼 {row['thread_id']}"
             payload = {"text": row["text"]}
         else:
@@ -94,9 +97,10 @@ class ReplyOperations:
             if len(rows) != len(ids):
                 raise ValueError("所选来信不属于同一账号、角色和收件人")
             sources = [item["message_id"] for item in rows]
+            source_hash = content_hash(rows)
             destination = "私信"
             payload = service._outgoing(row, character)
-        return {**target, "binding": binding, "payload": payload, "source_keys": sources,
+        return {**target, "binding": binding, "payload": payload, "source_keys": sources, "source_hash": source_hash,
                 "audit_hash": content_hash(row["answer_check"]), "status": row["status"], "revision": row["updated_at"],
                 "target": f"账号 {scope[0]} · {character['name']} v{scope[2]} · {destination} → UID {recipient}"
                           f" · 来源 {', '.join(sources)}",
@@ -160,19 +164,53 @@ class ReplyOperations:
             return pending("原审批与发送令牌不匹配")
         if not self.tasks.identity.grant_current(approval["scope"]):
             return pending("原账号或角色授权已变化")
-        receipt = attempt["resolution_receipt"] or attempt["receipt"]
-        table = "drafts" if approval["channel"] == "comments" else "dm_drafts"
+        is_comment = approval["channel"] == "comments"
+        attempts = "publish_attempts" if is_comment else "dm_attempts"
         identity = approval["draft_id"]
-        draft = self.store.one(f"SELECT status,receipt FROM {table} WHERE id=?", (identity,))
-        if (attempt["resolved_status"] == "published" and receipt and draft and draft["status"] == "published"
-                and receipt == json.loads(draft["receipt"] or "null")):
-            return {"status": "published", "write_token": token, "receipt": receipt, "target": approval["target"]}
+
+        def original_draft():
+            row = (service._draft_source(identity) if is_comment else
+                   self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,)))
+            if (not row or [row[k] for k in ("account_id", "character_id", "character_version")] != approval["scope"][:3]
+                    or content_hash(row["answer_check"]) != approval["audit_hash"]):
+                return None
+            account = approval["scope"][0]
+            character = approval["binding"]["character"]
+            if is_comment:
+                binding = service._publication_binding(row, account, character)
+            elif row["source_kind"] == "message":
+                source = service._source("message", row["source_id"], character)
+                binding = service._publication_binding(row, source, account, character)
+            else:
+                return None
+            if (binding != approval["binding"] or "text" in approval["payload"] and row["text"] != approval["payload"]["text"]
+                    or row.get("meme_id") != approval["payload"].get("meme_id")):
+                return None
+            return row
+
+        draft = original_draft()
+        domain = self.store.one(f"SELECT id,status,receipt FROM {attempts} WHERE draft_id=? ORDER BY id DESC LIMIT 1",
+                                (identity,))
+        if not draft or not domain or domain["id"] != link["domain_attempt_id"]:
+            return pending("原草稿与领域发送记录无法唯一匹配")
+        receipt = json.loads(draft["receipt"] or "null")
+        receipt_id = "rpid" if is_comment else "msg_key"
+        if (draft["status"] == domain["status"] == "published" and receipt and receipt == json.loads(domain["receipt"] or "null")
+                and receipt.get(receipt_id)):
+            if attempt["resolved_status"] == "uncertain" and read:
+                attempt = service.operations.reconcile_attempt(token, account_id=approval["scope"][0],
+                                                              binding=approval["binding"], receipt=receipt)
+            if attempt["resolved_status"] == "published" and (attempt["resolution_receipt"] or attempt["receipt"]) == receipt:
+                return {"status": "published", "write_token": token, "receipt": receipt, "target": approval["target"],
+                        "message": f"{approval['target']} · 平台回执 {receipt[receipt_id]}"}
         if attempt["resolved_status"] in {"rejected", "cancelled"}:
             return {"status": attempt["resolved_status"], "error": "原发送未被平台接受", "write_token": token}
-        if read and draft and draft["status"] == "publish_uncertain":
+        if read and draft["status"] == "publish_uncertain":
             def guard(row, original):
                 if (not self.tasks.identity.grant_current(approval["scope"]) or not original or original["token"] != token
-                        or row["binding"] != approval["binding"] or row["feedback"]["sent_payload"] != approval["payload"]):
+                        or row["binding"] != approval["binding"] or row["feedback"]["sent_payload"] != approval["payload"]
+                        or not original_draft() or self.store.one(
+                            f"SELECT MAX(id) AS id FROM {attempts} WHERE draft_id=?", (identity,))["id"] != domain["id"]):
                     raise ValueError("待核对记录与原提交不符")
 
             feedback = FeedbackPublication(service.runtime, self.store, service.operations)
@@ -200,7 +238,7 @@ class ReplyOperations:
             if approval["channel"] == "comments":
                 result = await self.comments.publish(approval["draft_id"], submission=submission)
                 if result.get("status") == "operator_replied":
-                    return {"status": "operator_replied", "target": approval["target"]}
+                    return {"status": "operator_replied", "target": approval["target"], "message": "已核实号主回复，跳过本条。"}
             else:
                 await self.messages.send(approval["draft_id"], submission=submission)
         except ValueError as error:
@@ -236,12 +274,14 @@ class ReviewedReply:
                if not publishing or key not in {"status", "revision"}):
             raise ValueError("审批后的目标、正文或来源已变化")
 
-    def admit(self, token, binding, payload):
+    def admit(self, token, binding, payload, domain_attempt_id):
         self.check(publishing=True)
         if binding != self.approval["binding"] or payload != self.approval["payload"]:
             raise ValueError("实际发送目标或正文与审批不符")
-        self.operations.store.db.execute("INSERT INTO agent_reply_attempts VALUES(?,?,?)",
-                                         (self.step_id, content_hash(self.approval), token))
+        self.operations.store.db.execute(
+            "INSERT INTO agent_reply_attempts(step_id,approval_hash,token,domain_attempt_id) VALUES(?,?,?,?)",
+            (self.step_id, content_hash(self.approval), token, domain_attempt_id),
+        )
 
 
 def register_reply_operations(app, tasks, comments, messages, require_admin):

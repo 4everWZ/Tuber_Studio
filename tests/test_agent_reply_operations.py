@@ -8,6 +8,7 @@ import pytest
 
 from tuber_studio.agent.reply_operations import SelectedReply
 from tuber_studio.app import create_app
+from tuber_studio.operations_control import OperationsControl
 from tuber_studio.platforms.bilibili import PublishUncertain
 from tuber_studio.store import dump
 
@@ -49,6 +50,9 @@ class Transport:
 @pytest.fixture
 async def studio(settings, monkeypatch):
     monkeypatch.setenv("TUBER_ADMIN_TOKEN", "test-owner")
+    async def deny_network(*args, **kwargs):
+        pytest.fail("限定回复测试只能使用 ASGI 和注入的平台传输")
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", deny_network)
     transport = Transport()
     app = create_app(settings, adapter=transport, message_adapter=transport)
     runtime, store = app.state.runtime, app.state.store
@@ -71,7 +75,7 @@ def incoming(s, key, uid="123"):
                               "display_name": "观众", "text": f"来信 {key}", "timestamp": time.time()})[0]
 
 
-def prepare(s, channel):
+def prepare(s, channel, *, key=10, uid="123"):
     if channel == "comments":
         s.comments.import_items("BV1d8pU6xEZX", [{"comment_id": "1234", "platform_user_id": "123", "content": "原评论"}])
         source = s.store.one("SELECT id FROM comments")["id"]
@@ -80,7 +84,7 @@ def prepare(s, channel):
             "VALUES(?,'pending_review','已核对的回复',?,?,'900',1)", (source, s.scope["character"], s.scope["version"]),
         ).lastrowid
     else:
-        source = incoming(s, 10)
+        source = incoming(s, key, uid)
         identity = s.messages.enqueue("message", source, schedule=False)
         row = s.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         window = s.messages._reply_window(row, s.store.one("SELECT * FROM dm_inbox WHERE id=?", (source,)))
@@ -209,3 +213,63 @@ async def test_reconcile_stopped_step_uses_only_original_attempt(studio):
     stopped = await s.tasks.control(task_id, 1, "cancel")
     assert stopped["steps"][0]["result"]["receipt"] == {"msg_key": "901"}
     assert len(s.transport.sent) == len(s.transport.reads) == 1
+
+
+@pytest.mark.parametrize("channel", ["comments", "messages"])
+async def test_restart_after_domain_receipt_before_ledger_finish(studio, monkeypatch, channel):
+    s = studio
+    task_id, _ = await approve(s, prepare(s, channel))
+    control = s.comments.operations
+    def interrupt(token, status, **kwargs):
+        assert status == "published"
+        raise asyncio.CancelledError
+    with monkeypatch.context() as patch:
+        patch.setattr(control, "finish", interrupt)
+        task = s.tasks.current(task_id)
+        with pytest.raises(asyncio.CancelledError):
+            await s.tasks._invoke(task, task["steps"][0], [], task["goal"])
+    assert s.store.one("SELECT status FROM account_writes")["status"] == "sending"
+    OperationsControl(s.store)
+    assert s.store.one("SELECT status FROM account_writes")["status"] == "uncertain"
+    result = (await advance(s, task_id))["result"]
+    assert result["status"] == "published" and control.get_attempt(result["write_token"])["resolved_status"] == "published"
+    assert len(s.transport.sent) == 1 and not s.transport.reads
+
+
+async def test_foreign_domain_attempt_cannot_be_reconciled(studio):
+    s = studio
+    item = prepare(s, "messages")
+    task_id, _ = await approve(s, item)
+    s.transport.disconnect = s.transport.visible = True
+    await advance(s, task_id)
+    s.store.execute("INSERT INTO dm_attempts(draft_id,started_at,status,platform_user_id) VALUES(?,?,'uncertain','123')",
+                    (item["draft_id"], time.time()))
+    step = await advance(s, task_id)
+    assert "checkpoint" in step and not s.transport.reads and len(s.transport.sent) == 1
+
+
+async def test_separate_conversations_can_submit_while_selected_inbox_waits(studio, monkeypatch):
+    s = studio
+    selected = prepare(s, "messages")
+    task_id, _ = await approve(s, selected)
+    other = prepare(s, "messages", key=11, uid="222")
+    s.messages.review(other["draft_id"], "approve")
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def send(uid, text, *, authorized):
+        assert authorized()
+        if uid == "123":
+            entered.set()
+            await release.wait()
+        s.transport.sent.append((uid, text))
+        return {"msg_key": uid}
+    monkeypatch.setattr(s.transport, "send", send)
+    async with asyncio.timeout(3), asyncio.TaskGroup() as group:
+        first = group.create_task(advance(s, task_id))
+        await entered.wait()
+        try:
+            assert (await s.messages.send(other["draft_id"]))["status"] == "published"
+            assert not first.done()
+        finally:
+            release.set()
+    assert first.result()["result"]["receipt"] == {"msg_key": "123"}
+    assert [uid for uid, _ in s.transport.sent] == ["222", "123"]

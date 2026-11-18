@@ -1856,7 +1856,8 @@ class DirectMessages:
         destination = self.store.one("SELECT account_id,platform,platform_user_id FROM dm_drafts WHERE id=?", (identity,))
         if not destination:
             raise ValueError("私信草稿不存在")
-        async with self.runtime.conversation_turn(("dm_send", *destination.values())):
+        async with self.runtime.conversation_turn(("dm_send", destination["account_id"],
+                                                   destination["platform"], destination["platform_user_id"])):
             draft = self.store.one("SELECT account_id FROM dm_drafts WHERE id=?", (identity,))
             if draft:
                 self.operations.assert_review_writable(
@@ -2054,7 +2055,8 @@ class DirectMessages:
                             binding=actual_binding,
                             content_hash=content_hash(payload),
                             revision_ticket=revision_ticket,
-                            admission_hook=(lambda ticket: submission.admit(ticket, actual_binding, payload)) if submission else None,
+                            admission_hook=(lambda ticket: submission.admit(ticket, actual_binding, payload, attempt))
+                            if submission else None,
                         )
                     return True
 
