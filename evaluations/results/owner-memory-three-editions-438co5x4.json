@@ -1,0 +1,358 @@
+{
+  "run": "438co5x4",
+  "confirmation": {
+    "browser": "156.0.8078.4",
+    "quote": "Group related points and separate distinct concerns. Use headings and lists when they improve readability.",
+    "revision": 1
+  },
+  "independent_device": {
+    "architecture": "x86_64",
+    "fresh_authenticated_session": true,
+    "read_after_page_close": true,
+    "forget_visible_on_original_client": true
+  },
+  "material_origin": {
+    "mode": "reused_verified_public_read",
+    "task_id": "06b1ee8d-40f4-4756-8ca0-e91bd68f34bc",
+    "step_id": "840ec0bf-e632-5856-a442-1b7045296a31",
+    "selection": {
+      "bvid": "BV1Hy4y1J7xH",
+      "ranges": [
+        {
+          "part": 2,
+          "start": 11,
+          "end": 14
+        }
+      ]
+    },
+    "cid": "301983263",
+    "clip_frames": 75
+  },
+  "platform_writes": 0,
+  "run_timeout_seconds": 1440,
+  "saved_owner_turn": {
+    "source_key": "turn:c7ca9a52-0ef3-4654-b8a9-d6a04ad36119",
+    "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。"
+  },
+  "forgotten_revisions": {
+    "1": 3
+  },
+  "voice_style_observed": true,
+  "video": {
+    "input": "owner-authorized isolated QA preference",
+    "original": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+    "before_titles": [
+      "画面中央是一个装饰华丽的金色宝座，为什么它如此引人注目？"
+    ],
+    "after_titles": [
+      "大肥鱼的宫廷场景，画面中央是一个装饰华丽的金色宝座"
+    ],
+    "same_frame": true,
+    "semantic_status": "unverified"
+  },
+  "acceptance_passed": false,
+  "teardown": {
+    "remaining_http_tasks": 0,
+    "open_connections": 0,
+    "server_exited": true
+  },
+  "queue_waits": [],
+  "automatic_lookup": [
+    {
+      "id": 1,
+      "revision": 2,
+      "source_key": "turn:c7ca9a52-0ef3-4654-b8a9-d6a04ad36119",
+      "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。"
+    }
+  ],
+  "voice": {
+    "gateway": "local service checkout, deployed ordinary Omni upstream",
+    "protocol": "explicit_user_audio",
+    "speaker": "synthetic Mandarin QA speech",
+    "status": "observed",
+    "explicit_samples": 128000,
+    "final_transcript_events": 0,
+    "bound_final_transcript": "好的，以后直播提纲的标题都用陈述句，以句号结尾。",
+    "owner_confirmed_text": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "preview_edited_by_authorized_qa": true,
+    "correction": {
+      "id": 1,
+      "revision": 3
+    }
+  },
+  "remote_voice": {
+    "id": 1,
+    "revision": 3,
+    "source_key": "confirmed_voice:9a23c6965b729770a1e3c26e61d4781e8740893299139a587d57917011790493",
+    "quote": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "voice_origin": {
+      "machine_text": "好的，以后直播提纲的标题都用陈述句，以句号结尾。",
+      "samples": 128000,
+      "owner_edited": true
+    }
+  },
+  "before": {
+    "body": "**画面中央是一个装饰华丽的金色宝座，为什么它如此引人注目？**\n选材理由：画面依据：画面中央是一个装饰华丽的金色宝座。剪辑安排：用在开场，开场时插入这一镜，作为引入段落的视觉支撑，随后配合第一句介绍语音出现。\n主帧：BV1Hy4y1J7xH · 单帧采样 · 分 P 2 · 13.52 秒 · <https://www.bilibili.com/video/BV1Hy4y1J7xH/?p=2&t=13>\n覆盖：仅核实所列采样时点；连续画面及音轨均未经该画面回执核实。\n\n当轮取材窗口与观测覆盖：\n- 第 1 项 · BV1Hy4y1J7xH P2 · 连续取材入点 11 秒、出点 14 秒（不含），保存 75 个连续原帧。私有短片不含音轨。\n- 第 1 项 · 逐帧检测画面及下方屏字变化；Omni 审读代表帧 11、12.24、13.96 秒，检测到的状态均有代表帧。\n- 第 1 项 · BV1Hy4y1J7xH P2 · 请求抽样范围 [11, 14) 秒。初读取材观察 3 帧，实际时点为 11.44、12.48、13.52 秒。\n- 第 1 项的工具回执：此区间未取得可公开读取的字幕。\n- 第 1 项的工具回执：画面内容按时点抽样描述；未听审原片音轨。",
+    "status": "completed",
+    "citations": [
+      {
+        "id": 1,
+        "revision": 2,
+        "headline": "直播",
+        "note": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+        "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+        "source_key": "turn:c7ca9a52-0ef3-4654-b8a9-d6a04ad36119"
+      }
+    ],
+    "primary_points": [
+      {
+        "part": 2,
+        "cid": "301983263",
+        "seconds": 13.52
+      }
+    ],
+    "independent_device_body_matched": true,
+    "measurement": {
+      "items": [
+        {
+          "title": "画面中央是一个装饰华丽的金色宝座，为什么它如此引人注目？",
+          "ending": "？",
+          "punctuation_matches": true,
+          "expected_form": "问句",
+          "reading": {
+            "form": "问句",
+            "core": "为什么它如此引人注目",
+            "supported": true,
+            "observation": "画面中央是一个装饰华丽的金色宝座",
+            "answer": "因为它是装饰华丽的金色宝座",
+            "core_bound": true,
+            "answer_bound": false,
+            "grounded": true
+          },
+          "form_matches": true,
+          "frame_observations": [
+            "画面中央是一个装饰华丽的金色宝座",
+            "宝座周围摆放着蓝色和白色的石像或装饰物",
+            "一名身穿传统服饰的人物站在宝座右侧",
+            "室内装饰以深色调为主，带有复杂的雕花和图案",
+            "宫廷场景",
+            "皇帝宝座",
+            "古代服饰人物",
+            "很快就创造了16.7%的收视奇迹",
+            "史君说剧 bilibili"
+          ]
+        }
+      ],
+      "passed": true,
+      "requested_frame": true
+    },
+    "format_rules": [
+      {
+        "id": 1,
+        "revision": 2,
+        "source": "turn:c7ca9a52-0ef3-4654-b8a9-d6a04ad36119",
+        "check": {
+          "field": "title",
+          "operation": "ends_with",
+          "value": "？"
+        },
+        "start": 12,
+        "end": 24,
+        "quote": "标题都用问句，以问号结尾"
+      }
+    ],
+    "discarded_format_suggestions": [
+      {
+        "id": 1,
+        "revision": 2,
+        "source": "turn:c7ca9a52-0ef3-4654-b8a9-d6a04ad36119",
+        "suggested": {
+          "field": "title",
+          "operation": "starts_with",
+          "value": "关于"
+        },
+        "reason": "号主原文没有可核对的字段、操作与值跨度"
+      },
+      {
+        "id": 1,
+        "revision": 2,
+        "source": "turn:c7ca9a52-0ef3-4654-b8a9-d6a04ad36119",
+        "suggested": {
+          "field": "rationale",
+          "operation": "contains",
+          "value": "画面"
+        },
+        "reason": "号主原文没有可核对的字段、操作与值跨度"
+      },
+      {
+        "id": 1,
+        "revision": 2,
+        "source": "turn:c7ca9a52-0ef3-4654-b8a9-d6a04ad36119",
+        "suggested": {
+          "field": "gap",
+          "operation": "contains",
+          "value": "无"
+        },
+        "reason": "号主原文没有可核对的字段、操作与值跨度"
+      }
+    ],
+    "submitted_titles": [
+      [
+        "画面中央是一个装饰华丽的金色宝座，为什么它如此引人注目？"
+      ]
+    ],
+    "chosen_candidates": {}
+  },
+  "voice_corrected": {
+    "body": "**画面中央是一个装饰华丽的金色宝座。**\n选材理由：画面依据：画面中央是一个装饰华丽的金色宝座。剪辑安排：用在开场，开场时插入这一镜，作为引入段落的视觉支撑，随后配合第一句介绍语音出现。\n主帧：BV1Hy4y1J7xH · 单帧采样 · 分 P 2 · 13.52 秒 · <https://www.bilibili.com/video/BV1Hy4y1J7xH/?p=2&t=13>\n覆盖：仅核实所列采样时点；连续画面及音轨均未经该画面回执核实。\n\n当轮取材窗口与观测覆盖：\n- 第 1 项 · BV1Hy4y1J7xH P2 · 连续取材入点 11 秒、出点 14 秒（不含），保存 75 个连续原帧。私有短片不含音轨。\n- 第 1 项 · 逐帧检测画面及下方屏字变化；Omni 审读代表帧 11、12.24、13.96 秒，检测到的状态均有代表帧。\n- 第 1 项 · BV1Hy4y1J7xH P2 · 请求抽样范围 [11, 14) 秒。初读取材观察 3 帧，实际时点为 11.44、12.48、13.52 秒。\n- 第 1 项的工具回执：此区间未取得可公开读取的字幕。\n- 第 1 项的工具回执：画面内容按时点抽样描述；未听审原片音轨。",
+    "status": "completed",
+    "citations": [
+      {
+        "id": 1,
+        "revision": 3,
+        "headline": "以后直播提纲的标题都用陈述句，以句号结尾。",
+        "note": "以后直播提纲的标题都用陈述句，以句号结尾。",
+        "quote": "以后直播提纲的标题都用陈述句，以句号结尾。",
+        "source_key": "confirmed_voice:9a23c6965b729770a1e3c26e61d4781e8740893299139a587d57917011790493"
+      }
+    ],
+    "primary_points": [
+      {
+        "part": 2,
+        "cid": "301983263",
+        "seconds": 13.52
+      }
+    ],
+    "independent_device_body_matched": true,
+    "measurement": {
+      "items": [
+        {
+          "title": "画面中央是一个装饰华丽的金色宝座。",
+          "ending": "。",
+          "punctuation_matches": true,
+          "expected_form": "陈述句",
+          "reading": {
+            "form": "陈述句",
+            "core": "画面中央是一个装饰华丽的金色宝座",
+            "supported": true,
+            "observation": "画面中央是一个装饰华丽的金色宝座",
+            "answer": "画面中央是一个装饰华丽的金色宝座",
+            "core_bound": true,
+            "answer_bound": true,
+            "grounded": true
+          },
+          "form_matches": true,
+          "frame_observations": [
+            "画面中央是一个装饰华丽的金色宝座",
+            "宝座周围摆放着蓝色和白色的石像或装饰物",
+            "一名身穿深色古代服饰的人物站在宝座右侧",
+            "背景墙上有复杂的金色浮雕装饰",
+            "宫廷场景",
+            "皇帝宝座",
+            "古代服饰人物",
+            "很快就创造了16.7%的收视奇迹",
+            "史君说剧 bilibili"
+          ]
+        }
+      ],
+      "passed": true,
+      "requested_frame": true
+    },
+    "format_rules": [
+      {
+        "id": 1,
+        "revision": 3,
+        "source": "confirmed_voice:9a23c6965b729770a1e3c26e61d4781e8740893299139a587d57917011790493",
+        "check": {
+          "field": "title",
+          "operation": "ends_with",
+          "value": "。"
+        },
+        "start": 7,
+        "end": 20,
+        "quote": "标题都用陈述句，以句号结尾"
+      }
+    ],
+    "discarded_format_suggestions": [
+      {
+        "id": 1,
+        "revision": 3,
+        "source": "confirmed_voice:9a23c6965b729770a1e3c26e61d4781e8740893299139a587d57917011790493",
+        "suggested": {
+          "field": "title",
+          "operation": "starts_with",
+          "value": "大肥鱼直播片段"
+        },
+        "reason": "号主原文没有可核对的字段、操作与值跨度"
+      }
+    ],
+    "submitted_titles": [
+      [
+        "画面中央是一个装饰华丽的金色宝座"
+      ],
+      [
+        "画面中央是一个装饰华丽的金色宝座。"
+      ]
+    ],
+    "chosen_candidates": {
+      "items.0.title": {
+        "chosen": "画面中央是一个装饰华丽的金色宝座。",
+        "fact": "画面中央是一个装饰华丽的金色宝座"
+      }
+    }
+  },
+  "after": {
+    "body": "**大肥鱼的宫廷场景，画面中央是一个装饰华丽的金色宝座**\n选材理由：画面依据：画面中央是一个装饰华丽的金色宝座。剪辑安排：用在开场，开场时插入这一镜，作为引入段落的视觉支撑，随后配合第一句介绍语音出现。\n主帧：BV1Hy4y1J7xH · 单帧采样 · 分 P 2 · 13.52 秒 · <https://www.bilibili.com/video/BV1Hy4y1J7xH/?p=2&t=13>\n覆盖：仅核实所列采样时点；连续画面及音轨均未经该画面回执核实。\n\n当轮取材窗口与观测覆盖：\n- 第 1 项 · BV1Hy4y1J7xH P2 · 连续取材入点 11 秒、出点 14 秒（不含），保存 75 个连续原帧。私有短片不含音轨。\n- 第 1 项 · 逐帧检测画面及下方屏字变化；Omni 审读代表帧 11、12.24、13.96 秒，检测到的状态均有代表帧。\n- 第 1 项 · BV1Hy4y1J7xH P2 · 请求抽样范围 [11, 14) 秒。初读取材观察 3 帧，实际时点为 11.44、12.48、13.52 秒。\n- 第 1 项的工具回执：此区间未取得可公开读取的字幕。\n- 第 1 项的工具回执：画面内容按时点抽样描述；未听审原片音轨。",
+    "status": "completed",
+    "citations": [],
+    "primary_points": [
+      {
+        "part": 2,
+        "cid": "301983263",
+        "seconds": 13.52
+      }
+    ],
+    "independent_device_body_matched": true,
+    "measurement": {
+      "items": [
+        {
+          "title": "大肥鱼的宫廷场景，画面中央是一个装饰华丽的金色宝座",
+          "ending": "",
+          "punctuation_matches": true,
+          "expected_form": "名词短语",
+          "reading": {
+            "form": "陈述句",
+            "core": "画面中央是一个装饰华丽的金色宝座",
+            "supported": true,
+            "observation": "画面中央是一个装饰华丽的金色宝座",
+            "answer": "画面中央是一个装饰华丽的金色宝座",
+            "core_bound": true,
+            "answer_bound": true,
+            "grounded": true
+          },
+          "form_matches": false,
+          "frame_observations": [
+            "画面中央是一个装饰华丽的金色宝座",
+            "宝座周围摆放着蓝色和白色的石像或装饰物",
+            "一名身穿传统服饰的人物站在宝座右侧",
+            "室内装饰以深色调为主，带有复杂的雕花和图案",
+            "宫廷场景",
+            "皇帝宝座",
+            "古代服饰人物",
+            "很快就创造了16.7%的收视奇迹",
+            "史君说剧 bilibili"
+          ]
+        }
+      ],
+      "passed": false,
+      "requested_frame": true
+    },
+    "format_rules": [],
+    "discarded_format_suggestions": []
+  },
+  "independent_review": {
+    "before": "“为什么它如此引人注目”提出实际问题。中央位置、金色与装饰可从图中核对。判读器给出的原因是释义，answer_bound=false。",
+    "voice_corrected": "“画面中央是……”断言所见物件及位置，金色、装饰和位置可由主帧核对。经核准候选、交付标题及另一端读回的字符串一致。",
+    "after": "“画面中央是一个装饰华丽的金色宝座”仍有主句谓语。首段“大肥鱼的宫廷场景”将角色与画面关联，13.52 秒原图及来源未提供依据。判读器只为后一分句给出了依据。无标点、无记忆引用；撤回后要求的简短名词标题未达成。"
+  }
+}
