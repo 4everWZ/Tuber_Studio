@@ -9,10 +9,26 @@ async function test(browser, origin, mode) {
   const selected = mode === "selected", correction = selected || mode === "correct";
   assert.equal(new URL(origin).hostname, "127.0.0.1");
   const context = await browser.newContext({serviceWorkers: "block"});
-  await context.route("**/*", route => new URL(route.request().url()).origin === origin ?
-    route.continue() : route.abort());
+  await context.route(url => url.origin !== origin, route => route.abort());
   const page = await context.newPage();
   page.on("pageerror", error => console.error(error.message));
+  page.on("requestfailed", request => {
+    if (["script", "document"].includes(request.resourceType())) {
+      console.error("Failed asset", new URL(request.url()).pathname, request.failure()?.errorText);
+    }
+  });
+  async function waitForWorkspace(control) {
+    try {
+      await control.waitFor({state:"visible"});
+    } catch (error) {
+      console.error("Workspace after navigation", await page.evaluate(() => ({
+        hash:location.hash, workspaceHidden:document.querySelector("#workspace")?.hidden,
+        loginError:document.querySelector("#login-error")?.textContent,
+        section:document.querySelector("[data-section]:not([hidden])")?.dataset.section,
+      })));
+      throw error;
+    }
+  }
   // Deliver the actual initial role status while the settings input has focus.
   let releaseStatus;
   const typing = new Promise(resolve => { releaseStatus = resolve; });
@@ -79,6 +95,7 @@ async function test(browser, origin, mode) {
     assert.ok([statement, voiceNote].some(text => dialog.message().includes(text)));
     await dialog.accept();
   });
+  await waitForWorkspace(page.locator("#owner-memory-statement"));
   await page.locator("#owner-memory-statement").fill(statement);
   releaseStatus();
   if (mode === "save") {
@@ -95,10 +112,15 @@ async function test(browser, origin, mode) {
   const [saved] = await Promise.all([page.waitForResponse(r => r.request().method() === "PUT" &&
     r.url().endsWith("/daily-memory/preferences") && r.ok()), history.uncheck()]);
   assert.equal((await saved.json()).history_enabled, false);
-  const [restored] = await Promise.all([page.waitForResponse(r => r.request().method() === "GET" &&
-    r.url().endsWith("/daily-memory/preferences") && r.ok()), page.reload()]);
+  await page.reload();
+  await waitForWorkspace(history);
+  await page.waitForFunction(() => {
+    const input = document.getElementById("memory-history-enabled");
+    return input && !input.disabled && !input.checked;
+  });
+  const restored = await context.request.get(origin + "/api/daily-memory/preferences");
+  assert.equal(restored.ok(), true);
   assert.equal((await restored.json()).history_enabled, false);
-  await page.waitForFunction(() => !document.querySelector("#memory-history-enabled:disabled, #memory-history-enabled:checked"));
   await page.locator('a[data-page="chat"]').click();
   await page.locator("#operator-chat-shortcuts-toggle").waitFor();
   await page.locator("#operator-chat-more-toggle").click();
@@ -109,7 +131,7 @@ async function test(browser, origin, mode) {
   await dialog.getByRole("log").getByText("只在这个窗口出现", {exact: true}).waitFor();
   await dialog.getByRole("button", {name: "结束临时对话"}).click();
   await page.reload();
-  await page.locator("#operator-chat-input").waitFor();
+  await waitForWorkspace(page.locator("#operator-chat-input"));
   assert.equal(await page.getByText("只在这个窗口出现", {exact: true}).count(), 0);
   await page.locator("#operator-chat-input").fill(statement);
   await page.locator("#operator-chat-send").click();
