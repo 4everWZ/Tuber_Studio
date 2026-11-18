@@ -1,4 +1,5 @@
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -160,3 +161,20 @@ async def test_theme_inferred_from_typeface_is_checked_even_without_copying_any_
         return {"topic_evidence":"只能看到字形、图形设计或局部字样"}
     result = await check_screen_title("items.0.title","书法艺术","v:1",{"type":"image_url"},["甲乙影像"],[],set(),audit,512)
     assert result["claims"][0]["phrase"] == "书法艺术" and result["claims"][0]["issue"]
+
+
+@pytest.mark.parametrize("supported", [True, False])
+async def test_unbound_reader_excerpt_checks_the_actual_full_title_against_the_frame(supported):
+    title = "金色的雕饰"
+    async def audit(messages, schema, **kwargs):
+        if "title_subject" in schema["properties"]:
+            return {"title_subject":"以内容主题、学科或艺术门类命名", "subject_words":"工艺史"}
+        content = messages[-1]["content"]
+        assert json.loads(content[0]["text"]) == {"候选主题": title}
+        assert content[1]["type"] == "image_url"
+        return {"topic_evidence":"主帧直接展示该主题的内容或实践" if supported else "内容无法辨明"}
+    result = await check_screen_title("items.0.title", title, "v:1", {"type":"image_url"},
+                                      ["栏目"], [], set(), audit, 512)
+    claim, = result["claims"]
+    assert claim["phrase"] == title and claim["reader_excerpt"] == "工艺史"
+    assert (claim["issue"] is None) == supported

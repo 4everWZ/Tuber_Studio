@@ -117,16 +117,17 @@ async def check_screen_title(path, title, primary, image, screen_text, bylines, 
         "subject_words":{"type":"string"}},"required":["title_subject","subject_words"],"additionalProperties":False},max_tokens=budget)
     claims = []
     if subject["title_subject"] == categories[1]:
-        words = subject["subject_words"]
-        if not words or words not in title:
-            raise DelegationError("主题审读未定位标题内的实际主张。")
+        excerpt = subject["subject_words"].strip()
+        # A reader can paraphrase the title. Check the literal full title against the
+        # image in that case, so the decision still concerns what the editor wrote.
+        words = excerpt if excerpt and excerpt in title else title
         proof = ["主帧直接展示该主题的内容或实践", "只能看到字形、图形设计或局部字样", "内容无法辨明"]
         checked = await generate([{"role":"system","content":"核对这幅图能否独立支持用所述主题命名素材。"
             "用某种字形排印标识，仅说明标识的外观。将主帧表现的实物或实践与渲染文字的方式分别判断。"},
             {"role":"user","content":[{"type":"text","text":dump({"候选主题":words})},image]}],
             {"type":"object","properties":{"topic_evidence":{"type":"string","enum":proof}},
              "required":["topic_evidence"],"additionalProperties":False},max_tokens=budget)
-        claims.append({"phrase":words,"target":words,"relation":"主帧内容主题","observation":checked["topic_evidence"],
+        claims.append({"phrase":words,"target":words,"reader_excerpt":excerpt,"relation":"主帧内容主题","observation":checked["topic_evidence"],
                        "issue":None if checked["topic_evidence"] == proof[0] else "可见的字形或图形不足以把该主题赋给片段。"})
     receipt = {"field":path,"text":title,"primary_frame":primary,"claims":claims,"pages":bylines,
                "programme_names":sorted(programme_names),"screen_text":screen_text}
