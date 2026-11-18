@@ -36,6 +36,14 @@ from tuber_studio.agent.task_tools import (
 BV = "BV1234567890"
 
 
+@pytest.fixture(autouse=True)
+def anonymous_frame_fields(monkeypatch):
+    async def extract(fields, *_):
+        return {path: [] for path in fields}
+
+    monkeypatch.setattr("tuber_studio.agent.task_tools.extract_people", extract)
+
+
 def frame(seconds, *, part=2, cid="part-two", bvid=BV):
     return {"part": part, "cid": cid, "seconds": seconds, "kind": "画面", "text": "左侧有一把椅子",
             "url": f"https://www.bilibili.com/video/{bvid}/?p={part}&t={int(seconds)}"}
@@ -387,16 +395,19 @@ async def test_real_image_inventory_and_caption_do_not_inherit_worker_plot(runti
         if "opening" in props:
             assert json.loads(content)["号主交办"] == task["goal"] and "后台推测" not in content
             return {"opening": "我会用这一镜引出布景话题。", "main": "在讲解时插入。", "transition": "先停一下旁白。"}
+        if "title_action" in props:
+            return {"title_action": "另拟标题", "fact": props["fact"]["enum"][0]}
         if set(props) == {"title"}:
             assert "enum" not in props["title"]
-            assert json.loads(content) == {"构图锚点": "座椅旁站着一人", "可见细节": "一人站在椅子旁", "写作偏好": []}
+            assert content[1]["type"] == "image_url"
+            assert json.loads(content[0]["text"])["已核画面事实"] == ["座椅旁站着一人", "一人站在椅子旁"]
             return {"title": "这是登基仪式吗？" if invented_title else "椅子旁站着谁？"}
         assert isinstance(content, list) and "后台推测" not in str(content)
         if "labels" in props:
             assert content[0]["type"] == "image_url" and [p["type"] for p in content] == ["image_url", "text"]
             return {"labels": ["座椅旁站着一人"], "details": ["一人站在椅子旁"], "screen_text": []}
         if "items.0.title" in props:
-            assert props["items.0.title"] == {"type": "string"}
+            assert props["items.0.title"]["anyOf"][1]["properties"]["use_fact"]["enum"] == ["座椅旁站着一人", "一人站在椅子旁"]
             assert "fixed_title_anchors" in content[0]["text"] and "座椅旁站着一人" in content[0]["text"]
             return {"items.0.title": "一人站在椅子旁。"}
         if "anchor" in props:

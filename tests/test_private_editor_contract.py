@@ -1,9 +1,15 @@
 import json
 
 import pytest
-from test_video_delivery import reviewed_window, selection, short_read
+from test_video_delivery import reviewed_window as reviewed_window
+from test_video_delivery import selection, short_read
 
-from tuber_studio.agent.editor_contract import FormatCheck, literal_checks, literal_evidence, review_preferences
+from tuber_studio.agent.editor_contract import (
+    FormatCheck,
+    literal_checks,
+    literal_evidence,
+    review_preferences,
+)
 from tuber_studio.agent.task_delivery import DelegationError, PrivateDelivery
 
 
@@ -79,8 +85,10 @@ async def test_editor_selects_a_sentence_against_one_observation_for_the_origina
     fact = "白色台灯位于书桌右侧"
     async def call(messages, schema):
         data = json.loads(messages[-1]["content"])
+        if "observations_by_id" in data:
+            return {"0":"","1":"位于书桌右侧"}
         if "frame_details" in data:
-            assert data["frame_details"] == ["白色台灯", fact]
+            assert data["frame_details"] == [fact]
             return {"fact":fact, "options":[{"evidence_span":"位于书桌右侧","title":t} for t in
                                ("书桌右侧的白色台灯。","台灯在书桌右侧。","书桌右侧有一盏白色台灯。")]}
         if "statement" in data:
@@ -115,8 +123,9 @@ async def test_anchored_question_candidate_must_ask_for_a_visible_answer():
     assert options["chosen"] == "左侧的台灯是什么颜色？"
 
 
+@pytest.mark.usefixtures("reviewed_window")
 @pytest.mark.parametrize("reject", [False, True])
-async def test_verified_title_goes_verbatim_to_the_final_image_review(runtime, store, monkeypatch, reviewed_window, reject):
+async def test_verified_title_goes_verbatim_to_the_final_image_review(runtime, store, monkeypatch, reject):
     from tuber_studio.agent import task_tools
     from tuber_studio.agent.task_delivery import evidence_index
     from tuber_studio.agent.title_form import verified_title_fields
@@ -143,6 +152,8 @@ async def test_verified_title_goes_verbatim_to_the_final_image_review(runtime, s
         return dict.fromkeys(texts, [])
     async def omni(messages, schema, **kwargs):
         props = schema["properties"]
+        if "person_subject" in props:
+            return {"person_subject": "地点、构图或物件"}
         assert "items.0.title" not in props, "Already approved title was requested from the model again"
         if "requested_count" in props:
             return {"requested_count":1, "usage":"解释画面", "playable":True, "trace_origin":False}

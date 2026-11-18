@@ -73,6 +73,8 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                                 (255, 0, 0): ("red", "circle")}[pixel]
                 decision = {"color": color, "shape": shape}
                 seen.append(shape)
+            elif "person_subject" in body["messages"][0]["content"]:
+                decision = {"person_subject": "地点、构图或物件"}
             elif content == replay.REQUEST:
                 if "requested_count" in body["messages"][0]["content"]:
                     decision = {"requested_count": 2, "usage": "列出形状、理由和时码", "playable": False,
@@ -97,7 +99,7 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                     decision = {"supported": True}
                 else:
                     assert packet["message"] == replay.CHANGE and edits == [2]
-                    decision = {"intent": "revise", "reference": packet["recent_task_cards"][0]["id"]}
+                    decision = {"intent": "revise", "instruction_quote": packet["message"], "reference": packet["recent_task_cards"][0]["id"]}
             result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(decision)}}],
                       "usage": {"prompt_tokens": 128}}
         else:

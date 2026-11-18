@@ -9,6 +9,8 @@ async def test_visible_description_is_not_a_work_target_even_when_both_extractor
 
     async def omni(messages, schema, **kwargs):
         props = schema["properties"]
+        if "type_word" in props:
+            return {"type_word": ""}
         if all(v.get("enum") for v in props.values()):
             return {k: v["enum"][-1] for k, v in props.items()}
         if "work_claims" not in props:

@@ -3,11 +3,24 @@
 import hashlib
 import json
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from copy import deepcopy
 
 _START = "<current-account-identity>"
 _END = "</current-account-identity>"
 _BLOCK = re.compile(r"\n?" + re.escape(_START) + r"\n(.*?)\n" + re.escape(_END), re.DOTALL)
+_visual_edit = ContextVar("visual_edit", default=False)
+
+
+@contextmanager
+def visual_editor_context():
+    """Keep runtime account/persona metadata out of image evidence and editing calls."""
+    token = _visual_edit.set(True)
+    try:
+        yield
+    finally:
+        _visual_edit.reset(token)
 
 BILIBILI_OWNER_INSTRUCTION = (
     "bilibili_owner 是当前角色绑定的 B 站号主。有人问你是谁家的鱼时，用自己的口吻回答，"
@@ -85,7 +98,7 @@ def identity_messages(messages, identity):
 
 def provider_identity_messages(provider, messages):
     """Use a task's captured identity, or the provider's current runtime identity."""
-    if captured_identity(messages) is not None:
+    if _visual_edit.get() or captured_identity(messages) is not None:
         return messages
     resolve = getattr(provider, "identity_resolver", None)
     return identity_messages(messages, resolve()) if resolve is not None else messages
