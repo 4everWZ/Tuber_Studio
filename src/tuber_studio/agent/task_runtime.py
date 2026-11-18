@@ -7,8 +7,10 @@ import math
 import operator
 import re
 import time
+import traceback
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 from uuid import UUID, uuid5
 
@@ -519,7 +521,11 @@ class TaskRuntime:
                 self._save(fresh, status="waiting", due=time.time() + busy.retry_after,
                            message="等待推理资源，已保存任务进度。")
         except Exception as error:
-            log.warning("Agent task %s failed: %s", task["id"], type(error).__name__)
+            # Provider errors and validation messages can contain private task input.
+            # Record the failure site without locals, source text or machine paths.
+            site = traceback.extract_tb(error.__traceback__, limit=-1)[0]
+            log.warning("Agent task %s failed: %s in %s:%s (%s)", task["id"], type(error).__name__,
+                        Path(site.filename).name, site.lineno, site.name)
             fresh = self.executable(task["id"])
             if fresh and fresh["revision"] == task["revision"]:
                 try:
