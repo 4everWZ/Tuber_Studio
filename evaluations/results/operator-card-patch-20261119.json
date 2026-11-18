@@ -1,0 +1,447 @@
+{
+  "date": "2026-11-19",
+  "checkpoints": [
+    "08928270de：同一任务 r1 v1 两项私有交付",
+    "jdw0cq8i：普通闲聊误改前的运行中任务，尚无成果"
+  ],
+  "method": "各轮从 SQLite 隔离副本还原聊天可见状态，普通请求省略 intent。运行中副本按原始目标与浏览器回执恢复 r1/running，移除故障闲聊。使用工作站 Omni 与同网关 Responses，关闭执行 worker。逐项查询实际任务数、修订号与平台写入表。",
+  "baseline": "08928270de 的路由回执为 discuss，引用了正确的原任务。jdw0cq8i 的普通请求将闲聊原话追加到工作目标，revision 由 1 增至 2。",
+  "scope": "浏览器从现有私聊打开 r1 v1、关闭活动，普通输入后从实际回复打开任务卡。核验到同一任务 r2 已入队。成品与从零双端运行由主线程 p59kts9i 单独验证。",
+  "cases": [
+    {
+      "message": "保留第一段，第二段换成适合开场的",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": false,
+      "before": "completed",
+      "expected": "revise",
+      "route": "revise",
+      "revision_after": 2,
+      "status_after": "queued",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "实际修改同一任务或成果的部分或全部",
+      "responses_review": [
+        [
+          {
+            "operation": "edit_existing",
+            "changes": {
+              "item:1": "沿用现有内容",
+              "item:2": "现在另选或修改内容"
+            },
+            "separate_deliverable": ""
+          }
+        ]
+      ],
+      "applied_patch": {
+        "task_revision": 1,
+        "operation": "steer_task",
+        "owner_clauses": {
+          "item:1": [
+            "保留第一段"
+          ],
+          "item:2": [
+            "第二段换成适合开场的"
+          ]
+        },
+        "item_states": {
+          "item:1": "沿用现有内容",
+          "item:2": "现在另选或修改内容"
+        },
+        "artifact": {
+          "task_revision": 1,
+          "edition": 1
+        }
+      }
+    },
+    {
+      "message": "头一个我挺喜欢。后面那个麻烦另挑一段，想拿来暖场。",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": false,
+      "before": "completed",
+      "expected": "revise",
+      "route": "revise",
+      "revision_after": 2,
+      "status_after": "queued",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "维持整份现状或等确认",
+      "responses_review": [
+        [
+          {
+            "operation": "edit_existing",
+            "changes": {
+              "item:1": "沿用现有内容",
+              "item:2": "现在另选或修改内容"
+            },
+            "separate_deliverable": "帮我准备下场直播。看我给的视频 P2 https://www.bilibili.com/video/BV1Hy4y1J7xH/?p=2，只取两个不剧透的片段，再查一下原出处，先别发。"
+          }
+        ]
+      ],
+      "applied_patch": {
+        "task_revision": 1,
+        "operation": "steer_task",
+        "owner_clauses": {
+          "item:1": [
+            "头一个我挺喜欢"
+          ],
+          "item:2": [
+            "后面那个麻烦另挑一段，想拿来暖场"
+          ]
+        },
+        "item_states": {
+          "item:1": "沿用现有内容",
+          "item:2": "现在另选或修改内容"
+        },
+        "artifact": {
+          "task_revision": 1,
+          "edition": 1
+        }
+      }
+    },
+    {
+      "message": "能帮我把后半份重新选一下吗？挑个上来就能用的。",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": true,
+      "before": "completed",
+      "expected": "revise",
+      "route": "revise",
+      "revision_after": 2,
+      "status_after": "queued",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "实际修改同一任务或成果的部分或全部",
+      "responses_review": [
+        [
+          {
+            "operation": "edit_existing",
+            "changes": {
+              "item:2": "现在另选或修改内容"
+            },
+            "separate_deliverable": ""
+          }
+        ]
+      ],
+      "applied_patch": {
+        "task_revision": 1,
+        "operation": "steer_task",
+        "owner_clauses": {
+          "item:2": [
+            "能帮我把后半份重新选一下吗"
+          ]
+        },
+        "item_states": {
+          "item:2": "现在另选或修改内容"
+        },
+        "artifact": {
+          "task_revision": 1,
+          "edition": 1
+        }
+      }
+    },
+    {
+      "message": "这份再加条要求：如果找不到合适的开头，就只交第一段。",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": false,
+      "before": "completed",
+      "expected": "revise",
+      "route": "revise",
+      "revision_after": 2,
+      "status_after": "queued",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "实际修改同一任务或成果的部分或全部",
+      "responses_review": [
+        [
+          {
+            "operation": "edit_existing",
+            "changes": {},
+            "separate_deliverable": "如果找不到合适的开头，就只交第一段。"
+          }
+        ]
+      ],
+      "applied_patch": {
+        "task_revision": 1,
+        "operation": "steer_task",
+        "owner_clauses": {
+          "goal": [
+            "这份再加条要求：如果找不到合适的开头，就只交第一段"
+          ],
+          "item:1": [
+            "就只交第一段"
+          ]
+        },
+        "item_states": {},
+        "artifact": {
+          "task_revision": 1,
+          "edition": 1
+        }
+      }
+    },
+    {
+      "message": "第二段当时为什么选它？",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": true,
+      "before": "completed",
+      "expected": "recall_reason",
+      "route": "recall_reason",
+      "revision_after": 1,
+      "status_after": "completed",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "查当初为何作出某个选择的原文",
+      "responses_review": [
+        [
+          {
+            "operation": "past_reason",
+            "changes": {
+              "item:2": "现在另选或修改内容"
+            },
+            "separate_deliverable": ""
+          }
+        ]
+      ]
+    },
+    {
+      "message": "假设第二段拿来开场，会有什么效果？我只是想听听。",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": true,
+      "before": "completed",
+      "expected": "discuss",
+      "route": "discuss",
+      "revision_after": 1,
+      "status_after": "completed",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "只回答当前问题或假设",
+      "responses_review": [
+        [
+          {
+            "operation": "answer",
+            "changes": {
+              "item:2": "沿用现有内容"
+            },
+            "separate_deliverable": "\n用户仅提出纯假设问题（\"假设第二段拿来开场，会有什么效果？我只是想听听\"），属于询问效果类讨论而非实际委托。根据规则，纯假设应回答讨论。\n\n**当前判断：Answer**\n\n用户没有实际委托改变业务状态（item:2\"影视信息页面\"），只是询问假设效果。存在纯假设咨询，直接提供效果分析讨论。\n\n**建议回复：**\n作为开场段落的\"影视信息页面\"有其功能定位——建立内容源的权威性，展示素材出处。如果直接用作开场，可能吸引对出处信息感兴趣的观众，但会牺牲其作为副标题/结尾的简洁展示效果。具体需看视频开场是否急需建立\"参考来源\"的印象。\n"
+          }
+        ]
+      ]
+    },
+    {
+      "message": "别换第二段，两段都照旧，我没要你重做。",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": false,
+      "before": "completed",
+      "expected": "discuss",
+      "route": "discuss",
+      "revision_after": 1,
+      "status_after": "completed",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "维持整份现状或等确认",
+      "responses_review": [
+        [
+          {
+            "operation": "answer",
+            "changes": {
+              "item:2": "现在另选或修改内容"
+            },
+            "separate_deliverable": "KEEP：号主明确说\"别换第二段，两段都照旧，我没要你重做\"，业务状态维持现状，无改变委托"
+          }
+        ]
+      ]
+    },
+    {
+      "message": "这项正在做的选片不用继续了，现在把任务停下。",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": false,
+      "before": "running",
+      "expected": "cancel",
+      "route": "cancel",
+      "revision_after": 2,
+      "status_after": "cancelled",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "现在停止执行整个任务",
+      "applied_patch": {
+        "task_revision": 1,
+        "operation": "cancel_task",
+        "owner_clauses": {
+          "goal": [
+            "这项正在做的选片不用继续了，现在把任务停下"
+          ],
+          "execution": [
+            "这项正在做的选片不用继续了，现在把任务停下",
+            "现在把任务停下"
+          ]
+        },
+        "item_states": {}
+      }
+    },
+    {
+      "message": "要不要换我还没想好，等我点头再动。",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": false,
+      "before": "completed",
+      "expected": "discuss",
+      "route": "discuss",
+      "revision_after": 1,
+      "status_after": "completed",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "维持整份现状或等确认"
+    },
+    {
+      "message": "如果取消这项交办，已有的稿子还在吗？先回答我。",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": false,
+      "before": "completed",
+      "expected": "discuss",
+      "route": "discuss",
+      "revision_after": 1,
+      "status_after": "completed",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "只回答当前问题或假设"
+    },
+    {
+      "message": "原来那版照用就行，别动它。",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": false,
+      "before": "completed",
+      "expected": "discuss",
+      "route": "discuss",
+      "revision_after": 1,
+      "status_after": "completed",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "维持整份现状或等确认"
+    },
+    {
+      "message": "后一个请重新选个轻快的，第一个保持原样。",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": false,
+      "before": "completed",
+      "expected": "revise",
+      "route": "revise",
+      "revision_after": 2,
+      "status_after": "queued",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "只回答当前问题或假设",
+      "responses_review": [
+        [
+          {
+            "operation": "edit_existing",
+            "changes": {
+              "item:2": "现在另选或修改内容",
+              "item:1": "沿用现有内容"
+            },
+            "separate_deliverable": "后一个请重新选个轻快的，第一个保持原样"
+          }
+        ]
+      ],
+      "applied_patch": {
+        "task_revision": 1,
+        "operation": "steer_task",
+        "owner_clauses": {
+          "item:2": [
+            "后一个请重新选个轻快的"
+          ],
+          "item:1": [
+            "第一个保持原样"
+          ]
+        },
+        "item_states": {
+          "item:2": "现在另选或修改内容",
+          "item:1": "沿用现有内容"
+        },
+        "artifact": {
+          "task_revision": 1,
+          "edition": 1
+        }
+      }
+    },
+    {
+      "message": "假设我保留第一段、换掉第二段，你怎么看？先别改。",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": false,
+      "before": "completed",
+      "expected": "discuss",
+      "route": "discuss",
+      "revision_after": 1,
+      "status_after": "completed",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "维持整份现状或等确认",
+      "responses_review": [
+        [
+          {
+            "operation": "answer",
+            "changes": {
+              "item:1": "沿用现有内容",
+              "item:2": "现在另选或修改内容"
+            },
+            "separate_deliverable": "\n1. 分析号主当前委托状态：\n   - owner_message核心是\"假设我保留第一段、换掉第二段，你怎么看？先别改\"\n   - 这是一个假设性询问句，号主明确说\"先别改\"，意味着现在不执行任何修改操作\n   - owner_clauses显示 item:1 是\"假设我保留第一段\"，item:2 是\"换掉第二段\"的假设探究\n   - goal明确声明\"先别改\"，状态已经锁定\n\n2. 判断：号主当前没有实际委托改变业务状态\n   - \"假设...你怎么看\"是询问意见而非执行指令\n   - \"先别改\"是否定当前修改\n   - 整体属于询问/假设场景\n\n3. 结论：保留现有作业内容，FP无需执行item:1和item:2任何修改"
+          }
+        ]
+      ]
+    },
+    {
+      "message": "保留第一段，第二段换成适合开场的",
+      "entry": "Chromium /api/chat/intelligent/stream",
+      "opened_r1_v1": true,
+      "before": "completed",
+      "expected": "revise",
+      "route": "revise",
+      "revision_after": 2,
+      "status_after": "queued",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "applied_patch": {
+        "task_revision": 1,
+        "operation": "steer_task",
+        "owner_clauses": {
+          "item:1": [
+            "保留第一段"
+          ],
+          "item:2": [
+            "第二段换成适合开场的"
+          ]
+        },
+        "item_states": {
+          "item:1": "沿用现有内容",
+          "item:2": "现在另选或修改内容"
+        },
+        "artifact": {
+          "task_revision": 1,
+          "edition": 1
+        }
+      }
+    },
+    {
+      "message": "辛苦啦，跟我聊两句吧。",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": false,
+      "before": "running",
+      "expected": "discuss",
+      "route": "discuss",
+      "revision_after": 1,
+      "status_after": "running",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "只回答当前问题或假设"
+    },
+    {
+      "message": "你继续忙手上的，我就想找你说会儿话。",
+      "entry": "POST /api/chat/intelligent",
+      "opened_r1_v1": false,
+      "before": "running",
+      "expected": "discuss",
+      "route": "discuss",
+      "revision_after": 1,
+      "status_after": "running",
+      "tasks_after": 1,
+      "platform_writes": 0,
+      "omni_choice": "只回答当前问题或假设"
+    }
+  ]
+}

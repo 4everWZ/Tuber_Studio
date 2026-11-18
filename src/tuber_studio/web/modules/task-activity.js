@@ -70,7 +70,7 @@ function appendSource(target, value, name = value) {
   } catch { /* An invalid source remains visible in the diagnostic details. */ }
 }
 
-export function initTaskActivity(api, requestId) {
+export function initTaskActivity(api, requestId, onArtifact = () => {}) {
   const panel = $("chat-activity"), toggle = $("chat-activity-toggle"), closeButton = $("chat-activity-close");
   const content = $("chat-activity-content"), notice = $("chat-activity-status");
   let selection = null, version = 0, timer, reading = false, viewKey, editing = false;
@@ -98,6 +98,7 @@ export function initTaskActivity(api, requestId) {
     clearInterval(timer);
     version++;
     selection = id;
+    if (id) onArtifact(null);
     viewKey = null;
     editing = false;
     content.replaceChildren();
@@ -486,6 +487,7 @@ export function initTaskActivity(api, requestId) {
     card.append(node("h3", "私有成果"), node("small", `任务 r${artifact.task_revision} · 成果 v${artifact.edition}`, "hint"));
     const body = node("div");
     renderArtifact(body, artifact.body);
+    onArtifact({ task_id: task.id, task_revision: artifact.task_revision, edition: artifact.edition });
     const edit = button("编辑成果");
     edit.onclick = () => editor("私有成果正文", artifact.body, 64000, (text, submit) => change(
       path + "/artifact", "PATCH", { task_revision: artifact.task_revision, edition: artifact.edition, body: text }, submit,
@@ -506,10 +508,17 @@ export function initTaskActivity(api, requestId) {
             const details = node("details"), text = node("div");
             details.append(node("summary", `任务 r${entry.task_revision} · 成果 v${entry.edition}`), text);
             details.ontoggle = async () => {
-              if (!details.open || text.childElementCount) return;
+              if (!details.open) return;
+              const coordinate = { task_id: task.id, task_revision: entry.task_revision, edition: entry.edition };
+              if (text.childElementCount) {
+                onArtifact(coordinate);
+                return;
+              }
               try {
                 const saved = await api(`${path}/artifacts/${entry.task_revision}/${entry.edition}`);
+                if (!details.isConnected || !details.open) return;
                 renderArtifact(text, saved.body);
+                onArtifact(coordinate);
               } catch (error) { text.textContent = safeMessage(error.message); }
             };
             reading.append(details);

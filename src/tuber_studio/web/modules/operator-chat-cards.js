@@ -358,6 +358,7 @@ export function createOperatorCard(root, turn, context) {
         if (details.open && details.isConnected) {
           const text = node("div");
           renderArtifact(text, edition.body);
+          context.rememberArtifact?.({ task_id: turn.task_reference, task_revision: data.task_revision, edition: data.edition });
           body.replaceChildren(node("small", edition.author === "owner" ? "号主编辑" : "角色交付", "hint"), text);
         }
       } catch (error) {

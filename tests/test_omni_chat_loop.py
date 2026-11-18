@@ -43,7 +43,8 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
                     assert behavior == "public_action" and "start_live" in schema["properties"]["action"]["enum"]
                     decision = {"action": "start_live"}
             else:
-                packet = json.loads(content)
+                packet = (json.loads(body["messages"][1]["content"]) | {"message": content}
+                          if content == replay.CHANGE else json.loads(content))
                 if "candidate" in packet:
                     assert body["max_tokens"] == 4096
                     assert replay.CHANGE in packet["goal"] and packet["evidence"] == evidence and evidence
@@ -55,7 +56,7 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
                 else:
                     assert packet["message"] == replay.CHANGE
                     card, = packet["recent_task_cards"]
-                    decision = {"intent": "revise", "reference": card["id"]}
+                    decision = {"intent": "实际修改同一任务或成果的部分或全部", "patch": {"field": "goal", "subject": "便笺", "requirement": "只核对自主运营有没有启动"}, "reference": card["id"]}
             result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(decision)}}],
                       "usage": {"prompt_tokens": 128}}
         elif path == "/llm/v1/responses":

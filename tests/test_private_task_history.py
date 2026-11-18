@@ -55,15 +55,15 @@ async def test_old_edition_from_private_chat_is_openable_and_read_only(studio, m
              "source": f"当时为什么采纳 <{URL}>？", "phrase": "之前为什么想留出报幕的时间？",
              "video_url": f"https://www.bilibili.com/video/{BV} 的选段呢？",
              "project": "秋季直播当时为了报幕的时间怎么选？"}[anchor]
-    routed = "recall_reason"
+    routed = "查当初为何作出某个选择的原文"
 
     async def generate(messages, schema, **kwargs):
-        packet = json.loads(messages[-1]["content"])
+        packet = json.loads(messages[1 if schema["title"] == "CardTurnIntent" else -1]["content"])
         if schema["title"] == "CardTurnIntent":
             candidate, = [c for c in packet["history_task_cards"] if c["id"] == task]
             assert candidate["artifact"] == {"task_revision": 1, "edition": 1}
             assert REASON not in str(messages)
-            return {"intent": routed, "reference": task}
+            return {"intent": routed, "reference": task, "patch": None}
         assert schema["title"] == "ReasonSelection"
         assert packet["versions"][0]["source"][1] == {"line": 2, "text": "选材理由：" + REASON}
         assert schema["properties"]["lines"]["items"]["enum"] == [2]
@@ -92,7 +92,7 @@ async def test_old_edition_from_private_chat_is_openable_and_read_only(studio, m
     assert runtime.tasks.scope()[0] != old_account
     again = (await client.post(CHAT, json={"request_id": str(uuid4()), "message": "我上次为什么选那段？"})).raise_for_status()
     assert again.json()["card"] == answer["card"]
-    routed = "revise"
+    routed = "实际修改同一任务或成果的部分或全部"
     response = (await client.post(CHAT, json=request | {"request_id": str(uuid4())})).raise_for_status().json()
     assert response.get("task_reference") is None and not runtime.tasks.executable(task)
     assert runtime.tasks.current(task)["revision"] == 1
@@ -114,7 +114,7 @@ async def test_history_boundaries_on_model_input_and_stream_delivery(studio, mon
     async def generate(messages, schema, **kw):
         seen.append(messages)
         if schema["title"] == "CardTurnIntent":
-            return {"intent": "recall_reason", "reference": task}
+            return {"intent": "查当初为何作出某个选择的原文", "reference": task}
         if revoke:
             assert REASON in messages[-1]["content"] and schema["title"] == "ReasonSelection"
             history_preference(runtime, False)
@@ -155,7 +155,7 @@ async def test_chromium_chat_opens_original_edition_and_source(studio, monkeypat
     async def generate(messages, schema, **kwargs):
         if schema["title"] == "CardTurnIntent":
             assert task in schema["properties"]["reference"]["anyOf"][0]["enum"]
-            return {"intent": "recall_reason", "reference": task}
+            return {"intent": "查当初为何作出某个选择的原文", "reference": task}
         assert schema["title"] == "ReasonSelection"
         return {"edition": 1, "evidence": "recorded", "lines": [2]}
 
@@ -236,11 +236,11 @@ async def test_unfinished_card_remains_discussable_after_only_account_switch(stu
     runtime.browsing.discovery.remember_account("switched")
     assert runtime.tasks.current(task) and not runtime.tasks.executable(task)
     async def generate(messages, schema, **kwargs):
-        packet = json.loads(messages[-1]["content"])
+        packet = json.loads(messages[1 if schema["title"] == "CardTurnIntent" else -1]["content"])
         if schema["title"] == "CardTurnIntent":
             assert "recent_task_cards" not in packet
             assert [c["id"] for c in packet["history_task_cards"]] == [task]
-            return {"intent": "discuss", "reference": task}
+            return {"intent": "只回答当前问题或假设", "reference": task}
         assert packet["task"]["goal"] == "等待下次彩排"
         return {"action": "chat", "reply_markdown": "还在等待。"}
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
@@ -254,7 +254,7 @@ async def test_reason_question_can_open_the_agent_original_after_an_owner_edit(s
     _, task = await seed(client, runtime)
 
     async def choose(messages, schema, **kwargs):
-        packet = json.loads(messages[-1]["content"])
+        packet = json.loads(messages[1 if schema["title"] == "CardTurnIntent" else -1]["content"])
         if schema["title"] == "CardTurnIntent":
             card, = packet["history_task_cards"]
             assert card["artifact"]["edition"] == 2 and card["original_edition"]["author"] == "agent"
@@ -262,7 +262,7 @@ async def test_reason_question_can_open_the_agent_original_after_an_owner_edit(s
             assert card["matched_edition"]["author"] == "owner"
             assert not card["matched_edition"]["has_rationale"] and card["original_edition"]["has_rationale"]
             assert REASON not in str(packet)
-            return {"intent": "recall_reason", "reference": task, "read_original": False}
+            return {"intent": "查当初为何作出某个选择的原文", "reference": task, "read_original": False}
         assert {v["edition"] for v in packet["versions"]} == {1, 2}
         return {"edition": 1, "evidence": "recorded", "lines": [2]}
 
@@ -288,7 +288,7 @@ async def test_only_verified_reason_lines_from_the_selected_version(studio, monk
     async def select(messages, schema, **options):
         assert options["on_content"] is None
         if schema["title"] == "CardTurnIntent":
-            return {"intent": "recall_reason", "reference": task_id}
+            return {"intent": "查当初为何作出某个选择的原文", "reference": task_id}
         assert schema["title"] == "ReasonSelection"
         assert schema["properties"]["edition"]["enum"] == [edition]
         return {"edition": edition, "evidence": state, "lines": numbers}
@@ -298,3 +298,31 @@ async def test_only_verified_reason_lines_from_the_selected_version(studio, monk
     answer = response.raise_for_status().json()
     assert answer["reply_text"] == expected
     assert answer["reply_format"] == "plain" and answer["card"]["data"]["edition"] == edition
+
+async def test_chat_opened_edition_read_and_stale_write(studio, monkeypatch):
+    client, runtime = studio
+    identity = str(uuid4())
+    (await client.post(CHAT, json={"request_id": identity, "message": "准备直播提纲",
+                                   "intent": {"action": "agent_task"}})).raise_for_status()
+    with runtime.store.db as db:
+        runtime.tasks.workspace.record_delivery(db, runtime.tasks.current(identity), ORIGINAL)
+    opened = {"task_id": identity, "task_revision": 1, "edition": 1}
+    (await client.patch(f"{TASKS}/{identity}/artifact", json={"task_revision": 1, "edition": 1,
+                                                              "body": "号主另存的第二版。"})).raise_for_status()
+    change = "把这份的尾声缩短。"
+
+    async def generate(messages, schema, **kwargs):
+        if schema["title"] == "CardTurnIntent":
+            editing = messages[-1]["content"] == change
+            return {"intent": "实际修改同一任务或成果的部分或全部" if editing else "查当初为何作出某个选择的原文",
+                    "patch": {"field": "goal", "subject": "这份", "requirement": "缩短"} if editing else None, "reference": identity, "read_original": False}
+        versions = json.loads(messages[-1]["content"])["versions"]
+        assert [v["edition"] for v in versions] == [1]
+        return {"edition": 1, "evidence": "recorded", "lines": [2]}
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
+    request = {"request_id": str(uuid4()), "message": "这份当时为什么这么选？", "opened_artifact": opened}
+    read = (await client.post(CHAT, json=request)).raise_for_status().json()
+    assert read["task_artifact"] == {"task_revision": 1, "edition": 1} and REASON in read["reply_text"]
+    stale = await client.post(CHAT, json=request | {"request_id": str(uuid4()), "message": change})
+    assert stale.status_code == 409 and runtime.tasks.current(identity)["revision"] == 1

@@ -82,7 +82,8 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                 else:
                     decision = {"action": "agent_task"}
             else:
-                packet = json.loads(content)
+                packet = (json.loads(body["messages"][1]["content"]) | {"message": content}
+                          if content == replay.CHANGE else json.loads(content))
                 if "candidate" in packet:
                     decision = packet["candidate"]
                     for item in decision["items"]:
@@ -99,7 +100,7 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                     decision = {"supported": True}
                 else:
                     assert packet["message"] == replay.CHANGE and edits == [2]
-                    decision = {"intent": "revise", "instruction_quote": packet["message"], "reference": packet["recent_task_cards"][0]["id"]}
+                    decision = {"intent": "实际修改同一任务或成果的部分或全部", "patch": {"field": "goal", "subject": "提纲", "requirement": "改做三角形主题的开场"}, "reference": packet["recent_task_cards"][0]["id"]}
             result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(decision)}}],
                       "usage": {"prompt_tokens": 128}}
         else:

@@ -164,7 +164,7 @@ async def test_nonchat_acknowledgement_is_neither_streamed_nor_saved(settings, m
     async def generate(messages, schema, *, on_content, **options):
         if schema["title"] == "CardTurnIntent":
             assert on_content is None and "reply_markdown" not in schema["properties"]
-            return {"intent": "revise", "reference": previous}
+            return {"intent": "实际修改同一任务或成果的部分或全部", "patch": {"field": "goal", "subject": "素材", "requirement": "核对 P2"}, "reference": previous}
         if schema["title"] != "WorkLifecycle":
             assert on_content is None
             return {"action": "live_status", "reply_markdown": hidden}
@@ -204,6 +204,8 @@ async def test_semantic_task_cards_bind_clarified_steering_without_approval(sett
     async def decide(messages, schema, **options):
         content = messages[-1]["content"]
         packet = json.loads(content) if content.startswith("{") else {"message": content}
+        if schema["title"] == "CardTurnIntent":
+            packet = json.loads(messages[1]["content"]) | {"message": content}
         index = texts.index(packet["message"])
         reference = schema["properties"]["reference"]
         if index == 0:
@@ -215,12 +217,12 @@ async def test_semantic_task_cards_bind_clarified_steering_without_approval(sett
             assert reference == {"anyOf": [{"type": "string", "enum": expected}, {"type": "null"}]}
             assert "reference" in schema["required"]
         if index < 2:
-            return {"intent": "new_work", "reference": None}
+            return {"intent": "另立交办", "reference": None}
         assert [card["id"] for card in packet["recent_task_cards"]] == [ids[1], ids[0]]
         if index == 2:
-            return {"intent": "revise", "reference": None}
+            return {"intent": "实际修改同一任务或成果的部分或全部", "patch": None, "reference": None}
         assert packet["clarification"]["request"] == texts[2]
-        return {"intent": "revise", "reference": ids[0], "clarification_id": packet["clarification"]["id"]}
+        return {"intent": "实际修改同一任务或成果的部分或全部", "patch": {"field": "goal", "subject": "暖场", "requirement": "换成轻松点的"}, "reference": ids[0], "clarification_id": packet["clarification"]["id"]}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", decide, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
@@ -248,7 +250,7 @@ async def test_discussing_a_card_or_chatting_without_material_does_not_steer(set
         stages.append(schema["title"])
         if schema["title"] == "CardTurnIntent":
             assert on_content is None and "reply_markdown" not in schema["properties"]
-            return {"intent": "discuss", "reference": identity if ask_about_card else None}
+            return {"intent": "只回答当前问题或假设", "reference": identity if ask_about_card else None}
         assert schema["properties"]["action"]["enum"] == ["chat"]
         current = messages[-1]["content"]
         if ask_about_card:
@@ -313,7 +315,7 @@ async def test_chat_steer_rejects_concurrent_revision_and_non_card_tasks(setting
     async def decide(messages, schema, **options):
         assert hidden not in str(messages)
         await tasks.control(identity, 1, "steer", goal="另一端的新要求")
-        return {"intent": "revise", "reference": identity}
+        return {"intent": "实际修改同一任务或成果的部分或全部", "patch": None, "reference": identity}
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", decide, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
@@ -1171,3 +1173,99 @@ def test_specified_video_can_resume_when_previously_unavailable_subtitles_appear
         resumed = wait_for("completed")
         assert resumed["id"] == partial["id"] == identity
         assert resumed["coverage"]["parts"][0]["ranges"][0]["subtitle"]["state"] == "available"
+
+@pytest.mark.parametrize(("operation", "quote", "expected", "revision"), [
+    ("revise", "另挑一段", "queued", 2),
+    ("cancel", "停止这项交办", "cancelled", 2),
+    ("cancel", "另一个人的指令", "queued", 1),
+    ("revise", "", "queued", 1),
+])
+async def test_opened_edition_routes_once_with_current_instruction(settings, monkeypatch, operation, quote, expected, revision):
+    app = create_app(settings, adapter=ControlledPlatform())
+    runtime = app.state.runtime
+    path = "/api/chat/intelligent"
+    identity = str(uuid4())
+    message = "原定的素材，另挑一段。" if operation == "revise" else "这项交办，停止这项交办，已有的稿子留着。"
+    coord = {"task_revision": 1, "edition": 1}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        (await client.post(path, json={"request_id": identity, "message": "挑选两段素材",
+                                       "intent": {"action": "agent_task"}})).raise_for_status()
+        with runtime.store.db as db:
+            runtime.tasks.workspace.record_delivery(db, runtime.tasks.current(identity), "这是首版。")
+
+        async def route(messages, schema, **options):
+            if schema["title"] == "WorkLifecycle":
+                return {"action": "chat", "reply_markdown": "我在。"}
+            packet = json.loads(messages[1]["content"])
+            assert messages[-1]["content"] == message
+            assert packet["opened_artifact"] == {"id": identity, **coord}
+            assert [card["id"] for card in packet["recent_task_cards"]] == [identity]
+            assert not packet["history_task_cards"]
+            effect = "现在停止执行整个任务" if operation == "cancel" else "实际修改同一任务或成果的部分或全部"
+            return {"intent": effect, "reference": identity, "patch": {"field": "goal", "requirement": quote,
+                                                                    "subject": "这项" if operation == "cancel" else "素材"}}
+
+        monkeypatch.setattr(runtime.llm, "generate_assistant_json", route, raising=False)
+        payload = {"request_id": str(uuid4()), "message": message, "opened_artifact": {"task_id": identity, **coord}}
+        invalid = await client.post(path, json=payload | {"opened_artifact": {**payload["opened_artifact"], "edition": 2}})
+        assert invalid.status_code == 409
+        for _ in range(2):
+            response = await client.post(path, json=payload)
+            assert response.status_code == 200, response.text
+        task = runtime.tasks.current(identity)
+        assert (task["status"], task["revision"]) == (expected, revision)
+        if revision == 2 and operation == "revise":
+            assert "引用成果 r1 v1" in task["goal"] and task["goal"].endswith(message)
+        assert runtime.tasks.workspace.latest(identity)["body"] == "这是首版。"
+
+@pytest.mark.parametrize("bad_route", [False, True])
+async def test_unopened_running_task_cannot_absorb_unrelated_conversation(settings, monkeypatch, bad_route):
+    app = create_app(settings, adapter=ControlledPlatform())
+    runtime = app.state.runtime
+    identity = str(uuid4())
+    goal = "为下场直播从视频取两个片段，保存提纲，写两句引言。"
+    path = "/api/chat/intelligent"
+    conversation = "辛苦啦，跟我聊两句吧。"
+
+    async def generate(messages, schema, **options):
+        if schema["title"] == "CardTurnIntent":
+            assert schema["properties"]["patch"] == {"type": "null"}
+            assert "实际修改同一任务或成果的部分或全部" not in schema["properties"]["intent"]["enum"]
+            if bad_route:
+                return {"intent": "实际修改同一任务或成果的部分或全部", "reference": identity,
+                        "patch": {"field": "goal", "subject": "我", "requirement": "两句"}}
+            return {"intent": "只回答当前问题或假设", "reference": None, "patch": None}
+        return {"action": "chat", "reply_markdown": "我在呢，今天聊点什么好？"}
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        (await client.post(path, json={"request_id": identity, "message": goal, "intent": {"action": "agent_task"}})).raise_for_status()
+        runtime.store.db.execute("UPDATE agent_tasks SET status='running' WHERE id=?", (identity,))
+        monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
+        reply = (await client.post(path, json={"request_id": str(uuid4()), "message": conversation})).raise_for_status().json()
+        task = runtime.tasks.current(identity)
+        assert reply["card"] is None and reply["reply_text"] == "我在呢，今天聊点什么好？"
+        assert (task["goal"], task["revision"], task["status"]) == (goal, 1, "running")
+
+async def test_disputed_new_task_needs_an_independent_deliverable():
+    from types import SimpleNamespace
+    from tuber_studio.agent.operator_task_patch import patch_vocabulary, review_change
+
+    card = {"goal": "备两段素材", "editable": {"goal": "备两段素材", "item:1": "甲", "item:2": "乙"}}
+    message = "假设保留第一段、换掉第二段，你怎么看？先别改。"
+    choices, bindings = patch_vocabulary([card], message)
+
+    async def check(**request):
+        assert [tool["name"] for tool in request["tools"]] == ["record_review"]
+        assert request["tool_choice"] == "required" and "previous_response_id" not in request
+        packet = json.loads(request["input"][0]["content"])
+        assert packet["owner_message"] == message and packet["omni_proposal"] == "new_work"
+        return SimpleNamespace(calls=[SimpleNamespace(name="record_review", arguments=assessment)])
+
+    assessment = {"operation": "answer", "changes": {field: "沿用现有内容" for field, _ in choices if field.startswith("item:")},
+                  "separate_deliverable": ""}
+    assert await review_change(check, message, card, "new_work", choices, bindings) == ("discuss", None)
+    assessment.update(operation="new_task", separate_deliverable="换掉第二段")
+    assert await review_change(check, message, card, "new_work", choices, bindings) == ("clarify", None)
+    assessment.update(operation="edit_existing", changes=["unknown"])
+    with pytest.raises(ValueError, match="未知选项"):
+        await review_change(check, message, card, "new_work", choices, bindings)

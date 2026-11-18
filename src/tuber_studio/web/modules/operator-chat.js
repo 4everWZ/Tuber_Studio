@@ -49,7 +49,9 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   let epoch = 0, recentRequest = 0, historyPending = false, cardRefreshPending = false;
   const viewport = window.visualViewport;
   const shell = form.closest(".win-main-shell");
-  const taskActivity = initTaskActivity(api, requestId);
+  let openedArtifact = null;
+  const rememberArtifact = value => { openedArtifact = value; };
+  const taskActivity = initTaskActivity(api, requestId, rememberArtifact);
 
   function sizeChat() {
     if (active && viewport?.scale === 1) shell.style.setProperty("--operator-chat-height", `${viewport.height}px`);
@@ -230,7 +232,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     let card;
     if (cardTurn.card) {
       const cardRoot = node("div", null, "operator-chat-card");
-      card = createOperatorCard(cardRoot, cardTurn, { api, path, reflectAutomation, controls, openTask: taskActivity.open });
+      card = createOperatorCard(cardRoot, cardTurn, { api, path, reflectAutomation, controls, openTask: taskActivity.open, rememberArtifact });
       section.append(cardRoot);
       if (turn.card.type === "operation_control" && getAutomationStatus?.()) card.update(getAutomationStatus());
     }
@@ -248,6 +250,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     inFlight?.controller.abort();
     inFlight = null;
     turns.clear();
+    openedArtifact = null;
     taskActivity.close(false);
     feed.replaceChildren();
     input.value = videoId.value = "";
@@ -390,7 +393,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     if (selectedAction !== "full_video") {
       const topic = input.value.trim();
       const shortcut = shortcutInputs[selectedAction];
-      if (!shortcut) return { message: topic };
+      if (!shortcut) return { message: topic, ...(openedArtifact ? { opened_artifact: openedArtifact } : {}) };
       return {
         ...(selectedAction === "agent_task" && (videoId.value.trim() || rangeList.children.length) ?
           { video_selection: videoSelection() } : {}),
@@ -480,6 +483,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
         }
       }
       retry = null;
+      if (request.opened_artifact === openedArtifact) openedArtifact = null;
       const follow = nearEnd();
       const section = mountTurn({ ...request, ...result });
       if (section) transient.replaceWith(section);
@@ -489,6 +493,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
       progress.textContent = "";
     } catch (error) {
       if (currentEpoch !== epoch) return;
+      if (request.opened_artifact && error.status === 409) openedArtifact = null;
       retry = { key, request };
       progress.textContent = "";
       setMessage(safeMessage(error.message), true);
