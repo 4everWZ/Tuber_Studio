@@ -163,6 +163,8 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
         result = {"status":"completed", "body":body, "citations":other.get("memory_citations", []),
                   "editor_review":plan.get("editor_memory", {}).get("review"), "items":visible_items,
                   "primary_points":primary, "independent_device_body_matched":True}
+        if plan.get("attribution_rejections"):
+            result["attribution_rejections"] = plan["attribution_rejections"]
         record(phase, result)
         result["measurement"] = await measure_edition(result["items"], plan.get("frame_reviews", {}), phase, grader)
         nearest = min(points.values(), key=lambda p:abs(p["seconds"] - 13.5), default=None)

@@ -1,0 +1,455 @@
+{
+  "run": "fnl_3w2b",
+  "material_origin": {
+    "mode": "reused_verified_public_read",
+    "task_id": "06b1ee8d-40f4-4756-8ca0-e91bd68f34bc",
+    "step_id": "840ec0bf-e632-5856-a442-1b7045296a31",
+    "selection": {
+      "bvid": "BV1Hy4y1J7xH",
+      "ranges": [
+        {
+          "part": 2,
+          "start": 11,
+          "end": 14
+        }
+      ]
+    },
+    "cid": "301983263",
+    "clip_frames": 75
+  },
+  "independent_device": {
+    "architecture": "x86_64",
+    "fresh_authenticated_session": true,
+    "read_after_page_close": true,
+    "forget_visible_on_original_client": true
+  },
+  "forgotten_revisions": {
+    "1": 3
+  },
+  "acceptance_passed": false,
+  "platform_writes": 0,
+  "teardown": {
+    "remaining_http_tasks": 0,
+    "open_connections": 0,
+    "server_exited": true
+  },
+  "voice": {
+    "status": "observed",
+    "protocol": "explicit_user_audio",
+    "speaker": "synthetic Mandarin QA speech",
+    "bound_final_transcript": "好的，以后直播提纲的标题都用陈述句，以句号结尾。",
+    "owner_confirmed_text": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "correction": {
+      "id": 1,
+      "revision": 3
+    },
+    "final_transcript_events": 0
+  },
+  "before": {
+    "status": "failed",
+    "body": null,
+    "message": "任务未完成。",
+    "read": {
+      "status": "failed",
+      "tools": [
+        "inspect_video"
+      ],
+      "video_findings": [
+        3
+      ],
+      "frames": [
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 11.44,
+          "kind": "实际视频帧"
+        },
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 12.48,
+          "kind": "实际视频帧"
+        },
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 13.52,
+          "kind": "实际视频帧"
+        }
+      ]
+    },
+    "frame_field_rejections": [],
+    "outbound_title_and_review_requests": []
+  },
+  "voice_corrected": {
+    "status": "failed",
+    "body": null,
+    "message": "前台核对未通过：items.0.title 人物或物主归属未经核实；items.0.rationale 人物或物主归属未经核实",
+    "read": {
+      "status": "failed",
+      "tools": [
+        "inspect_video",
+        "submit_materials"
+      ],
+      "video_findings": [
+        3
+      ],
+      "frames": [
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 11.44,
+          "kind": "实际视频帧"
+        },
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 12.48,
+          "kind": "实际视频帧"
+        },
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 13.52,
+          "kind": "实际视频帧"
+        }
+      ]
+    },
+    "frame_field_rejections": [
+      {
+        "field": "items.0.title",
+        "text": "宫殿内部摆放着一座华丽的金色雕花宝座",
+        "primary_frame": "09fb3c59-d240-58cb-bd8f-e9de2f978d4a:3",
+        "claims": [
+          {
+            "phrase": "宫殿内部",
+            "person": "无",
+            "relation": "场景或物件归属",
+            "sources": [],
+            "issue": "审稿未逐字定位该人名及其关系。"
+          }
+        ],
+        "pages": []
+      },
+      {
+        "field": "items.0.rationale",
+        "text": "画面依据：华丽的金色雕花宝座。剪辑安排：用作转场，用这一镜作为前后段落的视觉桥梁，平滑过渡到下一个主题。",
+        "primary_frame": "09fb3c59-d240-58cb-bd8f-e9de2f978d4a:3",
+        "claims": [
+          {
+            "phrase": "华丽的金色雕花宝座",
+            "person": "无",
+            "relation": "场景或物件归属",
+            "sources": [],
+            "issue": "审稿未逐字定位该人名及其关系。"
+          }
+        ],
+        "pages": []
+      },
+      {
+        "field": "items.0.title",
+        "text": "宫殿内部摆放着一座华丽的金色雕花宝座",
+        "primary_frame": "09fb3c59-d240-58cb-bd8f-e9de2f978d4a:3",
+        "claims": [
+          {
+            "phrase": "宫殿内部",
+            "person": "无",
+            "relation": "场景或物件归属",
+            "sources": [],
+            "issue": "审稿未逐字定位该人名及其关系。"
+          }
+        ],
+        "pages": []
+      },
+      {
+        "field": "items.0.rationale",
+        "text": "画面依据：宝座上有黄色坐垫和靠背。剪辑安排：用在开场，开场时插入这一镜，作为过渡引入主题的视觉铺垫。",
+        "primary_frame": "09fb3c59-d240-58cb-bd8f-e9de2f978d4a:3",
+        "claims": [
+          {
+            "phrase": "皇帝宝座",
+            "person": "无",
+            "relation": "场景或物件归属",
+            "sources": [],
+            "issue": "审稿未逐字定位该人名及其关系。"
+          }
+        ],
+        "pages": []
+      }
+    ],
+    "outbound_title_and_review_requests": [
+      {
+        "schema": "pixel_caption",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": true,
+        "image_count": 1
+      },
+      {
+        "schema": "pixel_caption",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": true,
+        "image_count": 1
+      },
+      {
+        "schema": "ClipTitle",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": false,
+        "image_count": 1
+      },
+      {
+        "schema": "ClipTitle",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": false,
+        "image_count": 1
+      },
+      {
+        "schema": "VideoGroundingReview",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": true,
+        "image_count": 1
+      },
+      {
+        "schema": "VideoGroundingReview",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": true,
+        "image_count": 1
+      },
+      {
+        "schema": "field_repair",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": false,
+        "image_count": 0
+      },
+      {
+        "schema": "field_repair",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": false,
+        "image_count": 2
+      },
+      {
+        "schema": "field_repair",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": false,
+        "image_count": 2
+      },
+      {
+        "schema": "VideoGroundingReview",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": true,
+        "image_count": 1
+      },
+      {
+        "schema": "VideoGroundingReview",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": true,
+        "image_count": 1
+      },
+      {
+        "schema": "field_repair",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": false,
+        "image_count": 0
+      }
+    ]
+  },
+  "after": {
+    "status": "failed",
+    "body": null,
+    "message": "前台核对未通过：items.0.title 人物或物主归属未经核实；items.0.rationale 人物或物主归属未经核实",
+    "read": {
+      "status": "failed",
+      "tools": [
+        "inspect_video"
+      ],
+      "video_findings": [
+        3
+      ],
+      "frames": [
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 11.44,
+          "kind": "实际视频帧"
+        },
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 12.48,
+          "kind": "实际视频帧"
+        },
+        {
+          "part": 2,
+          "cid": "301983263",
+          "seconds": 13.52,
+          "kind": "实际视频帧"
+        }
+      ]
+    },
+    "frame_field_rejections": [
+      {
+        "field": "items.0.title",
+        "text": "故宫金雕宝座",
+        "primary_frame": "7dd77a26-9289-5242-beab-509b2e508310:3",
+        "claims": [
+          {
+            "phrase": "皇帝宝座",
+            "person": "无",
+            "relation": "场景或物件归属",
+            "sources": [],
+            "issue": "审稿未逐字定位该人名及其关系。"
+          }
+        ],
+        "pages": []
+      },
+      {
+        "field": "items.0.rationale",
+        "text": "画面依据：华丽的金色雕花宝座。剪辑安排：用在开场，开场时插入这一镜，作为过渡引入主题的视觉铺垫。",
+        "primary_frame": "7dd77a26-9289-5242-beab-509b2e508310:3",
+        "claims": [
+          {
+            "phrase": "皇帝宝座",
+            "person": "无",
+            "relation": "场景或物件归属",
+            "sources": [],
+            "issue": "审稿未逐字定位该人名及其关系。"
+          }
+        ],
+        "pages": []
+      },
+      {
+        "field": "items.0.title",
+        "text": "宫殿内部",
+        "primary_frame": "7dd77a26-9289-5242-beab-509b2e508310:3",
+        "claims": [
+          {
+            "phrase": "史君说剧 bilibili",
+            "person": "史君说剧 bilibili",
+            "relation": "画面文字提名",
+            "sources": [],
+            "issue": "审稿未逐字定位该人名及其关系。"
+          }
+        ],
+        "pages": []
+      },
+      {
+        "field": "items.0.rationale",
+        "text": "画面依据：华丽的金色雕花宝座。剪辑安排：用在开场，开场时插入这一镜，作为过渡引入主题的视觉铺垫。",
+        "primary_frame": "7dd77a26-9289-5242-beab-509b2e508310:3",
+        "claims": [
+          {
+            "phrase": "史君说剧 bilibili",
+            "person": "史君说剧 bilibili",
+            "relation": "画面文字提名",
+            "sources": [],
+            "issue": "审稿未逐字定位该人名及其关系。"
+          }
+        ],
+        "pages": []
+      }
+    ],
+    "outbound_title_and_review_requests": [
+      {
+        "schema": "pixel_caption",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": true,
+        "image_count": 1
+      },
+      {
+        "schema": "pixel_caption",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": true,
+        "image_count": 1
+      },
+      {
+        "schema": "ClipTitle",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": false,
+        "image_count": 1
+      },
+      {
+        "schema": "ClipTitle",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": false,
+        "image_count": 1
+      },
+      {
+        "schema": "VideoGroundingReview",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": true,
+        "image_count": 1
+      },
+      {
+        "schema": "VideoGroundingReview",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": true,
+        "image_count": 1
+      },
+      {
+        "schema": "field_repair",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": false,
+        "image_count": 0
+      },
+      {
+        "schema": "field_repair",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": false,
+        "image_count": 2
+      },
+      {
+        "schema": "field_repair",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": false,
+        "image_count": 2
+      },
+      {
+        "schema": "VideoGroundingReview",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": true,
+        "image_count": 1
+      },
+      {
+        "schema": "VideoGroundingReview",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": true,
+        "image_count": 1
+      },
+      {
+        "schema": "field_repair",
+        "account_identity_block": false,
+        "character_name_in_system": false,
+        "task_goal_in_user_text": false,
+        "image_count": 0
+      }
+    ]
+  },
+  "independent_review": {
+    "before": "已读取三个实际时点；未持久保存后台候选，也未观察到编辑请求。该轮回执未给具体异常原因。",
+    "voice_corrected": "保存同条目 v3 并跨端读回。草稿“宫殿内部摆放着一座华丽的金色雕花宝座”有陈述谓语，缺所要求的句号，未交付。人名审查将“无”当成人名；标题原文没有该人名。",
+    "after": "初稿“故宫金雕宝座”没有工坊角色名，但具体地点“故宫”缺乏可核对来源。同一主帧修为“宫殿内部”，符合简短名词形式。审查引用屏上水印“史君说剧 bilibili”，修稿标题与理由均没有该短语；不能据此判定两个字段写了人物归属。任务未交付。",
+    "path": "第三份的线上请求同时出现 pixel_caption、ClipTitle 和 VideoGroundingReview，系统账号身份块与角色名均为 false，ClipTitle 携带 1 张图。初稿及修稿拒绝均绑定同一 P2 13.52 秒主帧。修稿间只有带图的通用字段修正，未再次发出 ClipTitle。原版字段名诊断也会把分类审查标作 field_repair；重复请求可含计数探针。"
+  }
+}

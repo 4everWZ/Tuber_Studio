@@ -19,8 +19,16 @@ def editor_requests(provider, goal, character_name, publish):
         if not route:
             if fields == {"anchor", "detail", "use"}:
                 route = "pixel_caption"
-            elif any(field.startswith(("items.", "gaps.")) for field in fields):
-                route = "field_repair"
+            elif fields and all(field.startswith(("items.", "gaps.")) for field in fields):
+                content = messages[-1].get("content")
+                if isinstance(content, list):
+                    content = next((p["text"] for p in content if p.get("type") == "text"), "")
+                try:
+                    packet = json.loads(content)
+                except (TypeError, ValueError):
+                    packet = None
+                route = ("field_repair" if isinstance(packet, dict) and
+                         {"draft", "issues"} <= packet.keys() else "field_review")
             else:
                 route = "other"
         token = pending.set(route)
@@ -32,7 +40,8 @@ def editor_requests(provider, goal, character_name, publish):
     async def sent(request):
         if not pending.get() or not request.url.path.endswith("/chat/completions"):
             return
-        messages = json.loads(request.content)["messages"]
+        payload = json.loads(request.content)
+        messages = payload["messages"]
         system = [m["content"] for m in messages if m["role"] == "system" and isinstance(m["content"], str)]
         # Look only at text parts; image bytes, headers, account data and prompts stay out of the receipt.
         user_text = []
@@ -49,7 +58,8 @@ def editor_requests(provider, goal, character_name, publish):
         publish({"schema": pending.get(), "account_identity_block": captured_identity(messages) is not None,
                  "character_name_in_system": any(character_name and character_name in s for s in system),
                  "task_goal_in_user_text": any(goal and goal in s for s in user_text),
-                 "image_count": image_count})
+                 "image_count": image_count, "max_tokens": payload.get("max_tokens"),
+                 "structured_output": bool(payload.get("response_format") or payload.get("structured_outputs"))})
 
     hooks = provider.client.event_hooks["request"]
     with patch.object(provider, "generate_json", observed):
