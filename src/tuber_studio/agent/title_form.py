@@ -64,7 +64,31 @@ def meets_form(reading, expected, *, require_grounding):
 
 def form_instruction(expected):
     if expected == "陈述句":
-        return "用完整主句陈述可核实的事实。说清主体及其可核实的动作、位置、关系或状态；定语加中心名词仍是标签。"
+        return "从具体观察里选一条已有的事实，保留它的主句谓语。写清谁或什么位于何处、呈何种颜色或状态、做什么。定语修饰中心名词仍是标签。"
     if expected == "问句":
-        return "提出确实可回答的问题，使问题中的事实前提均有依据。"
+        return "先从材料中选一个能直接指出的答案，再就这一项事实发问，使题面描述也有依据。画面可询问位置、颜色、物件或动作。"
     return "用简短的名词短语概括已核实的内容。"
+
+
+class TitleOptions(StrictModel):
+    titles: list[str] = Field(min_length=2, max_length=3)
+
+
+async def grounded_options(fact, preference, expected, checks, call):
+    """Offer alternative expressions of one observation for the existing field repair."""
+    messages = [
+        {"role":"system","content":"你是私有成果的文字编辑。只使用给定的这一条可见事实，"
+         "写两至三个不同的完整标题候选。每个都必须符合号主要求的句式和标点。"
+         + form_instruction(expected)},
+        {"role":"user","content":dump({"verified_observation":fact, "writing_preference":preference})},
+    ]
+    options = TitleOptions.model_validate(await call(messages, TitleOptions.model_json_schema()))
+    measured = []
+    chosen = None
+    for title in dict.fromkeys(options.titles):
+        literal_ok = all(check.meets(title) for check in checks)
+        reading = await read_title(title, [fact], call) if literal_ok and chosen is None else None
+        measured.append({"title":title, "literal_checks_passed":literal_ok, "reading":reading})
+        if reading and meets_form(reading, expected, require_grounding=True):
+            chosen = title
+    return {"fact":fact, "candidates":measured, "chosen":chosen}

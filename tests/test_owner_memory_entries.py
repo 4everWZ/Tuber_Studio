@@ -284,7 +284,10 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
             prefs = packet.get("owner_writing_preferences", [])
             assert isinstance(packet["candidate"]["items"], list)
             assert note not in json.dumps(packet["candidate"],ensure_ascii=False)
-            seen.append(prefs)
+            seen.append([p["owner_preference"] for p in prefs])
+            if prefs:
+                assert prefs[0]["title_form"] == ("陈述句" if statement else "问句")
+                assert prefs[0]["editor_guidance"]
             if not prefs:
                 assert "椅子放在哪里？" not in json.dumps(packet, ensure_ascii=False)
                 assert note not in json.dumps(packet, ensure_ascii=False)

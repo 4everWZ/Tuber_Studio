@@ -9,7 +9,7 @@ from ..store import dump
 from .owner_memory import MemoryUse, check_use, citation, correctable_preference, private_rows, read_stamp
 from .editor_contract import FormatCheck, literal_checks, review_preferences
 from .task_delivery import DelegationError
-from .title_form import RequestedTitleForm, explicit_title_form, form_instruction, frame_observations, meets_form, read_title
+from .title_form import RequestedTitleForm, explicit_title_form, form_instruction, frame_observations, grounded_options, meets_form, read_title
 
 
 class WritingSelection(StrictModel):
@@ -96,16 +96,25 @@ def connect_private_editor(runtime):
         use = MemoryUse(ids=[row["id"] for row in rows], stamp=read_stamp(runtime, rows))
         plan["editor_memory"] = {"memory_use": use.model_dump(), "memory_citations": [citation(r) for r in rows]}
         try:
-            request = request | {"owner_writing_preferences": list(notes.values())}
+            directions = [{"owner_preference":note, "title_form":forms[k], "editor_guidance":form_instruction(forms[k])}
+                          if k in forms else {"owner_preference":note} for k,note in notes.items()]
+            request = request | {"owner_writing_preferences": directions}
             product = await editor(request, evidence)
             check_use(runtime, use)
             if not notes:
                 return product
             locked = getattr(product, "_locked_fields", set())
+            async def call(messages, schema):
+                return await generate(messages, schema, use)
+
+            audit = {"preference_ids":list(notes), "format_checks":len(checks), "attempts":[], "alternatives":{}}
+            plan["editor_memory"]["review"] = audit
             async def verify(draft):
-                call = lambda messages,schema: generate(messages,schema,use)
-                issues = await review_preferences(task["goal"], notes, checks, draft, call, locked)
                 readings = {}
+                attempt = {"titles":readings, "submitted_titles":[item.title for item in draft.items]}
+                audit["attempts"].append(attempt)
+                issues = await review_preferences(task["goal"], notes, checks, draft, call, locked)
+                attempt["failed_fields"] = issues
                 if forms:
                     for index, item in enumerate(draft.items):
                         path = f"items.{index}.title"
@@ -116,7 +125,9 @@ def connect_private_editor(runtime):
                         if not observations and frame and frame in evidence.observations:
                             observations = [evidence.observations[frame]]
                         reading = await read_title(item.title, observations, call)
-                        readings[path] = reading
+                        readings[path] = reading | {"title":item.title, "observations":observations, "expected":forms,
+                            "writing_review_issues":list(issues.get(path, [])),
+                            "literal_checks_passed":all(c.meets(item.title) for _,c in checks if c.field == "title")}
                         for identity, expected in forms.items():
                             if not meets_form(reading, expected, require_grounding=bool(frame)):
                                 ids = issues.setdefault(path, [])
@@ -129,6 +140,22 @@ def connect_private_editor(runtime):
                                     notes[k] + (form_instruction(forms[k]) if k in forms and path.endswith(".title") else "")
                                     for k in ids)
                                 for path,ids in issues.items()}
+                for path, reading in readings.items():
+                    if path in instructions:
+                        instructions[path] += "。本稿去标点后判为" + reading["form"] + "。本字段可用的原始观察：" + dump(reading["observations"])
+                        item = product.items[int(path.split(".")[1])]
+                        details = product._frame_reviews.get(item.primary_frame, {}).get("details", [])
+                        expected = {forms[k] for k in issues[path] if k in forms}
+                        if details and len(expected) == 1:
+                            rules = [c for _,c in checks if c.field == "title"]
+                            relevant = "；".join(notes[k] for k in issues[path])
+                            basis = product._field_sources.get(path.replace(".title", ".rationale"), {})
+                            fact = basis.get("observation") if basis.get("source") == item.primary_frame else None
+                            options = await grounded_options(fact if fact in details else details[0], relevant,
+                                                             expected.pop(), rules, call)
+                            audit["alternatives"][path] = options
+                            if options["chosen"]:
+                                instructions[path] += "。此完整候选已通过句式和事实核对，请逐字采用并按原画面复核：" + options["chosen"]
                 repair = private_plan | {"editor_draft":product.model_dump(), "editor_issues":instructions,
                                          "frame_reviews":product._frame_reviews,
                                          "window_reviews":getattr(product, "_window_reviews", {})}
@@ -139,8 +166,7 @@ def connect_private_editor(runtime):
                     diagnostics = "；".join(f"{path}（约定 " + "、".join(f"#{k}" for k in ids) + "）"
                                            for path,ids in remaining.items())
                     raise DelegationError("成品仍未满足本轮写作约定：" + diagnostics + "。尚未交付。")
-            plan["editor_memory"]["review"] = {"preference_ids":list(notes), "format_checks":len(checks),
-                                               "repaired_fields":sorted(issues), "title_readings":readings}
+            audit.update(repaired_fields=sorted(issues), title_readings=readings)
             return product
         finally:
             check_use(runtime, use)

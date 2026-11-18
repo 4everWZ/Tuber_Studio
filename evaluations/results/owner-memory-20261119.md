@@ -23,6 +23,8 @@ node --test tests/web_personalization.test.cjs tests/web_private_call.test.cjs
 
 ## 历次对照与回归
 
+分开审查句式后，第一次重新联网取材取得 CID 301983263 的 P2 三帧，初版因 `gaps.0 引用未支持该断言` 未交付（`ekd1g4j1`）。第二次复用封存的 11–14 秒原片及取材回执，解码得到 75 帧；首版标题修正后仍被约定 #1 拦截（`nsubsfsg`）。该轮只记录了失败字段，无法从回执还原被拒的两个标题。两轮都未进入语音阶段，不参与三版语义对照。
+
 Windows 上的 Chromium 156.0.8078.4 登录隔离工坊，在设置页预览并确认了号主提供的原文 “Group related points and separate distinct concerns. Use headings and lists when they improve readability.”。关闭页面后，另一台 ARM64 设备通过仅绑定回环的 SSH 转发访问同一个工坊。该设备首次未登录读取返回 401，独立登录后取得相同原文、设置来源及修订 1。该设备按修订号忘记这条偏好后，原设备检索为空。本次使用新建业务库，平台写入 0。
 
 | 验收项 | 取得的证据 |
@@ -43,6 +45,7 @@ Windows 上的 Chromium 156.0.8078.4 登录隔离工坊，在设置页预览并�
 ```sh
 uv run --locked python -m evaluations.owner_memory_device --device <ssh-alias> --live --voice-wav <speech.wav>
 uv run --locked python -m evaluations.owner_memory_device --device <ssh-alias> --live --gateway-checkout ../omni-avatar-api
+uv run --locked python -m evaluations.owner_memory_device --device <ssh-alias> --live --gateway-checkout ../omni-avatar-api --reviewed-receipt <isolated-qa-runtime> <inspect-video-step-uuid>
 uv run --locked python -m evaluations.owner_memory_device --device <ssh-alias> --live --gateway-checkout ../omni-avatar-api --voice-only
 uv run --locked pytest -q tests/test_owner_memory_entries.py
 ```

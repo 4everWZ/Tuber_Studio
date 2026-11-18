@@ -64,3 +64,23 @@ async def test_three_edition_measurement_separates_form_punctuation_and_groundin
     report = await measure_edition([{"title":title,"primary_frame":"frame"}], {"frame":{"details":["宝座在中央"]}}, phase, read)
     assert report["items"][0]["punctuation_matches"] is punctuation
     assert report["passed"] is passed
+
+
+async def test_editor_selects_a_sentence_against_one_observation_for_the_original_frame_review():
+    from tuber_studio.agent.title_form import grounded_options
+
+    fact = "白色台灯位于书桌右侧"
+    async def call(messages, schema):
+        data = json.loads(messages[-1]["content"])
+        if "verified_observation" in data:
+            assert data["verified_observation"] == fact
+            return {"titles":["书桌右侧的白色台灯。","台灯在书桌右侧。","书桌右侧有一盏白色台灯。"]}
+        assert data["observations"] == [fact] and "writing_preference" not in data
+        phrase = data["title_words"].endswith("台灯")
+        return {"form":"名词短语" if phrase else "陈述句", "core":"台灯" if phrase else "在书桌右侧",
+                "observation":fact, "supported":True}
+    review = await grounded_options(fact, "标题用陈述句，以句号结尾。", "陈述句",
+                                    [FormatCheck(field="title", operation="ends_with",value="。")], call)
+    assert review["chosen"] == "台灯在书桌右侧。"
+    assert review["candidates"][0]["reading"]["form"] == "名词短语"
+    assert review["candidates"][1]["reading"]["grounded"]

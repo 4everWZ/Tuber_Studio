@@ -67,6 +67,15 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
     record("automatic_lookup", {"source_key":"turn:"+identity, "items":found, "state":runtime.memory_organizer.state()})
     auto, = [row for row in found if row["source_key"] == "turn:" + identity and AUTO in row["quote"]]
     tasks = runtime.tasks
+    edit = tasks.edit_delivery
+    async def audited_edit(task, evidence):
+        try:
+            return await edit(task, evidence)
+        except Exception as error:
+            if audit := task["plan"].get("editor_memory", {}).get("review"):
+                record("rejected_writing", {"task_id":task["id"], "message":str(error), "review":audit})
+            raise
+    tasks.edit_delivery = audited_edit
     tasks.start()
     record("video_request", {"goal":GOAL, "selection":SELECTION})
     async def grader(messages, schema):
@@ -131,3 +140,4 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
                 "after_titles":after_titles, "semantic_status":"observed" if observed else "unverified"}
     finally:
         await tasks.close()
+        tasks.edit_delivery = edit
