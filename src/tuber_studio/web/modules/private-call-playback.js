@@ -27,6 +27,27 @@ export class PrivatePlayback {
     }
   }
 
+  speaking() {
+    if (this.muted || this.context.state !== "running") return false;
+    const time = this.context.getOutputTimestamp?.().contextTime;
+    const span = this.queue.find(item => item.start <= time && time < item.end);
+    if (!span) return false;
+    const buffer = span.node.buffer, samples = buffer.getChannelData(0);
+    const end = Math.min(samples.length, Math.floor((time - span.start) * buffer.sampleRate));
+    const start = Math.max(0, end - Math.round(buffer.sampleRate * .02));
+    let squares = 0;
+    for (let index = start; index < end; index++) squares += samples[index] ** 2;
+    return end > start && squares / (end - start) > .012 ** 2;
+  }
+
+  setMuted(muted) {
+    if (muted) {
+      this.clear();
+      this.cancelled.add(this.response);
+    }
+    this.muted = muted;
+  }
+
   clear() {
     this.acknowledge();
     for (const span of this.queue) {
@@ -54,6 +75,7 @@ export class PrivatePlayback {
     }
     if (!["response.audio.delta", "response.output_audio.delta"].includes(event.type) ||
         !response || this.cancelled.has(response)) return;
+    if (this.muted) { this.cancelled.add(response); return; }
     const rate = event.sample_rate_hz ?? 24000;
     if (!Number.isInteger(rate) || rate < 8000 || rate > 96000 || (event.format ?? "pcm16") !== "pcm16" ||
         typeof event.delta !== "string" || event.delta.length > 1048576 ||

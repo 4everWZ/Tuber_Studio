@@ -1,5 +1,6 @@
 import { api } from "./api.js";
 import { PrivatePlayback } from "./private-call-playback.js";
+import { CallAvatar } from "./private-call-avatar.js";
 import { FinalUtterances, showHandoff } from "./private-call-handoff.js";
 
 const byId = id => document.getElementById(id);
@@ -7,6 +8,16 @@ const open = byId("private-call-open"), dialog = byId("private-call-dialog");
 const start = byId("private-call-start"), end = byId("private-call-end"), status = byId("private-call-state");
 const menu = byId("operator-chat-more-panel"), workspace = byId("workspace");
 let current;
+const avatar = new CallAvatar(byId("private-call-avatar"), byId("private-call-avatar-fallback"));
+const mute = byId("private-call-mute");
+mute.onclick = () => {
+  const playback = current?.playback;
+  if (!playback) return;
+  playback.setMuted(!playback.muted);
+  mute.setAttribute("aria-pressed", String(playback.muted));
+  mute.textContent = playback.muted ? "恢复播放" : "播放静音";
+  avatar.draw(false);
+};
 
 async function check() {
   if (menu.hidden || workspace.hidden || !window.isSecureContext || !navigator.mediaDevices?.getUserMedia ||
@@ -19,6 +30,11 @@ new MutationObserver(check).observe(menu, {attributes: true, attributeFilter: ["
 function finish(call, message) {
   if (call !== current || !call) return;
   current = null;
+  cancelAnimationFrame(call.frame);
+  avatar.draw(false);
+  mute.hidden = true;
+  mute.textContent = "播放静音";
+  mute.setAttribute("aria-pressed", "false");
   byId("private-call-utterances").replaceChildren();
   call.abort.abort();
   clearTimeout(call.deadline);
@@ -82,6 +98,14 @@ async function begin() {
     url.search = new URLSearchParams({ticket: config.ticket, duplex: "1", autostart: "0"});
     call.socket = new WebSocket(url);
     call.playback = new PrivatePlayback(call.context, event => call.send(event));
+    void avatar.load(config, call.abort.signal);
+    mute.hidden = false;
+    const animate = () => {
+      if (current !== call) return;
+      avatar.draw(!avatar.motion.matches && call.playback.speaking());
+      call.frame = requestAnimationFrame(animate);
+    };
+    animate();
     call.socket.onopen = () => call.send({type: "session.update", session: {
       instructions: config.instructions, modalities: ["audio", "text"], input_audio_format: "pcm16",
       output_audio_format: "pcm16", playback_commit_policy: "ack_only", extra_body: {auto_response: true},
@@ -117,6 +141,7 @@ async function begin() {
 }
 
 open.onclick = () => {
+  avatar.reset();
   byId("operator-chat-more-toggle").click();
   status.textContent = "尚未开始通话";
   dialog.showModal();

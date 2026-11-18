@@ -79,12 +79,15 @@
 </section>
 <dialog id="private-call-dialog" aria-labelledby="private-call-title">
   <h2 id="private-call-title">私有语音通话</h2>
+  <canvas id="private-call-avatar" width="200" height="180" hidden role="img" aria-label="通话角色"></canvas>
+  <span id="private-call-avatar-fallback">语音通话</span>
   <p>声音只送往私聊推理服务，不接入直播、不写入聊天记录。建议佩戴耳机。</p>
   <p id="private-call-state" role="status">尚未开始通话</p>
   <p class="hint">仅当服务返回可核对的号主最终转写时，才可在这里确认交办。</p>
   <div id="private-call-utterances" aria-label="号主最终转写" style="max-height:30vh;overflow:auto"></div>
   <div class="actions">
     <button id="private-call-start" type="button">开始通话</button>
+    <button id="private-call-mute" type="button" hidden aria-pressed="false">播放静音</button>
     <button id="private-call-end" type="button">关闭</button>
   </div>
 </dialog>

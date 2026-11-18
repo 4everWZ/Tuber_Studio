@@ -47,6 +47,29 @@ async def mint_ticket(origin, token):
     return ticket
 
 
+def call_avatar(settings, character):
+    images = {}
+    if character.get("avatar_manifest"):
+        try:
+            entries = settings.assets(character)
+        except (TypeError, AttributeError):
+            entries = []
+        for entry in entries:
+            path = entry.get("path", "")
+            if not path.startswith("assets/") or Path(path).suffix.lower() not in {".png", ".gif", ".webp", ".jpg", ".jpeg"}:
+                continue
+            try:
+                file = settings.asset_path(path)
+            except (OSError, ValueError):
+                continue
+            images[entry.get("tag")] = "/" + file.relative_to(settings.root).as_posix()
+    pair = character["id"] == "whale" and (
+        images.get("sing_closed"), images.get("sing_open")
+    ) == ("/assets/whale/sing_closed.png", "/assets/whale/sing_open.png")
+    return {"still": images.get("sing_closed") if pair else images.get("idle") or next(iter(images.values()), None),
+            "speaking": images["sing_open"] if pair else None, "fallback": images.get("idle")}
+
+
 def register_private_call(app, runtime, require_admin):
     @app.get("/api/chat/private-call", dependencies=[Depends(require_admin)])
     async def availability():
@@ -71,6 +94,7 @@ def register_private_call(app, runtime, require_admin):
             "socket": origin.replace("http", "ws", 1) + "/v1/realtime",
             "ticket": ticket,
             "character": character["name"],
+            "avatar": call_avatar(runtime.settings, character),
             "instructions": "\n".join(text for text in (
                 f"你是{character['name']}，正在和号主私下通话。",
                 character.get("core", {}).get("identity"), character.get("style", {}).get("instructions"),

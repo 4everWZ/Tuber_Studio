@@ -33,11 +33,22 @@ def test_ticket_is_admin_only_fixed_upstream_and_contains_no_service_credential(
         assert key.read_text() not in reply.text and settings.admin_token not in reply.text
         assert reply.json()["socket"] == "wss://voice.example.org/v1/realtime"
         assert reply.json()["character"] == app.state.runtime.character["name"]
+        assert reply.json()["avatar"]["speaking"] == "/assets/whale/sing_open.png"
         assert len(issued) == 1
         request = issued[0]
         assert request.method == "POST" and str(request.url) == "https://voice.example.org/v1/browser-tickets"
         assert request.headers["authorization"] == "Bearer " + key.read_text()
         assert request.content == b'{"path":"/v1/realtime"}'
+
+
+def test_private_avatar_pair_is_not_inherited_by_name_or_manifest(settings):
+    clone = {"id": "other", "name": "大肥鱼", "avatar_manifest": "assets/whale/manifest.json"}
+    profile = private_call.call_avatar(settings, clone)
+    assert profile["speaking"] is None and profile["still"] == "/assets/whale/idle.gif"
+    for role in (clone, clone | {"id": "whale"}):
+        assert private_call.call_avatar(settings, role | {"avatar_manifest": "missing.json"}) == {
+            "still": None, "speaking": None, "fallback": None,
+        }
 
 
 @pytest.mark.parametrize("origin", ["", "http://192.0.2.3", "https://voice.example/llm", "https://user@voice.example"])
