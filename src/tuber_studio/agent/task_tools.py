@@ -23,6 +23,7 @@ from ..store import dump
 from ..web_fetch import WebFetchRequest, fetch_excerpt, source_url
 from ..web_search import search_broadcast_programmes, search_public_web
 from . import operator_facts
+from .title_form import verified_title_fields
 from .clip_review import review_clip_window
 from .dynamic_publication import register_dynamic_publication
 from .handoff import PublicText, handoff_text, supplied_private_fragments, video_findings
@@ -1232,9 +1233,14 @@ def create_task_runtime(runtime, store, browsing):
                 "required": ["keep_previous"], "additionalProperties": False}]}
         if correction:
             draft = task["plan"]["editor_draft"]
-            patch_schema = {"type": "object", "properties": {key: {"type": "string"} for key in correction},
-                            "required": list(correction), "additionalProperties": False}
-            repair = {"draft": draft, "issues": correction,
+            locked_fields.update(task.get("editor_locked_fields", ()))
+            if locked_fields.intersection(correction):
+                raise DelegationError("本轮修订不能改写号主要求保留的字段。")
+            fixed = verified_title_fields(task, draft, correction, inventories, locked_fields)
+            pending = {path:issue for path,issue in correction.items() if path not in fixed}
+            patch_schema = {"type": "object", "properties": {key: {"type": "string"} for key in pending},
+                            "required": list(pending), "additionalProperties": False}
+            repair = {"draft": correct_editorial_fields(draft, fixed, fixed).model_dump() if fixed else draft, "issues": pending,
                       "request": "依据被指出字段自身的画面与号主要求，填写完整替换文字。"}
             draft_fields = editorial_fields(PrivateDelivery.model_validate(draft))
             if receipts := [row for row in task["plan"].get("attribution_rejections", ())
@@ -1243,7 +1249,7 @@ def create_task_runtime(runtime, store, browsing):
             repair_images = []
             repair_choices = {}
             missing_anchors = {}
-            for path in correction:
+            for path in pending:
                 parts = path.split(".")
                 if parts[0] != "items":
                     continue
@@ -1266,7 +1272,11 @@ def create_task_runtime(runtime, store, browsing):
                         patch_schema["properties"][path] = pixel_choice_schema(repair_choices[path])
             content = ([{"type": "text", "text": dump(repair)}, *repair_images] if repair_images else dump(repair))
             messages = [messages[0], {"role": "user", "content": content}]
-            fixed = await request_json(messages, patch_schema, max_tokens=budget)
+            if pending:
+                generated = await request_json(messages, patch_schema, max_tokens=budget)
+                if set(generated) != set(pending):
+                    raise DelegationError("本轮修稿返回了未开放的字段或遗漏了待修字段。")
+                fixed.update(generated)
             for path, key in missing_anchors.items():
                 value = fixed[path]
                 if value["anchor"] not in inventories[key]["labels"]:

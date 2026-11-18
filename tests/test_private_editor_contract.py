@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from test_video_delivery import reviewed_window, selection, short_read
 
 from tuber_studio.agent.editor_contract import FormatCheck, literal_checks, literal_evidence, review_preferences
 from tuber_studio.agent.task_delivery import DelegationError, PrivateDelivery
@@ -108,3 +109,44 @@ async def test_anchored_question_candidate_must_ask_for_a_visible_answer():
     options = await grounded_options(fact, "标题用问句", "问句", [], call)
     assert not options["candidates"][0]["reading"]["answer_bound"]
     assert options["chosen"] == "左侧的台灯是什么颜色？"
+
+
+async def test_verified_title_goes_verbatim_to_the_final_image_review(runtime, store, monkeypatch, reviewed_window):
+    from tuber_studio.agent import task_tools
+    from tuber_studio.agent.task_delivery import evidence_index
+    from tuber_studio.agent.title_form import verified_title_fields
+
+    read = short_read("read", 1)
+    evidence = evidence_index([read])
+    draft = selection(primary="read:1").model_dump()
+    fact = "一人站在椅子旁"
+    title = "椅子旁站着一个人。"
+    fields = {"items.0.title":"使用核准语句"}
+    inventory = {"read:1":{"labels":["座椅"], "details":[fact], "screen_text":[], "title_anchor":["座椅"]}}
+    task = {"goal":"使用这一帧做提纲", "steps":[read], "verified_title_edits":{
+                "items.0.title":{"primary_frame":"read:1", "original":draft["items"][0]["title"], "title":title, "fact":fact}},
+            "plan":{"prior_goals":[], "candidate":draft, "editor_draft":draft, "editor_issues":fields, "frame_reviews":inventory}}
+    with pytest.raises(DelegationError):
+        verified_title_fields(task, draft, fields, inventory, set(fields))
+    with pytest.raises(DelegationError):
+        verified_title_fields(task, draft, fields, {}, set())
+    audited = []
+    async def image(*args):
+        return {"type":"image_url","image_url":{"url":"data:image/jpeg;base64,test"}}
+    async def claims(texts, *args, **kwargs):
+        assert texts["items.0.title"] == title
+        return dict.fromkeys(texts, [])
+    async def omni(messages, schema, **kwargs):
+        props = schema["properties"]
+        assert "items.0.title" not in props, "Already approved title was requested from the model again"
+        if "requested_count" in props:
+            return {"requested_count":1, "usage":"解释画面", "playable":True, "trace_origin":False}
+        assert "field_basis" in props and title in str(messages[-1]["content"])
+        audited.append(title)
+        return {"supported":True, "issues":[], "field_basis":{
+            "items.0."+name:{"source":"read:1","observation":fact,"claim":"有来源的事实"} for name in ("title","rationale")}}
+    monkeypatch.setattr(task_tools, "clip_review_image", image)
+    monkeypatch.setattr(task_tools, "review_work_claims", claims)
+    monkeypatch.setattr(runtime.llm, "generate_json", omni)
+    result = await task_tools.create_task_runtime(runtime, store, None).edit_delivery(task, evidence)
+    assert audited and result.items[0].title == title

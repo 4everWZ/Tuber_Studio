@@ -148,6 +148,7 @@ def connect_private_editor(runtime):
                 return issues, readings
             issues, readings = await verify(product)
             if issues:
+                verified_titles = {}
                 instructions = {path:"保留事实、证据和选材，按号主约定改写：" + "；".join(
                                     notes[k] + (form_instruction(forms[k]) if k in forms and path.endswith(".title") else "")
                                     for k in ids)
@@ -167,11 +168,14 @@ def connect_private_editor(runtime):
                                                              expected.pop(), rules, call)
                             audit["alternatives"][path] = options
                             if options["chosen"]:
-                                instructions[path] += "。此完整候选已通过句式和事实核对，请逐字采用并按原画面复核：" + options["chosen"]
+                                verified_titles[path] = {"primary_frame":item.primary_frame, "original":item.title, "fact":options["fact"],
+                                                         "title":options["chosen"]}
                 repair = private_plan | {"editor_draft":product.model_dump(), "editor_issues":instructions,
                                          "frame_reviews":product._frame_reviews,
                                          "window_reviews":getattr(product, "_window_reviews", {})}
-                product = await editor(request | {"plan":repair}, evidence)
+                check_use(runtime, use)
+                product = await editor(request | {"plan":repair, "verified_title_edits":verified_titles,
+                                                  "editor_locked_fields":sorted(locked)}, evidence)
                 check_use(runtime, use)
                 remaining, readings = await verify(product)
                 if remaining:

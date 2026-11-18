@@ -8,6 +8,7 @@ from pydantic import Field
 
 from ..models import StrictModel
 from ..store import dump
+from .task_delivery import DelegationError
 
 
 RequestedTitleForm = Literal["陈述句", "问句", "名词短语"]
@@ -71,6 +72,22 @@ def form_instruction(expected):
     if expected == "问句":
         return "先从给出的观察摘出一个确定答案，再仅就该答案发问。若问题是位置，答案须是位置；问颜色须能回答颜色，问物件须能直接指出该物件。"
     return "用简短的名词短语概括已核实的内容。"
+
+
+def verified_title_fields(task, draft, correction, inventories, locked):
+    fixed = {}
+    for path, choice in task.get("verified_title_edits", {}).items():
+        match = re.fullmatch(r"items\.(0|[1-9]\d*)\.title", path)
+        if not match or path not in correction or path in locked or int(match[1]) >= len(draft["items"]):
+            raise DelegationError("已核准文字未绑定本轮可改写的标题。")
+        item = draft["items"][int(match[1])]
+        key = item.get("primary_frame")
+        if (not key or key != choice["primary_frame"] or item["title"] != choice["original"]
+                or choice["fact"] not in inventories.get(key, {}).get("details", [])
+                or not isinstance(choice["title"], str) or not choice["title"].strip()):
+            raise DelegationError("已核准标题与本项主帧或图像依据不符。")
+        fixed[path] = choice["title"]
+    return fixed
 
 
 class TitleOption(StrictModel):
