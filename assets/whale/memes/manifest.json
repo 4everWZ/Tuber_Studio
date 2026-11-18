@@ -146,6 +146,50 @@
       ],
       "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-walk.png",
       "note": "原动作图集按帧 [0, 16, 5, 6, 22, 10, 26, 13, 14, 30]（行优先，从 0 编号）裁切，缩放为 256×256 透明循环 GIF，每帧 100 ms。"
+    },
+    {
+      "id": "archive-flowers",
+      "title": "花花",
+      "path": "archive-flowers.webp",
+      "emotions": [
+        "cheerful"
+      ],
+      "credit": "ai-girl-stickers-32",
+      "source": "https://github.com/lmy414/ai-girl-stickers/blob/d1f355f10d641a5760e849440d0913e5f42bbec6/dist/submissions/originals/deepseek/issue-32-062.webp",
+      "note": "蓝色大肥鱼档案馆收录的投稿原文件，保留原字节。作品页 https://xn--pssy23gqgbz2d718b.com/works/deepseek202609230067.html"
+    },
+    {
+      "id": "archive-blanket",
+      "title": "被窝",
+      "path": "archive-blanket.webp",
+      "emotions": [
+        "idle"
+      ],
+      "credit": "ai-girl-stickers-32",
+      "source": "https://github.com/lmy414/ai-girl-stickers/blob/d1f355f10d641a5760e849440d0913e5f42bbec6/dist/submissions/originals/deepseek/issue-32-064.webp",
+      "note": "蓝色大肥鱼档案馆收录的投稿原文件，保留原字节。作品页 https://xn--pssy23gqgbz2d718b.com/works/deepseek202609230069.html"
+    },
+    {
+      "id": "archive-thinking-whale",
+      "title": "鲸鱼思考",
+      "path": "archive-thinking-whale.webp",
+      "emotions": [
+        "confused"
+      ],
+      "credit": "ai-girl-stickers-32",
+      "source": "https://github.com/lmy414/ai-girl-stickers/blob/d1f355f10d641a5760e849440d0913e5f42bbec6/dist/submissions/originals/deepseek/issue-32-071.webp",
+      "note": "蓝色大肥鱼档案馆收录的投稿原文件，保留原字节。作品页 https://xn--pssy23gqgbz2d718b.com/works/deepseek202609230076.html"
     }
-  ]
+  ],
+  "sources": {
+    "ai-girl-stickers-32": {
+      "author": "1cyberlangke1",
+      "revision": "d1f355f10d641a5760e849440d0913e5f42bbec6",
+      "license": {
+        "name": "CC0 1.0",
+        "url": "https://github.com/lmy414/ai-girl-stickers/issues/32",
+        "note": "投稿人声明为自己的创作或生成作品，并指定 CC0 公共领域。许可文本见 https://creativecommons.org/publicdomain/zero/1.0/ 。"
+      }
+    }
+  }
 }

@@ -7,15 +7,38 @@ async page => {
   await page.route(domain, route => { blocked.push(route.request().url()); return route.fulfill({status: 503, body: "{}"}); });
   const base = await page.evaluate(() => ({origin: location.origin, host: location.hostname}));
   if (!["127.0.0.1", "localhost"].includes(base.host)) throw Error("Open an isolated local Studio before running this check");
+  const gallery = /\/api\/memes(?:[/?]|$)/;
+  const blockGallery = route => { blocked.push(route.request().url()); return route.fulfill({status: 503, body:"{}"}); };
+  await page.route(gallery, blockGallery);
   await page.goto(base.origin);
   const pet = page.getByRole("button", {name:"为角色宠物选表情"});
   const menu = page.getByRole("button", {name:"更多对话操作"});
   await pet.waitFor();
+  await page.waitForFunction(() => {
+    const image = document.querySelector("#chat-agent-avatar");
+    return image.naturalWidth > 0 && new URL(image.src).pathname === "/assets/whale/idle.gif";
+  });
   await page.getByRole("textbox", {name:"给大肥鱼发消息"}).fill("保留草稿");
+  await page.unroute(gallery, blockGallery);
   await pet.click();
   await page.getByRole("dialog", {name:"宠物表情"}).waitFor();
-  await page.getByRole("button", {name:"选用吃一口"}).click();
+  const dialog = page.getByRole("dialog", {name:"宠物表情"});
+  const original = dialog.locator("article").filter({has: page.getByRole("button", {name:"选用吃一口"})});
+  await original.getByText("来源与许可").click();
+  if (!(await original.getByRole("link", {name:"查看来源"}).getAttribute("href")).endsWith("/assets/whale/dense-eat.png")
+      || !(await original.innerText()).includes("YunYueSama")) throw Error("pet atlas credit missing");
+  const archive = dialog.locator("article").filter({has: page.getByRole("button", {name:"选用花花"})});
+  await archive.getByText("来源与许可").click();
+  if (!(await archive.innerText()).includes("1cyberlangke1") ||
+      !(await archive.getByRole("link", {name:"查看来源"}).getAttribute("href")).endsWith("/issue-32-062.webp") ||
+      !(await archive.getByRole("link", {name:"许可说明"}).getAttribute("href")).endsWith("/ai-girl-stickers/issues/32"))
+    throw Error("archive image or grant is not attributed");
+  await archive.getByRole("button", {name:"选用花花"}).click();
   await page.waitForFunction(() => document.querySelector("#chat-agent-avatar").naturalWidth > 0 && document.querySelector("#chat-agent-avatar").src.includes("/api/memes/"));
+  if (await page.locator("#chat-agent-avatar").evaluate(async image => {
+    await image.decode();
+    return image.naturalWidth !== 898 || image.naturalHeight !== 898;
+  })) throw Error("selected image does not match the archived original");
   if (await page.locator("#operator-chat-input").inputValue() !== "保留草稿") throw Error("draft changed");
   await menu.click(); await page.getByRole("button",{name:"隐藏角色宠物"}).click();
   await page.reload(); await page.getByRole("heading",{name:"大肥鱼",exact:true}).waitFor();

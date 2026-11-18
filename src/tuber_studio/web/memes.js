@@ -89,8 +89,9 @@ export class MemeGallery {
 }
 
 export class MemePicker {
-  constructor(api, onSelect, {title = "选择私信表情包", description = "显示图库中已启用的图片。选图后仍需审核，最终仅发送这一张图片。", accept = () => true, emptyText = "图库没有可用表情包，请先在图库启用或导入图片。"} = {}) {
+  constructor(api, onSelect, {title = "选择私信表情包", description = "显示图库中已启用的图片。选图后仍需审核，最终仅发送这一张图片。", accept = () => true, showSources = false, emptyText = "图库没有可用表情包，请先在图库启用或导入图片。"} = {}) {
     this.accept = accept;
+    this.showSources = showSources;
     this.emptyText = emptyText;
     this.api = api; this.onSelect = onSelect; this.sequence = 0; this.pending = false;
     const headingId = `meme-picker-heading-${++memePickerCount}`;
@@ -122,7 +123,11 @@ export class MemePicker {
           catch (error) { this.$("[data-picker-state]").textContent = `选图未保存：${error.message}`; }
           finally { this.pending = false; this.controls(); }
         };
-        this.$("[data-picker-grid]").append(button);
+        if (this.showSources) {
+          const card = memeElement("article", null, "meme-card");
+          card.append(button, memeMetadata(asset));
+          this.$("[data-picker-grid]").append(card);
+        } else this.$("[data-picker-grid]").append(button);
       }
     } catch (error) { if (request === this.sequence) this.$("[data-picker-state]").textContent = `图库读取失败：${error.message}`; }
     finally { if (request === this.sequence) this.$("[data-picker-refresh]").disabled = false; }

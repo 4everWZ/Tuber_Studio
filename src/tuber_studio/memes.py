@@ -408,17 +408,20 @@ class MemeCatalog:
              "entry": next((item for item in manifest["entries"] if item["id"] == name), {})}
             for name, emotions in PRESETS.items()
         ]
+        credits = {}
         reactions = manifest_path.parent / "memes" / "manifest.json"
         if reactions.is_file():
             if linked(reactions) or linked(reactions.parent):
                 raise ValueError("已有表情manifest不能使用链接")
-            for entry in json.loads(reactions.read_text(encoding="utf-8"))["entries"]:
+            catalog = json.loads(reactions.read_text(encoding="utf-8"))
+            credits = catalog.get("sources", {})
+            for entry in catalog["entries"]:
                 name = entry["path"]
                 if not BUNDLED_MEME_NAME.fullmatch(name):
                     raise ValueError("已有表情文件名无效")
                 presets.append(entry | {"file": reactions.parent / name, "storage_name": name,
                                         "enabled": True, "entry": entry})
-        license = {
+        pet_license = {
             "name": attribution["license"],
             "url": attribution["repository"] + "/blob/" + attribution["revision"] + "/LICENSE",
             "note": "完整来源声明：" + attribution["license_path"] + "；" + attribution["asset_license_path"]
@@ -426,12 +429,21 @@ class MemeCatalog:
         }
         for preset in presets:
             asset_id = "meme_" + uuid5(NAMESPACE_URL, "tuber-studio:existing-whale-meme:" + preset["id"]).hex
+            entry = preset["entry"]
+            if "credit" in entry:
+                credit = credits[entry["credit"]]
+                license = credit["license"]
+                kind = "licensed_pack"
+            else:
+                if not entry["source"].startswith(f"{attribution['repository']}/blob/{attribution['revision']}/"):
+                    raise ValueError("其他来源的内置表情须登记自己的作者、修订与许可")
+                credit, license, kind = attribution, pet_license, "existing_user_assets"
             source = {
-                "kind": "existing_user_assets",
-                "author": attribution["author"],
-                "url": preset["entry"].get("source") or attribution["repository"],
-                "revision": attribution["revision"],
-                "note": preset["entry"].get("note") or "项目现有素材，保留登记时的图像字节。",
+                "kind": kind,
+                "author": credit["author"],
+                "url": entry["source"],
+                "revision": credit["revision"],
+                "note": entry.get("note") or "项目现有素材，保留登记时的图像字节。",
             }
             async with self.lock:
                 if not self.store.one("SELECT asset_id FROM meme_assets WHERE asset_id=?", (asset_id,)):

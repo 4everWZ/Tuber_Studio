@@ -236,7 +236,7 @@ async def test_bootstrap_preserves_disabled_deleted_preferences_and_original_fil
         assert (clip["source"]["author"], clip["license"]["name"]) == ("YunYueSama", "大肥鱼项目署名许可 1.0")
         assert f'/blob/{clip["source"]["revision"]}/assets/whale/dense-' in clip["source"]["url"]
         assert catalog.read(clip["asset_id"], "whale")["mime_type"] == "image/gif"
-    assert len(reactions) == 8 and all(row["enabled"] for row in reactions)
+    assert len(reactions) == 11 and all(row["enabled"] for row in reactions)
     row = gifs[0]
     assert row["source"]["kind"] == "existing_user_assets" and row["source"]["author"] == "YunYueSama"
     assert row["license"]["name"] == "大肥鱼项目署名许可 1.0" and "第三方" in row["license"]["note"]
@@ -248,7 +248,7 @@ async def test_bootstrap_preserves_disabled_deleted_preferences_and_original_fil
     catalog.enable(new_clips[0]["asset_id"], False)
     reopened = MemeCatalog(settings, store)
     await reopened.seed_existing(enabled=True)
-    assert len(reopened.list("whale", include_disabled=True)) == 19
+    assert len(reopened.list("whale", include_disabled=True)) == len(rows) - 1
     assert {row["asset_id"] for row in reopened.list("whale")} == {row["asset_id"] for row in reactions + new_clips[1:]}
     assert {p.name: p.read_bytes() for p in (settings.root / "assets/whale").glob("*.gif")} == original
 

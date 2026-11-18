@@ -20,6 +20,7 @@ export function initChatPet(api) {
     render();
   }, {
     title: "宠物表情",
+    showSources: true,
     description: "只改变你眼前的宠物，不会发送消息。更多来源可从共享图库导入。",
     accept: asset => hasPetSource(asset) && !(motion.matches && asset.animated),
     emptyText: "没有合适的表情。可到图库导入带作者、来源链接和许可链接的图片。",

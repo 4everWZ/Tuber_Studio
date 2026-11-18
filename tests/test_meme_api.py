@@ -28,7 +28,16 @@ def test_catalog_requires_admin_and_exposes_shared_reaction_pack(client, setting
     listing = client.get("/api/memes").json()
     assert listing["max_file_bytes"] == MAX_BYTES
     assert listing["character_id"] == "whale"
-    assert len(listing["items"]) == 20
+    assert len(listing["items"]) == 23
+    archive = [item for item in listing["items"] if item["source"]["kind"] == "licensed_pack"]
+    assert {item["title"] for item in archive} == {"花花", "被窝", "鲸鱼思考"}
+    for item in archive:
+        assert item["enabled"] and item["source"]["author"] == "1cyberlangke1"
+        assert f'/ai-girl-stickers/blob/{item["source"]["revision"]}/dist/submissions/originals/' in item["source"]["url"]
+        assert item["license"]["name"] == "CC0 1.0"
+        assert item["license"]["url"] == "https://github.com/lmy414/ai-girl-stickers/issues/32"
+        preview = client.get(f"/api/memes/{item['asset_id']}/preview")
+        assert preview.headers["content-type"] == "image/webp" and preview.content[8:12] == b"WEBP"
     assert sum(item["enabled"] and item["mime_type"] == "image/png" for item in listing["items"]) == 8
     new_clips = [item for item in listing["items"] if item["enabled"] and item["animated"]]
     assert {item["title"] for item in new_clips} == {"摇摆一下", "开饭啦", "蹦起来", "困了，晚安", "悄悄偷吃", "这就来"}
