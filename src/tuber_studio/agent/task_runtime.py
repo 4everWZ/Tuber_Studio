@@ -120,6 +120,7 @@ class TaskRuntime:
         self.responses_client = lambda: None
         self.requires_responses = lambda: False
         self.edit_delivery = None
+        self.validate_private_read = None
         self.read_parallelism = lambda: 2
         self.tools: dict[str, Tool] = {}
         self.wake = asyncio.Event()
@@ -176,6 +177,13 @@ class TaskRuntime:
 
     def view(self, task):
         result = {key: task[key] for key in ("id", "goal", "revision", "status", "steps", "message", "due", "updated")}
+        try:
+            self._validate_reads(task["steps"], task["plan"])
+        except ValueError:
+            return result | {"steps": [step for step in task["steps"] if step["tool"] == "owner_attachment"],
+                             "message": "引用的私有记忆已变化。"}
+        if isinstance(task["plan"], dict) and (memory := task["plan"].get("editor_memory")):
+            result["memory_citations"] = memory["memory_citations"]
         if result["status"] in {"queued", "running", "waiting"}:
             for step in reversed(task["steps"]):
                 tool = self.tools.get(step.get("tool"))
@@ -338,6 +346,14 @@ class TaskRuntime:
             change["plan"].update(selection_plan(video_selection, change["goal"]))
         if change["plan"] and task_delegation.uses_responses(task) and video_binding(task) != video_binding(task | change):
             change["plan"].pop("previous_delivery", None)
+        if change["plan"] and task_delegation.uses_responses(task) and video_binding(task) == video_binding(task | change):
+            previous = task["plan"].get("private_previous_edition")
+            if task["status"] == "completed" and (memory := task["plan"].get("editor_memory")):
+                fields = {key: change["plan"].pop(key) for key in ("previous_delivery", "previous_selection")
+                          if key in change["plan"]}
+                previous = {"memory_use": memory["memory_use"], "fields": fields}
+            if previous and (task["status"] != "completed" or task["plan"].get("editor_memory")):
+                change["plan"]["private_previous_edition"] = previous
         if stops:
             # Persist the control and original step together before interrupting its coroutine.
             change.update(status="waiting", message="正在核对关联操作的停止结果。",
@@ -394,7 +410,40 @@ class TaskRuntime:
             return
         self._save(task, **control, steps=steps, pending_control=None, due=time.time())
 
+    @staticmethod
+    def _memory_uses(steps, plan):
+        sources = [step.get("result") or {} for step in steps]
+        if isinstance(plan, dict) and plan.get("editor_memory"):
+            sources.append(plan["editor_memory"])
+        return [source["memory_use"] for source in sources if source.get("memory_use")]
+
+    def edition_recallable(self, task_id, revision):
+        uses = self.store.get(f"private_edition_memory:{task_id}:{revision}", [])
+        if uses and not self.validate_private_read:
+            return False
+        try:
+            for use in uses:
+                self.validate_private_read(use)
+        except ValueError:
+            return False
+        return True
+
+    def _validate_reads(self, steps, plan):
+        if self.validate_private_read:
+            for use in self._memory_uses(steps, plan):
+                if any(s["tool"].startswith("owner_") and s["tool"].endswith("_grant") for s in steps):
+                    raise ValueError("私有记忆写作的工具范围已变化")
+                self.validate_private_read(use)
+
     def _save(self, task, **changes):
+        if "revision" not in changes and not task["pending_control"]:
+            self._validate_reads(changes.get("steps", task["steps"]), changes.get("plan", task["plan"]))
+        return self._persist(task, changes)
+
+    def _persist(self, task, changes):
+        uses = []
+        if changes.get("status") == "completed":
+            uses = self._memory_uses(changes.get("steps", task["steps"]), changes.get("plan", task["plan"]))
         changes["updated"] = max(time.time(), math.nextafter(task["updated"], math.inf))
         if "steps" in changes:
             changes["steps"] = dump(changes["steps"])
@@ -408,6 +457,9 @@ class TaskRuntime:
             ).rowcount == 1
             if applied and changes.get("status") == "completed" and changes.get("message"):
                 self.workspace.record_delivery(database, task, changes["message"])
+                if uses:
+                    database.execute("INSERT OR IGNORE INTO kv VALUES(?,?)",
+                                     (f"private_edition_memory:{task['id']}:{task['revision']}", dump(uses)))
             if applied and changes.get("status") in {"completed", "failed", "awaiting_approval", "needs_input"}:
                 self.workspace.notify(database, task["id"], changes["updated"])
             elif applied and changes.get("status") and changes["status"] != task["status"]:
@@ -459,6 +511,7 @@ class TaskRuntime:
             if task["pending_control"]:
                 await self._finish_control(task)
             else:
+                self._validate_reads(task["steps"], task["plan"])
                 await self._step(task)
         except InferenceQueueBusy as busy:
             fresh = self.executable(task["id"])
@@ -469,6 +522,13 @@ class TaskRuntime:
             log.warning("Agent task %s failed: %s", task["id"], type(error).__name__)
             fresh = self.executable(task["id"])
             if fresh and fresh["revision"] == task["revision"]:
+                try:
+                    self._validate_reads(fresh["steps"], fresh["plan"])
+                except ValueError:
+                    self._persist(fresh, {"status": "failed", "message": "引用的私有记忆已变化，请重新交办。",
+                        "steps": [s for s in fresh["steps"] if s["tool"] == "owner_attachment"],
+                        "plan": {"backend": "responses", "prior_goals": []}})
+                    return
                 _, delivery = self._deliver(fresh)
                 reason = "后台请求超出服务预算。" if isinstance(error, InferenceBudgetExceeded) else "任务未完成。"
                 if isinstance(error, DelegationError):

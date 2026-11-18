@@ -11,7 +11,7 @@ from fastapi import Body, Depends, HTTPException, Path, Query
 from pydantic import Field, StrictBool, StringConstraints, ValidationError
 
 from ..bilibili_account import space_uid
-from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER, DailyMemoryService, contains_memory_credential
+from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER, DailyMemoryService, MemoryChanged, contains_memory_credential
 from ..generation_meter import budgeted_call
 from ..models import Character, StrictModel
 from ..operation_continuations import content_hash
@@ -19,6 +19,7 @@ from ..relationships import UserProfile
 from ..store import character_card, dump, editable_character
 from .handoff import LIVE_STYLE, LIVE_STYLE_GROUP
 from .operator_facts import recent_events
+from .owner_memory import history_preference
 
 
 class OrganizedMemoryChange(StrictModel):
@@ -59,11 +60,12 @@ class DeleteCharacter(StrictModel):
 class MemoryPreference(StrictModel):
     enabled: StrictBool
     scope: str
+    history_enabled: StrictBool | None = None
 
 
 def organized_view(row):
     result = {key: row[key] for key in ("id", "memory_kind", "headline", "quote", "anecdote", "status",
-                                       "channels", "source", "updated_at")}
+                                       "channels", "source", "updated_at", "revision")}
     if row["status"] == "active":
         result["channels"] = ["operator", *result["channels"]]
     result["scene"] = row["proof"].get("scene")
@@ -86,7 +88,7 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
             raise HTTPException(409, "当前账号或角色已变化，请重新打开")
         return scope, token
 
-    def change_memory(scope, item_id, data, revision=None):
+    def change_memory(scope, item_id, data, revision=None, expected_revision=None):
         memory = runtime.daily_memory
         existing = memory.organized(scope, item_id=item_id)
         if not existing:
@@ -98,7 +100,11 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
             group = row["proof"].get("style_group")
             if data.note not in {text for key, text in LIVE_STYLE.items() if LIVE_STYLE_GROUP[key] == group}:
                 raise ValueError("请从直播表达规则中选择")
-        return organized_view(memory.change_organized(scope, item_id, **data.model_dump()))
+        try:
+            return organized_view(memory.change_organized(scope, item_id, expected_revision=expected_revision,
+                                                         **data.model_dump()))
+        except MemoryChanged as error:
+            raise HTTPException(412, "这条记忆已有变更，请重新读取") from error
 
     def user_memory_scope(platform, user_id, account_id, character_id):
         messages = comments.direct_messages
@@ -256,14 +262,14 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
     @app.get("/api/daily-memory/preferences", dependencies=[Depends(require_admin)])
     async def get_memory_preference():
         scope, token = memory_scope()
-        return runtime.daily_memory.preference(scope) | {"scope": token}
+        return runtime.daily_memory.preference(scope) | history_preference(runtime) | {"scope": token}
 
     @app.put("/api/daily-memory/preferences", dependencies=[Depends(require_admin)])
     async def set_memory_preference(data: MemoryPreference):
         scope, token = memory_scope(data.scope)
         result = runtime.daily_memory.set_preference(scope, data.enabled)
         runtime.memory_organizer.setting_changed()
-        return result | {"scope": token}
+        return result | history_preference(runtime, data.history_enabled) | {"scope": token}
 
     @app.get("/api/daily-memory", dependencies=[Depends(require_admin)])
     async def get_daily_memory(
@@ -351,17 +357,29 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
         await runtime.browsing.discovery.restore_history_scope()
         return recent_events(runtime.browsing) | {"scope": memory_scope()[1]}
 
+    @app.get("/api/daily-memory/organized/{item_id}/revisions", dependencies=[Depends(require_admin)])
+    async def memory_revisions(item_id: int, scope: str):
+        current, _ = memory_scope(scope)
+        revisions = runtime.daily_memory.revisions(current, item_id)
+        if not revisions:
+            raise HTTPException(404, "找不到这条记忆")
+        return {"revisions": revisions}
+
     @app.patch("/api/daily-memory/organized/{item_id}", dependencies=[Depends(require_admin)])
     async def change_organized_memory(
         item_id: int, data: OrganizedMemoryChange, scope: str | None = None, revision: float | None = None,
+        expected_revision: int | None = Query(None, gt=0),
     ):
         current, _ = memory_scope(scope)
-        return change_memory(current, item_id, data, revision)
+        return change_memory(current, item_id, data, revision, expected_revision)
 
     @app.delete("/api/daily-memory/organized/{item_id}", dependencies=[Depends(require_admin)])
-    async def delete_organized_memory(item_id: int, scope: str | None = None):
+    async def delete_organized_memory(item_id: int, scope: str | None = None, expected_revision: int | None = Query(None, gt=0)):
         current, _ = memory_scope(scope)
-        result = runtime.daily_memory.change_organized(current, item_id, delete=True)
+        try:
+            result = runtime.daily_memory.change_organized(current, item_id, delete=True, expected_revision=expected_revision)
+        except MemoryChanged as error:
+            raise HTTPException(412, "这条记忆已有变更，请重新读取") from error
         if not result:
             raise HTTPException(404, "未找到当前账号和角色的记忆")
         return result

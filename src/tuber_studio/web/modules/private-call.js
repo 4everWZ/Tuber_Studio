@@ -3,6 +3,7 @@ import { PrivatePlayback } from "./private-call-playback.js";
 import { portraitPlayback } from "./private-call-whep.js";
 import { guardCall } from "./private-call-guard.js";
 import { CallAvatar } from "./private-call-avatar.js";
+import { citations } from "./owner-memory.js";
 import { FinalUtterances, showHandoff } from "./private-call-handoff.js";
 
 const byId = id => document.getElementById(id);
@@ -10,6 +11,8 @@ const open = byId("private-call-open"), dialog = byId("private-call-dialog");
 const start = byId("private-call-start"), end = byId("private-call-end"), status = byId("private-call-state");
 const menu = byId("operator-chat-more-panel"), workspace = byId("workspace");
 let current;
+const topic = byId("private-call-topic"), temporary = byId("private-call-temporary");
+temporary.onchange = () => { topic.disabled = temporary.checked; };
 const avatar = new CallAvatar(byId("private-call-avatar"), byId("private-call-avatar-fallback"));
 const mute = byId("private-call-mute");
 mute.onclick = () => {
@@ -38,6 +41,9 @@ function finish(call, message) {
   mute.textContent = "播放静音";
   mute.setAttribute("aria-pressed", "false");
   byId("private-call-utterances").replaceChildren();
+  byId("private-call-citations").replaceChildren();
+  temporary.disabled = false;
+  topic.disabled = temporary.checked;
   call.abort.abort();
   clearTimeout(call.deadline);
   clearInterval(call.receipts);
@@ -95,8 +101,21 @@ async function begin(previous = null) {
     call.context = new AudioContext({sampleRate: 16000});
     await call.context.resume();
     if (current !== call) return;
-    const config = await api("/api/chat/private-call/ticket", {method: "POST", signal: call.abort.signal});
+    const ephemeral = temporary.checked;
+    temporary.disabled = topic.disabled = true;
+    const config = await api("/api/chat/private-call/ticket", {method: "POST", signal: call.abort.signal,
+      body: {temporary: ephemeral, topic: ephemeral ? "" : topic.value.trim()}});
     if (current !== call) return;
+    async function validateMemory() {
+      if (!config.memory_use) return true;
+      try {
+        await api("/api/agent/memory/validate", {method: "POST", body: config.memory_use, signal: call.abort.signal});
+        return current === call;
+      } catch (error) {
+        invalidate(error.status === 409 ? "changed" : "closed");
+        return false;
+      }
+    }
     if (previous && config.call_scope !== previous.scope) {
       finish(call, "角色或授权已变化，请重新开始通话"); return;
     }
@@ -114,6 +133,7 @@ async function begin(previous = null) {
     if (config.memory_use) {
       call.guard = await guardCall(call, config.memory_use, invalidate);
       if (current !== call) return;
+      byId("private-call-citations").append(citations(config.memory_citations));
     }
     const url = new URL(config.socket);
     url.search = new URLSearchParams({ticket: config.ticket, duplex: "1", autostart: "0"});
@@ -156,8 +176,14 @@ async function begin(previous = null) {
           await capture(call, config.character);
         } else if (call.stream) {
           const text = call.utterances.accept(event);
-          if (text) showHandoff(byId("private-call-utterances"), text);
-          call.playback.event(event);
+          if (text && !ephemeral) showHandoff(byId("private-call-utterances"), text);
+          if (config.memory_use && ["response.audio.delta", "response.output_audio.delta"].includes(event.type)) {
+            call.pendingAudio = (call.pendingAudio || 0) + 1;
+            if (call.pendingAudio > 8) { finish(call, "记忆核对积压，通话已结束"); return; }
+            call.audioQueue = (call.audioQueue || Promise.resolve()).then(async () => {
+              if (current === call && await validateMemory()) call.playback.event(event);
+            }).catch(() => finish(call, "语音播放失败，通话已结束")).finally(() => { call.pendingAudio--; });
+          } else call.playback.event(event);
         }
       } catch (error) {
         finish(call, error.name === "NotAllowedError" ? "未获麦克风权限，通话已结束" :

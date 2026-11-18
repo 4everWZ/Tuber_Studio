@@ -1,4 +1,5 @@
 import { $, node } from "./core.js";
+import { rememberButton } from "./owner-memory.js";
 
 const endpoint = "/api/daily-memory";
 export const memoryVisibility = { owner: "仅号主", shared: "可跨端使用", live_rule: "直播规则" };
@@ -50,9 +51,13 @@ function renderSources(item) {
 }
 
 export function initPersonalization(model, api) {
+  $("owner-memory-save")?.append(rememberButton(() => ({
+    source: "settings", text: $("owner-memory-statement").value.trim(),
+  }), "保存私有记忆"));
   const memory = $("memory-summary-dialog");
   const recent = $("recent-events-dialog");
   const toggle = $("memory-enabled");
+  const historyToggle = $("memory-history-enabled");
   const settingsStatus = $("memory-switch-status");
   const preview = $("recent-memory-preview-text");
   const memoryLoad = $("memory-load-state");
@@ -97,6 +102,8 @@ export function initPersonalization(model, api) {
   function showPreference(value) {
     preference = value;
     toggle.checked = value.enabled;
+    historyToggle.checked = value.history_enabled !== false;
+    historyToggle.disabled = savingPreference;
     toggle.disabled = savingPreference;
     retryPreference.hidden = true;
     settingsStatus.textContent = "";
@@ -129,10 +136,13 @@ export function initPersonalization(model, api) {
     const enabled = toggle.checked;
     savingPreference = true;
     toggle.disabled = true;
+    historyToggle.disabled = true;
     settingsStatus.textContent = "正在保存…";
     let failure;
     try {
-      const value = await api(endpoint + "/preferences", { method: "PUT", body: { enabled, scope: old.scope } });
+      const value = await api(endpoint + "/preferences", { method: "PUT", body: {
+        enabled, scope: old.scope, history_enabled: historyToggle.checked,
+      } });
       if (version === scopeVersion) showPreference(value);
     } catch (error) {
       failure = error;
@@ -144,13 +154,16 @@ export function initPersonalization(model, api) {
       return;
     }
     toggle.disabled = false;
+    historyToggle.disabled = false;
     if (failure) {
       toggle.checked = old.enabled;
+      historyToggle.checked = old.history_enabled !== false;
       settingsStatus.textContent = `保存失败：${failure.message}。可再次切换重试。`;
     } else if (memory.open) {
       loadReport({ background: true });
     }
   };
+  historyToggle.onchange = toggle.onchange;
   retryPreference.onclick = () => loadPreference();
 
   function showDialog(dialog, opener) {
@@ -421,6 +434,11 @@ export function initPersonalization(model, api) {
     const feedback = requestForm.contains(target) ? requestStatus :
       fromSummary ? $("memory-summary-feedback") : organizerStatus;
     const query = new URLSearchParams({ scope });
+    const organized = /^\/organized\/(\d+)$/.exec(path);
+    if (organized) {
+      const current = report.organized.find(item => item.id === Number(organized[1]));
+      if (current?.revision) query.set("expected_revision", current.revision);
+    }
     if (revision !== undefined) query.set("revision", revision);
     feedback.textContent = "";
     try {
@@ -462,6 +480,19 @@ export function initPersonalization(model, api) {
         node("p", [memoryVisibility[item.visibility], archived ? statuses[item.status] : "", date].filter(Boolean).join(" · "), "hint"));
       edit.append(node("summary", "来源与编辑"));
       if (item.quote) edit.append(node("blockquote", item.quote));
+      const versions = node("details"), versionList = node("div");
+      versions.append(node("summary", "更正历史"), versionList);
+      const displayedScope = report.scope;
+      versions.ontoggle = async () => {
+        if (!versions.open) return;
+        try {
+          const result = await api(`${endpoint}${path}/revisions?scope=${encodeURIComponent(displayedScope)}`);
+          if (versions.isConnected && report?.scope === displayedScope) {
+            versionList.replaceChildren(...result.revisions.map(row => node("p", `v${row.revision} · ${row.note}`)));
+          }
+        } catch (error) { versionList.textContent = error.message; }
+      };
+      edit.append(versions);
       if (item.memory_kind === "private") {
         edit.append(node("p", `来源 · 号主对话 · ${new Date(item.source.at * 1000).toLocaleString("zh-CN")}`, "hint"));
       }
@@ -572,6 +603,9 @@ export function initPersonalization(model, api) {
     recentScope = undefined;
     toggle.disabled = true;
     toggle.checked = false;
+    historyToggle.disabled = true;
+    historyToggle.checked = false;
+    $("owner-memory-statement").value = "";
     settingsStatus.textContent = "";
     preview.textContent = "正在读取…";
     recentList.replaceChildren();

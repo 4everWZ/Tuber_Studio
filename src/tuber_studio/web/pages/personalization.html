@@ -7,6 +7,10 @@
         <input id="memory-enabled" type="checkbox" role="switch" aria-labelledby="memory-toggle-label" aria-describedby="memory-toggle-description" disabled>
       </label>
       <div class="personalization-row">
+        <label for="memory-history-enabled">回复时引用以前的私聊</label>
+        <input id="memory-history-enabled" type="checkbox" role="switch" disabled>
+      </div>
+      <div class="personalization-row">
         <span><strong>记忆摘要</strong><small>查看、更正或删除已记住的内容。</small></span>
         <button type="button" class="personalization-button" id="open-memory-summary">管理</button>
       </div>
@@ -16,6 +20,10 @@
       </div>
     </section>
     <p id="memory-switch-status" class="hint" role="status"></p>
+    <div class="personalization-row">
+      <label>要明确记住的原话<input id="owner-memory-statement" maxlength="150"></label>
+      <span id="owner-memory-save"></span>
+    </div>
     <button type="button" class="win-btn" id="retry-memory-preference" hidden>重新读取记忆设置</button>
   </div>
 </section>

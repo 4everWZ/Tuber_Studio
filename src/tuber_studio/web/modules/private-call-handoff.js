@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { rememberButton } from "./owner-memory.js";
 
 export class FinalUtterances {
   items = new Map();
@@ -60,5 +61,6 @@ export function showHandoff(root, text) {
     row.append(button);
   }
   row.append(feedback);
+  if ([...text].length <= 150) row.append(rememberButton(() => ({source: "confirmed_voice", text}), "确认并记住原话"));
   root.append(row);
 }

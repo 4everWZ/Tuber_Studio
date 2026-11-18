@@ -1,5 +1,6 @@
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
 import { createOperatorCard } from "./operator-chat-cards.js?v=20261116.3";
+import { citations, rememberButton } from "./owner-memory.js";
 import { inferenceDisplay } from "./inference-status.js?v=20261111.07";
 import { renderAssistantAnswer } from "./operator-chat-answer.js";
 import { initTaskActivity } from "./task-activity.js?v=20261116.3";
@@ -205,6 +206,10 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
           renderAssistantAnswer(existing.section.querySelector(".operator-chat-reply"), turn);
         }
         existing.turn = turn;
+        const prior = existing.section.querySelector(".owner-memory-citations");
+        if (turn.memory_citations?.length) {
+          if (!prior) existing.section.append(citations(turn.memory_citations));
+        } else prior?.remove();
         if (cardTurn.card) existing.card?.update(turn.card.type === "operation_control" ? getAutomationStatus?.() || turn.card.data : turn.card.data);
         return null;
       }
@@ -214,6 +219,14 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     const answer = node("div", null, "operator-chat-reply");
     renderAssistantAnswer(answer, turn);
     section.append(node("p", turn.message, "operator-chat-user"), answer);
+    if (turn.memory_citations?.length) section.append(citations(turn.memory_citations));
+    if (turn.private && !turn.card && turn.message && [...turn.message].length <= 150) {
+      const options = node("details");
+      options.append(node("summary", "原话操作"), rememberButton(() => ({
+        source: "turn", turn_id: turn.request_id, text: turn.message,
+      })));
+      section.append(options);
+    }
     let card;
     if (cardTurn.card) {
       const cardRoot = node("div", null, "operator-chat-card");

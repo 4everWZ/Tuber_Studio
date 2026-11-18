@@ -1,4 +1,5 @@
 import { node, safeMessage } from "./core.js?v=20261105.32";
+import { citations, rememberButton } from "./owner-memory.js";
 import { memoryGroupNames, memoryVisibility } from "./personalization.js?v=20261116.1";
 import { renderAssistantAnswer } from "./operator-chat-answer.js";
 import { operationControlCard } from "./operator-chat-control.js?v=20261113.12";
@@ -365,11 +366,22 @@ export function createOperatorCard(root, turn, context) {
       summary.hidden = !["completed", "failed"].includes(value.status) || !value.steps?.some(step => step.result);
     };
     open.onclick = () => context.openTask(data.id);
-    root.append(status, summary, detail, open);
+    root.append(status, summary, detail, references, open);
     update(data);
     return { update, needsRefresh: () => active };
+    const references = node("div");
   }
   if (type === "owner_profile") root.append(link("打开绑定号主的 B 站主页", data.url));
+      references.replaceChildren();
+      if (value.memory_citations?.length) references.append(citations(value.memory_citations));
+      for (const step of value.steps || []) {
+        if (step.revision !== value.revision || !step.result) continue;
+        if (step.result.memory_citations?.length) references.append(citations(step.result.memory_citations));
+        for (const suggestion of step.result.memory_proposals || []) {
+          references.append(rememberButton(() => ({source: "task", task_id: value.id,
+            source_id: suggestion.source_id, text: suggestion.quote}), "查看记忆建议"));
+        }
+      }
   if (type === "dynamic_draft") return dynamicCard(root, data, context.api);
   if (type === "dynamic_edit") {
     const note = node("p", "", "hint");

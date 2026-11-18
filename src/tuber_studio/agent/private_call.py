@@ -13,10 +13,18 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import Depends, HTTPException
+from pydantic import BaseModel, Field
 
 from ..config import validate_api_key
 from ..http_api import endpoint
 from ..operation_continuations import content_hash
+from ..store import dump
+from .owner_memory import citation, private_rows, read_stamp
+
+
+class CallOptions(BaseModel):
+    temporary: bool = False
+    topic: str = Field(default="", max_length=500)
 
 
 def private_service():
@@ -77,7 +85,7 @@ def register_private_call(app, runtime, require_admin):
         return {"configured": private_service() is not None}
 
     @app.post("/api/chat/private-call/ticket", dependencies=[Depends(require_admin)])
-    async def create_ticket():
+    async def create_ticket(options: CallOptions = CallOptions()):
         service = private_service()
         if service is None:
             raise HTTPException(503, "尚未配置独立的私聊语音服务")
@@ -94,14 +102,19 @@ def register_private_call(app, runtime, require_admin):
         if runtime.tasks.scope() != grant:
             raise HTTPException(409, "角色或授权已变化，请重新开始通话")
         character = runtime.character
+        rows = private_rows(runtime, options.topic) if options.topic and not options.temporary else []
+        # A retained headline or source quote may contain the superseded preference.
+        notes = [row["anecdote"] for row in rows]
         return {
             "socket": origin.replace("http", "ws", 1) + "/v1/realtime",
             "ticket": ticket,
             "call_scope": content_hash(grant),
             "character": character["name"],
             "avatar": call_avatar(runtime.settings, character),
+            "memory_citations": [citation(row) for row in rows],
+            "memory_use": {"ids": [row["id"] for row in rows], "stamp": read_stamp(runtime, rows)} if rows else None,
             "instructions": "\n".join(text for text in (
                 f"你是{character['name']}，正在和号主私下通话。",
                 character.get("core", {}).get("identity"), character.get("style", {}).get("instructions"),
-            ) if isinstance(text, str))[:6000],
+            ) if isinstance(text, str))[:6000] + ("\n与本次私聊话题有关的记忆资料：" + dump(notes) if notes else ""),
         }
