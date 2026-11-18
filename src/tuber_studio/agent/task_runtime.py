@@ -16,8 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..http_api import InferenceBudgetExceeded, InferenceQueueBusy
 from ..store import dump
-from .creative_workspace import CreativeWorkspace
 from . import task_delegation
+from .creative_workspace import CreativeWorkspace
 from .task_delivery import LABELS, DelegationError, deliver_from_receipts
 from .task_identity import TaskIdentity
 
@@ -106,6 +106,8 @@ class Tool:
     reusable: bool = False
     own_deadline: bool = False
     responses_only: bool = False
+    accepts_goal: Callable[[str, BaseModel], bool] | None = None
+    checkpoint_submission: bool = False
 
 
 class TaskRuntime:
@@ -173,11 +175,26 @@ class TaskRuntime:
 
     def view(self, task):
         result = {key: task[key] for key in ("id", "goal", "revision", "status", "steps", "message", "due", "updated")}
+        if result["status"] in {"queued", "running", "waiting"}:
+            for step in reversed(task["steps"]):
+                tool = self.tools.get(step.get("tool"))
+                if step.get("approved") and "result" not in step and tool and tool.checkpoint_submission:
+                    checkpoint = step.get("checkpoint") or {}
+                    if not self.can_control(task):
+                        result.update(status="waiting", message="执行授权已变化，原提交待核对，不再发送。")
+                    elif checkpoint.get("status") == "needs_reconciliation":
+                        result.update(message=checkpoint["reason"] + "；原提交待核对。")
+                    break
         if result["status"] == "completed" and not task_delegation.uses_responses(task):
             verified, result["message"] = self._deliver(task)
             if not verified:
                 result["status"] = "failed"
         return result
+
+    def can_control(self, task):
+        if self.identity:
+            return self.identity.grant_current(task["scope"])
+        return self.scope() == task["scope"]
 
     def executable(self, identity):
         row = self.store.one("SELECT * FROM agent_tasks WHERE id=? AND scope=?", (identity, dump(self.scope())))
@@ -501,12 +518,20 @@ class TaskRuntime:
         tool = self.tools[step["tool"]]
         try:
             arguments = tool.arguments.model_validate(step["arguments"])
+            if tool.accepts_goal and not tool.accepts_goal(task["goal"], arguments):
+                return step | {"result": {"error": "本轮目标没有明确指定该草稿 ID。"}}, "queued", time.time()
             if tool.review and not step.get("approved"):
                 step = step | {"approval": tool.review(arguments)}
                 return step, "awaiting_approval", time.time()
             receipts = tuple(item for item in context if "result" in item)
             request = ToolRequest(step.get("resource_id", step["id"]), goal, task["scope"], step.get("checkpoint"),
                                   step.get("approval"), receipts)
+            if tool.checkpoint_submission and not step.get("checkpoint"):
+                if not step.get("approved") or not request.approval:
+                    raise ValueError("没有当前步骤的明确审批")
+                step = step | {"checkpoint": {"submission_started": True}}
+                if not self._save(task, steps=[step if item["id"] == step["id"] else item for item in task["steps"]]):
+                    return step, "waiting", time.time()
             async with asyncio.timeout(None if tool.own_deadline else 20):
                 result = await tool.run(request, arguments)
         except InferenceQueueBusy as busy:
@@ -515,7 +540,11 @@ class TaskRuntime:
             result = {"error": "后台请求超出服务预算。"}
         except Exception as error:
             log.info("Agent tool %s failed: %s", step["tool"], type(error).__name__)
-            result = {"error": "工具调用失败，参数无效或数据暂时不可用。"}
+            if tool.checkpoint_submission and step.get("checkpoint"):
+                result = ToolWait(step["checkpoint"] | {"status": "needs_reconciliation",
+                                                        "reason": "无法确认原提交结果，不再发送"}, 60)
+            else:
+                result = {"error": "工具调用失败，参数无效或数据暂时不可用。"}
         if isinstance(result, ToolWait):
             return step | {"checkpoint": result.checkpoint}, "waiting", time.time() + result.delay
         return {key: value for key, value in step.items() if key != "checkpoint"} | {"result": result}, "queued", time.time()

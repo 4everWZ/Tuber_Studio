@@ -72,6 +72,10 @@ class TaskIdentity:
     def reader(self):
         return self.principal, self.character()
 
+    def grant_current(self, scope):
+        epoch = self.store.one("SELECT epoch FROM agent_task_authority WHERE singleton=1")["epoch"]
+        return len(scope) == 6 and scope[-2:] == [self.principal, epoch]
+
     def __call__(self):
         binding = self.binding()
         raw = dump(binding)

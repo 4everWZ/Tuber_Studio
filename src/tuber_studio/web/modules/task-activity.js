@@ -11,6 +11,8 @@ const tools = {
   web_search: "搜索网页", web_page: "打开来源", bilibili_owner: "查号主主页", operation_status: "查看运营",
   today_activity: "查看当日活动", inspect_video: "读取视频", live_status: "查看直播", game_status: "查看游戏",
   live_handoff: "交接直播素材", game_action: "执行模拟游戏动作",
+  inspect_dynamic_draft: "核对动态草稿", publish_dynamic_draft: "发布指定动态", delegate_text: "委派文本工作",
+  owner_attachment: "号主提供的私有附件",
 };
 const stoppable = new Set(["queued", "scheduled", "running", "waiting", "needs_input", "awaiting_approval"]);
 const needsAttention = new Set(["needs_input", "awaiting_approval"]);
@@ -311,7 +313,24 @@ export function initTaskActivity(api, requestId) {
     if (task.can_control !== false && task.status === "awaiting_approval") {
       const step = task.steps.at(-1);
       const action = node("p", `${step.approval.target} · ${step.approval.text || step.arguments.action}`);
-      const confirm = button(step.tool === "live_handoff" ? "确认交接给本场直播" : "确认执行这个动作");
+      if (step.tool === "publish_dynamic_draft") {
+        const { payload, post_id: postId, sources } = step.approval;
+        for (const source of sources) {
+          appendSource(action, source.source_url, "查看原始来源");
+          for (const origin of source.public_sources || []) appendSource(action, origin.url);
+        }
+        const previews = payload.meme_id ? [`/api/memes/${encodeURIComponent(payload.meme_id)}/preview`] :
+          payload.comment_card_sha256 ? Array.from({length: payload.comment_card_page_sha256?.length || 1},
+            (_, index) => `/api/dynamics/posts/${encodeURIComponent(postId)}/comment-card?page=${index + 1}`) : [];
+        for (const url of previews) {
+          const image = node("img", null, "dynamic-comment-card");
+          image.src = url;
+          image.alt = "将随正文一起发布的配图";
+          action.append(image);
+        }
+      }
+      const confirm = button(step.tool === "publish_dynamic_draft" ? "确认公开发布这条动态" :
+        step.tool === "live_handoff" ? "确认交接给本场直播" : "确认执行这个动作");
       confirm.onclick = () => apply(task, { action: "approve", step_id: step.id }, confirm);
       content.append(action, confirm);
     }

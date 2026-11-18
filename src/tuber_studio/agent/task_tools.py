@@ -18,6 +18,7 @@ from ..store import dump
 from ..web_fetch import WebFetchRequest, fetch_excerpt, source_url
 from ..web_search import search_public_web
 from . import operator_facts
+from .dynamic_publication import register_dynamic_publication
 from .handoff import PublicText, handoff_text, supplied_private_fragments, video_findings
 from .task_identity import TaskIdentity
 from .task_delivery import PrivateDelivery, evidence_index
@@ -557,6 +558,8 @@ def create_task_runtime(runtime, store, browsing):
                             GameAction, game_action, review=review_game),
     }.items():
         tasks.register(name, tool)
+    if getattr(browsing, "dynamics", None) is not None:
+        register_dynamic_publication(tasks, browsing.dynamics)
     tasks.register("delegate_text", Tool("按 objective 和选定证据 ID 委派独立文本创作。只返回草稿，不是新证据。",
                                         TextBrief, delegate_text, parallel_read=True, reusable=True, own_deadline=True,
                                         responses_only=True))

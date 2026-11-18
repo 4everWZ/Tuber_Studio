@@ -896,12 +896,12 @@ class Dynamics:
             reconcile=lambda token, prepared: self._reconcile(post_id),
         )
 
-    async def _reconcile(self, post_id):
+    async def _reconcile(self, post_id, *, guard=None):
         feedback = FeedbackPublication(self.runtime, self.store, self.operations)
 
         async def read(row, attempt):
             adapter = self.comments.adapter
-            if not hasattr(adapter, "reconcile_dynamic_publication"):
+            if not guard and not hasattr(adapter, "reconcile_dynamic_publication"):
                 return {"status": "unsupported"}
             try:
                 account = await self.comments.account_id()
@@ -909,19 +909,26 @@ class Dynamics:
                 return {"status": "check_failed", "reason": "account_unavailable"}
             if account != row["binding"]["account_id"]:
                 return {"status": "check_failed", "reason": "account_changed"}
+            if guard:
+                guard(row, attempt)
+            if not hasattr(adapter, "reconcile_dynamic_publication"):
+                return {"status": "unsupported"}
             payload = row["feedback"]["sent_payload"]
             target = row["binding"]["target"] | {
                 "message_kind": "image" if payload.get("meme_id") or payload.get("comment_card_sha256") else "text"
             }
             if payload.get("prepared_images"):
                 target["images"] = payload["prepared_images"]
-            return await adapter.reconcile_dynamic_publication(
+            result = await adapter.reconcile_dynamic_publication(
                 target,
                 author_uid=account,
                 text=payload["text"],
                 started_at=attempt["started_at"],
                 receipt=attempt["receipt"],
             )
+            if guard:
+                guard(row, attempt)
+            return result
 
         def commit(receipt, verification):
             self._status(post_id, "published", receipt=receipt)
@@ -930,7 +937,11 @@ class Dynamics:
 
         return await feedback.reconcile("dynamics", post_id, read, commit)
 
-    async def publish(self, post_id, automatic=False, *, expected_text=None):
+    async def publish(self, post_id, automatic=False, *, expected_text=None, submission=None):
+        if submission is not None:
+            if automatic or expected_text is None:
+                raise ValueError("限定草稿提交必须绑定人工确认的正文")
+            submission.check(self._post(post_id))
         if not hasattr(self.runtime, "settings"):
             self.runtime.settings = self.settings
         control = self.operations.policy()
@@ -947,11 +958,13 @@ class Dynamics:
                 body_hash=body_hash,
                 authorization_epoch=epoch,
                 expected_text=expected_text,
+                submission=submission,
             ),
             apply_revision=lambda prepared, text: self._apply_revision(post_id, prepared, text),
             automatic=automatic,
             epoch=epoch,
-            reconcile=lambda token, prepared: self._reconcile(post_id),
+            reconcile=(lambda token, prepared: self._reconcile(post_id)) if submission is None else None,
+            revise_on_rejection=submission is None,
         )
 
     async def _publish_once(
@@ -964,6 +977,7 @@ class Dynamics:
         body_hash=None,
         authorization_epoch=None,
         expected_text=None,
+        submission=None,
     ):
         # Model regeneration may wait for the inference lock. Finish it before
         # acquiring the shared platform write lock used by other generators.
@@ -1001,6 +1015,8 @@ class Dynamics:
                 self._check_automatic_draft(row, policy)
                 if row != checked:
                     raise ValueError("草稿已变化，请重新核对当前正文")
+            elif submission is not None:
+                submission.check(row)
             elif row["status"] != "approved":
                 raise ValueError("请先审核通过动态")
             if not policy["credentials_configured"]:
@@ -1057,6 +1073,7 @@ class Dynamics:
                     "UPDATE dynamic_posts SET attempted_at=?,updated_at=?,send_payload=? WHERE id=?",
                     (time.time(), time.time(), _json({
                         "token": attempt_token, "binding": actual_binding, "payload": attempted_payload(),
+                        **({"agent_step": submission.step_id} if submission is not None else {}),
                     }), post_id),
                 )
             if (
@@ -1078,6 +1095,11 @@ class Dynamics:
                 ):
                     raise PublishCancelled("运营已停止或账号已变化，取消发送")
                 fresh = self._post(post_id)
+                if submission is not None:
+                    try:
+                        submission.check(fresh, publishing=True)
+                    except ValueError:
+                        raise PublishCancelled("限定草稿的审批或来源已变化") from None
                 if (
                     fresh["status"] != "publishing"
                     or not self._valid_sources(fresh)
@@ -1136,6 +1158,10 @@ class Dynamics:
             # Account reads may fail or be cancelled before publication begins.
             # Keep the reviewed draft intact until all identity setup succeeds.
             fresh = self._post(post_id)
+            if submission is not None:
+                submission.check(fresh)
+                if actual_binding != submission.binding or payload != submission.payload:
+                    raise ValueError("限定草稿的目标或完整提交内容已变化")
             if (
                 fresh["status"] != row["status"]
                 or fresh["content"] != row["content"]

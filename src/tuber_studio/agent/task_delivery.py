@@ -105,6 +105,16 @@ def render_private_delivery(product, evidence):
 
 
 def _describe(tool, result):
+    if tool == "inspect_dynamic_draft":
+        lines = ["这是草稿，不是发布回执。", _text(result.get("target")), _text(result.get("text"))]
+        for source in result.get("sources", []):
+            lines.extend([_text(source["text"]), _source(source.get("source_url"))])
+            lines.extend(_source(item.get("url")) for item in source.get("public_sources", []))
+        return lines, bool(result.get("sources") and result.get("binding") and result.get("text"))
+    if tool == "publish_dynamic_draft":
+        confirmed = result.get("status") == "published" and bool(result.get("receipt") and result.get("write_token"))
+        return (["平台已确认该动态发布。", _text(result.get("target")), _text(result.get("text"))]
+                if confirmed else ["原提交尚未确认发布。"]), confirmed
     if tool == "operation_status":
         value = OPERATIONS.get(result.get("state"))
         return [value or "运营状态暂不可查。"], bool(value)
