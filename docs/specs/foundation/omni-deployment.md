@@ -9,9 +9,9 @@ Tuber Studio 通过配置取得服务地址、凭据和模型别名。推理和 
 | 健康与模型发现 | 通过 `GET /healthz` 和 `GET /v1/models` 核对健康与模型，使用配置的别名及模型卡实报的 `max_model_len`。实际模型、版本、窗口和可用模态在设置与诊断可查。 |
 | 普通与流式推理 | 通过 `POST /v1/chat/completions` 调用，统一正文、结构化结果、支持的图像或音频、用量以及错误状态。纯文本计量在服务提供 `POST /v1/chat/prompt_tokens` 时沿现有 Provider 使用。模型的工具请求经业务端校验，实际工具回执从原任务回流。 |
 | 原生双工 | 连接 `/v1/realtime?duplex=1` WebSocket，按 `session.created` 协商输入模态、切片、语音、字幕、打断、恢复和播放确认。实时通话与后台任务通过业务会话和任务 ID 关联。 |
-| Avatar | 服务发布 Avatar 会话能力后，通过 `POST /v1/avatar/sessions` 关联已授权的实时会话，按回包订阅音画。会话权限、资源状态和正常关闭独立核对。当前业务验证使用既有节目桥，通用 Avatar 会话接口待服务端交付。 |
+| Avatar | 服务已提供 `POST /v1/avatar/sessions` 与 WHEP，客户端须使用获准的音频源或实时会话，按回包订阅音画。现有节目桥不能代替私聊客户端的播放验收。 |
 
-Provider 按实际能力选择协议。后续服务原生支持 `/v1/responses` 时，在 Provider 适配并实测流式输出、工具结果、取消和错误，再让业务使用同一接口。服务不可用时明确显示等待、降级或失败状态，持久任务按原检查点续接。 [当前实施计划](../../plans/current.md#共享推理与-avatar-api) · [上下文与压缩](context-and-compaction.md)
+后台文本服务已提供 `POST /llm/v1/responses`，函数结果按 `call_id` 续接；不要假定 Omni 图文或双工端点支持同一套函数协议。服务端分支生命周期不替代业务持久化。服务不可用时明确显示等待或失败，持久任务按本地检查点续接。 [当前实施计划](../../plans/current.md#共享推理与-avatar-api) · [上下文与压缩](context-and-compaction.md)
 
 ## Avatar 与音画交付
 
