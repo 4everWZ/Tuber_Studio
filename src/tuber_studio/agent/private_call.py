@@ -19,7 +19,7 @@ from ..config import validate_api_key
 from ..http_api import endpoint
 from ..operation_continuations import content_hash
 from ..store import dump
-from .owner_memory import citation, private_rows, read_stamp
+from .owner_memory import citation, correctable_preference, private_rows, read_stamp
 
 
 class CallOptions(BaseModel):
@@ -112,6 +112,7 @@ def register_private_call(app, runtime, require_admin):
             "character": character["name"],
             "avatar": call_avatar(runtime.settings, character),
             "memory_citations": [citation(row) for row in rows],
+            "correction_targets": [row["id"] for row in rows if correctable_preference(row, runtime.daily_memory.private_owner)],
             "memory_use": {"ids": [row["id"] for row in rows], "stamp": read_stamp(runtime, rows)} if rows else None,
             "instructions": "\n".join(text for text in (
                 f"你是{character['name']}，正在和号主私下通话。",

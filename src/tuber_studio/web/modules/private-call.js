@@ -176,7 +176,7 @@ async function begin(previous = null) {
           await capture(call, config.character);
         } else if (call.stream) {
           const text = call.utterances.accept(event);
-          if (text && !ephemeral) showHandoff(byId("private-call-utterances"), text);
+          if (text && !ephemeral) showHandoff(byId("private-call-utterances"), text, config);
           if (config.memory_use && ["response.audio.delta", "response.output_audio.delta"].includes(event.type)) {
             call.pendingAudio = (call.pendingAudio || 0) + 1;
             if (call.pendingAudio > 8) { finish(call, "记忆核对积压，通话已结束"); return; }

@@ -33,7 +33,7 @@ export class FinalUtterances {
   }
 }
 
-export function showHandoff(root, text) {
+export function showHandoff(root, text, call = {}) {
   const row = document.createElement("div");
   const quote = document.createElement("blockquote");
   quote.textContent = text;
@@ -62,5 +62,17 @@ export function showHandoff(root, text) {
   }
   row.append(feedback);
   if ([...text].length <= 150) row.append(rememberButton(() => ({source: "confirmed_voice", text}), "确认并记住原话"));
+  const targets = (call.memory_citations || []).filter(item => call.correction_targets?.includes(item.id));
+  if ([...text].length <= 150 && call.memory_use && targets.length) {
+    const label = document.createElement("label"), select = document.createElement("select");
+    label.append("更正本次引用的偏好 ", select);
+    select.append(new Option("选择原偏好", ""));
+    for (const item of targets) select.append(new Option(`#${item.id} · v${item.revision} · ${item.note}`, String(item.id)));
+    row.append(label, rememberButton(() => {
+      const item = targets.find(target => String(target.id) === select.value);
+      if (!item) throw Error("请选择要更正的原偏好");
+      return {source: "confirmed_voice", text, correction: {id: item.id, revision: item.revision, use: call.memory_use}};
+    }, "确认用这句话更正"));
+  }
   root.append(row);
 }

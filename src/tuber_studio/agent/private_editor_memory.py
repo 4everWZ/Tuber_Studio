@@ -6,7 +6,7 @@ from ..daily_memory import MemoryChanged
 from ..generation_meter import budgeted_call
 from ..models import StrictModel
 from ..store import dump
-from .owner_memory import MemoryUse, check_use, citation, private_rows, read_stamp
+from .owner_memory import MemoryUse, check_use, citation, correctable_preference, private_rows, read_stamp
 
 
 class WritingSelection(StrictModel):
@@ -47,9 +47,7 @@ def connect_private_editor(runtime):
         recent = memory.organized(scope, limit=48)
         candidates = dict(inherited)
         for row in [*matches, *recent]:
-            proof = row["proof"]
-            if (row["status"] == "active" and row["memory_kind"] == "private" and not proof.get("scene")
-                    and proof.get("summary_kind") == "preference" and proof.get("private_owner") == memory.private_owner):
+            if correctable_preference(row, memory.private_owner):
                 if len(candidates) < 8:
                     candidates.setdefault(row["id"], row)
             if len(candidates) == 8:

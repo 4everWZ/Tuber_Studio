@@ -50,3 +50,9 @@ def citation(row):
     source = row.get("exact_source") or {"quote": row["quote"], "source_key": row["source"]["key"]}
     return {"id": row["id"], "revision": row["revision"], "headline": row["headline"],
             "note": row["anecdote"], "quote": source["quote"], "source_key": source["source_key"]}
+
+
+def correctable_preference(row, owner):
+    return bool(owner and row["status"] == "active" and row["memory_kind"] == "private"
+                and row["proof"].get("private_owner") == owner and not row["proof"].get("scene")
+                and row["proof"].get("summary_kind") == "preference")

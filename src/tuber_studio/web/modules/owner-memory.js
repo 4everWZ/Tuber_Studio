@@ -21,7 +21,10 @@ export function rememberButton(proposal, label = "记住这句话") {
     try {
       const body = proposal();
       const preview = await api("/api/agent/memory.propose", {method: "POST", body});
-      if (!button.isConnected || !window.confirm(`保存为号主私有记忆？\n\n${preview.text}`)) return;
+      const question = preview.replaces
+        ? `更正私有偏好 #${preview.replaces.id}（v${preview.replaces.revision}）？\n\n原内容：${preview.replaces.note}\n新原话：${preview.text}`
+        : `保存为号主私有记忆？\n\n${preview.text}`;
+      if (!button.isConnected || !window.confirm(question)) return;
       await api("/api/agent/memory/confirm", {method: "POST", body: {...body, stamp: preview.stamp}});
       feedback.textContent = "已保存";
       document.dispatchEvent(new Event("owner-memory-changed"));

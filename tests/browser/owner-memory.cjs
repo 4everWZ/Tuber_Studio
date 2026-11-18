@@ -4,7 +4,7 @@ const { chromium } = require(require.resolve("playwright", {
   paths: [__dirname, path.join(path.dirname(process.execPath), "node_modules/@playwright/cli")],
 }));
 
-async function test(browser, origin) {
+async function test(browser, origin, correction) {
   assert.equal(new URL(origin).hostname, "127.0.0.1");
   const context = await browser.newContext({serviceWorkers: "block"});
   await context.route("**/*", route => new URL(route.request().url()).origin === origin ?
@@ -18,7 +18,7 @@ async function test(browser, origin) {
       return output.stream;
     };
   });
-  const voiceNote = "请把片段按时间排序。";
+  const voiceNote = "开场素材请按时间排序。";
   let sessions = 0, renewed;
   const resumed = new Promise(resolve => { renewed = resolve; });
   let send, sentTranscript = false, acknowledged = 0, markClosed;
@@ -31,7 +31,10 @@ async function test(browser, origin) {
       if (event.type === "session.update") {
         sessions++;
         assert.equal(event.session.instructions.includes(statement), sessions === 1);
-        if (sessions === 2) renewed();
+        if (sessions === 2) {
+          if (correction) assert.ok(event.session.instructions.includes(voiceNote));
+          renewed();
+        }
         send({type: "session.created", session: {capabilities: {implementation_level: "model_native_duplex"}}});
       } else if (!sentTranscript && event.type === "input_audio_buffer.append") {
         sentTranscript = true;
@@ -82,8 +85,25 @@ async function test(browser, origin) {
 
   await page.locator("#operator-chat-more-toggle").click();
   await page.locator("#private-call-open").click();
-  await page.locator("#private-call-topic").fill(statement);
+  const other = await browser.newContext();
+  const original = await other.request.post(origin + "/api/agent/memory.search", {data: {query: statement}});
+  const originalRow = (await original.json()).items[0];
+  await page.locator("#private-call-topic").fill(correction ? originalRow.source_key : statement);
   await page.locator("#private-call-start").click();
+  if (correction) {
+    const selector = page.getByLabel("更正本次引用的偏好");
+    await selector.selectOption(String(originalRow.id));
+    const updated = page.waitForResponse(r => r.url().endsWith("/api/agent/memory/confirm") && r.ok());
+    await page.getByRole("button", {name: "确认用这句话更正"}).click();
+    assert.deepEqual(await (await updated).json(), {id:originalRow.id, revision:originalRow.revision+1});
+    await resumed;
+    const current = await other.request.post(origin+"/api/agent/memory.get", {data:{id:originalRow.id}});
+    assert.equal((await current.json()).quote, voiceNote);
+    const list = await other.request.get(origin+"/api/daily-memory");
+    assert.equal((await list.json()).organized.filter(row => row.status === "active").length, 1);
+    await other.close();
+    return;
+  }
   try {
     await page.getByRole("button", {name: "确认并记住原话"}).click({timeout: 10000});
   } catch (error) {
@@ -91,11 +111,9 @@ async function test(browser, origin) {
     throw error;
   }
   await page.locator("#private-call-utterances").getByText("已保存").waitFor();
-  const other = await browser.newContext();
   const recalled = await other.request.post(origin + "/api/agent/memory.search", {data: {query: voiceNote}});
   assert.equal((await recalled.json()).items[0].quote, voiceNote);
-  const original = await other.request.post(origin + "/api/agent/memory.search", {data: {query: statement}});
-  const {id} = (await original.json()).items[0];
+  const {id} = originalRow;
   let entered, resume;
   const validating = new Promise(resolve => { entered = resolve; });
   const release = new Promise(resolve => { resume = resolve; });
@@ -117,5 +135,5 @@ async function test(browser, origin) {
   const browser = await chromium.launch({executablePath: process.env.CHROMIUM_EXECUTABLE || undefined,
     args: ["--disable-background-networking", "--use-fake-device-for-media-stream", "--autoplay-policy=no-user-gesture-required",
       "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"]});
-  try { await test(browser, process.argv[2]); } finally { await browser.close(); }
+  try { await test(browser, process.argv[2], process.argv[3] === "correct"); } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

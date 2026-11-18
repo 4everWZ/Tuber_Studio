@@ -160,7 +160,8 @@ async def test_private_child_memory_functions_and_mid_delivery_withdrawal(owner)
 
 
 @pytest.mark.skipif(not os.getenv("TUBER_TEST_CHROMIUM"), reason="requires local Playwright and Chromium")
-async def test_chromium_owner_controls(settings, monkeypatch):
+@pytest.mark.parametrize("mode", ["save", "correct"])
+async def test_chromium_owner_controls(settings, monkeypatch, mode):
     app = create_app(settings)
 
     async def chat(messages, schema, **kwargs):
@@ -184,7 +185,7 @@ async def test_chromium_owner_controls(settings, monkeypatch):
                         serving.result()
                     await asyncio.sleep(.05)
             script = Path(__file__).parent / "browser" / "owner-memory.cjs"
-            await asyncio.to_thread(subprocess.run, ["node", script, origin], check=True, timeout=150)
+            await asyncio.to_thread(subprocess.run, ["node", script, origin, mode], check=True, timeout=150)
         finally:
             server.should_exit = True
             await serving
@@ -331,3 +332,33 @@ async def test_exact_original_ranked_before_eight_fuzzy_matches(owner, monkeypat
     hits = (await client.post(MEM + ".search", json={"query": key})).raise_for_status().json()["items"]
     assert len(hits) == 8
     assert (hits[0]["id"],hits[0]["source_key"],hits[0]["quote"],hits[0]["note"]) == (target,key,NOTE,"新的开场偏好。")
+
+async def test_confirmed_voice_correction_rechecks_target_and_revision(owner, monkeypatch):
+    client, state = owner
+    identity = await save(client)
+    unrelated = await save(client, text="每天八点整理书架。")
+    old = (await client.post(MEM + ".get", json={"id":identity})).json()
+    async def mint(*args):
+        return "test-ticket"
+    monkeypatch.setattr(private_call, "private_service", lambda: ("https://voice.example","fixture"))
+    monkeypatch.setattr(private_call, "mint_ticket", mint)
+    call = (await client.post("/api/chat/private-call/ticket", json={"topic":old["source_key"]})).json()
+    target = {"id":identity, "revision":old["revision"], "use":call["memory_use"]}
+    new = "今后开场先告诉我片段的出处。"
+    body = {"source":"confirmed_voice", "text":new, "correction":target}
+    assert call["correction_targets"] == [identity]
+    assert (await client.post(MEM+".propose", json=body | {"correction":target | {"id":unrelated}})).status_code == 422
+    assert (await client.post(MEM+".propose", json=body | {"source":"settings"})).status_code == 422
+    preview = (await client.post(MEM+".propose", json=body)).raise_for_status().json()
+    assert preview["replaces"] == old
+    confirmed = body | {"stamp":preview["stamp"]}
+    result = (await client.post(MEM+"/confirm", json=confirmed)).raise_for_status().json()
+    assert result == {"id":identity, "revision":target["revision"]+1}
+    assert (await client.post(MEM+"/confirm", json=confirmed)).status_code == 412
+    assert (await client.post(MEM+"/validate", json=call["memory_use"])).status_code == 409
+    now = (await client.post(MEM+".get", json={"id":identity})).raise_for_status().json()
+    assert now["quote"] == now["note"] == new and now["source_key"].startswith("confirmed_voice:")
+    scope = (await client.get("/api/daily-memory/preferences")).json()["scope"]
+    revisions = (await client.get(f"/api/daily-memory/organized/{identity}/revisions", params={"scope":scope})).json()["revisions"]
+    assert [r["source_key"] for r in revisions[:2]] == [now["source_key"],old["source_key"]]
+    assert [r["note"] for r in revisions[:2]] == [new, NOTE]

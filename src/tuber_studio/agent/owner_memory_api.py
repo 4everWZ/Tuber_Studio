@@ -9,13 +9,20 @@ from fastapi import Depends, HTTPException
 from pydantic import Field
 
 from ..daily_memory import MemoryChanged, contains_memory_credential
+from ..memory_sources import memory_transaction
 from ..models import StrictModel
 from ..operation_continuations import content_hash
 from .memory_organizer import MemorySuggestion
-from .owner_memory import Get, MemoryUse, OwnerNote, Search, check_use, citation, private_rows
+from .owner_memory import Get, MemoryUse, OwnerNote, Search, check_use, citation, correctable_preference, private_rows
+
+
+class VoiceCorrection(Get):
+    revision: int = Field(gt=0, strict=True)
+    use: MemoryUse
 
 
 class Proposal(StrictModel):
+    correction: VoiceCorrection | None = None
     source: Literal["turn", "confirmed_voice", "settings", "task"]
     text: OwnerNote
     turn_id: UUID | None = None
@@ -56,6 +63,19 @@ def register_owner_memory(app, runtime, chat, require_admin):
         pref = memory.preference(scope)
         if not pref["enabled"] or contains_memory_credential(data.text):
             raise HTTPException(409, "当前设置或内容不允许保存这句话")
+        target = None
+        if correction := data.correction:
+            if data.source != "confirmed_voice" or correction.id not in correction.use.ids:
+                raise HTTPException(422, "更正须选择本次通话引用的号主偏好")
+            rows = memory.organized(scope, item_id=correction.id)
+            if (not rows or not correctable_preference(rows[0], memory.private_owner)
+                    or rows[0]["revision"] != correction.revision):
+                raise HTTPException(412, "原偏好已更改或撤回，请重新选择")
+            try:
+                check_use(runtime, correction.use)
+            except MemoryChanged as error:
+                raise HTTPException(409, str(error)) from error
+            target = rows[0]
         if data.source != "task" and (data.task_id or data.source_id):
             raise HTTPException(422, "此来源不能指定任务")
         if data.source == "turn":
@@ -87,21 +107,35 @@ def register_owner_memory(app, runtime, chat, require_admin):
             if data.turn_id:
                 raise HTTPException(422, "手动确认的内容不能指定历史消息")
             key = data.source + ":" + content_hash([memory.private_owner, scope[1], data.text])
+            if target:
+                key = "confirmed_voice:" + content_hash([key, target["id"], target["revision"]])
             at = time.time()
         source = {"kind": "private", "key": key, "text": data.text, "at": at,
                   "private_owner": memory.private_owner}
-        return scope, source, content_hash([runtime.tasks.scope(), pref, key, data.text])
+        stamp = content_hash([runtime.tasks.scope(), pref, key, data.text,
+                              data.correction.model_dump() if target else None])
+        return scope, source, stamp, target
 
     @app.post("/api/agent/memory.propose", dependencies=deps)
     async def propose(data: Proposal):
-        _, source, stamp = proposal(data)
-        return {"text": source["text"], "stamp": stamp}
+        _, source, stamp, target = proposal(data)
+        return {"text": source["text"], "stamp": stamp, **({"replaces": citation(target)} if target else {})}
 
     @app.post("/api/agent/memory/confirm", dependencies=deps)
     async def confirm(data: Confirmation):
-        scope, source, stamp = proposal(data)
+        scope, source, stamp, target = proposal(data)
         if data.stamp != stamp:
             raise HTTPException(409, "记忆设置已变化，请重新确认")
+        if target:
+            decision = MemorySuggestion(action="update", existing_id=target["id"], headline=data.text[:40],
+                                        note=data.text, tags=[])
+            with memory_transaction(runtime.store.db):
+                if not memory.save_organized(scope, source, decision, target):
+                    raise HTTPException(412, "原偏好或来源已变化，请重新选择")
+                hits = memory.lookup_source(scope, "operator", source["key"])
+                if len(hits) != 1 or hits[0]["id"] != target["id"] or hits[0]["quote"] != data.text:
+                    raise HTTPException(409, "新原话与其他条目冲突，更正尚未保存")
+                return {"id": target["id"], "revision": hits[0]["revision"]}
         existing = memory.lookup_source(scope, "operator", source["key"])
         if not existing:
             decision = MemorySuggestion(action="add", existing_id=None, headline=data.text[:40], note=data.text, tags=[])
