@@ -30,6 +30,10 @@ async def test_specific_name_requires_a_distinguishing_feature(verdict, observat
                     "reason": [],
                 }
             }
+        if "original_name" in schema["properties"]:
+            return {"counterfactual_clause": fields["title"] + "（印花贴面）",
+                    "original_name": "原称呼指定了另一解释不能保证的种类或属性" if rejected else "另一解释本身就是原称呼的一种",
+                    "unsupported_modifiers": [], "basis": observation}
         assert messages[-1]["content"][1] == image
         return {
             "0": {
@@ -83,6 +87,25 @@ async def test_repair_offers_only_same_image_observations_that_survive_compariso
     ) == [common]
 
 
+async def test_repair_reads_remaining_inventory_when_first_choice_is_disputed():
+    inventory = ["中央放着瓷器。", "右侧有红色圆形标志。"]
+    examined = []
+
+    async def model(messages, schema, **kwargs):
+        if "details" in schema["properties"]:
+            return {"details": inventory[:1]}
+        if "alternatives" in schema["properties"]:
+            text = json.loads(messages[-1]["content"])["0"]
+            examined.append(text)
+            entries = [{"term": "瓷器", "other": "涂釉陶器", "discriminator": "胎体"}] if text == inventory[0] else []
+            return {"alternatives": {"0": entries}}
+        return {"0": {"verdict": "另一解释仍可能或更符合", "common_label": "带釉器皿",
+                      "observation": "仅见表面", "distinguishing_cue": "", "identifying_feature": ""}}
+
+    assert await shared_visual_facts({}, "v:1", "", inventory, ["实木"], model, 1024) == inventory[1:]
+    assert examined == inventory
+
+
 async def test_same_visual_assertion_binds_both_fields_and_preserves_editing_use():
     fields = {
         "items.1.title": "中央是实木饰面",
@@ -132,3 +155,76 @@ async def test_ruling_out_one_alternative_does_not_identify_the_material():
         }
 
     assert "title" in await review_visual_specificity(fields, {}, "read:1", "", model, 1024)
+
+
+@pytest.mark.parametrize(
+    ("assertion", "term", "other", "referent", "shared", "detail", "unsupported"),
+    [
+        ("画面中央是一位身穿华丽服饰的人物", "人物", "神像", "人物", "人形造型", "穿有带花纹的服装", ""),
+        ("画面中央是一位头戴红色头盔的人物", "人物", "神像", "人物", "人形造型", "红色帽饰", "头盔"),
+        ("座椅后方有金色雕花屏风", "屏风", "宫墙", "屏风", "龙纹装饰", "可见成排金色雕饰", "屏风"),
+        ("画面右侧的人物戴着红色帽子", "红色帽子", "侍者", "人物", "身着古装的形象", "头上有红色帽饰", ""),
+    ],
+)
+async def test_shared_appearance_checks_whole_original_clause(assertion, term, other, referent, shared, detail, unsupported):
+    image = {"type": "image_url", "image_url": {"url": "bound-frame"}}
+    fields = {"items.0.title": assertion, "items.0.rationale": f"画面依据：{assertion}。剪辑安排：用于开场。"}
+    checks = []
+
+    async def model(messages, schema, **kwargs):
+        props = schema["properties"]
+        if "alternatives" in props:
+            return {"alternatives": {
+                "items.0.title": [{"term": term, "other": other, "discriminator": "类别构造"}],
+                "items.0.rationale": [],
+            }}
+        content = messages[-1]["content"]
+        if "original_name" in props:
+            assert content[1] is image
+            packet = json.loads(content[0]["text"])
+            assert packet["原图所见"] == detail and packet["假定另一解释为真"] == other
+            checks.append(packet["整句原文"])
+            relation = "原称呼指画中被表现的形象，另一解释是其载体"
+            if unsupported == term:
+                relation = "原称呼指定了另一解释不能保证的种类或属性"
+            elif referent != term:
+                relation = "另一解释本身就是原称呼的一种"
+            hypothetical = assertion.replace(referent, other) if referent != term or unsupported == term else assertion + f"（{other}）"
+            return {"counterfactual_clause": hypothetical, "original_name": relation,
+                    "unsupported_modifiers": [unsupported] if unsupported and unsupported != term else [],
+                    "basis": detail}
+        assert content[1] is image
+        return {"0": {"verdict": "原词仅描述共同可见特征", "common_label": shared,
+                      "observation": detail, "distinguishing_cue": "", "identifying_feature": ""}}
+
+    rows = await review_visual_specificity(fields, image, "read:1", detail, model, 1024)
+    assert checks == [assertion]
+    assert set(rows) == (set(fields) if unsupported else set())
+    for row in rows.values():
+        claim, = row["claims"]
+        assert claim["term"] == claim["target"] == claim["phrase"] == unsupported
+
+
+@pytest.mark.parametrize("terms", [("红色帽子", "华丽"), ("华丽", "红色帽子")])
+async def test_same_alternative_is_bound_to_the_person_in_both_objections(terms):
+    assertion = "画面右侧站立一名身穿华丽传统服饰的人物，头戴红色帽子"
+    fields = {"title": assertion}
+    image = {"type": "image_url", "image_url": {"url": "bound-frame"}}
+
+    async def model(messages, schema, **kwargs):
+        props = schema["properties"]
+        if "alternatives" in props:
+            return {"alternatives": {"title": [
+                {"term": t, "other": "侍者", "discriminator": "身份标记"} for t in terms
+            ]}}
+        assert messages[-1]["content"][1] is image
+        if "counterfactual_clause" in props:
+            term = json.loads(messages[-1]["content"][0]["text"])["原称呼"]
+            hypothetical = assertion.replace("人物", "侍者") if term == "华丽" else assertion.replace("红色帽子", "侍者帽")
+            return {"counterfactual_clause": hypothetical, "original_name": "原称呼指定了另一解释不能保证的种类或属性",
+                    "unsupported_modifiers": [], "basis": "推测人物身份"}
+        return {key: {"verdict": "原词仅描述共同可见特征", "common_label": "身穿传统服饰的人物",
+                      "observation": "右侧有人站立", "distinguishing_cue": "", "identifying_feature": ""}
+                for key in props}
+
+    assert await review_visual_specificity(fields, image, "read:1", "", model, 1024) == {}

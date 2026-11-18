@@ -37,6 +37,38 @@ class SharedAppearance(StrictModel):
     )
 
 
+class CounterfactualReading(StrictModel):
+    counterfactual_clause: str = Field(min_length=1, description="把假定解释写入原句：只把它实际指称的原词换成假定名称，保留其余字词、语序和标点。")
+    basis: str = Field(min_length=1, description="解释两个词的包含关系，并核对原句的其它具体用词。")
+    original_name: Literal["另一解释本身就是原称呼的一种", "原称呼指画中被表现的形象，另一解释是其载体",
+                           "原称呼指定了另一解释不能保证的种类或属性"]
+    unsupported_modifiers: list[str] = Field(description="原名之外，原句还有哪些修饰或关联缺少画面依据？逐字摘录，均可见则返回空数组。")
+
+    def replaced_words(self, original, alternative):
+        before, sep, after = self.counterfactual_clause.partition(alternative)
+        if sep and original.startswith(before) and original.endswith(after):
+            return original[len(before):len(original) - len(after)]
+        return ""
+
+
+async def _read_under_alternative(assertion, hypothesis, proof, image, generate, budget):
+    packet = {"整句原文": assertion, "原称呼": hypothesis.term, "假定另一解释为真": hypothesis.other,
+              "共有形象": proof.common_label, "原图所见": proof.observation}
+    reply = await generate(
+        [
+            {"role": "system", "content": "做反事实核对。假定镜头内实物确实属于另一解释，外观仍与照片完全相同。"
+             "不要判断实物更可能是什么。区分它本身是什么、它表现的是什么形象、它与什么东西外观相似。"
+             "先说明原称呼在原句中指实物还是被表现的形象；若指形象，具体说出另一解释所表现的内容。"
+             "仅仅同属一个大类或装饰相像不足以把实物定为原称呼。"
+             "再逐字核对剩余修饰语，即便主体称呼成立，也要指出无法据原图确认的具体修饰。"},
+            {"role": "user", "content": [{"type": "text", "text": dump(packet)}, image]},
+        ],
+        CounterfactualReading.model_json_schema(),
+        max_tokens=budget,
+    )
+    return CounterfactualReading.model_validate(reply)
+
+
 async def shared_visual_facts(image, primary, raw_observation, inventory, terms, generate, budget):
     observations = [*inventory, raw_observation]
     reply = await generate(
@@ -63,16 +95,15 @@ async def shared_visual_facts(image, primary, raw_observation, inventory, terms,
         for q in SharedAppearance.model_validate(reply).details
         if any(q in o for o in observations) and not any(t in q for t in terms)
     ]
-    if not quotes:
-        quotes = [q for q in inventory if q.strip() and not any(t in q for t in terms)]
-    options = {str(i): text for i, text in enumerate(dict.fromkeys(quotes))}
-    if not options:
-        raise DelegationError("主帧复读未选到可独立引用的画面属性。")
-    disputed = await review_visual_specificity(options, image, primary, raw_observation, generate, budget)
-    supported = [fact for i, fact in options.items() if i not in disputed]
-    if not supported:
-        raise DelegationError("主帧复读仍缺少足以确定称呼的画面依据。")
-    return supported
+    remaining = [q for q in inventory if q not in quotes and not any(t in q for t in terms)]
+    for candidates in (quotes, remaining):
+        options = {str(i): text for i, text in enumerate(dict.fromkeys(candidates)) if text.strip()}
+        if options:
+            disputed = await review_visual_specificity(options, image, primary, raw_observation, generate, budget)
+            supported = [fact for i, fact in options.items() if i not in disputed]
+            if supported:
+                return supported
+    raise DelegationError("主帧复读仍缺少足以确定称呼的画面依据。")
 
 
 async def review_visual_specificity(fields, image, primary, raw_observation, generate, budget):
@@ -158,13 +189,11 @@ async def review_visual_specificity(fields, image, primary, raw_observation, gen
     if set(checked) != set(cases):
         raise DelegationError("主帧具体称呼的辨别依据未逐项返回。")
     receipts = {}
+    substitutions = {}
+    objections = []
     for i, h in enumerate(alternatives):
         proof = Distinction.model_validate(checked[str(i)])
         if (
-            proof.verdict == "原词仅描述共同可见特征"
-            and h.term in proof.common_label
-            and proof.common_label in proof.observation
-        ) or (
             proof.verdict == "画面特征可排除另一解释"
             and proof.distinguishing_cue.strip()
             and proof.identifying_feature.strip()
@@ -191,10 +220,41 @@ async def review_visual_specificity(fields, image, primary, raw_observation, gen
                     assertions[p] in assertions[path] or assertions[path] in assertions[p] for p in paths[i]
                 ):
                     affected.add(path)
-        for path in affected:
-            row = receipts.setdefault(
-                path,
-                {"field": path, "text": fields[path], "primary_frame": primary, "claims": [], "pages": []},
-            )
-            row["claims"].append(claim)
+        readings = {}
+        for path in sorted(affected):
+            field_claim = claim
+            targets = [h.term]
+            if proof.verdict == "原词仅描述共同可见特征":
+                assertion = assertions[path]
+                if assertion not in readings:
+                    readings[assertion] = await _read_under_alternative(assertion, h, proof, image, generate, budget)
+                reading = readings[assertion]
+                replaced = reading.replaced_words(assertion, h.other)
+                if replaced:
+                    substitutions.setdefault((assertion, h.other), set()).add(replaced)
+                targets = [t for t in reading.unsupported_modifiers if t.strip() and t in assertion]
+                if (reading.original_name == "原称呼指定了另一解释不能保证的种类或属性"
+                        or not any(h.term in text for text in (proof.common_label, proof.observation, reading.counterfactual_clause))):
+                    targets.append(h.term)
+                if not targets and reading.unsupported_modifiers:
+                    # The reading raised an objection but its wording was not located.
+                    targets.append(assertion)
+                if not targets and assertion != h.term and not replaced and assertion not in reading.counterfactual_clause:
+                    # Other words changed too; the proposed reading did not verify the complete clause.
+                    targets.append(assertion)
+                if not targets:
+                    continue
+                field_claim = claim | {"counterfactual": reading.model_dump(), "issue": reading.basis}
+            objections.append((path, h, field_claim, targets))
+    for path, h, claim, targets in objections:
+        slots = substitutions.get((assertions[path], h.other), set())
+        if len(slots) == 1:
+            slot = next(iter(slots))
+            if h.term not in slot and slot not in h.term:
+                # A faithful substitution binds this same alternative to another part of the same clause.
+                continue
+        row = receipts.setdefault(path, {"field": path, "text": fields[path], "primary_frame": primary,
+                                         "claims": [], "pages": []})
+        for target in dict.fromkeys(targets):
+            row["claims"].append(claim | {"term": target, "target": target, "phrase": target})
     return receipts
