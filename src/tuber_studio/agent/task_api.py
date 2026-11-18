@@ -5,11 +5,13 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import Depends, HTTPException
-from pydantic import Field, field_validator
+from pydantic import Field, PositiveInt, field_validator
 
 from ..models import StrictModel
+from ..store import dump
 from .goal_events import register_goal_events
 from .goal_followups import register_goal_followups
+from .operator_chat import VideoSelection
 
 
 class TextAttachment(StrictModel):
@@ -30,6 +32,7 @@ class TaskCreate(StrictModel):
     run_at: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     creative_goal_id: UUID | None = None
     attachments: list[TextAttachment] = Field(default_factory=list, max_length=3)
+    video_selection: VideoSelection | None = None
 
     @field_validator("goal")
     @classmethod
@@ -44,12 +47,17 @@ class TaskControl(StrictModel):
     action: Literal["steer", "cancel", "approve"]
     goal: str | None = Field(default=None, max_length=2000)
     step_id: UUID | None = None
+    video_selection: VideoSelection | None = None
 
 
 class EditionEdit(StrictModel):
     task_revision: int = Field(ge=1)
     edition: int = Field(ge=1)
     body: str = Field(min_length=1, max_length=64000)
+
+
+class GoalStop(StrictModel):
+    confirmed_runs: dict[UUID, PositiveInt]
 
 
 def register_task_api(app, tasks, require_admin):
@@ -67,10 +75,21 @@ def register_task_api(app, tasks, require_admin):
         root = task.get("creative_goal_id")
         project = tasks.workspace.goal(root) if root and tasks.current(root) else None
         if project:
-            project["runs"] = [run for run in tasks.workspace.runs(root) if tasks.current(run["id"])]
+            scope = dump(tasks.scope())
+            scopes, params = tasks.visible_scopes()
+            runs = tasks.store.all(
+                "SELECT id,goal,status,revision,scope FROM agent_tasks "
+                f"WHERE creative_goal_id=? AND scope IN {scopes} ORDER BY created,id", (root, *params),
+            )
+            project["stop_scope"] = {
+                run["id"]: run["revision"] for run in runs
+                if not project["closed"] and run["status"] not in {"completed", "failed", "cancelled"}
+                and run["scope"] == scope
+            }
+            project["runs"] = [{key: run[key] for key in ("id", "goal", "status", "revision")} for run in runs]
         notice = tasks.store.one("SELECT updated FROM creative_attention WHERE task_id=?", (task["id"],))
         return tasks.view(task) | {"creative_goal": project, "artifact": tasks.workspace.latest(task["id"]),
-                                   "can_control": tasks.can_control(task),
+                                   "can_control": tasks.can_control(task) and not bool(project and project["closed"]),
                                    "attention": notice["updated"] if notice else None}
 
     def notices():
@@ -116,7 +135,8 @@ def register_task_api(app, tasks, require_admin):
                     raise ValueError("目标已经结束")
             return detail(tasks.create(str(body.request_id), body.goal, due=body.run_at,
                                        creative_goal_id=root, source_key=["goal", root] if root else None,
-                                       attachments=[item.model_dump() for item in body.attachments]))
+                                       attachments=[item.model_dump() for item in body.attachments],
+                                       video_selection=body.video_selection))
         except ValueError as error:
             raise HTTPException(409, str(error)) from error
 
@@ -134,12 +154,14 @@ def register_task_api(app, tasks, require_admin):
         return detail(visible(identity))
 
     @app.post("/api/agent/tasks/{identity}/goal/close", dependencies=deps)
-    async def close_goal(identity: UUID):
+    async def close_goal(identity: UUID, body: GoalStop | None = None):
         visible(identity)
         if not tasks.workspace.goal(str(identity)):
             raise HTTPException(404, "找不到这个长期目标")
         try:
-            tasks.workspace.close(str(identity), tasks.executable)
+            await tasks.close_goal(str(identity), {str(key): rev for key, rev in body.confirmed_runs.items()} if body else {})
+        except LookupError as error:
+            raise HTTPException(404, "找不到这个长期目标") from error
         except ValueError as error:
             raise HTTPException(409, str(error)) from error
         return detail(visible(identity))
@@ -160,9 +182,11 @@ def register_task_api(app, tasks, require_admin):
         goal = (body.goal or "").strip()
         if body.action == "steer" and not goal:
             raise HTTPException(400, "请填写新的任务要求")
+        if body.action != "steer" and body.video_selection is not None:
+            raise HTTPException(400, "只有改口可以更换视频范围")
         try:
             task = await tasks.control(str(identity), body.revision, body.action, goal,
-                                       str(body.step_id) if body.step_id else None)
+                                       str(body.step_id) if body.step_id else None, video_selection=body.video_selection)
         except LookupError as error:
             raise HTTPException(404, "找不到这项任务") from error
         except ValueError as error:

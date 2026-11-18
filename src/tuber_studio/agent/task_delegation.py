@@ -1,7 +1,6 @@
 """Responses function calls backed by Studio's durable steps and domain receipts."""
 
 import asyncio
-import re
 import time
 from itertools import groupby
 from uuid import UUID, uuid5
@@ -11,9 +10,7 @@ from pydantic import Field
 from ..models import StrictModel
 from ..store import dump
 from .task_delivery import DelegationError, PrivateDelivery, evidence_index, render_private_delivery
-
-_BVID = re.compile(r"BV[0-9A-Za-z]{10}")
-_PART = re.compile(r"(?:[?&]p=|(?<![A-Za-z0-9])p\s*)([1-9]\d*)|第\s*([1-9]\d*)\s*[pP]", re.I)
+from .task_video_scope import permits, scoped_video_step, video_binding
 
 
 class Clarification(StrictModel):
@@ -24,19 +21,8 @@ def uses_responses(task):
     return isinstance(task["plan"], dict) and task["plan"].get("backend") == "responses"
 
 
-def video_binding(task):
-    videos, parts = set(), set()
-    for goal in [*task["plan"]["prior_goals"], task["goal"]]:
-        mentioned = set(_BVID.findall(goal))
-        if mentioned and mentioned != videos:
-            videos, parts = mentioned, set()
-        if selected := {int(left or right) for left, right in _PART.findall(goal)}:
-            parts = selected
-    return videos, parts
-
-
 def visible_steps(runtime, task):
-    videos, parts = video_binding(task)
+    bound = video_binding(task)
     context = []
     for step in task["steps"]:
         if step["tool"] == "owner_attachment":
@@ -46,19 +32,35 @@ def visible_steps(runtime, task):
             tool = runtime.tools.get(step["tool"])
             if not tool or not tool.reusable or not step.get("result") or step["result"].get("error"):
                 continue
-            if step["tool"] == "inspect_video":
-                if videos and step["arguments"].get("bvid") not in videos:
-                    continue
-                result = step["result"]
-                if parts:
-                    step = step | {"result": result | {"findings": [item if item.get("part") in parts else {}
-                                                                   for item in result.get("findings", [])]}}
+        if step["tool"] == "inspect_video":
+            step = scoped_video_step(step, bound)
+            if step is None:
+                continue
+        if step["tool"] == "delegate_text" and not set(step["arguments"]["sources"]) <= evidence_index(context).keys():
+            continue
         context.append(step)
     return context
 
 
 def function(name, description, arguments):
-    return {"type": "function", "name": name, "description": description, "parameters": arguments.model_json_schema()}
+    schema = arguments.model_json_schema()
+    definitions = schema.pop("$defs", {})
+
+    def wire(node):
+        if isinstance(node, list):
+            return [wire(item) for item in node]
+        if not isinstance(node, dict):
+            return node
+        if "$ref" in node:
+            target = node["$ref"].removeprefix("#/$defs/")
+            node = definitions[target] | {key: value for key, value in node.items() if key != "$ref"}
+        result = {key: wire(value) for key, value in node.items() if key not in {"title", "default", "properties"}}
+        if "properties" in node:
+            result["properties"] = {field: wire(value) for field, value in node["properties"].items()}
+            result["required"] = list(result["properties"])
+        return result
+
+    return {"type": "function", "name": name, "description": description, "parameters": wire(schema), "strict": True}
 
 
 def model_input(task, context):
@@ -69,6 +71,7 @@ def model_input(task, context):
         "取材结束调用 submit_materials，按真实 evidence ID 提交候选、建议和缺口，由前台角色决定交付。"
         "证据不足就写 gaps，不凑数；须号主补充时调用 ask_owner。不要用普通消息代替工具或交付。"
     )}, {"role": "user", "content": dump({"prior_goals": task["plan"]["prior_goals"], "goal": task["goal"],
+                                           "video_selection": task["plan"].get("video_selection"),
                                            "previous_delivery": task["plan"].get("previous_delivery"),
                                            "saved_evidence": evidence_index([
                                                step for step in context if step["revision"] != task["revision"]]),
@@ -126,6 +129,9 @@ async def advance(runtime, task):
         return
     pending = [step for step in current if "result" not in step]
     if pending:
+        bound = video_binding(task)
+        if any(step["tool"] == "inspect_video" and not permits(bound, step["arguments"]) for step in pending):
+            raise DelegationError("视频、分P或时段超出了号主给定的来源。")
         await run_pending(runtime, task, pending, context)
         return
     client = runtime.responses_client()
@@ -135,8 +141,17 @@ async def advance(runtime, task):
     private_files = any(step["tool"] == "owner_attachment" for step in context)
     allowed = {name: tool for name, tool in runtime.tools.items() if not private_files or name == "delegate_text"}
     tools = [function(name, tool.description, tool.arguments) for name, tool in allowed.items()]
-    tools.extend([function("submit_materials", "向前台 Omni 提交候选证据与缺口，不直接向号主交付。", PrivateDelivery),
-                  function("ask_owner", "向号主询问完成委派所缺的资料。", Clarification)])
+    submission = function("submit_materials", "向前台 Omni 提交候选证据与缺口，不直接向号主交付。", PrivateDelivery)
+    items = submission["parameters"]["properties"]["items"]
+    sources = list(evidence_index(context))
+    if sources:
+        items["items"]["properties"]["sources"]["items"]["enum"] = sources
+        for tool in tools:
+            if tool["name"] == "delegate_text":
+                tool["parameters"]["properties"]["sources"]["items"]["enum"] = sources
+    else:
+        items["maxItems"] = 0
+    tools.extend([submission, function("ask_owner", "向号主询问完成委派所缺的资料。", Clarification)])
     reply = await client(input=model_input(task, context), tools=tools, tool_choice="required")
     if runtime.scope() != task["scope"]:
         return
@@ -160,10 +175,8 @@ async def advance(runtime, task):
         if len(calls) > 1 and (tool.review or not tool.parallel_read):
             raise DelegationError("并行委派只允许独立读取。")
         arguments = tool.arguments.model_validate(call.arguments).model_dump(mode="json")
-        if call.name == "inspect_video":
-            videos, parts = video_binding(task)
-            if arguments["bvid"] not in videos or (parts and arguments.get("part") not in parts):
-                raise DelegationError("视频或分P超出了号主给定的来源。")
+        if call.name == "inspect_video" and not permits(video_binding(task), arguments):
+            raise DelegationError("视频、分P或时段超出了号主给定的来源。")
         if any(step["tool"] == call.name and step["arguments"] == arguments for step in steps):
             raise DelegationError("同一批次存在重复委派。")
         cached = next((step for step in reversed(context) if tool.reusable and step["tool"] == call.name

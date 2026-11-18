@@ -309,7 +309,7 @@ export function initTaskActivity(api, requestId) {
       input.focus();
     };
     content.replaceChildren(back, title, state, result, steps, adjust, stop);
-    if (task.can_control === false) content.append(node("p", "原执行授权已失效。记录与成果仍可查看；如需继续，请重新交办。", "hint"));
+    if (task.can_control === false && !task.creative_goal?.closed) content.append(node("p", "原执行授权已失效。记录与成果仍可查看；如需继续，请重新交办。", "hint"));
     renderWorkspace(task);
     if (task.can_control !== false && task.status === "awaiting_approval") {
       const step = task.steps.at(-1);
@@ -394,7 +394,16 @@ export function initTaskActivity(api, requestId) {
             request_id: identity, goal: text, creative_goal_id: goal.id,
           }, submit));
         };
-        finish.onclick = () => change(`${base}/${goal.id}/goal/close`, "POST", undefined, finish);
+        finish.onclick = () => {
+          const scope = goal.stop_scope || {};
+          const runs = goal.runs.filter(run => Object.hasOwn(scope, run.id));
+          if (runs.length && !window.confirm([
+            `结束「${goal.title}」并停止当前授权的 ${runs.length} 项执行？`,
+            ...runs.map(run => `· ${run.goal}`),
+            "周期和事件跟进也会停止。已提交的动作只核对原回执，历史和成果保留。",
+          ].join("\n"))) return;
+          change(`${base}/${goal.id}/goal/close`, "POST", {confirmed_runs: scope}, finish);
+        };
         content.append(next, finish);
       }
     }

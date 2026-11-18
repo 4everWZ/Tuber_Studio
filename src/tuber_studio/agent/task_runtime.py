@@ -20,6 +20,7 @@ from . import task_delegation
 from .creative_workspace import CreativeWorkspace
 from .task_delivery import LABELS, DelegationError, deliver_from_receipts
 from .task_identity import TaskIdentity
+from .task_video_scope import selection_plan, video_binding
 
 MAX_STEPS = 8
 log = logging.getLogger(__name__)
@@ -220,13 +221,18 @@ class TaskRuntime:
         return [{key: task[key] for key in ("id", "goal", "revision", "status", "due", "updated")}
                 for task in (self.view(self._decode(row)) for row in rows)]
 
-    def create(self, identity, goal, *, due=None, source_key=None, creative_goal_id=None, attachments=()):
+    def create(self, identity, goal, *, due=None, source_key=None, creative_goal_id=None, attachments=(), video_selection=None):
         scope, now = dump(self.scope()), time.time()
-        key = dump([source_key, goal, due])
+        if creative_goal_id:
+            project = self.workspace.goal(creative_goal_id)
+            if not project or not self.current(creative_goal_id) or project["closed"]:
+                raise ValueError("长期目标已结束或不可访问")
+        selection = selection_plan(video_selection, goal) if video_selection is not None else {}
+        key = dump([source_key, goal, due] + ([selection["video_selection"]] if selection else []))
         inputs = [{"id": str(uuid5(UUID(identity), f"attachment:{index}")), "revision": 0,
                    "tool": "owner_attachment", "arguments": {}, "result": attachment}
                   for index, attachment in enumerate(attachments)]
-        plan = dump({"backend": "responses", "prior_goals": []}) if inputs else None
+        plan = dump({"backend": "responses", "prior_goals": [], **selection}) if inputs or selection else None
         due = now if due is None else due
         self.store.execute(
             "INSERT OR IGNORE INTO agent_tasks"
@@ -242,14 +248,36 @@ class TaskRuntime:
         self.wake.set()
         return task
 
-    async def control(self, identity, revision, action, goal=None, step_id=None):
-        async with self.controls:
-            return await self._control(identity, revision, action, goal, step_id)
+    async def close_goal(self, identity, confirmed):
+        def stops_for(row):
+            task = self._decode(row)
+            if task["pending_control"]:
+                return [task["steps"][-1]["id"]]
+            return self._stop_ids(task)
 
-    async def _control(self, identity, revision, action, goal, step_id):
+        if not self.current(identity):
+            raise LookupError(identity)
+        stopped = self.workspace.stop_goal(identity, dump(self.scope()), confirmed, stops_for)
+        if self.active and self.active[0] in stopped:
+            self.active[1].cancel()
+        self.wake.set()
+
+    def _stop_ids(self, task):
+        return [item["id"] for item in self._current_steps(task)
+                if "result" not in item and task["status"] != "awaiting_approval"
+                and (item["tool"] not in self.tools or self.tools[item["tool"]].stop
+                     or (self.tools[item["tool"]].checkpoint_submission and item.get("checkpoint")))]
+
+    async def control(self, identity, revision, action, goal=None, step_id=None, *, video_selection=None):
+        async with self.controls:
+            return await self._control(identity, revision, action, goal, step_id, video_selection)
+
+    async def _control(self, identity, revision, action, goal, step_id, video_selection=None):
         task = self.current(identity)
         if not task:
             raise LookupError(identity)
+        if task["creative_goal_id"] and self.workspace.goal(task["creative_goal_id"])["closed"]:
+            raise ValueError("长期目标已结束，不能再改口、审批或执行；历史与成果仍可查看。")
         if self.scope() != task["scope"]:
             raise ValueError("原任务的执行授权已失效，历史仍可查看；请重新交办")
         if task["revision"] != revision:
@@ -257,6 +285,8 @@ class TaskRuntime:
         status = task["status"]
         if task["pending_control"]:
             raise ValueError("关联操作的停止结果待核对")
+        if video_selection is not None and action != "steer":
+            raise ValueError("只有改口可以更换视频范围")
         if action == "approve":
             step = task["steps"][-1] if task["steps"] else None
             if (status != "awaiting_approval" or not step or step["id"] != step_id
@@ -275,8 +305,7 @@ class TaskRuntime:
         if status not in allowed[action]:
             raise ValueError("任务当前无法执行此操作")
         pending = [item for item in self._current_steps(task) if "result" not in item]
-        stops = [item["id"] for item in pending if self.tools[item["tool"]].stop
-                 and status != "awaiting_approval"]
+        stops = self._stop_ids(task)
         final_status = "cancelled" if action == "cancel" else "queued"
         final_message = "任务已停止。" if action == "cancel" else ""
         due = time.time()
@@ -289,6 +318,14 @@ class TaskRuntime:
                               "previous_delivery": task["plan"].get("previous_delivery")}
             if task["status"] == "completed":
                 change["plan"]["previous_delivery"] = task["message"]
+            change["plan"].update({key: task["plan"][key] for key in ("video_selection", "video_parts") if key in task["plan"]})
+        if video_selection is not None:
+            if change["plan"] is None:
+                change["plan"] = {"backend": "responses", "prior_goals": [task["goal"]]}
+            change["plan"].pop("video_parts", None)
+            change["plan"].update(selection_plan(video_selection, change["goal"]))
+        if change["plan"] and task_delegation.uses_responses(task) and video_binding(task) != video_binding(task | change):
+            change["plan"].pop("previous_delivery", None)
         if stops:
             # Persist the control and original step together before interrupting its coroutine.
             change.update(status="waiting", message="正在核对关联操作的停止结果。",
@@ -314,6 +351,7 @@ class TaskRuntime:
         if self.scope() != task["scope"]:
             return
         control = json.loads(task["pending_control"])
+        goal_stop = control.pop("goal_stop", False)
         stops = control.pop("stops", [task["steps"][-1]["id"]])
         steps = []
         try:
@@ -321,15 +359,23 @@ class TaskRuntime:
                 if "result" in pending:
                     steps.append(pending)
                 elif pending["id"] in stops:
+                    if self.scope() != task["scope"]:
+                        return
                     tool = self.tools[pending["tool"]]
                     stop_context = (pending.get("checkpoint") or {}) | (pending.get("approval") or {})
                     async with asyncio.timeout(20):
                         receipt = await tool.stop(pending.get("resource_id", pending["id"]), stop_context)
+                    if tool.checkpoint_submission and pending.get("checkpoint") and not receipt:
+                        raise ValueError("原提交尚无可核实的停止回执")
                     if receipt is not None:
                         stopped = pending | {"result": receipt}
                         if tool.reusable and control["status"] == "queued" and receipt.get("status") == "cancelled":
                             stopped["paused_for_steer"] = True
                         steps.append(stopped)
+                    elif goal_stop:
+                        steps.append(pending)
+                elif goal_stop:
+                    steps.append(pending)
         except Exception as error:
             log.warning("Agent tool %s stop failed: %s", pending["tool"], type(error).__name__)
             self._save(task, message="关联操作的停止结果待核对。", due=time.time() + 30)
@@ -375,7 +421,10 @@ class TaskRuntime:
             async with self.controls:
                 row = self.store.one(
                     "SELECT * FROM agent_tasks WHERE scope=? AND status IN ('queued','running','waiting','scheduled') "
-                    "AND due<=? ORDER BY due,created LIMIT 1", (dump(self.scope()), time.time()),
+                    "AND due<=? AND (creative_goal_id IS NULL OR NOT EXISTS "
+                    "(SELECT 1 FROM creative_goals WHERE id=agent_tasks.creative_goal_id AND closed=1) "
+                    "OR json_extract(pending_control,'$.goal_stop')=1) ORDER BY due,created LIMIT 1",
+                    (dump(self.scope()), time.time()),
                 )
                 if row:
                     task = asyncio.create_task(self._advance(self._decode(row)))

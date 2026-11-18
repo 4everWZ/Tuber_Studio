@@ -267,6 +267,7 @@ async def test_native_admission_is_not_an_eight_step_plan(runtime, settings, sto
 
 async def test_steer_reuses_original_video_operation_even_if_last_sibling_has_finished(settings, monkeypatch):
     reads = []
+    metadata_reads = []
 
     async def search(query):
         reads.append(query)
@@ -280,6 +281,11 @@ async def test_steer_reuses_original_video_operation_even_if_last_sibling_has_fi
     gateway(settings, monkeypatch, model)
     monkeypatch.setattr(task_tools, "search_public_web", search)
     platform = ControlledPlatform()
+    async def metadata(bvid):
+        metadata_reads.append(bvid)
+        return {"bvid": bvid, "parts": [{"page": 1, "duration": 30}, {"page": 2, "duration": 18}]}
+
+    monkeypatch.setattr(platform, "video_metadata", metadata)
     app = create_app(settings, adapter=platform)
     tasks, browsing = app.state.runtime.tasks, app.state.browsing
     browsing.discovery.remember_account("100")
@@ -297,6 +303,9 @@ async def test_steer_reuses_original_video_operation_even_if_last_sibling_has_fi
         await tasks._advance(tasks.current(identity))
         resumed = tasks.current(identity)
         assert resumed["status"] == "waiting" and resumed["steps"][-1]["resource_id"] == resource
+        assert metadata_reads == [BV]
+        assert browsing.repo.round(resource)["config"]["operator_selection"]["ranges"] == [
+            {"part": 2, "start": 10, "end": 18}]
         assert browsing.repo.round(resource)["status"] == "waiting" and reads == ["原出处"]
         assert app.state.store.one("SELECT COUNT(*) AS n FROM browsing_rounds")["n"] == 1
         await tasks.control(identity, 2, "cancel")
