@@ -92,7 +92,8 @@ async def run(device, live, voice_wav, gateway_checkout=None):
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
             local = f"http://127.0.0.1:{port}"
-            server = uvicorn.Server(uvicorn.Config(app, lifespan="off", access_log=False, log_level="error"))
+            server = uvicorn.Server(uvicorn.Config(app, lifespan="off", access_log=False, log_level="error",
+                                                   timeout_graceful_shutdown=4))
             serving = asyncio.create_task(server.serve(sockets=[listener]))
             try:
                 async with asyncio.timeout(10):
@@ -105,6 +106,7 @@ async def run(device, live, voice_wav, gateway_checkout=None):
                     browser = await playwright.chromium.launch(executable_path=os.getenv("CHROMIUM_EXECUTABLE"))
                     stack.push_async_callback(browser.close)
                     context = await browser.new_context(service_workers="block")
+                    stack.push_async_callback(context.close)
                     await context.route("**/*", lambda route: route.continue_() if route.request.url.startswith(local+"/") else route.abort())
                     assert (await context.request.post(local+"/api/auth", data={"token":token})).ok
                     page = await context.new_page()
@@ -133,7 +135,7 @@ async def run(device, live, voice_wav, gateway_checkout=None):
                             speech = voice_wav or await asyncio.to_thread(spoken_rule, Path(directory), VOICE_RULE)
                             async with checkout_binding(config, gateway_checkout) as voice_service, live_voice_binding(voice_service):
                                 result = await voice_probe(playwright, os.getenv("CHROMIUM_EXECUTABLE"), local,
-                                                           token, speech, target, VOICE_RULE)
+                                                           token, speech, target, VOICE_RULE, correct_qa_preview=voice_wav is None)
                             result["gateway"] = "local service checkout, deployed ordinary Omni upstream" if gateway_checkout else "deployed service"
                             result["speaker"] = "supplied WAV" if voice_wav else "synthetic Mandarin QA speech"
                         except (OSError, subprocess.SubprocessError, ValueError, httpx.HTTPError) as error:
@@ -143,7 +145,10 @@ async def run(device, live, voice_wav, gateway_checkout=None):
                             updated = (await device_call(device, port, token, "POST", "/api/agent/memory.get",
                                                          {"id":target["id"]}))["value"]
                             assert updated["revision"] == result["correction"]["revision"]
-                            assert updated["quote"] == result["bound_final_transcript"]
+                            assert updated["quote"] == result["owner_confirmed_text"]
+                            if result["protocol"] == "explicit_user_audio":
+                                assert updated["voice_origin"]["machine_text"] == result["bound_final_transcript"]
+                                assert updated["voice_origin"]["owner_edited"] == result["preview_edited_by_authorized_qa"]
                             record("voice_cross_device_revision", updated)
                             return updated
                     if config:
@@ -155,14 +160,21 @@ async def run(device, live, voice_wav, gateway_checkout=None):
                         await device_call(device, port, token, "DELETE", f"/api/daily-memory/organized/{row['id']}?expected_revision={row['revision']}")
                     assert not (await client.post(SEARCH, json={"query":CONFIRMED})).json()["items"]
                     report["independent_device"]["forget_visible_on_original_client"] = True
-                    record("stage", "finished")
+                    record("stage", "closing_clients")
             finally:
+                report["teardown"] = {"remaining_http_tasks":len(server.server_state.tasks),
+                                      "open_connections":len(server.server_state.connections)}
+                record("stage", "stopping_server")
                 server.should_exit = True
                 await serving
-                if hasattr(runtime.llm, "close"):
-                    await runtime.llm.close()
-                await app.state.comments.adapter.close()
-                app.state.store.close()
+                async with AsyncExitStack() as cleanup:
+                    cleanup.callback(app.state.store.close)
+                    cleanup.push_async_callback(app.state.comments.adapter.close)
+                    cleanup.push_async_callback(app.state.browsing.evidence.close)
+                    cleanup.push_async_callback(runtime.llm.close)
+                    cleanup.push_async_callback(runtime.memory_organizer.close)
+                report["teardown"]["server_exited"] = serving.done()
+    record("stage", "finished")
     return report
 
 

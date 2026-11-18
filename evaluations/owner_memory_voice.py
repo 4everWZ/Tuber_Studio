@@ -79,7 +79,7 @@ async def live_voice_binding(config):
         await relay.wait()
 
 
-async def voice_probe(playwright, executable, origin, login, audio, target, expected):
+async def voice_probe(playwright, executable, origin, login, audio, target, expected, *, correct_qa_preview=False):
     browser = await playwright.chromium.launch(executable_path=executable, args=[
         "--use-fake-device-for-media-stream", f"--use-file-for-fake-audio-capture={audio.resolve()}",
         "--autoplay-policy=no-user-gesture-required"])
@@ -146,7 +146,7 @@ async def voice_probe(playwright, executable, origin, login, audio, target, expe
         requested = False
         try:
             await page.wait_for_function("typeof window.qaStartSpeech === 'function'", timeout=30000)
-            if capabilities.get("gateway_input_transcription"):
+            if (capabilities.get("gateway_input_transcription") or {}).get("receipt") == "hmac-sha256-v1":
                 await page.get_by_role("button", name="转认下一句").click()
                 await page.get_by_role("button", name="结束并转认这句").wait_for()
                 requested = True
@@ -167,11 +167,14 @@ async def voice_probe(playwright, executable, origin, login, audio, target, expe
                 quote = page.locator("#private-call-utterances > div").filter(has_text="所选录音的转写").locator("blockquote").first
             await quote.wait_for(timeout=60000 if requested else 15000)
         except BrowserTimeout:
-            return {"status":"unverified", "session_created":bool(counts["session.created"]),
+            result = {"status":"unverified", "session_created":bool(counts["session.created"]),
                     "capabilities":capabilities, "commit_requested":committed_manually, "ui_status":await page.locator("#private-call-state").inner_text(),
                     "service_events":dict(counts), "explicit_requested":requested,
                     "selection_status":await page.locator("#private-call-transcribe-state").inner_text(),
                     "sent_pcm_seconds":sent_seconds, "committed_user_audio_items":len(commits), "final_transcript_events":len(finals)}
+            await page.locator("#private-call-end").click()
+            await context.close()
+            return result
         transcript = await quote.inner_text()
         if requested:
             capture_id, = started
@@ -184,11 +187,21 @@ async def voice_probe(playwright, executable, origin, login, audio, target, expe
                   "explicit_samples":wire["samples"] if requested else None, "final_transcript_events":len(finals),
                   "bound_final_transcript":transcript, "committed_user_audio_items":len(commits)}
         normalize = lambda text: re.sub(r"[^\w]", "", text.casefold())
-        if normalize(transcript) == normalize(expected):
-            row = quote.locator("..")
+        row = quote.locator("..")
+        exact = normalize(transcript) == normalize(expected)
+        # This QA speaker read the authorized script. Re-enter that entire script in the visible
+        # preview; keep both verbatim texts. An arbitrary supplied WAV cannot take this path.
+        owner_edit = requested and correct_qa_preview and not exact
+        if exact or owner_edit:
+            confirmed = transcript
+            if owner_edit:
+                confirmed = expected
+                await row.get_by_label("号主确认的文字（可改正误听）").fill(confirmed)
+            report["owner_confirmed_text"] = confirmed
+            report["preview_edited_by_authorized_qa"] = owner_edit
             await row.get_by_label("更正本次引用的偏好").select_option(str(target["id"]))
             async def confirm(dialog):
-                assert target["note"] in dialog.message and transcript in dialog.message
+                assert target["note"] in dialog.message and transcript in dialog.message and confirmed in dialog.message
                 await dialog.accept()
             page.once("dialog", confirm)
             async with page.expect_response(lambda r: r.url.endswith("/api/agent/memory/confirm")) as response:
@@ -200,6 +213,7 @@ async def voice_probe(playwright, executable, origin, login, audio, target, expe
         else:
             report["correction"] = "unverified; transcript did not match the authorized sentence"
         await page.locator("#private-call-end").click()
+        await context.close()
         return report
     finally:
         await browser.close()
