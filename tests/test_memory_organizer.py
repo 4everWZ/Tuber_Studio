@@ -243,8 +243,7 @@ class OrganizerModel:
                           "note": item["original"], "tags": ["运营汇报"]}
             if item["kind"] == "private":
                 text = item["original"]
-                items[item["key"]]["routine"] = {"statement": text, "scope_quote": "以后",
-                                                 "practice_quote": text.split("以后", 1)[1]}
+                items[item["key"]].update(statement=text, scope_quote="以后", practice_quote=text.split("以后", 1)[1])
         return items
 
 

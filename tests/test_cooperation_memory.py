@@ -7,9 +7,10 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from pydantic import TypeAdapter, ValidationError
 
 from tuber_studio.app import create_app
-from tuber_studio.agent.memory_organizer import MemorySuggestion
+from tuber_studio.agent.memory_organizer import MemorySuggestion, PrivateSuggestion, SkipPrivateTurn
 from tuber_studio.agent.owner_memory import private_rows, read_stamp
 from tuber_studio.agent.private_editor_memory import connect_private_editor
 from tuber_studio.cooperation import RoutineProposal, RoutineReview, bound_statement, corroborates, locate_rule
@@ -19,10 +20,11 @@ SCOPE = "咱俩对稿有个默契"
 PRACTICE = "存疑处圈红，定稿处描蓝"
 RULE = SCOPE + "：" + PRACTICE + "。"
 GREETING = "辛苦啦，跟我聊两句吧。"
+ONE_OFF = "明天交接时帮我圈红两处。"
 EXAMPLES = {
     RULE: (SCOPE, PRACTICE, "号主本人的持续协作约定"),
     GREETING: ("辛苦啦", "跟我聊两句吧", "寒暄玩笑或举例转述"),
-    "明天交接时帮我圈红两处。": ("明天交接时", "帮我圈红两处", "单次请求或邀请"),
+    ONE_OFF: ("明天交接时", "帮我圈红两处", "单次请求或邀请"),
     "有人说每次都要倒着念稿，我只是开个玩笑。": ("每次", "倒着念稿", "寒暄玩笑或举例转述"),
 }
 
@@ -37,7 +39,7 @@ async def test_private_chat_admission_requires_independent_original_evidence(set
         async def generate_json(self, messages, schema, **kwargs):
             packet = json.loads(messages[-1]["content"])
             if schema["title"] == "RoutineReviews":
-                assert {item["original"] for item in packet.values()} == set(EXAMPLES)
+                assert {item["original"] for item in packet.values()} == set(EXAMPLES) - {ONE_OFF}
                 for item in packet.values():
                     assert (item["scope_quote"], item["practice_quote"]) == EXAMPLES[item["original"]][:2]
                 return {key: {"meaning": EXAMPLES[item["original"]][2], "scope_supported": item["original"] == RULE,
@@ -46,10 +48,13 @@ async def test_private_chat_admission_requires_independent_original_evidence(set
             result = {}
             for item in packet:
                 quote = item["original"]
+                if quote == ONE_OFF:
+                    result[item["key"]] = {"action": "skip"}
+                    continue
                 scope, practice, _ = EXAMPLES[quote]
                 result[item["key"]] = {"action": "add", "headline": quote, "note": quote,
                                        "existing_id": None, "tags": [], "summary_kind": "preference",
-                                       "routine": {"statement": quote, "scope_quote": scope, "practice_quote": practice}}
+                                       "statement": quote, "scope_quote": scope, "practice_quote": practice}
             return result
 
     try:
@@ -79,6 +84,20 @@ async def test_private_chat_admission_requires_independent_original_evidence(set
         await app.state.comments.adapter.close()
         await app.state.browsing.close()
         runtime.store.close()
+
+
+def test_vutxt9a6_add_requires_all_original_evidence_and_skip_needs_no_slots():
+    decision = TypeAdapter(PrivateSuggestion | SkipPrivateTurn)
+    assert isinstance(decision.validate_python({"action": "skip"}), SkipPrivateTurn)
+    for quote in (RULE, GREETING):
+        common = {"existing_id": None, "headline": quote, "note": quote, "tags": []}
+        for action in ("add", "update"):
+            original = common | {"action": action}
+            for missing in ({"routine": None}, {}, {"statement": quote, "scope_quote": "", "practice_quote": quote}):
+                with pytest.raises(ValidationError):
+                    decision.validate_python(original | missing)
+    accepted = dict(common, action="add", note=RULE, headline=SCOPE, statement=RULE, scope_quote=SCOPE, practice_quote=PRACTICE)
+    assert locate_rule(RULE, decision.validate_python(accepted))
 
 
 def test_binding_rejects_unsupported_ambiguous_and_overlapping_source_spans():

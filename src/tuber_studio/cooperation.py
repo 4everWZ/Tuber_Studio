@@ -9,9 +9,9 @@ from .models import StrictModel
 
 
 class RoutineProposal(StrictModel):
-    statement: str = Field(description="包含全部适用条件和要求的原话，逐字摘录。")
-    scope_quote: str = Field(description="原话中表明跨次适用、通用惯例或稳定个人偏好的文字。")
-    practice_quote: str = Field(description="原话中工坊能够实际执行的具体合作方式。")
+    statement: str = Field(min_length=1, description="包含全部适用条件和要求的原话，逐字摘录。")
+    scope_quote: str = Field(min_length=1, description="原话中表明跨次适用、通用惯例或稳定个人偏好的文字。")
+    practice_quote: str = Field(min_length=1, description="原话中工坊能够实际执行的具体合作方式。")
 
 
 class RoutineReview(StrictModel):

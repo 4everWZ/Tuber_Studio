@@ -1,0 +1,55 @@
+{
+  "run": "vutxt9a6",
+  "commit": "3a6256e",
+  "source": "ordinary Omni, isolated QA Studio, two authenticated clients",
+  "failed_stage": "checking_ordinary_chat_preferences",
+  "editions_reached": 0,
+  "platform_writes": 0,
+  "teardown": {
+    "remaining_http_tasks": 0,
+    "open_connections": 0,
+    "server_exited": true
+  },
+  "turns": [
+    {
+      "owner_quote": "辛苦啦，跟我聊两句吧。",
+      "expected": "skipped",
+      "status": "skipped",
+      "remote_source_matches": 0,
+      "judgments": [
+        {
+          "stage": "proposal",
+          "action": "add",
+          "routine": null
+        },
+        {
+          "stage": "rejected_unbound_proposal"
+        },
+        {
+          "stage": "source_ledger",
+          "status": "skipped"
+        }
+      ]
+    },
+    {
+      "owner_quote": "咱俩对稿有个默契：存疑处圈红，定稿处描蓝。",
+      "expected": "saved",
+      "status": "skipped",
+      "remote_source_matches": 0,
+      "judgments": [
+        {
+          "stage": "proposal",
+          "action": "add",
+          "routine": null
+        },
+        {
+          "stage": "rejected_unbound_proposal"
+        },
+        {
+          "stage": "source_ledger",
+          "status": "skipped"
+        }
+      ]
+    }
+  ]
+}
