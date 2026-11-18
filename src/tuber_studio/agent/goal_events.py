@@ -11,6 +11,7 @@ from pydantic import Field
 
 from ..models import StrictModel
 from ..store import dump
+from .goal_comment_events import GoalCommentEvents, register_comment_events
 from .task_delivery import deliver_from_receipts
 
 log = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ class GoalEvents:
     def __init__(self, tasks):
         self.tasks, self.store = tasks, tasks.store
         self.retry_at = 0
+        self.comments = GoalCommentEvents(tasks)
         self.store.db.executescript("""
             CREATE TABLE IF NOT EXISTS goal_event_watches(
                 goal_id TEXT PRIMARY KEY REFERENCES creative_goals(id), scope TEXT NOT NULL,
@@ -88,6 +90,7 @@ class GoalEvents:
             log.exception("私有事件跟踪未提交，将从原游标重试")
 
     def consume(self):
+        self.comments.consume(self.record, BATCH)
         if not self.store.one("SELECT 1 FROM goal_event_watches WHERE enabled=1 LIMIT 1"):
             return
         scope = dump(self.tasks.scope())
@@ -109,24 +112,28 @@ class GoalEvents:
             now = time.time()
             for receipt in receipts:
                 event_key = dump(["bilibili_inbox", watch["account"], receipt["message_id"]])
-                run_id = str(uuid5(UUID(watch["goal_id"]), event_key))
                 result = {"sender_uid": watch["sender_uid"], "account_id": watch["account"],
                           "message_id": receipt["message_id"], "inbox_id": receipt["id"]}
-                steps = [{"id": run_id, "revision": 1, "tool": "inbox_received", "arguments": {}, "result": result}]
-                _, message = deliver_from_receipts(steps, 1)
-                inserted = db.execute("""
-                    INSERT INTO agent_tasks(id,scope,goal,revision,status,steps,message,source_key,due,created,updated,creative_goal_id)
-                    VALUES(?,?,?,1,'completed',?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING
-                """, (run_id, scope, f"UID {watch['sender_uid']} 的来信已入库", dump(steps), message,
-                      event_key, now, now, now, watch["goal_id"]))
-                if inserted.rowcount:
-                    self.tasks.workspace.notify(db, run_id, now)
+                self.record(db, watch["goal_id"], scope, event_key, "inbox_received", result,
+                            f"UID {watch['sender_uid']} 的来信已入库", now)
             db.execute("UPDATE goal_event_watches SET cursor=?,consumed_at=? WHERE goal_id=?",
                        (receipts[-1]["id"], now, watch["goal_id"]))
+
+    def record(self, db, goal_id, scope, event_key, tool, result, title, now):
+        run_id = str(uuid5(UUID(goal_id), event_key))
+        steps = [{"id": run_id, "revision": 1, "tool": tool, "arguments": {}, "result": result}]
+        _, message = deliver_from_receipts(steps, 1)
+        inserted = db.execute("""
+            INSERT INTO agent_tasks(id,scope,goal,revision,status,steps,message,source_key,due,created,updated,creative_goal_id)
+            VALUES(?,?,?,1,'completed',?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING
+        """, (run_id, scope, title, dump(steps), message, event_key, now, now, now, goal_id))
+        if inserted.rowcount:
+            self.tasks.workspace.notify(db, run_id, now)
 
 
 def register_goal_events(app, tasks, require_admin):
     events = tasks.goal_events = GoalEvents(tasks)
+    register_comment_events(app, events.comments, require_admin)
     path = "/api/agent/tasks/{identity}/goal/events"
     deps = [Depends(require_admin)]
 

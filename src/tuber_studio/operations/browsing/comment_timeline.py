@@ -55,12 +55,7 @@ def comment_href(resource, comment_id=None):
     return public_discussion_url(resource, comment_id)
 
 
-def observe_thread(store, row, resource, items, *, via, resource_author_uid=None):
-    """Persist only platform-verified public rows, with independent discovery sources."""
-    if (row.get("preview") and not row.get("config", {}).get("full_video")) or not (
-        resource and items and row.get("account_id") and row.get("character_id")
-    ):
-        return
+def ensure_comment_timeline(store):
     if not _table(store, "browsing_comment_observations"):
         store.db.execute(
             "CREATE TABLE IF NOT EXISTS browsing_comment_timeline("
@@ -82,6 +77,15 @@ def observe_thread(store, row, resource, items, *, via, resource_author_uid=None
             "CREATE INDEX IF NOT EXISTS browsing_comment_observations_round ON "
             "browsing_comment_observations(round_id)"
         )
+
+
+def observe_thread(store, row, resource, items, *, via, resource_author_uid=None):
+    """Persist only platform-verified public rows, with independent discovery sources."""
+    if (row.get("preview") and not row.get("config", {}).get("full_video")) or not (
+        resource and items and row.get("account_id") and row.get("character_id")
+    ):
+        return
+    ensure_comment_timeline(store)
     entries, observations = [], []
     now = time.time()
     for item in items:

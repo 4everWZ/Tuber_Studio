@@ -9,6 +9,7 @@ from tuber_studio.agent.goal_events import BATCH, EventGrant, GoalEvents
 from tuber_studio.agent.task_identity import TaskIdentity
 from tuber_studio.agent.task_runtime import TaskRuntime
 from tuber_studio.app import create_app
+from tuber_studio.operations.browsing.comment_timeline import observe_thread
 from tuber_studio.store import Store
 
 
@@ -140,3 +141,87 @@ def test_pending_events_not_delivered_under_changed_grant(studio, invalidate):
     service.consume()
     assert service.get(goal)["enabled"] == (invalidate == "replace")
     assert not tasks.store.all("SELECT task_id FROM creative_attention")
+
+
+def observe(tasks, comment, *, resource="BV1d8pU6xEZX", root="42", uid="200", account="100", via="visit", **extra):
+    row = {"account_id": account, "character_id": "whale", "id": via, **extra}
+    with tasks.store.db:
+        observe_thread(tasks.store, row, resource, [{"comment_id": str(comment), "thread_id": root,
+                       "user_id": uid, "text": "只保留在评论原出处"}], via=via)
+
+
+async def test_comment_watch_deduplicates_verified_observations_and_restarts(studio, settings, monkeypatch):
+    app, tasks, goal = studio
+    monkeypatch.setenv("TUBER_ADMIN_TOKEN", "fixture-only")
+    path = f"/api/agent/tasks/{goal}/goal/comment-events"
+    observe(tasks, 1)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as owner:
+        assert (await owner.get(path)).status_code == 401
+        owner.headers["Authorization"] = "Bearer fixture-only"
+        state = (await owner.get(path)).json()
+        body = {"resource": "BV1d8pU6xEZX", "root_id": "42", "epoch": state["epoch"], "revision": state["revision"]}
+        assert (await owner.put(path, json=body | {"resource": "*"})).status_code == 422
+        watch = (await owner.put(path, json=body)).json()
+        assert watch["enabled"] and watch["root_id"] == "42"
+        assert (await owner.put(path, json=body)).status_code == 409
+        observe(tasks, 1, via="again")
+        observe(tasks, 2, uid="100")
+        observe(tasks, 3, account="999")
+        observe(tasks, 4, root="12")
+        observe(tasks, 5, resource="dynamic:987")
+        observe(tasks, 6, character_id="other")
+        observe(tasks, 7, preview=True)
+        observe(tasks, 8)
+        observe(tasks, 8, via="different_source")
+        assert tasks.store.all("SELECT comment_id FROM goal_pending_comments") == [{"comment_id": "8"}]
+        assert (await owner.put(path, json=body | {"revision": watch["revision"]})).json() == watch
+    tasks.store.close()
+    reopened = Store(settings.runtime / "studio.sqlite3", [])
+    try:
+        restored = TaskRuntime(reopened, TaskIdentity(reopened, lambda: "whale", lambda: ["100", "whale", 1, None]), None)
+        events = GoalEvents(restored)
+        with monkeypatch.context() as patch:
+            def fail(*args):
+                raise sqlite3.IntegrityError("fixture")
+            patch.setattr(restored.workspace, "notify", fail)
+            with pytest.raises(sqlite3.IntegrityError):
+                events.consume()
+        assert not reopened.all("SELECT * FROM creative_attention")
+        original, = reopened.all("SELECT * FROM goal_pending_comments")
+        events.consume()
+        notice, = reopened.all("SELECT task_id FROM creative_attention")
+        detail = restored.current(notice["task_id"])
+        result = detail["steps"][0]["result"]
+        assert result["comment_id"] == "8" and result["url"].endswith("#reply8") and "只保留在" not in str(detail)
+        assert "42" in detail["goal"] and result["author_uid"] == "200"
+        reopened.execute("DELETE FROM creative_attention")
+        reopened.execute("INSERT INTO goal_pending_comments(id,goal_id,revision,comment_id,author_uid) VALUES(?,?,?,?,?)",
+                         tuple(original[key] for key in ("id", "goal_id", "revision", "comment_id", "author_uid")))
+        events.consume()
+        assert not reopened.all("SELECT * FROM goal_pending_comments") and not reopened.all("SELECT * FROM creative_attention")
+        assert len(restored.workspace.runs(goal)) == 2
+        assert not reopened.all("SELECT * FROM account_writes") and not reopened.all("SELECT * FROM drafts")
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize("reason", ["replace", "disable", "account", "close"])
+def test_queued_comment_event_respects_revocation(studio, reason):
+    from tuber_studio.agent.goal_comment_events import CommentWatch
+    app, tasks, goal = studio
+    events = tasks.goal_events.comments
+    grant = CommentWatch(resource="BV1d8pU6xEZX", root_id="42", epoch=events.get(goal)["epoch"], revision=0)
+    state = events.configure(goal, grant)
+    observe(tasks, 1)
+    if reason == "replace":
+        events.configure(goal, grant.model_copy(update={"revision": state["revision"], "root_id": "43"}))
+    elif reason == "disable":
+        events.disable(goal, state["revision"])
+    elif reason == "close":
+        tasks.workspace.close(goal, tasks.executable)
+    else:
+        app.state.browsing.discovery.remember_account("300")
+        app.state.browsing.discovery.remember_account("100")
+    tasks.goal_events.consume()
+    assert not tasks.store.all("SELECT * FROM goal_pending_comments")
+    assert not tasks.store.all("SELECT * FROM creative_attention")
