@@ -1,0 +1,251 @@
+{
+  "case": "Private owner preference across Chromium, ordinary Omni, a second physical client and three P2 video artifacts",
+  "binding": "local service checkout, deployed ordinary Omni upstream",
+  "platform_writes": 0,
+  "input": {
+    "goal": "请只读取 BV1Hy4y1J7xH P2 的 11 到 14 秒，用其中最接近 13.5 秒的已核实画面给我写一项私有直播文字提纲。交付标题、选用理由和覆盖缺口。有画面即可成稿，缺少字幕或音轨就标明。标题沿用已约定的写法，未约定时用末尾无标点的简短名词标题。先别发。",
+    "selection": {
+      "bvid": "BV1Hy4y1J7xH",
+      "ranges": [
+        {
+          "part": 2,
+          "start": 11,
+          "end": 14
+        }
+      ]
+    }
+  },
+  "setting_confirmation": {
+    "browser": "156.0.8078.4",
+    "quote": "Group related points and separate distinct concerns. Use headings and lists when they improve readability.",
+    "revision": 1
+  },
+  "owner_chat_preference": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+  "independent_device": {
+    "architecture": "x86_64",
+    "fresh_authenticated_session": true,
+    "read_after_page_close": true,
+    "forget_visible_on_original_client": true
+  },
+  "voice": {
+    "protocol": "explicit_user_audio",
+    "speaker": "synthetic Mandarin QA speech",
+    "machine_transcript": "好的，以后直播提纲的标题都用陈述句，以句号结尾。",
+    "owner_confirmed_text": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "explicitly_edited_in_preview": true,
+    "explicit_samples": 128000,
+    "native_final_user_events": 0,
+    "committed_user_audio_items": 1,
+    "wire_events": {
+      "session.created": 1,
+      "session.updated": 1,
+      "gateway.input_transcription.started": 1,
+      "response.listen": 6,
+      "input_audio_buffer.speech_started": 1,
+      "response.created": 1,
+      "conversation.item.added": 2,
+      "conversation.item.created": 2,
+      "response.output_item.added": 1,
+      "response.content_part.added": 1,
+      "response.speak": 1,
+      "response.output_audio.delta": 5,
+      "response.output_audio_transcript.delta": 5,
+      "input_audio_buffer.speech_stopped": 1,
+      "input_audio_buffer.committed": 1,
+      "conversation.item.done": 1,
+      "playback.acknowledged": 14,
+      "gateway.input_transcription.completed": 1
+    },
+    "confirmed": {
+      "id": 1,
+      "revision": 3
+    }
+  },
+  "cross_device_voice_source": {
+    "id": 1,
+    "revision": 3,
+    "source_kind": "confirmed_voice",
+    "quote": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "machine_text": "好的，以后直播提纲的标题都用陈述句，以句号结尾。",
+    "owner_edited": true
+  },
+  "editions": [
+    {
+      "phase": "before",
+      "title": "这华丽的金色宝座是皇帝的象征吗？",
+      "full_artifact": "**这华丽的金色宝座是皇帝的象征吗？**\n选材理由：画面依据：画面中央是一个装饰华丽的金色宝座。剪辑安排：用作转场，用这一镜作为转场，连接前后两段讲述内容。\n主帧：BV1Hy4y1J7xH · 单帧采样 · 分 P 2 · 13.52 秒 · <https://www.bilibili.com/video/BV1Hy4y1J7xH/?p=2&t=13>\n覆盖：仅核实所列采样时点；连续画面及音轨均未经该画面回执核实。\n\n当轮取材窗口与观测覆盖：\n- 第 1 项 · BV1Hy4y1J7xH P2 · 连续取材入点 11 秒、出点 14 秒（不含），保存 75 个连续原帧。私有短片不含音轨。\n- 第 1 项 · 逐帧检测画面及下方屏字变化；Omni 审读代表帧 11、12.24、13.96 秒，检测到的状态均有代表帧。\n- 第 1 项 · BV1Hy4y1J7xH P2 · 请求抽样范围 [11, 14) 秒。初读取材观察 3 帧，实际时点为 11.44、12.48、13.52 秒。\n- 第 1 项的工具回执：此区间未取得可公开读取的字幕。\n- 第 1 项的工具回执：画面内容按时点抽样描述；未听审原片音轨。",
+      "citations": [
+        {
+          "id": 1,
+          "revision": 2,
+          "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+          "source_kind": "turn"
+        }
+      ],
+      "grounded_title_anchor": [
+        "宫廷场景"
+      ],
+      "observed_frame_labels": [
+        "宫廷场景",
+        "皇帝宝座",
+        "古代服饰人物"
+      ],
+      "transport": {
+        "status": "completed",
+        "tools": [
+          "inspect_video",
+          "submit_materials"
+        ],
+        "video_findings": [
+          3
+        ],
+        "frames": [
+          {
+            "part": 2,
+            "cid": "301983263",
+            "seconds": 11.44,
+            "kind": "实际视频帧"
+          },
+          {
+            "part": 2,
+            "cid": "301983263",
+            "seconds": 12.48,
+            "kind": "实际视频帧"
+          },
+          {
+            "part": 2,
+            "cid": "301983263",
+            "seconds": 13.52,
+            "kind": "实际视频帧"
+          }
+        ]
+      },
+      "editor_review": {
+        "preference_ids": [
+          1
+        ],
+        "format_checks": 1,
+        "repaired_fields": []
+      },
+      "independent_device_body_matched": true
+    },
+    {
+      "phase": "voice_corrected",
+      "title": "皇帝宝座的华丽装饰。",
+      "full_artifact": "**皇帝宝座的华丽装饰。**\n选材理由：画面依据：画面中央是一个装饰华丽的金色宝座。剪辑安排：用作转场，用这一镜作为转场，连接前后两段讲述内容。\n主帧：BV1Hy4y1J7xH · 单帧采样 · 分 P 2 · 13.52 秒 · <https://www.bilibili.com/video/BV1Hy4y1J7xH/?p=2&t=13>\n覆盖：仅核实所列采样时点；连续画面及音轨均未经该画面回执核实。\n\n当轮取材窗口与观测覆盖：\n- 第 1 项 · BV1Hy4y1J7xH P2 · 连续取材入点 11 秒、出点 14 秒（不含），保存 75 个连续原帧。私有短片不含音轨。\n- 第 1 项 · 逐帧检测画面及下方屏字变化；Omni 审读代表帧 11、12.24、13.96 秒，检测到的状态均有代表帧。\n- 第 1 项 · BV1Hy4y1J7xH P2 · 请求抽样范围 [11, 14) 秒。初读取材观察 3 帧，实际时点为 11.44、12.48、13.52 秒。\n- 第 1 项的工具回执：此区间未取得可公开读取的字幕。\n- 第 1 项的工具回执：画面内容按时点抽样描述；未听审原片音轨。",
+      "citations": [
+        {
+          "id": 1,
+          "revision": 3,
+          "quote": "以后直播提纲的标题都用陈述句，以句号结尾。",
+          "source_kind": "confirmed_voice"
+        }
+      ],
+      "grounded_title_anchor": [
+        "宫廷场景"
+      ],
+      "observed_frame_labels": [
+        "宫廷场景",
+        "皇帝宝座",
+        "古代服饰人物"
+      ],
+      "transport": {
+        "status": "completed",
+        "tools": [
+          "inspect_video",
+          "submit_materials"
+        ],
+        "video_findings": [
+          3
+        ],
+        "frames": [
+          {
+            "part": 2,
+            "cid": "301983263",
+            "seconds": 11.44,
+            "kind": "实际视频帧"
+          },
+          {
+            "part": 2,
+            "cid": "301983263",
+            "seconds": 12.48,
+            "kind": "实际视频帧"
+          },
+          {
+            "part": 2,
+            "cid": "301983263",
+            "seconds": 13.52,
+            "kind": "实际视频帧"
+          }
+        ]
+      },
+      "editor_review": {
+        "preference_ids": [
+          1
+        ],
+        "format_checks": 1,
+        "repaired_fields": [
+          "items.0.title"
+        ]
+      },
+      "independent_device_body_matched": true
+    },
+    {
+      "phase": "after",
+      "title": "金色宝座与蓝白石像环绕的宫廷场景",
+      "full_artifact": "**金色宝座与蓝白石像环绕的宫廷场景**\n选材理由：画面依据：画面中央是一个装饰华丽的金色宝座。剪辑安排：用作转场，用这一镜作为相邻两段讲述的过渡，通过视觉变化自然衔接。\n主帧：BV1Hy4y1J7xH · 单帧采样 · 分 P 2 · 13.52 秒 · <https://www.bilibili.com/video/BV1Hy4y1J7xH/?p=2&t=13>\n覆盖：仅核实所列采样时点；连续画面及音轨均未经该画面回执核实。\n\n当轮取材窗口与观测覆盖：\n- 第 1 项 · BV1Hy4y1J7xH P2 · 连续取材入点 11 秒、出点 14 秒（不含），保存 75 个连续原帧。私有短片不含音轨。\n- 第 1 项 · 逐帧检测画面及下方屏字变化；Omni 审读代表帧 11、12.24、13.96 秒，检测到的状态均有代表帧。\n- 第 1 项 · BV1Hy4y1J7xH P2 · 请求抽样范围 [11, 14) 秒。初读取材观察 3 帧，实际时点为 11.44、12.48、13.52 秒。\n- 第 1 项的工具回执：此区间未取得可公开读取的字幕。\n- 第 1 项的工具回执：画面内容按时点抽样描述；未听审原片音轨。",
+      "citations": [],
+      "grounded_title_anchor": [
+        "宫廷场景"
+      ],
+      "observed_frame_labels": [
+        "宫廷场景",
+        "皇帝宝座",
+        "古代服饰人物"
+      ],
+      "transport": {
+        "status": "completed",
+        "tools": [
+          "inspect_video"
+        ],
+        "video_findings": [
+          3
+        ],
+        "frames": [
+          {
+            "part": 2,
+            "cid": "301983263",
+            "seconds": 11.44,
+            "kind": "实际视频帧"
+          },
+          {
+            "part": 2,
+            "cid": "301983263",
+            "seconds": 12.48,
+            "kind": "实际视频帧"
+          },
+          {
+            "part": 2,
+            "cid": "301983263",
+            "seconds": 13.52,
+            "kind": "实际视频帧"
+          }
+        ]
+      },
+      "editor_review": null,
+      "independent_device_body_matched": true
+    }
+  ],
+  "forgotten_revisions": {
+    "1": 3
+  },
+  "semantic_status": "observed",
+  "voice_style_observed": true,
+  "acceptance_passed": true,
+  "teardown": {
+    "remaining_http_tasks": 0,
+    "open_connections": 0,
+    "server_exited": true
+  },
+  "interpretation": "问句、语音更正后以句号收束、撤回后无末尾标点的结构对照已观察到。第二个标题采用名词短语，此例未证明完整主谓陈述句的生成。"
+}
