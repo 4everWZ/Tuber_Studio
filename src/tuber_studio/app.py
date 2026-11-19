@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .agent.api import register_agent_api
@@ -258,6 +258,10 @@ def create_app(
         {"comments": comments, "messages": messages, "dynamics": dynamics, "browsing": browsing},
         require_admin,
     )
+
+    @app.get("/settings", include_in_schema=False)
+    async def settings_page():
+        return RedirectResponse("/#settings")
 
     @app.get("/")
     async def index():

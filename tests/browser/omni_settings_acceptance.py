@@ -53,7 +53,8 @@ async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):
                 page = await browser.new_page()
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
-                await page.goto(f"http://127.0.0.1:{listener.getsockname()[1]}")
+                await page.goto(f"http://127.0.0.1:{listener.getsockname()[1]}/settings")
+                assert page.url.endswith("/#settings")
                 await page.locator("#token").fill(token)
                 await page.locator("#login-form button").click()
                 await page.locator('[data-page="settings"]').click()
