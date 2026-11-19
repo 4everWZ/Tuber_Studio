@@ -444,7 +444,7 @@ class BilibiliAccount:
             result.update(
                 state=state,
                 error={
-                    "expired": "B站登录已失效，请在设置中重新扫码或更新凭证",
+                    "expired": "B站登录已失效，请在设置中重新扫码",
                     "restricted": "B站限制读取，请稍后重试",
                     "error": "账号资料读取失败，请稍后重试",
                 }[state],
@@ -467,6 +467,10 @@ class BilibiliAccount:
                 },
             )
         elif result["state"] == "expired":
+            # Only discard the exact login that the platform rejected. A new scan
+            # or pending credential rotation may already own this account.
+            await self.comments.replace_credentials({}, expected=credential)
+            self.checked_signature = signature({})
             self.avatar = None
             self.comments.verified_account_id = ""
             self.comments.verified_credential = None

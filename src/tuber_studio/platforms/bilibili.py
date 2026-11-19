@@ -186,8 +186,10 @@ class BilibiliAdapter:
         if nav.get("code") == -101:
             raise BilibiliAccountExpired("B站登录已失效")
         nav = _data(nav)
-        if nav.get("isLogin") is not True:
+        if nav.get("isLogin") is False:
             raise BilibiliAccountExpired("B站登录已失效")
+        if nav.get("isLogin") is not True:
+            raise ValueError("B站账号核验缺少登录状态")
         uid = _positive_id(nav.get("mid"))
         try:
             details = await self._get("/x/space/myinfo", {})

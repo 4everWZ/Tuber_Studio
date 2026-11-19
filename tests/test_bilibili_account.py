@@ -78,7 +78,7 @@ def network(monkeypatch):
                 json={
                     "code": state["nav_code"],
                     "data": {
-                        "isLogin": True,
+                        "isLogin": state.get("is_login", True),
                         "mid": 123,
                         "uname": "大肥鱼账号",
                         "face": state["face"],
@@ -384,8 +384,22 @@ def test_confirmed_expiry_clears_last_profile_and_verified_account_binding(accou
     failed = client.post("/api/account/bilibili/refresh").json()
     assert failed["state"] == "expired"
     assert failed["profile"] is None
+    assert not app.state.comments.credentials
+    assert json.loads(app.state.comments.credential_path.read_text()) == {}
     assert app.state.store.get(PROFILE_CACHE_KEY) is None
     assert app.state.comments.display_account_id() == ""
+
+
+def test_invalid_login_indicator_preserves_credentials_until_explicit_logout(account_client):
+    client, app, _, state = account_client
+    configure(client)
+    original = app.state.comments.credential_path.read_bytes()
+    state["is_login"] = None
+    assert client.post("/api/account/bilibili/refresh").json()["state"] == "error"
+    assert app.state.comments.credential_path.read_bytes() == original
+    state["is_login"] = False
+    assert client.post("/api/account/bilibili/refresh").json()["state"] == "expired"
+    assert json.loads(app.state.comments.credential_path.read_text()) == {}
 
 
 def test_unchanged_credentials_keep_profile_but_replacement_and_clear_drop_it(account_client):
