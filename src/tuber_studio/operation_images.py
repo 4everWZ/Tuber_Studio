@@ -281,7 +281,7 @@ class OperationImages:
                 ref = resolve_reference(self.settings, scope.character_id, brief.variant, sha256=binding["sha256"])
                 if hashlib.sha256(ref.data).hexdigest() != binding["sha256"]:
                     raise ValueError("图片参考与入队时绑定的内容不一致")
-                payload = image_payload(brief, ref.data)
+                payload = image_payload(brief, ref.data, character_id=scope.character_id)
                 self.store.execute("UPDATE operation_image_jobs SET status='submitting' WHERE job_id=?", (identity,))
                 job["remote_id"] = await submit(client, payload)
                 self.store.execute("UPDATE operation_image_jobs SET status='running',remote_id=? WHERE job_id=?",

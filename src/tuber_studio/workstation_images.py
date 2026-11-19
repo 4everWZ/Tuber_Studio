@@ -28,14 +28,27 @@ def gateway(settings):
     return api_client({"base_url": base, "timeout_seconds": 45}, settings.provider_key("omni"))
 
 
-def image_payload(brief, data):
+def image_payload(brief, data, *, character_id):
+    if character_id == "whale" and brief.variant == "mature":
+        guidance = (
+            "Use the mature reference: each view depicts the same woman. Match her face, proportions, "
+            "outfit and fin ears. When showing her lower body, draw two human legs, each ending in its "
+            "own navy Mary Jane. A separate blue whale tail grows from the back of her pelvis behind "
+            "the skirt and ends in two broad horizontal flukes. Stage the pose so each calf and the tail "
+            "have a distinct contour with visible space between them. Keep the requested framing. "
+            "Draw one scene without sheet panels, labels or duplicate views."
+        )
+    else:
+        guidance = (
+            "Use the reference for character design. Multiple views depict the same individual. "
+            "Match the head-to-body ratio, facial features, hair and outfit details in the full-body views. "
+            "When visible, draw the appendages with the attachment, orientation and silhouette shown "
+            "in the detail views. Compose the requested action as one coherent scene without sheet "
+            "panels, labels or duplicate views."
+        )
     return {
         "prompt": "Draw one finished illustration of this character in the following scene: " + brief.prompt
-                  + "\nUse the reference for character design. Multiple views depict the same individual. "
-                  "Match the head-to-body ratio, facial features, hair and outfit details in the full-body views. "
-                  "When visible, draw the appendages with the attachment, orientation and silhouette shown "
-                  "in the detail views. Compose the requested action as one coherent scene without sheet "
-                  "panels, labels or duplicate views.",
+                  + "\n" + guidance,
         "reference_image_base64": base64.b64encode(data).decode("ascii"),
     }
 

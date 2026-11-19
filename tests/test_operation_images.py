@@ -12,6 +12,18 @@ from PIL import Image
 from tuber_studio import operation_images as ops
 from tuber_studio.artwork_references import Reference
 from tuber_studio.memes import MemeCatalog
+from tuber_studio.workstation_images import ImageBrief, image_payload
+
+
+@pytest.mark.parametrize(("character_id", "variant", "whale_anatomy"), [
+    ("whale", "mature", True), ("whale", "q", False), ("another", "mature", False),
+])
+def test_scene_and_character_guidance_fit_gateway_budget(character_id, variant, whale_anatomy):
+    scene = "画" * 3400
+    payload = image_payload(ImageBrief(variant=variant, prompt=scene), b"ref", character_id=character_id)
+    assert scene in payload["prompt"]
+    assert len(payload["prompt"]) <= 4096
+    assert ("human legs" in payload["prompt"]) is whale_anatomy
 
 
 async def test_chooser_offers_only_available_images_and_binds_gallery_digest(monkeypatch):
