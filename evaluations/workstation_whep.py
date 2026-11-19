@@ -18,7 +18,7 @@ OFFER = """async ({codec, bufferMs}) => {
     document.body.append(video);
     const stream = new MediaStream();
     pc.ontrack = ({track}) => stream.addTrack(track);
-    pc.addTransceiver('audio', {direction: 'recvonly'});
+    const audio = pc.addTransceiver('audio', {direction: 'recvonly'}).receiver;
     const receiver = pc.addTransceiver('video', {direction: 'recvonly'});
     for (const {receiver} of pc.getTransceivers()) {
         if (bufferMs !== null) {
@@ -44,7 +44,15 @@ OFFER = """async ({codec, bufferMs}) => {
     });
     video.srcObject = stream;
     window.presented = 0;
-    function frame(_, metadata) { window.presented = metadata.presentedFrames; video.requestVideoFrameCallback(frame); }
+    window.rtpPairs = [];
+    function frame(_, metadata) {
+        window.presented = metadata.presentedFrames;
+        const source = audio.getSynchronizationSources()[0];
+        if (source && Number.isFinite(source.rtpTimestamp) && Number.isFinite(metadata.rtpTimestamp)) {
+            window.rtpPairs.push([metadata.expectedDisplayTime, metadata.rtpTimestamp, source.source, source.rtpTimestamp]);
+        }
+        video.requestVideoFrameCallback(frame);
+    }
     video.requestVideoFrameCallback(frame);
     return pc.localDescription.sdp;
 }"""
@@ -56,7 +64,7 @@ SAMPLE = """async () => {
                     width: v.videoWidth, height: v.videoHeight, state: pc.connectionState};
     for (const stat of report.values()) {
         if (stat.type === 'inbound-rtp') {
-            sample[stat.kind] = {codec: report.get(stat.codecId)?.mimeType, packets: stat.packetsReceived,
+            sample[stat.kind] = {ssrc: stat.ssrc, codec: report.get(stat.codecId)?.mimeType, packets: stat.packetsReceived,
                 lost: stat.packetsLost, decoded: stat.framesDecoded, freezes: stat.freezeCount,
                 energy: stat.totalAudioEnergy, nack: stat.nackCount, jitter: stat.jitter,
                 bufferSeconds: stat.jitterBufferDelay, emitted: stat.jitterBufferEmittedCount,
@@ -111,6 +119,7 @@ def measure(origin, token, args):
                     """async ({method, path, status, data, sdp, token}) => {
                     const headers = {Authorization: "Bearer " + token};
                     if (data !== null) headers["Content-Type"] = sdp ? "application/sdp" : "application/json";
+                    if (path.endsWith("/audio")) window.audioSubmission = performance.now();
                     const reply = await fetch(path, {method, headers, mode: "same-origin", redirect: "error",
                         body: data === null ? undefined : sdp ? data : JSON.stringify(data),
                         signal: AbortSignal.timeout(22000)});
@@ -148,6 +157,20 @@ def measure(origin, token, args):
                 page.evaluate("() => { probeVideo.play().catch(() => {}); }")
                 page.wait_for_function("presented > 0", timeout=20000)
                 samples = [page.evaluate(SAMPLE)]
+                page.evaluate("""async () => {
+                    const ctx = new AudioContext();
+                    await ctx.resume();
+                    const meter = ctx.createAnalyser(), silent = ctx.createGain();
+                    silent.gain.value = 0;
+                    ctx.createMediaStreamSource(probeVideo.srcObject).connect(meter).connect(silent).connect(ctx.destination);
+                    const wave = new Float32Array(meter.fftSize);
+                    window.firstSound = null;
+                    const timer = setInterval(() => {
+                        meter.getFloatTimeDomainData(wave);
+                        const rms = Math.sqrt(wave.reduce((sum, v) => sum + v * v, 0) / wave.length);
+                        if (rms > 0.012) { window.firstSound = performance.now(); clearInterval(timer); }
+                    }, 20);
+                }""")
                 request(
                     "POST",
                     path + "/audio",
@@ -160,6 +183,10 @@ def measure(origin, token, args):
                 for _ in range(args.seconds):
                     page.wait_for_timeout(1000)
                     samples.append(page.evaluate(SAMPLE))
+                pairs = page.evaluate("rtpPairs")
+                sound_delay = page.evaluate(
+                    "firstSound === null ? null : firstSound - window.audioSubmission"
+                )
             finally:
                 request("DELETE", path, 204)
             return {
@@ -169,6 +196,8 @@ def measure(origin, token, args):
                 "buffer_ms": args.buffer_ms,
                 "secure_context": page.evaluate("isSecureContext"),
                 "samples": samples,
+                "rtp_pairs": pairs,
+                "submission_to_first_sound_ms": sound_delay,
             }
         finally:
             browser.close()

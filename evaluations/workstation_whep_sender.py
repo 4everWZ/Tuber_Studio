@@ -12,13 +12,16 @@ import ipaddress
 import json
 import os
 import secrets
+import struct
 import sys
 from contextlib import AsyncExitStack
 from unittest.mock import patch
 
 import aioice
 from aiohttp import web
+from aiortc.rtp import is_rtcp
 from services.avatar.app import create_app as avatar_app
+from services.avatar.media import TimelineTrack
 from services.gateway.app import create_app as gateway_app
 from services.gateway.config import Config
 
@@ -32,8 +35,23 @@ async def serve(bind, mtu):
         if len(token) < 32:
             raise ValueError("Supply a one-run application token of at least 32 characters")
         internal = secrets.token_urlsafe(32)
-        counters = dict(datagrams=0, max_udp_payload=0, over_ipv4_mtu=0, over_ipv6_mtu=0)
+        counters = dict(
+            datagrams=0,
+            max_udp_payload=0,
+            over_ipv4_mtu=0,
+            over_ipv6_mtu=0,
+            first_rtp={},
+            first_track_sample={},
+        )
         send = aioice.Connection.send
+        recv = TimelineTrack.recv
+
+        async def measured_recv(track):
+            first = track.index == 0
+            frame = await recv(track)
+            if first:
+                counters["first_track_sample"][track.kind] = track.clock.start_sample
+            return frame
 
         async def measured_send(connection, data):
             await send(connection, data)
@@ -42,9 +60,14 @@ async def serve(bind, mtu):
             counters["max_udp_payload"] = max(counters["max_udp_payload"], size)
             counters["over_ipv4_mtu"] += size + 28 > mtu
             counters["over_ipv6_mtu"] += size + 48 > mtu
+            # The fixed RTP header stays visible after SRTP protection.
+            if size >= 12 and data[0] >> 6 == 2 and not is_rtcp(data):
+                timestamp, ssrc = struct.unpack_from("!II", data, 4)
+                counters["first_rtp"].setdefault(ssrc, timestamp)
 
         async with AsyncExitStack() as stack:
             stack.enter_context(patch.object(aioice.Connection, "send", measured_send))
+            stack.enter_context(patch.object(TimelineTrack, "recv", measured_recv))
 
             async def listen(app, address):
                 runner = web.AppRunner(app, access_log=None)
