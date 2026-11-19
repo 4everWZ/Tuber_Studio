@@ -542,7 +542,7 @@ async def test_real_runtime_checker_integrates_without_borrowing_another_threads
     comments, runtime, store, monkeypatch
 ):
     # Exercise the actual Runtime checker and actual context/source-memory stores;
-    # only its normal offline DemoProvider substitutes for a GPU model.
+    # The test fixture supplies offline chat inference.
     monkeypatch.setattr(runtime, "generate_reply", Runtime.generate_reply.__get__(runtime, Runtime))
     comments.credentials = {"sessdata": "test", "csrf": "test"}
     comments.import_items("import-grounded", [{"comment_id": "original", "thread_id": "story-floor", "content": "刚才发生什么？"}])

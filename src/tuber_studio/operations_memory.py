@@ -66,10 +66,7 @@ class OperationsMemory:
                         "required": ["source_id", "quote"],
                         "properties": {
                             "source_id": {"type": "string", "enum": [source["id"] for source in sources]},
-                            # llama.cpp d749821 rejects finite grammar repetitions
-                            # above 2000 and can then run without a grammar. Source
-                            # substring validation and the measured token cap own
-                            # the quote bound, without imposing a smaller budget.
+                            # The source substring and output budget bound each quote.
                             "quote": {"type": "string", "minLength": 1},
                         },
                     },

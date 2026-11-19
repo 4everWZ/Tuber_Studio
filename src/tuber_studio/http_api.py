@@ -35,7 +35,7 @@ class InferenceTransport(httpx.AsyncHTTPTransport):
 
     async def handle_async_request(self, request):
         replayable = request.method in {"GET", "HEAD"} or (
-            request.method == "POST" and request.url.path.rsplit("/", 1)[-1] in {"apply-template", "tokenize"}
+            request.method == "POST" and request.url.path.endswith("/chat/prompt_tokens")
         )
         for delay in (*self.retry_delays, None):
             try:
@@ -91,7 +91,7 @@ def endpoint(value):
                 address.is_private or address.is_loopback or any(address in network for network in _TAILSCALE_NETWORKS)
             )
         except ValueError:
-            local = host in {"localhost", "host.docker.internal", "jetson", "omni-gateway"} or host.endswith(".local")
+            local = host in {"localhost", "host.docker.internal"} or host.endswith(".local")
             if not local and "." not in host and host.replace("-", "").isalnum():
                 managed = urlsplit(os.getenv("OMNI_GATEWAY_URL", ""))
                 local = managed.scheme == "http" and (host, parsed.port) == (managed.hostname, managed.port)

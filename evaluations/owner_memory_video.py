@@ -122,7 +122,7 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
     async def grader(messages, schema):
         async def read():
             async with runtime.operator_generation("background"):
-                limit = min(runtime.settings.data["llm"]["max_tokens"], 1024)
+                limit = min(runtime.settings.data["omni"]["max_tokens"], 1024)
                 return await budgeted_call(runtime.llm, lambda: runtime.llm.generate_json(messages, schema, max_tokens=limit),
                                            messages, max_tokens=limit)
         return await await_admission("independent_title_reading", read, deadline, queue_receipts, record)

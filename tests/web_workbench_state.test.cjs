@@ -118,34 +118,34 @@ test("interactive controls bind once and preserve zero thresholds and unsaved ru
   assert.equal(selected, "pvz");
 });
 
-test("saving text model settings leaves independent vision configuration untouched", async t => {
+test("one Omni connection owns both aliases and patches only explicit credentials", async t => {
   const { get } = dom(t);
-  const { readProviderPayload } = await import("../src/tuber_studio/web/modules/providers.js");
-  const values = { "llm-kind": "llama_cpp", "llm-base-url": "http://node:9012/llm", "llm-model": "dafeiyu-qwen35-9b:1.0.0",
-    "llm-context-tokens": "131072", "llm-native-tokens": "262144", "llm-operations-tokens": "8192",
-    "llm-live-thinking-tokens": "0" };
-  for (const [id, value] of Object.entries(values)) get(id).value = value;
-  const payload = readProviderPayload();
-  assert.equal(payload.llm.model, "dafeiyu-qwen35-9b:1.0.0");
-  assert.equal(payload.llm.live_thinking_tokens, 0);
-  assert.equal(Object.hasOwn(payload, "vision"), false);
-  get("llm-context-tokens").value = "";
-  get("llm-enable-thinking").checked = true;
-  assert.equal(readProviderPayload().llm.context_tokens, 262144);
-  assert.equal(readProviderPayload().llm.enable_thinking, true);
+  const { readOmniSettings } = await import("../src/tuber_studio/web/modules/providers.js");
+  get("omni-base-url").value = "http://127.0.0.1:8000/v1";
+  get("omni-model").value = "foreground";
+  get("omni-responses-model").value = "background";
+  get("llm-operations-tokens").valueAsNumber = 2048;
   get("llm-enable-thinking").checked = false;
-  assert.equal(readProviderPayload().llm.enable_thinking, false);
+  get("background-parallel").valueAsNumber = 3;
+  get("background-budget").valueAsNumber = 1024;
+  const omni = { base_url: "http://127.0.0.1:8000/v1", model: "foreground", responses_model: "background",
+    operations_max_tokens: 2048, enable_thinking: false, responses_options: { parallel_reads: 3, max_output_tokens: 1024 } };
+  assert.deepEqual(readOmniSettings(), { omni });
+  get("omni-key").value = "fixture";
+  assert.deepEqual(readOmniSettings(), { omni, credentials: { omni: "fixture" } });
+  get("omni-clear-key").checked = true;
+  assert.throws(readOmniSettings, /选择一项/);
+  get("omni-key").value = "";
+  assert.deepEqual(readOmniSettings(), { omni, clear_credentials: ["omni"] });
 });
 
-test("main and standalone live controls share session, feature and mode-transition rules", async () => {
-  const { liveActionDisabled, inferenceModeChanging } = await import("../src/tuber_studio/web/modules/live-controls.js");
+test("main and standalone live controls share session and feature rules", async () => {
+  const { liveActionDisabled } = await import("../src/tuber_studio/web/modules/live-controls.js");
   assert.equal(liveActionDisabled("start", { state: "stopped" }, { enabled: false }), true);
   assert.equal(liveActionDisabled("stop", { state: "live" }, { enabled: false }), false);
   assert.equal(liveActionDisabled("start", { state: "stopped" }, { enabled: true }), false);
   assert.equal(liveActionDisabled("pause", { state: "stopped" }, { enabled: true }), true);
   assert.equal(liveActionDisabled("resume", { state: "paused" }, { enabled: true }), false);
-  assert.equal(inferenceModeChanging({ mode: "text", operation: { mode: "text" } }), false);
-  assert.equal(inferenceModeChanging({ mode: "text", operation: { mode: "live" } }), true);
 });
 
 test("pet picker requires attributable assets with source and permission links", async () => {

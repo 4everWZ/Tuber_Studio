@@ -24,7 +24,6 @@ from evaluations.creative_memory_receipt import REPLACE, WRITE_TABLES, counts, v
 from evaluations.omni_chat_loop import ROOT, connection
 from evaluations.owner_memory_device import AUTO, CONFIRMED, SEARCH
 from evaluations.owner_memory_voice import VOICE_RULE, spoken_rule, voice_on_page
-from tuber_studio.agent.private_call import private_service
 from tuber_studio.agent.voice_origin import sign
 from tuber_studio.auth_sessions import COOKIE_NAME
 from tuber_studio.operation_continuations import content_hash
@@ -75,8 +74,7 @@ def serve(args):
         previous = {}
         directory.mkdir(mode=0o700, parents=True, exist_ok=False)
     traffic = dict(previous.get("inference", {}))
-    service = private_service()
-    ticket_url = service[0] + "/v1/browser-tickets" if service else None
+    ticket_url = gateway[0] + "/v1/browser-tickets"
     with isolated_app(directory, *gateway, traffic=traffic, realtime_ticket_url=ticket_url) as (app, denied):
         db = app.state.store.db
         baseline = counts(
@@ -109,14 +107,14 @@ def serve(args):
         async def identity():
             return {
                 "run": directory.name,
-                "voice_origin": os.getenv("TUBER_PRIVATE_REALTIME_PUBLIC_ORIGIN") if service else None,
+                "voice_origin": os.getenv("TUBER_PRIVATE_REALTIME_PUBLIC_ORIGIN"),
             }
 
         @app.get(CHECKPOINT)
         async def state(request: Request):
             if not app.state.auth_sessions.valid(request.cookies.get(COOKIE_NAME)):
                 raise HTTPException(401)
-            if service and (voice := workstation_voice_source(db, service[1])):
+            if voice := workstation_voice_source(db, gateway[1]):
                 write(directory / "p2-voice-source.json", voice)
             # Raw editorial inputs and login material stay on the workstation.
             for task, revision, plan in db.execute(

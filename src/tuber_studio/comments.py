@@ -18,6 +18,18 @@ from .comment_materials import (
 )
 from .config import atomic_json
 from .media_cache import linked
+from .operation_attachments import (
+    bound_comment,
+    checked_image,
+    comment_image,
+    comment_payload,
+    decision,
+    image_scope,
+    queue_image,
+    record_upload,
+    row_ref,
+    wait_decision,
+)
 from .operation_continuations import content_hash
 from .operation_feedback import (
     FeedbackPublication,
@@ -25,8 +37,6 @@ from .operation_feedback import (
     generation_view,
     publication_binding,
 )
-from .operation_attachments import (bound_comment, checked_image, comment_image, comment_payload, decision, image_scope,
-                                    queue_image, record_upload, row_ref, wait_decision)
 from .operation_identity import runtime_identity
 from .operation_text import validate_comment_body, validate_operation_text
 from .operations.browsing.models import BrowsingPolicy
@@ -666,7 +676,7 @@ class Comments:
                     "input_summary,created_at,updated_at,account_id) VALUES(?,?,'private_handoff',?,?,?,?,?,?,?)",
                     (
                         cid, f"已转私信草稿 #{handoff}", character["id"], character["version"],
-                        self.settings.data["llm"].get("model", "demo"), json.dumps(event, ensure_ascii=False),
+                        self.settings.data["omni"]["model"], json.dumps(event, ensure_ascii=False),
                         now, now, account_id,
                     ),
                 )
@@ -756,7 +766,7 @@ class Comments:
                                 reply.spoken_text,
                                 character["id"],
                                 character["version"],
-                                self.settings.data["llm"].get("model", "demo"),
+                                self.settings.data["omni"]["model"],
                                 json.dumps(event, ensure_ascii=False),
                                 json.dumps(check, ensure_ascii=False),
                                 time.time(),

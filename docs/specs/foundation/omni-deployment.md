@@ -1,6 +1,6 @@
 # Omni 与 Avatar API 接入契约
 
-Tuber Studio 通过配置取得服务地址、凭据和模型别名。推理和 Avatar 作为独立服务交付。HTTP 请求和 Realtime WebSocket 握手使用该服务分配的 Bearer 凭据。业务主机持有用户、任务、共享记忆、角色配置、平台授权和工具回执。 [独立服务接口](https://github.com/4everWZ/omni-avatar-api/blob/main/docs/api.md) · [业务数据归属](distributed-runtime.md)
+Core 使用一个外部 Omni 网关和按该地址授权的普通应用凭据。模型别名由服务方提供，业务能力按实际调用核验。Core 持有角色、记忆、任务、平台许可和工具回执。服务方负责推理、排队及媒体交付。[独立服务接口](https://github.com/4everWZ/omni-avatar-api/blob/main/docs/api.md)
 
 ## 首版协议与 Provider 边界
 
@@ -8,10 +8,14 @@ Tuber Studio 通过配置取得服务地址、凭据和模型别名。推理和 
 | --- | --- |
 | 健康与模型发现 | 通过 `GET /healthz` 和 `GET /v1/models` 核对健康与模型，使用配置的别名及模型卡实报的 `max_model_len`。实际模型、版本、窗口和可用模态在设置与诊断可查。 |
 | 普通与流式推理 | 通过 `POST /v1/chat/completions` 调用，统一正文、结构化结果、支持的图像或音频、用量以及错误状态。纯文本计量在服务提供 `POST /v1/chat/prompt_tokens` 时沿现有 Provider 使用。模型的工具请求经业务端校验，实际工具回执从原任务回流。 |
-| 原生双工 | 连接 `/v1/realtime?duplex=1` WebSocket，按 `session.created` 协商输入模态、切片、语音、字幕、打断、恢复和播放确认。实时通话与后台任务通过业务会话和任务 ID 关联。 |
+| 浏览取材的音频输入 | 显式启用公开片段转写后，Core 使用同一连接、模型别名与普通应用凭据，将已准备的分 P 音频送入 Chat Completions，读取转写文本。[公开片段准备与使用](../../guides/operations.md#转写已备公开音频) |
+| 后台任务 | 同网关的 `POST /llm/v1/responses` 承接后台文本与函数请求，工坊按 `call_id` 续交实际工具结果。 |
+| 参考朗读 | `POST /v1/audio/speech` 接收指定台词、模型别名与授权参考音频。工坊核对原文和可播放的音频，记录实际播完。[声音与缓存](models-and-audio.md) |
+| 运营配图 | `POST /v1/images/jobs` 提交内联的角色参考与场景。按服务回包排队，完成后持久保存校验过的 PNG，渠道通过工件 ID 读取。[配图任务契约](../operations/generated-images.md) |
+| 原生双工 | Core 向 `POST /v1/browser-tickets` 换取限定路径的一次性票据。浏览器连接 `/v1/realtime?duplex=1`，按实际协商处理语音、打断和播放确认。应用凭据留在业务端。 |
 | Avatar | 服务已提供 `POST /v1/avatar/sessions` 与 WHEP，客户端须使用获准的音频源或实时会话，按回包订阅音画。工坊私有电话固定使用原生语音，直播渲染需先验收当前角色。 |
 
-后台文本服务已提供 `POST /llm/v1/responses`，函数结果按 `call_id` 续接；不要假定 Omni 图文或双工端点支持同一套函数协议。服务端分支生命周期不替代业务持久化。服务不可用时明确显示等待或失败，持久任务按本地检查点续接。 [当前实施计划](../../plans/current.md#共享推理与-avatar-api) · [上下文与压缩](context-and-compaction.md)
+网关会话与业务任务分别保存。服务暂不可用时显示等待或原因，恢复后按工坊检查点续接。Chat、Responses 和 Realtime 各自按其实际协议调用工具。[当前计划](../../plans/current.md#共享推理与-avatar-api)
 
 ## Avatar 与音画交付
 
@@ -29,4 +33,4 @@ Tuber Studio 通过配置取得服务地址、凭据和模型别名。推理和 
 | Agent 与业务 | 在隔离工作台按原入口回放且平台写入为零。验证任务保存、回执、改口、取消、待核对和恢复。更换 Provider 后保持同一任务、记忆和业务授权。 |
 | Realtime、Avatar 与节目 | 直接验证原生输入与输出、插话、静默恢复和关闭。通用 Avatar 到位后验会话隔离、同步及播完回执。OBS 与持续节目共驻随后验收。 |
 
-按实测能力逐项启用。端点回退使用已验的 Provider 配置。业务卷迁移按独立的唯一写入者流程办理。 [跨主机验收](distributed-runtime.md#跨主机验收)
+按验证结果启用能力。网关变更后复核既有任务、授权和声音绑定。业务卷迁移按唯一写入者流程交接。[跨主机验收](distributed-runtime.md#跨主机验收)

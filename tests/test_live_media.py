@@ -59,10 +59,8 @@ class Player:
 
 
 @pytest.mark.parametrize("cancel", [False, True])
-async def test_genie_live_plays_first_clause_while_next_is_synthesizing(runtime, store, monkeypatch, cancel):
-    text = "鱼鱼刚看完这一段，下一轮我们慢一点试试。"
-    runtime.settings.data["tts"].update(kind="gpt_sovits", local_backend="genie_onnx_int8")
-    monkeypatch.setattr(runtime.settings, "voice", lambda _: {"provider": "gpt_sovits"})
+async def test_omni_live_plays_first_sentence_while_next_is_synthesizing(runtime, store, monkeypatch, cancel):
+    text = "鱼鱼刚看完这一段。下一轮我们慢一点试试。"
     second_started = asyncio.Event()
     second_release = asyncio.Event()
     second_cancelled = asyncio.Event()
@@ -95,7 +93,7 @@ async def test_genie_live_plays_first_clause_while_next_is_synthesizing(runtime,
         return [message for message in player.messages if message["type"] == "play"]
 
     await wait_for(lambda: plays() and second_started.is_set())
-    assert [message["text"] for message in plays()] == ["鱼鱼刚看完这一段，"]
+    assert [message["text"] for message in plays()] == ["鱼鱼刚看完这一段。"]
     first = {"job_id": job_id, "playback_token": plays()[0]["playback_token"]}
     assert not await runtime.live.acknowledge(owner, first | {"type": "ended"})
     assert await runtime.live.acknowledge(owner, first | {"type": "started"})
@@ -125,7 +123,7 @@ async def test_genie_live_plays_first_clause_while_next_is_synthesizing(runtime,
     assert runtime.live.timings["first_audio_ms"] == first_audio_ms
     assert await runtime.live.acknowledge(owner, second | {"type": "ended"})
     assert store.job(job_id)["status"] == "completed"
-    spoken = "鱼鱼刚看完这一段，下一轮我们慢一点。"
+    spoken = "鱼鱼刚看完这一段。下一轮我们慢一点。"
     assert [row["reply_text"] for row in store.all("SELECT * FROM conversations")] == [spoken]
     assert room_feed(runtime.live)["last_spoken"]["text"] == spoken
 

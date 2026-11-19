@@ -14,7 +14,7 @@ from pathlib import Path
 
 from tuber_studio.comments import Comments
 from tuber_studio.compaction import is_summary_message
-from tuber_studio.config import Settings, redact_credentials, uses_broker_llm
+from tuber_studio.config import Settings, redact_credentials
 from tuber_studio.providers import public_error
 from tuber_studio.runtime import Runtime
 from tuber_studio.store import Store
@@ -31,16 +31,11 @@ def configured_paths():
     return runtime, Path(os.environ.get("TUBER_CONFIG", runtime / "studio.json"))
 
 
-def isolated_settings(config_path, runtime_path, seed):
+def isolated_settings(config_path, runtime_path):
     source_runtime, default_config = configured_paths()
     credentials = source_runtime if config_path == default_config.resolve() else config_path.parent
     target = runtime_path / "studio.json"
     config = redact_credentials(json.loads(config_path.read_text(encoding="utf-8")))
-    if config["llm"]["kind"] not in {"llama_cpp", "openai_compatible"} or uses_broker_llm(config):
-        raise ValueError("Use a configured independent inference API")
-    config["inference_broker"] = {"enabled": False}
-    if seed is not None:
-        config["llm"]["seed"] = seed
     config["features"] = config.get("features", {}) | {"live_enabled": False}
     target.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
     previous = os.environ.get("TUBER_CONFIG")
@@ -52,21 +47,19 @@ def isolated_settings(config_path, runtime_path, seed):
             os.environ.pop("TUBER_CONFIG", None)
         else:
             os.environ["TUBER_CONFIG"] = previous
-    keys = Settings.read_provider_keys(credentials / "provider-credentials.json")
-    settings.provider_keys = {"llm": keys["llm"]} if "llm" in keys else {}
+    settings.provider_keys = Settings.read_provider_keys(credentials / "provider-credentials.json")
     return settings
 
 
 async def ready_model(runtime):
     async def inference_only(request):
-        routes = ("/tokenize", "/apply-template", "/chat/completions", "/chat/prompt_tokens")
+        routes = ("/chat/completions", "/chat/prompt_tokens")
         if request.method != "GET" and not (request.method == "POST" and request.url.path.endswith(routes)):
             raise ValueError("The diagnostic cannot warm up or reconfigure an inference service")
 
     runtime.llm.client.event_hooks["request"].append(inference_only)
-    await runtime.llm.health()
-    if getattr(runtime.llm, "is_sleeping", False):
-        raise ValueError("The configured inference model is sleeping")
+    if not (await runtime.llm.health())["available"]:
+        raise ValueError("The configured Omni gateway is unavailable")
     runtime.llm.supports_operation_web_fetch = False
 
 
@@ -99,13 +92,13 @@ def seed_history(runtime, comments, character, case):
     return scope, delivered
 
 
-async def evaluate(config_path, character_id, seed):
+async def evaluate(config_path, character_id):
     source = ROOT / "evaluations/semantic-cases.json"
     case = json.loads(source.read_text(encoding="utf-8"))
     characters = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
     tmp = ROOT / "tmp"
     with tempfile.TemporaryDirectory(prefix="semantic-probe-", dir=tmp if tmp.is_dir() else None) as folder:
-        settings = isolated_settings(config_path.resolve(), Path(folder), seed)
+        settings = isolated_settings(config_path.resolve(), Path(folder))
         store = Store(":memory:", characters)
         try:
             character = store.character(character_id)
@@ -137,8 +130,8 @@ async def evaluate(config_path, character_id, seed):
                 if sources != delivered or set(audit["supported_slots"]) != set(case["source_slots"]):
                     raise ValueError("The reply did not recover the expected receipt-backed source facts")
                 return {
-                    "case": "source_backed_after_compaction", "model": settings.data["llm"]["model"],
-                    "seed": settings.data["llm"].get("seed"), "compaction_seconds": round(compaction_seconds, 3),
+                    "case": "source_backed_after_compaction", "model": settings.data["omni"]["model"],
+                    "compaction_seconds": round(compaction_seconds, 3),
                     "generation_seconds": round(generation_seconds, 3), "text": reply.spoken_text,
                     "answer_check": audit, "context": context, "platform_writes": 0,
                 }
@@ -152,10 +145,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=configured_paths()[1])
     parser.add_argument("--character", default="whale")
-    parser.add_argument("--seed", type=int, help="Override the saved seed for this diagnostic")
     args = parser.parse_args()
     try:
-        report = asyncio.run(evaluate(args.config, args.character, args.seed))
+        report = asyncio.run(evaluate(args.config, args.character))
     except Exception as error:
         print(json.dumps({"error": public_error(error)}, ensure_ascii=False))
         return 1

@@ -10,7 +10,7 @@ from tuber_studio.app import create_app
 def test_voice_only_even_with_accepted_legacy_profiles_and_avatar_enabled(settings, monkeypatch):
     auth = {"Authorization": "Bearer " + settings.admin_token}
     origin = "https://voice.example"
-    monkeypatch.setattr(private_call, "private_service", lambda: (origin, "fixture"))
+    monkeypatch.setattr(private_call, "private_service", lambda settings: (origin, "fixture"))
     (settings.runtime / "private-call-avatars.json").write_text(json.dumps({
         "origin": origin, "character_id": "whale",
         "profiles": {key: {"avatar_id": "portrait_" + ch * 32, "accepted": True}

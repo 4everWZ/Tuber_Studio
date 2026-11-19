@@ -139,9 +139,6 @@ class Fixture:
         # discover or write the production TUBER_CONFIG or its credentials.
         os.environ["TUBER_CONFIG"] = str(directory / "studio.json")
         self.settings = Settings(root=root, runtime=directory)
-        self.settings.data["llm"]["kind"] = "demo"
-        self.settings.data["tts"]["kind"] = "prerecorded"
-        self.settings.data["inference_broker"]["enabled"] = False
         self.settings.data["features"]["live_enabled"] = False
         seeds = json.loads((root / "config/characters.json").read_text(encoding="utf-8"))
         self.store = Store(directory / "benchmark.sqlite3", seeds)

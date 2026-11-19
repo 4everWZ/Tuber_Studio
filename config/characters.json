@@ -154,7 +154,7 @@
         "text": "偶尔偷吃token被发现就嘴硬是系统加载；常拿'去吃白饭'当摸鱼借口。"
       }
     ],
-    "voice_profile": "yaoyao_sovits_v2",
+    "voice_profile": "whale_reference",
     "avatar_manifest": "assets/whale/manifest.json",
     "sources": [
       "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/docs/角色设定.md",

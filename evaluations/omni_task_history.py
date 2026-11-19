@@ -77,8 +77,8 @@ async def exercise(directory, root, token, env):
         stack.enter_context(patch.dict(os.environ, {"TUBER_CONFIG": str(ROOT / "config/studio.example.json"),
                                                     "TUBER_ADMIN_TOKEN": login}))
         settings = Settings(runtime=directory)
-        settings.data["llm"].update(base_url=root + "/v1", model=env.get("OMNI_MODEL_ALIAS", "omni-default"))
-        settings.provider_keys = {"llm": token}
+        settings.data["omni"].update(base_url=root + "/v1", model=env.get("OMNI_MODEL_ALIAS", "omni-default"))
+        settings.provider_keys = {"omni": token}
         def writer(path):
             lease = ExitStack()
             lease.enter_context(acquire_business_writer(path))

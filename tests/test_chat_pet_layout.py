@@ -14,6 +14,7 @@ import pytest
 @pytest.fixture
 async def pet_studio(settings, monkeypatch):
     import uvicorn
+
     from tuber_studio.agent import private_call
     from tuber_studio.app import create_app
 
@@ -27,7 +28,7 @@ async def pet_studio(settings, monkeypatch):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
-        monkeypatch.setattr(private_call, "private_service", lambda: (origin, "fixture"))
+        monkeypatch.setattr(private_call, "private_service", lambda settings: (origin, "fixture"))
         server = uvicorn.Server(uvicorn.Config(app, access_log=False, log_level="error", lifespan="off",
                                                timeout_graceful_shutdown=2))
         serving = asyncio.create_task(server.serve(sockets=[listener]))
@@ -54,6 +55,7 @@ async def capture(page, name):
 
 async def painted_size(page):
     from PIL import Image, ImageSequence
+
     from tuber_studio.config import ROOT
 
     image = page.locator("#chat-agent-avatar")

@@ -9,16 +9,19 @@ from collections import OrderedDict
 from typing import Protocol
 
 from .compaction import ContextWindowExceeded, IncompleteCompaction
-from .config import uses_broker_llm
 from .generation_meter import reserve_generation, settle_generation
-from .http_api import InferenceBudgetExceeded, InferenceQueueBusy, api_client, inference_model_card, models_health, response_json
-from .image_preprocessing import prepare_image
-from .llama_sampling import LlamaCppSampling, llama_cpp_sampling
+from .http_api import (
+    InferenceBudgetExceeded,
+    InferenceQueueBusy,
+    api_client,
+    inference_model_card,
+    models_health,
+    response_json,
+)
+from .models import Reply
 from .operation_identity import provider_identity_messages
 from .operation_turns import defer_background_request, mark_model_request, prepare_model_request
 from .providers import (
-    DemoProvider,
-    LlamaCppProvider,
     chat_stream_payload,
     generate_operation_reply,
     json_schema_text,
@@ -31,14 +34,7 @@ from .providers import (
 
 
 def create_llm(settings):
-    config = settings.data["llm"]
-    if config["kind"] == "demo":
-        return DemoProvider()
-    if config["kind"] == "openai_compatible":
-        return APIProvider(config, settings.provider_key("llm"))
-    return LlamaCppProvider(
-        config, settings.endpoint_key("llm"), broker_model_routing=uses_broker_llm(settings.data)
-    )
+    return APIProvider(settings.data["omni"], settings.provider_key("omni"))
 
 
 class APIProvider:
@@ -49,13 +45,8 @@ class APIProvider:
     token_accounting = "api_usage_probe"
     is_sleeping = None
 
-    def __init__(self, config, api_key=None, *, adapter="openai_compatible"):
-        if adapter not in {"openai_compatible", "llama_cpp"}:
-            raise ValueError("未知API协议适配器")
-        self.adapter = adapter
+    def __init__(self, config, api_key=None):
         self.config = config
-        if adapter == "llama_cpp":
-            LlamaCppSampling.model_validate(llama_cpp_sampling(config))
         self.client = api_client(config, api_key)
         self.last_tokens = self.server_tokens = None
         self.profile_error = None
@@ -125,15 +116,15 @@ class APIProvider:
             "messages": single_system_messages(provider_identity_messages(self, messages)),
         }
         thinking = self.config.get("enable_thinking") if enable_thinking is None else enable_thinking
-        if (self.adapter == "llama_cpp" or self.uses_model_card) and thinking is not None:
+        if self.uses_model_card and thinking is not None:
             if type(thinking) is not bool:
                 raise ValueError("思考设置须为布尔值或None")
             payload["chat_template_kwargs"] = {"enable_thinking": thinking}
         return payload
 
     async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None,
-                        enable_thinking=None, thinking_budget=None, on_content=None):
-        payload = self.chat_payload(messages, enable_thinking=enable_thinking) | {"max_tokens": budget, "stream": False}
+                        on_content=None):
+        payload = self.chat_payload(messages) | {"max_tokens": budget, "stream": False}
         if self.uses_model_card:
             payload["include_reasoning"] = False
         if not probe:
@@ -142,18 +133,9 @@ class APIProvider:
             )
             if self.uses_model_card:
                 payload.update({key: self.config[key] for key in ("top_k", "top_p") if key in self.config})
-        if self.adapter == "llama_cpp":
-            sampling = llama_cpp_sampling(self.config, summary=summary)
-            if probe:
-                sampling.pop("temperature", None)
-            payload.update(sampling)
-            if payload.get("temperature") is None:
-                payload.pop("temperature", None)
         if structured:
             contract = self.config.get("structured_output")
-            if self.adapter == "llama_cpp" and schema is not None:
-                payload["response_format"] = {"type": "json_object", "schema": schema}
-            elif schema is not None and contract == "json_schema":
+            if schema is not None and contract == "json_schema":
                 payload["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {"name": "structured_reply", "schema": schema, "strict": True},
@@ -165,8 +147,6 @@ class APIProvider:
                 }, ensure_ascii=False, separators=(",", ":"))}
             else:
                 payload["response_format"] = {"type": "json_object"}
-        if thinking_budget is not None:
-            payload.update(thinking_budget_tokens=thinking_budget, reasoning_format="deepseek")
         await prepare_model_request()
         reservation = (
             reserve_generation(
@@ -248,7 +228,8 @@ class APIProvider:
             return count
 
     async def prefill(self, messages):
-        count = await self.count_tokens(messages)
+        await self.ensure_capacity()
+        _, count = await self._complete(messages, budget=1, probe=True)
         if count + 1 > self.capacity_window:
             raise ContextWindowExceeded("重建原文超出API窗口预算")
         return True
@@ -275,7 +256,9 @@ class APIProvider:
         reservation = reserve_generation(
             self.capacity_window - budget, budget, conservative_input=True
         )
-        content, _ = await self._complete(messages, budget=budget, structured=True)
+        schema = Reply.model_json_schema()
+        schema["properties"]["reply_to"] |= {"items": {"type": "string", "enum": [event_id]}, "maxItems": 1}
+        content, _ = await self._complete(messages, budget=budget, structured=True, schema=schema)
         reply = validate_reply(content, character, event_id, source_text)
         settle_generation(reservation, self.last_usage)
         return reply
@@ -306,14 +289,6 @@ class APIProvider:
 
     async def generate_operation(self, messages, character, event_id, source_text=None, *, web_fetch=None):
         return await generate_operation_reply(self, messages, event_id, web_fetch=web_fetch)
-
-    async def complete_admitted_live_image(self, messages, schema, budget, *, enable_thinking=None, thinking_budget=None):
-        """Direct call for an already admitted device with context shifting disabled."""
-        if self.adapter != "llama_cpp":
-            raise ValueError("直播画面需要已准入的 llama.cpp 视觉节点")
-        json_schema_text(schema, budget)
-        return await self._complete(messages, budget=budget, structured=True, schema=schema,
-                                    enable_thinking=enable_thinking, thinking_budget=thinking_budget)
 
     def prepare_json_messages(self, messages, schema, *, max_tokens):
         schema_text = json_schema_text(schema, max_tokens)
@@ -383,35 +358,22 @@ def validate_image(image, mime_type):
 
 
 class VisionService:
-    """Local and remote configured endpoints share a bounded inline-image contract."""
+    """Send bounded inline images to the configured Omni gateway."""
 
     def __init__(self, config, api_key=None):
         self.config = config
-        self.client = api_client(config, api_key) if config.get("kind") == "openai_compatible" else None
+        self.client = api_client(config, api_key)
 
     async def close(self):
-        if self.client:
-            await self.client.aclose()
+        await self.client.aclose()
 
     async def health(self):
-        if not self.client:
-            return {"available": False, "detail": "尚未启用视觉 Provider"}
         return await models_health(self.client, self.config["model"])
 
     async def describe(self, prompt, image, mime_type):
-        if not self.client:
-            raise ValueError("尚未启用视觉 Provider")
         if not isinstance(prompt, str) or not 0 < len(prompt.strip()) <= 8000:
             raise ValueError("图片问题须为1到8000字")
         validate_image(image, mime_type)
-        prepared = (
-            await asyncio.to_thread(
-                prepare_image, image, mime_type, self.config.get("image_profile", "server_native")
-            )
-            if self.config.get("image_profile", "server_native") != "server_native"
-            else {"data": image, "mime_type": mime_type}
-        )
-        image, mime_type = prepared["data"], prepared["mime_type"]
         data_url = f"data:{mime_type};base64," + base64.b64encode(image).decode("ascii")
         content = [
             {"type": "text", "text": prompt},
@@ -438,7 +400,7 @@ class VisionService:
                     if "enable_thinking" in self.config
                     else {}
                 ),
-                **llama_cpp_sampling(self.config),
+                **{key: self.config[key] for key in ("temperature", "top_p", "top_k") if key in self.config},
             },
         )
         choices = result.get("choices", [])

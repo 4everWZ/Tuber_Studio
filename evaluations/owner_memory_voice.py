@@ -2,21 +2,20 @@
 
 import asyncio
 import json
+import math
 import os
 import re
-import subprocess
 import secrets
+import subprocess
 import wave
-import math
 from collections import Counter
 from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import patch
 
-from tuber_studio.agent import private_call
-
 from playwright.async_api import TimeoutError as BrowserTimeout
 
+from tuber_studio.agent import private_call
 
 VOICE_RULE = "以后直播提纲的标题都用陈述句，以句号结尾。"
 
@@ -71,7 +70,7 @@ async def live_voice_binding(config):
         relay.stdin.write(json.dumps({"origin":root}).encode() + b"\n")
         await relay.stdin.drain()
         port = int(await asyncio.wait_for(relay.stdout.readline(), 5))
-        with patch.object(private_call, "private_service", lambda: (f"http://127.0.0.1:{port}", key)):
+        with patch.object(private_call, "private_service", lambda settings: (f"http://127.0.0.1:{port}", key)):
             yield
     finally:
         if relay.returncode is None:
@@ -263,8 +262,8 @@ async def service_probe(config, directory, speech=None):
     import base64
     from urllib.parse import urlencode
 
-    from tuber_studio.agent.private_call import mint_ticket
     from evaluations.owner_memory_device import AUTO
+    from tuber_studio.agent.private_call import mint_ticket
 
     # Only the Studio process can mint. No gateway credentials are inherited by the audio/WS probes.
     env = tool_env()

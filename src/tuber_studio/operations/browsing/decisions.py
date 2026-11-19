@@ -21,7 +21,7 @@ from ...operation_text import (
 )
 from ...operation_turns import operation_lane
 from ...operations_control import canonical_intent
-from ...providers import SYSTEM_RULES, public_error, reuse_turn_token_counts
+from ...providers import SYSTEM_RULES, public_error
 from ...publication_errors import SendLimitReached
 from ...store import dump
 from .comment_reader import (
@@ -353,7 +353,7 @@ class BrowsingDecisions:
                             else packet
                         )
                         tokens = await self.browsing.runtime.llm.count_tokens(counted)
-                        if tokens + output > self.browsing.settings.data["llm"]["context_tokens"] * 95 // 100:
+                        if tokens + output > self.browsing.settings.data["omni"]["context_tokens"] * 95 // 100:
                             raise ContextWindowExceeded("浏览输入超出真实窗口，未静默截断材料")
                     return await budgeted_json(
                         self.browsing.runtime.llm,
@@ -568,7 +568,7 @@ class BrowsingDecisions:
             await provider.ensure_capacity()
             available = provider.capacity_window - output
         else:
-            context = self.browsing.settings.data["llm"]["context_tokens"]
+            context = self.browsing.settings.data["omni"]["context_tokens"]
             available = min(context // 2, context * 95 // 100 - output)
         if row["config"]["max_input_tokens"]:
             available = min(available, row["config"]["max_input_tokens"] // 2)
@@ -618,7 +618,6 @@ class BrowsingDecisions:
             source_grouper=classification_source_groups if view else None,
         )
 
-    @reuse_turn_token_counts
     async def _content_decisions(self, material, row, metrics, *, allow_visual=None):
         decisions = []
         presentation = self._content_presentation(material, row)

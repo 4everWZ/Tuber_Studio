@@ -39,8 +39,8 @@ async def run(path):
     readings = {}
     with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as directory:
         settings = Settings(runtime=Path(directory))
-        settings.data["llm"]["base_url"] = config[0] + "/v1"
-        settings.provider_keys = {"llm": config[1]}
+        settings.data["omni"]["base_url"] = config[0] + "/v1"
+        settings.provider_keys = {"omni": config[1]}
         provider = create_llm(settings)
         try:
             deadline = asyncio.get_running_loop().time() + 180

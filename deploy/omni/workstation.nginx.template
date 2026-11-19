@@ -8,18 +8,6 @@ server {
     return 308 ${STUDIO_PUBLIC_ORIGIN}$request_uri;
 }
 
-# Control requests stay in the shared network namespace. Only ticketed
-# browser websockets go from the public edge to the model gateway.
-server {
-    listen 127.0.0.1:9180;
-    access_log off;
-    resolver 127.0.0.11 valid=30s ipv6=off;
-    set $gateway "${STUDIO_GATEWAY}";
-    location / {
-        proxy_pass $gateway;
-    }
-}
-
 server {
     listen 8443 ssl;
     ssl_certificate /etc/studio/ip.crt;

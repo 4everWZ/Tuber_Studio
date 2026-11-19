@@ -413,17 +413,9 @@ async def run(args, work, service):
                 args.gateway_repo.resolve(), media_python, args.rig_dir.resolve(), service, token
             )
         )
-        token_file = work / "app.token"
-        token_file.write_text(token, encoding="utf-8")
-        os.environ.update(
-            TUBER_RUNTIME=str(work),
-            TUBER_PRIVATE_REALTIME_ORIGIN=gateway,
-            TUBER_PRIVATE_REALTIME_TOKEN_FILE=str(token_file),
-        )
+        os.environ["TUBER_RUNTIME"] = str(work)
         config = json.loads((ROOT / "config/studio.example.json").read_text(encoding="utf-8"))
-        config["llm"]["kind"] = "demo"
-        config.pop("responses", None)
-        config.pop("video_vision", None)
+        config["omni"]["base_url"] = gateway + "/v1"
         path = work / "studio.json"
         path.write_text(json.dumps(config), encoding="utf-8")
         os.environ["TUBER_CONFIG"] = str(path)
@@ -439,7 +431,9 @@ async def run(args, work, service):
                 }
             )
         )
-        app = create_app(Settings(runtime=work))
+        settings = Settings(runtime=work)
+        settings.provider_keys = {"omni": token}
+        app = create_app(settings)
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             origin = f"http://127.0.0.1:{listener.getsockname()[1]}"

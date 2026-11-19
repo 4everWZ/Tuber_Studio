@@ -98,10 +98,6 @@ async def child(count):
     store = runtime = None
     try:
         settings = Settings(runtime=directory)
-        settings.data["llm"]["kind"] = "demo"
-        settings.data["tts"]["kind"] = "prerecorded"
-        settings.data["inference_broker"]["enabled"] = False
-        settings.data["vision"] = {"kind": "disabled"}
         settings.data["features"]["live_enabled"] = False
         seeds = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
         store = Store(directory / "benchmark.sqlite3", seeds)

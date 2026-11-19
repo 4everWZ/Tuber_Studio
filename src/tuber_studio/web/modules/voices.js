@@ -1,137 +1,30 @@
-import { $, safeMessage } from "./core.js";
+import { $ } from "./core.js";
 
-const sourceNames = {
-  omni_reference: "工作站 Omni",
-  gpt_sovits: "本地 Jetson",
-  openai_compatible: "兼容 API",
-  prerecorded: "预录配置",
-};
-
-function fillVoiceSettings(model) {
-  const tts = model.settings?.tts || {};
-  $("tts-kind").value = tts.kind || "gpt_sovits";
-  $("tts-base-url").value = ["openai_compatible", "omni_reference"].includes(tts.kind) ? tts.base_url : "";
-  $("tts-model").value = tts.model || "";
-  $("tts-voice").value = tts.voice || "";
-  $("tts-key").value = "";
-  $("tts-clear-key").checked = false;
-}
-
-function renderVoiceSettings(model, saving) {
-  const selection = $("tts-kind").value;
-  const saved = model.settings?.tts?.kind;
-  const omni = selection === "omni_reference";
-  const external = selection === "openai_compatible" || omni;
-  $("tts-voice").closest("label").hidden = omni;
-  $("tts-voice").disabled = omni;
-  $("tts-api-fields").hidden = !external;
-  $("tts-api-fields").disabled = !external || saving;
-  $("tts-kind").disabled = saving;
-  $("tts-source-state").textContent = sourceNames[saved] ? "当前 · " + sourceNames[saved] : "待读取";
-  $("tts-key-state").textContent = model.settings?.provider_credentials?.tts ?
-    "已保存密钥。同一地址留空可保留。" : "服务需要认证时填写。";
-  $("tts-source-help").textContent = omni ? "按角色参考录音朗读。与聊天端点地址相同时可共用其凭据。" :
-    external ? "保存后用于试听和直播台词。" :
-    selection === "prerecorded" ? "当前使用预录音色。" :
-      "使用已配置的语音服务试听角色音色。";
-}
-
-export function voiceAvailability(voice, model) {
-  const kind = model.settings?.tts?.kind;
-  if (kind === "omni_reference") return voice?.provider === "gpt_sovits" && voice.reference_asset ? "" : "请选择带参考录音的角色音色";
-  if (voice?.provider === "prerecorded") return "";
-  if (voice?.provider !== kind) return "请选择当前语音来源的音色";
-  return voice ? "" : "暂无可用音色";
+export function voiceAvailability(voice) {
+  if (!voice) return "请选择可用的音色。";
+  if (voice.provider === "prerecorded") return "";
+  if (voice.id === "external_api") {
+    return "该角色保留外部 API 音色选择。要用 Omni 试听，请选择参考音色。";
+  }
+  if (voice.provider === "omni_reference" && voice.reference_asset) return "";
+  return "该音色缺少可用的参考录音。";
 }
 
 export function renderVoicePreview(model, selectDefault = false) {
   const select = $("preview-voice");
-  const kind = model.settings?.tts?.kind;
-  const active = model.status?.character?.voice_profile || model.settings?.tts?.voice_id;
-  const provider = kind === "omni_reference" ? "gpt_sovits" : kind;
-  const preferred = model.voices.find(voice => voice.provider === provider && voice.id === active) ||
-    model.voices.find(voice => voice.provider === provider);
-  for (const option of select.options) {
-    const voice = model.voices.find(item => item.id === option.value);
-    option.hidden = Boolean(voiceAvailability(voice, model));
-    option.disabled = option.hidden;
-  }
-  if (selectDefault || !select.selectedOptions[0] || select.selectedOptions[0].hidden) {
-    select.value = preferred?.id || [...select.options].find(option => !option.hidden)?.value || "";
+  const active = model.status?.character ? model.status.character.voice_profile || model.settings?.voice_id || "" : "";
+  if (selectDefault || select.dataset.activeVoice !== active) {
+    select.value = active;
+    select.dataset.activeVoice = active;
+    delete select.dataset.selectedVoice;
   }
   const voice = model.voices.find(item => item.id === select.value);
-  const reason = voiceAvailability(voice, model);
-  if ($("preview-submit").getAttribute("aria-busy") !== "true") $("preview-submit").disabled = Boolean(reason);
-  $("voice-preview-help").textContent = reason || "";
-}
-
-export function initVoiceSettings(model, api, busy, apply) {
-  let dirty = false;
-  let saving = false;
-  const render = () => renderVoiceSettings(model, saving);
-  const sync = () => {
-    if (!dirty) fillVoiceSettings(model);
-    render();
-  };
-  $("tts-form").addEventListener("input", () => {
-    dirty = true;
-    render();
-  });
-  $("tts-kind").addEventListener("change", () => {
-    if ($("tts-kind").value === "omni_reference" && model.settings?.llm?.kind === "openai_compatible") {
-      $("tts-base-url").value = model.settings.llm.base_url;
-      $("tts-model").value = model.settings.llm.model;
-    }
-  });
-  $("tts-form").addEventListener("submit", event => {
-    event.preventDefault();
-    busy(event.submitter, async () => {
-      const kind = $("tts-kind").value;
-      const state = $("tts-save-state");
-      const body = { tts: { kind } };
-      if (kind === "openai_compatible" || kind === "omni_reference") {
-        Object.assign(body.tts, {
-          base_url: $("tts-base-url").value.trim(),
-          model: $("tts-model").value.trim(),
-        });
-        if (kind === "openai_compatible") body.tts.voice = $("tts-voice").value.trim();
-        const key = $("tts-key").value.trim();
-        if (key && $("tts-clear-key").checked) {
-          state.textContent = "请在填写新密钥和清除旧密钥之间选一项。";
-          state.classList.add("error-text");
-          return;
-        }
-        if (key) body.credentials = { tts: key };
-        if ($("tts-clear-key").checked) body.clear_credentials = ["tts"];
-      } else if (kind === "gpt_sovits") {
-        body.clear_credentials = ["tts"];
-      }
-      saving = true;
-      render();
-      state.classList.remove("error-text");
-      state.textContent = "正在保存…";
-      try {
-        const result = await api("/api/settings/providers", { method: "PUT", body });
-        dirty = false;
-        apply(result);
-        $("preview-audio").pause();
-        $("preview-audio").removeAttribute("src");
-        $("preview-audio").hidden = true;
-        $("preview-state").textContent = "";
-        renderVoicePreview(model, true);
-        state.textContent = "已保存直播语音来源。";
-      } catch (error) {
-        state.classList.add("error-text");
-        state.textContent = `保存失败：${safeMessage(error.message)}`;
-      } finally {
-        saving = false;
-        render();
-      }
-    });
-  });
-  return {
-    get dirty() { return dirty; },
-    reset() { dirty = false; },
-    sync,
-  };
+  const reason = voiceAvailability(voice);
+  const fixed = voice?.provider === "prerecorded";
+  $("preview-text").disabled = fixed || Boolean(reason);
+  $("preview-text").closest("label").hidden = fixed;
+  const submit = $("preview-submit");
+  if (submit.getAttribute("aria-busy") !== "true") submit.disabled = Boolean(reason);
+  submit.textContent = fixed ? "试听固定样本" : "生成试听音频";
+  $("voice-preview-help").textContent = reason || (fixed ? "固定录音：" + (voice.sample_text || voice.name) : "");
 }

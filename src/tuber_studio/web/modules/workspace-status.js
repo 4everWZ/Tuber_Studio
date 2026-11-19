@@ -13,15 +13,14 @@ export function renderWorkspaceStatus(model, status) {
   $("overview-live-state").textContent = label(status.state);
   $("overview-queue").textContent = status.queue_length ?? "—";
   $("overview-player").textContent = status.overlay_connected ? "已连接" : "未连接";
-  $("overview-speech").textContent = {
-    gpt_sovits: "本地语音", openai_compatible: "兼容 API", prerecorded: "预录音频",
-  }[status.providers?.tts] || "待确认";
+  const voiceId = status.character?.voice_profile || model.settings?.voice_id;
+  $("overview-speech").textContent = model.voices.find(voice => voice.id === voiceId)?.name || voiceId || "待确认";
   if (status.context) renderContext(status.context);
   renderVoicePreview(model);
   // Keep the workspace status bar aligned with the live panel.
-  if ($("sb-status-mode")) $("sb-status-mode").textContent = status.mode === "live" ? "直播模式" : "运营模式";
+  if ($("sb-status-mode")) $("sb-status-mode").textContent = label(status.state);
   if ($("sb-status-char")) $("sb-status-char").textContent = character || "—";
-  if ($("sb-status-engine")) $("sb-status-engine").textContent = `${inferenceDisplay(status, model.settings).text} · 直播${label(status.state)}`;
+  if ($("sb-status-engine")) $("sb-status-engine").textContent = inferenceDisplay(status, model.settings).connection;
 }
 
 export function refreshWorkspaceClock() {
@@ -31,13 +30,12 @@ export function refreshWorkspaceClock() {
 
 export function renderContext(context) {
   const usable = context.usable !== false;
-  const external = context.source === "external_declared";
   const error = context.error || "";
   describe($("context-details"), [
     ["活动范围", context.scope || "暂无活动历史"],
     ["配置目标", tokenCount(context.configured_tokens)],
-    [external ? "API 服务容量声明" : "实际服务容量", tokenCount(context.server_tokens)],
-    [external ? "API 上限声明" : "模型原生容量", tokenCount(context.native_tokens)],
+    ["实际服务容量", tokenCount(context.server_tokens)],
+    ["服务报告上限", tokenCount(context.native_tokens)],
     ["完整输入占用", `${tokenCount(context.active_tokens ?? 0)}（${occupancyText(context)}）`],
     ["累计已安装压缩轮数", context.compact_count ?? 0],
     ["最近操作尝试轮数", context.compaction_passes_last ?? 0],
@@ -47,9 +45,7 @@ export function renderContext(context) {
     ["最近压缩错误", context.last_compaction_error || "无"]
   ]);
   if ($("context-profile-note")) {
-    $("context-profile-note").textContent = error || (external ?
-      "外部 API 的容量来自操作者声明；可用连接、实际 token 用量与容量上限是不同证据，不能标为本机已验证 128K。" :
-      "模型原生能力、运行服务实际容量及配置目标分别显示。上方设置保存成功后立即应用，并重新校验服务容量。");
+    $("context-profile-note").textContent = error;
   }
   const generate = $("generate-drafts");
   if (generate) {

@@ -23,8 +23,6 @@ from pydantic import Field, model_validator
 from .api_providers import APIProvider, validate_image
 from .generation_meter import GenerationMeter
 from .http_api import response_json
-from .image_preprocessing import prepare_image
-from .llama_sampling import LlamaCppSampling, live_thinking_budget, supports_live_thinking_budget
 from .models import Reply, StrictModel
 from .providers import public_error, validate_reply
 
@@ -47,7 +45,7 @@ class VideoPartText:
                 continue
             source = "平台自动字幕" if track.get("is_ai") else "平台字幕"
             if track.get("asr"):
-                source = "本地ASR"
+                source = "音频转写"
             elif track.get("retrieval") == "archive":
                 source = "归档字幕"
             for segment in track.get("segments") or ():
@@ -110,87 +108,51 @@ class VideoVisionAdmissionRequired(ValueError):
 
 
 class VideoVisionConfig(StrictModel):
-    enabled: bool = False
-    adapter: Literal["llama_cpp", "omni"] = "llama_cpp"
-    base_url: str = "http://127.0.0.1:8080/v1"
-    model: str = ""
+    base_url: str = "http://127.0.0.1:8000/v1"
+    model: str = Field(min_length=1)
     model_revision: str = ""
-    projector_revision: str = ""
     runtime_revision: str = ""
-    runtime_profile: str = ""
-    context_tokens: int = Field(default=131072, ge=4096, le=1048576, strict=True)
-    native_context_tokens: int = Field(default=131072, ge=4096, le=1048576, strict=True)
     max_frames: int = Field(default=3, ge=1, le=16, strict=True)
     max_pixels: int = Field(default=1024 * 1024, ge=1, le=4096 * 4096, strict=True)
     max_bytes: int = Field(default=1024 * 1024, ge=1, le=4 * 1024 * 1024, strict=True)
     max_output_tokens: int = Field(default=2048, ge=256, le=65536, strict=True)
     enable_thinking: bool | None = Field(default=None, strict=True)
-    sampling: LlamaCppSampling = Field(default_factory=LlamaCppSampling)
     timeout_seconds: float = Field(default=60, gt=0, le=600)
-    properties_path: str = Field(default="/props", pattern=r"^/[A-Za-z0-9_/-]{1,160}$")
-    image_profile: Literal["server_native", "gemma4_image_280"] = "server_native"
     image_order: Literal["text_first", "image_first"] = "text_first"
     frame_strategy: Literal["sequential", "joint"] = "sequential"
 
     @model_validator(mode="after")
     def valid(self):
-        if self.adapter == "llama_cpp" and self.context_tokens > self.native_context_tokens:
-            raise ValueError("视觉窗口超过已声明的原生上限；禁止静默缩窗")
-        if self.adapter == "llama_cpp" and self.max_output_tokens >= self.context_tokens * 95 // 100:
-            raise ValueError("视觉输出预算没有留下输入空间")
-        if self.enabled and not self.model.strip():
-            raise ValueError("启用视觉须指定真实模型ID")
+        if not self.model.strip():
+            raise ValueError("视觉模型 ID 不能为空")
         if self.frame_strategy == "joint" and self.max_frames > 8:
             raise ValueError("联合视觉请求最多使用八帧")
-        if any(
-            len(value) > 2048
-            for value in (
-                self.model,
-                self.model_revision,
-                self.projector_revision,
-                self.runtime_revision,
-                self.runtime_profile,
-            )
-        ):
+        if any(len(value) > 2048 for value in (self.model, self.model_revision, self.runtime_revision)):
             raise ValueError("视觉版本身份过长")
         return self
 
 
 class ApiVideoEvidenceProvider:
-    def __init__(self, runtime, config=None, *, api_key=None):
+    def __init__(self, runtime, config, *, api_key=None):
         self.runtime = runtime
-        self._api_key = api_key
-        self.config = VideoVisionConfig.model_validate(config or {})
-        self.api = self._create_api()
+        self.config = VideoVisionConfig.model_validate(config)
+        self.api = APIProvider(
+            self.config.model_dump() | {
+                "max_tokens": self.config.max_output_tokens,
+                "prefill_timeout_seconds": self.config.timeout_seconds,
+                "structured_output": "json_schema",
+                "context_source": "model_card",
+            },
+            api_key,
+        )
         self._probe = None
         self._admission = None
         self._active = {}
 
-    def _create_api(self):
-        if not self.config.enabled:
-            return None
-        config = self.config.model_dump()
-        sampling = config.pop("sampling")
-        config.update(
-            {
-                "kind": "openai_compatible",
-                "max_tokens": config["max_output_tokens"],
-                "prefill_timeout_seconds": config["timeout_seconds"],
-            }
-        )
-        if self.config.adapter == "llama_cpp":
-            return APIProvider(config | sampling, self._api_key, adapter="llama_cpp")
-        config.pop("context_tokens")
-        config.pop("native_context_tokens")
-        return APIProvider(config | {"structured_output": "json_schema", "context_source": "model_card"}, self._api_key)
-
     def identity(self):
         """Public configuration bound to an external device benchmark record."""
-        configuration = self.config.model_dump(exclude={"enabled", "timeout_seconds", "frame_strategy", "adapter"})
-        if self.config.adapter == "omni":
-            configuration.pop("context_tokens")
-            configuration.pop("native_context_tokens")
-            configuration.update(adapter="omni", context_source="model_card")
+        configuration = self.config.model_dump(exclude={"timeout_seconds", "frame_strategy"})
+        configuration.update(adapter="omni", context_source="model_card")
         return configuration | {
             "protocol": (
                 VIDEO_EVIDENCE_PROTOCOL
@@ -203,16 +165,9 @@ class ApiVideoEvidenceProvider:
     def version(self):
         return hashlib.sha256(json.dumps(self.identity(), sort_keys=True).encode()).hexdigest()
 
-    async def configure(self, config, *, api_key=None):
-        parsed = VideoVisionConfig.model_validate(config)
-        await self.close()
-        self.config, self._api_key = parsed, api_key
-        self.api = self._create_api()
-        self._probe = self._admission = None
-
     def capabilities(self):
         probe = self._probe or {}
-        configured = self.api is not None
+        configured = not self.api.client.is_closed
         available = bool(configured and probe.get("images"))
         admitted = bool(available and self._admission)
         result = {
@@ -220,54 +175,20 @@ class ApiVideoEvidenceProvider:
             "images": configured,
             "admitted": admitted,
             "multiple_images": configured and self.config.max_frames > 1,
-            "provider_id": self.config.model or "disabled",
+            "provider_id": self.config.model,
             "version": self.version,
             "max_frames": self.config.max_frames,
             "max_pixels": self.config.max_pixels,
             "max_bytes": self.config.max_bytes,
-            "context_tokens": probe.get("context_tokens") if self.config.adapter == "omni" else self.config.context_tokens,
+            "context_tokens": probe.get("context_tokens"),
             "timeout_seconds": self.config.timeout_seconds,
             "runtime_context_tokens": probe.get("context_tokens"),
-            "reason": "" if configured else "未配置多模态视觉接口",
+            "reason": "" if configured else "视觉客户端已关闭",
         }
-        if self.config.adapter == "omni":
-            result["provenance"] = (probe.get("properties") or {}).get("provenance")
+        result["provenance"] = (probe.get("properties") or {}).get("provenance")
         return result
 
     async def _runtime_properties(self):
-        if not self.api:
-            raise ValueError("视觉接口未启用")
-        if self.config.adapter == "omni":
-            return await self._omni_properties()
-        await self.api.health()
-        props = await response_json(
-            self.api.client,
-            "GET",
-            str(self.api.client.base_url.copy_with(path=self.config.properties_path)),
-            timeout=min(20, self.config.timeout_seconds),
-        )
-        # The configured llama.cpp endpoint must prove its actual window and
-        # loaded vision projector; /models or a model name alone is insufficient.
-        window = props.get("default_generation_settings", {}).get("n_ctx")
-        if type(window) is not int or window < self.config.context_tokens:
-            raise ValueError("视觉服务实际窗口小于要求或未提供可核验窗口")
-        if not isinstance(props.get("modalities"), dict) or props["modalities"].get("vision") is not True:
-            raise ValueError("视觉服务未加载图像投影器")
-        aliases = props.get("model_alias")
-        aliases = [aliases] if isinstance(aliases, str) else aliases
-        if not isinstance(aliases, list) or self.config.model not in aliases:
-            raise ValueError("视觉服务实际模型别名与配置不一致")
-        return {
-            "endpoint": str(self.api.client.base_url),
-            "context_tokens": window,
-            "model_alias": aliases,
-            "model_path": props.get("model_path"),
-            "build_info": props.get("build_info"),
-            "supports_thinking_budget": props.get("supports_thinking_budget") is True,
-            "modalities": props["modalities"],
-        }
-
-    async def _omni_properties(self):
         client = self.api.client
         timeout = min(20, self.config.timeout_seconds)
         registry = await response_json(client, "GET", "models", timeout=timeout)
@@ -290,14 +211,13 @@ class ApiVideoEvidenceProvider:
             provenance.update({key: health[key] for key in (
                 "model", "checkpoint", "checkpoint_source", "checkpoint_root_verified", "engine_version", "engine_version_source",
             ) if key in health})
-        return {"context_tokens": window, "provenance": provenance}
+        return {"context_tokens": window, "provenance": provenance, "endpoint": str(client.base_url)}
 
     def _record_omni_observation(self, properties, frame_count):
-        if self.config.adapter == "omni":
-            self._probe = {
-                "images": True, "properties": properties, "context_tokens": properties["context_tokens"],
-                "tested_frames": frame_count,
-            }
+        self._probe = {
+            "images": True, "properties": properties, "context_tokens": properties["context_tokens"],
+            "tested_frames": frame_count,
+        }
 
     def _validate_frames(self, metadata, frames):
         if not isinstance(frames, list) or not 0 < len(frames) <= self.config.max_frames:
@@ -331,12 +251,11 @@ class ApiVideoEvidenceProvider:
         return identities
 
     @staticmethod
-    def _schema(frame_count, *, joint=False, decoder_unique=True):
+    def _schema(frame_count, *, joint=False):
         properties = {
             "sufficient": {"type": "boolean"},
             "used_frames": {
                 "type": "array",
-                **({"uniqueItems": True} if decoder_unique else {}),
                 "maxItems": frame_count,
                 "items": {"type": "integer", "minimum": 1, "maximum": frame_count},
             },
@@ -424,8 +343,7 @@ class ApiVideoEvidenceProvider:
         async with self.runtime.offline_generation():
             self._check_task(task, deadline)
             props = await self._confirmed_properties(expected, identity)
-            if self.config.adapter == "omni":
-                self.api.adopt_context_window(props["context_tokens"])
+            self.api.adopt_context_window(props["context_tokens"])
             self._check_task(task, deadline)
             before = repository.round(task["round_id"])["budget"].copy() if repository else None
             try:
@@ -444,67 +362,34 @@ class ApiVideoEvidenceProvider:
 
     async def _image_content(self, frame):
         mime_type = frame.get("mime_type", "image/jpeg")
-        prepared = (
-            await asyncio.to_thread(prepare_image, frame["image"], mime_type, self.config.image_profile)
-            if self.config.image_profile != "server_native"
-            else {"data": frame["image"], "mime_type": mime_type, "metadata": None}
-        )
-        data = base64.b64encode(prepared["data"]).decode("ascii")
-        return {"type": "image_url", "image_url": {"url": f"data:{prepared['mime_type']};base64,{data}"}}, (
-            prepared["metadata"]
-        )
+        data = base64.b64encode(frame["image"]).decode("ascii")
+        return {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{data}"}}, None
 
     async def generate_live_reply(self, scene, messages, llm, event_id):
-        """One direct image generation with the same admitted live model and bounded input."""
-        live_endpoint = llm.get("base_url", "").rstrip("/").removesuffix("/v1")
-        visual_endpoint = self.config.base_url.rstrip("/").removesuffix("/v1")
-        if (
-            not self.capabilities()["admitted"]
-            or llm.get("kind") != "llama_cpp"
-            or llm.get("model") != self.config.model
-            or llm.get("context_tokens") != self.config.context_tokens
-            or live_endpoint != visual_endpoint
-        ):
+        if (not self.capabilities()["admitted"] or llm.get("model") != self.config.model
+                or llm.get("base_url", "").rstrip("/") != self.config.base_url.rstrip("/")):
             return None
-        if (
-            type(scene.width) is not int
-            or type(scene.height) is not int
-            or not 0 < scene.width <= 4096
-            or not 0 < scene.height <= 4096
-            or scene.width * scene.height > self.config.max_pixels
-            or not isinstance(scene.image, bytes)
-            or len(scene.image) > self.config.max_bytes
-        ):
+        if (type(scene.width) is not int or type(scene.height) is not int
+                or not 0 < scene.width <= 4096 or not 0 < scene.height <= 4096
+                or scene.width * scene.height > self.config.max_pixels
+                or not isinstance(scene.image, bytes) or len(scene.image) > self.config.max_bytes):
             return None
         validate_image(scene.image, scene.mime_type)
-        identity = self.identity()
-        expected = self._probe["properties"]
+        api, identity, expected = self.api, self.identity(), self._probe["properties"]
         try:
-            props = await self._runtime_properties()
-            self._check_properties(props, expected, identity)
+            props = await self._confirmed_properties(expected, identity)
         except (ValueError, httpx.HTTPError):
-            self._probe = self._admission = None
             return None
+        api.adopt_context_window(props["context_tokens"])
         image, _ = await self._image_content({"image": scene.image, "mime_type": scene.mime_type})
         if not scene.current(scene.session_id):
             return None
-        # Attach the snapshot to the last actual viewer message. The live turn
-        # still owns the generation lock and no visual bytes enter its history.
-        messages = scene.annotate(messages, image=image)
         schema = Reply.model_json_schema()
         schema["properties"]["reply_to"] |= {"items": {"type": "string", "enum": [event_id]}, "maxItems": 1}
-        budget = llm.get("max_tokens", 1024)
-        options = {"enable_thinking": llm.get("enable_thinking")}
-        if supports_live_thinking_budget(props) and llm.get("enable_thinking"):
-            thinking = live_thinking_budget(llm)
-            budget += thinking
-            options["thinking_budget"] = thinking
         async with asyncio.timeout(self.config.timeout_seconds):
-            content, tokens = await self.api.complete_admitted_live_image(messages, schema, budget, **options)
+            value = await api.generate_json(scene.annotate(messages, image=image), schema, max_tokens=llm["max_tokens"])
         self._check_properties(props, expected, identity)
-        if tokens + budget > self.config.context_tokens * 95 // 100:
-            raise ValueError("直播画面输入超出实际窗口预算")
-        return validate_reply(content, None, event_id)
+        return validate_reply(json.dumps(value), None, event_id)
 
     async def _observe_sequential(self, task, frames, question, deadline, identity, expected, repository, sources):
         captions, stages = [], []
@@ -513,7 +398,6 @@ class ApiVideoEvidenceProvider:
             "properties": {"caption": {"type": "string", "minLength": 1, "maxLength": 4000}},
         }
         budget = self.config.max_output_tokens
-        structured_caption = self.config.adapter == "omni"
         for number, frame in enumerate(frames, 1):
             image, preprocessing = await self._image_content(frame)
             context = frame_reading_context(sources, [frame])
@@ -534,21 +418,16 @@ class ApiVideoEvidenceProvider:
             ]
             if self.config.image_order == "image_first":
                 messages[0]["content"].reverse()
-            make_caption = (
-                partial(self.api.generate_json, messages, caption_schema, max_tokens=budget) if structured_caption
-                else partial(self.api.generate_text, messages, max_tokens=budget)
-            )
             text, props, stage = await self._stage(
                 task,
                 deadline,
                 identity,
                 expected,
                 repository,
-                make_caption,
+                partial(self.api.generate_json, messages, caption_schema, max_tokens=budget),
             )
             expected = props
-            if structured_caption:
-                text = text.get("caption")
+            text = text.get("caption")
             if not isinstance(text, str) or not text.strip() or len(text) > 4000:
                 raise ValueError("视觉逐帧观察须为非空且有界的自然文本")
             captions.append({"frame": frame, "text": text})
@@ -596,7 +475,7 @@ class ApiVideoEvidenceProvider:
             expected,
             repository,
             lambda: self.api.generate_json(
-                messages, self._schema(len(captions), decoder_unique=self.config.adapter == "llama_cpp"),
+                messages, self._schema(len(captions)),
                 max_tokens=self.config.max_output_tokens,
             ),
         )
@@ -628,8 +507,7 @@ class ApiVideoEvidenceProvider:
             {"role": "user", "content": content},
         ]
         count = len(frames)
-        # Omni's grammar compiler lacks uniqueItems; _bind_assessment checks it for both adapters.
-        schema = self._schema(count, joint=True, decoder_unique=self.config.adapter == "llama_cpp")
+        schema = self._schema(count, joint=True)
         value, props, stage = await self._stage(
             task,
             deadline,
@@ -695,7 +573,7 @@ class ApiVideoEvidenceProvider:
         return result | {
             "provider_id": self.config.model,
             "version": self.version,
-            **({"provenance": final_props["provenance"]} if self.config.adapter == "omni" else {}),
+            "provenance": final_props["provenance"],
             "usage": usage,
             "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
             "coverage": {
@@ -722,9 +600,7 @@ class ApiVideoEvidenceProvider:
                     raise asyncio.CancelledError
             return await child
         except httpx.HTTPError as error:
-            if self.config.adapter == "omni":
-                raise VideoVisionAdmissionRequired("Omni 视觉暂不可用 · " + public_error(error)) from error
-            raise
+            raise VideoVisionAdmissionRequired("Omni 视觉暂不可用 · " + public_error(error)) from error
         finally:
             if cancellation is not None:
                 cancellation.cancel()
@@ -754,8 +630,6 @@ class ApiVideoEvidenceProvider:
         The caller owns obtaining the device measurements behind that proof.
         """
         self._probe = self._admission = None
-        if not self.api:
-            raise ValueError("视觉接口未启用")
         task = dict(task or {})
         result, props = await self._owned(
             task,
@@ -780,7 +654,7 @@ class ApiVideoEvidenceProvider:
             and proof.get("configuration") == self.identity()
             and all(
                 getattr(self.config, key)
-                for key in ("model_revision", "projector_revision", "runtime_revision")
+                for key in ("model_revision", "runtime_revision")
             )
             and proof.get("context_tokens") == props["context_tokens"]
             and len(frames) == self.config.max_frames
@@ -793,8 +667,6 @@ class ApiVideoEvidenceProvider:
         return {"capabilities": self.capabilities(), "result": result, "properties": props}
 
     async def analyze_video_evidence(self, task, metadata, frames, question, *, deadline):
-        if not self.api:
-            raise ValueError("未配置多模态视觉接口")
         if task.get("cancel_signal") is not None and task["cancel_signal"].is_set():
             raise asyncio.CancelledError
         result, _ = await self._owned(
@@ -803,8 +675,6 @@ class ApiVideoEvidenceProvider:
         return result
 
     async def analyze_comment_images(self, task, frames, *, deadline):
-        if not self.api:
-            raise ValueError("未配置多模态视觉接口")
         return await self._owned(task, self._observe_comment_images(task, frames, deadline))
 
     async def _observe_comment_images(self, task, frames, deadline):
@@ -844,14 +714,13 @@ class ApiVideoEvidenceProvider:
                 lambda: self.api.generate_json(messages, schema, max_tokens=min(768, self.config.max_output_tokens)),
             )
         captions = result.get("captions") if isinstance(result, dict) else None
-        if self.config.adapter == "omni":
-            if not isinstance(captions, list) or len(captions) != count or any(
-                not isinstance(caption, str) or not 0 < len(caption.strip()) <= 1000 for caption in captions
-            ):
-                raise ValueError("Omni 评论附件视觉须返回逐张描述")
-            confirmed = await self._confirmed_properties(props, identity)
-            self._check_task(task, deadline)
-            self._record_omni_observation(confirmed, count)
+        if not isinstance(captions, list) or len(captions) != count or any(
+            not isinstance(caption, str) or not 0 < len(caption.strip()) <= 1000 for caption in captions
+        ):
+            raise ValueError("Omni 评论附件视觉须返回逐张描述")
+        confirmed = await self._confirmed_properties(props, identity)
+        self._check_task(task, deadline)
+        self._record_omni_observation(confirmed, count)
         return captions
 
     async def cancel(self, task_id):
@@ -866,7 +735,5 @@ class ApiVideoEvidenceProvider:
             child.cancel()
         await asyncio.gather(*children, return_exceptions=True)
         self._active.clear()
-        if self.api:
-            await self.api.close()
-        self.api = None
+        await self.api.close()
         self._probe = self._admission = None

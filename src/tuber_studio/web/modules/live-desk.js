@@ -285,7 +285,6 @@ export class LiveDesk {
 
   renderControls() {
     const enabled = this.view?.live_enabled === true;
-    const transitioning = this.view?.inference_transitioning;
     const state = this.view;
     const playback = state?.playback;
     const canAct = !this.pending && this.fresh;
@@ -293,7 +292,7 @@ export class LiveDesk {
     for (const button of this.root.querySelectorAll("[data-desk-action]")) {
       const action = button.dataset.deskAction;
       button.disabled = !canAct || (action === "media" ? !enabled || !playback?.song || !playback.started :
-        liveActionDisabled(action, liveStatus, { enabled, transitioning }));
+        liveActionDisabled(action, liveStatus, { enabled }));
       if (action === "media") button.textContent = playback?.paused ? "继续歌曲" : "暂停歌曲";
       if (action === "pause") button.hidden = state?.state === "paused";
       if (action === "resume") {
@@ -306,9 +305,9 @@ export class LiveDesk {
     for (const button of this.root.querySelectorAll("[data-queue-action]")) {
       button.disabled = !canAct || !enabled || button.dataset.edge === "true";
     }
-    this.find("[data-desk-mock] fieldset").disabled = !canAct || !enabled || transitioning;
+    this.find("[data-desk-mock] fieldset").disabled = !canAct || !enabled;
     this.say("[data-desk-feature]", !state ? "正在读取直播配置" :
-      enabled ? (transitioning ? "正在切换推理资源" : "") : "直播功能未启用，可在推理设置中配置。");
+      enabled ? "" : "直播功能未启用。");
   }
 
   async run(action, { queueEdit = false } = {}) {

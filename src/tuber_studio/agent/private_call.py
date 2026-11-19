@@ -1,11 +1,4 @@
-"""Mint a path-scoped browser ticket, never a program or Avatar session.
-
-TUBER_PRIVATE_REALTIME_ORIGIN is the server-side gateway origin (HTTPS or
-loopback). A TLS edge can advertise TUBER_PRIVATE_REALTIME_PUBLIC_ORIGIN
-for the browser's ticketed sockets. TUBER_PRIVATE_REALTIME_TOKEN_FILE
-must hold a dedicated ordinary application token, not a media/admin token.
-There is deliberately no fallback to the Studio login or gateway admin secret.
-"""
+"""Mint an ordinary Omni browser ticket for the active connection."""
 
 import json
 import os
@@ -20,8 +13,8 @@ from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from ..config import validate_api_key
 from ..daily_memory import contains_memory_credential
+from ..deployment_profiles import omni_base
 from ..front_persona import front_identity
 from ..http_api import endpoint
 from ..memory_sources import original_turn
@@ -74,27 +67,28 @@ def inherited_topic(runtime, turn_id):
 
 def browser_socket_origin(service_origin):
     public = os.environ.get("TUBER_PRIVATE_REALTIME_PUBLIC_ORIGIN")
-    if public:
+    deployed = os.environ.get("OMNI_GATEWAY_URL")
+    if public and deployed and omni_base(deployed) == service_origin + "/v1":
         public = endpoint(public)
         if urlsplit(public).scheme != "https" or urlsplit(public).path:
             raise ValueError("私聊浏览器入口须为 HTTPS 源")
-    return (public or service_origin).replace("http", "ws", 1)
+        return public.replace("https", "wss", 1)
+    parsed = urlsplit(service_origin)
+    if parsed.scheme != "https" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        raise ValueError("私聊浏览器入口须为 HTTPS 或回环源")
+    return service_origin.replace("http", "ws", 1)
 
 
-def private_service():
+def private_service(settings):
+    origin = settings.data["omni"]["base_url"].removesuffix("/v1")
+    token = settings.provider_key("omni")
+    if not token:
+        return None
     try:
-        origin = endpoint(os.environ["TUBER_PRIVATE_REALTIME_ORIGIN"])
-        url = urlsplit(origin)
-        if url.path or (url.scheme != "https" and url.hostname not in {"localhost", "127.0.0.1", "::1"}):
-            return None
         browser_socket_origin(origin)
-        token = Path(os.environ["TUBER_PRIVATE_REALTIME_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
-        validate_api_key(token)
-        if token:
-            return origin, token
-    except (KeyError, OSError, ValueError):
-        pass
-    return None
+    except ValueError:
+        return None
+    return origin, token
 
 
 async def mint_ticket(origin, token):
@@ -152,7 +146,7 @@ def register_private_call(app, runtime, require_admin):
     @app.get("/api/chat/private-call", dependencies=[Depends(require_admin)])
     async def availability():
         character = runtime.character["id"]
-        result = {"configured": private_service() is not None}
+        result = {"configured": private_service(runtime.settings) is not None}
         if profiles := recordings(character):
             result["recordings"] = {p: f"{recording_route}/{character}/{p}.mp4" for p in profiles}
         return result
@@ -166,9 +160,9 @@ def register_private_call(app, runtime, require_admin):
 
     @app.post("/api/chat/private-call/ticket", dependencies=[Depends(require_admin)])
     async def create_ticket(options: CallOptions = CallOptions()):
-        service = private_service()
+        service = private_service(runtime.settings)
         if service is None:
-            raise HTTPException(503, "尚未配置独立的私聊语音服务")
+            raise HTTPException(503, "尚未配置可用的 Omni 私聊连接")
         origin, token = service
         grant = runtime.tasks.scope()
         try:
@@ -179,8 +173,8 @@ def register_private_call(app, runtime, require_admin):
             raise HTTPException(502, "语音服务未签发私聊票据，请核对应用凭据与服务地址") from None
         except (httpx.RequestError, ValueError):
             raise HTTPException(502, "私聊语音服务不可用") from None
-        if runtime.tasks.scope() != grant:
-            raise HTTPException(409, "角色或授权已变化，请重新开始通话")
+        if runtime.tasks.scope() != grant or private_service(runtime.settings) != service:
+            raise HTTPException(409, "角色、授权或 Omni 连接已变化，请重新开始通话")
         character = runtime.character
         topic = "" if options.temporary else options.topic.strip()
         inherited = not options.temporary and not topic and options.topic_turn is not None

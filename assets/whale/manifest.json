@@ -15,13 +15,9 @@
     },
     "voice": {
       "dataset": "https://www.modelscope.cn/datasets/YinZilu/da-fei-yu-girl-voice-zh",
-      "version": "GPT-SoVITS v2 (v2final)",
-      "note": "Original reference and synthesized publisher sample downloaded unchanged. Weights are external and not bundled.",
-      "model": "https://www.modelscope.cn/datasets/sirmn6/da-fei-yu-gpt-sovits",
+      "note": "The original reference recording conditions Omni speech. The publisher's separate synthesized sample is a fixed preview.",
       "author": "尹紫鹭幻想社（Bilibili）",
-      "gpt_weights": "weights/da_fei_yu-e12.ckpt",
       "license_url": "https://creativecommons.org/licenses/by-nc/4.0/",
-      "sovits_weights": "weights/da_fei_yu_e15_s300.pth",
       "license": "CC BY-NC 4.0"
     }
   },

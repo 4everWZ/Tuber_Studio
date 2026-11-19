@@ -3,13 +3,13 @@
 import asyncio
 import json
 import os
-from pathlib import Path
 import secrets
 import socket
 import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 from uuid import uuid4
 
 import httpx
@@ -98,9 +98,6 @@ async def select_candidate(task, evidence):
 
 async def setup(runtime_dir, denied):
     settings = Settings(runtime=runtime_dir)
-    settings.data["llm"]["kind"] = "demo"
-    settings.data["inference_broker"]["enabled"] = False
-    settings.data["tts"]["kind"] = "prerecorded"
     platform = Platform()
     app = create_app(settings, adapter=platform)
     state = app.state

@@ -20,13 +20,12 @@ def register_model_api(app, settings, runtime, require_admin):
     @app.post("/api/tts/preview", dependencies=[Depends(require_admin)])
     async def preview(data: dict = Body(...)):
         text = data.get("text", "")
-        if not isinstance(text, str) or not 1 <= len(text) <= 120:
-            raise ValueError("试听台词为1到120字")
         if runtime.live.busy:
             raise ValueError("直播生成／播放繁忙，请先暂停并等待当前任务结束")
         async with runtime.generation_lock:
             try:
-                artifact = await runtime.voices.synthesize(text, settings.voice(data.get("voice_id")))
+                voice = settings.voice(data.get("voice_id", settings.data["voice_id"]))
+                artifact = await runtime.voices.preview(text, voice)
             except httpx.HTTPError as error:
                 raise HTTPException(502, public_error(error)) from None
         return {
@@ -63,7 +62,7 @@ def register_model_api(app, settings, runtime, require_admin):
                 raise HTTPException(502, public_error(error)) from None
         return {
             "description": description,
-            "model": settings.data["vision"].get("model"),
+            "model": settings.data["omni"]["model"],
             "context_installed": False,
         }
 

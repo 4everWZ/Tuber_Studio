@@ -17,5 +17,5 @@
 
 ## 验收缺口与业务数据
 
-- 已有候选历史记录中的长文答复和持续共驻失败，接新端点时用同一业务场景复测。 [历史证据](../evaluations/results/omni-deployment-20261116.md)
+- 网关变更时复测长文答案与持续混合负载，并核对服务队列和工作台回执。
 - 笔电的原库已退役，正式写入权已交给工作站 Core。原库和迁移快照保留。后续回退须核对切换后新增的任务及回执。空库 P2 归档场已在 r6 结案，独立卷和回执留存。[P2 结案](../evaluations/results/creative-memory-p2-20261119.md) · [正式迁移记录](../evaluations/results/workstation-business-cutover-20261119.md) · [迁移与恢复](specs/foundation/distributed-runtime.md#迁移备份与恢复)

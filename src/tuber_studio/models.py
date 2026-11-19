@@ -119,6 +119,14 @@ def resident_character_profile(character):
     return profile
 
 
+LEGACY_VOICE_IDS = {"whale_sovits_v2": "whale_reference", "yaoyao_sovits_v2": "yaoyao_reference"}
+
+
+def canonical_voice_id(voice_id):
+    """Resolve only the two renamed reference recordings; preserve every other voice selection."""
+    return LEGACY_VOICE_IDS.get(voice_id, voice_id) if isinstance(voice_id, str) else voice_id
+
+
 class Character(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(pattern=r"^[a-z0-9_-]{1,50}$")
@@ -135,6 +143,11 @@ class Character(BaseModel):
     sources: list[str] = Field(default_factory=list)
     license_status: str = "unknown"
     bilibili_owner: BilibiliOwner | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @field_validator("voice_profile")
+    @classmethod
+    def reference_voice(cls, value):
+        return canonical_voice_id(value)
 
     @field_validator("self_description", "speaking_style", mode="before")
     @classmethod

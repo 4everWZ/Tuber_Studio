@@ -5,17 +5,17 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
+from offline_chat import OfflineChat
 
 from tuber_studio.app import create_app
 from tuber_studio.config import Settings
 from tuber_studio.context import ContextManager
 from tuber_studio.operations_memory import OperationsMemory
-from tuber_studio.providers import DemoProvider
 from tuber_studio.retention import RetentionManager
 
 
 def memory(settings, store):
-    return ContextManager(settings, store, DemoProvider())
+    return ContextManager(settings, store, OfflineChat())
 
 
 def test_default_policy_and_disabled_policy_survive_reinitialization(settings, store):

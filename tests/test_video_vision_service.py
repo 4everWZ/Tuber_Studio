@@ -10,9 +10,9 @@ from tuber_studio.video_vision_service import restore_admission
 @pytest.mark.parametrize("mismatch", [None, "model", "properties", "stale"])
 async def test_restored_admission_requires_matching_service_and_current_proof(settings, monkeypatch, mismatch):
     runtime = SimpleNamespace(settings=settings)
-    provider = ApiVideoEvidenceProvider(runtime, {"enabled": True, "model": "visual", "base_url": "http://127.0.0.1:8000/v1"})
+    provider = ApiVideoEvidenceProvider(runtime, {"model": "visual", "base_url": "http://127.0.0.1:8000/v1"})
     runtime.browsing = SimpleNamespace(visual_provider=provider)
-    properties = {"context_tokens": provider.config.context_tokens}
+    properties = {"context_tokens": 32768, "endpoint": str(provider.api.client.base_url)}
     configuration = provider.identity()
     proof = {"passed": True, "configuration": configuration if mismatch != "model" else configuration | {"model": "other"}}
     path = settings.runtime / "video-vision-admission.json"

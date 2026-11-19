@@ -1020,14 +1020,14 @@ def create_task_runtime(runtime, store, browsing):
 
     tasks = TaskRuntime(store, scope, decide, make_plan)
     tasks.unread_web_addresses = available_web_addresses
-    tasks.read_parallelism = lambda: (runtime.settings.data.get("responses") or {}).get("parallel_reads", 2)
+    tasks.read_parallelism = lambda: runtime.settings.responses_config.get("parallel_reads", 2)
 
     async def respond(**options):
         async with ResponsesClient.from_settings(runtime.settings) as client:
             return await client.create(**options)
 
-    tasks.responses_client = lambda: respond if runtime.settings.data.get("responses") else None
-    tasks.requires_responses = lambda: runtime.settings.data["llm"]["kind"] != "demo"
+    tasks.responses_client = lambda: respond
+    tasks.requires_responses = lambda: True
 
     async def can_nominate_video(task, question):
         schema = {"type": "object", "properties": {"decision": {"type": "string",
@@ -1036,7 +1036,7 @@ def create_task_runtime(runtime, store, browsing):
         reply = await request_json([{"role": "system", "content": "已有获准分P的实际采样。按原话核对后台的问题："
             "时段和出处搜索是否已经由号主委托工坊判断？若有必须由号主决定的新范围、缺失材料或授权，选需要回答。"},
             {"role": "user", "content": dump({"owner_goals": [*task["plan"]["prior_goals"], task["goal"]], "question": question})}],
-            schema, max_tokens=runtime.settings.data["llm"]["max_tokens"])
+            schema, max_tokens=runtime.settings.data["omni"]["max_tokens"])
         return reply.get("decision") == "号主委托工坊选择，现可提名候选"
 
     tasks.can_nominate_video = can_nominate_video
@@ -1052,7 +1052,7 @@ def create_task_runtime(runtime, store, browsing):
              "查原出处可以分别交付已核实的作品资料和未核实的镜头归属。只在现有资料可支持不同查询时请求检索。"},
             {"role": "user", "content": dump({"goal": task["goal"], "proposed_question": question,
                                                "public_page_titles": pages, "attempted_searches": searches})}],
-            ResearchQuestion.model_json_schema(), max_tokens=runtime.settings.data["llm"]["max_tokens"]))
+            ResearchQuestion.model_json_schema(), max_tokens=runtime.settings.data["omni"]["max_tokens"]))
         return decision.search.model_dump() if decision.search else None
 
     tasks.review_source_question = review_source_question
@@ -1077,7 +1077,7 @@ def create_task_runtime(runtime, store, browsing):
                 "只填写号主明确要求的秒数，未限定填 null。"}, {"role": "user", "content": dump(goals)}],
                 {"type": "object", "properties": {"required_seconds": {"anyOf": [{"type": "number", "exclusiveMinimum": 0},
                     {"type": "null"}]}}, "required": ["required_seconds"], "additionalProperties": False},
-                max_tokens=runtime.settings.data["llm"]["max_tokens"])
+                max_tokens=runtime.settings.data["omni"]["max_tokens"])
             required_seconds = length["required_seconds"]
         if required_seconds is not None:
             refined = {k: p for k, p in refined.items() if math.isclose(p["window"]["end"] - p["window"]["start"], required_seconds)}
@@ -1117,7 +1117,7 @@ def create_task_runtime(runtime, store, browsing):
                 "优先调查与目标相符且内容类型不同的材料；多次相邻拒收后换一个有观察依据的内容区。"
                 "first 填最高优先级中的一个证据 ID，全部不合适时填 null。判断只用于补读，整段需另行审查。"},
                 {"role": "user", "content": dump(exploration)}],
-                ranking, max_tokens=runtime.settings.data["llm"]["max_tokens"])
+                ranking, max_tokens=runtime.settings.data["omni"]["max_tokens"])
             if set(ranked["samples"]) != proposals.keys():
                 raise DelegationError("补读提案没有覆盖所列实际观察。")
             priorities = {k: DiscoveryAssessment.model_validate(v).priority for k, v in ranked["samples"].items()}
@@ -1138,7 +1138,7 @@ def create_task_runtime(runtime, store, browsing):
                 "assessed_samples": ranked["samples"] if proposals else {},
                 "reads": {key: {"part": s["arguments"]["part"], "duration": s["result"]["part_duration"],
                                 "saved_clip": evidence.video_coverage[key].get("clip")} for key, s in reads.items() if key in starts}})}],
-            schema, max_tokens=runtime.settings.data["llm"]["max_tokens"]))
+            schema, max_tokens=runtime.settings.data["omni"]["max_tokens"]))
         if probe.read not in reads:
             raise DelegationError("补读须绑定号主提供的视频。")
         read = reads[probe.read]
@@ -1161,7 +1161,7 @@ def create_task_runtime(runtime, store, browsing):
         if prior and task.get("id") and not retained and not task["plan"].get("previous_delivery"):
             # A failed collection or review can have several revisions before the first edition.
             first_delivery = tasks.workspace.latest(task["id"]) is None
-        budget = runtime.settings.data["llm"]["max_tokens"]
+        budget = runtime.settings.data["omni"]["max_tokens"]
         correction = task["plan"].get("editor_issues")
         inventories = dict(task["plan"].get("frame_reviews", {}))
         images = {}

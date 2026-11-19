@@ -18,7 +18,7 @@ def test_ticket_instructions_follow_current_character_owner(settings, monkeypatc
     async def mint(origin, token):
         return "test-ticket"
 
-    monkeypatch.setattr(private_call, "private_service", lambda: ("https://voice.example", "test-key"))
+    monkeypatch.setattr(private_call, "private_service", lambda settings: ("https://voice.example", "test-key"))
     monkeypatch.setattr(private_call, "mint_ticket", mint)
     app = create_app(settings)
     runtime = app.state.runtime
@@ -43,7 +43,7 @@ async def test_ticket_uses_only_the_eligible_chat_topic_and_revalidates_it(setti
     question = "咱们电话聊一下明天开场提纲。"
     related = "写开场提纲时，先介绍海底厨房。"
     unrelated = "只有整理账单时，才按金额倒序排列。"
-    monkeypatch.setattr(private_call, "private_service", lambda: ("https://voice.example", "test-key"))
+    monkeypatch.setattr(private_call, "private_service", lambda settings: ("https://voice.example", "test-key"))
 
     async def mint(*args):
         return "test-ticket"
@@ -118,7 +118,7 @@ async def test_role_background_is_selected_at_open_and_its_inherited_source_can_
     runtime.store.replace_character(card)
     base = "\n".join([front_identity(runtime.character), private_participant_instructions(runtime.character)])
     assert all(word in base for word in ("码头看守", "轻声慢讲", runtime.character["name"]))
-    monkeypatch.setattr(private_call, "private_service", lambda: ("https://voice.example", "test-key"))
+    monkeypatch.setattr(private_call, "private_service", lambda settings: ("https://voice.example", "test-key"))
 
     async def mint(*args):
         return "test-ticket"
@@ -159,10 +159,11 @@ async def test_role_background_is_selected_at_open_and_its_inherited_source_can_
 def test_ticket_is_admin_only_fixed_upstream_and_contains_no_service_credential(settings, tmp_path, monkeypatch, behind_edge):
     key = tmp_path / "voice.key"
     key.write_text("private-application-fixture")
-    monkeypatch.setenv("TUBER_PRIVATE_REALTIME_ORIGIN", "https://voice.example.org")
+    settings.data["omni"]["base_url"] = "https://voice.example.org/v1"
+    settings.provider_keys = {"omni": key.read_text()}
+    monkeypatch.setenv("OMNI_GATEWAY_URL", "https://voice.example.org")
     if behind_edge:
         monkeypatch.setenv("TUBER_PRIVATE_REALTIME_PUBLIC_ORIGIN", "https://192.0.2.10")
-    monkeypatch.setenv("TUBER_PRIVATE_REALTIME_TOKEN_FILE", str(key))
     issued = []
 
     async def issue(client, request, **kwargs):
@@ -224,13 +225,20 @@ def test_review_recordings_are_owner_only_and_role_bound(settings):
         assert browser.get(path.replace("mature.mp4", "q.mp4"), headers=auth).status_code == 404
 
 
-@pytest.mark.parametrize("origin", ["", "http://192.0.2.3", "https://voice.example/llm", "https://user@voice.example"])
-def test_unconfigured_or_insecure_service_is_not_offered(monkeypatch, tmp_path, origin):
-    key = tmp_path / "token"
-    key.write_text("test-app-token")
-    monkeypatch.setenv("TUBER_PRIVATE_REALTIME_TOKEN_FILE", str(key))
-    monkeypatch.setenv("TUBER_PRIVATE_REALTIME_ORIGIN", origin)
-    assert private_call.private_service() is None
+def test_private_signing_follows_only_the_current_credential_and_secure_browser_route(settings, monkeypatch):
+    monkeypatch.setenv("OMNI_GATEWAY_URL", "http://omni-gateway:8000")
+    monkeypatch.setenv("TUBER_PRIVATE_REALTIME_PUBLIC_ORIGIN", "https://192.0.2.10")
+    settings.data["omni"]["base_url"] = "http://omni-gateway:8000/v1"
+    assert private_call.private_service(settings) is None
+    settings.provider_keys = {"omni": "app-key"}
+    assert private_call.private_service(settings) == ("http://omni-gateway:8000", "app-key")
+    settings.data["omni"]["base_url"] = "https://changed.example/v1"
+    assert private_call.private_service(settings) is None
+    settings.provider_keys = {"omni": "new-key"}
+    assert private_call.browser_socket_origin("https://changed.example") == "wss://changed.example"
+    settings.data["omni"]["base_url"] = "http://192.0.2.11/v1"
+    settings.provider_keys = {"omni": "network-key"}
+    assert private_call.private_service(settings) is None
 
 
 @pytest.mark.parametrize("data", [{"ticket": "app-credential-do-not-echo"}, {}, {"ticket": 5}])

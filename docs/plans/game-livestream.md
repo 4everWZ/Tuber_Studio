@@ -34,7 +34,7 @@
 | FR-040–044 | [游戏闭环](../specs/live/game-livestream.md#游戏闭环) | G4：具体版本、策略来源、资源／格子操作、胜负、两种时序模式。 |
 | FR-050–056 | [弹幕表达与记忆](../specs/live/game-livestream.md#弹幕表达与记忆) | G3：建议／投票／挑战、自然人物表达、读档事实；沿用现有角色与播放owner。 |
 | FR-060–064 | [工作台与音画](../specs/live/game-livestream.md#工作台与音画) | G2–G5：控制入口、电脑OBS合成、实际音频时钟、独立音量与ducking。 |
-| DR-001–007 | [数据权威](../specs/foundation/distributed-runtime.md#数据权威与保留)、[恢复](../specs/foundation/distributed-runtime.md#迁移备份与恢复)、[在线依赖](../specs/foundation/distributed-runtime.md#节点与业务服务中断) | G1、G5：稳定身份与私域隔离、可重建上下文、唯一写入、备份完整性、主机退出与推理失联。 |
+| DR-001–007 | [数据权威](../specs/foundation/distributed-runtime.md#数据权威与保留)、[恢复](../specs/foundation/distributed-runtime.md#迁移备份与恢复)、[在线依赖](../specs/foundation/distributed-runtime.md#服务中断与恢复) | G1、G5：稳定身份与私域隔离、可重建上下文、唯一写入、备份完整性、主机退出与推理失联。 |
 | IR-001–005 | [接口语义](../specs/live/game-livestream.md#接口语义) | G1：同ID幂等、过期／控制权、配对认证、单调超时及跨机时间偏差、版本能力。 |
 | PR-001–006 | [游戏负载验收](../specs/live/game-livestream.md#游戏负载验收)、[服务能力与配额](../specs/foundation/models-and-audio.md) | G2–G5：通过 Provider 使用直播、视觉和语音能力，核对实报窗口、滚动上下文、单项与并发。 |
 | PR-010–014 | [游戏负载验收](../specs/live/game-livestream.md#游戏负载验收) | G1–G5：分布与场景期限；1s确认与实际停止分开；两游戏各60分钟语音／弹幕会话。 |
@@ -49,7 +49,7 @@
 | OP-010–015 | [测量约束](#基准与采用门槛)、[视觉服务](../specs/foundation/models-and-audio.md) | G5：使用实际 Provider 比较同图文字、小目标、格子坐标、UI、复杂图及图像工具决策质量。 |
 | AT-001–006 | [游戏合同](../specs/live/game-livestream.md) | 真推理服务、状态／动作、两游戏闭环、自主策略变化、视觉信息及纠错，逐项留证据。 |
 | AT-007–012 | [游戏负载验收](../specs/live/game-livestream.md#游戏负载验收) | 人工角色评审、建议／投票与记忆、各60分钟、异常恢复、OBS同步和完整退出。 |
-| AT-013–016 | [跨主机验收](../specs/foundation/distributed-runtime.md#跨主机验收) | 数据归属与缓存保护、推理节点替换、隔离备份恢复、电脑在线依赖及未知动作核对。 |
+| AT-013–016 | [跨主机验收](../specs/foundation/distributed-runtime.md#跨主机验收) | 数据归属与缓存保护、推理服务变更、隔离备份恢复、电脑在线依赖及未知动作核对。 |
 
 ## 基准与采用门槛
 

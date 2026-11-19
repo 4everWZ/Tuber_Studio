@@ -95,7 +95,7 @@ def connect_private_editor(runtime):
             async with runtime.operator_generation("background"):
                 check_use(runtime, use)
                 provider = runtime.llm
-                limit = runtime.settings.data["llm"]["max_tokens"]
+                limit = runtime.settings.data["omni"]["max_tokens"]
                 options = {"use_remaining_window":True} if isinstance(provider, APIProvider) else {}
                 result = await budgeted_call(
                     provider, lambda: provider.generate_json(messages, schema, max_tokens=limit, **options),

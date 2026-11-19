@@ -65,14 +65,12 @@ def isolated_app(directory, endpoint, key, *, traffic=None, realtime_ticket_url=
     os.environ.update(TUBER_CONFIG=str(directory / "studio.json"), TUBER_RUNTIME=str(directory))
     settings = Settings(runtime=directory)
     model = os.getenv("OMNI_MODEL_ALIAS", "omni-default")
-    settings.data["llm"].update(base_url=endpoint + "/v1", model=model)
-    settings.data["video_vision"].update(base_url=endpoint + "/v1", model=model)
-    settings.data["responses"].update(
-        base_url=endpoint + "/llm/v1",
-        model=os.getenv("OMNI_LLM_MODEL_ALIAS", "llm-default"),
-        max_output_tokens=8192,
+    settings.data["omni"].update(
+        base_url=endpoint + "/v1", model=model,
+        responses_model=os.getenv("OMNI_LLM_MODEL_ALIAS", "llm-default"),
+        responses_options={"max_output_tokens": 8192},
     )
-    settings.provider_keys = {"llm": key, "responses": key}
+    settings.provider_keys = {"omni": key}
     # Applies even to new public-read clients and redirected requests.
     transport = httpx.AsyncHTTPTransport.handle_async_request
     posts = {

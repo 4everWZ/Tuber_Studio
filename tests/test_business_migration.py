@@ -117,55 +117,34 @@ def test_snapshot_restore_keeps_business_identity_credentials_cache_and_unknown_
     assert (source / "models/main.gguf").is_file()
 
 
-def test_omni_profile_switch_is_confined_to_staged_business_data(settings, monkeypatch):
-    from deploy.omni.core_entrypoint import stage_omni
-
-    runtime = settings.runtime
-    monkeypatch.setenv("TUBER_RUNTIME", str(runtime))
-    monkeypatch.setenv("OMNI_GATEWAY_URL", "https://studio.example/proxy")
-    monkeypatch.delenv("TUBER_CONFIG", raising=False)
-    settings.save_public(settings.data)
-    settings.save_keys({"tts": "retained-provider-key"})
-    before = (runtime / "provider-credentials.json").read_bytes()
-    with pytest.raises(RuntimeError, match="existing staged"):
-        stage_omni()
-    migration.set_business_authority(runtime, "staged", migration_id="stage-profile")
-    stage_omni()
-    value = json.loads(settings.path.read_text(encoding="utf-8"))
-    assert (value["llm"]["kind"], value["llm"]["base_url"], value["llm"]["model"]) == (
-        "openai_compatible", "https://studio.example/proxy/v1", "omni-default",
-    )
-    assert value["video_vision"]["adapter"] == "omni"
-    assert value["tts"] == settings.data["tts"]
-    assert (runtime / "provider-credentials.json").read_bytes() == before
-    with pytest.raises(BusinessAuthorityError):
-        assert_business_writer(runtime)
-
-
-def test_staged_omni_retires_legacy_profiles_and_keeps_paired_tts(settings, monkeypatch):
+def test_omni_profile_switch_is_confined_to_staged_business_data(tmp_path, monkeypatch):
     from deploy.omni.core_entrypoint import stage_omni
     from tuber_studio.config import Settings
 
-    runtime = settings.runtime
-    base = "http://192.0.2.1:9000"
-    monkeypatch.setenv("TUBER_RUNTIME", str(runtime))
+    monkeypatch.setenv("TUBER_RUNTIME", str(tmp_path))
+    monkeypatch.setenv("OMNI_GATEWAY_URL", "https://studio.example/proxy")
     monkeypatch.delenv("TUBER_CONFIG", raising=False)
-    settings.data["inference_broker"].update(enabled=True, base_url=base)
-    settings.data["tts"].update(kind="gpt_sovits", base_url=base + "/tts")
-    settings.data["work_mode_profiles"] = {"offline": {"llm": {"model": "old-profile"}}}
-    settings.save_public(settings.data)
-    (runtime / "inference-token").write_text("fixture-paired-token", encoding="utf-8")
-    monkeypatch.setattr(settings, "provider_keys", {"llm": "old-local-key"})
-    settings.save_keys(settings.provider_keys)
-    migration.set_business_authority(runtime, "staged", migration_id="stage-profile")
+    settings = Settings(runtime=tmp_path)
+    legacy = {k: v for k, v in settings.data.items() if k not in {"voice_id", "omni"}}
+    legacy.update(llm={"kind": "llama_cpp"}, tts={"kind": "gpt_sovits", "voice_id": "yaoyao_sovits_v2"},
+                  inference_broker={"enabled": True}, work_mode_profiles={"live": {}}, operator_extension="keep")
+    settings.path.write_text(json.dumps(legacy), encoding="utf-8")
+    keys = {"tts": {"key": "old-test-key", "base_url": "https://old.test/tts"}}
+    settings.credentials_path.write_text(json.dumps(keys), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="existing staged"):
+        stage_omni()
+    assert json.loads(settings.path.read_text()) == legacy
+    assert json.loads(settings.credentials_path.read_text()) == keys
+    migration.set_business_authority(tmp_path, "staged", migration_id="stage-profile")
     stage_omni()
-    restored = Settings(runtime=runtime)
-    assert "work_mode_profiles" not in restored.data
-    assert restored.data["llm"]["structured_output"] == "structural_tag"
-    assert restored.data["tts"]["base_url"] == base + "/tts"
-    assert restored.endpoint_key("tts") == "fixture-paired-token"
-    assert restored.provider_key("llm") is None
-    assert restored.broker_key_for(base + "/llm") is None
+    restored = Settings(runtime=tmp_path)
+    assert restored.data["omni"]["base_url"] == "https://studio.example/proxy/v1"
+    assert restored.data["voice_id"] == "yaoyao_reference" and restored.data["operator_extension"] == "keep"
+    assert restored.responses_config["base_url"] == "https://studio.example/proxy/llm/v1"
+    assert not restored.provider_keys and json.loads(restored.credentials_path.read_text()) == {}
+    assert not {"tts", "llm", "work_mode_profiles", "inference_broker"}.intersection(json.loads(settings.path.read_text()))
+    with pytest.raises(BusinessAuthorityError):
+        assert_business_writer(tmp_path)
 
 
 def test_sqlite_backup_includes_committed_wal_rows(tmp_path):

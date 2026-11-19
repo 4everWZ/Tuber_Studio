@@ -9,7 +9,7 @@ const names = {
   approved: "已审核", rejected: "已拒绝", copied: "已复制", published: "已发布", publishing: "发布中",
   publish_uncertain: "发布结果待核对", publish_failed: "发布失败", question: "问题",
   suggestion: "建议 / 反馈", interaction: "适合互动", spam: "垃圾", general: "一般评论", chat: "弹幕",
-  gift: "礼物", song: "点歌", sfx: "预录音效", disconnect: "断线", mock: "离线演示", llama_cpp: "llama.cpp",
+  gift: "礼物", song: "点歌", sfx: "预录音效", disconnect: "断线", mock: "离线演示",
   invalidated: "已失效", invalid: "生成无效", deferred: "本次已暂缓", post: "生成动态", wait: "等待", role_story: "虚构角色故事",
   checkpoint: "进度已保存", needs_material: "等待补充材料", deciding: "Agent 处理中", awaiting_review: "待审核", needs_reconciliation: "发送结果待核对", waiting: "等待下一步", abandoned: "已暂缓",
 };

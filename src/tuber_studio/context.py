@@ -64,7 +64,7 @@ class BudgetedSummary:
 
 class ContextManager:
     def effective_llm_config(self):
-        config = self.settings.data["llm"]
+        config = self.settings.data["omni"]
         if getattr(self.provider, "uses_model_card", False):
             window = self.provider.server_tokens
             return config | {"context_tokens": window, "native_context_tokens": window}
@@ -420,7 +420,7 @@ class ContextManager:
             prefix,
             initial,
             suffix=suffix,
-            output_tokens=reply_output_budget(self.settings.data["llm"], mode),
+            output_tokens=reply_output_budget(self.settings.data["omni"], mode),
         )
         return self.status()
 
@@ -519,7 +519,7 @@ class ContextManager:
                 and server >= configured >= 4096
                 and native >= configured
                 and not self.provider.profile_error
-                and (config["kind"] == "llama_cpp" or getattr(self.provider, "uses_model_card", False))
+                and getattr(self.provider, "uses_model_card", False)
             ),
             "capacity_source": getattr(
                 self.provider, "capacity_source", "server_verified" if server else "unverified"

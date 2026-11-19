@@ -37,7 +37,7 @@ async def model_for(
         probe, finish = body["max_tokens"] == 1, "stop"
         if probe:
             text = ""
-        elif "read" in body["response_format"].get("schema", {}).get("properties", {}):
+        elif "read" in body["response_format"].get("json_schema", {}).get("schema", {}).get("properties", {}):
             text = json.dumps(
                 {"action": decision, "reason": "继续当前这次交流", "read": ""}, ensure_ascii=False
             )
@@ -56,14 +56,14 @@ async def model_for(
             },
         )
 
-    config = settings.data["llm"] | {
+    config = settings.data["omni"] | {
         "base_url": "https://isolated.invalid/v1",
         "model": "test-model",
         "context_tokens": 131072,
         "native_context_tokens": 131072,
         "enable_thinking": True,
     }
-    provider = APIProvider(config, adapter="llama_cpp")
+    provider = APIProvider(config | {"structured_output":"json_schema", "context_source":"declared", "prompt_token_endpoint":False})
     await provider.client.aclose()
     provider.client = httpx.AsyncClient(
         base_url="https://isolated.invalid/v1", transport=httpx.MockTransport(respond)
@@ -101,8 +101,8 @@ async def test_runtime_operation_web_fetch_is_model_selected(
     assert reply.reply_to == ["source-event"]
     assert fetched == [url] and len(generated) == 2
     responses = [body for body in requests if body["max_tokens"] != 1]
-    assert responses[0]["response_format"]["schema"]["oneOf"][-1]["required"] == ["web_fetch"]
-    assert "oneOf" not in responses[1]["response_format"]["schema"]
+    assert responses[0]["response_format"]["json_schema"]["schema"]["oneOf"][-1]["required"] == ["web_fetch"]
+    assert "oneOf" not in responses[1]["response_format"]["json_schema"]["schema"]
     assert any("企鹅生活在南半球。" in message["content"] for message in responses[1]["messages"])
     episode = runtime.store.one(
         "SELECT id FROM operation_continuations WHERE channel=?", (f"generation.{mode}",)
@@ -121,7 +121,7 @@ async def test_interrupted_operation_resumes_with_saved_web_result(runtime, sett
 
     def interrupt_followup(body):
         nonlocal failed
-        if not failed and "oneOf" not in body["response_format"]["schema"]:
+        if not failed and "oneOf" not in body["response_format"]["json_schema"]["schema"]:
             failed = True
             return httpx.ReadTimeout("model read timed out after fetching the page")
 
@@ -156,9 +156,9 @@ async def test_interrupted_operation_resumes_with_saved_web_result(runtime, sett
     assert fetched == [url] and generated == [{"web_fetch": url}, corrected]
     responses = [body for body in requests if body["max_tokens"] != 1]
     first, interrupted, resumed = responses
-    assert "oneOf" in first["response_format"]["schema"]
+    assert "oneOf" in first["response_format"]["json_schema"]["schema"]
     assert interrupted["response_format"] == resumed["response_format"]
-    assert "oneOf" not in resumed["response_format"]["schema"]
+    assert "oneOf" not in resumed["response_format"]["json_schema"]["schema"]
     assert interrupted["messages"] == resumed["messages"]
     expected = excerpt if readable else "本轮未读到网页正文。"
     assert any(expected in message["content"] for message in resumed["messages"])
@@ -168,7 +168,7 @@ async def test_interrupted_operation_resumes_with_saved_web_result(runtime, sett
     assert runtime.continuations.generation_checkpoint(checkpoint["id"]) == {}
 
     await reply()
-    assert "oneOf" in requests[-1]["response_format"]["schema"]
+    assert "oneOf" in requests[-1]["response_format"]["json_schema"]["schema"]
 
 
 async def generate(runtime, *, diagnose=None, parent=None, guard=lambda: True):
@@ -222,7 +222,7 @@ async def test_invalid_reply_target_terminates_once_and_keeps_bound_original(run
         await generate(runtime)
     assert len(requests) == 2
     assert row["budget"] == {"model_calls": 2, "input_tokens": 400, "output_tokens": 21}
-    assert all(body["chat_template_kwargs"]["enable_thinking"] is True for body in requests)
+    assert all("chat_template_kwargs" not in body for body in requests)
 
 
 async def test_parseable_length_result_is_invalid_without_a_repair_call(runtime, settings):

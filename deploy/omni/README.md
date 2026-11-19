@@ -2,11 +2,15 @@
 
 Tuber Studio 消费已部署的 Omni 推理和 Avatar 服务。业务启动需要服务地址、模型别名及对应凭据。可选节目另需 Avatar 会话和观看入口。引擎、渲染器和媒体服务由各自部署方维护。 [独立推理部署仓库](https://github.com/4everWZ/omni-avatar-api)
 
-本仓库的示例 Compose 加入名为 `tuber-omni` 的外部 Docker 网络，可用 `TUBER_OMNI_NETWORK` 指定已创建的网络。示例使用 `omni-gateway:8000` 和默认别名 `omni-default`。Core 的 9020 默认发布到宿主机回环地址，同网络代理可访问 `http://tuber-core:9020`。接入其他服务地址时，在工作台分别配置受支持的 Provider 和对应凭据。示例注入的 Core 网关令牌仅用于预设网关地址。 [配置入口](../../docs/guides/deployment.md#provider与上下文设置)
+本仓库的示例 Compose 加入名为 `tuber-omni` 的外部 Docker 网络，可用 `TUBER_OMNI_NETWORK` 指定已创建的网络。示例使用 `omni-gateway:8000` 和默认别名 `omni-default`。Core 的 9020 默认发布到宿主机回环地址，同网络代理可访问 `http://tuber-core:9020`。Core 共用一组 Omni 网关地址与凭据。示例注入的 Core 网关令牌仅用于预设网关地址。 [配置入口](../../docs/guides/deployment.md#连接验证)
 
 ## Core
 
 在仓库根目录执行。先从基础设施管理员取得分配给 Core 的网关服务令牌，并将它存入 `deploy/omni/secrets/gateway-core.token`。`secrets/` 用宿主目录权限限制访问，容器内 UID/GID 65532 需要可读各自的令牌文件。可用 `OMNI_CORE_TOKEN_FILE` 指向授权的其他文件。
+
+同一网关地址可在工作台保存新的普通应用凭据。保存值优先，清除后恢复该地址的 Compose 凭据。换成其他地址时须为新地址单独授权。
+
+设置 API 的 `PUT /api/settings/providers` 接受 `omni.base_url`、`omni.model` 和 `omni.responses_model`。后台并发和输出额度分别使用 `omni.responses_options.parallel_reads` 和 `max_output_tokens`。填写 `credentials.omni` 可更换凭据，发送 `clear_credentials: ["omni"]` 可清除保存值。`GET /api/settings` 通过 `provider_credentials.omni` 报告当前是否持有可用凭据。
 
 ```sh
 docker compose -f deploy/omni/app-compose.yml config --quiet
@@ -14,11 +18,11 @@ docker compose -f deploy/omni/app-compose.yml up -d --build --wait tuber-core
 curl --fail http://127.0.0.1:9020/healthz
 ```
 
-通过 `OMNI_GATEWAY_URL` 指定服务根地址（不带 `/v1`）。Omni 前台使用 `OMNI_MODEL_ALIAS`，后台使用 `OMNI_LLM_MODEL_ALIAS`。工作站与 Core 在不同机器时使用 Core 可达的工作站地址；不需要在 Core 安装引擎。用应用凭据验证 Chat、模型卡实报窗口、真实图文输入和后台 `/llm/v1/responses` 函数结果回传。只得到健康响应不代表 Agent 已接通。朗读合成使用单独配置的语音 Provider。 [能力与验收](../../docs/specs/foundation/omni-deployment.md#接入验收与切换)
+通过 `OMNI_GATEWAY_URL` 指定服务根地址（不带 `/v1`）。Omni 前台使用 `OMNI_MODEL_ALIAS`，后台使用 `OMNI_LLM_MODEL_ALIAS`。工作站与 Core 在不同机器时使用 Core 可达的工作站地址；不需要在 Core 安装引擎。用应用凭据验证 Chat、模型卡实报窗口、真实图文输入和后台 `/llm/v1/responses` 函数结果回传。只得到健康响应不代表 Agent 已接通。参考音色朗读使用同一 Omni 连接。 [能力与验收](../../docs/specs/foundation/omni-deployment.md#接入验收与切换)
 
-`core-data` 是 Core 独占的持久卷，保存、备份和迁移步骤沿用 [部署指南](../../docs/guides/deployment.md)。复用已有业务数据时须保有 `studio.json` 及权威写入者记录，`TUBER_CORE_HOSTNAME` 需和迁移时登记的目标一致。初次建卷可用 `TUBER_CORE_MODE=demo` 运行离线演示，或用 `TUBER_CORE_MODE=existing` 要求已有配置。切换已存在的配置通过工作台及部署准入完成。
+`core-data` 是 Core 独占的持久卷，保存、备份和迁移步骤沿用 [部署指南](../../docs/guides/deployment.md)。复用已有业务数据时须保有 `studio.json` 及权威写入者记录，`TUBER_CORE_HOSTNAME` 需和迁移时登记的目标一致。初次建卷读取部署的 Omni 连接。`TUBER_CORE_MODE=existing` 要求卷内已有配置。切换已存在的配置通过工作台及部署准入完成。
 
-接收现有正式业务时，将已核验快照还原到独立 Docker 卷的 `/data/business`。同用 `-f deploy/omni/app-business-data.compose.yml` 接入 `TUBER_CORE_BUSINESS_VOLUME` 指定的卷。恢复和正式 Core 使用相同容器内路径，数据库的取材引用在恢复时重新绑定。正式数据按迁移工具的 `staged → active` 交接。在 staged 卷运行 `python /opt/tuber/core_entrypoint.py --stage-omni` 可准备模型配置并退出旧推理模式档。保留平台账号和现有 TTS 地址，原通过推理节点配对提供的 TTS 凭据绑定到同一地址。任务及平台连接由正式 Core 激活后管理。
+接收现有正式业务时，将已核验快照还原到独立 Docker 卷的 `/data/business`。同用 `-f deploy/omni/app-business-data.compose.yml` 接入 `TUBER_CORE_BUSINESS_VOLUME` 指定的卷。恢复和正式 Core 使用相同容器内路径，数据库的取材引用在恢复时重新绑定。正式数据按迁移工具的 `staged → active` 交接。在 staged 卷运行 `python /opt/tuber/core_entrypoint.py --stage-omni` 可在独占写锁下准备网关配置。角色音色选择按稳定 ID 迁移，凭据仅可在绑定的网关地址复用。任务及平台连接由正式 Core 激活后管理。
 
 ## 从电脑访问业务工作台
 
@@ -34,7 +38,7 @@ docker compose -f deploy/omni/app-compose.yml -f deploy/omni/workstation.compose
 
 当号主允许使用已有视频原件取材时，可以在相应工坊追加 `-f deploy/omni/private-source.compose.yml`。`TUBER_PRIVATE_SOURCE_DIR` 填工作站上含 `manifest.json` 和原始片段的目录，`TUBER_PRIVATE_SOURCE_URL` 填清单对应的原投稿分 P 完整网址。Core 的 UID 65532 须能读取该目录。只有 Core 获得只读挂载。任务工具在对应分 P 的取材授权内使用原件，来源回执注明归档。
 
-在浏览器地址栏输入工作站 IP，HTTP 自动转向 HTTPS。TLS 代理服务工作台、静态文件、SSE 和私有通话 WebSocket。Core 使用回环入口签发短时票据，浏览器在当前 HTTPS IP 订阅。WHEP 音视频遵循协商得到的 ICE 路径。验证实际收帧、冻结和音画同步时使用号主浏览器所在网络。
+在浏览器地址栏输入工作站 IP，HTTP 自动转向 HTTPS。TLS 代理服务工作台、静态文件、SSE 和私有通话 WebSocket。工作站覆盖文件将电话签票代理到同一网关，复用 Core 的普通应用凭据；浏览器在当前 HTTPS 入口持短时票据连接。WHEP 音视频遵循协商得到的 ICE 路径。验证实际收帧、冻结和音画同步时使用号主浏览器所在网络。
 
 Core 提供工作台、静态素材、管理 API、SSE 和 WebSocket。浏览器连接实际业务主机，任务和 SQLite 由该 Core 实例持有。使用独立候选卷时，管理令牌、聊天和平台登录按该卷读取。
 

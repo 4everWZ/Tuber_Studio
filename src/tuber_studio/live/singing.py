@@ -82,7 +82,7 @@ class SingingService:
             await self.provider.close()
 
     def reference(self, voice):
-        return self.settings.voice_reference_path(voice) if voice.get("provider") == "gpt_sovits" else None
+        return self.settings.voice_reference_path(voice) if voice.get("provider") == "omni_reference" else None
 
     def identity(self, character):
         if self.provider is None:

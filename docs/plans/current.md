@@ -30,7 +30,3 @@ Chats 已能交办、在活动页接续、改口、取消和查看工具回执�
 ## 已结束或暂停的工作
 
 - **P2 归档场在 r6 结案。** 号主决定停止。只读核库为 `failed`、0 份 edition、四类平台写入均为 0。该场的三版成品、同场语音更正和撤回对成品的影响均未验成；保留 r1–r6 回执、原业务卷和归档片段，未派发 r7。[结案记录](../../evaluations/results/creative-memory-p2-20261119.md)
-- **模型驱动的直播 Avatar 暂停，状态 TBD。** 在役 Ditto 对获选 Q、mature 成图及两份母稿裁图的四次准备均失败。已有绑定和录像保留；恢复由号主另定，届时须逐套验证实际收端的完整半身、身份和说话／停顿动作。现行电话用语音，直播用播放器音频和字幕，Pets 开关独立生效。[形象核查](../../evaluations/results/live-ditto-oc-20261119.md)
-- **9B 语义实测停止追加。** 冻结记录保留 220 条候选、159 条成功回执及独立配对评估；逐条语义未完成标注，历史送达数不能据以认定角色表达通过。现行 Omni 的来源、行动选择、委派与纠偏按各自业务场景取证。旧训练管线可从标签 `archive/pre-creative-agent-20261118` 回查。[历史实跑](../../evaluations/results/operations-feedback-20261112.md) · [配对评估](../../evaluations/results/dafeiyu-clean-9b-20261111.md)
-
-收敛前的逐项计划可由 `git show 1d76e6f:docs/plans/current.md` 查阅。

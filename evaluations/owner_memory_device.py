@@ -24,7 +24,6 @@ from playwright.async_api import async_playwright
 from tuber_studio.app import create_app
 from tuber_studio.config import ROOT, Settings
 
-
 CONFIRMED = "Group related points and separate distinct concerns. Use headings and lists when they improve readability."
 AUTO = "以后写直播素材提纲，每个标题都用问句，以问号结尾。"
 SEARCH = "/api/agent/memory.search"
@@ -63,8 +62,9 @@ async def device_call(device, port, login, method, path, data=None):
 
 async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, reviewed_receipt=None,
               timeout_seconds=1440, check_cooperation=False):
-    from evaluations.omni_chat_loop import connection
     from contextlib import AsyncExitStack
+
+    from evaluations.omni_chat_loop import connection
 
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
@@ -101,11 +101,8 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
         settings = Settings(runtime=Path(directory))
         if config:
             origin, key = config
-            for kind, suffix in (("llm", "/v1"), ("responses", "/llm/v1"), ("video_vision", "/v1")):
-                settings.data[kind]["base_url"] = origin + suffix
-            settings.provider_keys = {"llm": key, "responses": key, "vision": key}
-        else:
-            settings.data["llm"]["kind"] = "demo"
+            settings.data["omni"]["base_url"] = origin + "/v1"
+            settings.provider_keys = {"omni": key}
         app = create_app(settings)
         runtime = app.state.runtime
         # No operations scheduler or platform action tool can run in this instance.
@@ -168,7 +165,13 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                     (await client.post("/api/auth", json={"token":token})).raise_for_status()
                     record("stage", "independent_device_authenticated")
                     async def correct_voice(target):
-                        from evaluations.owner_memory_voice import VOICE_RULE, checkout_binding, live_voice_binding, spoken_rule, voice_probe
+                        from evaluations.owner_memory_voice import (
+                            VOICE_RULE,
+                            checkout_binding,
+                            live_voice_binding,
+                            spoken_rule,
+                            voice_probe,
+                        )
                         try:
                             speech = voice_wav or await asyncio.to_thread(spoken_rule, Path(directory), VOICE_RULE)
                             async with checkout_binding(config, gateway_checkout) as voice_service, live_voice_binding(voice_service):
@@ -197,9 +200,9 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                         from evaluations.owner_memory_video import forget_current
                         record("forgotten_revisions", await forget_current(client, port, device, token, [updated]))
                     elif config:
-                        from evaluations.owner_memory_video import compare
                         from evaluations.owner_memory_budget import load_capacity, wire_receipts
-                        record("responses_capacity", await load_capacity(config, settings.data["responses"]["model"]))
+                        from evaluations.owner_memory_video import compare
+                        record("responses_capacity", await load_capacity(config, settings.responses_config["model"]))
                         stack.enter_context(wire_receipts(record))
                         if reviewed_receipt:
                             from evaluations.owner_memory_receipt import reviewed_read

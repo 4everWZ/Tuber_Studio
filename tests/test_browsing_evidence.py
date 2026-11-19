@@ -526,28 +526,36 @@ async def test_no_caption_fallback_distributes_bounded_storyboard_windows(eviden
     assert scan[0]["samples"] == [8] and scan[1]["state"] == "gap"
 
 
-async def test_opt_in_local_asr_is_partial_audio_evidence_not_cc(evidence_factory, config, monkeypatch):
+async def test_omni_clip_transcription_is_partial_audio_evidence_not_cc(evidence_factory, config, monkeypatch):
     import wave
-    from unittest.mock import AsyncMock
 
-    monkeypatch.setenv("TUBER_VIDEO_ASR_CLI", "whisper-cli")
+    import httpx
+
+    monkeypatch.setenv("TUBER_TRANSCRIBE_PUBLIC_CLIPS", "1")
     service = evidence_factory(await no_cc_adapter())
-    model = service.directory / "stub.gguf"
-    model.write_bytes(b"test identity")
-    service.asr.model = str(model)
+    calls = []
+
+    def receive(request):
+        payload = json.loads(request.content)
+        assert request.url.path.endswith("/v1/chat/completions")
+        audio, = payload["messages"][-1]["content"]
+        assert audio["type"] == "input_audio"
+        assert base64.b64decode(audio["input_audio"]["data"]).startswith(b"RIFF")
+        calls.append(payload)
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": "现场说话"}}]})
+
+    monkeypatch.setattr("tuber_studio.http_api.inference_transport", lambda base: httpx.MockTransport(receive))
     service.asr.directory.mkdir()
     with wave.open(str(service.asr.directory / f"{BV}-456.wav"), "wb") as clip:
         clip.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
-        clip.writeframes(bytes(32000))
-    run = AsyncMock(return_value=[{"id": "456:asr:1", "start": 0.1, "end": 0.5, "text": "现场说话"}])
-    monkeypatch.setattr(service.asr, "_read", run)
+        clip.writeframes(b"\x01\x02" * 16000)
     _, material = await service.prepare(BV, config)
     assert material["coverage"] == "sampled_audio"
     assert material["parts"][0]["asr"] and not material["parts"][0]["coverage"]["complete"]
-    assert material["parts"][0]["track_id"].startswith("local-asr:")
+    assert material["parts"][0]["track_id"].startswith("omni-asr:")
     assert {row["cid"] for row in material["missing_parts"]} == {"456", "457"}
     assert not any(call[0] == "frames" for call in service.adapter.calls)
-    assert run.await_count == 1
+    assert len(calls) == 1
 
 
 async def test_visual_references_actual_times_and_each_part_without_claiming_full_view(

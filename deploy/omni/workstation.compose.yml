@@ -3,9 +3,7 @@
 services:
   tuber-core:
     environment:
-      TUBER_PRIVATE_REALTIME_ORIGIN: http://127.0.0.1:9180
       TUBER_PRIVATE_REALTIME_PUBLIC_ORIGIN: https://${TUBER_WORKSTATION_IP:?set the browser-reachable workstation IP}
-      TUBER_PRIVATE_REALTIME_TOKEN_FILE: /run/secrets/omni_gateway_core
     ports: !override
       - "${TUBER_WORKSTATION_IP}:80:8081"
       - "${TUBER_WORKSTATION_IP}:443:8443"

@@ -2,7 +2,7 @@
 
   <div class="page-heading win-heading">
     <h1>工坊设置</h1>
-    <a href="#voices" class="win-link-btn">前往配置语音 →</a>
+    <a href="#voices" class="win-link-btn">角色音色试听 →</a>
   </div>
 
   <fieldset class="win-group-box">
@@ -19,93 +19,38 @@
     <p class="hint" id="artwork-reference-result" role="status"></p>
   </fieldset>
 
-  <div class="win-group-box" id="providers-panel" data-workspace-anchor style="margin-top:16px;">
-    <div class="panel-heading">
-      <div class="win-group-title" style="margin:0;">文本推理端点配置</div>
-      <span id="providers-dirty" class="hint">正在读取已保存配置…</span>
-    </div>
-
-    <div class="subsection" style="border:0; padding-top:0; margin-top:8px;">
-      <div class="actions" style="margin-bottom:12px;">
-        <button type="button" id="btn-ping-providers" class="win-btn">⚡ 快速检查表单端点连通性</button>
-        <span id="ping-provider-result" class="hint" role="status"></span>
-      </div>
-
-      <form id="providers-form">
-        <fieldset id="provider-fields" class="provider-fields">
-          <fieldset class="provider-group">
-            <legend>推理引擎协议与端点地址</legend>
-            <div class="form-grid">
-              <label>推理引擎协议
-                <select id="llm-kind">
-                  <option value="llama_cpp">本地 llama.cpp 推理服务</option>
-                  <option value="openai_compatible">远程 / 自定义 OpenAI 兼容端点</option>
-                  <option value="demo">离线演示模式 (无真实推理)</option>
-                </select>
-              </label>
-              <div>
-                <label>模型标识 (Model ID)</label>
-                <div style="display:flex; gap:6px; margin-top:5px;">
-                  <select id="llm-model-select" style="flex:1;">
-                    <optgroup label="🌐 远端已拉取模型" id="remote-models-group" hidden></optgroup>
-                    <option value="__custom__">自定义输入模型 ID…</option>
-                  </select>
-                  <button type="button" id="btn-fetch-models" class="win-btn" title="向 Base URL 请求 /v1/models 动态拉取模型列表">拉取列表</button>
-                </div>
-                <div style="margin-top:6px;">
-                  <input id="llm-model" placeholder="服务实际提供的模型 ID" autocomplete="off" style="width:100%;">
-                </div>
-              </div>
-            </div>
-
-            <label style="margin-top:10px;">服务 Base URL
-              <input id="llm-base-url" type="url" placeholder="http://127.0.0.1:8000/v1" autocomplete="off" aria-describedby="llm-endpoint-help">
-            </label>
-            <p id="llm-endpoint-help" class="hint">支持任意本地工作站 (如 vLLM, Ollama, llama-server) 或外部兼容端点；Base URL 通常以 /v1 结尾。</p>
-              <label class="check-field"><input id="omni-video-service" type="checkbox">这是工坊 Omni 服务：读取模型卡窗口，视频取材使用同一图文端点</label>
-
-            <div class="form-grid" style="margin-top:10px;">
-              <label>上下文窗口（tokens）<input id="llm-context-tokens" type="number" min="4096" step="1" placeholder="留空用模型上限" aria-describedby="llm-capacity-help"></label>
-              <label id="llm-native-label">服务声明容量（tokens）<input id="llm-native-tokens" type="number" min="4096" step="1" required></label>
-            </div>
-            <p id="llm-capacity-help" class="hint"></p>
-            <label class="check-field"><input id="llm-enable-thinking" type="checkbox" checked> 启用思维链（CoT）</label>
-            <label>直播思考额度（tokens）
-              <input id="llm-live-thinking-tokens" type="number" min="0" max="8192" step="1" value="1024"
-                     aria-describedby="llm-live-output-budget">
-            </label>
-            <p id="llm-live-output-budget" class="hint"></p>
-
-            <label style="margin-top:10px;">单次运营输出配额（tokens，含思考）
-              <input id="llm-operations-tokens" type="number" min="1" max="65536" step="1" value="8192" required aria-describedby="llm-operations-help">
-            </label>
-            <p id="llm-operations-help" class="hint">评论、私信和动态共用，包含思考过程与正文。</p>
-
-            <div class="provider-credential" style="margin-top:10px;">
-              <label>API Key（可选）<input id="llm-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label>
-              <span id="llm-key-state" class="hint">密钥状态待读取</span>
-              <label class="check-field"><input id="llm-clear-key" type="checkbox"> 清除已保存密钥</label>
-            </div>
-          </fieldset>
-          <fieldset class="provider-group">
-            <legend>后台创作任务 · Responses</legend>
-            <label>后台 Base URL<input id="background-base" type="url" placeholder="http://127.0.0.1:8000/llm/v1"></label>
-            <label>后台模型别名<input id="background-model" placeholder="llm-default"></label>
-            <label>单项任务并行取材数<input id="background-parallel" type="number" min="1" step="1" value="2"></label>
-            <label>后台思考与输出额度（token）<input id="background-budget" type="number" min="1" step="1" value="4096"></label>
-            <label>后台应用凭据<input id="background-key" type="password" autocomplete="new-password" placeholder="留空保留已保存凭据"></label>
-            <label class="check-field"><input id="background-clear" type="checkbox">清除已保存的后台凭据</label>
-          </fieldset>
-        </fieldset>
-
-        <div class="actions" style="margin-top:16px;">
-          <button id="save-providers" class="primary win-btn" type="submit">保存并应用设置</button>
-          <button id="reset-providers" type="button" class="win-btn">恢复已保存配置</button>
-          <button id="check-providers-settings" type="button" class="win-btn">检查已保存配置连接</button>
+  <fieldset class="win-group-box" id="providers-panel" data-workspace-anchor>
+    <legend>共用 Omni API</legend>
+    <button type="button" id="check-providers-settings" class="win-btn">检查服务能力</button>
+    <p id="providers-check-result" class="hint" role="status"></p>
+    <form id="providers-form">
+      <fieldset id="provider-fields" class="provider-fields" disabled>
+        <legend>服务连接与生成</legend>
+        <label>Omni API 地址<input id="omni-base-url" type="url" required></label>
+        <div class="form-grid">
+          <label>图文与语音模型别名<input id="omni-model" list="omni-model-options" required></label>
+          <label>后台 Responses 模型别名<input id="omni-responses-model" required></label>
         </div>
-        <p id="providers-save-state" class="hint" role="status"></p>
-        <p id="providers-check-result" class="hint" role="status" hidden></p>
-      </form>
-    </div>
-  </div>
+        <datalist id="omni-model-options"></datalist>
+        <button type="button" class="win-btn" id="omni-discover-models">读取已保存服务的模型别名</button>
+        <span id="omni-discovery-state" class="hint" role="status"></span>
+        <label>共用应用凭据<input id="omni-key" type="password" autocomplete="new-password" placeholder="留空保留当前凭据"></label>
+        <span id="omni-key-state" class="hint"></span>
+        <label><input id="omni-clear-key" type="checkbox"> 清除已保存的应用凭据</label>
+        <label class="check-field"><input id="llm-enable-thinking" type="checkbox"> 启用思考</label>
+        <label>单次运营输出额度（含思考，tokens）
+          <input id="llm-operations-tokens" type="number" min="1" max="65536" required>
+        </label>
+        <div class="form-grid">
+          <label>后台任务并行取材数<input id="background-parallel" type="number" min="1" required></label>
+          <label>后台任务输出额度（含思考，tokens）<input id="background-budget" type="number" min="1" required></label>
+        </div>
+      </fieldset>
+      <div class="actions">
+        <button class="primary win-btn" id="save-providers" type="submit" disabled>保存 Omni 设置</button>
+        <button class="win-btn" id="reset-providers" type="button" disabled>放弃修改</button>
+      </div>
+      <p id="providers-save-state" class="hint" role="status"></p>
+    </form>
+  </fieldset>
 </section>

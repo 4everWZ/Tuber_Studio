@@ -217,7 +217,7 @@ async def test_uncertain_send_cannot_be_retried_or_edited(messages):
 @pytest.mark.parametrize("automatic", [False, True])
 async def test_confirmed_handoff_never_records_private_reply_in_public_context(messages, monkeypatch, invitation, automatic):
     await messages.configure({"enabled": True})
-    original_llm = dict(messages.settings.data["llm"])
+    original_llm = dict(messages.settings.data["omni"])
     comments = messages.comments
     comments.credentials = {"sessdata": "test", "csrf": "test"}
     comments.verified_account_id = "injected-test-account"
@@ -252,7 +252,7 @@ async def test_confirmed_handoff_never_records_private_reply_in_public_context(m
             has_intent=lambda *_: False, comment_evidence=unavailable_video_evidence,
         ), raising=False)
         await comments._process_comment(source, messages.runtime.character, automatic)
-    assert messages.settings.data["llm"] == original_llm
+    assert messages.settings.data["omni"] == original_llm
     bridge = messages.store.one("SELECT * FROM drafts WHERE comment_id=?", (source["id"],))
     assert bridge["status"] == "private_handoff"
     draft = messages.store.one("SELECT * FROM dm_drafts")

@@ -173,13 +173,13 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   function renderModel(status, settings) {
     const state = inferenceDisplay(status, settings);
     const failed = state.connected === false;
-    const value = failed ? "" : state.loaded ? "已连接" : state.modelState || state.connection;
+    const value = failed ? "" : state.connection;
     modelState.hidden = failed;
     if (modelState.textContent !== value) modelState.textContent = value;
     modelDetails.hidden = !failed;
     if (!failed) modelDetails.open = false;
     const error = $("operator-chat-model-error");
-    const detail = failed ? safeMessage(status.context?.profile_error || status.inference?.error || "推理服务连接失败") : "";
+    const detail = failed ? safeMessage(status.context?.profile_error || "Omni API 连接失败") : "";
     if (error.textContent !== detail) error.textContent = detail;
   }
 

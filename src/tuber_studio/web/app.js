@@ -10,7 +10,7 @@ import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261115.2";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261118.1";
-import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
+import { renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js?v=20261118.1";
 import { MessagesPanel } from "./messages.js?v=20261118.1";
 import { UserMemoryEditor } from "./user-memory.js";
@@ -188,6 +188,7 @@ async function busy(button, action) {
 }
 
 function showLogin() {
+  inferenceProviders.reset();
   void loadArtworkReferences(null);
   characterDisplay.reset();
   model.authenticated = false;
@@ -208,7 +209,6 @@ function applyWorkbenchSettings(settings) {
   $("logout-sidebar").hidden = localAccess;
   accountPanel.setLocalAccess(localAccess);
   inferenceProviders.sync();
-  voiceSettings.sync();
   if (model.status) renderStatus(model.status);
   else renderVoicePreview(model);
 }
@@ -218,7 +218,6 @@ async function refreshSettings() {
 }
 
 async function enterWorkspace() {
-  voiceSettings.reset();
   await Promise.all([refreshSettings(), characterDisplay.refresh().catch(error => notice(error.message, true))]);
   model.authenticated = true;
   $("login").hidden = true;
@@ -311,8 +310,10 @@ async function loadAssets() {
 async function loadVoices() {
   const select = $("preview-voice");
   if (!select) return;
-  const previous = select.value;
+  const previous = select.dataset.selectedVoice;
   model.voices = list(await api("/api/voices"));
+  const options = $("character-voice-options");
+  options.replaceChildren();
   const tbody = $("voices");
   tbody?.replaceChildren();
   select.replaceChildren();
@@ -330,10 +331,12 @@ async function loadVoices() {
     }
     const option = node("option", voice.name || voice.id);
     option.value = voice.id;
+    options.append(option.cloneNode(true));
     select.append(option);
   });
-  if (model.voices.some(voice => voice.id === previous)) select.value = previous;
-  renderVoicePreview(model, !previous);
+  const keep = model.voices.some(voice => voice.id === previous);
+  if (keep) select.value = previous;
+  renderVoicePreview(model, !keep);
 }
 
 async function compactContext(scope, videoId, threadId) {
@@ -401,7 +404,7 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
     await interactiveGamesUI.refresh();
   } else if (model.page === "characters" || model.page === "personalization") {
     personalization.refresh();
-    if (model.page === "characters") await characterStudio.loadCharacters();
+    if (model.page === "characters") await Promise.all([characterStudio.loadCharacters(), loadVoices()]);
   } else if (model.page === "overview") {
     await Promise.allSettled([cachePanel.refresh(), maintenanceModule?.loadRetention()]);
   } else if (model.page === "accounts") {
@@ -508,9 +511,7 @@ const inferenceProviders = initInferenceProvidersUI(model, {
   api,
   busy,
   apply: applyWorkbenchSettings,
-  refreshStatus: () => api("/api/status").then(renderStatus),
 });
-const voiceSettings = initVoiceSettings(model, api, busy, applyWorkbenchSettings);
 
 // Form submits & remaining listeners
 $("login-form")?.addEventListener("submit", event => {
@@ -535,20 +536,30 @@ $("logout").addEventListener("click", event => busy(event.currentTarget, async (
   showLogin();
 }));
 
-$("preview-voice")?.addEventListener("change", () => renderVoicePreview(model));
+$("preview-voice")?.addEventListener("change", event => {
+  event.target.dataset.selectedVoice = event.target.value;
+  $("preview-audio").pause();
+  $("preview-audio").removeAttribute("src");
+  $("preview-audio").hidden = true;
+  $("preview-state").textContent = "";
+  renderVoicePreview(model);
+});
 $("preview-form")?.addEventListener("submit", event => {
   event.preventDefault();
   busy(event.submitter, async () => {
     const voice = model.voices.find(item => item.id === $("preview-voice")?.value);
-    const unavailable = voiceAvailability(voice, model);
+    const unavailable = voiceAvailability(voice);
     if (unavailable) throw new Error(unavailable);
     if ($("preview-state")) $("preview-state").textContent = "等待合成…";
     $("preview-audio")?.pause();
+    $("preview-audio").removeAttribute("src");
+    $("preview-audio").hidden = true;
     try {
       const result = await api("/api/tts/preview", {
         method: "POST",
-        body: { text: $("preview-text")?.value, voice_id: $("preview-voice")?.value }
+        body: { text: voice.provider === "prerecorded" ? voice.sample_text : $("preview-text").value, voice_id: voice.id }
       });
+      if ($("preview-voice").value !== voice.id) return;
       if ($("preview-audio")) {
         $("preview-audio").src = result.audio_ref;
         $("preview-audio").hidden = false;
@@ -559,6 +570,7 @@ $("preview-form")?.addEventListener("submit", event => {
         $("preview-state").textContent = safeMessage(`${recorded ? "预录已准备" : "合成完成"}${result.duration != null ? ` · ${Number(result.duration).toFixed(2)} 秒` : ""}，点击播放试听。${actualText}${result.warning ? ` ${result.warning}` : ""}`);
       }
     } catch (error) {
+      if ($("preview-voice").value !== voice.id) return;
       if ($("preview-state")) $("preview-state").textContent = `合成失败：${safeMessage(error.message)}`;
       throw error;
     }
@@ -604,7 +616,7 @@ if ($("refresh-operations")) {
 
 const changePage = initWorkspaceNavigation(model, loadWorkspacePage);
 window.addEventListener("beforeunload", event => {
-  if (commentQueue.hasUnsaved() || model.characterDirty || inferenceProviders.dirty || voiceSettings.dirty || interactiveGamesUI.rulesDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || dynamicsModule?.hasUnsaved() || messagesPanel.hasUnsaved()) {
+  if (commentQueue.hasUnsaved() || model.characterDirty || inferenceProviders.dirty || interactiveGamesUI.rulesDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || dynamicsModule?.hasUnsaved() || messagesPanel.hasUnsaved()) {
     event.preventDefault();
     event.returnValue = "";
   }

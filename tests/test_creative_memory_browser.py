@@ -39,7 +39,6 @@ def test_workstation_checkpoint_requires_fresh_directory_session_and_no_platform
     monkeypatch.setenv("OMNI_GATEWAY_URL", "https://model.invalid")
     monkeypatch.setenv("OMNI_STUDIO_TOKEN", "fixture-key")
     monkeypatch.delenv("OMNI_CORE_TOKEN_FILE", raising=False)
-    monkeypatch.setattr(runner, "private_service", lambda: ("https://voice.invalid", "fixture-key"))
 
     async def offline(self, request):
         return httpx.Response(503, request=request)
@@ -63,10 +62,10 @@ def test_workstation_checkpoint_requires_fresh_directory_session_and_no_platform
 
             async with httpx.AsyncClient(trust_env=False) as http:
                 assert (
-                    await http.post("https://voice.invalid/v1/browser-tickets", json={"path": "/v1/realtime"})
+                    await http.post("https://model.invalid/v1/browser-tickets", json={"path": "/v1/realtime"})
                 ).status_code == 503
                 with pytest.raises(Mismatch, match="拒绝对外写入"):
-                    await http.post("https://voice.invalid/v1/browser-tickets", json={"path": "/v1/other"})
+                    await http.post("https://model.invalid/v1/browser-tickets", json={"path": "/v1/other"})
                 with pytest.raises(Mismatch, match="拒绝对外写入"):
                     await http.post("https://platform.invalid/publish")
             assert (await client.get(runner.CHECKPOINT)).json()["denied"] == 2
@@ -461,7 +460,7 @@ async def test_chat_memory_migration_in_chromium(settings, monkeypatch):
                     # Seed an already confirmed voice source, then inspect it through settings.
                     # This fixture does not exercise transcription or a live call.
                     key = "browser-fixture"
-                    monkeypatch.setattr(private_call, "private_service", lambda: (origin, key))
+                    monkeypatch.setattr(private_call, "private_service", lambda settings: (origin, key))
                     signed = voice_origin.ticket_context(key, "fixture-ticket", runtime.tasks.scope())
                     quote = "以后标题用陈述句。"
                     machine = "好的，" + quote

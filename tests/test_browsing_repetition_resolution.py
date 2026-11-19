@@ -138,7 +138,7 @@ async def isolated_output_limit_provider(browsing, *, comments=False, network=Fa
         if body["max_tokens"] == 1:
             text, finish = "", "stop"
         else:
-            schema = body["response_format"]["schema"]
+            schema = body["response_format"]["json_schema"]["schema"]
             if "read" in schema.get("properties", {}):
                 calls.append("feedback")
                 text = json.dumps({"action": "wait", "reason": "unexpected repair call", "read": ""})
@@ -184,10 +184,10 @@ async def isolated_output_limit_provider(browsing, *, comments=False, network=Fa
             "usage": {"prompt_tokens": 200, "completion_tokens": 1 if body["max_tokens"] == 1 else 20},
         })
 
-    provider = APIProvider(browsing.settings.data["llm"] | {
+    provider = APIProvider(browsing.settings.data["omni"] | {
         "base_url": "https://isolated.invalid/v1", "model": "isolated-browsing",
         "context_tokens": 131072, "native_context_tokens": 131072,
-    }, adapter="llama_cpp")
+    } | {"structured_output":"json_schema", "context_source":"declared", "prompt_token_endpoint":False})
     await provider.client.aclose()
     provider.client = httpx.AsyncClient(base_url="https://isolated.invalid/v1", transport=httpx.MockTransport(respond))
     browsing.runtime.llm = provider

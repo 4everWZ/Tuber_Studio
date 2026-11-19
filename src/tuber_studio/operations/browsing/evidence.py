@@ -13,13 +13,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
+import httpx
+
 from ...api_providers import validate_image
 from ...generation_meter import BrowsingBudgetDeferred
 from ...media_cache import linked
 from ...platforms.bilibili_browsing import CREDIT
 from ...providers import public_error
 from ...video_vision import VideoPartText
-from .local_asr import LocalVideoASR
+from .clip_transcription import PublicClipTranscription
 from .models import DisabledVideoEvidence, browsing_filter_reason
 from .round_context import read_round
 
@@ -91,7 +93,7 @@ class BrowsingEvidence:
         if linked(self.directory):
             raise ValueError("浏览缓存目录不能使用链接")
         self.directory.mkdir(exist_ok=True)
-        self.asr = LocalVideoASR(runtime.settings)
+        self.asr = PublicClipTranscription(runtime.settings)
         self.store.execute("CREATE TABLE IF NOT EXISTS browsing_stream_frames (material_id TEXT PRIMARY KEY,bvid TEXT NOT NULL,"
                            "cid TEXT NOT NULL,version TEXT NOT NULL,provider TEXT NOT NULL,start REAL NOT NULL,end REAL NOT NULL) "
                            "WITHOUT ROWID")
@@ -390,8 +392,9 @@ class BrowsingEvidence:
                 if transcription:
                     parts.append(transcription)
                     missing[0]["asr"] = "sampled_audio"
-            except (ValueError, OSError, TimeoutError, wave.Error, EOFError):
+            except (ValueError, OSError, TimeoutError, wave.Error, EOFError, httpx.HTTPError) as error:
                 missing[0]["asr"] = "unavailable"
+                missing[0]["asr_error"] = public_error(error)
         sampling = config.get("frame_sampling", "baseline")
         material = {
             "metadata": metadata,
@@ -726,7 +729,7 @@ class BrowsingEvidence:
             and capabilities.get("version")
             and all(
                 type(capabilities.get(key)) is int and capabilities[key] > 0
-                for key in ("max_frames", "max_bytes", "max_pixels", "context_tokens")
+                for key in ("max_frames", "max_bytes", "max_pixels")
             )
         ):
             raise EvidenceUnavailable("visual_unavailable", capabilities.get("reason", "视觉接口未配置"))

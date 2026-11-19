@@ -14,7 +14,6 @@ from tuber_studio.generation_meter import GenerationMeter, current_meter
 from tuber_studio.models import Reply
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
-from tuber_studio.providers import LlamaCppProvider
 
 
 def parent(store, *, calls=16):
@@ -25,18 +24,16 @@ def parent(store, *, calls=16):
 
 
 def native_response(request, *, failure=None):
-    if request.url.path == "/props":
-        return httpx.Response(200, json={"default_generation_settings": {"n_ctx": 131072}})
-    if request.url.path == "/apply-template":
-        return httpx.Response(200, json={"prompt": "rendered"})
-    if request.url.path == "/tokenize":
-        return httpx.Response(200, json={"tokens": [1, 2, 3, 4]})
+    if request.url.path == "/v1/models":
+        return httpx.Response(200, json={"data": [{"id": "omni-default", "max_model_len": 131072}]})
+    if request.url.path == "/v1/chat/prompt_tokens":
+        return httpx.Response(200, json={"count": 4})
     body = json.loads(request.content)
     if failure == "http":
         return httpx.Response(503, json={"error": "temporarily unavailable"})
-    schema = body.get("response_format", {}).get("schema", {})
+    schema = body.get("response_format", {}).get("json_schema", {}).get("schema", {})
     if "spoken_text" in schema.get("properties", {}):
-        event = schema["properties"]["reply_to"]["items"]["enum"][0]
+        event = "evt"
         content = json.dumps({"spoken_text": "鱼宝，我们慢慢聊。", "reply_to": [event]})
     else:
         content = json.dumps({"ok": True}) if schema else "保留原文与来源的摘要。"
@@ -61,10 +58,10 @@ def native_response(request, *, failure=None):
 
 
 async def native(settings, handler):
-    config = settings.data["llm"] | {"max_tokens": 64, "enable_thinking": True}
-    provider = LlamaCppProvider(config)
+    config = settings.data["omni"] | {"max_tokens": 64, "enable_thinking": True, "structured_output":"json_schema"}
+    provider = APIProvider(config)
     await provider.client.aclose()
-    provider.client = httpx.AsyncClient(base_url="http://model", transport=httpx.MockTransport(handler))
+    provider.client = httpx.AsyncClient(base_url="http://model/v1/", transport=httpx.MockTransport(handler))
     return provider
 
 
@@ -165,7 +162,7 @@ async def test_remote_usage_probe_is_bounded_generation_and_actual_input_is_sett
             },
         )
 
-    provider = APIProvider(settings.data["llm"] | {"base_url": "https://api.test/v1", "context_tokens": 8192})
+    provider = APIProvider(settings.data["omni"] | {"base_url": "https://api.test/v1", "context_tokens": 8192, "context_source":"declared", "prompt_token_endpoint":False})
     await provider.client.aclose()
     provider.client = httpx.AsyncClient(
         base_url="https://api.test/v1/", transport=httpx.MockTransport(respond)
@@ -195,7 +192,7 @@ async def test_remote_probe_is_rejected_before_http_when_parent_cannot_reserve_d
         requests.append(request)
         return httpx.Response(500)
 
-    provider = APIProvider(settings.data["llm"] | {"base_url": "https://api.test/v1", "context_tokens": 8192})
+    provider = APIProvider(settings.data["omni"] | {"base_url": "https://api.test/v1", "context_tokens": 8192, "context_source":"declared", "prompt_token_endpoint":False})
     await provider.client.aclose()
     provider.client = httpx.AsyncClient(
         base_url="https://api.test/v1/", transport=httpx.MockTransport(respond)

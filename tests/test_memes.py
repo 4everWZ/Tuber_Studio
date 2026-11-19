@@ -10,13 +10,13 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from tuber_studio.api_providers import APIProvider
 from tuber_studio.app import create_app
 from tuber_studio.generation_meter import GenerationMeter
 from tuber_studio.meme_selection import select_meme
 from tuber_studio.memes import MAX_BYTES, ImageInspector, MemeCatalog
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
-from tuber_studio.providers import LlamaCppProvider
 
 SOURCE = {
     "kind": "user_upload",
@@ -348,12 +348,10 @@ async def test_selector_inherits_parent_budget_and_counts_actual_native_usage(
     calls = []
 
     def respond(request):
-        if request.url.path == "/props":
-            return httpx.Response(200, json={"default_generation_settings": {"n_ctx": 131072}})
-        if request.url.path == "/apply-template":
-            return httpx.Response(200, json={"prompt": "rendered"})
-        if request.url.path == "/tokenize":
-            return httpx.Response(200, json={"tokens": [1, 2, 3, 4]})
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": "omni-default", "max_model_len": 131072}]})
+        if request.url.path == "/v1/chat/prompt_tokens":
+            return httpx.Response(200, json={"count": 4})
         assert request.url.path == "/v1/chat/completions"
         body = json.loads(request.content)
         assert body["chat_template_kwargs"]["enable_thinking"] is True
@@ -373,9 +371,9 @@ async def test_selector_inherits_parent_budget_and_counts_actual_native_usage(
             },
         )
 
-    model = LlamaCppProvider(settings.data["llm"] | {"enable_thinking": True})
+    model = APIProvider(settings.data["omni"] | {"enable_thinking": True})
     await model.client.aclose()
-    model.client = httpx.AsyncClient(base_url="http://model", transport=httpx.MockTransport(respond))
+    model.client = httpx.AsyncClient(base_url="http://model/v1/", transport=httpx.MockTransport(respond))
     runtime = SimpleNamespace(llm=model)
     try:
         with GenerationMeter(repository, parent["id"]):

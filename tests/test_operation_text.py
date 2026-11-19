@@ -27,7 +27,11 @@ from tuber_studio.operation_text import (
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.provider_settings import proposal
 from tuber_studio.providers import build_messages
-from tuber_studio.video_vision import VideoVisionConfig
+from tuber_studio.video_vision import (
+    ApiVideoEvidenceProvider,
+    VideoVisionAdmissionRequired,
+    VideoVisionConfig,
+)
 
 LONG_TEXT = "\n".join(f"第{i}段，鱼鱼顺着这件事聊一聊自己的想法，也听听你接下来怎么说。" for i in range(80))
 
@@ -188,7 +192,7 @@ async def test_dynamic_keeps_long_body_and_uses_shared_operations_budget(service
         return value
 
     service.runtime.llm.generate_json = generate
-    service.settings.data["llm"]["operations_max_tokens"] = 16384
+    service.settings.data["omni"]["operations_max_tokens"] = 16384
     result = await service.evaluate(manual=True)
     assert result["status"] == "pending_review" and result["content"] == LONG_TEXT
     assert budgets == [16384] and not service.sent
@@ -210,12 +214,21 @@ async def test_actual_platform_length_rejection_is_not_a_local_short_limit(adapt
     assert len([r for r in requests if r.method == "POST"]) == 1
 
 
-def test_high_explicit_budgets_are_visible_without_changing_live_budget(settings):
-    live = settings.data["llm"]["max_tokens"]
-    data, *_ = proposal(settings, {"llm": {"operations_max_tokens": 32768}})
-    assert data["llm"]["operations_max_tokens"] == 32768 and data["llm"]["max_tokens"] == live
-    assert settings.data["llm"]["operations_max_tokens"] == 8192
+async def test_high_explicit_budgets_are_visible_without_changing_live_budget(settings, monkeypatch):
+    live = settings.data["omni"]["max_tokens"]
+    data, *_ = proposal(settings, {"omni": {"operations_max_tokens": 32768}})
+    assert data["omni"]["operations_max_tokens"] == 32768 and data["omni"]["max_tokens"] == live
+    assert settings.data["omni"]["operations_max_tokens"] == 8192
     assert BrowsingPolicy(decision_max_tokens=32768).decision_max_tokens == 32768
-    assert VideoVisionConfig(max_output_tokens=32768).max_output_tokens == 32768
-    with pytest.raises(ValueError):
-        VideoVisionConfig(max_output_tokens=32768, context_tokens=4096)
+    assert VideoVisionConfig(model="omni", max_output_tokens=32768).max_output_tokens == 32768
+    def registry(request):
+        assert request.method == "GET" and request.url.path.endswith("/models")
+        return httpx.Response(200, json={"data": [{"id": settings.video_config["model"], "max_model_len": 4096}]})
+
+    monkeypatch.setattr("tuber_studio.http_api.inference_transport", lambda _: httpx.MockTransport(registry))
+    vision = ApiVideoEvidenceProvider(None, settings.video_config | {"max_output_tokens": 32768})
+    try:
+        with pytest.raises(VideoVisionAdmissionRequired, match="输出预算"):
+            await vision._runtime_properties()
+    finally:
+        await vision.close()

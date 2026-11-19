@@ -6,8 +6,8 @@ import sqlite3
 import httpx
 import pytest
 
+from tuber_studio.api_providers import APIProvider
 from tuber_studio.comments import Comments
-from tuber_studio.providers import LlamaCppProvider
 
 
 class LocalOnly:
@@ -36,10 +36,10 @@ def originals(service):
 
 
 async def real_protocol(settings, runtime, *, failure=None, first_large=False):
-    settings.data["llm"].update(
-        kind="llama_cpp", context_tokens=131072, native_context_tokens=131072, auto_compact_token_limit=117964,
+    settings.data["omni"].update(
+         context_tokens=131072, native_context_tokens=131072, auto_compact_token_limit=117964, structured_output="json_schema",
     )
-    provider = LlamaCppProvider(settings.data["llm"])
+    provider = APIProvider(settings.data["omni"])
     await provider.client.aclose()
     requests = []
     entered, closed = asyncio.Event(), asyncio.Event()
@@ -49,20 +49,12 @@ async def real_protocol(settings, runtime, *, failure=None, first_large=False):
         nonlocal token_calls
         body = json.loads(request.content) if request.content else {}
         requests.append((request.url.path, body))
-        if request.url.path == "/props":
-            return httpx.Response(
-                200,
-                json={
-                    "model_alias": settings.data["llm"]["model"],
-                    "default_generation_settings": {"n_ctx": 131072},
-                },
-            )
-        if request.url.path == "/apply-template":
-            return httpx.Response(200, json={"prompt": "rendered"})
-        if request.url.path == "/tokenize":
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": "omni-default", "max_model_len": 131072}]})
+        if request.url.path == "/v1/chat/prompt_tokens":
             token_calls += 1
             return httpx.Response(
-                200, json={"tokens": list(range(118000)) if first_large and token_calls == 1 else [1, 2, 3]}
+                200, json={"count": 118000 if first_large and token_calls == 1 else 3}
             )
         entered.set()
         if failure == "cancel":
@@ -86,7 +78,7 @@ async def real_protocol(settings, runtime, *, failure=None, first_large=False):
         return httpx.Response(
             200,
             json={
-                "usage": {"prompt_tokens": 2 if failure == "count" else 3},
+                "usage": {"prompt_tokens": 0 if failure == "count" else 3},
                 "choices": [
                     {
                         "finish_reason": "length" if body["max_tokens"] == 1 else "stop",
@@ -96,7 +88,7 @@ async def real_protocol(settings, runtime, *, failure=None, first_large=False):
             },
         )
 
-    provider.client = httpx.AsyncClient(base_url="http://model", transport=httpx.MockTransport(respond))
+    provider.client = httpx.AsyncClient(base_url="http://model/v1/", transport=httpx.MockTransport(respond))
     await runtime.llm.close()
     runtime.llm = provider
     runtime.context.provider = provider

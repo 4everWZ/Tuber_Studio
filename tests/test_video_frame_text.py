@@ -6,8 +6,11 @@ from uuid import uuid4
 
 import pytest
 from test_archived_video_source import package as package
-from test_browsing_evidence import BV, PublicAdapter, config as config, evidence_factory as evidence_factory
-from test_video_vision import FRAMES, generations, provider as provider
+from test_browsing_evidence import BV, PublicAdapter
+from test_browsing_evidence import config as config
+from test_browsing_evidence import evidence_factory as evidence_factory
+from test_video_vision import FRAMES, generations
+from test_video_vision import provider as provider
 
 from tuber_studio.agent.public_video import read_public_part
 from tuber_studio.agent.task_tools import Video
@@ -83,7 +86,7 @@ async def test_precise_cache_is_scoped_to_part_text_and_reuses_another_parts_edi
 
     await inspect()
     first = json.dumps(messages(state), ensure_ascii=False)
-    assert "本地ASR" in first and "本地识别" in first and "错误BV" not in first and "旁P旧" not in first
+    assert "音频转写" in first and "本地识别" in first and "错误BV" not in first and "旁P旧" not in first
     tracks[1] = track("457", [(10, "旁P新")])
     await inspect()
     assert len(reads) == 1 and len(messages(state)) == 2
@@ -116,7 +119,7 @@ async def test_browsing_uses_available_timed_asr_when_cc_is_missing(provider, ev
     assert len(messages(state)) == 2
     for item in messages(state):
         value = json.dumps(item, ensure_ascii=False)
-        assert value.count("本地ASR") == value.count("可用音轨") == 1
+        assert value.count("音频转写") == value.count("可用音轨") == 1
         assert "章鱼有三个心脏" not in value
 
 

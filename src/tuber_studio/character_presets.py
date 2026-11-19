@@ -3,7 +3,7 @@
 import hashlib
 import json
 
-from .models import Character
+from .models import LEGACY_VOICE_IDS, Character
 
 # Full normalized configs from earlier releases and the previous clean presets,
 # excluding only the database-assigned version. No identity substring or
@@ -24,10 +24,11 @@ _LEGACY = {
     },
 }
 _REPLACEMENTS = {
-    # Both shipped seeds carry the same historical content upgrade.
+    # These released seeds carry the same historical persona content upgrade.
     "whale": {
         "3e16a9d1dfa4065b0c5545e0f29857bcedc84460594d8d127b77155364efacfe",
         "70c3f55e82c857052a32f0dcdf6b27292da07dfe5b24dd030fdf048c829b79f0",
+        "dc3b07c1580c1cdd14c6eb3d8d92c1e272f0f21218176b5fcf5526933169a1dc",
     },
 }
 # Fresh installations receive the full seed. Existing versions gain only the original upgrade fields.
@@ -41,6 +42,11 @@ def _fingerprint(config):
         # Unknown fields and malformed historical/custom configs are left alone.
         return None
     data.pop("version", None)
+    # Compare using the spelling in the original fingerprints, even after an equivalent voice rename.
+    for old, current in LEGACY_VOICE_IDS.items():
+        if data["voice_profile"] == current:
+            data["voice_profile"] = old
+            break
     canonical = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 

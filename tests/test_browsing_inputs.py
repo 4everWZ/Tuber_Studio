@@ -9,8 +9,8 @@ import pytest
 from test_browsing import browsing as browsing
 from test_browsing import finished, model_packet
 
+from tuber_studio.api_providers import APIProvider
 from tuber_studio.dynamics import dynamic_decision_messages
-from tuber_studio.inference_profiles import GROUNDED_DAFEIYU_MODEL
 from tuber_studio.operation_text import operation_character
 from tuber_studio.operations.browsing.inputs import (
     CLASSIFICATION_INSTRUCTION,
@@ -33,7 +33,7 @@ from tuber_studio.operations.browsing.models import (
     ResponseDecision,
     content_decision_schema,
 )
-from tuber_studio.providers import LlamaCppProvider, build_messages
+from tuber_studio.providers import build_messages
 
 
 def test_prepared_intent_combination_has_specific_field_feedback():
@@ -473,9 +473,7 @@ def test_content_view_does_not_replace_full_persona_for_response_generation(brow
     assert character["core"]["examples"][0]["reply"] in body_messages[0]["content"]
 
 
-@pytest.mark.parametrize("model", ["dafeiyu-qwen35-9b:1.0.0", GROUNDED_DAFEIYU_MODEL])
-def test_runtime_generation_uses_selected_card_with_either_model(browsing, model):
-    browsing.settings.data["llm"].update(kind="llama_cpp", model=model)
+def test_runtime_generation_uses_selected_card_on_gateway(browsing):
     character = browsing.runtime.character
     identity = character["core"]["identity"]
     row = {"character_id": character["id"], "character_version": character["version"], "config": {}}
@@ -529,21 +527,17 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
     monkeypatch.setattr(web_fetch, "fetch_excerpt", fetch)
 
     def handle(request):
-        if request.url.path == "/health":
-            return httpx.Response(200, json={"status": "ok"})
-        if request.url.path == "/props":
-            return httpx.Response(200, json={"default_generation_settings": {"n_ctx": 4096}})
-        if request.url.path == "/apply-template":
-            return httpx.Response(200, json={"prompt": "mock rendered template"})
-        if request.url.path == "/tokenize":
-            return httpx.Response(200, json={"tokens": list(range(32))})
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": "omni-default", "max_model_len": 4096}]})
+        if request.url.path == "/v1/chat/prompt_tokens":
+            return httpx.Response(200, json={"count": 32})
         assert request.url.path == "/v1/chat/completions"
         body = json.loads(request.content)
         bodies.append(body)
         data = model_packet(
             next(item["content"] for item in body["messages"] if item["content"].startswith("公开来源材料："))
         )
-        if body["response_format"]["schema"]["title"] == "ContentDecision":
+        if body["response_format"]["json_schema"]["schema"]["title"] == "ContentDecision":
             result = decision(["e1"]).model_dump()
         elif use_web_fetch and not fetched:
             result = {"web_fetch": "https://example.org/float"}
@@ -564,21 +558,19 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
             },
         )
 
-    native = LlamaCppProvider(
-        {"base_url": "http://offline.invalid", "context_tokens": 4096, "enable_thinking": True}
-    )
+    native = APIProvider(browsing.settings.data["omni"] | {"model": "omni-default", "structured_output": "json_schema"})
     await native.client.aclose()
     native.client = httpx.AsyncClient(
-        base_url="http://offline.invalid", transport=httpx.MockTransport(handle)
+        base_url="http://offline.invalid/v1/", transport=httpx.MockTransport(handle)
     )
     controlled = browsing.runtime.llm
     browsing.runtime.llm = native
-    browsing.settings.data["llm"]["context_tokens"] = 4096
+    browsing.settings.data["omni"]["context_tokens"] = 4096
     browsing.store.set("browsing_policy", browsing.policy() | {"decision_max_tokens": 1024})
     try:
         row = await finished(browsing, preview=True)
         assert row["status"] == "completed"
-        schema = bodies[0]["response_format"]["schema"]
+        schema = bodies[0]["response_format"]["json_schema"]["schema"]
         assert all(b["properties"]["evidence_ids"]["items"]["enum"] == ["e1"] for b in schema["oneOf"])
         packet = model_packet(bodies[0]["messages"][-1]["content"])
         assert packet["segments"][0] == {"id": "e1"}
@@ -586,28 +578,28 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
         assert "parts" not in packet
         assert bodies[0]["chat_template_kwargs"]["enable_thinking"] is True
         response_body = next(
-            body for body in bodies if body["response_format"]["schema"]["title"] == "ResponseDecision"
+            body for body in bodies if body["response_format"]["json_schema"]["schema"]["title"] == "ResponseDecision"
         )
         assert all(
             branch["properties"]["evidence_ids"]["items"] == {"$ref": "#/$defs/evidence_id"}
-            for branch in response_body["response_format"]["schema"]["oneOf"]
+            for branch in response_body["response_format"]["json_schema"]["schema"]["oneOf"]
             if "evidence_ids" in branch["properties"]
         )
-        assert response_body["response_format"]["schema"]["$defs"]["evidence_id"]["enum"] == ["ref:1"]
-        assert response_body["response_format"]["schema"]["oneOf"][-1]["required"] == ["web_fetch"]
+        assert response_body["response_format"]["json_schema"]["schema"]["$defs"]["evidence_id"]["enum"] == ["ref:1"]
+        assert response_body["response_format"]["json_schema"]["schema"]["oneOf"][-1]["required"] == ["web_fetch"]
         response_user = response_body["messages"][-1]["content"]
         assert "[ref:1|" in response_user and "11:0" not in response_user
         assert browsing.tasks()[0]["decisions"][0]["evidence_ids"] == ["11:0"]
         assert browsing.intents()[0]["evidence"] == ["11:0"]
         assert browsing.intents()[0]["status"] == "pending_review" and not browsing.adapter.sent
         assert fetched == (["https://example.org/float"] if use_web_fetch else [])
-        responses = [b for b in bodies if b["response_format"]["schema"]["title"] == "ResponseDecision"]
+        responses = [b for b in bodies if b["response_format"]["json_schema"]["schema"]["title"] == "ResponseDecision"]
         assert len(responses) == (2 if use_web_fetch else 1)
         if use_web_fetch:
             assert any("盐水密度较高。" in message["content"] for message in responses[-1]["messages"])
             assert all(
                 "web_fetch" not in branch["properties"]
-                for branch in responses[-1]["response_format"]["schema"]["oneOf"]
+                for branch in responses[-1]["response_format"]["json_schema"]["schema"]["oneOf"]
             )
     finally:
         browsing.runtime.llm = controlled

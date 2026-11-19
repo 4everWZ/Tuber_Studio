@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 from datetime import UTC, datetime, timedelta
 
@@ -25,84 +26,71 @@ class Overlay:
         self.messages.append(message)
 
 
-async def prepare_play(runtime, store):
+async def prepare_play(runtime, event=None):
     await runtime.control("start")
     overlay = Overlay()
     owner = await runtime.live.attach_overlay(overlay)
-    submitted = await runtime.submit(Event(text="鲸鱼娘你好", platform_user_id="user-1"))
+    event = event or Event(text="鲸鱼娘你好", platform_user_id="user-1")
+    submitted = await runtime.submit(event)
     await until(lambda: any(m["type"] == "play" for m in overlay.messages))
     message = next(m for m in overlay.messages if m["type"] == "play")
     ack = {"job_id": message["job_id"], "playback_token": message["playback_token"]}
     return owner, submitted, ack, overlay
 
 
-async def test_saved_speech_api_supplies_preview_and_live_then_restores_local(runtime, store):
+async def test_saved_omni_serves_reference_preview_and_live(runtime, store, monkeypatch):
     settings = runtime.settings
-    character = store.save_character(store.character() | {"voice_profile": "whale_sovits_v2"})
+    reference = settings.asset_path("assets/whale/ref.wav").read_bytes()
+    response_wav = settings.asset_path("assets/whale/sample1.wav").read_bytes()
+    calls = []
+
+    def gateway(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "omni-default"}]})
+        assert str(request.url) == "https://speech.example/v1/audio/speech"
+        assert request.headers["authorization"] == "Bearer speech-test-key"
+        body = json.loads(request.content)
+        assert body["model"] == "shared-model"
+        assert base64.b64decode(body["reference_audio"]["data"]) == reference
+        calls.append(body["input"])
+        transcript = base64.b64encode(body["input"].encode()).decode()
+        return httpx.Response(200, content=response_wav, headers={"X-Omni-Transcript": transcript})
+
+    monkeypatch.setattr("tuber_studio.http_api.inference_transport", lambda _: httpx.MockTransport(gateway))
+
+    async def reply(*_):
+        return Reply(spoken_text="直播开始啦。"), None
+
+    monkeypatch.setattr(runtime, "generate_reply", reply)
+    character = store.save_character(store.character() | {"voice_profile": "whale_reference"})
     await runtime.activate(character["id"], character["version"])
-    sample = settings.asset_path(settings.voice("whale_sample_v1")["sample_asset"]).read_bytes()
-    requests = []
+    await apply_settings(runtime, {
+        "omni": {"base_url": "https://speech.example/v1", "model": "shared-model"},
+        "credentials": {"omni": "speech-test-key"},
+    })
+    preview = await runtime.voices.preview("语音试听。", settings.voice("whale_reference"))
+    assert preview.path.is_file()
+    owner, submitted, ack, overlay = await prepare_play(runtime, Event(text="开始了吗？"))
+    assert next(msg["text"] for msg in overlay.messages if msg["type"] == "play") == "直播开始啦。"
+    assert calls == ["语音试听。", "直播开始啦。"]
+    assert await runtime.live.acknowledge(owner, ack | {"type": "started"})
+    assert await runtime.live.acknowledge(owner, ack | {"type": "ended"})
+    assert store.job(submitted["job_id"])["status"] == "completed"
 
-    def speech(request):
-        requests.append(request)
-        return httpx.Response(200, content=sample)
 
-    async def replace_transport():
-        client = runtime.voices.client
-        runtime.voices.client = httpx.AsyncClient(
-            base_url=client.base_url, headers=client.headers, transport=httpx.MockTransport(speech)
-        )
-        await client.aclose()
-
-    await apply_settings(
-        runtime,
-        {
-            "tts": {
-                "kind": "openai_compatible",
-                "base_url": "https://speech.test/v1",
-                "model": "tts-model",
-                "voice": "api-voice",
-            },
-            "credentials": {"tts": "speech-test-key"},
-        },
-    )
-    await replace_transport()
-    preview = await runtime.voices.synthesize("语音 API 试听", settings.voice("external_api"))
-    recorded = await runtime.voices.synthesize_live("使用已有预录", "whale_sample_v1")
-    assert preview.path.is_file() and recorded.warning
-    owner, _, _, overlay = await prepare_play(runtime, store)
-    playback = next(message for message in overlay.messages if message["type"] == "play")
-    assert [request.url.path for request in requests] == ["/v1/audio/speech"] * 2
-    assert requests[-1].headers["authorization"] == "Bearer speech-test-key"
-    assert json.loads(requests[-1].content) == {
-        "model": "tts-model",
-        "voice": "api-voice",
-        "input": playback["text"],
-        "response_format": "wav",
-    }
-    await runtime.control("stop")
-    await runtime.live.detach_overlay(owner)
-
-    await apply_settings(runtime, {"tts": {"kind": "gpt_sovits"}, "clear_credentials": ["tts"]})
-    await replace_transport()
+@pytest.mark.parametrize("voice_id", ["whale_sample_v1", "external_api"])
+async def test_live_without_selected_reference_preserves_voice_and_writes_no_receipt(runtime, store, voice_id):
+    character = store.save_character(store.character() | {"voice_profile": voice_id})
+    await runtime.activate(character["id"], character["version"])
     await runtime.control("start")
     overlay = Overlay()
     await runtime.live.attach_overlay(overlay)
-    submitted = await runtime.submit(Event(text="欢迎回到本地语音", platform_user_id="user-2"))
-    await until(
-        lambda: (
-            any(message["type"] == "play" for message in overlay.messages)
-            or store.job(submitted["job_id"])["status"] == "failed"
-        )
-    )
-    assert any(message["type"] == "play" for message in overlay.messages), store.job(submitted["job_id"])
-    assert requests[-1].url.path == "/tts/tts"
-    assert "authorization" not in requests[-1].headers
-    assert (
-        json.loads(requests[-1].content)["ref_audio_path"]
-        == settings.voice("whale_sovits_v2")["server_reference_path"]
-    )
-    assert runtime.character["version"] == character["version"]
+    job = await runtime.submit(Event(text="今天准备了什么？"))
+    await until(lambda: store.job(job["job_id"])["status"] == "failed")
+    assert "参考录音" in store.job(job["job_id"])["error"]
+    assert runtime.character["voice_profile"] == voice_id
+    assert not any(message["type"] == "play" for message in overlay.messages)
+    assert not store.all("SELECT * FROM conversations")
 
 
 async def test_live_control_owns_playback_not_model_residency(runtime, store, monkeypatch):
@@ -110,7 +98,14 @@ async def test_live_control_owns_playback_not_model_residency(runtime, store, mo
         pytest.fail("live control must not send model management requests")
 
     monkeypatch.setattr(httpx.AsyncClient, "send", reject)
-    owner, submitted, ack, _ = await prepare_play(runtime, store)
+    owner, submitted, ack, overlay = await prepare_play(
+        runtime, Event(type="sfx", text="播放参考录音", metadata={"asset_id": "ref"})
+    )
+    playback = next(message for message in overlay.messages if message["type"] == "play")
+    voice = runtime.settings.voice("whale_reference")
+    assert playback["text"] == voice["reference_text"]
+    served = runtime.settings.audio / playback["audio_ref"].split("/")[-1]
+    assert served.read_bytes() == runtime.settings.voice_reference_path(voice).read_bytes()
     await runtime.control("stop")
     assert store.job(submitted["job_id"])["status"] == "cancelled"
     assert not await runtime.live.acknowledge(owner, ack | {"type": "ended"})
@@ -118,7 +113,7 @@ async def test_live_control_owns_playback_not_model_residency(runtime, store, mo
 
 
 async def test_only_owner_started_then_ended_counts_as_delivered(runtime, store):
-    owner, submitted, ack, overlay = await prepare_play(runtime, store)
+    owner, submitted, ack, overlay = await prepare_play(runtime)
     assert store.job(submitted["job_id"])["status"] == "ready_to_play"
     assert not await runtime.live.acknowledge(owner, ack | {"type": "ended"})
     assert not await runtime.live.acknowledge("other-owner", ack | {"type": "started"})
@@ -127,8 +122,10 @@ async def test_only_owner_started_then_ended_counts_as_delivered(runtime, store)
     assert await runtime.live.acknowledge(owner, ack | {"type": "started"})
     assert await runtime.live.acknowledge(owner, ack | {"type": "ended"})
     assert not await runtime.live.acknowledge(owner, ack | {"type": "ended"})
-    assert len(store.all("SELECT * FROM conversations")) == 1
-    assert store.job(submitted["job_id"])["text"] == "你好呀，我是大肥鱼。今天也想和你说说话。"
+    spoken = next(message["text"] for message in overlay.messages if message["type"] == "play")
+    assert spoken != runtime.settings.voice("whale_sample_v1")["sample_text"]
+    assert store.job(submitted["job_id"])["text"] == spoken
+    assert [row["reply_text"] for row in store.all("SELECT * FROM conversations")] == [spoken]
     standby = Overlay()
     assert await runtime.live.attach_overlay(standby) is None
     assert standby.messages[0]["type"] == "standby"
@@ -136,7 +133,7 @@ async def test_only_owner_started_then_ended_counts_as_delivered(runtime, store)
 
 @pytest.mark.parametrize("action", ["mute", "skip", "stop"])
 async def test_operator_interrupt_rejects_late_audio_completion(runtime, store, action):
-    owner, submitted, ack, overlay = await prepare_play(runtime, store)
+    owner, submitted, ack, overlay = await prepare_play(runtime)
     await runtime.live.acknowledge(owner, ack | {"type": "started"})
     await runtime.control(action)
     assert store.job(submitted["job_id"])["status"] == "cancelled"
@@ -146,7 +143,7 @@ async def test_operator_interrupt_rejects_late_audio_completion(runtime, store, 
 
 
 async def test_overlay_disconnect_does_not_replay_or_remember(runtime, store):
-    owner, submitted, ack, overlay = await prepare_play(runtime, store)
+    owner, submitted, ack, overlay = await prepare_play(runtime)
     await runtime.live.detach_overlay(owner)
     assert store.job(submitted["job_id"])["status"] == "cancelled"
     new_overlay = Overlay()
@@ -183,7 +180,7 @@ async def test_queue_dedup_expiry_and_identity_are_persistent(runtime, store):
 
 
 async def test_character_clone_versions_and_switch_cancel_old_audio(runtime, store):
-    owner, submitted, ack, overlay = await prepare_play(runtime, store)
+    owner, submitted, ack, overlay = await prepare_play(runtime)
     original = store.character()
     clone = original | {"id": "my_oc", "name": "新OC", "core": {"identity": "原创深海旅人"}}
     store.save_character(clone)

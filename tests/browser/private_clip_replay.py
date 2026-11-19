@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import json
 import os
-from pathlib import Path
 import secrets
 import socket
 import sqlite3
@@ -12,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 from uuid import uuid4
 
 import uvicorn
@@ -23,9 +23,6 @@ from tuber_studio.config import ROOT, Settings
 
 def replay(source, reference, folder):
     settings = Settings(runtime=folder)
-    settings.data["llm"]["kind"] = "demo"
-    settings.data["inference_broker"]["enabled"] = False
-    settings.data["tts"]["kind"] = "prerecorded"
     app = create_app(settings)
     runtime, store = app.state.runtime, app.state.store
     coverage = json.loads((reference / "coverage.json").read_text(encoding="utf-8"))

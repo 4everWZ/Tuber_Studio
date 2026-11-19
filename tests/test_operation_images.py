@@ -15,8 +15,7 @@ from tuber_studio.memes import MemeCatalog
 
 
 async def test_chooser_offers_only_available_images_and_binds_gallery_digest(monkeypatch):
-    settings = SimpleNamespace(data={"responses": {"base_url": "http://gateway/llm/v1"}})
-    monkeypatch.setattr(ops, "gateway_base", lambda _: "http://gateway/v1")
+    settings = SimpleNamespace()
     entry = {"asset_id": "gallery-1", "title": "海边", "emotions": ["idle"], "sha256": "c" * 64}
     material = json.dumps({"variants": ["q"], "gallery": [entry], "draft": "想去看海。"})
     selection = {"choice": "gallery-1", "prompt": ""}

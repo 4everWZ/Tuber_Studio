@@ -67,12 +67,19 @@ async def test_task_restarts_at_saved_tool_checkpoint(tmp_path):
         store.close()
 
 
+def use_test_decision_driver(tasks):
+    """Exercise domain tools and local queue timing with the test's injected decision callback."""
+    tasks.requires_responses = lambda: False
+    tasks.responses_client = lambda: None
+
+
 @pytest.mark.parametrize(("phase", "finish"), [
     ("plan", "generated"), ("decision", "generated"), ("plan", "timeout"), ("decision", "cancelled"),
 ])
 async def test_agent_model_deadline_starts_after_background_admission(settings, monkeypatch, phase, finish):
     app = create_app(settings, adapter=ControlledPlatform())
     runtime, tasks = app.state.runtime, app.state.runtime.tasks
+    use_test_decision_driver(tasks)
     queued, generating, respond = asyncio.Event(), asyncio.Event(), asyncio.Event()
     acquire = runtime.operation_turns.acquire
     loop = asyncio.get_running_loop()
@@ -139,6 +146,7 @@ async def test_chat_delegates_across_existing_services_and_cancels_video(setting
     platform = ControlledPlatform()
     app = create_app(settings, adapter=platform)
     tasks = app.state.runtime.tasks
+    use_test_decision_driver(tasks)
     calls = ["operation_status", "live_status", "game_status", "inspect_video"]
     seen = []
 
@@ -372,6 +380,7 @@ async def test_approved_game_step_checks_control_and_replays_receipt(settings, m
                                 arguments={"game": "stardew_valley", "action": "water_crops"})
         return TaskDecision(action="finish", message="游戏已返回实际结果。")
 
+    use_test_decision_driver(tasks)
     monkeypatch.setattr(tasks, "decide", decide)
     monkeypatch.setattr(tasks, "make_plan", None)
     async with app.router.lifespan_context(app):
@@ -432,6 +441,7 @@ def test_agent_live_handoff_requires_approval_and_actual_playback(settings, monk
     platform = ControlledPlatform()
     app = create_app(settings, adapter=platform)
     runtime = app.state.runtime
+    use_test_decision_driver(runtime.tasks)
     spoken = "这段话现在才真的播完。"
 
     async def decide(goal, steps, tools):

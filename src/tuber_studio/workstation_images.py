@@ -1,8 +1,7 @@
 """Application-authenticated workstation image jobs with locally approved OC inputs."""
-import base64
 import asyncio
+import base64
 import io
-import os
 import re
 from typing import Literal
 
@@ -12,9 +11,6 @@ from pydantic import Field
 from .http_api import api_client
 from .models import StrictModel
 
-MODEL = "black-forest-labs/FLUX.2-klein-4B"
-REVISION = "e7b7dc27f91deacad38e78976d1f2b499d76a294"
-
 
 class ImageBrief(StrictModel):
     variant: Literal["q", "mature"]
@@ -22,19 +18,14 @@ class ImageBrief(StrictModel):
 
 
 def gateway_base(settings):
-    root = os.environ.get("OMNI_GATEWAY_URL", "").rstrip("/")
-    llm = settings.data["llm"]
-    if not root or llm["kind"] != "openai_compatible" or llm["base_url"].rstrip("/") != root + "/v1":
-        raise ValueError("工作站图片网关未配置或普通凭据作用域不匹配")
-    return root + "/v1"
+    if not settings.provider_key("omni"):
+        raise ValueError("工作站图片网关缺少普通应用凭据")
+    return settings.data["omni"]["base_url"]
 
 
 def gateway(settings):
     base = gateway_base(settings)
-    key = settings.provider_key("llm")
-    if not key:
-        raise ValueError("工作站图片网关缺少普通应用凭据")
-    return api_client({"base_url": base, "timeout_seconds": 45}, key)
+    return api_client({"base_url": base, "timeout_seconds": 45}, settings.provider_key("omni"))
 
 
 def image_payload(brief, data):

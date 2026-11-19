@@ -46,7 +46,7 @@ class FixtureProvider:
         self.closed = True
 
 
-async def prepared_case(settings, store):
+async def prepared_case(settings, store, voice_id="whale_reference"):
     provider = FixtureProvider()
     media = LiveMedia(settings, store, singing_provider=provider)
     source = media.directory / "fixture.wav"
@@ -64,19 +64,22 @@ async def prepared_case(settings, store):
             "license_note": "自有测试波形",
         }
     )
-    character = store.character()
+    character = store.character() | {"voice_profile": voice_id}
     snapshot = media.request(Event(type="song", text="接口测试", metadata={"mode": "sing"}), character)
     return media, provider, snapshot, character
 
 
-async def test_mounted_provider_receives_validated_inputs_and_reuses_own_cache(settings, store):
-    media, provider, snapshot, character = await prepared_case(settings, store)
+@pytest.mark.parametrize("voice_id", ["whale_reference", "whale_sample_v1", "external_api"])
+async def test_mounted_provider_receives_validated_inputs_and_reuses_own_cache(settings, store, voice_id):
+    media, provider, snapshot, character = await prepared_case(settings, store, voice_id)
     audio, activity = await media.singing.prepare(snapshot, character)
     cached, cached_activity = await media.singing.prepare(snapshot, character)
     assert audio.path == cached.path and activity == cached_activity
     assert provider.calls == 1
     assert provider.request.voice["id"] == character["voice_profile"]
-    assert provider.request.audio.is_file() and provider.request.reference is None
+    assert provider.request.audio.is_file()
+    expected = settings.asset_path("assets/whale/ref.wav") if voice_id == "whale_reference" else None
+    assert provider.request.reference == expected
     assert audio.path.parent == media.directory
     provider.version = "v2"
     with pytest.raises(ValueError, match="身份已改变"):

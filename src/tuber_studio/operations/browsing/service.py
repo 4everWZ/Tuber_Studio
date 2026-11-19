@@ -142,10 +142,10 @@ class BrowsingService:
         ))
 
     def model_signature(self):
-        llm, character = self.settings.data["llm"], self.runtime.character
+        llm, character = self.settings.data["omni"], self.runtime.character
         return dump(
             [
-                llm.get("kind"),
+                "omni",
                 llm.get("model"),
                 llm.get("base_url"),
                 llm.get("enable_thinking"),
@@ -258,7 +258,7 @@ class BrowsingService:
 
     async def check_browsing_model(self):
         health = await self.runtime.llm.health()
-        if self.settings.data["llm"]["kind"] == "demo" or health.get("ok") is False:
+        if health.get("ok") is False:
             raise ValueError("请连接实际运营模型；离线演示不支持自主决策")
 
     async def probe_discovery(self, config):

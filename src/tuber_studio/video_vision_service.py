@@ -2,15 +2,12 @@
 
 import json
 
-from .operations.browsing.models import DisabledVideoEvidence
 from .video_vision import ApiVideoEvidenceProvider
 
 
 def configured_video_provider(runtime):
-    config = runtime.settings.data.get("video_vision", {})
-    if not config.get("enabled"):
-        return DisabledVideoEvidence()
-    return ApiVideoEvidenceProvider(runtime, config, api_key=runtime.settings.video_vision_key())
+    return ApiVideoEvidenceProvider(runtime, runtime.settings.video_config,
+                                    api_key=runtime.settings.provider_key("omni"))
 
 
 async def restore_admission(runtime):
@@ -27,9 +24,7 @@ async def restore_admission(runtime):
     if proof.get("passed") is not True or proof.get("configuration") != configuration:
         return
     current = await provider._runtime_properties()
-    if not isinstance(current, dict) or (
-        provider.config.adapter != "omni" and current.get("context_tokens", 0) < provider.config.context_tokens
-    ):
+    if not isinstance(current, dict):
         return
     if current != value.get("probe", {}).get("properties"):
         return

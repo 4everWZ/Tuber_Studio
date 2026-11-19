@@ -7,13 +7,22 @@ from pathlib import Path
 from uuid import uuid4
 
 from .character_presets import upgrade_bundled_characters
-from .models import Character
+from .models import Character, canonical_voice_id
 
 DELETED_CHARACTER = "角色工作室删除"
 
 
 def dump(value):
     return json.dumps(value, ensure_ascii=False)
+
+
+def _read_character(config):
+    # A startup UPDATE would fire the active-card edit trigger and revoke pending tasks.
+    # Translate on read. An actual save persists the canonical ID via Character validation.
+    card = json.loads(config)
+    if "voice_profile" in card:
+        card["voice_profile"] = canonical_voice_id(card["voice_profile"])
+    return card
 
 
 def editable_character(config):
@@ -166,7 +175,7 @@ class Store:
         )
         if row is None:
             raise ValueError("角色版本不存在")
-        return json.loads(row["config"])
+        return _read_character(row["config"])
 
     def characters(self):
         return [
@@ -228,7 +237,7 @@ class Store:
 
     def versions(self, character_id, *, include_archived=False):
         return [
-            json.loads(r["config"])
+            _read_character(r["config"])
             for r in self.all(
                 "SELECT v.config FROM character_versions v WHERE v.character_id=? AND "
                 "(? OR NOT EXISTS (SELECT 1 FROM character_archives a "

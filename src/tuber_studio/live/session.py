@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from ..daily_memory import MemoryChanged
 from ..models import Event, Reply
+from ..omni_speech import sentences
 from ..performance import performance
 from ..providers import public_error
 from ..store import character_card, dump
@@ -784,27 +785,18 @@ class LiveSession:
                         llm_ms=self.timings["llm_ms"],
                         answer_check=answer_check,
                     )
-                    parts = self.runtime.voices.live_parts(reply.spoken_text, character["voice_profile"])
+                    parts = sentences(reply.spoken_text)
                     if len(parts) == 1:
                         started = time.perf_counter()
                         audio = await self.runtime.voices.synthesize_live(
                             reply.spoken_text, character["voice_profile"]
                         )
                         self.timings["tts_ms"] = round((time.perf_counter() - started) * 1000)
-                        self.store.update_job(job_id, tts_ms=self.timings["tts_ms"], error=audio.warning)
+                        self.store.update_job(job_id, tts_ms=self.timings["tts_ms"])
                     emotion, animation = reply.emotion, reply.animation_id
             if len(parts) > 1:
                 await self._play_live_parts(job_id, parts, character, reply, answer_check)
                 return
-            # Preserve model suggestion separately in error when prerecorded text differs.
-            suggestion = self.store.job(job_id)["text"]
-            warning = audio.warning
-            check = self.store.job(job_id).get("answer_check")
-            if check:
-                check = json.loads(check) if isinstance(check, str) else check
-                warning = "; ".join(filter(None, [warning, check.get("warning")])) or None
-            if warning and suggestion != audio.text:
-                warning += f"；模型候选：{suggestion}"
             self.store.update_job(
                 job_id,
                 status="ready_to_play",
@@ -812,7 +804,7 @@ class LiveSession:
                 emotion=emotion,
                 animation_id=animation,
                 audio_ref=audio.ref,
-                error=warning,
+                error=(answer_check or {}).get("warning"),
             )
             await self._play(job_id, audio, character, emotion, animation, memory_audit=answer_check)
         except MemoryChanged:
@@ -854,15 +846,12 @@ class LiveSession:
                 audio, elapsed = await (pending if pending is not None else synthesize(part))
                 tts_ms += elapsed
                 self.timings["tts_ms"] = tts_ms
-                warning = (
-                    "; ".join(filter(None, (audio.warning, (answer_check or {}).get("warning")))) or None
-                )
                 self.store.update_job(
                     job_id,
                     status="ready_to_play",
                     tts_ms=tts_ms,
                     audio_ref=audio.ref,
-                    error=warning,
+                    error=(answer_check or {}).get("warning"),
                 )
                 final_segment = index == len(parts) - 1
                 pending = None if final_segment else asyncio.create_task(synthesize(parts[index + 1]))

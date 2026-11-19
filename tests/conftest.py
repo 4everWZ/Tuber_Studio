@@ -1,7 +1,10 @@
 import asyncio
+import base64
 import json
 
+import httpx
 import pytest
+from offline_chat import OfflineChat
 
 from tuber_studio.config import ROOT, Settings
 from tuber_studio.runtime import Runtime
@@ -31,21 +34,15 @@ def wait_for_worker_start():
 
 
 @pytest.fixture
-def settings(tmp_path):
+def settings(tmp_path, monkeypatch):
     config = Settings(runtime=tmp_path)
-    legacy = json.loads((ROOT / "tests/fixtures/legacy-node-profile.json").read_text(encoding="utf-8"))
-    config.data.update(legacy)
-    config.data.pop("responses", None)
-    config.data.pop("video_vision", None)
-    config.inference_token = config._secret("inference-token")
-    # Controlled providers in this fixture use the 128K profile and its compaction thresholds.
-    config.data["llm"].update(
-        kind="demo", model="MiniCPM5-2B", context_tokens=131072, native_context_tokens=131072,
-        auto_compact_token_limit=117964,
+    config.data["omni"].update(
+        context_tokens=131072, native_context_tokens=131072, auto_compact_token_limit=117964,
     )
-    config.data["inference_broker"].update(enabled=False, model="MiniCPM5-2B", context_tokens=131072)
-    config.data["tts"]["kind"] = "prerecorded"
-    # These legacy worker tests explicitly exercise the retained live subsystem.
+    from tuber_studio import runtime as runtime_module
+
+    create_chat = runtime_module.create_llm
+    monkeypatch.setattr(runtime_module, "create_llm", lambda current: OfflineChat() if current is config else create_chat(current))
     config.data["features"]["live_enabled"] = True
     config.data["queue_limit"] = 3
     config.data["playback_wait_seconds"] = 0.15
@@ -55,8 +52,6 @@ def settings(tmp_path):
 @pytest.fixture
 def store(settings):
     seeds = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
-    for seed in seeds:
-        seed["voice_profile"] = "whale_sample_v1"
     value = Store(settings.runtime / "test.sqlite3", seeds)
     yield value
     value.close()
@@ -65,6 +60,21 @@ def store(settings):
 @pytest.fixture
 async def runtime(settings, store):
     value = Runtime(settings, store)
+    sample = (ROOT / "assets/whale/ref.wav").read_bytes()
+
+    def speech(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": settings.data["omni"]["model"]}]})
+        assert request.url.path.endswith("/audio/speech")
+        words = json.loads(request.content)["input"]
+        return httpx.Response(200, content=sample, headers={
+            "X-Omni-Transcript": base64.b64encode(words.encode()).decode(),
+        })
+
+    await value.voices.client.aclose()
+    value.voices.client = httpx.AsyncClient(
+        base_url=settings.data["omni"]["base_url"] + "/", transport=httpx.MockTransport(speech),
+    )
     await value.open()
     yield value
     await value.close()

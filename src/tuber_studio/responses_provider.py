@@ -98,9 +98,7 @@ class ResponsesClient:
 
     @classmethod
     def from_settings(cls, settings):
-        if not settings.data.get("responses"):
-            raise ValueError("后台 Responses 服务未配置")
-        return cls(settings.data["responses"], settings.provider_key("responses"))
+        return cls(settings.responses_config, settings.provider_key("omni"))
 
     async def __aenter__(self):
         return self

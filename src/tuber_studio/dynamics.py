@@ -262,21 +262,11 @@ class Dynamics:
         return self.store.character()
 
     def _summary_model(self):
-        fields = (
-            "kind",
-            "base_url",
-            "model",
-            "context_tokens",
-            "native_context_tokens",
-            "tokenizer",
-            "tokenizer_path",
-            "chat_template",
-            "enable_thinking",
-        )
+        fields = ("base_url", "model", "enable_thinking", "structured_output", "context_source", "prompt_token_endpoint")
         active = getattr(self.runtime.llm, "config", {})
         active = active if isinstance(active, dict) else {}
         identity = {
-            "settings": {k: self.settings.data["llm"].get(k) for k in fields},
+            "settings": {k: self.settings.data["omni"].get(k) for k in fields},
             "provider": {k: active.get(k) for k in fields},
             "implementation": type(self.runtime.llm).__module__ + "." + type(self.runtime.llm).__qualname__,
         }
@@ -826,7 +816,7 @@ class Dynamics:
             ),
             identity,
         )
-        maximum = self.settings.data["llm"].get("operations_max_tokens", 8192)
+        maximum = self.settings.data["omni"].get("operations_max_tokens", 8192)
 
         async def invoke(packet):
             return await budgeted_json(
@@ -1459,7 +1449,7 @@ class Dynamics:
         if selected and memory_dependencies:
             selected[0] = selected[0] | {"memory_dependencies": memory_dependencies}
             memory_dependencies = []
-        model = str(self.settings.data["llm"].get("model", self.settings.data["llm"]["kind"]))
+        model = str(self.settings.data["omni"]["model"])
         next_at = now + data["next_evaluation_seconds"]
         with self.store.db:
             decision_id = self.store.db.execute(
@@ -1796,7 +1786,7 @@ class Dynamics:
                     payload = json.loads(messages[1]["content"])
                     payload["public_sources"] = public_sources
                     messages[1]["content"] = _json(payload)
-                    maximum = self.settings.data["llm"].get("operations_max_tokens", 8192)
+                    maximum = self.settings.data["omni"].get("operations_max_tokens", 8192)
                     binding = {
                         "task": "generation",
                         "character": {"id": char["id"], "version": char["version"]},

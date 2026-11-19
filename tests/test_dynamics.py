@@ -1123,17 +1123,16 @@ async def test_summary_reused_without_append_new_source_updates_and_budget_inval
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("kind", "openai_compatible"),
         ("base_url", "https://api.example.test/v1"),
         ("model", "different-model"),
-        ("tokenizer_path", "different-tokenizer"),
+        ("enable_thinking", False),
     ],
 )
-async def test_provider_or_tokenizer_configuration_invalidates_token_measurement(service, field, value):
+async def test_omni_configuration_invalidates_token_measurement(service, field, value):
     public_memory(service)
     await service.evaluate(manual=True)
     assert service.summary_status()["valid"]
-    service.settings.data["llm"][field] = value
+    service.settings.data["omni"][field] = value
     status = service.summary_status()
     assert status["valid"] is False and status["entries"] == [] and status["token_count"] is None
 

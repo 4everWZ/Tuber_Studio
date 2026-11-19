@@ -11,17 +11,16 @@ from typing import Literal
 import httpx
 from pydantic import Field, create_model
 
-from ..daily_memory import contains_memory_credential
 from ..cooperation import RoutineReview, corroborates, locate_rule, with_scope_context
-from ..memory_sources import install_chat_cleanup, memory_transaction
+from ..daily_memory import contains_memory_credential
 from ..generation_meter import budgeted_call
+from ..memory_sources import install_chat_cleanup, memory_transaction
 from ..models import StrictModel
-from ..operation_identity import without_model_identity
 from ..operation_continuations import content_hash
+from ..operation_identity import without_model_identity
 from ..operations.browsing.comment_timeline import comment_thread, resource_key
-from ..providers import DemoProvider, public_error
+from ..providers import public_error
 from ..store import dump
-
 
 # Only the isolated replay installs a sink. Private turns never enter general application logs.
 admission_receipt = ContextVar("private_memory_admission_receipt", default=None)
@@ -232,7 +231,7 @@ class MemoryOrganizer:
                 )
                 if turn and not is_chat_turn(json.loads(turn["result"])):
                     memory.resolve_legacy_private(scope, row, None)
-        if (isinstance(runtime.llm, DemoProvider) or runtime.operations_waiting()
+        if (not getattr(runtime.llm, "supports_memory_organization", True) or runtime.operations_waiting()
                 or runtime.generation_lock.locked() or any(runtime.operation_turns.queues.values())):
             self.status = "waiting"
             return 0

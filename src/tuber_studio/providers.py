@@ -5,31 +5,23 @@ import hashlib
 import json
 import re
 import wave
-from contextvars import ContextVar
 from dataclasses import dataclass
-from functools import wraps
 from pathlib import Path
-from time import monotonic
 from typing import Protocol
 from uuid import uuid4
 
 import httpx
 
 from . import omni_speech
-from .compaction import ContextWindowExceeded, IncompleteCompaction, approx_token_count
 from .front_persona import front_identity
-from .generation_meter import reserve_generation, settle_generation
-from .http_api import api_client, check_response_status, inference_transport, models_health, response_bytes
-from .llama_sampling import live_thinking_budget, llama_cpp_sampling, supports_live_thinking_budget
+from .http_api import api_client, check_response_status, models_health
 from .models import OperationReply, Reply
 from .operation_identity import (
     BILIBILI_OWNER_INSTRUCTION,
     bilibili_owner_context,
     private_participant_instructions,
-    provider_identity_messages,
 )
 from .operation_text import operation_character
-from .operation_turns import mark_model_request, prepare_model_request
 from .sse import event_data
 
 SYSTEM_RULES = (
@@ -42,24 +34,6 @@ REPLY_SCENES = {
     "comment_draft": "公开评论",
     "direct_message": "平台私信",
 }
-
-_turn_token_counts = ContextVar("turn_token_counts", default=None)
-_ASSISTANT_CAPACITY_TTL = 90
-
-
-def reuse_turn_token_counts(function):
-    """Share exact local tokenizer results only within one reply or evidence pass."""
-
-    @wraps(function)
-    async def run(*args, **kwargs):
-        scope = _turn_token_counts.set({})
-        try:
-            return await function(*args, **kwargs)
-        finally:
-            _turn_token_counts.reset(scope)
-
-    return run
-
 
 def single_system_messages(messages):
     """Keep all system instructions, in order, ahead of unchanged dialogue."""
@@ -154,423 +128,6 @@ class LLMProvider(Protocol):
     async def generate_json(self, messages: list[dict], schema: dict, *, max_tokens: int) -> dict: ...
     async def health(self) -> dict: ...
     async def close(self) -> None: ...
-
-
-class LlamaCppProvider:
-    generation_metered = True
-    supports_operation_web_fetch = True
-
-    def __init__(self, config, inference_token=None, *, broker_model_routing=False):
-        self.config = config
-        self.uses_broker = bool(inference_token)
-        self.broker_model_routing = broker_model_routing
-        self.client = httpx.AsyncClient(
-            base_url=config["base_url"].rstrip("/"),
-            timeout=httpx.Timeout(config.get("timeout_seconds", 90), connect=10),
-            trust_env=False,
-            headers={"X-Tuber-Inference-Key": inference_token} if inference_token else None,
-            transport=inference_transport(config["base_url"]),
-        )
-        self.last_tokens = None
-        self.last_usage = {}
-        self.last_finish_reason = None
-        self.last_http_status = None
-        self.server_tokens = None
-        self.profile_error = None
-        self.is_sleeping = None
-        self.live_thinking_budget_supported = None
-        self._assistant_capacity = None
-
-    def sampling(self, *, summary=False):
-        return llama_cpp_sampling(self.config, summary=summary, local_defaults=True)
-
-    def _begin_generation_observation(self):
-        self.last_tokens = None
-        self.last_usage = {}
-        self.last_finish_reason = None
-        self.last_http_status = None
-        self.last_content = None
-
-    def _observe_generation(self, data):
-        # Diagnostics are independent of acceptance and reservation settlement.
-        # Retain usage even when length/invalid output is correctly rejected.
-        if not isinstance(data, dict):
-            return
-        usage = data.get("usage")
-        self.last_usage = usage if isinstance(usage, dict) else {}
-        choices = data.get("choices")
-        if isinstance(choices, list) and len(choices) == 1 and isinstance(choices[0], dict):
-            finish = choices[0].get("finish_reason")
-            self.last_finish_reason = finish if isinstance(finish, str) else None
-            message = choices[0].get("message")
-            content = message.get("content") if isinstance(message, dict) else None
-            self.last_content = content if isinstance(content, str) else None
-            self.last_content_characters = len(content) if isinstance(content, str) else None
-
-    async def close(self):
-        await self.client.aclose()
-
-    async def health(self):
-        timeout = httpx.Timeout(15, connect=5) if self.uses_broker else 5
-        response = await self.client.get("/health", timeout=timeout)
-        response.raise_for_status()
-        await self.ensure_capacity()
-        return {"available": True, "detail": response.json(), "server_context_tokens": self.server_tokens}
-
-    async def ensure_capacity(self, *, require_ready=True):
-        try:
-            window = self.config["context_tokens"]
-            native = self.config.get("native_context_tokens", 131072)
-            if type(window) is not int or window < 4096:
-                raise ValueError("上下文至少4096 tokens")
-            if window > native:
-                raise ValueError("配置超出该模型原生上下文；请先验证并配置支持更长窗口的模型")
-            timeout = httpx.Timeout(20, connect=5) if self.uses_broker else 5
-            response = await self.client.get("/props", timeout=timeout)
-            if response.status_code == 503 and self.uses_broker and not require_ready:
-                self._assistant_capacity = None
-                return False
-            response.raise_for_status()
-            properties = response.json()
-            self.is_sleeping = properties.get("is_sleeping", False)
-            self.server_tokens = properties["default_generation_settings"]["n_ctx"]
-            aliases = properties.get("model_alias")
-            aliases = [aliases] if isinstance(aliases, str) else aliases
-            if aliases and self.config.get("model") not in aliases:
-                raise ValueError("实际模型服务与配置的model别名不一致；拒绝错误标记模型生成结果")
-            if self.server_tokens < window:
-                raise ValueError(f"模型服务实际上下文{self.server_tokens}小于配置{window}")
-            self.live_thinking_budget_supported = supports_live_thinking_budget(properties)
-            self.profile_error = None
-            self._assistant_capacity = (self._capacity_key(), monotonic() + _ASSISTANT_CAPACITY_TTL)
-            return True
-        except Exception as error:
-            self._assistant_capacity = None
-            self.live_thinking_budget_supported = None
-            self.profile_error = public_error(error)
-            raise
-
-    def _capacity_key(self):
-        return tuple(self.config.get(name) for name in ("base_url", "model", "context_tokens", "native_context_tokens"))
-
-    def _assistant_capacity_current(self):
-        record = self._assistant_capacity
-        return bool(record and self._capacity_key() == record[0] and monotonic() < record[1])
-
-    async def prepare_assistant_capacity(self):
-        if not self._assistant_capacity_current():
-            await self.ensure_capacity(require_ready=False)
-
-    async def _token_count(self, messages, *, enable_thinking=None):
-        # Count the actual chat template, including role delimiters, rather than estimating Chinese characters.
-        model = {"model": self.config["model"]} if self.broker_model_routing else {}
-        response = await self.client.post(
-            "/apply-template",
-            json={
-                **model,
-                "messages": single_system_messages(provider_identity_messages(self, messages)),
-                "add_generation_prompt": True,
-                "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)
-                                         if enable_thinking is None else enable_thinking},
-            },
-        )
-        response.raise_for_status()
-        prompt = response.json()["prompt"]
-        response = await self.client.post("/tokenize", json={**model, "content": prompt, "add_special": True})
-        response.raise_for_status()
-        return len(response.json()["tokens"])
-
-    async def count_tokens(self, messages):
-        counts = _turn_token_counts.get()
-        if counts is None:
-            return await self._token_count(messages)
-        messages = provider_identity_messages(self, messages)
-        wire = json.dumps(single_system_messages(messages), sort_keys=True, ensure_ascii=False)
-        key = (
-            self,
-            self.config.get("model"),
-            self.config.get("enable_thinking", False),
-            hashlib.sha256(wire.encode()).digest(),
-        )
-        if key not in counts:
-            counts[key] = await self._token_count(messages)
-        return counts[key]
-
-    async def prefill(self, messages):
-        """Condition the real model on restored source text; discard its one token."""
-        self._begin_generation_observation()
-        await self.ensure_capacity()
-        messages = single_system_messages(provider_identity_messages(self, messages))
-        tokens = await self.count_tokens(messages)
-        self.last_tokens = tokens
-        if tokens + 1 > self.config["context_tokens"] * 95 // 100:
-            raise ContextWindowExceeded("重建输入超出真实token预算")
-        await prepare_model_request()
-        reservation = reserve_generation(tokens, 1)
-        mark_model_request()
-        response = await self.client.post(
-            "/v1/chat/completions",
-            json={
-                "model": self.config.get("model", "local"),
-                "messages": messages,
-                "max_tokens": 1,
-                "temperature": 0,
-                "cache_prompt": True,
-                "stream": False,
-                "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
-            },
-            timeout=httpx.Timeout(self.config.get("prefill_timeout_seconds", 600), connect=5),
-        )
-        self.last_http_status = response.status_code
-        response.raise_for_status()
-        data = response.json()
-        self._observe_generation(data)
-        usage, choices = data.get("usage", {}), data.get("choices", [])
-        if (
-            type(usage.get("prompt_tokens")) is not int
-            or usage["prompt_tokens"] != tokens
-            or not choices
-            or choices[0].get("finish_reason") not in {"stop", "length"}
-        ):
-            raise ValueError("模型未确认完整原文prefill，未安装重建历史")
-        settle_generation(reservation, usage)
-        return True
-
-    async def summarize(self, messages, *, max_tokens=None):
-        self._begin_generation_observation()
-        await self.ensure_capacity()
-        max_tokens = self.config.get("compaction_max_tokens", 2048) if max_tokens is None else max_tokens
-        tokens = await self.count_tokens(messages)
-        self.last_tokens = tokens
-        if tokens + max_tokens > self.config["context_tokens"] * 95 // 100:
-            raise ContextWindowExceeded("压缩输入超窗")
-        await prepare_model_request()
-        reservation = reserve_generation(tokens, max_tokens)
-        mark_model_request()
-        response = await self.client.post(
-            "/v1/chat/completions",
-            json={
-                "model": self.config.get("model", "local"),
-                "messages": single_system_messages(provider_identity_messages(self, messages)),
-                **self.sampling(summary=True),
-                "max_tokens": max_tokens,
-                "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
-                **({"reasoning_format": "deepseek"} if self.config.get("enable_thinking", False) else {}),
-                **({"seed": self.config["seed"]} if "seed" in self.config else {}),
-            },
-            timeout=self.config.get("compaction_timeout_seconds", 600),
-        )
-        self.last_http_status = response.status_code
-        if response.status_code == 400 and "context" in response.text.lower():
-            raise ContextWindowExceeded("模型压缩输入超窗")
-        response.raise_for_status()
-        data = response.json()
-        self._observe_generation(data)
-        choice = data["choices"][0]
-        if choice.get("finish_reason") != "stop":
-            raise IncompleteCompaction("压缩输出未完整结束；原上下文保留")
-        content = choice["message"]["content"]
-        if not isinstance(content, str) or not content.strip():
-            raise IncompleteCompaction("模型摘要为空；原上下文保留")
-        settle_generation(reservation, data.get("usage", {}))
-        return content
-
-    async def generate(self, messages, character, event_id, source_text=None):
-        return await self._generate_reply(messages, character, event_id, source_text, live=False)
-
-    async def generate_live(self, messages, character, event_id, source_text=None):
-        return await self._generate_reply(messages, character, event_id, source_text, live=True)
-
-    def _live_budget(self, visible, live):
-        if not live or not self.live_thinking_budget_supported or not self.config.get("enable_thinking"):
-            return visible, {}
-        thinking = live_thinking_budget(self.config)
-        return visible + thinking, {"thinking_budget_tokens": thinking}
-
-    async def _generate_reply(self, messages, character, event_id, source_text, *, live):
-        self._begin_generation_observation()
-        await self.ensure_capacity()
-        messages = single_system_messages(provider_identity_messages(self, messages))
-        output_budget, live_parameters = self._live_budget(self.config.get("max_tokens", 160), live)
-        budget = self.config["context_tokens"] * 95 // 100 - output_budget
-        self.last_tokens = await self.count_tokens(messages)
-        if self.last_tokens > budget:
-            raise ContextWindowExceeded("输入超出真实token预算；需要模型压缩，禁止静默丢弃历史")
-        schema = Reply.model_json_schema()
-        schema["properties"]["reply_to"]["items"] = {"type": "string", "enum": [event_id]}
-        schema["properties"]["reply_to"]["maxItems"] = 1
-        await prepare_model_request()
-        reservation = reserve_generation(self.last_tokens, output_budget)
-        mark_model_request()
-        response = await self.client.post(
-            "/v1/chat/completions",
-            json={
-                "model": self.config.get("model", "local"),
-                "messages": messages,
-                **self.sampling(),
-                "max_tokens": output_budget,
-                **live_parameters,
-                "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
-                **({"reasoning_format": "deepseek"} if self.config.get("enable_thinking", False) else {}),
-                "response_format": {"type": "json_object", "schema": schema},
-                **({"seed": self.config["seed"]} if "seed" in self.config else {}),
-            },
-            # 120K real tokens took 339s of prefill on Orin Nano. A short-turn
-            # transport timeout cannot silently make the verified 128K window unusable.
-            timeout=httpx.Timeout(self.config.get("prefill_timeout_seconds", 600), connect=5),
-        )
-        self.last_http_status = response.status_code
-        response.raise_for_status()
-        data = response.json()
-        self._observe_generation(data)
-        choice = data["choices"][0]
-        if choice.get("finish_reason") != "stop":
-            raise ValueError("模型回复未完整结束；未提交草稿或播报")
-        content = choice["message"]["content"]
-        reply = validate_reply(content, character, event_id, source_text)
-        settle_generation(reservation, data.get("usage", {}))
-        return reply
-
-    async def generate_operation(self, messages, character, event_id, source_text=None, *, web_fetch=None):
-        return await generate_operation_reply(self, messages, event_id, web_fetch=web_fetch)
-
-    def prepare_json_messages(self, messages, schema, *, max_tokens):
-        json_schema_text(schema, max_tokens)
-        return single_system_messages(provider_identity_messages(self, messages))
-
-    async def generate_json(self, messages, schema, *, max_tokens):
-        """A bounded schema-constrained task, independent of compaction output."""
-        return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=self.sampling())
-
-    async def generate_operator_json(self, messages, schema, *, max_tokens):
-        return await self._generate_json(messages, schema, max_tokens=max_tokens,
-                                         sampling=self.sampling() | {"temperature": 0}, thinking_limit=96)
-
-    async def generate_assistant_json(self, messages, schema, *, max_tokens, on_content=None, on_stage=None):
-        try:
-            return await self._generate_json(
-                messages, schema, max_tokens=max_tokens, sampling=self.sampling(),
-                enable_thinking=False, on_content=on_content, on_stage=on_stage, bounded_assistant=True,
-            )
-        except (ValueError, httpx.HTTPError):
-            self._assistant_capacity = None
-            raise
-
-    async def generate_assistant_text(self, messages, *, max_tokens, on_content=None, on_stage=None):
-        try:
-            return await self._generate_json(
-                messages, None, max_tokens=max_tokens,
-                sampling=self.sampling() | {"dry_multiplier": 0.8, "dry_allowed_length": 4, "dry_penalty_last_n": 256},
-                enable_thinking=False, on_content=on_content, on_stage=on_stage, bounded_assistant=True,
-            )
-        except (ValueError, httpx.HTTPError):
-            self._assistant_capacity = None
-            raise
-
-    async def generate_live_json(self, messages, schema, *, max_tokens):
-        return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=self.sampling(), live=True)
-
-    async def generate_video_response(self, messages, schema, *, max_tokens):
-        sampling = self.sampling() | {
-            "dry_multiplier": 0.8,
-            "dry_allowed_length": 5,
-            "dry_penalty_last_n": 512,
-        }
-        return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=sampling)
-
-    async def _generate_json(self, messages, schema, *, max_tokens, sampling, live=False, thinking_limit=None,
-                             on_content=None, on_stage=None, enable_thinking=None, bounded_assistant=False):
-        self._begin_generation_observation()
-        if schema is not None:
-            json_schema_text(schema, max_tokens)
-        if on_stage:
-            on_stage("checking_model")
-        if not bounded_assistant or not self._assistant_capacity_current():
-            await self.ensure_capacity()
-        max_tokens, live_parameters = self._live_budget(max_tokens, live)
-        if thinking_limit is not None and self.live_thinking_budget_supported and self.config.get("enable_thinking"):
-            live_parameters = {"thinking_budget_tokens": thinking_limit}
-        messages = single_system_messages(provider_identity_messages(self, messages))
-        window = self.config["context_tokens"] * 95 // 100
-        if on_stage:
-            on_stage("counting")
-        # A local Qwen byte-token upper bound with ample room for the chat template.
-        # Other models and tight windows use the exact tokenizer as before.
-        upper = sum(len(message["content"].encode("utf-8")) + 128 for message in messages) * 2 + 1024
-        conservative = (bounded_assistant and self.config.get("model", "").startswith("dafeiyu-qwen35-9b:")
-                        and upper + max_tokens <= window)
-        if conservative:
-            tokens = upper
-        elif enable_thinking is None:
-            tokens = await self.count_tokens(messages)
-        else:
-            tokens = await self._token_count(messages, enable_thinking=enable_thinking)
-        thinking = self.config.get("enable_thinking", False) if enable_thinking is None else enable_thinking
-        self.last_tokens = tokens
-        if tokens + max_tokens > window:
-            raise ContextWindowExceeded("结构化输入超出真实token预算；禁止静默丢弃数据")
-        await prepare_model_request()
-        reservation = reserve_generation(tokens, max_tokens, conservative_input=conservative)
-        mark_model_request()
-        payload = {
-            "model": self.config.get("model", "local"),
-            "messages": messages,
-            **sampling,
-            "max_tokens": max_tokens,
-            **live_parameters,
-            "stream": False,
-            "chat_template_kwargs": {"enable_thinking": thinking},
-            **({"reasoning_format": "deepseek"} if thinking else {}),
-            **({"response_format": {"type": "json_object", "schema": schema}} if schema is not None else {}),
-            **({"seed": self.config["seed"]} if "seed" in self.config else {}),
-        }
-        timeout = httpx.Timeout(self.config.get("prefill_timeout_seconds", 600), connect=5)
-        if on_stage:
-            on_stage("generating")
-        if on_content is not None:
-            data = await self._stream_json(payload, timeout, on_content)
-        else:
-            response = await self.client.post("/v1/chat/completions", json=payload, timeout=timeout)
-            self.last_http_status = response.status_code
-            if response.status_code == 400 and "context" in response.text.lower():
-                raise ContextWindowExceeded("模型结构化输入超窗")
-            response.raise_for_status()
-            data = response.json()
-        self._observe_generation(data)
-        choices = data.get("choices") if isinstance(data, dict) else None
-        if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
-            raise ValueError("模型未返回唯一结构化回答")
-        choice = choices[0]
-        if choice.get("finish_reason") != "stop":
-            raise ValueError("模型结构化输出未完整结束；未采用结果")
-        message = choice.get("message")
-        if not isinstance(message, dict) or message.get("tool_calls") or message.get("function_call"):
-            raise ValueError("模型返回了不允许的工具调用或无效消息")
-        usage = data.get("usage", {})
-        if (
-            not isinstance(usage, dict)
-            or type(usage.get("prompt_tokens")) is not int
-            or (not 0 < usage["prompt_tokens"] <= tokens if conservative else usage["prompt_tokens"] != tokens)
-        ):
-            raise ValueError("模型未确认结构化输入完整计量；未采用结果")
-        value = message.get("content")
-        if not isinstance(value, str):
-            raise ValueError("模型未返回文本")
-        if schema is not None:
-            value = parse_json_object(value)
-        self.last_tokens = usage["prompt_tokens"]
-        settle_generation(reservation, usage)
-        if bounded_assistant:
-            # A complete, accounted reply keeps the same model warm. Model
-            # changes and transport failures still invalidate the fingerprint.
-            self._assistant_capacity = (self._capacity_key(), monotonic() + _ASSISTANT_CAPACITY_TTL)
-        return value
-
-    async def _stream_json(self, payload, timeout, on_content):
-        async with self.client.stream("POST", "/v1/chat/completions", json=chat_stream_payload(payload),
-                                      timeout=timeout) as response:
-            self.last_http_status = response.status_code
-            return await read_chat_stream(response, on_content)
 
 
 def chat_stream_payload(payload):
@@ -676,44 +233,6 @@ async def generate_operation_reply(provider, messages, event_id, *, web_fetch=No
     return reply
 
 
-class DemoProvider:
-    """Explicit offline diagnostic only; never labelled as real inference."""
-
-    last_tokens = None
-    server_tokens = None
-    profile_error = "离线诊断，无真实128K模型能力"
-    is_sleeping = None
-
-    async def close(self):
-        pass
-
-    async def health(self):
-        return {"available": True, "detail": "离线固定台词，不是模型推理"}
-
-    async def count_tokens(self, messages):
-        return sum(approx_token_count(m["content"]) + 8 for m in provider_identity_messages(self, messages))
-
-    async def prefill(self, messages):
-        return False
-
-    async def summarize(self, messages, *, max_tokens=None):
-        raise ValueError("离线诊断Provider没有模型摘要能力，请连接真实LLM")
-
-    async def generate_json(self, messages, schema, *, max_tokens):
-        raise ValueError("离线诊断Provider没有模型结构化生成能力，请连接真实LLM")
-
-    async def generate(self, messages, character, event_id, source_text=None):
-        return Reply(
-            spoken_text="你好呀，先来一碗白饭，再陪你聊聊天。",
-            emotion="cheerful",
-            animation_id="talk_happy",
-            reply_to=[event_id],
-        )
-
-    async def generate_operation(self, messages, character, event_id, source_text=None):
-        return await self.generate(messages, character, event_id, source_text)
-
-
 @dataclass
 class Audio:
     path: Path
@@ -724,10 +243,6 @@ class Audio:
     @property
     def ref(self):
         return "/media/audio/" + self.path.name
-
-
-class TTSProvider(Protocol):
-    async def synthesize(self, text: str, voice: dict) -> Audio: ...
 
 
 def wav_duration(path: Path, *, require_speech=False) -> float:
@@ -749,54 +264,17 @@ class VoiceService:
     def __init__(self, settings):
         self.settings = settings
         self.cache = None
-        config = settings.data["tts"]
-        tts_key = settings.endpoint_key("tts")
-        self.client = (
-            api_client(config, settings.provider_key("tts"))
-            if config["kind"] in {"openai_compatible", "omni_reference"}
-            else httpx.AsyncClient(
-                base_url=config["base_url"].rstrip("/") + "/",
-                timeout=config.get("timeout_seconds", 45),
-                trust_env=False,
-                headers={"X-Tuber-Inference-Key": tts_key} if tts_key else None,
-                transport=inference_transport(config["base_url"]),
-            )
-        )
+        config = settings.data["omni"]
+        key = settings.provider_key("omni")
+        self.client = api_client(config, key)
+        self.model = config["model"]
+        self.credential_scope = hashlib.sha256((key or "").encode()).hexdigest()
 
     async def close(self):
         await self.client.aclose()
 
     async def health(self):
-        if self.settings.data["tts"]["kind"] == "prerecorded":
-            return {"available": True, "detail": "预录路径；动态 TTS 尚未启用"}
-        if self.settings.data["tts"]["kind"] in {"openai_compatible", "omni_reference"}:
-            return await models_health(self.client, self.settings.data["tts"]["model"])
-        if self.settings.data["tts"].get("local_backend") == "genie_onnx_int8":
-            await self._genie_identity()
-            return {"available": True, "detail": "Genie ONNX INT8已就绪；音质与持续运行按独立验收记录"}
-        target = "docs" if str(self.client.base_url).endswith("/") else "/docs"
-        response = await self.client.get(target, timeout=5)
-        response.raise_for_status()
-        return {"available": True, "detail": "GPT-SoVITS HTTP 可达；不代表已完成合成"}
-
-    async def _genie_identity(self, voice=None):
-        """Ask the fixed worker to check its own assets before cached playback."""
-        target = "docs" if str(self.client.base_url).endswith("/") else "/docs"
-        response = await self.client.get(target, timeout=5)
-        response.raise_for_status()
-        if len(response.content) > 65_536:
-            raise ValueError("本地语音健康响应过大")
-        body = response.json()
-        if (
-            not isinstance(body, dict)
-            or body.get("status") != "ready"
-            or body.get("backend") != "genie_onnx_int8"
-            or not isinstance(body.get("bundle_identity"), str)
-            or re.fullmatch(r"[0-9a-f]{64}", body["bundle_identity"]) is None
-            or (voice is not None and body.get("voice_id") != voice["id"])
-        ):
-            raise ValueError("Genie引擎、音色或权重身份未就绪，请检查资源模式与声音配置")
-        return body["bundle_identity"]
+        return await models_health(self.client, self.model)
 
     async def prerecorded(self, relative, text):
         source = self.settings.asset_path(relative)
@@ -810,100 +288,55 @@ class VoiceService:
             self.cache.touch(target, seconds=180)
         return Audio(target, duration, text)
 
-    async def synthesize(self, text, voice):
-        audio = await self._synthesize(text, voice)
-        if self.cache:
-            self.cache.touch(audio.path, seconds=180)
-        return audio
-
-    def live_parts(self, text, voice_id):
-        config = self.settings.data["tts"]
-        if config["kind"] == "omni_reference":
-            return omni_speech.sentences(text)
-        if (
-            config["kind"] != "gpt_sovits"
-            or config.get("local_backend") != "genie_onnx_int8"
-            or self.settings.voice(voice_id)["provider"] != "gpt_sovits"
-        ):
-            return [text]
-        parts, start = [], 0
-        for boundary in re.finditer(r"[，。！？；、!?;\n]|(?<![0-9]),|,(?![0-9])", text):
-            stop = boundary.end()
-            if (
-                sum(char.isalnum() for char in text[start:stop]) >= 5
-                and sum(char.isalnum() for char in text[stop:]) >= 5
-            ):
-                parts.append(text[start:stop])
-                start = stop
-                if len(parts) == 3:
-                    break
-        return [*parts, text[start:]]
-
-    async def synthesize_live(self, text, voice_id):
-        voice = self.settings.voice(voice_id)
-        if voice["provider"] != "prerecorded" and self.settings.data["tts"]["kind"] == "openai_compatible":
-            voice = self.settings.voice("external_api")
+    async def preview(self, text, voice):
+        if voice["provider"] == "prerecorded":
+            return await self.prerecorded(voice["sample_asset"], voice["sample_text"])
+        if not isinstance(text, str) or not 1 <= len(text) <= 120:
+            raise ValueError("试听台词为1到120字")
         return await self.synthesize(text, voice)
 
-    async def _synthesize(self, text, voice):
-        if self.settings.data["tts"]["kind"] == "omni_reference":
-            return await self._api_speech(text, voice)
-        if voice["provider"] == "prerecorded":
-            audio = await self.prerecorded(voice["sample_asset"], voice["sample_text"])
-            audio.warning = "当前为预录原型；字幕按实际录音台词显示，模型候选台词保留在任务详情"
-            return audio
-        if self.settings.data["tts"]["kind"] == "openai_compatible":
-            return await self._api_speech(text, voice)
-        if self.settings.data["tts"]["kind"] != "gpt_sovits":
-            raise ValueError("动态TTS尚未配置，选择预录音色或启用GPT-SoVITS")
-        if voice["provider"] != "gpt_sovits":
-            raise ValueError("不支持的语音Provider")
-        if not self.settings.data.get("features", {}).get("live_enabled", False):
-            raise ValueError("本地动态TTS尚未启用；可选择预录或配置外部语音API")
-        params = voice.get("params", {})
+    async def synthesize_live(self, text, voice_id):
+        return await self.synthesize(text, self.settings.voice(voice_id))
+
+    def _read_reference(self, voice):
+        try:
+            path = self.settings.voice_reference_path(voice)
+            with path.open("rb") as stream:
+                reference = stream.read(8_000_001)
+        except OSError:
+            raise ValueError("所选音色的参考录音缺失或无法读取") from None
+        if not 0 < len(reference) <= 8_000_000:
+            raise ValueError("角色参考录音为空或过大")
+        return reference
+
+    async def synthesize(self, text, voice):
+        if voice["provider"] != "omni_reference":
+            raise ValueError("此音色没有用于 Omni 朗读的参考录音，请选择已配置参考录音的音色")
+        if not isinstance(text, str) or not text.strip() or len(text) > 4096:
+            raise ValueError("合成文本须为1到4096字")
+        reference = await asyncio.to_thread(self._read_reference, voice)
         identity = {
-            "provider": voice["provider"],
-            "voice": voice["id"],
-            "version": voice["version"],
-            "weights_version": voice["weights_version"],
-            "reference": voice["reference_asset"],
-            "reference_text": voice["reference_text"],
+            "provider": "omni_reference",
+            "endpoint": str(self.client.base_url),
+            "model": self.model,
+            "voice_profile": voice,
+            "reference_bytes": hashlib.sha256(reference).hexdigest(),
+            "reader_version": "audio-speech-readback-v1",
             "text": text,
-            "params": params,
-            "endpoint": self.settings.data["tts"]["base_url"],
-            "local_backend": self.settings.data["tts"].get("local_backend", "compact"),
+            "credential_scope": self.credential_scope,
         }
-        if identity["local_backend"] == "genie_onnx_int8":
-            identity["bundle_identity"] = await self._genie_identity(voice)
-        reference = self.settings.voice_reference_path(voice)
-        identity["reference_bytes"] = hashlib.sha256(
-            await asyncio.to_thread(reference.read_bytes)
-        ).hexdigest()
-        key = hashlib.sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-        path = self.settings.audio / f"{key}.wav"
-        if path.exists():
+        digest = hashlib.sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        path = self.settings.audio / (digest + ".wav")
+        try:
+            duration = await asyncio.to_thread(wav_duration, path, require_speech=True)
+        except (FileNotFoundError, ValueError, EOFError, wave.Error):
             try:
-                duration = await asyncio.to_thread(wav_duration, path, require_speech=True)
-                return Audio(path, duration, text)
-            except (ValueError, wave.Error):
-                path.unlink(missing_ok=True)
-        response = await self.client.post(
-            "/tts",
-            json={
-                "text": text,
-                "ref_audio_path": voice["server_reference_path"],
-                "prompt_text": voice["reference_text"],
-                "batch_size": 1,
-                "seed": 42,
-                "media_type": "wav",
-                "streaming_mode": False,
-                **params,
-            },
-        )
-        response.raise_for_status()
-        if len(response.content) > 20_000_000:
-            raise ValueError("合成音频过大")
-        duration = await self._store_audio(path, response.content)
+                data = await omni_speech.render(self.client, self.model, text, reference)
+                duration = await self._store_audio(path, data)
+            except (EOFError, wave.Error):
+                raise ValueError("Omni 须返回有效 WAV 录音") from None
+        if self.cache:
+            self.cache.touch(path, seconds=180)
         return Audio(path, duration, text)
 
     async def _store_audio(self, path, data, *, require_speech=True):
@@ -925,56 +358,6 @@ class VoiceService:
             return duration
         finally:
             temporary.unlink(missing_ok=True)
-
-    async def _api_speech(self, text, voice):
-        config = self.settings.data["tts"]
-        omni = config["kind"] == "omni_reference"
-        reference = None
-        if omni:
-            if voice["provider"] != "gpt_sovits":
-                raise ValueError("Omni 朗读需要带参考录音的角色音色")
-            source = self.settings.voice_reference_path(voice)
-            if not 0 < source.stat().st_size <= 8_000_000:
-                raise ValueError("角色参考录音为空或过大")
-            reference = await asyncio.to_thread(source.read_bytes)
-        elif voice["provider"] != "openai_compatible":
-            raise ValueError("当前音色属于本地模型；试听API请选择外部API音色，不会自动替换角色声音")
-        if not isinstance(text, str) or not text.strip() or len(text) > 4096:
-            raise ValueError("API合成文本须为1到4096字")
-        identity = {
-            "provider": config["kind"],
-            "endpoint": config["base_url"],
-            "model": config["model"],
-            "voice_profile": voice,
-            "text": text,
-            "credential_scope": hashlib.sha256(
-                (self.settings.provider_key("tts") or "").encode()
-            ).hexdigest(),
-        }
-        if omni:
-            identity.update(reference_bytes=hashlib.sha256(reference).hexdigest(), reader_version="audio-speech-readback-v1")
-        else:
-            identity["api_voice"] = config["voice"]
-        digest = hashlib.sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-        path = self.settings.audio / (digest + ".wav")
-        if path.exists():
-            try:
-                return Audio(path, await asyncio.to_thread(wav_duration, path, require_speech=True), text)
-            except (ValueError, EOFError, wave.Error):
-                path.unlink(missing_ok=True)
-        try:
-            if omni:
-                data = await omni_speech.render(self.client, config["model"], text, reference)
-            else:
-                data = await response_bytes(
-                    self.client, "POST", "audio/speech",
-                    payload={"model": config["model"], "voice": config["voice"], "input": text, "response_format": "wav"},
-                    limit=20_000_000,
-                )
-            duration = await self._store_audio(path, data)
-        except (EOFError, wave.Error):
-            raise ValueError("语音API须返回有效WAV；未缓存不兼容格式") from None
-        return Audio(path, duration, text)
 
 
 def public_error(error):

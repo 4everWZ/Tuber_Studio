@@ -44,13 +44,10 @@ FRAMES = [
     },
 ]
 CONFIG = {
-    "enabled": True,
     "model": "actual-vlm",
     "base_url": "http://127.0.0.1:18080/v1",
     "model_revision": "weights-sha",
-    "projector_revision": "projector-sha",
     "runtime_revision": "runtime-sha",
-    "runtime_profile": "single-slot-q4-kv",
     "max_frames": 2,
 }
 
@@ -59,8 +56,8 @@ CONFIG = {
 async def omni_provider(runtime):
     checkpoint = "f" * 40
     value = ApiVideoEvidenceProvider(runtime, {
-        "adapter": "omni", "enabled": True, "model": "omni-default", "model_revision": checkpoint,
-        "base_url": "http://omni-gateway:8000/v1", "context_tokens": 12288, "native_context_tokens": 12288,
+        "model": "omni-default", "model_revision": checkpoint,
+        "base_url": "https://vision.example/v1",
     }, api_key="scoped-service-key")
     await value.api.client.aclose()
     health = {
@@ -99,7 +96,7 @@ async def omni_provider(runtime):
         })
 
     value.api.client = httpx.AsyncClient(
-        base_url="http://omni-gateway:8000/v1", headers={"Authorization": "Bearer scoped-service-key"},
+        base_url="https://vision.example/v1", headers={"Authorization": "Bearer scoped-service-key"},
         transport=httpx.MockTransport(handle),
     )
     yield value, health, registry, requests
@@ -123,7 +120,6 @@ async def test_omni_video_uses_real_frame_transport_and_verified_identity(omni_p
     assert value.capabilities()["provenance"] == result["provenance"]
     assert value.capabilities()["context_tokens"] == 40960
     assert value.capabilities()["runtime_context_tokens"] == 40960
-    assert value.config.context_tokens == 12288
     assert not value.capabilities()["admitted"]
     assert any("data:image/png;base64," in json.dumps(request) for request in requests)
     assert requests[-1]["response_format"]["type"] == "json_schema"
@@ -199,22 +195,16 @@ def test_compose_omni_vision_default_uses_only_its_scoped_service_key(tmp_path, 
     monkeypatch.setenv("TUBER_CONFIG", str(tmp_path / "studio.json"))
     monkeypatch.setenv("TUBER_CORE_MODE", "omni")
     settings = ComposeSettings()
-    vision = VideoVisionConfig.model_validate(settings.data["video_vision"])
-    assert vision.adapter == "omni" and vision.enabled and vision.base_url == "https://inference.example/service/v1"
+    vision = VideoVisionConfig.model_validate(settings.video_config)
+    assert vision.base_url == "https://inference.example/service/v1"
     assert not vision.model_revision
-    assert settings.data["responses"] == {"model": "workers", "base_url": "https://inference.example/service/llm/v1"}
-    assert settings.provider_key("responses") == settings.provider_key("llm") == "scoped-compose-key"
-    settings.data["responses"]["base_url"] = vision.base_url
-    settings.data["llm"]["base_url"] = "https://other.example/v1"
-    assert settings.provider_key("responses") is None and settings.provider_key("llm") is None
-    assert settings.video_vision_key() == "scoped-compose-key"
-    settings.data["vision"]["base_url"] = "https://vision.example/v1"
-    settings.provider_keys = {"vision": "separate-vision-key"}
-    assert settings.endpoint_key("vision") == "separate-vision-key"
-    settings.data["video_vision"]["base_url"] = "https://other.example/v1"
-    assert settings.video_vision_key() is None
-    settings.data["video_vision"]["base_url"] = settings.data["vision"]["base_url"]
-    assert settings.video_vision_key() == "separate-vision-key"
+    assert settings.responses_config["model"] == "workers"
+    assert settings.responses_config["base_url"] == "https://inference.example/service/llm/v1"
+    assert settings.provider_key("omni") == "scoped-compose-key"
+    settings.data["omni"]["base_url"] = "https://other.example/v1"
+    assert settings.provider_key("omni") is None
+    assert settings.video_config["base_url"] == "https://other.example/v1"
+    assert settings.responses_config["base_url"] == "https://other.example/llm/v1"
 
 
 @pytest.mark.parametrize("joint", [False, True])
@@ -254,30 +244,24 @@ async def provider(runtime, request):
     async def handle(request):
         state["requests"].append(request)
         if request.url.path == "/v1/models":
-            return httpx.Response(200, json={"data": [{"id": "actual-vlm"}]})
-        if request.url.path == "/props":
-            return httpx.Response(
-                200,
-                json={
-                    "default_generation_settings": {"n_ctx": state["window"]},
-                    "modalities": {"vision": state["vision"]},
-                    "model_alias": state["aliases"],
-                    "build_info": state.get("build_info", "tested-runtime"),
-                    "model_path": "tested-weights.gguf",
-                },
-            )
+            return httpx.Response(200, json={"data": [{"id": alias, "max_model_len": state["window"]}
+                                                       for alias in state["aliases"]]})
+        if request.url.path == "/healthz":
+            return httpx.Response(200, json={"checkpoint": value.config.model_revision,
+                                             "engine_version": state.get("build_info", value.config.runtime_revision)})
         assert request.url.path == "/v1/chat/completions"
         payload = json.loads(request.content)
         assert "tools" not in payload and not payload["stream"]
+        caption = "caption" in payload.get("response_format", {}).get("json_schema", {}).get("schema", {}).get("properties", {})
         probe = payload["max_tokens"] == 1
         if (
             state["block"]
             or not probe
             and (
                 state.get("block_assessment")
-                and "response_format" in payload
+                and not caption
                 or state.get("block_at_caption") == state["caption_requests"] + 1
-                and "response_format" not in payload
+                and caption
             )
         ):
             state["started"].set()
@@ -287,10 +271,10 @@ async def provider(runtime, request):
                 state["cancelled"].set()
         if probe:
             content = None
-        elif "response_format" not in payload:
+        elif caption:
             index = state["caption_requests"] % len(state["captions"])
             state["caption_requests"] += 1
-            content = list(state["captions"].values())[index]
+            content = json.dumps({"caption": list(state["captions"].values())[index]})
         else:
             content = json.dumps(state["result"])
         message = state.get("message") or {"role": "assistant", "content": content}
@@ -346,18 +330,32 @@ async def admit(provider):
     return await provider.probe(FRAMES, metadata=META, resource_admission=proof(provider))
 
 
+async def test_admitted_live_frame_reaches_the_selected_omni_model(provider):
+    value, state = provider
+    await admit(value)
+    state["result"] = {"spoken_text": "我看见了。", "reply_to": ["event"]}
+    scene = LiveScene("session", time.monotonic(), "桌面", PNG, "image/png", 1, 1)
+    messages = [{"role": "user", "content": "看得到吗？"}]
+    llm = {"base_url": value.config.base_url, "model": value.config.model, "max_tokens": 128}
+    assert await value.generate_live_reply(scene, messages, llm | {"model": "other"}, "event") is None
+    reply = await value.generate_live_reply(scene, messages, llm, "event")
+    assert reply.spoken_text == state["result"]["spoken_text"] and reply.reply_to == ["event"]
+    request = state["requests"][-1]
+    body = json.loads(request.content)
+    assert request.url.path == "/v1/chat/completions" and body["model"] == llm["model"]
+    image, text = body["messages"][-1]["content"]
+    assert image["image_url"]["url"] == "data:image/png;base64," + base64.b64encode(PNG).decode()
+    assert "桌面" in text["text"] and "看得到吗？" in text["text"]
+    assert body["response_format"]["json_schema"]["schema"]["properties"]["reply_to"]["items"]["enum"] == ["event"]
+
+
+def caption_body(body):
+    schema = body.get("response_format", {}).get("json_schema", {}).get("schema", {})
+    return "caption" in schema.get("properties", {})
+
+
 def generations(state):
     return [request for request in state["requests"] if request.method == "POST"]
-
-
-async def test_default_disabled_never_opens_client_or_admits_by_name(runtime):
-    value = ApiVideoEvidenceProvider(runtime, {"model": "MiniCPM-V-4.7-1B"})
-    assert (
-        value.api is None and not value.capabilities()["available"] and not value.capabilities()["admitted"]
-    )
-    with pytest.raises(ValueError, match="未启用"):
-        await value.probe(FRAMES, metadata=META)
-    await value.close()
 
 
 async def test_normal_visual_request_runs_without_admission(provider):
@@ -386,38 +384,6 @@ async def test_joint_observation_binds_frames_and_rejects_missing_caption(provid
         await value.analyze_video_evidence({}, META, FRAMES, "观察画面", deadline=time.time() + 10)
 
 
-@pytest.mark.parametrize("thinking", [False, True])
-async def test_admitted_live_scene_uses_one_generation_and_matches_live_model(provider, thinking):
-    value, state = provider
-    state["build_info"] = "b1-434ddbb"
-    await admit(value)
-    state["requests"].clear()
-    state["result"] = {"spoken_text": "画面中是圆形。", "reply_to": ["live-1"]}
-    scene = LiveScene("session-1", time.monotonic(), "关卡开始", PNG, "image/png", 1, 1)
-    messages = [{"role": "user", "content": "你看到了什么？"}]
-    config = {
-        "kind": "llama_cpp",
-        "model": "actual-vlm",
-        "context_tokens": 131072,
-        "base_url": "http://127.0.0.1:18080",
-        "enable_thinking": thinking,
-        "live_thinking_tokens": 8,
-    }
-    assert await value.generate_live_reply(scene, messages, config | {"model": "other"}, "live-1") is None
-    assert (
-        await value.generate_live_reply(
-            scene, messages, config | {"base_url": "http://127.0.0.1:18081"}, "live-1"
-        )
-        is None
-    )
-    result = await value.generate_live_reply(scene, messages, config, "live-1")
-    assert result.spoken_text == "画面中是圆形。"
-    request, = generations(state)
-    payload = json.loads(request.content)
-    assert messages[-1]["content"] == "你看到了什么？"
-    assert payload["max_tokens"] == (1032 if thinking else 1024)
-    assert payload["chat_template_kwargs"] == {"enable_thinking": thinking}
-    assert payload.get("thinking_budget_tokens") == (8 if thinking else None)
 
 
 async def test_real_inline_image_probe_and_distinct_frame_evidence(provider):
@@ -433,10 +399,10 @@ async def test_real_inline_image_probe_and_distinct_frame_evidence(provider):
     ]
     assert result["elapsed_ms"] >= 0 and result["usage"]["final_generation"]["prompt_tokens"] == 100
     payloads = [json.loads(request.content) for request in generations(state)]
-    captions = [body for body in payloads if body["max_tokens"] != 1 and "response_format" not in body]
+    captions = [body for body in payloads if caption_body(body)]
     assert len(captions) == 4  # Two sequential frame calls in probe and analysis.
     for body in captions:
-        content = body["messages"][0]["content"]
+        content = body["messages"][-1]["content"]
         assert len([item for item in content if item["type"] == "image_url"]) == 1
         assert all(frame["id"] not in json.dumps(body) for frame in FRAMES)
     assessment = json.loads(payloads[-1]["messages"][-1]["content"])
@@ -450,13 +416,6 @@ async def test_real_inline_image_probe_and_distinct_frame_evidence(provider):
     assert all(frame["id"] not in json.dumps(payloads[-1]) for frame in FRAMES)
 
 
-@pytest.mark.parametrize("field,changed", [("window", 8192), ("vision", False), ("aliases", ["wrong-model"])])
-async def test_runtime_window_projector_and_alias_are_proved_not_assumed(provider, field, changed):
-    value, state = provider
-    state[field] = changed
-    with pytest.raises(ValueError):
-        await admit(value)
-    assert not value.capabilities()["available"] and not generations(state)
 
 
 @pytest.mark.parametrize(
@@ -680,8 +639,16 @@ async def test_deadline_and_close_cancel_owned_http_only(provider, runtime):
             {"id": "timeout"}, META, FRAMES, "期限测试", deadline=time.time() + 0.03
         )
     assert state["cancelled"].is_set() and not value._active and not runtime.generation_lock.locked()
-    await value.configure({"enabled": False})
-    assert value.api is None and not value.capabilities()["available"]
+    state["started"].clear()
+    state["cancelled"].clear()
+    task = asyncio.create_task(value.analyze_video_evidence({"id": "closing"}, META, FRAMES, "取消测试", deadline=None))
+    await asyncio.wait_for(state["started"].wait(), 2)
+    await value.close()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert state["cancelled"].is_set() and not value._active and not runtime.generation_lock.locked()
+    assert value.api.client.is_closed
+    assert not value.capabilities()["images"] and not value.capabilities()["admitted"]
     assert runtime.llm is not None
 
 
@@ -757,15 +724,13 @@ async def test_public_configuration_controls_outbound_thinking_timeout_and_budge
 
 
 def test_vision_defaults_remain_compatible_and_explicit_bounds_are_validated():
-    defaults = VideoVisionConfig()
+    defaults = VideoVisionConfig(model="visual")
     assert defaults.timeout_seconds == 60 and defaults.enable_thinking is None
     assert defaults.max_output_tokens == 2048
-    assert defaults.sampling.temperature == 0.2
-    assert all(value is None for key, value in defaults.sampling.model_dump().items() if key != "temperature")
-    assert VideoVisionConfig(timeout_seconds=600).timeout_seconds == 600
+    assert VideoVisionConfig(model="visual", timeout_seconds=600).timeout_seconds == 600
     for patch in ({"timeout_seconds": 601}, {"timeout_seconds": 0}, {"enable_thinking": "on"}):
         with pytest.raises(ValueError):
-            VideoVisionConfig(**patch)
+            VideoVisionConfig(model="visual", **patch)
 
 
 @pytest.mark.parametrize(
@@ -798,58 +763,8 @@ async def test_resource_proof_for_different_thinking_setting_does_not_admit(prov
     assert observed["capabilities"]["images"] and not observed["capabilities"]["admitted"]
 
 
-@pytest.mark.parametrize(
-    "provider",
-    [
-        {},
-        {"sampling": {"temperature": None}},
-        {
-            "enable_thinking": True,
-            "max_output_tokens": 8192,
-            "sampling": {
-                "temperature": 1.0,
-                "top_p": 0.95,
-                "top_k": 20,
-                "min_p": 0.0,
-                "presence_penalty": 1.5,
-                "repeat_penalty": 1.0,
-                "seed": 42,
-                "reasoning_budget_tokens": 1024,
-            },
-        },
-    ],
-    indirect=True,
-)
-async def test_video_sampling_public_probe_analysis_and_compatible_defaults(provider):
-    value, state = provider
-    observed = await value.probe(FRAMES, metadata=META, resource_admission=proof(value))
-    assert observed["capabilities"]["admitted"]
-    await value.analyze_video_evidence({}, META, FRAMES, "观察这些杯子", deadline=time.time() + 10)
-    expected = value.config.sampling.model_dump(exclude_none=True)
-    for request in generations(state):
-        body = json.loads(request.content)
-        probe = body["max_tokens"] == 1
-        for key in type(value.config.sampling).model_fields:
-            if key == "temperature" and probe or key not in expected:
-                assert key not in body
-            else:
-                assert body[key] == expected[key]
-        assert body["max_tokens"] == (1 if probe else value.config.max_output_tokens)
-        assert body.get("chat_template_kwargs") == (
-            None
-            if value.config.enable_thinking is None
-            else {"enable_thinking": value.config.enable_thinking}
-        )
-    assert value.identity()["sampling"] == value.config.sampling.model_dump()
 
 
-async def test_sampling_budget_change_invalidates_resource_identity(provider):
-    value, _ = provider
-    original_version = value.version
-    resource = proof(value)
-    resource["configuration"]["sampling"]["reasoning_budget_tokens"] = 1024
-    observed = await value.probe(FRAMES, metadata=META, resource_admission=resource)
-    assert not observed["capabilities"]["admitted"] and value.version == original_version
 
 
 async def test_assessment_numbers_map_exact_captions_without_model_source_ids(provider):
@@ -872,10 +787,10 @@ async def test_each_caption_request_receives_current_question_as_its_observation
     before = len(generations(state))
     await value.analyze_video_evidence({}, META, FRAMES, question, deadline=time.time() + 10)
     bodies = [json.loads(request.content) for request in generations(state)[before:]]
-    captions = [body for body in bodies if body["max_tokens"] != 1 and "response_format" not in body]
+    captions = [body for body in bodies if caption_body(body)]
     assert len(captions) == 2
     for frame, body in zip(FRAMES, captions, strict=True):
-        content = body["messages"][0]["content"]
+        content = body["messages"][-1]["content"]
         texts = [item["text"] for item in content if item["type"] == "text"]
         assert any(question in text and "人物、物品和动作" in text for text in texts)
         assert any(f"{frame['actual_time']} 秒" in text and f"分P {frame['cid']}" in text for text in texts)
@@ -938,7 +853,7 @@ async def test_runtime_switch_between_stages_or_before_return_revokes_admission(
     await admit(value)
 
     def switch(body):
-        if ("response_format" in body) == (stage == "assessment"):
+        if (not caption_body(body)) == (stage == "assessment"):
             state["window"] *= 2
 
     state["after_generation"] = switch
@@ -991,7 +906,7 @@ async def test_tight_budget_stops_before_assessment_post_without_overrun(provide
             FRAMES, metadata=META, resource_admission=proof(value), task={"round_id": row["id"]}
         )
     assert len(generations(state)) == repo.round(row["id"])["budget"]["model_calls"] == 4
-    assert all("response_format" not in json.loads(request.content) for request in generations(state))
+    assert all(body["max_tokens"] == 1 or caption_body(body) for body in (json.loads(r.content) for r in generations(state)))
     assert not value.capabilities()["admitted"]
 
 
@@ -1001,4 +916,4 @@ async def test_empty_or_oversize_caption_never_reaches_assessment(provider, capt
     state["captions"]["first"] = caption
     with pytest.raises(ValueError):
         await admit(value)
-    assert all("response_format" not in json.loads(request.content) for request in generations(state))
+    assert all(body["max_tokens"] == 1 or caption_body(body) for body in (json.loads(r.content) for r in generations(state)))

@@ -1,11 +1,6 @@
-export function inferenceModeChanging(inference) {
-  return inference?.operation?.mode != null && inference.operation.mode !== inference.mode;
-}
-
-export function liveActionDisabled(action, status = {}, { enabled = false, transitioning = false } = {}) {
+export function liveActionDisabled(action, status = {}, { enabled = false } = {}) {
   const state = status.state || "stopped";
   if (!enabled && !(action === "stop" && state !== "stopped")) return true;
-  if (transitioning && ["start", "resume"].includes(action)) return true;
   return action === "start" ? state !== "stopped" :
     action === "pause" ? !["live", "degraded"].includes(state) :
     action === "resume" ? !["paused", "degraded"].includes(state) :

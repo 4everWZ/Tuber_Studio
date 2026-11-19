@@ -24,21 +24,21 @@ uv sync --python 3.12
 uv run python -m tuber_studio --port 8020
 ```
 
-Open [the local workbench](http://127.0.0.1:8020). Direct local access opens without a management token. For remote access, follow the authentication setup in the [deployment guide](docs/guides/deployment.md). Set the Provider endpoint and credential under **Settings → Inference and models**. **Autonomous operations** contains activity, comment review, private messages, dynamic posts and operations settings. Live production and the character studio remain separate workspaces.
+Open the [local workbench](http://127.0.0.1:8020). Direct local access opens without a management token. For remote access and gateway setup, follow the [deployment guide](docs/guides/deployment.md).
 
-Under **Character → Voice**, configure the speech source for previews and spoken livestream replies. Demo text and prerecorded audio are available for an offline tour.
+The character card selects the reading voice. New installations use the Da-Fei-Yu reference. A fixed preview plays its recorded line. To hear a new line, enter it in the workbench and play the generated audio.
 
 For Bilibili operations, configure and verify the account under **Settings → Account and permissions**, then save the actions you want under operations settings. Starting autonomous operations uses those permissions. Video discovery, comment replies, private messages and dynamic posts share that one control. The activity view shows daily outcomes across channels. Reading or importing comments, selecting sources, generating and reviewing replies stay in the same comment workbench. See the [operations guide](docs/guides/operations.md) for review, recovery and emergency stop.
 
 ## Deployment
 
-Tuber Studio runs the workbench and Agent, and owns platform credentials, business data, tasks and memory. It uses authenticated endpoints for inference and Avatar media. Configure the address, credential, model alias and capabilities reported by the service. [Business deployment](docs/guides/deployment.md#业务部署与服务接入) · [API integration](docs/specs/foundation/omni-deployment.md)
+Core runs the workbench and Agent and holds platform credentials, business data, tasks and memory. Configure one external Omni gateway and its application credential for chat, background tasks, vision, reference speech and image jobs. Private calls use short-lived browser tickets. [API contract](docs/specs/foundation/omni-deployment.md)
 
 ## Project status
 
 | Area | Status |
 | --- | --- |
-| Community operations | A review run covered 30 real videos. Real incoming direct messages and sustained operation remain to be verified. |
+| Community operations | The workstation review covered all three image-enabled drafting channels. Delivery, real incoming private messages and owner replies require separate platform checks. |
 | Live production | Images and GIFs are the default. OBS tests covered optional Live2D lip sync, mute and GIF fallback. Live platform integration, first-audio latency and sustained mixed load remain open. |
 | Games | Stardew Valley and Plants vs. Zombies have offline simulations. Real-game integration follows the live production phase. |
 
@@ -54,7 +54,7 @@ uv run --locked python tools/ci/check_style.py
 uv run --locked pytest tests/test_comments.py
 ```
 
-For a change, run the tests that cover the affected flow. See the [documentation index](docs/README.md) for guides, specifications and the game implementation plan. Model serving and weight releases belong to the external service, not this workbench.
+Run the tests for the affected flow. The [documentation index](docs/README.md) covers the guides, specifications, implementation plans and project archives.
 
 `uv run --locked pytest tests/test_account_ui.py` runs the workbench browser-module tests in Node when available. Use the project test directory to keep test backups and packaged releases out of discovery.
 

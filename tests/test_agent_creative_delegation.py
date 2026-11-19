@@ -67,7 +67,7 @@ async def test_front_delivery_uses_measured_remaining_window(runtime, store, mon
     provider = APIProvider({"base_url": "https://example.org/v1", "model": "omni", "context_source": "model_card",
                             "structured_output": "json_schema", "prompt_token_endpoint": True})
     monkeypatch.setattr(runtime, "llm", provider)
-    monkeypatch.setitem(runtime.settings.data["llm"], "max_tokens", 4096)
+    monkeypatch.setitem(runtime.settings.data["omni"], "max_tokens", 4096)
     tasks = task_tools.create_task_runtime(runtime, store, None)
     evidence = evidence_index([{"id": "origin", "tool": "web_page", "result": {"url": "https://example.org/s", "excerpt": text}}])
     task = {"goal": "取材", "plan": {"prior_goals": [], "candidate": {"items": [], "gaps": ["待核实"]}}}
@@ -84,8 +84,9 @@ async def test_front_delivery_uses_measured_remaining_window(runtime, store, mon
 
 
 def gateway(settings, monkeypatch, reply):
-    settings.data["responses"] = {"base_url": "https://example.org/llm/v1", "model": "text-worker", "max_output_tokens": 1300}
-    settings.provider_keys["responses"] = "mock-responses-key"
+    settings.data["omni"].update(base_url="https://example.org/v1", responses_model="text-worker",
+                                 responses_options={"max_output_tokens": 1300})
+    settings.provider_keys = {"omni": "mock-responses-key"}
     requests = []
 
     def handle(request):

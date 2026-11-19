@@ -1,12 +1,5 @@
 {
-  "features": {
-    "live_enabled": false
-  },
-  "inference_broker": {
-    "enabled": false
-  },
-  "llm": {
-    "kind": "openai_compatible",
+  "omni": {
     "base_url": "http://127.0.0.1:8000/v1",
     "model": "omni-default",
     "max_tokens": 4096,
@@ -14,7 +7,6 @@
     "temperature": 0.6,
     "summary_temperature": 1.0,
     "enable_thinking": true,
-    "live_thinking_tokens": 1024,
     "timeout_seconds": 40,
     "prefill_timeout_seconds": 1200,
     "auto_compact_token_limit_scope": "total",
@@ -26,33 +18,21 @@
     "structured_output": "structural_tag",
     "prompt_token_endpoint": true,
     "top_k": 20,
-    "top_p": 0.95
+    "top_p": 0.95,
+    "responses_model": "llm-default",
+    "responses_options": {
+      "max_output_tokens": 4096,
+      "timeout_seconds": 120,
+      "parallel_reads": 2
+    }
   },
-  "tts": {
-    "kind": "prerecorded",
-    "base_url": "",
-    "voice_id": "whale_sample_v1",
-    "timeout_seconds": 90
-  },
-  "vision": {
-    "kind": "disabled",
-    "location": "local",
-    "base_url": "",
-    "model": ""
+  "voice_id": "whale_reference",
+  "features": {
+    "live_enabled": false
   },
   "queue_limit": 40,
   "event_ttl_seconds": 90,
   "playback_wait_seconds": 45,
   "commercial_mode": false,
-  "conversation_retention_days": 30,
-  "responses": {
-    "base_url": "http://127.0.0.1:8000/llm/v1",
-    "model": "llm-default"
-  },
-  "video_vision": {
-    "enabled": true,
-    "adapter": "omni",
-    "base_url": "http://127.0.0.1:8000/v1",
-    "model": "omni-default"
-  }
+  "conversation_retention_days": 30
 }

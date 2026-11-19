@@ -4,11 +4,11 @@ import json
 
 import httpx
 import pytest
+from offline_chat import OfflineChat
 
 from tuber_studio.api_providers import APIProvider
 from tuber_studio.compaction import ContextWindowExceeded
 from tuber_studio.http_api import InferenceBudgetExceeded
-from tuber_studio.providers import DemoProvider, LlamaCppProvider
 
 SCHEMA = {
     "type": "object",
@@ -24,7 +24,6 @@ async def providers(settings):
     opened = []
 
     async def create(
-        kind,
         *,
         count=3,
         actual=3,
@@ -34,7 +33,8 @@ async def providers(settings):
         thinking=False,
         stream_response=None,
     ):
-        config = settings.data["llm"] | {
+        config = settings.data["omni"] | {
+            "context_source": "declared", "prompt_token_endpoint": False, "structured_output": "json_object",
             "base_url": "https://model.test/v1",
             "model": "actual-model",
             "context_tokens": 4096,
@@ -49,26 +49,10 @@ async def providers(settings):
 
         def respond(request):
             captured.append(request)
-            if request.url.path.endswith("/props"):
-                return httpx.Response(
-                    200,
-                    json={
-                        "model_alias": "actual-model",
-                        "default_generation_settings": {"n_ctx": 4096},
-                    },
-                )
-            if request.url.path.endswith("/apply-template"):
-                return httpx.Response(200, json={"prompt": "actual rendered chat template"})
-            if request.url.path.endswith("/tokenize"):
-                assert json.loads(request.content) == {
-                    "content": "actual rendered chat template",
-                    "add_special": True,
-                }
-                return httpx.Response(200, json={"tokens": list(range(count))})
             body = json.loads(request.content)
             if stream_response is not None and body.get("stream"):
                 return stream_response(body)
-            probe = kind == "api" and body["max_tokens"] == 1
+            probe = body["max_tokens"] == 1
             message = {"content": None if probe else content, "reasoning_content": "私有推理"}
             if not probe:
                 message.update(message_extra or {})
@@ -80,7 +64,7 @@ async def providers(settings):
                 },
             )
 
-        provider = APIProvider(config) if kind == "api" else LlamaCppProvider(config)
+        provider = APIProvider(config)
         await provider.client.aclose()
         provider.client = httpx.AsyncClient(
             base_url="https://model.test/v1/", transport=httpx.MockTransport(respond)
@@ -93,10 +77,9 @@ async def providers(settings):
         await provider.close()
 
 
-@pytest.mark.parametrize("kind", ["local", "api"])
 @pytest.mark.parametrize("thinking", [True, False])
-async def test_structured_request_counts_actual_input_and_uses_supported_json_mode(providers, kind, thinking):
-    provider, requests = await providers(kind, thinking=thinking)
+async def test_structured_request_counts_actual_input_and_uses_supported_json_mode(providers, thinking):
+    provider, requests = await providers( thinking=thinking)
     original = json.dumps(MESSAGES, ensure_ascii=False)
     assert await provider.generate_json(MESSAGES, SCHEMA, max_tokens=32) == {"entries": ["甲"]}
     assert json.dumps(MESSAGES, ensure_ascii=False) == original
@@ -104,42 +87,15 @@ async def test_structured_request_counts_actual_input_and_uses_supported_json_mo
     assert payload["model"] == "actual-model" and payload["max_tokens"] == 32
     assert payload["stream"] is False and payload["temperature"] == 0.8
     assert "tools" not in payload and "functions" not in payload
-    if kind == "local":
-        assert payload["response_format"] == {"type": "json_object", "schema": SCHEMA}
-        assert payload["chat_template_kwargs"] == {"enable_thinking": thinking}
-        assert payload.get("reasoning_format") == ("deepseek" if thinking else None)
-        assert payload["seed"] == 42
-        rendered = json.loads(requests[1].content)
-        assert rendered["messages"] == payload["messages"]
-        assert [r.url.path.rsplit("/", 1)[-1] for r in requests[:3]] == [
-            "props",
-            "apply-template",
-            "tokenize",
-        ]
-    else:
-        assert payload["response_format"] == {"type": "json_object"}
-        assert json.dumps(SCHEMA, ensure_ascii=False) in payload["messages"][0]["content"]
-        probe = json.loads(requests[0].content)
-        assert probe["max_tokens"] == 1
-        assert probe["messages"] == payload["messages"]
-        assert "response_format" not in probe
+    assert payload["response_format"] == {"type": "json_object"}
+    assert json.dumps(SCHEMA, ensure_ascii=False) in payload["messages"][0]["content"]
+    probe = json.loads(requests[0].content)
+    assert probe["max_tokens"] == 1
+    assert probe["messages"] == payload["messages"]
+    assert "response_format" not in probe
     assert provider.last_tokens == 3
 
 
-async def test_assistant_reuses_verified_capacity_and_rechecks_on_model_change(providers):
-    provider, requests = await providers("local")
-    stages = []
-    await provider.prepare_assistant_capacity()
-    for _ in range(2):
-        assert await provider.generate_assistant_json(
-            MESSAGES, SCHEMA, max_tokens=32, on_stage=stages.append,
-        ) == {"entries": ["甲"]}
-    assert sum(request.url.path.endswith("/props") for request in requests) == 1
-    assert stages == ["checking_model", "counting", "generating"] * 2
-    provider.config["model"] = "replacement"
-    with pytest.raises(ValueError, match="model别名不一致"):
-        await provider.prepare_assistant_capacity()
-    assert sum(request.url.path.endswith("/props") for request in requests) == 2
 
 
 @pytest.mark.parametrize("contract", ["json_schema", "structural_tag"])
@@ -166,7 +122,7 @@ async def test_api_schema_assistant_streams_content_and_uses_final_accounting(pr
         stream = "".join("data: " + json.dumps(packet) + "\n\n" for packet in packets) + "data: [DONE]\n\n"
         return httpx.Response(200, text=stream, headers={"Content-Type": "text/event-stream"})
 
-    provider, requests = await providers("api", stream_response=respond)
+    provider, requests = await providers( stream_response=respond)
     provider.config["structured_output"] = contract
     seen = []
     assert await provider.generate_assistant_json(MESSAGES, SCHEMA, max_tokens=32, on_content=seen.append) == {
@@ -177,36 +133,17 @@ async def test_api_schema_assistant_streams_content_and_uses_final_accounting(pr
     assert provider.last_usage["completion_tokens"] == 9
 
 
-async def test_native_plain_assistant_keeps_accounting_without_a_tool_schema(providers):
-    provider, requests = await providers("local", content="吃过啦，分你半碗。", thinking=True)
-    assert await provider.generate_assistant_text(MESSAGES, max_tokens=64) == "吃过啦，分你半碗。"
-    payload = json.loads(requests[-1].content)
-    assert "response_format" not in payload and payload["chat_template_kwargs"] == {"enable_thinking": False}
-    assert provider.last_tokens == 3
 
 
-@pytest.mark.parametrize("kind", ["local", "api"])
-async def test_structured_capacity_is_checked_before_generating(providers, kind):
-    provider, requests = await providers(kind, count=3880, actual=3880)
+async def test_structured_capacity_is_checked_before_generating(providers):
+    provider, requests = await providers( count=3880, actual=3880)
     with pytest.raises(ContextWindowExceeded):
         await provider.generate_json(MESSAGES, SCHEMA, max_tokens=32)
     assert not any("response_format" in json.loads(r.content) for r in requests if r.content)
 
 
-async def test_video_repetition_sampling_is_scoped_to_video_response(providers):
-    provider, requests = await providers("local")
-    assert await provider.generate_video_response(MESSAGES, SCHEMA, max_tokens=32) == {"entries": ["甲"]}
-    video = json.loads(requests[-1].content)
-    await provider.generate_json(MESSAGES, SCHEMA, max_tokens=32)
-    ordinary = json.loads(requests[-1].content)
-    assert video == ordinary | {
-        "dry_multiplier": 0.8,
-        "dry_allowed_length": 5,
-        "dry_penalty_last_n": 512,
-    }
 
 
-@pytest.mark.parametrize("kind", ["local", "api"])
 @pytest.mark.parametrize(
     ("finish", "content", "extra"),
     [
@@ -220,42 +157,35 @@ async def test_video_repetition_sampling_is_scoped_to_video_response(providers):
     ],
 )
 async def test_incomplete_or_untrusted_output_never_becomes_a_task_result(
-    providers, kind, finish, content, extra
+    providers, finish, content, extra
 ):
-    provider, _ = await providers(kind, finish=finish, content=content, message_extra=extra)
-    error = InferenceBudgetExceeded if kind == "api" and finish == "length" else ValueError
+    provider, _ = await providers( finish=finish, content=content, message_extra=extra)
+    error = InferenceBudgetExceeded if finish == "length" else ValueError
     with pytest.raises(error):
         await provider.generate_json(MESSAGES, SCHEMA, max_tokens=32)
 
 
-@pytest.mark.parametrize("actual", [None, True, 2, 4])
-async def test_local_json_requires_prompt_usage_to_confirm_complete_input(providers, actual):
-    provider, _ = await providers("local", actual=actual)
-    with pytest.raises(ValueError, match="完整计量"):
-        await provider.generate_json(MESSAGES, SCHEMA, max_tokens=32)
 
 
 async def test_api_actual_usage_cannot_overrun_declared_window_after_small_probe(providers):
-    provider, _ = await providers("api", actual=3880)
+    provider, _ = await providers( actual=3880)
     with pytest.raises(ContextWindowExceeded):
         await provider.generate_json(MESSAGES, SCHEMA, max_tokens=32)
 
 
-@pytest.mark.parametrize("kind", ["local", "api"])
 @pytest.mark.parametrize(
     ("schema", "budget"),
     [({}, 32), ({"type": "array"}, 32), (SCHEMA, True), (SCHEMA, 0), ({"type": "object", "x": object()}, 32)],
 )
-async def test_invalid_task_contract_is_rejected_before_any_http(providers, kind, schema, budget):
-    provider, requests = await providers(kind)
+async def test_invalid_task_contract_is_rejected_before_any_http(providers, schema, budget):
+    provider, requests = await providers()
     with pytest.raises(ValueError):
         await provider.generate_json(MESSAGES, schema, max_tokens=budget)
     assert requests == []
 
 
-@pytest.mark.parametrize("kind", ["local", "api"])
-async def test_json_generation_does_not_change_existing_summary_wire(providers, kind):
-    provider, requests = await providers(kind)
+async def test_json_generation_does_not_change_existing_summary_wire(providers):
+    provider, requests = await providers()
     await provider.generate_json(MESSAGES, SCHEMA, max_tokens=32)
     assert await provider.summarize(MESSAGES) == '{"entries":["甲"]}'
     summary = json.loads(requests[-1].content)
@@ -266,4 +196,4 @@ async def test_json_generation_does_not_change_existing_summary_wire(providers, 
 
 async def test_demo_does_not_fabricate_structured_model_output():
     with pytest.raises(ValueError, match="没有模型结构化生成能力"):
-        await DemoProvider().generate_json(MESSAGES, SCHEMA, max_tokens=32)
+        await OfflineChat().generate_json(MESSAGES, SCHEMA, max_tokens=32)

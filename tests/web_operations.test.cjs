@@ -631,41 +631,14 @@ test("clearing read alerts clears local and remote counts and stays clear after 
   assert.equal(byId("workspace-issues").textContent, "告警与错误");
 });
 
-test("node connection and model load state are separate from stopped livestream state", async () => {
+test("shared Omni status uses verified service context without a selected runtime model", async () => {
   const { inferenceDisplay } = await import("../src/tuber_studio/web/modules/inference-status.js");
-  const settings = { inference_broker: { deployment: "remote" } };
-  const status = { state: "stopped", providers: { llm_model: "selected-9B" },
-    persona: { source: "fine_tuned" },
-    inference: { state: "active", active_provider: "pet", providers: { pet: { running: true, is_sleeping: false } } } };
-  assert.equal(inferenceDisplay(status, settings).text, "Jetson 已连接 · 模型已加载 · selected-9B");
-  assert.doesNotMatch(inferenceDisplay(status, settings).text, /已停止/);
-  status.inference.state = "idle";
-  status.inference.providers.pet.running = false;
-  assert.match(inferenceDisplay(status, settings).text, /已连接.*模型未加载/);
-  status.inference.error = "无法连接";
-  assert.match(inferenceDisplay(status, settings).text, /连接异常/);
-});
-
-test("a cold node remains connected while the selected model sleeps", async () => {
-  const { inferenceDisplay } = await import("../src/tuber_studio/web/modules/inference-status.js");
-  const state = inferenceDisplay({ inference: { state: "cold", error: null, active_provider: null,
-    selected_provider: "pet", providers: { pet: { running: false, is_sleeping: true } } } },
-  { inference_broker: { deployment: "remote" } });
-  assert.equal(state.connected, true);
-  assert.equal(state.loaded, false);
-  assert.equal(state.text, "Jetson 已连接 · 模型未加载");
-});
-
-test("a loaded independent model keeps its own connection status", async () => {
-  const { inferenceDisplay } = await import("../src/tuber_studio/web/modules/inference-status.js");
-  const status = { providers: { llm: "llama_cpp", llm_route: "direct" },
-    inference: { state: "error", error: "语音节点暂不可达" },
-    context: { verified: true, is_sleeping: false }, persona: { configured_model: "selected-9B" } };
-  assert.equal(inferenceDisplay(status).text, "独立推理 已连接 · 模型已加载 · selected-9B");
-  status.error = "浏览器播放失败";
-  assert.equal(inferenceDisplay(status).text, "独立推理 已连接 · 模型已加载 · selected-9B");
-  status.context.profile_error = "连接中断";
-  assert.equal(inferenceDisplay(status).text, "独立推理 连接异常");
+  const settings = { omni: { model: "fixture-alias" } };
+  assert.equal(inferenceDisplay({}, settings).connected, undefined);
+  const status = { state: "stopped", context: { verified: true, capacity_source: "model_card" } };
+  assert.equal(inferenceDisplay(status, settings).text, "Omni API · 已连接");
+  status.context.profile_error = "unavailable";
+  assert.equal(inferenceDisplay(status, settings).connected, false);
 });
 
 test("new generation shows only this task and selects its first actual draft", async t => {

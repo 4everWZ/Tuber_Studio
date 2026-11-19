@@ -6,7 +6,7 @@
 
 1. 在「角色工作室 → 角色卡」通过「新建角色卡」填写角色名称。列表按首次创建时间排列，最早创建的在最上方。内部 ID 可在「高级 JSON 源码」查看。
 2. 在「编辑角色卡」修改名称、身份、人格、示例对白和口吻。保存覆盖当前卡片，当前激活的角色也可以改名。切换时选择要用的卡片并点击激活。有未保存修改时可以直接「保存并激活」。
-3. voice_profile引用config/voices.json中的独立音色；填Provider、版本／权重、参考音频／文本、来源、使用约束和推理参数。参考音频使用容器内实际可读路径，不把宿主路径直接当服务路径。本地 TTS 使用已加载的音色。换音色后，等服务就绪再试听。
+3. 用 `voice_profile` 选择已登记的声音。新装用 `whale_reference`，已选瑶瑶的角色沿用 `yaoyao_reference`。两者用各自录音生成新句。固定试听 `whale_sample_v1` 只播放登记的原句，已有 `external_api` 保留原来的声音选择。要用 Omni 试听新句，须明确选用参考音色。[声音清单与许可](../../config/voices.json)
 4. 图片放assets/sea_salt/，建立manifest.json，再将avatar_manifest指向assets/sea_salt/manifest.json。复制时可暂复用旧清单，换原创素材后独立替换。
 
 最小清单示意：
@@ -20,7 +20,7 @@
 
 常用标签为 `idle`、`talking`、`cheerful`、`angry`、`confused`、`shy` 和 `gift`，缺图时回退待机。为 WAV 音效填写对应文本，Mock 事件通过 `metadata.asset_id` 引用已登记素材。歌曲在直播曲库中维护。
 
-音色配置和素材清单由 Git 管理，权重、试听和合成缓存留在 `runtime/`。更改模型、声音、有效参数或参考音频时更新缓存。激活角色或编辑当前角色会停止旧待播队列，已有草稿和回执继续保留来源。编辑当前角色后，重新启用对应的自主运营权限。
+角色音色和素材清单分别登记。更换参考后用相同台词和一条新句试听，检查原文和声线。激活角色或编辑当前角色会停止旧待播队列，已有草稿和回执继续保留来源。编辑当前角色后，重新启用对应的自主运营权限。
 
 ## 角色输入
 
@@ -38,6 +38,6 @@
 
 唱歌的`sing_open`／`sing_closed`复用同一图集的现成张嘴／闭嘴帧；新OC可在自身manifest提供同名标签，缺失则回退待机。口型需要独立人声活动数据驱动，两张图本身不代表已经实现音素级口型或演唱能力。仅重建这两帧可加`--singing-only`。
 
-声音参考 [大肥鱼声音数据集](https://www.modelscope.cn/datasets/YinZilu/da-fei-yu-girl-voice-zh) 和 [GPT-SoVITS资源](https://www.modelscope.cn/datasets/sirmn6/da-fei-yu-gpt-sovits)。资源标有CC BY-NC 4.0时保留来源／署名、非商用约束；音频、数据、模型及使用场景分别核对，打赏直播不能自动当作已获商用许可。替换近似或原创资产时更新清单／声音身份，不只替换文件名。
+大肥鱼录音署名尹紫鹭幻想社，使用时保留来源并遵守 CC BY-NC 4.0。瑶瑶参考另有来源、作者和权利人，清单中单独标注。打赏直播等商业用途须核对相应授权。[大肥鱼声音数据集](https://www.modelscope.cn/datasets/YinZilu/da-fei-yu-girl-voice-zh) · [逐项来源、署名与条款](../../config/voices.json)
 
 音色在配置中分别记录来源和适用场景。更换声音时同步更新资料，并用目标场景试听。

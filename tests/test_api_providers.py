@@ -1,25 +1,20 @@
 import asyncio
 import json
-import wave
-from io import BytesIO
 from types import SimpleNamespace
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
 
 from tuber_studio.agent.operator_chat import OperatorChat
 from tuber_studio.api_providers import APIProvider, VisionService, create_llm
-from tuber_studio.app import create_app
 from tuber_studio.compaction import ContextWindowExceeded, IncompleteCompaction
 from tuber_studio.generation_meter import GenerationMeter
-from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operation_turns import OperationTurns, operation_ticket
-from tuber_studio.providers import VoiceService
+from tuber_studio.operations.browsing.models import BrowsingPolicy
 
 
 async def test_workstation_congestion_releases_background_turn_for_chat(settings):
-    settings.data["llm"].update(kind="openai_compatible", base_url="https://model.test/v1", model="remote-model")
+    settings.data["omni"].update(base_url="https://model.test/v1", model="remote-model")
     provider = create_llm(settings)
     refused = asyncio.Event()
     attempts = []
@@ -57,10 +52,11 @@ async def test_workstation_congestion_releases_background_turn_for_chat(settings
 
 
 @pytest.fixture
-def transport(monkeypatch):
+def transport(monkeypatch, settings):
+    settings.data["omni"].update(context_source="declared", prompt_token_endpoint=False, structured_output="json_object")
     real = httpx.AsyncClient
     captured = []
-    state = {"finish": "stop", "count": 120, "silent": False}
+    state = {"finish": "stop", "count": 120}
 
     def respond(request):
         captured.append(request)
@@ -69,16 +65,6 @@ def transport(monkeypatch):
         if request.url.path.endswith("/prompt_tokens"):
             return httpx.Response(200, json={"count": state["count"]})
         body = json.loads(request.content)
-        if request.url.path.endswith("/audio/speech"):
-            if state.get("speech_error"):
-                return httpx.Response(401, text="upstream echo: private-tts-key")
-            stream = BytesIO()
-            with wave.open(stream, "wb") as wav:
-                wav.setnchannels(1)
-                wav.setsampwidth(2)
-                wav.setframerate(32000)
-                wav.writeframes((b"\0\0" if state["silent"] else b"\x01\0") * 3200)
-            return httpx.Response(200, content=stream.getvalue())
         probe = body["max_tokens"] == 1
         reply = json.dumps(
             {
@@ -120,11 +106,11 @@ async def test_external_provider_uses_bearer_and_real_usage_without_broker_heade
     settings, store, transport
 ):
     captured, _ = transport
-    settings.data["llm"].update(
-        kind="openai_compatible", base_url="https://api.test/v1", model="remote-model", context_tokens=8192
+    settings.data["omni"].update(
+        base_url="https://api.test/v1", model="remote-model", context_tokens=8192
     )
     settings.inference_token = "internal-must-not-leak"
-    settings.provider_keys["llm"] = "external-test-key"
+    settings.provider_keys = {"omni": "external-test-key"}
     provider = create_llm(settings)
     messages = [{"role": "system", "content": "只返回JSON"}, {"role": "user", "content": "你好"}]
     try:
@@ -135,9 +121,9 @@ async def test_external_provider_uses_bearer_and_real_usage_without_broker_heade
         reply = await provider.generate(messages, store.character(), "current")
         assert reply.emotion == "cheerful"
         posts = [r for r in captured if r.method == "POST"]
-        assert len(posts) == 2
+        assert len(posts) == 3
         assert json.loads(posts[0].content)["max_tokens"] == 1
-        assert json.loads(posts[1].content)["response_format"] == {"type": "json_object"}
+        assert json.loads(posts[-1].content)["response_format"] == {"type": "json_object"}
         for request in captured:
             assert request.url.path.startswith("/v1/")
             assert request.headers["authorization"] == "Bearer external-test-key"
@@ -147,18 +133,12 @@ async def test_external_provider_uses_bearer_and_real_usage_without_broker_heade
         await provider.close()
 
 
-@pytest.mark.parametrize(("adapter", "structured_output"), [
-    ("openai_compatible", "json_object"),
-    ("openai_compatible", "json_schema"),
-    ("openai_compatible", "structural_tag"),
-    ("llama_cpp", "json_object"),
-])
-async def test_structured_schema_uses_the_selected_provider_contract(settings, transport, adapter, structured_output):
+@pytest.mark.parametrize("structured_output", ["json_object", "json_schema", "structural_tag"])
+async def test_structured_schema_uses_the_selected_provider_contract(settings, transport, structured_output):
     captured, _ = transport
     provider = APIProvider(
-        settings.data["llm"] | {"base_url": "https://api.test/v1", "model": "remote-model",
+        settings.data["omni"] | {"base_url": "https://api.test/v1", "model": "remote-model",
                                 "structured_output": structured_output},
-        adapter=adapter,
     )
     schema = {
         "type": "object",
@@ -183,91 +163,16 @@ async def test_structured_schema_uses_the_selected_provider_contract(settings, t
         return
     assert "structured_outputs" not in posts[-1]
     expected = {"type": "json_object"}
-    if adapter == "llama_cpp":
-        expected["schema"] = schema
-    elif structured_output == "json_schema":
+    if structured_output == "json_schema":
         expected = {"type": "json_schema",
                     "json_schema": {"name": "structured_reply", "schema": schema, "strict": True}}
     assert posts[-1]["response_format"] == expected
 
 
-@pytest.mark.parametrize("adapter", ["openai_compatible", "llama_cpp"])
-@pytest.mark.parametrize("thinking", [None, True, False])
-async def test_thinking_override_is_explicit_and_only_sent_by_llama_adapter(
-    settings, store, transport, adapter, thinking
-):
-    captured, _ = transport
-    config = settings.data["llm"] | {
-        "base_url": "https://api.test/v1",
-        "model": "remote-model",
-        "enable_thinking": thinking,
-    }
-    provider = APIProvider(config, adapter=adapter)
-    messages = [{"role": "user", "content": "聊聊海底的小灯吧"}]
-    try:
-        await provider.count_tokens(messages)
-        await provider.generate(messages, store.character(), "current")
-    finally:
-        await provider.close()
-    posts = [json.loads(request.content) for request in captured if request.method == "POST"]
-    assert len(posts) == 2 and posts[0]["max_tokens"] == 1
-    for body in posts:
-        if adapter == "llama_cpp" and thinking is not None:
-            assert body["chat_template_kwargs"] == {"enable_thinking": thinking}
-        else:
-            assert "chat_template_kwargs" not in body
 
 
-@pytest.mark.parametrize("adapter", ["openai_compatible", "llama_cpp"])
-async def test_explicit_llama_sampling_is_forwarded_without_polluting_generic_apis(
-    settings, store, transport, adapter
-):
-    captured, _ = transport
-    sampling = {
-        "temperature": 1.0,
-        "top_p": 0.95,
-        "top_k": 20,
-        "min_p": 0.0,
-        "presence_penalty": 1.5,
-        "repeat_penalty": 1.0,
-        "seed": 42,
-        "reasoning_budget_tokens": 1024,
-    }
-    config = (
-        settings.data["llm"]
-        | sampling
-        | {
-            "base_url": "https://api.test/v1",
-            "model": "remote-model",
-            "enable_thinking": True,
-        }
-    )
-    provider = APIProvider(config, adapter=adapter)
-    try:
-        await provider.generate([{"role": "user", "content": "海底的小灯"}], store.character(), "current")
-    finally:
-        await provider.close()
-    posts = [json.loads(request.content) for request in captured if request.method == "POST"]
-    assert len(posts) == 2 and posts[0]["max_tokens"] == 1
-    for body in posts:
-        assert "tools" not in body
-        if adapter == "llama_cpp":
-            for key in sampling.keys() - {"temperature"}:
-                assert body[key] == sampling[key]
-            assert body["chat_template_kwargs"] == {"enable_thinking": True}
-            assert "reasoning_budget_tokens" not in body["chat_template_kwargs"]
-        else:
-            assert not (sampling.keys() - {"temperature"}) & body.keys()
-            assert "chat_template_kwargs" not in body
-    assert posts[-1]["temperature"] == 1.0
-    assert "temperature" not in posts[0]
 
 
-async def test_invalid_explicit_llama_sampling_is_rejected_before_http(settings, transport):
-    captured, _ = transport
-    with pytest.raises(ValueError):
-        APIProvider(settings.data["llm"] | {"seed": True}, adapter="llama_cpp")
-    assert not captured
 
 
 async def test_public_text_preserves_natural_reply_normal_sampling_and_real_usage(
@@ -277,8 +182,7 @@ async def test_public_text_preserves_natural_reply_normal_sampling_and_real_usag
     text = "哼，红杯还在桌上。\n小女孩在看另一只手操作。"
     state.update(text=text, completion=12, extra={"reasoning_content": "private-reasoning-sentinel"})
     provider = APIProvider(
-        settings.data["llm"] | {"enable_thinking": True, "reasoning_budget_tokens": 1024},
-        adapter="llama_cpp",
+        settings.data["omni"] | {"enable_thinking": True, "reasoning_budget_tokens": 1024},
     )
     row, _ = runtime.browsing_repository.create_round(
         "text-test", runtime.character, BrowsingPolicy().model_dump(), 0, True
@@ -299,11 +203,11 @@ async def test_public_text_preserves_natural_reply_normal_sampling_and_real_usag
         posts = [json.loads(request.content) for request in captured]
         assert [post["max_tokens"] for post in posts] == [1, 128]
         assert posts[-1]["messages"] == messages
-        assert posts[-1]["temperature"] == settings.data["llm"]["temperature"]
+        assert posts[-1]["temperature"] == settings.data["omni"]["temperature"]
         for post in posts:
             assert "response_format" not in post and "tools" not in post
-            assert post["reasoning_budget_tokens"] == 1024
-            assert post["chat_template_kwargs"] == {"enable_thinking": True}
+            assert "reasoning_budget_tokens" not in post
+            assert "chat_template_kwargs" not in post
     finally:
         await provider.close()
 
@@ -311,7 +215,7 @@ async def test_public_text_preserves_natural_reply_normal_sampling_and_real_usag
 @pytest.mark.parametrize("budget", [True, 0, -1, "128"])
 async def test_public_text_invalid_budget_never_reaches_http(settings, transport, budget):
     captured, _ = transport
-    provider = APIProvider(settings.data["llm"])
+    provider = APIProvider(settings.data["omni"])
     try:
         with pytest.raises(ValueError):
             await provider.generate_text([{"role": "user", "content": "观察"}], max_tokens=budget)
@@ -333,7 +237,7 @@ async def test_public_text_invalid_budget_never_reaches_http(settings, transport
 async def test_public_text_incomplete_empty_or_tool_output_is_rejected(settings, transport, patch):
     _, state = transport
     state.update(patch)
-    provider = APIProvider(settings.data["llm"])
+    provider = APIProvider(settings.data["omni"])
     try:
         with pytest.raises(ValueError):
             await provider.generate_text([{"role": "user", "content": "观察"}], max_tokens=128)
@@ -345,7 +249,7 @@ async def test_public_text_incomplete_empty_or_tool_output_is_rejected(settings,
 async def test_public_text_checks_estimated_and_actual_context(settings, transport, counts, requests):
     captured, state = transport
     state.update(counts)
-    provider = APIProvider(settings.data["llm"] | {"context_tokens": 4096})
+    provider = APIProvider(settings.data["omni"] | {"context_tokens": 4096})
     try:
         with pytest.raises(ContextWindowExceeded):
             await provider.generate_text([{"role": "user", "content": "观察"}], max_tokens=128)
@@ -358,7 +262,7 @@ async def test_omni_chat_uses_the_reported_full_window_and_remaining_output_budg
     captured, state = transport
     state.update(model_card={"max_model_len": 40960}, count=40500, text='{"reply_markdown":"原文已读"}')
     provider = APIProvider(
-        settings.data["llm"] | {"model": "remote-model", "context_source": "model_card",
+        settings.data["omni"] | {"model": "remote-model", "context_source": "model_card",
                                 "context_tokens": 12288, "enable_thinking": True, "prompt_token_endpoint": True,
                                 "structured_output": "structural_tag"},
         "test-key",
@@ -413,7 +317,7 @@ async def test_public_text_parent_budget_denies_completion_before_request(settin
     row, _ = runtime.browsing_repository.create_round(
         "text-test", runtime.character, BrowsingPolicy(max_model_calls=1).model_dump(), 0, True
     )
-    provider = APIProvider(settings.data["llm"])
+    provider = APIProvider(settings.data["omni"])
     try:
         with GenerationMeter(runtime.browsing_repository, row["id"]), pytest.raises(ValueError, match="预算"):
             await provider.generate_text([{"role": "user", "content": "观察"}], max_tokens=128)
@@ -426,7 +330,7 @@ async def test_public_text_parent_budget_denies_completion_before_request(settin
 @pytest.mark.asyncio
 async def test_incomplete_external_summary_and_missing_usage_are_rejected(settings, transport):
     _, state = transport
-    config = settings.data["llm"] | {"base_url": "https://api.test/v1", "model": "remote-model"}
+    config = settings.data["omni"] | {"base_url": "https://api.test/v1", "model": "remote-model"}
     provider = APIProvider(config)
     try:
         state["finish"] = "length"
@@ -440,65 +344,11 @@ async def test_incomplete_external_summary_and_missing_usage_are_rejected(settin
 
 
 @pytest.mark.asyncio
-async def test_api_speech_is_wav_cached_and_scoped_by_actual_api_voice(settings, transport):
-    captured, state = transport
-    settings.data["tts"].update(
-        kind="openai_compatible", base_url="https://api.test/v1", model="remote-model", voice="voice-a"
-    )
-    settings.provider_keys["tts"] = "tts-test-key"
-    service = VoiceService(settings)
-    try:
-        voice = settings.voice("external_api")
-        first = await service.synthesize("这是一段接口测试。", voice)
-        assert first.duration == 0.1
-        assert (await service.synthesize("这是一段接口测试。", voice)).path == first.path
-        assert len(captured) == 1
-        assert json.loads(captured[0].content)["response_format"] == "wav"
-        assert "x-tuber-inference-key" not in captured[0].headers
-        settings.data["tts"]["voice"] = "voice-b"
-        assert (await service.synthesize("这是一段接口测试。", voice)).path != first.path
-        state["silent"] = True
-        with pytest.raises(ValueError, match="静音"):
-            await service.synthesize("新的静音错误测试。", voice)
-        assert not list(settings.audio.glob("*.part"))
-        with pytest.raises(ValueError, match="本地模型"):
-            await service.synthesize("不能冒充原角色声线。", settings.voice("whale_sovits_v2"))
-    finally:
-        await service.close()
-
-
-def test_api_speech_preview_reports_upstream_rejection_without_its_body(settings, transport):
-    settings.data["tts"].update(
-        kind="openai_compatible", base_url="https://api.test/v1", model="remote-model", voice="voice-a"
-    )
-    settings.provider_keys["tts"] = "private-tts-key"
-    captured, state = transport
-    headers = {"Authorization": "Bearer " + settings.admin_token}
-    with TestClient(create_app(settings)) as client:
-        response = client.post(
-            "/api/tts/preview", headers=headers, json={"voice_id": "external_api", "text": "语音 API 试听"}
-        )
-        assert response.status_code == 200 and response.json()["duration"] == 0.1
-        state["speech_error"] = True
-        response = client.post(
-            "/api/tts/preview", headers=headers, json={"voice_id": "external_api", "text": "凭据错误时试听"}
-        )
-    assert response.status_code == 502 and "HTTP 401" in response.json()["detail"]
-    assert "private-tts-key" not in response.text
-    assert captured[-1].url.path == "/v1/audio/speech"
-
-
-@pytest.mark.asyncio
-async def test_vision_provider_supports_explicit_disable_and_accepts_only_inline_images(transport):
-    service = VisionService({"kind": "disabled"})
-    with pytest.raises(ValueError, match="尚未启用视觉 Provider"):
-        await service.describe("图片是什么", b"x", "image/png")
+async def test_omni_vision_accepts_only_inline_images(transport):
     service = VisionService(
         {
-            "kind": "openai_compatible",
             "base_url": "https://api.test/v1",
             "model": "remote-model",
-            "location": "local",
         }
     )
     try:

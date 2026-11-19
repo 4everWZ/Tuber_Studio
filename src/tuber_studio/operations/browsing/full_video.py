@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from ...generation_meter import BrowsingBudgetDeferred
 from ...operation_turns import operation_lane
-from ...providers import DemoProvider, public_error
+from ...providers import public_error
 from ...video_vision import VideoPartText
 from .caption_corrections import CORRECTED_VIDEOS, corrected_caption
 from .comment_reader import commit_comment_context, enqueue_comment_visit, video_comment_context
@@ -263,7 +263,7 @@ async def _watch_interval(browsing, row, identity, material, part, interval, cho
     choice_key = str([cid, start, end, interval["subtitle"].get("segments")])
     chosen_intervals = choices.setdefault("classified:" + policy, [])
     if (interval["subtitle"]["state"] == "available" and choice_key not in chosen_intervals
-            and not isinstance(browsing.runtime.llm, DemoProvider)):
+            and getattr(browsing.runtime.llm, "supports_video_research", True)):
         subtitle = [source | {"segments": [segment for segment in source["segments"]
                                           if segment["start"] < end and segment["end"] > start]}
                     for source in material["parts"] if str(source["cid"]) == cid and not source.get("visual")]

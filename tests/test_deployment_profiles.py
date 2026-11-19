@@ -1,40 +1,59 @@
+import json
+
 import pytest
 
-from tuber_studio.deployment_profiles import business_configuration, mode_configuration
-from tuber_studio.http_api import endpoint
-from tuber_studio.inference_profiles import DAFEIYU_9B_MODEL
+from tuber_studio.config import Settings
+from tuber_studio.deployment_profiles import RETIRED_SECTIONS
 
 
-def test_business_modes_preserve_operator_data_and_separate_thinking_models(settings):
-    original = settings.data | {"llm": settings.data["llm"] | {"max_tokens": 160}}
-    original["operator_extension"] = {"keep": "unchanged"}
-    data = business_configuration(original, "http://100.64.0.42:9012",
-                                  operations_model="Gemma4-E2B", live_model="MiniCPM5-2B")
-    settings._validate(data)
-    assert data["llm"]["model"] == "Gemma4-E2B"
-    assert data["llm"]["context_tokens"] == 131072
-    assert data["llm"]["enable_thinking"] is True
-    assert "reasoning_budget_tokens" not in data["llm"]
-    assert data["llm"]["operations_max_tokens"] == 8192
-    assert data["video_vision"]["image_profile"] == "gemma4_image_280"
-    live = mode_configuration(data, "live")
-    assert live["llm"]["model"] == "MiniCPM5-2B" and live["vision"]["kind"] == "disabled"
-    assert live["llm"]["max_tokens"] == 1024
-    assert live["tts"]["local_backend"] == "genie_onnx_int8"
-    assert live["operator_extension"] == original["operator_extension"]
-    assert original["llm"]["kind"] == "demo"
+def test_new_configuration_has_one_connection_and_two_protocols(tmp_path):
+    settings = Settings(runtime=tmp_path)
+    omni = settings.data["omni"]
+    assert not settings.data.keys() & RETIRED_SECTIONS
+    assert settings.responses_config["base_url"] == omni["base_url"].removesuffix("/v1") + "/llm/v1"
+    assert settings.video_config["base_url"] == omni["base_url"]
+    assert settings.data["voice_id"] == "whale_reference"
+    assert not (tmp_path / "inference-token").exists()
 
 
-def test_new_profiles_share_the_pinned_fine_tuned_9b(settings):
-    data = business_configuration(settings.data, "http://127.0.0.1:9012")
-    settings._validate(data)
-    live = mode_configuration(data, "live")
-    assert data["llm"]["model"] == live["llm"]["model"] == DAFEIYU_9B_MODEL
-    assert data["llm"]["context_tokens"] == live["llm"]["context_tokens"] == 262144
-    assert data["video_vision"]["model"] == DAFEIYU_9B_MODEL
+def test_old_remote_voice_name_cannot_be_interpreted_as_a_reference_profile(tmp_path):
+    config = tmp_path / "studio.json"
+    config.write_text(json.dumps({"tts": {"kind": "openai_compatible", "voice": "yaoyao_sovits_v2"}}))
+    settings = Settings(runtime=tmp_path)
+    assert settings.data["voice_id"] == "external_api"
 
 
-@pytest.mark.parametrize("address", ["http://100.128.0.1:9012", "http://1.1.1.1:9012"])
-def test_shared_space_exception_does_not_enable_plain_http_public_endpoints(address):
-    with pytest.raises(ValueError, match="HTTPS"):
-        endpoint(address)
+@pytest.mark.parametrize("old_voice,current", [
+    ("whale_sovits_v2", "whale_reference"), ("yaoyao_sovits_v2", "yaoyao_reference"),
+    ("whale_sample_v1", "whale_sample_v1"), ("external_api", "external_api"),
+])
+def test_existing_gateway_profile_migrates_in_memory_and_persists_on_save(tmp_path, old_voice, current):
+    root = "https://studio.example/proxy"
+    settings = Settings(runtime=tmp_path)
+    legacy = {k: v for k, v in settings.data.items() if k not in {"omni", "voice_id"}}
+    legacy.update(llm={"base_url": root + "/v1", "kind": "openai_compatible", "model": "my-omni",
+                       "enable_thinking": False, "operations_max_tokens": 3011},
+                  tts={"kind": "gpt_sovits", "base_url": "https://retired.example", "voice_id": old_voice},
+                  video_vision={"adapter": "omni", "model": "my-omni", "base_url": root + "/v1", "model_revision": "pin"},
+                  responses={"base_url": root + "/llm/v1", "model": "worker", "parallel_reads": 3},
+                  inference_broker={"enabled": True}, work_mode_profiles={"live": {}}, operator_extension="original")
+    settings.path.write_text(json.dumps(legacy), encoding="utf-8")
+    settings.credentials_path.write_text(json.dumps({
+        "llm": {"base_url": root + "/v1", "key": "front-key"},
+        "tts": {"base_url": "https://retired.example", "key": "old-key"},
+    }), encoding="utf-8")
+    loaded = Settings(runtime=tmp_path)
+    assert loaded.data["voice_id"] == loaded.voice(old_voice)["id"] == current
+    assert loaded.data["operator_extension"] == "original"
+    assert loaded.data["omni"]["operations_max_tokens"] == 3011
+    assert loaded.video_config["model_revision"] == "pin" and not loaded.video_config["enable_thinking"]
+    assert (loaded.responses_config["model"], loaded.responses_config["parallel_reads"]) == ("worker", 3)
+    assert loaded.provider_keys == {"omni": "front-key"}
+    assert "old-key" not in str(loaded.public_data())
+    assert json.loads(loaded.path.read_text()) == legacy
+    # An unrelated public settings save must migrate the scoped key as well.
+    loaded.save_public(loaded.data)
+    again = Settings(runtime=tmp_path)
+    assert again.data == loaded.data and again.provider_key("omni") == "front-key"
+    assert not again.data.keys() & RETIRED_SECTIONS
+    assert set(json.loads(again.credentials_path.read_text())) == {"omni"}

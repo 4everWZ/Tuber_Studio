@@ -4,8 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.config import Settings
-from tuber_studio.inference_profiles import DAFEIYU_KEY, DAFEIYU_MODEL
 from tuber_studio.models import Character
 from tuber_studio.operation_identity import identity_snapshot
 from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
@@ -19,7 +17,7 @@ def test_runtime_reads_selected_card_with_legacy_metadata(store, mode):
         "style": {"min_chars": 10, "max_chars": 80},
         "lore": [{"text": "珊瑚村的料理故事", "keywords": ["吃什么"]}],
         "persona_type": "fine_tuned",
-        "fine_tuned_model": DAFEIYU_MODEL,
+        "fine_tuned_model": "archived-model",
         "compact_system_prompt": "旧模型绑定的短卡",
     }
     normalized = Character.model_validate(card).model_dump()
@@ -33,35 +31,6 @@ def test_runtime_reads_selected_card_with_legacy_metadata(store, mode):
         assert "用10到80字回答。" in messages[-1]["content"]
 
 
-@pytest.mark.parametrize(
-    ("route", "old_model", "model"),
-    [("dafeiyu", "MiniCPM5-2B", DAFEIYU_MODEL), ("2b", DAFEIYU_KEY, "MiniCPM5-2B")],
-)
-def test_legacy_node_configuration_migrates_its_model(settings, route, old_model, model):
-    base_url = "http://jetson.local:9012"
-    data = settings.data
-    data["inference_broker"].update(enabled=True, base_url=base_url)
-    data["llm"].update(kind="llama_cpp", base_url=f"{base_url}/llm/{route}/", model=old_model)
-    data["work_mode_profiles"] = {
-        "text": {"llm": {**data["llm"], "kind": "openai_compatible"}},
-        "live": {
-            "llm": {**data["llm"], "kind": "openai_compatible", "base_url": "https://api.example/llm/2b"}
-        },
-    }
-    settings.path.write_text(json.dumps(data), encoding="utf-8")
-
-    restored = Settings(runtime=settings.runtime)
-    llm = restored.data["llm"]
-    profiles = restored.data["work_mode_profiles"]
-    assert llm["base_url"] == base_url + "/llm" and llm["model"] == model
-    assert profiles["text"]["llm"] == llm
-    assert profiles["live"]["llm"] == data["work_mode_profiles"]["live"]["llm"]
-    assert restored.endpoint_key("llm") == restored.inference_token
-    assert restored.broker_key_for(f"{base_url}/llm/{route}") is None
-    assert json.loads(settings.path.read_text())["llm"]["model"] == old_model
-
-    restored.save_public(restored.data)
-    assert json.loads(settings.path.read_text())["llm"]["base_url"] == base_url + "/llm"
 
 
 def test_character_edit_overwrites_current_card_and_preserves_historical_sources(settings):

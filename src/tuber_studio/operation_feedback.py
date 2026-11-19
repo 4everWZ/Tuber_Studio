@@ -179,7 +179,7 @@ class FeedbackModel:
         self.max_tokens = (
             max_tokens
             if max_tokens is not None
-            else runtime.settings.data["llm"].get("operations_max_tokens", 8192)
+            else runtime.settings.data["omni"].get("operations_max_tokens", 8192)
         )
         self.reads = tuple(reads)
         self.generation_context = generation_context
@@ -232,7 +232,7 @@ class FeedbackModel:
             {"role": "user", "content": dump(value)},
         ]
         summary_messages = identity_messages(summary_messages, self._identity(row))
-        maximum = min(self.max_tokens, self.runtime.settings.data["llm"].get("compaction_max_tokens", 4096))
+        maximum = min(self.max_tokens, self.runtime.settings.data["omni"].get("compaction_max_tokens", 4096))
         summary = await budgeted_call(
             self.runtime.llm,
             lambda: self.runtime.llm.summarize(summary_messages, max_tokens=maximum),
@@ -403,7 +403,7 @@ class FeedbackPublication:
         return episode_limits(
             prepared.max_tokens
             if prepared.max_tokens is not None
-            else self.runtime.settings.data["llm"].get("operations_max_tokens", 8192)
+            else self.runtime.settings.data["omni"].get("operations_max_tokens", 8192)
         )
 
     def record_unknown(self, channel, identity, token, binding, payload, message):

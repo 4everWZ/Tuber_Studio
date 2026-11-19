@@ -27,11 +27,8 @@ class ControlledMessages:
 def make_app(settings):
     # Only transport/model inference is controlled. Routes, authorization,
     # SQLite, workers, evidence storage and cancellation are production code.
-    settings.data["llm"]["kind"] = "demo"
     app = create_app(settings, ControlledPlatform(), message_adapter=ControlledMessages())
     app.state.runtime.llm = ControlledModel()
-    app.state.runtime.context.llm = app.state.runtime.llm
-    settings.data["llm"]["kind"] = "llama_cpp"
     app.state.comments.credentials = {"sessdata": "controlled-session", "csrf": "controlled-csrf"}
     app.state.browsing.read_interval = 0
     return app
@@ -80,13 +77,13 @@ def test_browsing_close_failure_still_closes_runtime_and_store(settings):
         app.state.store.one("SELECT 1")
 
 
-def test_application_attaches_owned_visual_provider_and_keeps_it_disabled(settings):
+def test_application_attaches_and_closes_owned_visual_provider(settings):
     from tuber_studio.video_vision import ApiVideoEvidenceProvider
 
     owned = []
 
     def factory(runtime):
-        provider = ApiVideoEvidenceProvider(runtime)
+        provider = ApiVideoEvidenceProvider(runtime, runtime.settings.video_config, api_key=runtime.settings.provider_key("omni"))
         owned.append(provider)
         return provider
 
@@ -103,7 +100,7 @@ def test_application_attaches_owned_visual_provider_and_keeps_it_disabled(settin
         assert not response["vision"]["available"] and not response["vision"]["admitted"]
         assert app.state.browsing.evidence.visual is owned[0]
         assert not app.state.comments.adapter.sent
-    assert owned[0].api is None and not owned[0]._active
+    assert owned[0].api.client.is_closed and not owned[0]._active
 
 
 @pytest.mark.parametrize(("method", "suffix", "body"), [("GET", suffix, None) for suffix in READS] + WRITES)
@@ -131,13 +128,15 @@ def test_all_automation_writes_enforce_same_origin(admin):
     assert admin.app.state.comments.adapter.sent == []
 
 
-def test_default_disabled_visual_unavailable_and_semantics_still_require_review(admin):
+def test_automation_defaults_to_off_with_configured_unprobed_omni_vision(admin):
     status = admin.get("/api/automation").json()
     assert status["policy"]["enabled"] is False
     assert status["policy"]["emergency"] is False
     assert "visual_enabled" not in status["settings"] and "inspect_limit" not in status["settings"]
     assert status["vision"]["available"] is False
-    assert status["vision"]["reason"]
+    assert status["vision"]["images"] is True
+    assert status["vision"]["admitted"] is False
+    assert status["vision"]["reason"] == ""
     assert status["automatic_sending_ready"] is False
     assert "审核" in status["sending_note"]
     assert not status["effective"]["dynamics"].get("enabled", False)

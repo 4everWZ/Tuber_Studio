@@ -6,7 +6,7 @@ import pytest
 from tuber_studio.character_presets import _fingerprint
 from tuber_studio.config import ROOT
 from tuber_studio.maintenance import archive_character_version
-from tuber_studio.models import Character
+from tuber_studio.models import Character, canonical_voice_id
 from tuber_studio.operations_control import OperationsControl
 from tuber_studio.providers import build_messages
 from tuber_studio.store import Store, dump
@@ -63,6 +63,7 @@ def test_startup_does_not_reintroduce_an_archived_preset(tmp_path):
 def test_resident_fields_preserve_previous_active_version_and_history(tmp_path, custom):
     previous = presets()[0]
     del previous["self_description"], previous["speaking_style"]
+    previous["voice_profile"] = "yaoyao_sovits_v2"
     if custom:
         previous["core"]["identity"] = "你是蓝发鲸鱼娘，住在海底小屋，机灵傲娇又爱摸鱼。"
         previous["style"]["instructions"] = "说话口语化，平常用「我」和「你」。"
@@ -84,10 +85,11 @@ def test_enriched_preset_keeps_character_assets_without_retired_radio():
     assert _fingerprint(before[0]) == "c502c1ff0d81547625a819dd59aec9f2073a3610a51c86a4b75ddebd070df598"
     for item in after:
         Character.model_validate(item)
-    for field in ("id", "name", "voice_profile", "avatar_manifest", "license_status"):
+    for field in ("id", "name", "avatar_manifest", "license_status"):
         assert after[0][field] == before[0][field]
     assert [item["id"] for item in after] == ["whale"]
     main = after[0]
+    assert main["voice_profile"] == "whale_reference"
     assert main["style"]["min_chars"] == 1
     assert main["style"]["max_chars"] == 120
     assert {"本鱼", "本鲸", "鱼鱼", "鲸鲸", "小鲸鱼", "白饭"} <= set(main["style"]["catchphrases"])
@@ -281,9 +283,10 @@ def test_known_old_voice_history_upgrades_without_replacing_selected_voice(tmp_p
     targets = presets()
     if not with_resident_fields:
         del targets[0]["self_description"], targets[0]["speaking_style"]
+        targets[0]["voice_profile"] = "yaoyao_sovits_v2"
     store = Store(path, targets)
     assert store.character("whale")["version"] == 3
-    assert store.character("whale")["voice_profile"] == "yaoyao_sovits_v2"
+    assert store.character("whale")["voice_profile"] == "yaoyao_reference"
     assert (
         store.all(
             "SELECT * FROM character_versions WHERE character_id='whale' AND version<3 ORDER BY version"
@@ -310,7 +313,7 @@ def test_known_engineering_and_clean_history_upgrade_once_and_allow_rollback(tmp
     assert store.character("whale")["version"] == 3
     assert store.versions("whale")[1:] == old_versions
     assert store.character("whale")["core"] == presets()[0]["core"]
-    assert store.character("whale")["voice_profile"] == old_voice
+    assert store.character("whale")["voice_profile"] == canonical_voice_id(old_voice)
     assert store.relationship("whale", 7)["affection"] == 27
     assert store.get("active_character") == "whale_calm"
     store.activate("whale", 2)
@@ -333,7 +336,7 @@ def test_sample_voice_history_allows_the_current_production_preset_upgrade(tmp_p
     store = Store(path, presets())
     assert store.character("whale")["version"] == 3
     assert store.character("whale")["core"] == presets()[0]["core"]
-    assert store.character("whale")["voice_profile"] == "whale_sovits_v2"
+    assert store.character("whale")["voice_profile"] == "whale_reference"
     assert store.versions("whale")[1:] == history
     store.close()
 

@@ -22,7 +22,7 @@ def test_public_candidates_receipts_and_explicit_reviews_are_distinct(settings, 
     def add_candidate(identity, kind, status, model_body, stored_body, receipt=None):
         generation_id = "generation-" + identity
         if model_body is not None:
-            binding = json.dumps({"model": json.dumps(["llama_cpp", "recorded-model", "local", True])})
+            binding = json.dumps({"model": json.dumps(["omni", "recorded-model", "local", True])})
             store.execute(
                 "INSERT INTO operation_continuations (id,channel,entity_id,binding,state,episode,deadline,"
                 "feedback,current_output,created_at,updated_at) VALUES (?,'generation.browsing',?,?,'completed',"

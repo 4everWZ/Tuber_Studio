@@ -15,8 +15,6 @@ from .models import StrictModel
 from .responses_provider import ResponsesClient
 from .store import dump
 from .workstation_images import (
-    MODEL,
-    REVISION,
     ImageBrief,
     gateway,
     gateway_base,
@@ -50,9 +48,6 @@ class GalleryImage(StrictModel):
 
 async def choose(settings, material):
     # Only the background service receives this channel's material.
-    base = gateway_base(settings).removesuffix("/v1")
-    if settings.data.get("responses", {}).get("base_url", "").rstrip("/") != base + "/llm/v1":
-        raise ValueError("工作站后台 Responses 未配置")
     options = json.loads(material)
     gallery = {item["asset_id"]: item for item in options.get("gallery", [])}
     choices = ["text_only", *options.get("variants", ["q", "mature"]), *gallery]
@@ -298,7 +293,8 @@ class OperationImages:
         artifact_id = uuid4().hex
         with self.store.db as db:
             db.execute("INSERT INTO operation_image_artifacts VALUES(?,?,?,?,?,?,?,?,?)",
-                       (artifact_id, job["scope"], identity, hashlib.sha256(png).hexdigest(), png, MODEL, REVISION,
+                       (artifact_id, job["scope"], identity, hashlib.sha256(png).hexdigest(), png,
+                        remote.get("model") or "", remote.get("revision") or "",
                         brief.variant, binding["sha256"]))
             db.execute("UPDATE operation_image_jobs SET status='ready',artifact_id=? WHERE job_id=?",
                        (artifact_id, identity))

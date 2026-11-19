@@ -44,10 +44,11 @@ async def test_real_http_roundtrip_uses_scoped_key_budget_and_all_call_ids(setti
         worker = Thread(target=server.serve_forever)
         worker.start()
         try:
-            settings.data["responses"] = {"base_url": f"http://127.0.0.1:{server.server_port}/service/llm/v1",
-                                          "model": "local-worker", "max_output_tokens": 768}
+            settings.data["omni"].update(base_url=f"http://127.0.0.1:{server.server_port}/service/v1",
+                                         responses_model="local-worker",
+                                         responses_options={"max_output_tokens": 768})
             settings.save_public(settings.data)
-            settings.save_keys({"llm": "other-key", "responses": "worker-key"})
+            settings.save_keys({"omni": "worker-key"})
             async with ResponsesClient.from_settings(Settings(runtime=settings.runtime)) as client:
                 first = await client.create("Read both tickets", tools=[TOOL])
                 assert [(call.call_id, call.name, call.arguments) for call in first.calls] == [

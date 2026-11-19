@@ -848,7 +848,7 @@ class DirectMessages:
         return event
 
     async def _reply_to_conversation(self, draft, character, event, relationship, refs, links):
-        config = self.settings.data["llm"]
+        config = self.settings.data["omni"]
         maximum = config.get("operations_max_tokens", 8192)
         scope = self.scope(draft)
         binding = reply_generation_binding(scope, character, event, "direct_message") | {
@@ -1422,7 +1422,7 @@ class DirectMessages:
                     "pending_review",
                     reply.spoken_text,
                     json.dumps(check, ensure_ascii=False),
-                    self.settings.data["llm"].get("model", "demo"),
+                    self.settings.data["omni"]["model"],
                     json.dumps(ref) if ref else None,
                     draft["message_kind"] if preserve_attachments else "text",
                     draft["meme_id"] if preserve_attachments else None,

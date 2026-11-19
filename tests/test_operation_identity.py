@@ -4,7 +4,6 @@ import asyncio
 import copy
 from types import SimpleNamespace
 
-import httpx
 import pytest
 
 from tuber_studio.operation_identity import (
@@ -111,45 +110,3 @@ async def test_explicit_local_adapter_without_profile_keeps_unknown_profile_with
     assert result["account_display_name"] is None and result["account_bio"] is None
     assert "verified" not in result and "checked_at" not in result
     del runtime.account
-
-
-async def test_llama_native_tokenizer_json_summary_and_prefill_share_system_identity(settings, runtime):
-    import json
-
-    from tuber_studio.providers import LlamaCppProvider
-
-    expected = runtime.identity_snapshot()
-    observed = []
-
-    def respond(request):
-        if request.url.path == "/props":
-            return httpx.Response(200, json={"default_generation_settings": {"n_ctx": 131072}})
-        body = json.loads(request.content)
-        if request.url.path == "/tokenize":
-            return httpx.Response(200, json={"tokens": [1, 2, 3]})
-        observed.append((request.url.path, body["messages"]))
-        assert captured_identity(body["messages"]) == expected
-        assert len([item for item in body["messages"] if item["role"] == "system"]) == 1
-        if request.url.path == "/apply-template":
-            return httpx.Response(200, json={"prompt": "identity plus task"})
-        return httpx.Response(200, json={
-            "choices": [{"message": {"content": '{"ok":true}' if "response_format" in body else "来源摘要"},
-                         "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 3, "completion_tokens": 1},
-        })
-
-    provider = LlamaCppProvider(settings.data["llm"])
-    await provider.client.aclose()
-    provider.client = httpx.AsyncClient(base_url="http://identity-model", transport=httpx.MockTransport(respond))
-    previous = runtime.llm
-    runtime.llm = provider
-    messages = [{"role": "system", "content": "任务"}, {"role": "user", "content": "原文"}]
-    try:
-        assert await provider.count_tokens(messages) == 3
-        assert await provider.generate_json(messages, {"type": "object"}, max_tokens=32) == {"ok": True}
-        assert await provider.summarize(messages, max_tokens=32) == "来源摘要"
-        assert await provider.prefill(messages)
-        assert len([path for path, _ in observed if path == "/v1/chat/completions"]) == 3
-    finally:
-        runtime.llm = previous
-        await provider.close()

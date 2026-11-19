@@ -1,9 +1,9 @@
 import asyncio
 import json
 import os
-from pathlib import Path
 import socket
 import subprocess
+from pathlib import Path
 from uuid import uuid4
 
 import httpx
@@ -13,7 +13,6 @@ import uvicorn
 from tuber_studio.agent import private_call
 from tuber_studio.app import create_app
 from tuber_studio.responses_provider import FunctionCall, ResponseTurn
-
 
 CHAT = "/api/chat/intelligent"
 MEM = "/api/agent/memory"
@@ -77,7 +76,7 @@ async def test_private_writing_budget_on_the_counted_structured_request(owner, m
     async def editor(task, evidence):
         return PrivateDelivery(items=[], gaps=["待补资料"])
     monkeypatch.setattr(rt, "llm", provider)
-    monkeypatch.setitem(rt.settings.data["llm"], "max_tokens", owner_limit)
+    monkeypatch.setitem(rt.settings.data["omni"], "max_tokens", owner_limit)
     monkeypatch.setattr(rt.tasks, "edit_delivery", editor)
     connect_private_editor(rt)
     task = {"goal":NOTE, "steps":[{"tool":"owner_attachment"}], "plan":{}}
@@ -126,7 +125,7 @@ async def test_owner_citations_voice_and_temporary_window(owner, monkeypatch):
     async def mint(*args):
         return "test-ticket"
 
-    monkeypatch.setattr(private_call, "private_service", lambda: ("https://voice.example", "test-key"))
+    monkeypatch.setattr(private_call, "private_service", lambda settings: ("https://voice.example", "test-key"))
     monkeypatch.setattr(private_call, "mint_ticket", mint)
     path = "/api/chat/private-call/ticket"
     ticket = (await client.post(path, json={"topic": source_key})).raise_for_status().json()
@@ -236,7 +235,7 @@ async def test_chromium_owner_controls(settings, monkeypatch, mode):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
-        monkeypatch.setattr(private_call, "private_service", lambda: (origin, "fixture"))
+        monkeypatch.setattr(private_call, "private_service", lambda settings: (origin, "fixture"))
         async def mint(*args):
             return "session-fixture"
         monkeypatch.setattr(private_call, "mint_ticket", mint)
@@ -261,6 +260,7 @@ async def test_chromium_owner_controls(settings, monkeypatch, mode):
                                       "unsupported_setting", "unbound_answer", "incomplete_initial", "incomplete_final"])
 async def test_private_video_editor_reads_preferences_only_after_research(owner, monkeypatch, scenario):
     from types import SimpleNamespace
+
     from tuber_studio.agent import public_video
 
     client, state = owner
@@ -528,7 +528,7 @@ async def test_voice_preview_binds_original_and_forgets_both_texts(owner, monkey
     client, state = owner
     raw, confirmed = "好的，以后用陈述句。", "以后用陈述句。"
     key = "isolated-ordinary"
-    monkeypatch.setattr(private_call, "private_service", lambda: ("https://voice.example", key))
+    monkeypatch.setattr(private_call, "private_service", lambda settings: ("https://voice.example", key))
     context = ticket_context(key, "single-use-ticket", state.runtime.tasks.scope())
     origin = dict(context, capture_id="selected", samples=32000, machine_text=raw,
                   receipt=sign(key, ["omni.mic.v1", context["ticket_hash"], "selected", 32000, raw]))
@@ -555,7 +555,7 @@ async def test_confirmed_voice_correction_rechecks_target_and_revision(owner, mo
     old = (await client.post(MEM + ".get", json={"id":identity})).json()
     async def mint(*args):
         return "test-ticket"
-    monkeypatch.setattr(private_call, "private_service", lambda: ("https://voice.example","fixture"))
+    monkeypatch.setattr(private_call, "private_service", lambda settings: ("https://voice.example","fixture"))
     monkeypatch.setattr(private_call, "mint_ticket", mint)
     call = (await client.post("/api/chat/private-call/ticket", json={"topic":old["source_key"]})).json()
     target = {"id":identity, "revision":old["revision"], "use":call["memory_use"]}

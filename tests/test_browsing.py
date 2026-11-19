@@ -270,7 +270,7 @@ async def browsing(settings, store, runtime):
     runtime.browsing = service
     previous = runtime.llm
     runtime.llm = ControlledModel()
-    settings.data["llm"]["kind"] = "llama_cpp"
+    settings.data["omni"]["model"] = "omni-default"
     service.store.set("browsing_policy", BrowsingPolicy(top_level_enabled=True).model_dump())
     yield service
     await service.close()
@@ -1153,7 +1153,7 @@ async def test_cache_pins_drafts_and_clear_does_not_clear_audit(browsing):
 
 async def test_long_cc_chunks_use_provider_tokens_and_keep_every_reference(browsing):
     await browsing.preflight()
-    browsing.settings.data["llm"]["context_tokens"] = 4096
+    browsing.settings.data["omni"]["context_tokens"] = 4096
     browsing.store.set("browsing_policy", browsing.policy() | {"decision_max_tokens": 1024})
     segments = [{"id": str(i), "start": i, "end": i + 1, "text": "盐水实验浮力测试" * 70} for i in range(30)]
     material = {

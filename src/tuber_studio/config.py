@@ -6,10 +6,19 @@ import secrets
 import tempfile
 from pathlib import Path
 
+from .deployment_profiles import (
+    GENERATION_OPTIONS,
+    RESPONSE_OPTIONS,
+    RETIRED_SECTIONS,
+    VIDEO_OPTIONS,
+    load_profile,
+    omni_base,
+    responses_profile,
+    video_profile,
+)
 from .http_api import endpoint
-from .inference_profiles import LLM_MODELS, VISION_ROUTES
 from .inference_validation import project_wav
-from .llama_sampling import live_thinking_budget
+from .models import canonical_voice_id
 from .responses_provider import ResponsesConfig
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,37 +37,6 @@ class _EndpointKey(str):
         return str(self), self.base_url
 
 
-def normalize_broker_llm(data):
-    """Migrate the exact saved node routes that previously chose the model by path."""
-    broker = data.get("inference_broker", {})
-    base = (broker.get("base_url") or "").rstrip("/")
-    if not base:
-        return
-    unified = base + "/llm"
-    legacy = {f"{unified}/{key.removeprefix('llm')}": model for key, model in LLM_MODELS.items()}
-    profiles = [data, *(data.get("work_mode_profiles") or {}).values()]
-    for profile in profiles:
-        llm = profile.get("llm", {})
-        url = llm.get("base_url")
-        model = legacy.get(url.rstrip("/")) if isinstance(url, str) else None
-        if model and (
-            llm.get("kind") == "llama_cpp"
-            or (llm.get("kind") == "openai_compatible" and broker.get("enabled"))
-        ):
-            llm.update(kind="llama_cpp", base_url=unified, model=model)
-
-
-def uses_broker_llm(data):
-    broker, llm = data.get("inference_broker", {}), data["llm"]
-    base = broker.get("base_url", "").rstrip("/")
-    return (
-        bool(base)
-        and broker.get("enabled")
-        and llm.get("kind", "llama_cpp") == "llama_cpp"
-        and llm.get("base_url", "").rstrip("/") in {base, base + "/llm"}
-    )
-
-
 class Settings:
     def __init__(self, root: Path = ROOT, runtime: Path | None = None):
         self.root = root.resolve()
@@ -66,126 +44,89 @@ class Settings:
         self.runtime.mkdir(parents=True, exist_ok=True)
         self.audio = self.runtime / "audio"
         self.audio.mkdir(exist_ok=True)
-        self.models = self.runtime / "models"
-        self.models.mkdir(exist_ok=True)
-        path = Path(os.getenv("TUBER_CONFIG", str(self.runtime / "studio.json")))
-        example = self.root / "config/studio.example.json"
-        self.data = json.loads((path if path.exists() else example).read_text(encoding="utf-8"))
-        normalize_broker_llm(self.data)
-        # Conversation retention now has its own persisted policy; the old
-        # seven-day event setting must not silently override the requested 30 days.
+        self.path = Path(os.getenv("TUBER_CONFIG", self.runtime / "studio.json"))
+        defaults = json.loads((self.root / "config/studio.example.json").read_text(encoding="utf-8"))
+        self._omni_fields = defaults["omni"].keys() | GENERATION_OPTIONS | {"video_options"}
+        saved = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else defaults
+        self.data, legacy_base = load_profile(saved, defaults)
         self.data.pop("event_retention_days", None)
         self.data.setdefault("conversation_retention_days", 30)
         self.data.setdefault("features", {}).setdefault("live_enabled", False)
-        self.data.setdefault("vision", {"kind": "disabled", "location": "local", "base_url": "", "model": ""})
-        self.data["tts"].setdefault("model", "")
-        self.data["tts"].setdefault("voice", "")
-        self.data["tts"].setdefault("local_backend", "compact")
-        self.data["llm"].setdefault("operations_max_tokens", 8192)
-        self.data["llm"].setdefault("context_tokens", self.data["llm"].get("native_context_tokens", 131072))
-        if self.data["llm"]["kind"] == "llama_cpp":
-            self.data["llm"].setdefault("enable_thinking", True)
         self._validate()
-        self.path = path
         self.admin_token = os.getenv("TUBER_ADMIN_TOKEN") or self._secret("admin-token")
         self.overlay_token = self._secret("overlay-token")
-        self.inference_token = (
-            self._secret("inference-token") if self.data.get("inference_broker", {}).get("enabled") else None
-        )
         self.credentials_path = self.runtime / "provider-credentials.json"
-        self.provider_keys = self.read_provider_keys(self.credentials_path)
+        self._legacy_public = "omni" not in saved
+        self.provider_keys = self.read_provider_keys(self.credentials_path, legacy_base=legacy_base)
 
     @staticmethod
-    def read_provider_keys(path):
+    def read_provider_keys(path, *, legacy_base=None):
         if path.is_symlink():
             raise ValueError("API凭证文件不能使用符号链接")
-        saved_keys = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-        if not isinstance(saved_keys, dict) or set(saved_keys) - {"llm", "tts", "vision", "responses"}:
+        saved = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        if not isinstance(saved, dict) or saved.keys() - {"omni", "llm", "tts", "vision", "responses"}:
             raise ValueError("API凭证文件格式无效")
-        keys = {}
-        for name, entry in saved_keys.items():
-            if isinstance(entry, str):
-                keys[name] = _EndpointKey(entry, None)
-            elif isinstance(entry, dict) and set(entry) == {"key", "base_url"}:
-                keys[name] = _EndpointKey(entry["key"], entry["base_url"])
-            else:
-                raise ValueError("API凭证文件格式无效")
-        return keys
+        entry = saved.get("omni")
+        if entry is None and legacy_base:
+            old = saved.get("llm")
+            if isinstance(old, dict) and old.get("base_url") == legacy_base:
+                entry = old
+        if entry is None:
+            return {}
+        if not isinstance(entry, dict) or set(entry) != {"key", "base_url"} or not entry["base_url"]:
+            raise ValueError("Omni 凭证需要绑定服务地址")
+        return {"omni": _EndpointKey(entry["key"], entry["base_url"])}
+
+    @property
+    def responses_config(self):
+        return responses_profile(self.data["omni"])
+
+    @property
+    def video_config(self):
+        return video_profile(self.data["omni"])
 
     def _validate(self, data=None):
-        data = self.data if data is None else data
-        if "responses" in data:
-            ResponsesConfig.model_validate(data["responses"])
-        llm, tts = data["llm"], data["tts"]
-        if llm["kind"] not in {"llama_cpp", "openai_compatible", "demo"} or tts["kind"] not in {
-            "gpt_sovits",
-            "omni_reference",
-            "openai_compatible",
-            "prerecorded",
-        }:
-            raise ValueError("未知模型或语音Provider")
-        window, native = llm["context_tokens"], llm.get("native_context_tokens", 131072)
-        if (
-            type(window) is not int
-            or type(native) is not int
-            or not 4096 <= window <= native <= 2_147_483_647
-        ):
-            raise ValueError("上下文须为至少4096的整数，且不能超过服务或模型上限")
-        if not 1 <= llm.get("max_tokens", 1024) < window * 95 // 100:
-            raise ValueError("输出预算须小于有效上下文")
-        operations = llm.get("operations_max_tokens", 8192)
-        if type(operations) is not int or not 1 <= operations <= 65536:
-            raise ValueError("运营输出额度须为1到65536 tokens，实际生成仍受真实输入与窗口约束")
-        if "enable_thinking" in llm and type(llm["enable_thinking"]) is not bool:
-            raise ValueError("思考开关须为布尔值")
-        if llm.get("structured_output", "json_object") not in ("json_object", "json_schema", "structural_tag"):
-            raise ValueError("未知结构化输出方式")
-        if "live_thinking_tokens" in llm and (
-            type(llm["live_thinking_tokens"]) is not int or not 0 <= llm["live_thinking_tokens"] <= 8192
-        ):
-            raise ValueError("直播思考额度须为0到8192 tokens")
-        if llm.get("max_tokens", 1024) + live_thinking_budget(llm) >= window * 95 // 100:
-            raise ValueError("直播思考与台词额度之和须小于有效上下文")
-        if llm["kind"] != "demo":
-            endpoint(llm["base_url"])
-            if not isinstance(llm.get("model"), str) or not llm["model"].strip():
-                raise ValueError("请填写模型ID")
-        if tts["kind"] != "prerecorded":
-            endpoint(tts["base_url"])
-        if tts["kind"] == "omni_reference" and (
-            not isinstance(tts.get("model"), str) or not tts["model"].strip()
-        ):
-            raise ValueError("Omni 朗读需要模型 ID")
-        if tts.get("local_backend", "compact") not in {"compact", "genie_onnx_int8"}:
-            raise ValueError("未知固定本地语音引擎")
-        if tts["kind"] == "openai_compatible" and any(
-            not isinstance(tts.get(key), str) or not tts[key].strip() for key in ("model", "voice")
-        ):
-            raise ValueError("语音API需要模型ID及voice ID")
-        vision = data.get("vision", {"kind": "disabled"})
-        if vision.get("kind") not in {"disabled", "openai_compatible"} or vision.get(
-            "location", "local"
-        ) not in {"local", "remote"}:
-            raise ValueError("未知视觉接口配置")
-        if vision["kind"] != "disabled":
-            endpoint(vision["base_url"])
-            if not isinstance(vision.get("model"), str) or not vision["model"].strip():
-                raise ValueError("视觉接口需要模型ID")
-        if llm.get("auto_compact_token_limit_scope", "total") not in {"total", "body_after_prefix"}:
-            raise ValueError("未知上下文压缩阈值范围")
-        if not 1 <= llm.get("effective_context_window_percent", 95) <= 95:
-            raise ValueError("有效上下文比例必须在1到95之间")
-        if not 1 <= data["queue_limit"] <= 1000 or not 1 <= data["event_ttl_seconds"] <= 3600:
-            raise ValueError("队列深度或TTL越界")
         from .retention import validate_days
 
+        data = self.data if data is None else data
+        if RETIRED_SECTIONS.intersection(data):
+            raise ValueError("仅支持 Omni 连接")
+        omni = data["omni"]
+        if not isinstance(omni, dict) or omni_base(omni.get("base_url")) != omni["base_url"]:
+            raise ValueError("Omni 地址须为有效的 /v1 接口")
+        if omni.keys() - self._omni_fields:
+            raise ValueError("未知 Omni 配置字段")
+        if (omni.get("context_source"), omni.get("structured_output"), omni.get("prompt_token_endpoint")) != (
+            "model_card", "structural_tag", True
+        ):
+            raise ValueError("Omni 配置需要模型卡窗口、结构化输出及服务计量")
+        if not isinstance(omni.get("model"), str) or not omni["model"].strip():
+            raise ValueError("请填写 Omni 模型别名")
+        if type(omni.get("enable_thinking")) is not bool:
+            raise ValueError("思考开关须为布尔值")
+        if omni.get("auto_compact_token_limit_scope") not in {"total", "body_after_prefix"}:
+            raise ValueError("未知上下文压缩阈值范围")
+        percent = omni.get("effective_context_window_percent")
+        if type(percent) is not int or not 1 <= percent <= 95:
+            raise ValueError("有效上下文比例必须在1到95之间")
+        if "context_tokens" in omni or "native_context_tokens" in omni:
+            window = omni.get("context_tokens", omni.get("native_context_tokens"))
+            native = omni.get("native_context_tokens", window)
+            if type(window) is not int or type(native) is not int or not 4096 <= window <= native <= 2_147_483_647:
+                raise ValueError("保存的窗口范围无效")
+        for name in ("max_tokens", "operations_max_tokens"):
+            if type(omni.get(name)) is not int or not 1 <= omni[name] <= 65536:
+                raise ValueError("输出额度须为1到65536 tokens")
+        for name, fields in (("responses_options", RESPONSE_OPTIONS), ("video_options", VIDEO_OPTIONS)):
+            options = omni.get(name, {})
+            if not isinstance(options, dict) or options.keys() - fields:
+                raise ValueError("未知 Omni 能力配置")
+        ResponsesConfig.model_validate(responses_profile(omni))
+        if not isinstance(data["voice_id"], str) or not data["voice_id"]:
+            raise ValueError("音色标识无效")
+        if not 1 <= data["queue_limit"] <= 1000 or not 1 <= data["event_ttl_seconds"] <= 3600:
+            raise ValueError("队列深度或TTL越界")
         validate_days(data["conversation_retention_days"])
-
-    def _key_base(self, name):
-        base = self.data.get(name, {}).get("base_url", "")
-        if name == "vision" and not base:
-            base = self.data.get("video_vision", {}).get("base_url", "")
-        return base.rstrip("/")
 
     @property
     def provider_keys(self):
@@ -193,66 +134,64 @@ class Settings:
 
     @provider_keys.setter
     def provider_keys(self, keys):
-        for name, value in keys.items():
-            if not isinstance(value, _EndpointKey):
-                keys[name] = _EndpointKey(value, self._key_base(name))
-        self._provider_keys = keys
-
-    def _key_for(self, name, base):
-        value = self.provider_keys.get(name)
-        if value is not None and not isinstance(value, _EndpointKey):
-            value = self.provider_keys[name] = _EndpointKey(value, self._key_base(name))
-        return str(value) if value and base and value.base_url == base.rstrip("/") else None
+        if keys.keys() - {"omni"}:
+            raise ValueError("仅支持 Omni 凭证")
+        self._provider_keys = {name: value if isinstance(value, _EndpointKey)
+                               else _EndpointKey(value, self.data["omni"]["base_url"])
+                               for name, value in keys.items()}
 
     def provider_key(self, name):
-        base = self._key_base(name)
-        key = self._key_for(name, base)
-        if (
-            not key and name == "tts" and self.data["tts"]["kind"] == "omni_reference"
-            and self.data["llm"]["kind"] == "openai_compatible" and base == self._key_base("llm")
-        ):
-            return self.provider_key("llm")
-        return key
-
-    def endpoint_key(self, name):
-        """A paired node credential is scoped to its exact configured routes."""
-        base = self.data.get(name, {}).get("base_url", "")
-        return self.broker_key_for(base) or (self.provider_key(name) if base else None)
-
-    def video_vision_key(self):
-        base = self.data.get("video_vision", {}).get("base_url", "")
-        return self.broker_key_for(base) or self._key_for("vision", base) or (
-            self.provider_key("llm") if base and base.rstrip("/") == self._key_base("llm") else None
-        )
-
-    def broker_key_for(self, base_url):
-        broker = self.data.get("inference_broker", {})
-        base = broker.get("base_url", "").rstrip("/")
-        allowed = {base, base + "/tts", base + "/llm", *(f"{base}/vlm/{route}/v1" for route in VISION_ROUTES)}
-        return (
-            self.inference_token
-            if base and broker.get("enabled") and base_url.rstrip("/") in allowed
-            else None
-        )
+        if name != "omni":
+            raise ValueError("仅支持 Omni 凭证")
+        value = self.provider_keys.get(name)
+        return str(value) if value and value.base_url == self.data["omni"]["base_url"] else None
 
     def public_data(self):
-        return redact_credentials(self.data) | {
-            "provider_credentials": {
-                key: bool(self.provider_key(key)) for key in ("llm", "tts", "vision", "responses")
-            }
-        }
+        return redact_credentials(self.data) | {"provider_credentials": {"omni": bool(self.provider_key("omni"))}}
 
     def save_public(self, data):
-        normalize_broker_llm(data)
         self._validate(data)
-        atomic_json(self.path, data)
+        if self._legacy_public and self.credentials_path.exists():
+            self.save_connection(data, self.provider_keys)
+        else:
+            atomic_json(self.path, data)
+            self._legacy_public = False
 
     def save_keys(self, keys):
+        if keys.keys() - {"omni"}:
+            raise ValueError("仅支持 Omni 凭证")
         records = {}
         for name, value in keys.items():
-            bound = value if isinstance(value, _EndpointKey) else _EndpointKey(value, self._key_base(name))
+            bound = value if isinstance(value, _EndpointKey) else _EndpointKey(value, self.data["omni"]["base_url"])
             records[name] = {"base_url": bound.base_url, "key": str(bound)}
         atomic_json(self.credentials_path, records, private=True)
+
+    def save_connection(self, data, keys):
+        """Commit both files under the caller's configuration or staged-volume lock."""
+        self._validate(data)
+        bound = {name: value if isinstance(value, _EndpointKey) else _EndpointKey(value, data["omni"]["base_url"])
+                 for name, value in keys.items()}
+        files = (self.path, self.credentials_path)
+        if any(path.is_symlink() for path in files):
+            raise ValueError("配置文件不能使用符号链接")
+        previous = {path: path.read_bytes() if path.exists() else None for path in files}
+        try:
+            self.save_keys(bound)
+            atomic_json(self.path, data)
+        except BaseException:
+            restored = True
+            for path, content in previous.items():
+                try:
+                    if content is None:
+                        path.unlink(missing_ok=True)
+                    else:
+                        atomic_bytes(path, content, private=path == self.credentials_path)
+                except (OSError, ValueError):
+                    restored = False
+            if not restored:
+                raise RuntimeError("Omni 设置恢复结果未确认，请重新检查状态") from None
+            raise
+        self._legacy_public = False
 
     def _secret(self, name: str) -> str:
         path = self.runtime / name
@@ -272,20 +211,17 @@ class Settings:
         if not isinstance(voice, dict) or voice != self.voice(voice.get("id")):
             raise ValueError("参考音频须属于已配置的本地音色")
         relative = voice.get("reference_asset")
-        if voice.get("provider") != "gpt_sovits" or not isinstance(relative, str) or not relative:
+        if voice.get("provider") != "omni_reference" or not isinstance(relative, str) or not relative:
             raise ValueError("参考音频须属于已配置的本地音色")
         if Path(relative).anchor:
             raise ValueError("参考音频须使用项目相对路径")
-        data_root = (
-            self.runtime if self.data["tts"]["kind"] == "omni_reference"
-            or self.data.get("inference_broker", {}).get("deployment") == "remote" else None
-        )
-        return project_wav(self.root, relative, runtime=data_root)
+        return project_wav(self.root, relative, runtime=self.runtime)
 
     def voices(self) -> list[dict]:
         return json.loads((self.root / "config/voices.json").read_text(encoding="utf-8"))
 
     def voice(self, voice_id: str) -> dict:
+        voice_id = canonical_voice_id(voice_id)
         voice = next((v for v in self.voices() if v["id"] == voice_id), None)
         if voice is None:
             raise ValueError("未知音色")

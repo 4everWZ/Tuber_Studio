@@ -18,7 +18,7 @@ from .live.scene import LiveScene
 from .live.session import HANDOFF_PLATFORM, LiveSession
 from .media_cache import MediaCache
 from .memory import missing_slots
-from .models import OperationReply, Reply
+from .models import OperationReply, Reply, canonical_voice_id
 from .operation_continuations import ContinuationCoordinator, content_hash
 from .operation_generation import generate_with_recovery, hold_comment_body, reply_generation_binding
 from .operation_identity import identity_messages, identity_snapshot
@@ -27,7 +27,7 @@ from .operation_text import operation_output_diagnostics
 from .operation_turns import OperationTurns, operation_lane, operation_ready_at, operation_ticket
 from .operations.browsing.repository import BrowsingRepository
 from .operations_control import OperationsControl
-from .providers import VoiceService, public_error, reuse_turn_token_counts
+from .providers import VoiceService, public_error
 from .relationships import Relationships
 from .retention import INTERVAL_SECONDS, RetentionManager
 from .store import character_card, dump
@@ -47,9 +47,7 @@ class Runtime:
         self.relationships = Relationships(store)
         self.llm = create_llm(settings)
         self.voices = VoiceService(settings)
-        self.vision = VisionService(
-            settings.data.get("vision", {"kind": "disabled"}), settings.endpoint_key("vision")
-        )
+        self.vision = VisionService(settings.data["omni"], settings.provider_key("omni"))
         self.daily_memory = DailyMemoryService(store)
         self.memory_organizer = MemoryOrganizer(self)
         self.live = LiveSession(self, singing_provider=singing_provider, live_scene=live_scene)
@@ -254,10 +252,12 @@ class Runtime:
 
     def status(self):
         memory = psutil.virtual_memory()
+        character = self.character
+        voice_id = canonical_voice_id(character["voice_profile"])
         return {
             "state": self.live.state,
             "muted": self.live.muted,
-            "character": character_card(self.character),
+            "character": character_card(character),
             "session_id": self.live.session_id,
             "queue_length": len(self.live.queue),
             "overlay_connected": self.live.overlay is not None,
@@ -265,14 +265,10 @@ class Runtime:
             "error": self.error,
             "last_played": self.live.last_played,
             "providers": {
-                "llm": self.settings.data["llm"]["kind"],
-                "llm_model": self.settings.data["llm"].get("model"),
-                "live_thinking_budget_supported": (
-                    getattr(self.llm, "live_thinking_budget_supported", None)
-                    if self.settings.data["llm"]["kind"] == "llama_cpp" else False
-                ),
+                "llm": "omni",
+                "llm_model": self.settings.data["omni"].get("model"),
                 "llm_route": "direct",
-                "tts": self.settings.data["tts"]["kind"],
+                "tts": next((voice["provider"] for voice in self.settings.voices() if voice["id"] == voice_id), None),
             },
             "resources": {
                 "cpu_percent": psutil.cpu_percent(),
@@ -287,13 +283,12 @@ class Runtime:
                 "mode": "service",
                 "business_data": str(self.settings.runtime),
                 "business_host": socket.gethostname(),
-                "inference_url": self.settings.data["llm"].get("base_url"),
+                "inference_url": self.settings.data["omni"].get("base_url"),
             },
             "playback": self.live.playback,
             "operations_waiting": self.operations_waiting(),
         }
 
-    @reuse_turn_token_counts
     async def generate_reply(self, scope, character, event, relationship=None, mode="live", *, context=None):
         """Generate once with source memory; lexical diagnostics never rewrite speech."""
         if mode == "live" and event.get("platform") == HANDOFF_PLATFORM:
@@ -350,7 +345,7 @@ class Runtime:
         )
         continuation = None
         if operation:
-            maximum = self.settings.data["llm"].get("operations_max_tokens", 8192)
+            maximum = self.settings.data["omni"].get("operations_max_tokens", 8192)
             source_binding = reply_generation_binding(scope, character, event, mode)
             binding = dict(source_binding)
             binding["self_identity"] = generation_identity
@@ -431,7 +426,7 @@ class Runtime:
                 visual = self.browsing.visual_provider
                 scene_reply = getattr(visual, "generate_live_reply", None)
                 if scene.image and scene_reply:
-                    reply = await scene_reply(scene, messages, self.settings.data["llm"], event["event_id"])
+                    reply = await scene_reply(scene, messages, self.settings.data["omni"], event["event_id"])
                 if reply is None and scene.current(self.live.session_id):
                     messages = scene.annotate(messages)
             if reply is None:

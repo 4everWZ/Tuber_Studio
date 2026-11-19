@@ -69,7 +69,7 @@ async def exercise(store, omni, responses, *, explicit=False):
     character = next(seed for seed in seeds if seed["id"] == "whale") | {"version": 1}
     runtime = SimpleNamespace(
         store=store, character=character, llm=omni, operator_generation=nullcontext,
-        settings=SimpleNamespace(data={"llm": omni.config, "responses": responses.config.model_dump()}),
+        settings=SimpleNamespace(data={"omni": omni.config}, responses_config=responses.config.model_dump()),
         daily_memory=SimpleNamespace(preference=lambda scope: {"enabled": False}),
         context=SimpleNamespace(record=lambda *args, **kwargs: None),
         validate_memory_delivery=lambda *args, **kwargs: None,

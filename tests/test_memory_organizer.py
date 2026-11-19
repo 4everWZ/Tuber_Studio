@@ -391,6 +391,8 @@ async def test_shared_memory_keeps_owner_correction_after_two_client_restart(set
     organized_sources = []
 
     class CheckedProvider(OrganizerModel):
+        supports_memory_organization = True
+
         def __init__(self, provider):
             self.provider = provider
 

@@ -112,7 +112,7 @@ def full_input_counter(model, fixed):
 
 async def test_full_prepared_input_chunks_preserve_text_with_65536_output_reservation(browsing):
     await browsing.preflight()
-    browsing.settings.data["llm"]["context_tokens"] = 131072
+    browsing.settings.data["omni"]["context_tokens"] = 131072
     config = browsing.policy() | {"decision_max_tokens": 65536}
     row, _ = browsing.repo.create_round("100", browsing.runtime.character, config, 0, True)
     material = {
@@ -141,7 +141,7 @@ async def test_full_prepared_input_chunks_preserve_text_with_65536_output_reserv
 
 async def test_fixed_role_and_output_capacity_checkpoint_does_not_retry_same_settings(browsing):
     await browsing.preflight()
-    browsing.settings.data["llm"]["context_tokens"] = 131072
+    browsing.settings.data["omni"]["context_tokens"] = 131072
     config = BrowsingPolicy(
         sources=["specified"],
         watch_videos=["BV1d8pU6xEZX"],

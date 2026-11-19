@@ -3,8 +3,6 @@
 import re
 from collections import Counter
 
-from .llama_sampling import live_thinking_budget
-
 # A local transport/storage resource bound, not a claimed Bilibili word limit.
 MAX_OPERATION_TEXT_BYTES = 256 * 1024
 _ADJACENT_PHRASES = re.compile(r"([^\W_]{4,40}?)(?:\1){2,}")
@@ -26,7 +24,7 @@ _COMMENT_PROTOCOL_FIELDS = {
 def reply_output_budget(config, mode):
     if mode in {"comment_draft", "direct_message"}:
         return config.get("operations_max_tokens", 8192)
-    return config.get("max_tokens", 160) + (live_thinking_budget(config) if mode == "live" else 0)
+    return config.get("max_tokens", 160)
 
 
 def operation_character(character):

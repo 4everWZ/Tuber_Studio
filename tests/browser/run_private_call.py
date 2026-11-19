@@ -68,14 +68,11 @@ def main():
             dest.mkdir(parents=True)
             for name, _ in DEFAULTS.values():
                 shutil.copyfile(args.reference_defaults / name, dest / name)
-        token = runtime / "fixture-token"
-        token.write_text("private-call-fixture", encoding="utf-8")
+        origin = f"http://127.0.0.1:{base + 1}"
         config = json.loads((ROOT / "config/studio.example.json").read_text(encoding="utf-8"))
-        config["llm"]["kind"] = "demo"
+        config["omni"]["base_url"] = origin + "/v1"
         if args.display:
             config["features"]["live_enabled"] = True
-        config.pop("responses", None)
-        config.pop("video_vision", None)
         target = runtime / "studio.json"
         target.write_text(json.dumps(config), encoding="utf-8")
         env = {key: value for key, value in os.environ.items() if not key.startswith(("TUBER_", "OMNI_"))}
@@ -84,7 +81,9 @@ def main():
             browsers = list(cache.glob("chromium_headless_shell-*/*/chrome-headless-shell.exe"))
             if browsers:
                 env["CHROMIUM_EXECUTABLE"] = str(max(browsers, key=lambda binary: binary.stat().st_mtime))
-        origin = f"http://127.0.0.1:{base + 1}"
+        (runtime / "provider-credentials.json").write_text(json.dumps({
+            "omni": {"base_url": origin + "/v1", "key": "private-call-fixture"},
+        }), encoding="utf-8")
         if args.whep:
             env["STUDIO_TEST_RIG_DIR"] = str(args.rig_dir.resolve()) if args.rig_dir else ""
             (runtime / "private-call-avatars.json").write_text(json.dumps({
@@ -92,8 +91,7 @@ def main():
                     key: {"avatar_id": rig if args.rig_dir else "portrait_" + char * 32,
                           "driver": "inochi2d" if args.rig_dir else "ditto", "accepted": True}
                     for key, rig, char in (("original", "regular", "a"), ("q", "q", "b"))}}))
-        env.update(STUDIO_DISPLAY_TEST=str(int(args.display)), STUDIO_TEST_WHEP=str(int(args.whep)), TUBER_RUNTIME=folder, TUBER_CONFIG=str(target), TUBER_PRIVATE_REALTIME_ORIGIN=origin,
-                   TUBER_PRIVATE_REALTIME_TOKEN_FILE=str(token))
+        env.update(STUDIO_DISPLAY_TEST=str(int(args.display)), STUDIO_TEST_WHEP=str(int(args.whep)), TUBER_RUNTIME=folder, TUBER_CONFIG=str(target))
         for command, port, paths in (
             ([str(engine_python), "tests/browser/private_call_fixture.py"], base + 1, str(repo)),
             ([sys.executable, "-m", "tuber_studio", "--port", str(base)], base, str(ROOT / "src")),

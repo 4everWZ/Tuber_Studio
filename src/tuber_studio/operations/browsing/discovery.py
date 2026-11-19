@@ -254,7 +254,7 @@ class BackgroundDiscovery:
             "account_id": service.account or control["account_id"],
             "configured_account_id": service.comments.display_account_id(),
             "character": {key: service.runtime.character[key] for key in ("id", "version", "name")},
-            "model": service.settings.data["llm"].get("model"),
+            "model": service.settings.data["omni"].get("model"),
         }
 
     def sent_count(self, round_row):

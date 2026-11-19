@@ -102,15 +102,15 @@ async def prepared_service(
             time.time(),
         ),
     ).lastrowid
-    settings.data["llm"]["operations_max_tokens"] = max_tokens
-    config = settings.data["llm"] | {
+    settings.data["omni"]["operations_max_tokens"] = max_tokens
+    config = settings.data["omni"] | {
         "base_url": "https://isolated.invalid/v1",
         "model": "test-model",
         "context_tokens": 131072,
         "native_context_tokens": 131072,
         "enable_thinking": True,
     }
-    provider = APIProvider(config, adapter="llama_cpp")
+    provider = APIProvider(config | {"structured_output":"json_schema", "context_source":"declared", "prompt_token_endpoint":False})
     previous = provider.client
 
     def model(request):
@@ -120,7 +120,7 @@ async def prepared_service(
         if payload["max_tokens"] == 1:
             text = ""
         else:
-            schema = payload["response_format"]["schema"]
+            schema = payload["response_format"]["json_schema"]["schema"]
             text = json.dumps(
                 {"action": action, "reason": "结合平台反馈继续这次交流", "read": ""}
                 if "action" in schema["properties"]
@@ -201,7 +201,7 @@ async def test_definite_length_rejection_revises_then_manual_approval_reuses_sam
         assert continuation["trigger_feedback"]["message"] == "message too long"
         assert continuation["original_output"]["text"] == posted[0]["message"][0]
         for payload in requests:
-            assert payload["chat_template_kwargs"]["enable_thinking"] is True
+            assert "chat_template_kwargs" not in payload
             assert "12025" in json.dumps(payload["messages"], ensure_ascii=False)
         service.review(identity, "approve")
         assert (await service.publish(identity))["status"] == "published"
