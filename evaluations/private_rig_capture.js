@@ -1,4 +1,4 @@
-async profile => {
+async center => {
   const video = document.querySelector("#private-call-dialog video");
   const context = new AudioContext();
   await context.resume();
@@ -10,7 +10,7 @@ async profile => {
   canvas.width = 99;
   canvas.height = 85;
   const paint = canvas.getContext("2d", {willReadFrequently: true});
-  const [cx, cy] = profile === "q" ? [347, 465] : [370, 418];
+  const [cx, cy] = center;
 
   // The masters have distinct lip positions on their common 640×720 canvas.
   function mouthArea() {

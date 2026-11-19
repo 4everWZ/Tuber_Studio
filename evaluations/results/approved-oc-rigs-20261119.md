@@ -17,6 +17,8 @@
 
 ## 工作站验证
 
+本页记录 INP 的隔离渲染验证。正式网关切换后的接收端语音、口型与短录屏见[两套成图的工作站 WHEP 通话](approved-oc-whep-calls-20261119.md)。
+
 Linux 工作站上用隔离、无网络的短时容器运行独立服务 `4fa4c68` 的 `InochiRenderer`，没有启动媒体服务。按候选登记表的相对路径逐一加载四个 ID；每个读回 13 层，均实际渲染出 640×720 中性帧。两套 OC 另用 `evaluations/oc_rig_poses.py` 验了以下项目。
 
 | 实测 | mature | Q |

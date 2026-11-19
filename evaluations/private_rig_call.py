@@ -24,6 +24,8 @@ from evaluations.omni_chat_loop import ROOT, connection
 from tuber_studio.app import create_app
 from tuber_studio.config import Settings
 
+MOUTH_CENTERS = {"original": (370, 418), "q": (347, 465), "oc-mature-v1": (334, 427), "oc-q-v1": (328, 473)}
+
 
 def envelope(raw):
     values = array("h")
@@ -98,16 +100,41 @@ def match_audio(signal, ref):
     return round(best, 3)
 
 
-async def exercise(browser, origin, profile, work, gateway, token, reference, media_python):
-    ctx = await browser.new_context(service_workers="block", permissions=["microphone"])
+async def exercise(
+    browser,
+    origin,
+    profile,
+    work,
+    gateway,
+    token,
+    reference,
+    media_python,
+    *,
+    oc_id=None,
+    storage_state=None,
+    portrait=None,
+):
+    mouth_center = MOUTH_CENTERS[oc_id or profile]
+    ctx = await browser.new_context(
+        service_workers="block", permissions=["microphone"], storage_state=storage_state
+    )
     try:
         page = await ctx.new_page()
         await page.goto(origin)
+        if oc_id and os.environ.get("OC_QA_LOGIN_TOKEN"):
+            if page.url.rstrip("/") != origin or not origin.startswith("https://"):
+                raise RuntimeError("Unexpected Studio login origin")
+            await page.locator("#token").fill(os.environ["OC_QA_LOGIN_TOKEN"])
+            await page.locator("#login-form button[type=submit]").click()
         await page.locator("#operator-chat-more-toggle").click()
         await page.locator("#private-call-open").click()
-        choices = await (await page.request.get(origin + "/api/chat/private-call/avatars")).json()
-        if set(choices.get("profiles", [])) != {"original", "q"}:
-            raise RuntimeError("Isolated gateway did not confirm both registered rigs")
+        choices = await page.evaluate("""async () => {
+            const response = await fetch('/api/chat/private-call/avatars');
+            if (!response.ok) throw Error('Profile lookup: HTTP ' + response.status);
+            return response.json();
+        }""")
+        if profile not in choices.get("profiles", []):
+            raise RuntimeError("Studio did not offer the requested profile")
         await page.get_by_role("combobox", name="通话形象", exact=True).select_option(profile)
         packets, rates, acknowledgements = defaultdict(list), {}, {}
         state = {
@@ -183,6 +210,13 @@ async def exercise(browser, origin, profile, work, gateway, token, reference, me
             bound = await attachment.value
             assert bound.ok, f"Avatar bind HTTP {bound.status}"
             joined = (await bound.json())["handle"].split(".", 1)[0]
+            if oc_id:
+                async with httpx.AsyncClient(
+                    base_url=gateway, headers={"Authorization": "Bearer " + token}, trust_env=False
+                ) as client:
+                    actual = (await client.get("/v1/avatar/sessions/" + joined)).raise_for_status().json()
+                if actual["avatar_id"] != oc_id or actual["format"]["driver"] != "inochi2d":
+                    raise RuntimeError("Studio selected a different rig; not an OC recording")
             await page.get_by_text("麦克风已开启", exact=False).wait_for(timeout=35000)
         except Exception:
             print("Handshake:", await page.locator("#private-call-state").inner_text(), state, flush=True)
@@ -195,7 +229,7 @@ async def exercise(browser, origin, profile, work, gateway, token, reference, me
         if not await page.get_by_label("实时通话形象").is_visible():
             raise RuntimeError("The WHEP player is hidden")
         await page.evaluate(
-            Path(__file__).with_name("private_rig_capture.js").read_text(encoding="utf-8-sig"), profile
+            Path(__file__).with_name("private_rig_capture.js").read_text(encoding="utf-8-sig"), mouth_center
         )
 
         for _ in range(110):
@@ -209,6 +243,8 @@ async def exercise(browser, origin, profile, work, gateway, token, reference, me
                 break
         await asyncio.sleep(1.5)
         recorded = await page.evaluate("finishProbe()")
+        capture = work / "received.webm"
+        capture.write_bytes(base64.b64decode(recorded["audio"]))
         async with httpx.AsyncClient(
             base_url=gateway, headers={"Authorization": "Bearer " + token}, trust_env=False
         ) as client:
@@ -216,15 +252,16 @@ async def exercise(browser, origin, profile, work, gateway, token, reference, me
             state["server_bound"] = bool(
                 source_id
                 and view["source_session_id"] == source_id
-                and view["avatar_id"] == ("regular" if profile == "original" else "q")
+                and view["avatar_id"] == (oc_id or ("regular" if profile == "original" else "q"))
                 and view["format"]["driver"] == "inochi2d"
             )
             state["accepted_avatar_ack_ms"] = view["playback"].get("played_ms", 0)
             state["avatar_id"] = view["avatar_id"]
             state["driver"] = view["format"]["driver"]
-            state["sender_frame_age_ms"] = (
-                (await client.get("/qa/sender-clocks/" + joined)).raise_for_status().json()
-            )
+            if not oc_id:
+                state["sender_frame_age_ms"] = (
+                    (await client.get("/qa/sender-clocks/" + joined)).raise_for_status().json()
+                )
             await page.locator("#private-call-end").click()
             async with asyncio.timeout(5):
                 while True:
@@ -233,15 +270,14 @@ async def exercise(browser, origin, profile, work, gateway, token, reference, me
                         state["hangup_state"] = view["state"]
                         break
                     await asyncio.sleep(0.1)
-        capture = work / "received.webm"
-        capture.write_bytes(base64.b64decode(recorded["audio"]))
         synchronized = json.loads(
             subprocess.check_output(
                 [
                     str(media_python),
                     str(Path(__file__).with_name("private_rig_recording.py")),
                     str(capture),
-                    profile,
+                    *map(str, mouth_center),
+                    *([str(portrait)] if portrait else []),
                 ]
             )
         )
@@ -311,7 +347,13 @@ async def exercise(browser, origin, profile, work, gateway, token, reference, me
         )
         return report
     finally:
-        await ctx.close()
+        try:
+            if oc_id and ctx.pages:
+                end = ctx.pages[0].locator("#private-call-end")
+                if await end.is_visible() and await end.is_enabled():
+                    await end.click(timeout=3000)
+        finally:
+            await ctx.close()
 
 
 @asynccontextmanager
