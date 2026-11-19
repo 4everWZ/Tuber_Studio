@@ -51,8 +51,8 @@ async def test_core_groups_cannot_be_read_or_constructed_as_writes(workshop, gro
     ("pets", {"pets_enabled": False, "avatar_enabled": True}),
     ("browsing", {"daily_watch_limit": 1, "top_level_auto_publish": True}),
     ("browsing", {"interval_seconds": 120, "max_per_day": 0}),
-    ("messages", {"use_memes": True, "auto_send": True}),
-    ("dynamics", {"generate_images": False, "credentials": {}}),
+    ("illustrations", {"use_memes": True, "auto_send": True}),
+    ("illustrations", {"generate_images": False, "credentials": {}}),
     ("live", {"timezone": "UTC", "web_fetch": True}),
     ("scene", {"title": "replacement", "background": "transparent"}),
     ("music", {"volume": 0.3, "request_ttl_seconds": "600"}),
@@ -77,9 +77,9 @@ async def test_tool_changes_preserve_ui_siblings_and_private_authority(workshop)
     assert runtime.operations.policy() == original
     (await client.put("/api/automation/settings", json={"max_per_hour": 4})).raise_for_status()
     assert runtime.operations.policy()["max_per_hour"] == 4 and runtime.operations.policy()["max_per_day"] == 3
+    result = await set_values(workshop, "illustrations", {"use_memes": True})
+    assert result["values"]["use_memes"]
     for group in ("messages", "dynamics"):
-        result = await set_values(workshop, group, {"use_memes": True})
-        assert result["values"]["use_memes"]
         assert not getattr(runtime.browsing, group).policy()["base"]["enabled"]
     assert (await set_values(workshop, "live", {"timezone": "UTC"}))["values"]["timezone"] == "UTC"
     assert (await client.get("/api/live/options")).json()["timezone"] == "UTC"

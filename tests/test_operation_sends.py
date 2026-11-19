@@ -200,7 +200,8 @@ async def test_video_round_waits_for_illustration_and_send_but_direct_lanes_cont
 
     monkeypatch.setattr(delivery, "sessions", sessions)
     monkeypatch.setattr(browsing.messages, "adapter", delivery)
-    await browsing.messages.configure({"enabled": True, "auto_send": True, "generate_images": False})
+    browsing.store.set("illustration_policy", {"use_memes": False, "generate_images": True})
+    await browsing.messages.configure({"enabled": True, "auto_send": True})
     await browsing.messages.open()
     await browsing.configure({"top_level_auto_publish": auto_publish, "reply_enabled": True, "reply_auto_publish": True})
     await browsing.set_enabled(True)
@@ -215,6 +216,8 @@ async def test_video_round_waits_for_illustration_and_send_but_direct_lanes_cont
         assert browsing.store.one("SELECT COUNT(*) AS n FROM browsing_batches")["n"] == 1
 
     await check_blocked()
+    # Subsequent direct messages use text while the original decision is still running.
+    browsing.store.set("illustration_policy", {"use_memes": False, "generate_images": False})
     arrival(browsing)
     dm_id = browsing.messages.enqueue("message", incoming(browsing.messages, account_id="100"), automatic=True)
     await finished(browsing, automatic=True, interaction_only=True)

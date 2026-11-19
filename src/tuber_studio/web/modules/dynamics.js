@@ -53,8 +53,6 @@ export function dynamicPolicyFromServer(policy, model, describe, display) {
   if (!model.dynamicPolicyDirty) {
     if ($("dynamic-enabled")) $("dynamic-enabled").checked = !!saved.enabled;
     if ($("dynamic-auto-publish")) $("dynamic-auto-publish").checked = saved.auto_publish !== false;
-    if ($("dynamic-generate-images")) $("dynamic-generate-images").checked = saved.generate_images !== false;
-    if ($("dynamic-use-memes")) $("dynamic-use-memes").checked = !!saved.use_memes;
     if ($("dynamic-evaluate-interval")) $("dynamic-evaluate-interval").value = saved.evaluate_interval_seconds;
     if ($("dynamic-min-post-interval")) $("dynamic-min-post-interval").value = saved.min_post_interval_seconds;
     if ($("dynamic-max-posts")) $("dynamic-max-posts").value = saved.max_posts_per_day;
@@ -626,8 +624,6 @@ export function initDynamicsModule(model, {
     const payload = {
       enabled: $("dynamic-enabled")?.checked,
       auto_publish: $("dynamic-auto-publish")?.checked,
-      use_memes: $("dynamic-use-memes")?.checked,
-      generate_images: $("dynamic-generate-images")?.checked,
       evaluate_interval_seconds: policyInteger("dynamic-evaluate-interval", "动态评估间隔"),
       min_post_interval_seconds: policyInteger("dynamic-min-post-interval", "最短发布间隔"),
       max_posts_per_day: policyInteger("dynamic-max-posts", "每日动态数"),

@@ -1,8 +1,8 @@
 """Bounded settings for authenticated, owner-requested direct chat actions."""
 
-from pydantic import StrictBool, TypeAdapter, ValidationError
+from pydantic import TypeAdapter, ValidationError
 
-from ..direct_messages import MessagePolicy
+from ..illustration_policy import IllustrationPolicy, illustration_policy, save_illustration_policy
 from ..live.media import MusicSettings, Scene
 from ..live.options import LiveOptions
 from ..operation_continuations import content_hash
@@ -14,19 +14,15 @@ _GROUPS = {
     "pets": ("宠物展示", Performance, {
         "pets_enabled": "显示宠物",
     }),
-    "browsing": ("运营取材与视频主评配图", BrowsingPolicy, {
+    "browsing": ("运营取材", BrowsingPolicy, {
         "interval_seconds": "轮间等待秒数", "notification_interval_seconds": "通知检查间隔秒数",
         "daily_watch_limit": "每日观看额度，0 表示不限", "business_timezone": "业务日时区",
         "candidate_limit": "每批候选上限", "max_reads": "每轮读取额度",
         "min_duration_seconds": "最短视频秒数", "max_duration_seconds": "最长视频秒数",
         "recent_sample_limit": "近期样本数", "frame_sampling": "取帧方式",
-        "use_memes": "视频主评选用图库图片", "generate_images": "视频主评生成配图",
     }),
-    "messages": ("私信草稿配图", MessagePolicy, {
-        "use_memes": "使用表情包", "generate_images": "生成配图",
-    }),
-    "dynamics": ("动态草稿配图", None, {
-        "use_memes": "使用表情包", "generate_images": "生成配图",
+    "illustrations": ("运营配图", IllustrationPolicy, {
+        "generate_images": "生图", "use_memes": "图库",
     }),
     "live": ("直播显示", LiveOptions, {"timezone": "直播时区"}),
     "scene": ("直播画布", Scene, {
@@ -46,7 +42,7 @@ def _group(name):
 
 
 def _adapter(model, key):
-    return TypeAdapter(model.model_fields[key].rebuild_annotation() if model else StrictBool)
+    return TypeAdapter(model.model_fields[key].rebuild_annotation())
 
 
 def settings_catalog():
@@ -62,10 +58,8 @@ def _values(runtime, group):
         return runtime.pets.state(runtime.character["id"])
     if group == "browsing":
         return runtime.browsing.policy()
-    if group == "messages":
-        return runtime.browsing.messages.policy()["base"]
-    if group == "dynamics":
-        return runtime.browsing.dynamics.policy()["base"]
+    if group == "illustrations":
+        return illustration_policy(runtime.store).model_dump()
     if group == "live":
         return runtime.live.options().model_dump()
     if group == "scene":
@@ -98,10 +92,8 @@ async def update_settings(runtime, group, changes, *, scope):
         runtime.pets.set_visible(runtime.character["id"], patch["pets_enabled"])
     elif group == "browsing":
         await runtime.browsing.configure(patch)
-    elif group == "messages":
-        await runtime.browsing.messages.configure(_values(runtime, group) | patch)
-    elif group == "dynamics":
-        await runtime.browsing.dynamics.set_policy(patch)
+    elif group == "illustrations":
+        save_illustration_policy(runtime.store, _values(runtime, group) | patch)
     elif group == "live":
         runtime.live.set_options(LiveOptions.model_validate(_values(runtime, group) | patch))
     elif group == "scene":

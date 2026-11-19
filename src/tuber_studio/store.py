@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .character_presets import upgrade_bundled_characters
+from .illustration_policy import migrate_illustration_policy
 from .models import Character, canonical_voice_id
 
 DELETED_CHARACTER = "角色工作室删除"
@@ -136,6 +137,7 @@ class Store:
         for seed in seeds:
             if not self.one("SELECT id FROM characters WHERE id=?", (seed["id"],)):
                 self.save_character(seed)
+        migrate_illustration_policy(self)
         upgrade_bundled_characters(self, seeds)
         if seeds and self.get("active_character") is None:
             self.set("active_character", seeds[0]["id"])

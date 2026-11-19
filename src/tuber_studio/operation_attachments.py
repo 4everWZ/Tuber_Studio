@@ -93,7 +93,7 @@ def queue_image(runtime, channel, row, context, text):
     if channel in {"comments", "browsing"} and not can_attach_comment_image(channel, row):
         return None
     scope = image_scope(channel, row)
-    options = image_permissions(runtime.store, scope["channel"])
+    options = image_permissions(runtime.store)
     if not any(options):
         return None
     if callable(context):

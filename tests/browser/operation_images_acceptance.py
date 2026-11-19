@@ -55,6 +55,23 @@ def browse(origin, token):
             page.goto(origin)
             page.locator("#token").fill(token)
             page.locator("#login-form button").click()
+            page.locator('a[data-page="settings"]').click()
+            sources = page.get_by_role("group", name="运营配图")
+            generate = sources.get_by_label("生图", exact=True)
+            gallery = sources.get_by_label("图库", exact=True)
+            expect(gallery).to_be_checked()
+            expect(generate).to_be_checked()
+            for checkbox in (generate, gallery, generate, gallery):
+                with page.expect_response(lambda r: r.url.endswith("/api/settings/illustrations") and r.request.method == "PATCH") as change:
+                    checkbox.click()
+                assert change.value.ok
+                saved = change.value.json()
+                with page.expect_response(lambda r: r.url.endswith("/api/settings/illustrations") and r.request.method == "GET") as reload:
+                    page.reload()
+                assert reload.value.json() == saved
+                expect(gallery).to_be_enabled()
+                expect(gallery).to_be_checked(checked=saved["use_memes"])
+                expect(generate).to_be_checked(checked=saved["generate_images"])
             page.locator('a[data-page="automation"]').click()
             page.locator('a[data-operations-tab="comments"]').click()
             page.locator("#queue-list a.queue-row").first.click()
@@ -255,6 +272,7 @@ async def test_operations_images_browser(settings, monkeypatch):
         ),
     )
     sources = state.dynamics._sources()
+    store.set("illustration_policy", {"use_memes": True, "generate_images": True})
     state.dynamics._save_decision(
         char,
         False,

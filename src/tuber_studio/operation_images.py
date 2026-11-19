@@ -15,6 +15,7 @@ from .http_api import InferenceBudgetExceeded
 from .models import StrictModel
 from .responses_provider import ResponsesClient
 from .store import dump
+from .illustration_policy import illustration_policy
 from .workstation_images import (
     ImageBrief,
     gateway,
@@ -48,10 +49,9 @@ def scope_key(scope):
     return ImageScope.model_validate(scope).model_dump_json()
 
 
-def image_permissions(store, channel):
-    key = {"comment": "browsing_policy", "direct_message": "message_policy", "dynamic": "dynamic_policy"}[channel]
-    policy = store.get(key, {})
-    return policy.get("use_memes", False), policy.get("generate_images", True)
+def image_permissions(store):
+    policy = illustration_policy(store)
+    return policy.use_memes, policy.generate_images
 
 
 class GalleryImage(StrictModel):
@@ -138,7 +138,7 @@ class OperationImages:
                 raise ValueError("已绑定的请求键不能替换渠道材料或草稿")
             return self.status(scope, row["job_id"])
         card = self.store.character(scope.character_id, character_version)
-        use_gallery, generate = image_permissions(self.store, scope.channel)
+        use_gallery, generate = image_permissions(self.store)
         identity = uuid4().hex
         bindings = []
         for variant in (("q", "mature") if generate else ()):
@@ -244,14 +244,14 @@ class OperationImages:
                 raise ValueError("此评论目标使用文字回复")
             self.store.execute("UPDATE operation_image_jobs SET status='deciding' WHERE job_id=?", (identity,))
             material = json.loads(job["material"])
-            use_gallery, generate = image_permissions(self.store, scope.channel)
+            use_gallery, generate = image_permissions(self.store)
             if not use_gallery:
                 material["gallery"] = []
             if not generate:
                 material["variants"] = []
             offered = material.get("variants", ["q", "mature"]) or material.get("gallery")
             brief = await choose(self.settings, dump(material)) if offered else None
-            use_gallery, generate = image_permissions(self.store, scope.channel)
+            use_gallery, generate = image_permissions(self.store)
             if brief is None or (isinstance(brief, GalleryImage) and not use_gallery) or (isinstance(brief, ImageBrief) and not generate):
                 self.store.execute("UPDATE operation_image_jobs SET status='text_only' WHERE job_id=?", (identity,))
                 return
@@ -275,7 +275,7 @@ class OperationImages:
             raise ValueError("入队时此角色版本没有可用的所选参考")
         async with gateway(self.settings) as client:
             if not job["remote_id"]:
-                if not image_permissions(self.store, scope.channel)[1]:
+                if not image_permissions(self.store)[1]:
                     self.store.execute("UPDATE operation_image_jobs SET status='text_only' WHERE job_id=?", (identity,))
                     return
                 ref = resolve_reference(self.settings, scope.character_id, brief.variant, sha256=binding["sha256"])

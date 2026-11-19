@@ -17,6 +17,7 @@ from .dynamic_comment_card import comment_card, render_comment_card
 from .dynamic_grounding import review_caption
 from .generation_meter import budgeted_json
 from .meme_selection import select_meme
+from .illustration_policy import illustration_policy
 from .operation_attachments import (
     checked_image,
     decision,
@@ -65,8 +66,6 @@ MAX_SAFE_INTEGER = (1 << 53) - 1  # Exact integer range shared with browser JSON
 DEFAULT_POLICY = {
     "enabled": False,
     "auto_publish": True,
-    "use_memes": False,
-    "generate_images": True,
     "evaluate_interval_seconds": 1800,
     "min_post_interval_seconds": 21600,
     "max_posts_per_day": 2,
@@ -242,7 +241,7 @@ class Dynamics:
         if not isinstance(patch, dict) or not set(patch) <= set(DEFAULT_POLICY):
             raise ValueError("未知动态运营策略字段")
         data = DEFAULT_POLICY | self.store.get("dynamic_policy", {}) | patch
-        for name in ("enabled", "auto_publish", "use_memes", "generate_images"):
+        for name in ("enabled", "auto_publish"):
             if type(data[name]) is not bool:
                 raise ValueError("运营开关须为布尔值")
         for name, minimum in (
@@ -1836,7 +1835,7 @@ class Dynamics:
                     selected_sources = [by_id[source_id] for source_id in data["source_ids"]]
                     if (
                         data["action"] == "post" and not comment_card(selected_sources)
-                        and self.policy()["use_memes"] and self.memes and not workstation_image_decisions(self.runtime)
+                        and illustration_policy(self.store).use_memes and self.memes and not workstation_image_decisions(self.runtime)
                     ):
                         try:
                             selected = await select_meme(
@@ -1849,7 +1848,7 @@ class Dynamics:
                             )
                         except Exception:
                             selection_failed = True
-                        if not self.policy()["use_memes"]:
+                        if not illustration_policy(self.store).use_memes:
                             selected = None
                         if not authorized(include_enabled=False):
                             raise ValueError("选图期间运营来源或授权已变化")

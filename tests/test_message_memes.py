@@ -345,7 +345,8 @@ async def test_invalid_selector_preserves_pending_text_and_blocks_auto_send(
 ):
     messages, _, _, state = meme_messages
     messages.operations.configure({"enabled": True}, account_id="900", character=messages.runtime.character)
-    await messages.configure({"enabled": True, "auto_send": True, "use_memes": True})
+    messages.store.set("illustration_policy", {"use_memes": True, "generate_images": False})
+    await messages.configure({"enabled": True, "auto_send": True})
 
     async def select(*args, **kwargs):
         assert kwargs["max_tokens"] == 2048
@@ -362,7 +363,8 @@ async def test_invalid_selector_preserves_pending_text_and_blocks_auto_send(
 async def test_explicit_null_selector_can_keep_the_existing_automatic_text_path(meme_messages, monkeypatch):
     messages, _, _, state = meme_messages
     messages.operations.configure({"enabled": True}, account_id="900", character=messages.runtime.character)
-    await messages.configure({"enabled": True, "auto_send": True, "use_memes": True})
+    messages.store.set("illustration_policy", {"use_memes": True, "generate_images": False})
+    await messages.configure({"enabled": True, "auto_send": True})
 
     async def select(*args, **kwargs):
         return {"asset_id": None}
@@ -405,7 +407,8 @@ async def test_selector_service_error_preserves_generated_text_for_review(
 ):
     messages, _, _, state = meme_messages
     messages.operations.configure({"enabled": True}, account_id="900", character=messages.runtime.character)
-    await messages.configure({"enabled": True, "auto_send": True, "use_memes": True})
+    messages.store.set("illustration_policy", {"use_memes": True, "generate_images": False})
+    await messages.configure({"enabled": True, "auto_send": True})
 
     async def select(*args, **kwargs):
         raise failure

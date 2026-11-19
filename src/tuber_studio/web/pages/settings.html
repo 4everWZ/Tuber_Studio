@@ -12,6 +12,16 @@
     <p class="hint">宠物开关控制对话、电话和直播中的一只宠物。关闭后仍可通话和播放直播音频。</p>
   </fieldset>
 
+  <fieldset class="win-group-box" id="illustration-policy" disabled>
+    <legend>运营配图</legend>
+    <div class="checks">
+      <label><input type="checkbox" name="generate_images"> 生图</label>
+      <label><input type="checkbox" name="use_memes"> 图库</label>
+    </div>
+    <p class="hint">视频主评、私信和动态共用。都不勾选时关闭自动配图。</p>
+    <p class="hint" role="status" id="illustration-policy-result"></p>
+  </fieldset>
+
   <fieldset class="win-group-box" id="artwork-references">
     <legend>生图参考图</legend>
     <p class="hint" id="artwork-reference-scope"></p>

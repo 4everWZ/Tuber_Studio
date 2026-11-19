@@ -21,6 +21,7 @@ from .message_outreach import (
     verified_agreement,
 )
 from .models import OperationReply, StrictModel
+from .illustration_policy import illustration_policy
 from .operation_attachments import (
     checked_image,
     image_payload,
@@ -61,8 +62,6 @@ class MessagePolicy(StrictModel):
     enabled: bool = False
     auto_poll: bool = False
     auto_send: bool = False
-    use_memes: bool = False
-    generate_images: bool = True
     allow_comment_handoff: bool = True
     channel_max_tokens: int = Field(default=2048, ge=256, le=65536)
     poll_interval_seconds: int = Field(default=60, ge=20, le=86400)
@@ -1379,12 +1378,14 @@ class DirectMessages:
                     if draft["source_kind"] == "message":
                         reply_ids = list(refs.values())
                 selected, selection_failed = None, False
-                if (reply and not preserve_attachments and self.policy()["use_memes"] and self.memes
+                if (reply and not preserve_attachments and illustration_policy(self.store).use_memes and self.memes
                         and not workstation_image_decisions(self.runtime)):
                     try:
                         selected = await select_meme(
                             self.runtime, self.memes, character, event, reply.spoken_text
                         )
+                        if not illustration_policy(self.store).use_memes:
+                            selected = None
                         check["meme_selection"] = {"state": "selected" if selected else "text"}
                     except Exception:
                         check["meme_selection"] = {"state": "failed", "reason": "表情选择无效，保留待审文字"}

@@ -51,6 +51,7 @@ async def test_chooser_offers_only_available_images_and_binds_gallery_digest(mon
 
 @pytest.fixture
 def fixture(settings, store, monkeypatch):
+    store.set("illustration_policy", {"use_memes": False, "generate_images": True})
     image = io.BytesIO()
     Image.new("RGB", (1024, 1024), "blue").save(image, format="PNG")
     png = image.getvalue()
@@ -136,9 +137,8 @@ async def test_text_only_does_not_submit(fixture, store, monkeypatch):
     assert not monitor["posts"]
 
 
-@pytest.mark.parametrize("channel,key", [("comment", "browsing_policy"), ("direct_message", "message_policy"),
-                                          ("dynamic", "dynamic_policy")])
-async def test_gallery_and_generated_scene_share_scoped_choice(fixture, store, monkeypatch, channel, key):
+@pytest.mark.parametrize("channel", ["comment", "direct_message", "dynamic"])
+async def test_gallery_and_generated_scene_share_scoped_choice(fixture, store, monkeypatch, channel):
     images, scope, monitor = fixture
     scope = scope.model_copy(update={"channel": channel})
     if channel == "comment":
@@ -150,7 +150,7 @@ async def test_gallery_and_generated_scene_share_scoped_choice(fixture, store, m
     asset = await images.catalog.register("whale", monitor["selection"].data, title="海边", emotions=["idle"],
                                           source={"kind": "user_upload", "author": "test"},
                                           license={"name": "test"})
-    store.set(key, {"use_memes": True, "generate_images": True})
+    store.set("illustration_policy", {"use_memes": True, "generate_images": True})
     async def pick(settings, material):
         offer = json.loads(material)
         assert offer["variants"] == ["q", "mature"]
@@ -164,10 +164,26 @@ async def test_gallery_and_generated_scene_share_scoped_choice(fixture, store, m
     assert (result["status"], result["asset_id"], result["asset_sha256"]) == ("gallery", asset["asset_id"], asset["sha256"])
     assert not monitor["posts"]
     other = images.decide(scope, request_key="changed", context="海边", draft="一起看海。")
-    store.set(key, {"use_memes": False, "generate_images": False})
+    store.set("illustration_policy", {"use_memes": False, "generate_images": False})
     await images._process(store.one("SELECT * FROM operation_image_jobs WHERE job_id=?", (other["job_id"],)))
     assert images.status(scope, other["job_id"])["status"] == "text_only"
     assert not monitor["posts"]
+
+
+def test_shared_sources_migrate_without_expanding_permissions(store):
+    from tuber_studio.illustration_policy import KEY, migrate_illustration_policy
+
+    store.execute("DELETE FROM kv WHERE key=?", (KEY,))
+    channels = ("browsing_policy", "message_policy", "dynamic_policy")
+    for i, key in enumerate(channels):
+        store.set(key, {"use_memes": True, "generate_images": i != 0, "interval_seconds": 360 + i})
+    migrate_illustration_policy(store)
+    assert store.get(KEY) == {"use_memes": True, "generate_images": False}
+    for i, key in enumerate(channels):
+        assert store.get(key) == {"interval_seconds": 360 + i}
+    store.set(KEY, {"use_memes": False, "generate_images": True})
+    migrate_illustration_policy(store)
+    assert store.get(KEY) == {"use_memes": False, "generate_images": True}
 
 
 async def test_restart_with_remote_receipt_only_reads_existing_job(fixture, store):

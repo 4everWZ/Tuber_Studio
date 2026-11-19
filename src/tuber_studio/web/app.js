@@ -6,6 +6,7 @@ import { initOperatorChat } from "./modules/operator-chat.js?v=20261118.1";
 import { initChatPet } from "./modules/chat-pet.js";
 import { characterDisplay, bindDisplaySettings } from "./modules/character-display.js";
 import { initArtworkReferences } from "./modules/artwork-references.js";
+import { initIllustrationPolicy } from "./modules/illustration-policy.js";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261120.1";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261115.2";
@@ -96,6 +97,7 @@ const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
 const issueLog = initIssueLog(api, () => model.page);
 bindDisplaySettings(message => notice(message, true));
 const loadArtworkReferences = initArtworkReferences();
+const loadIllustrationPolicy = initIllustrationPolicy();
 const chatPet = initChatPet(api, characterDisplay, message => notice(message, true));
 const operatorChat = initOperatorChat((path, options) => baseApi(path, options, showLogin), {
   setPet: chatPet.setCharacter,
@@ -420,6 +422,7 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
     await Promise.allSettled([accountPanel.active ? accountPanel.settingsOpened() : accountPanel.activate(), updatePermissionCapsule(), commentsModule?.loadPolicy()]);
   } else if (model.page === "settings") {
     void loadArtworkReferences(model.status?.character, true);
+    void loadIllustrationPolicy();
     if (!inferenceProviders.dirty) await refreshSettings();
   }
 }

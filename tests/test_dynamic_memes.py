@@ -405,7 +405,8 @@ async def test_invalid_selector_keeps_caption_pending_and_does_not_auto_publish(
     service, _, _, state, _ = dynamic_memes
     service.operations.configure({"enabled": True}, account_id="900", character=service.store.character())
     service.comments.display_account_id = lambda: "900"
-    await service.set_policy({"enabled": True, "auto_publish": True, "use_memes": True})
+    service.store.set("illustration_policy", {"use_memes": True, "generate_images": False})
+    await service.set_policy({"enabled": True, "auto_publish": True})
     service.runtime.operation_llm.selection = {"asset_id": "meme_" + "0" * 32}
     if bad == "model_error":
         service.runtime.operation_llm.selector_error = RuntimeError("controlled model failure")
@@ -417,8 +418,8 @@ async def test_invalid_selector_keeps_caption_pending_and_does_not_auto_publish(
 
 async def test_dynamic_selector_attaches_to_the_unchanged_caption(dynamic_memes):
     service, _, asset, state, _ = dynamic_memes
-    assert service.policy()["use_memes"] is False
-    await service.set_policy({"use_memes": True})
+    assert "use_memes" not in service.policy()
+    service.store.set("illustration_policy", {"use_memes": True, "generate_images": False})
     service.runtime.operation_llm.selection = {"asset_id": asset["asset_id"]}
     decision = await service.evaluate(manual=True)
     row = service._post(decision["post_id"])
@@ -433,7 +434,8 @@ async def test_valid_automatic_selection_posts_once_with_original_caption(dynami
     service, _, asset, state, _ = dynamic_memes
     service.operations.configure({"enabled": True}, account_id="900", character=service.store.character())
     service.comments.display_account_id = lambda: "900"
-    await service.set_policy({"enabled": True, "auto_publish": True, "use_memes": True})
+    service.store.set("illustration_policy", {"use_memes": True, "generate_images": False})
+    await service.set_policy({"enabled": True, "auto_publish": True})
     if with_image:
         service.runtime.operation_llm.selection = {"asset_id": asset["asset_id"]}
     result = await service.evaluate()

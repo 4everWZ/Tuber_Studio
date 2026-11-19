@@ -25,6 +25,7 @@ from .agent.task_tools import create_task_runtime
 from .artwork_references import MAX_BYTES as MAX_REFERENCE_BYTES
 from .artwork_references import PREFIX as REFERENCE_PREFIX
 from .artwork_references import register_artwork_references
+from .illustration_policy import register_illustration_policy
 from .auth_sessions import (
     COOKIE_MAX_AGE,
     COOKIE_NAME,
@@ -252,6 +253,7 @@ def create_app(
     register_meme_api(app, memes, runtime, require_admin)
     register_pet_api(app, runtime.pets, require_admin)
     register_artwork_references(app, settings, store, require_admin)
+    register_illustration_policy(app, store, require_admin)
     register_browsing_api(app, browsing, require_admin)
     register_operation_recovery_api(
         app,
