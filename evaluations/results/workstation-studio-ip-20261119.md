@@ -13,3 +13,9 @@
 读库迁移与历史缺文件详见[业务切换记录](workstation-business-cutover-20261119.md)。工作站原画发送端分片和浏览器缓冲的对照见[媒体传输记录](workstation-whep-ip-20261119.md)，获选成图的绑定见[两套 OC 姿态验证](approved-oc-rigs-20261119.md)。[工作站 Compose 配置](../../deploy/omni/workstation.compose.yml) · [独立服务接入](../../docs/specs/foundation/omni-deployment.md)
 
 后续浏览器验收的一次表单超时在调试输出中带出了旧工坊登录令牌。经号主授权，已在工作站轮换令牌并注销全部现有浏览器登录。切换时旧令牌访问返回 401，新令牌返回 200，会话表读回为零。验收登录工具现先等待表单就绪，再填写凭据，并在失败时返回固定错误。使用虚构凭据触发失败时，错误输出中未出现该值。工作站普通推理应用凭据与此次轮换的工坊登录令牌独立。
+
+## 正式角色朗读
+
+号主认可第二版在新台词上的音色，并指出重读原句还有机械感。工作站正式网关切至 `082f213`，Core 切至 `b9798eb`。通过设置接口把朗读改为同址 `omni_reference`，保留角色参考 `whale_sovits_v2`。正式 IP 工作台的 Edge 音频元素播完了新句「窗外下雨了，先陪我聊两句吧。」用时 2.88 秒。独立中文识别从播放器录音读回相同字词。私有录音位于 `runtime/evaluations/omni-voice-calibration/workstation-formal-window.wav`。[参考音色对照与号主听感](omni-voice-conditioning-20261119.md)
+
+首次播完后的测试清理使用了独立 HTTP 客户端。该客户端未信任浏览器所用的证书，错误日志含该次测试会话 Cookie。已在 Core 暂停期间定向注销对应会话，再启用唯一业务写入者。重新验收时由 Edge 同源退出，正常结束，工作站读回活跃会话数为零。
