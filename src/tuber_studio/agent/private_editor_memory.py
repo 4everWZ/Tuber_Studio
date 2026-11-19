@@ -1,10 +1,11 @@
 """Owner-only writing preferences for the final, tool-free Omni editor."""
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from ..cooperation import collaboration_text
 from ..daily_memory import MemoryChanged
 from ..generation_meter import budgeted_call
+from ..http_api import InferenceBudgetExceeded
 from ..models import StrictModel
 from ..store import dump
 from .editor_contract import FormatCheck, literal_evidence, review_preferences
@@ -142,7 +143,7 @@ def connect_private_editor(runtime):
             async def call(messages, schema):
                 return await generate(messages, schema, use)
 
-            async def verify(draft):
+            async def verify(draft, *, before_repair=False):
                 locked = getattr(draft, "_locked_fields", set())
                 readings = {}
                 attempt = {"titles":readings, "submitted_titles":[item.title for item in draft.items],
@@ -151,7 +152,8 @@ def connect_private_editor(runtime):
                 _, markdown = render_private_delivery(draft, evidence)
                 attempt["rendered_markdown"] = markdown
                 issues = await review_preferences(task["goal"], notes, checks, draft, call, locked,
-                                                  markdown=markdown, audit=attempt["judgments"])
+                                                  markdown=markdown, audit=attempt["judgments"],
+                                                  title_forms=forms, allow_defer=before_repair)
                 attempt["failed_fields"] = issues
                 if forms:
                     for index, item in enumerate(draft.items):
@@ -162,17 +164,25 @@ def connect_private_editor(runtime):
                         observations = frame_observations(draft._frame_reviews.get(frame, {}))
                         if not observations and frame and frame in evidence.observations:
                             observations = [evidence.observations[frame]]
-                        reading = await read_title(item.title, observations, call)
+                        try:
+                            reading = await read_title(item.title, observations, call)
+                        except (InferenceBudgetExceeded, ValidationError) as error:
+                            if not before_repair or not issues:
+                                raise
+                            readings[path] = {"title":item.title, "observations":observations, "expected":forms,
+                                              "incomplete_reading":type(error).__name__}
+                            continue
                         readings[path] = reading | {"title":item.title, "observations":observations, "expected":forms,
                             "writing_review_issues":list(issues.get(path, [])),
                             "literal_checks_passed":all(c.meets(item.title) for _,c in checks if c.field == "title")}
                         for identity, expected in forms.items():
-                            if not meets_form(reading, expected, require_grounding=bool(frame)):
+                            if (not meets_form(reading, expected, require_grounding=bool(frame)) or
+                                    (frame and expected == "问句" and not reading["answer_bound"])):
                                 ids = issues.setdefault(path, [])
                                 if identity not in ids:
                                     ids.append(identity)
                 return issues, readings
-            issues, readings = await verify(product)
+            issues, readings = await verify(product, before_repair=True)
             if issues:
                 verified_titles = {}
                 instructions = {path:"保留事实、证据和选材，按号主约定改写：" + "；".join(
@@ -184,13 +194,19 @@ def connect_private_editor(runtime):
                         instructions[defect["path"]] += "。本字段审稿依据：" + dump(defect)
                 for path, reading in readings.items():
                     if path in instructions:
-                        instructions[path] += "。本稿去标点后判为" + reading["form"] + "。本字段可用的原始观察：" + dump(reading["observations"])
+                        if "form" in reading:
+                            instructions[path] += "。本稿去标点后判为" + reading["form"]
+                        instructions[path] += "。本字段可用的原始观察：" + dump(reading["observations"])
                         item = product.items[int(path.split(".")[1])]
                         details = product._frame_reviews.get(item.primary_frame, {}).get("details", [])
                         expected = {forms[k] for k in issues[path] if k in forms}
                         if details and len(expected) == 1:
                             rules = [c for _,c in checks if c.field == "title"]
-                            options = await grounded_options(details, expected.pop(), rules, call)
+                            try:
+                                options = await grounded_options(details, expected.pop(), rules, call)
+                            except (InferenceBudgetExceeded, ValidationError) as error:
+                                audit["alternatives"][path] = {"incomplete":type(error).__name__}
+                                continue
                             audit["alternatives"][path] = options
                             if options["chosen"]:
                                 verified_titles[path] = {"primary_frame":item.primary_frame, "original":item.title, "fact":options["fact"],

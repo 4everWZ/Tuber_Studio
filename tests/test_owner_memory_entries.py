@@ -192,7 +192,8 @@ async def test_chromium_owner_controls(settings, monkeypatch, mode):
             await app.state.comments.adapter.close()
             app.state.store.close()
 
-@pytest.mark.parametrize("scenario", ["corrected", "withdrawn", "still_invalid", "statement", "label_with_period", "unsupported_setting"])
+@pytest.mark.parametrize("scenario", ["corrected", "withdrawn", "still_invalid", "statement", "label_with_period",
+                                      "unsupported_setting", "unbound_answer", "incomplete_initial", "incomplete_final"])
 async def test_private_video_editor_reads_preferences_only_after_research(owner, monkeypatch, scenario):
     from types import SimpleNamespace
     from tuber_studio.agent import public_video
@@ -205,6 +206,8 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
     first_title = "画面中的椅子。" if statement else "画面中的椅子"
     if scenario == "unsupported_setting":
         first_title = "椅子位于直播间左侧。"
+    if scenario == "unbound_answer":
+        first_title = "椅子是谁的？"
     good_title = "左侧有一把椅子。" if statement else "椅子放在哪里？"
     turn = str(uuid4())
     (await client.post(CHAT, json={"request_id": turn, "message": note, "intent": {"action": "chat"}})).raise_for_status()
@@ -276,21 +279,17 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
                                                       ("场所","直播间左侧","左侧")]]}
         if "title_words" in packet:
             words = packet["title_words"]
+            if scenario == "incomplete_final" or (scenario == "incomplete_initial" and words == first_title):
+                from tuber_studio.http_api import InferenceBudgetExceeded
+                raise InferenceBudgetExceeded("测试送审未完整结束")
             assert not words.endswith(("？", "。")) and note not in str(packet)
-            form, core = {"左侧有一把椅子":("陈述句","有一把椅子"), "椅子放在哪里":("问句","哪里"),
+            form, core = {"左侧有一把椅子":("陈述句","有一把椅子"), "椅子放在哪里":("问句","哪里"), "椅子是谁的":("问句","谁"),
                           "椅子位于直播间左侧":("陈述句","位于直播间左侧")
                          }.get(words, ("名词短语","椅子"))
             return {"form":form, "core":core, "supported":True, "observation":packet["observations"][0],
-                    "answer":"左侧" if form == "问句" else ""}
+                    "answer":"左侧" if words == "椅子放在哪里" else ""}
         if schema.get("title") == "WritingJudgment":
-            assert packet["writing_preference"] == note
-            assert list(packet["delivery_fields"]) == ["items.0.title"]
-            assert schema["properties"]["document_blocker"] == {"type":"null"}
-            title = packet["delivery_fields"]["items.0.title"]
-            # Some real reviews accepted a noun label and omitted the explicit punctuation check.
-            defects = [] if statement or scenario == "still_invalid" or title == good_title else [
-                {"path":"items.0.title", "owner_excerpt":"用问句", "field_excerpt":title, "reason":"标题没有提问"}]
-            return {"basis":"核对了标题句式", "violations":defects, "document_blocker":None}
+            pytest.fail("Both clauses are already covered by bound punctuation and independent title reading")
         if "writing_preference" in packet:
             assert packet["writing_preference"] == note
             return {"applies":True, "checks":[{"field":"title","operation":"contains","value":"独家"},
@@ -349,6 +348,13 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
         assert rule["check"] == {"field":"title","operation":"ends_with","value":"。" if statement else "？"}
         assert {x["suggested"]["operation"] for x in audits[-1]["discarded_format_suggestions"]} == {
             "contains","max_chars","starts_with"}
+    if scenario.startswith("incomplete_"):
+        attempts = tasks.current(task_id)["plan"]["editor_memory"]["review"]["attempts"]
+        assert attempts[0]["titles"]["items.0.title"]["incomplete_reading"] == "InferenceBudgetExceeded"
+        assert repairs == [first_title] and len(attempts) == 2
+        if scenario == "incomplete_final":
+            assert first["status"] == "failed" and first["artifact"] is None
+            return
     if scenario in {"withdrawn","still_invalid","label_with_period"}:
         assert first["status"] == "failed" and first["artifact"] is None
         if scenario != "withdrawn":
