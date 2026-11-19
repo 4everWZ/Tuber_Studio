@@ -2,12 +2,33 @@
 import asyncio
 import json
 from secrets import token_urlsafe
+from uuid import UUID
 
 from fastapi import Depends, HTTPException
 from starlette.responses import StreamingResponse
 
 from ..daily_memory import MemoryChanged
+from ..models import StrictModel
+from .owner_memory import history_preference
 from .owner_memory_use import MemoryUse, check_use
+from .private_call import inherited_topic
+
+
+class TopicSource(StrictModel):
+    turn_id: UUID
+    history_revision: int
+
+
+class CallUse(MemoryUse):
+    topic_source: TopicSource | None = None
+
+
+def check_call_use(runtime, use):
+    check_use(runtime, use)
+    if source := use.topic_source:
+        if (history_preference(runtime)["history_revision"] != source.history_revision
+                or not inherited_topic(runtime, source.turn_id)):
+            raise MemoryChanged("私聊话题已失效")
 
 
 class CallGuard:
@@ -22,7 +43,7 @@ class CallGuard:
         if not self.active or self.runtime.tasks.scope() != self.scope:
             return "closed"
         try:
-            check_use(self.runtime, self.use)
+            check_call_use(self.runtime, self.use)
         except MemoryChanged:
             return "changed"
         return "valid"
@@ -40,8 +61,16 @@ def register_call_guards(app, runtime, require_admin):
                 guard.wake.set()
         return response
 
+    @app.post("/api/chat/private-call/memory-validate", dependencies=[Depends(require_admin)])
+    async def validate(use: CallUse):
+        try:
+            check_call_use(runtime, use)
+        except MemoryChanged as error:
+            raise HTTPException(409, str(error)) from error
+        return {"valid": True}
+
     @app.post("/api/chat/private-call/memory-watch", dependencies=[Depends(require_admin)])
-    async def watch(use: MemoryUse):
+    async def watch(use: CallUse):
         if len(guards) >= 32:
             raise HTTPException(429, "活跃的通话记忆订阅过多")
         identity = token_urlsafe(24)

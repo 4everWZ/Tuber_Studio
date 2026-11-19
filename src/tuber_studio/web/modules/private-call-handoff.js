@@ -33,7 +33,33 @@ export class FinalUtterances {
   }
 }
 
-export function showHandoff(root, text, call = {}, origin = null) {
+export function transcriptReview(panel, picker, root, call) {
+  const records = [];
+  picker.onchange = () => {
+    root.replaceChildren();
+    const record = records[picker.selectedIndex - 1];
+    if (record) {
+      record.row ??= handoff(record.text, call, record.origin);
+      root.append(record.row);
+    }
+  };
+  return {
+    add(text, origin = null) {
+      records.push({text, origin});
+      picker.add(new Option((origin ? "所选录音 · " : "") + text, String(records.length)));
+      panel.hidden = false;
+    },
+    close() {
+      picker.onchange = null;
+      picker.length = 1;
+      root.replaceChildren();
+      panel.open = false;
+      panel.hidden = true;
+    },
+  };
+}
+
+function handoff(text, call, origin) {
   const row = document.createElement("div");
   if (origin) row.append(document.createTextNode("所选录音的转写（机器原稿）"));
   const quote = document.createElement("blockquote");
@@ -91,5 +117,5 @@ export function showHandoff(root, text, call = {}, origin = null) {
       return {...memoryBody(), correction: {id: item.id, revision: item.revision, use: call.memory_use}};
     }, "确认用这句话更正"));
   }
-  root.append(row);
+  return row;
 }

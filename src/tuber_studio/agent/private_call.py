@@ -7,10 +7,13 @@ must hold a dedicated ordinary application token, not a media/admin token.
 There is deliberately no fallback to the Studio login or gateway admin secret.
 """
 
+import json
 import os
 import re
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
+from uuid import UUID
 
 import httpx
 from fastapi import Depends, HTTPException
@@ -18,17 +21,49 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from ..config import validate_api_key
+from ..daily_memory import contains_memory_credential
 from ..http_api import endpoint
+from ..memory_sources import original_turn
 from ..operation_continuations import content_hash
 from ..performance import performance
 from ..store import dump
-from .owner_memory import citation, correctable_preference, private_rows, read_stamp
+from .memory_organizer import is_chat_turn
+from .owner_memory import citation, correctable_preference, history_preference, private_rows, read_stamp
 from .voice_origin import ticket_context
 
 
 class CallOptions(BaseModel):
     temporary: bool = False
     topic: str = Field(default="", max_length=500)
+    topic_turn: UUID | None = None
+
+
+def inherited_topic(runtime, turn_id):
+    memory = runtime.daily_memory
+    scope = runtime.memory_organizer.scope()
+    account, character, version = scope
+    owner = memory.private_owner
+    if not owner or not history_preference(runtime)["history_enabled"] or not memory.preference(scope)["enabled"]:
+        return ""
+    # The chat reader supplies the visible turn ID. Verify its kind and age before reading its words.
+    now = time.time()
+    row = runtime.store.one(
+        "SELECT result FROM operator_chat_turns WHERE request_id=? AND character_id=? AND created_at BETWEEN ? AND ? "
+        "AND json_extract(result,'$.owner_source')=? AND ((character_version=? AND json_extract(result,'$.account_id')=?) "
+        "OR json_extract(result,'$.private_owner')=?)",
+        (str(turn_id), character, now - 30 * 60, now, owner, version, account, owner),
+    )
+    if not row:
+        return ""
+    saved = json.loads(row["result"])
+    if not saved.get("private") or saved.get("temporary") or saved.get("task_reference") or not is_chat_turn(saved):
+        return ""
+    key = f"turn:{turn_id}"
+    source = original_turn(runtime.store.db, character, key)
+    if not source or memory.source_deleted((source["account"], character, source["character_version"]), key, owner):
+        return ""
+    words = source["message"].strip()
+    return words if not contains_memory_credential(words) else ""
 
 
 def browser_socket_origin(service_origin):
@@ -141,7 +176,11 @@ def register_private_call(app, runtime, require_admin):
         if runtime.tasks.scope() != grant:
             raise HTTPException(409, "角色或授权已变化，请重新开始通话")
         character = runtime.character
-        rows = private_rows(runtime, options.topic) if options.topic and not options.temporary else []
+        topic = options.topic.strip()
+        inherited = not options.temporary and not topic and options.topic_turn is not None
+        if inherited:
+            topic = inherited_topic(runtime, options.topic_turn)
+        rows = private_rows(runtime, topic) if topic and not options.temporary else []
         # A retained headline or source quote may contain the superseded preference.
         notes = [row["anecdote"] for row in rows]
         show = performance(runtime.store)
@@ -158,6 +197,8 @@ def register_private_call(app, runtime, require_admin):
             "memory_citations": [citation(row) for row in rows],
             "correction_targets": [row["id"] for row in rows if correctable_preference(row, runtime.daily_memory.private_owner)],
             "memory_use": {"ids": [row["id"] for row in rows], "stamp": read_stamp(runtime, rows)} if rows else None,
+            **({"topic_source": {"turn_id": options.topic_turn,
+                                 "history_revision": history_preference(runtime)["history_revision"]}} if inherited and rows else {}),
             "instructions": "\n".join(text for text in (
                 f"你是{character['name']}，正在和号主私下通话。",
                 character.get("core", {}).get("identity"), character.get("style", {}).get("instructions"),

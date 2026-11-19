@@ -1,30 +1,20 @@
 import { api } from "./api.js";
 import { node } from "./core.js";
 
-export function citations(items) {
-  const details = node("details");
-  details.className = "owner-memory-citations";
-  details.append(node("summary", "为何提到它"));
-  for (const item of items) {
-    details.append(node("strong", item.note), node("blockquote", item.quote),
-      node("small", `来源 ${item.source_key} · v${item.revision}`));
-    if (item.source_key.startsWith("confirmed_voice:")) {
-      const inspect = node("button", "核对语音来源");
-      inspect.type = "button";
-      inspect.onclick = async () => {
-        try {
-          const row = await api("/api/agent/memory.get", {method:"POST", body:{id:item.id, source_key:item.source_key}});
-          const origin = row.source_key === item.source_key && row.voice_origin;
-          inspect.replaceWith(node("p", origin ? `机器转写：${origin.machine_text}\n号主确认：${row.quote}` : "此引用没有可核对的录音转写回执。"));
-        } catch { inspect.replaceWith(node("p", "当前无法读取这条来源。")); }
-      };
-      details.append(inspect);
-    }
-  }
-  return details;
+export function voiceSourceButton(id, sourceKey) {
+  const inspect = node("button", "核对语音来源");
+  inspect.type = "button";
+  inspect.onclick = async () => {
+    try {
+      const row = await api("/api/agent/memory.get", {method: "POST", body: {id, source_key: sourceKey}});
+      const origin = row.source_key === sourceKey && row.voice_origin;
+      inspect.replaceWith(node("p", origin ? `机器转写：${origin.machine_text}\n号主确认：${row.quote}` : "这条来源没有录音转写回执。"));
+    } catch { inspect.replaceWith(node("p", "当前无法读取这条来源。")); }
+  };
+  return inspect;
 }
 
-export function rememberButton(proposal, label = "记住这句话") {
+export function rememberButton(proposal, label) {
   const group = node("span"), button = node("button", label), feedback = node("span");
   button.type = "button";
   feedback.role = "status";

@@ -151,7 +151,8 @@ async def voice_on_page(page, origin, audio, target, expected, *, correct_qa_pre
     stage("open_private_call")
     await page.locator("#operator-chat-more-toggle").click()
     await page.locator("#private-call-open").click()
-    await page.locator("#private-call-topic").fill(target["source_key"])
+    await page.get_by_text("指定通话话题", exact=True).click()
+    await page.get_by_label("话题（可选）").fill(target["source_key"])
     stage("ticket_and_handshake")
     await page.locator("#private-call-start").click()
     quote = page.locator("#private-call-utterances blockquote").first
@@ -183,9 +184,14 @@ async def voice_on_page(page, origin, audio, target, expected, *, correct_qa_pre
                 committed_manually = True
                 break
             await asyncio.sleep(.2)
+        picker = page.get_by_label("选择要处理的转写")
+        options = picker.locator("option:not([value=''])")
         if requested:
-            quote = page.locator("#private-call-utterances > div").filter(has_text="所选录音的转写").locator("blockquote").first
-        await quote.wait_for(timeout=60000 if requested else 15000)
+            options = options.filter(has_text=re.compile("^所选录音 · "))
+        await options.first.wait_for(state="attached", timeout=60000 if requested else 15000)
+        await page.get_by_text("查看通话转写", exact=True).click()
+        await picker.select_option(await options.first.get_attribute("value"))
+        await quote.wait_for()
     except BrowserTimeout:
         result = {"status":"unverified", "session_created":bool(counts["session.created"]),
                 "capabilities":capabilities, "commit_requested":committed_manually, "ui_status":await page.locator("#private-call-state").inner_text(),

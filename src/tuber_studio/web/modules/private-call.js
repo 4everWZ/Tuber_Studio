@@ -1,8 +1,7 @@
 import { api } from "./api.js";
 import { PrivatePlayback } from "./private-call-playback.js";
 import { guardCall } from "./private-call-guard.js";
-import { citations } from "./owner-memory.js";
-import { FinalUtterances, showHandoff } from "./private-call-handoff.js";
+import { FinalUtterances, transcriptReview } from "./private-call-handoff.js";
 import { selectUtterance } from "./private-call-transcription.js";
 
 const byId = id => document.getElementById(id);
@@ -10,8 +9,9 @@ const open = byId("private-call-open"), dialog = byId("private-call-dialog");
 const start = byId("private-call-start"), end = byId("private-call-end"), status = byId("private-call-state");
 const menu = byId("operator-chat-more-panel"), workspace = byId("workspace");
 let current;
-const topic = byId("private-call-topic"), temporary = byId("private-call-temporary");
-temporary.onchange = () => { topic.disabled = temporary.checked; };
+const temporary = byId("private-call-temporary");
+const options = byId("private-call-options"), topic = byId("private-call-topic");
+temporary.onchange = () => { options.hidden = temporary.checked; };
 const finishUtterance = byId("private-call-finish-utterance");
 finishUtterance.onclick = () => {
   if (!current?.stream || finishUtterance.disabled) return;
@@ -59,11 +59,10 @@ function finish(call, cause, message, code = null) {
   mute.hidden = true;
   mute.textContent = "播放静音";
   mute.setAttribute("aria-pressed", "false");
-  byId("private-call-utterances").replaceChildren();
+  call.review?.close();
   finishUtterance.hidden = finishUtterance.disabled = true;
-  byId("private-call-citations").replaceChildren();
   temporary.disabled = false;
-  topic.disabled = temporary.checked;
+  topic.disabled = false;
   call.abort.abort();
   clearTimeout(call.deadline);
   clearInterval(call.receipts);
@@ -131,13 +130,18 @@ async function begin(previous = null) {
     if (current !== call) return;
     const ephemeral = call.ephemeral = temporary.checked;
     temporary.disabled = topic.disabled = true;
+    const subject = ephemeral ? "" : topic.value.trim();
+    const turn = !ephemeral && !subject && (previous ? previous.turn :
+      byId("operator-chat-feed").lastElementChild?.dataset.requestId);
     const config = await api("/api/chat/private-call/ticket", {method: "POST", signal: call.abort.signal,
-      body: {temporary: ephemeral, topic: ephemeral ? "" : topic.value.trim()}});
+      body: {temporary: ephemeral, ...(subject ? {topic: subject} : turn ? {topic_turn: turn} : {})}});
     if (current !== call) return;
+    const use = config.topic_source ? {...config.memory_use, topic_source: config.topic_source} : config.memory_use;
     async function validateMemory() {
       if (!config.memory_use) return true;
       try {
-        await api("/api/agent/memory/validate", {method: "POST", body: config.memory_use, signal: call.abort.signal});
+        const path = config.topic_source ? "/api/chat/private-call/memory-validate" : "/api/agent/memory/validate";
+        await api(path, {method: "POST", body: use, signal: call.abort.signal});
         return current === call;
       } catch (error) {
         invalidate(error.status === 409 ? "changed" : "closed");
@@ -155,14 +159,15 @@ async function begin(previous = null) {
       call.send({type: "output_audio_buffer.clear"});
       finish(call, reason === "changed" ? "memory_changed" : "memory_guard_closed", "通话记忆已变化，正在重新连接");
       if (reason === "changed" && dialog.open && !workspace.hidden) {
-        void begin({scope: config.call_scope, muted});
+        void begin({scope: config.call_scope, muted, turn});
       } else status.textContent = "记忆或授权暂时无法核对，通话已结束";
     }
     if (config.memory_use) {
-      call.guard = await guardCall(call, config.memory_use, invalidate);
+      call.guard = await guardCall(call, use, invalidate);
       if (current !== call) return;
-      byId("private-call-citations").append(citations(config.memory_citations));
     }
+    if (!ephemeral) call.review = transcriptReview(byId("private-call-review"), byId("private-call-transcript"),
+      byId("private-call-utterances"), config);
     const url = new URL(config.socket);
     url.search = new URLSearchParams({ticket: config.ticket, duplex: "1", autostart: "0"});
     if (!ephemeral) url.searchParams.set("input_transcription", "explicit");
@@ -206,12 +211,12 @@ async function begin(previous = null) {
           if (!ephemeral && current === call && config.voice_context && selection?.receipt === "hmac-sha256-v1" && selection.mode === "explicit_once" &&
               selection.sample_rate_hz === 16000 && selection.max_seconds === 15) {
             call.selection = selectUtterance(byId("private-call-transcribe"), byId("private-call-transcribe-state"),
-              e => call.send(e), (text, origin) => showHandoff(byId("private-call-utterances"), text, config, {...origin, ...config.voice_context}));
+              e => call.send(e), (text, origin) => call.review.add(text, {...origin, ...config.voice_context}));
           }
         } else if (call.stream) {
           call.selection?.event(event);
-          const text = call.utterances.accept(event);
-          if (text && !ephemeral) showHandoff(byId("private-call-utterances"), text, config);
+          const text = !ephemeral && call.utterances.accept(event);
+          if (text) call.review.add(text);
           if (config.memory_use && ["response.audio.delta", "response.output_audio.delta"].includes(event.type)) {
             call.pendingAudio = (call.pendingAudio || 0) + 1;
             if (call.pendingAudio > 8) { finish(call, "memory_backlog", "记忆核对积压，通话已结束"); return; }
@@ -230,6 +235,8 @@ async function begin(previous = null) {
 
 open.onclick = () => {
   byId("operator-chat-more-toggle").click();
+  options.open = false;
+  topic.value = "";
   status.textContent = "尚未开始通话";
   dialog.showModal();
 };

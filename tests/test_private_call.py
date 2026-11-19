@@ -1,9 +1,81 @@
+import json
+import time
+from uuid import uuid4
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.agent import private_call
 from tuber_studio.app import create_app
+
+
+async def test_ticket_uses_only_the_eligible_chat_topic_and_revalidates_it(settings, monkeypatch):
+    app = create_app(settings)
+    runtime = app.state.runtime
+    path = "/api/chat/private-call"
+    question = "咱们电话聊一下明天开场提纲。"
+    related = "写开场提纲时，先介绍海底厨房。"
+    unrelated = "只有整理账单时，才按金额倒序排列。"
+    monkeypatch.setattr(private_call, "private_service", lambda: ("https://voice.example", "test-key"))
+
+    async def mint(*args):
+        return "test-ticket"
+
+    monkeypatch.setattr(private_call, "mint_ticket", mint)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        async def ticket(**body):
+            return (await client.post(path + "/ticket", json=body)).raise_for_status().json()
+
+        for note in (related, unrelated):
+            body = {"source": "settings", "text": note}
+            preview = (await client.post("/api/agent/memory.propose", json=body)).raise_for_status().json()
+            (await client.post("/api/agent/memory/confirm", json=body | {"stamp": preview["stamp"]})).raise_for_status()
+        turn = str(uuid4())
+        (await client.post("/api/chat/intelligent", json={
+            "request_id": turn, "message": question, "intent": {"action": "chat"},
+        })).raise_for_status()
+        inherited = await ticket(topic_turn=turn)
+        assert related in inherited["instructions"] and unrelated not in inherited["instructions"]
+        assert question not in inherited["instructions"]
+        use = inherited["memory_use"] | {"topic_source": inherited["topic_source"]}
+        assert (await client.post(path + "/memory-validate", json=use)).status_code == 200
+        assert (await ticket())["memory_use"] is None
+        off_topic = str(uuid4())
+        (await client.post("/api/chat/intelligent", json={
+            "request_id": off_topic, "message": "我们去看月亮吧。", "intent": {"action": "chat"},
+        })).raise_for_status()
+        assert (await ticket(topic_turn=off_topic))["memory_use"] is None
+        assert (await ticket(topic_turn=turn, topic="月亮的背面"))["memory_use"] is None
+        assert (await ticket(topic_turn=turn, topic=related, temporary=True))["memory_use"] is None
+        prefs = (await client.get("/api/daily-memory/preferences")).json()
+        for enabled in (False, True):
+            (await client.put("/api/daily-memory/preferences", json={
+                "scope": prefs["scope"], "enabled": True, "history_enabled": enabled,
+            })).raise_for_status()
+            assert (await client.post(path + "/memory-validate", json=use)).status_code == 409
+            if not enabled:
+                assert (await ticket(topic_turn=turn))["memory_use"] is None
+                assert related in (await ticket(topic_turn=turn, topic=related))["instructions"]
+        original = runtime.store.one("SELECT * FROM operator_chat_turns WHERE request_id=?", (turn,))
+        result = json.loads(original["result"])
+        for changes in ({"owner_source": "another-owner"}, {"private": False}, {"card": {"type": "agent_task"}},
+                        {"account_id": "another-account", "private_owner": None}):
+            runtime.store.execute("UPDATE operator_chat_turns SET result=? WHERE request_id=?",
+                                  (json.dumps(result | changes), turn))
+            assert (await ticket(topic_turn=turn))["memory_use"] is None
+        for role, at in (("another-character", time.time()), (original["character_id"], time.time() - 31 * 60)):
+            runtime.store.execute("UPDATE operator_chat_turns SET result=?, character_id=?, created_at=? WHERE request_id=?",
+                                  (original["result"], role, at, turn))
+            assert (await ticket(topic_turn=turn))["memory_use"] is None
+        runtime.store.execute("UPDATE operator_chat_turns SET created_at=? WHERE request_id=?", (time.time(), turn))
+        fresh = await ticket(topic_turn=turn)
+        runtime.store.execute("DELETE FROM operator_chat_turns WHERE request_id=?", (turn,))
+        revoked = fresh["memory_use"] | {"topic_source": fresh["topic_source"]}
+        assert (await client.post(path + "/memory-validate", json=revoked)).status_code == 409
+        assert (await ticket(topic_turn=turn))["memory_use"] is None
+    await app.state.comments.adapter.close()
+    app.state.store.close()
 
 
 @pytest.mark.parametrize("behind_edge", [True, False])

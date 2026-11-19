@@ -1,5 +1,5 @@
 import { $, node } from "./core.js";
-import { rememberButton } from "./owner-memory.js";
+import { rememberButton, voiceSourceButton } from "./owner-memory.js";
 
 const endpoint = "/api/daily-memory";
 export const memoryVisibility = { owner: "仅号主", shared: "可跨端使用", live_rule: "直播规则" };
@@ -34,9 +34,16 @@ function errorState(area, text, retry) {
 function renderSources(item) {
   const details = node("details");
   details.append(node("summary", "查看来源"));
+  appendSources(details, item);
+  return details;
+}
+
+function appendSources(details, item) {
   if (item.memory_kind === "private") {
     const when = item.source.at ? ` · ${memoryDate(item.source.at)}` : "";
-    details.append(node("p", `号主对话${when}`, "hint"));
+    const voice = item.source.key?.startsWith("confirmed_voice:");
+    details.append(node("p", (voice ? "私有通话" : "号主原话") + when, "hint"));
+    if (voice) details.append(voiceSourceButton(item.id, item.source.key));
   }
   if (item.quote) details.append(node("blockquote", item.quote));
   for (const ref of item.source.references || []) {
@@ -47,7 +54,6 @@ function renderSources(item) {
       details.append(line);
     }
   }
-  return details;
 }
 
 export function initPersonalization(model, api) {
@@ -487,7 +493,7 @@ export function initPersonalization(model, api) {
       entry.append(node("strong", item.headline), node("p", item.anecdote),
         node("p", [memoryVisibility[item.visibility], archived ? statuses[item.status] : "", date].filter(Boolean).join(" · "), "hint"));
       edit.append(node("summary", "来源与编辑"));
-      if (item.quote) edit.append(node("blockquote", item.quote));
+      appendSources(edit, item);
       const versions = node("details"), versionList = node("div");
       versions.append(node("summary", "更正历史"), versionList);
       const displayedScope = report.scope;
@@ -501,13 +507,6 @@ export function initPersonalization(model, api) {
         } catch (error) { versionList.textContent = error.message; }
       };
       edit.append(versions);
-      if (item.memory_kind === "private") {
-        edit.append(node("p", `来源 · 号主对话 · ${new Date(item.source.at * 1000).toLocaleString("zh-CN")}`, "hint"));
-      }
-      for (const ref of item.source.references || []) {
-        const link = sourceLink(ref.text, ref.href);
-        if (link) { const line = node("p"); line.append(link); edit.append(line); }
-      }
 
       const form = node("form");
       const title = node("input");

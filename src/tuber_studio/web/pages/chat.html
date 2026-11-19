@@ -93,14 +93,21 @@
 <dialog id="private-call-dialog" aria-labelledby="private-call-title">
   <h2 id="private-call-title">私有语音通话</h2>
   <div id="private-call-recordings" class="actions" hidden></div>
-  <label>通话话题（用于查找相关记忆）<input id="private-call-topic" maxlength="500"></label>
   <label><input type="checkbox" id="private-call-temporary">临时通话</label>
-  <div id="private-call-citations"></div>
+  <details id="private-call-options">
+    <summary>指定通话话题</summary>
+    <label>话题（可选）<input id="private-call-topic" maxlength="500"></label>
+  </details>
   <div id="private-call-pet-slot"></div>
   <p>声音只送往私聊推理服务，不接入直播、不写入聊天记录。建议佩戴耳机。</p>
   <p id="private-call-state" role="status">尚未开始通话</p>
-  <p class="hint">仅当服务返回可核对的号主最终转写时，才可在这里确认交办。</p>
-  <div id="private-call-utterances" aria-label="号主最终转写" style="max-height:30vh;overflow:auto"></div>
+  <details id="private-call-review" hidden>
+    <summary>查看通话转写</summary>
+    <label>选择要处理的转写
+      <select id="private-call-transcript"><option value="">请选择一句</option></select>
+    </label>
+    <div id="private-call-utterances" style="max-height:30vh;overflow:auto"></div>
+  </details>
   <div class="actions">
     <button id="private-call-start" type="button">开始通话</button>
     <button id="private-call-mute" type="button" hidden aria-pressed="false">播放静音</button>

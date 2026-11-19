@@ -135,22 +135,50 @@ async function test(browser, origin, mode) {
   assert.equal(await page.getByText("只在这个窗口出现", {exact: true}).count(), 0);
   await page.locator("#operator-chat-input").fill(statement);
   await page.locator("#operator-chat-send").click();
-  await page.locator(".operator-chat-turn").getByText("为何提到它").click();
-  await page.locator(".owner-memory-citations blockquote").filter({hasText: statement}).waitFor();
+  const turn = page.locator(".operator-chat-turn").filter({has: page.locator(".operator-chat-user", {hasText: statement})}).last();
+  await turn.locator(".operator-chat-reply").waitFor();
+  assert.equal(await turn.getByText(/原话操作|记住这句话|为何提到它/).count(), 0);
 
   await page.locator("#operator-chat-more-toggle").click();
   await page.locator("#private-call-open").click();
   const other = await browser.newContext();
   const original = await other.request.post(origin + "/api/agent/memory.search", {data: {query: statement}});
   const originalRow = (await original.json()).items[0];
-  await page.locator("#private-call-topic").fill(correction ? originalRow.source_key : statement);
+  const memoryWrites = [];
+  page.on("request", request => {
+    if (/\/api\/agent\/memory(?:\.propose|\/confirm)$/.test(request.url())) memoryWrites.push(request.url());
+  });
+  assert.equal(await page.locator("#private-call-citations").count(), 0);
+  assert.equal(await page.locator("#private-call-topic").isVisible(), false);
+  if (selected) {
+    const prefs = await (await other.request.get(origin + "/api/daily-memory/preferences")).json();
+    const enabled = await other.request.put(origin + "/api/daily-memory/preferences",
+      {data:{scope: prefs.scope, enabled:prefs.enabled, history_enabled:true}});
+    assert.equal(enabled.ok(), true);
+  } else {
+    await page.getByText("指定通话话题", {exact:true}).click();
+    await page.getByLabel("话题（可选）").fill(correction ? originalRow.source_key : statement);
+  }
+  const ticket = page.waitForRequest(r => r.url().endsWith("/api/chat/private-call/ticket"));
   await page.locator("#private-call-start").click();
+  const body = (await ticket).postDataJSON();
+  if (selected) assert.deepEqual(body, {temporary:false, topic_turn:await turn.getAttribute("data-request-id")});
   if (selected) {
     const start = page.getByRole("button", {name:"转认下一句"});
     await start.waitFor();
     assert.equal(await page.getByRole("button",{name:"将这句话交办"}).count(), 0);
     await start.click();
     await page.getByRole("button",{name:"结束并转认这句"}).click();
+  }
+  await page.getByText("查看通话转写", {exact:true}).waitFor();
+  assert.equal(await page.locator("#private-call-review").evaluate(panel => panel.open), false);
+  assert.equal(await page.getByRole("button",{name:"确认并记住原话"}).count(), 0);
+  await page.getByText("查看通话转写", {exact:true}).click();
+  const picker = page.getByLabel("选择要处理的转写");
+  assert.deepEqual(await picker.locator("option").allTextContents(), ["请选择一句", selected ? "所选录音 · 好的，"+voiceNote : voiceNote]);
+  await picker.selectOption("1");
+  assert.deepEqual(memoryWrites, []);
+  if (selected) {
     await page.locator("#private-call-utterances blockquote").filter({hasText:voiceNote}).waitFor();
     assert.deepEqual(await page.locator("#private-call-utterances blockquote").allTextContents(), ["好的，"+voiceNote]);
     await page.getByLabel("号主确认的文字（可改正误听）").fill(voiceNote);

@@ -1,6 +1,5 @@
 import { illustrationUrl, illustrationStatus } from "./operation-image.js";
 import { node, safeMessage } from "./core.js?v=20261105.32";
-import { citations, rememberButton } from "./owner-memory.js";
 import { memoryGroupNames, memoryVisibility } from "./personalization.js?v=20261116.1";
 import { renderArtifact, renderAssistantAnswer } from "./operator-chat-answer.js";
 import { operationControlCard } from "./operator-chat-control.js?v=20261113.12";
@@ -336,7 +335,7 @@ function experienceCard(root, initial) {
   const items = node("ul");
   const empty = node("p", "暂无已保存的公开经历。", "hint");
   let signature;
-  root.append(items, empty, link("打开记忆设置", "#personalization"));
+  root.append(items, empty);
 
   function update(data) {
     const next = JSON.stringify(data.items);
@@ -388,19 +387,8 @@ export function createOperatorCard(root, turn, context) {
     status.setAttribute("role", "status");
     const summary = node("p", "按工具回执交付", "hint");
     const detail = node("div", null, "chat-task-result");
-    const references = node("div");
     let active = true, message = "";
     const update = value => {
-      references.replaceChildren();
-      if (value.memory_citations?.length) references.append(citations(value.memory_citations));
-      for (const step of value.steps || []) {
-        if (step.revision !== value.revision || !step.result) continue;
-        if (step.result.memory_citations?.length) references.append(citations(step.result.memory_citations));
-        for (const suggestion of step.result.memory_proposals || []) {
-          references.append(rememberButton(() => ({source: "task", task_id: value.id,
-            source_id: suggestion.source_id, text: suggestion.quote}), "查看记忆建议"));
-        }
-      }
       active = !["completed", "cancelled", "failed"].includes(value.status);
       status.textContent = ({ awaiting_approval: "等待确认", needs_input: "等待你的答复", waiting: "等待工具结果",
                               cancelled: "已停止", scheduled: "已预约" })[value.status] || label(value.status || "queued");
@@ -412,7 +400,7 @@ export function createOperatorCard(root, turn, context) {
       summary.hidden = !["completed", "failed"].includes(value.status) || !value.steps?.some(step => step.result);
     };
     open.onclick = () => context.openTask(data.id);
-    root.append(status, summary, detail, references, open);
+    root.append(status, summary, detail, open);
     update(data);
     return { update, needsRefresh: () => active };
   }

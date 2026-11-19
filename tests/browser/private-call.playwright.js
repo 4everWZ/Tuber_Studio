@@ -32,15 +32,40 @@ async page => {
     if (request.method() !== "GET" && request.url().startsWith(base)) mutations.push(request.url().slice(base.length));
   });
   const before = await (await page.request.get("http://127.0.0.1:18767/observations")).json();
+  const note = {source:"settings", text:"仅在写视频提纲时，每个标题都要以问号结尾。"};
+  const preview = await page.request.post(base + "/api/agent/memory.propose", {data:note, failOnStatusCode:true});
+  await page.request.post(base + "/api/agent/memory/confirm", {
+    data:{...note, stamp:(await preview.json()).stamp}, failOnStatusCode:true});
+  const prompts = [];
+  page.on("websocket", socket => {
+    if (new URL(socket.url()).pathname !== "/v1/realtime") return;
+    socket.on("framesent", ({payload}) => {
+      const event = JSON.parse(payload);
+      if (event.type === "session.update") prompts.push(event.session.instructions);
+    });
+  });
   await page.getByRole("button", {name:"更多对话操作"}).click();
   await page.getByRole("button", {name:"私有语音通话"}).click();
   if (await page.evaluate(() => window.testTracks.length) || mutations.length) throw Error("premature call");
   await page.getByRole("button", {name:"开始通话"}).click();
   await page.getByText(/麦克风已开启/).waitFor();
+  if (prompts.length !== 1 || prompts[0].includes(note.text)) throw Error("unrelated writing rule entered the call");
   const handoff = page.getByRole("button", {name:"将这句话交办"});
+  await page.getByText("查看通话转写", {exact:true}).waitFor();
+  if (await handoff.count() || await page.locator("#private-call-review").evaluate(panel => panel.open))
+    throw Error("transcript opened without owner action");
+  await page.getByText("查看通话转写", {exact:true}).click();
+  await page.getByLabel("选择要处理的转写").selectOption({label:"整理一份私有提纲"});
   await handoff.waitFor();
   if (await handoff.count() !== 1 || mutations.join() !== "/api/chat/private-call/ticket") throw Error("unconfirmed handoff");
-  await page.getByText("整理一份私有提纲", {exact:true}).waitFor();
+  await page.locator("#private-call-utterances blockquote").filter({hasText:"整理一份私有提纲"}).waitFor();
+  const prompted = page.waitForEvent("dialog");
+  const remember = page.getByRole("button", {name:"确认并记住原话"});
+  const click = remember.click();
+  const confirmation = await prompted;
+  if (!confirmation.message().includes("整理一份私有提纲")) throw Error("wrong transcript in preview");
+  await confirmation.dismiss();
+  await click;
   const pet = page.locator("#private-call-dialog #chat-pet");
   await pet.waitFor();
   if (await page.locator("#private-call-dialog video, #private-call-dialog canvas").count())
@@ -94,7 +119,8 @@ async page => {
   if (after.input <= before.input || !after.played || after.closed !== before.closed + 1) throw Error(JSON.stringify(after));
   if ((after.played_by_response["voice-2"] || 0) >= 3000 || (after.played_by_response["voice-3"] || 0) >= 3000 ||
       after.played_by_response["voice-4"]) throw Error("interrupted or muted audio was counted as played");
-  if (mutations.join() !== "/api/chat/private-call/ticket,/api/agent/tasks") throw Error("Unexpected business writes: " + mutations);
+  const expected = ["/api/chat/private-call/ticket", "/api/agent/memory.propose", "/api/agent/tasks"];
+  if (mutations.join() !== expected.join()) throw Error("Unexpected business writes: " + mutations);
   const retained = await (await page.request.get(base + "/api/agent/tasks/" + task.id)).json();
   if (retained.id !== task.id || retained.status === "cancelled") throw Error("hangup lost the task");
   await page.evaluate(() => { window.holdPermission = true; });
@@ -107,7 +133,7 @@ async page => {
   await page.evaluate(() => window.releasePermission());
   await page.waitForFunction(() => window.testTracks.every(track => track.readyState === "ended") &&
     window.callContexts.every(context => context.state === "closed"));
-  if (mutations.join() !== "/api/chat/private-call/ticket,/api/agent/tasks,/api/chat/private-call/ticket")
+  if (mutations.join() !== [...expected, "/api/chat/private-call/ticket"].join())
     throw Error("Late microphone permission triggered a business action");
   return after;
 }
