@@ -18,6 +18,7 @@ from ...generation_meter import BrowsingBudgetDeferred
 from ...media_cache import linked
 from ...platforms.bilibili_browsing import CREDIT
 from ...providers import public_error
+from ...video_vision import VideoPartText
 from .local_asr import LocalVideoASR
 from .models import DisabledVideoEvidence, browsing_filter_reason
 from .round_context import read_round
@@ -30,7 +31,7 @@ class EvidenceUnavailable(ValueError):
         super().__init__(message)
 
 
-VISUAL_SAMPLING_VERSION = "cid-aligned-v2"
+VISUAL_SAMPLING_VERSION = "cid-aligned-text-v3"
 STORYBOARD_STEP = 12
 MAX_VISUAL_INTERVAL = 18
 STORYBOARD_SCAN_QUESTION = (
@@ -153,7 +154,7 @@ class BrowsingEvidence:
                     "frame_evidence",
                     "limitations",
                 )
-            }
+            } | ({"visual_text_version": part["visual_text_version"]} if not legacy and "visual_text_version" in part else {})
             for part in material["parts"]
         ]
         for part in stable["parts_evidence"]:
@@ -197,20 +198,28 @@ class BrowsingEvidence:
         capabilities = dict(self.visual.capabilities())
         return (capabilities.get("provider_id"), capabilities.get("version"))
 
-    def _current_visual(self, material):
+    def _current_visual(self, material, *, text_tracks=None):
         capabilities = dict(self.visual.capabilities())
         expected = {key: capabilities.get(key) for key in ("provider_id", "version")}
         parts = [part for part in material["parts"] if part.get("visual")]
-        return bool(
+        if not (
             parts
             and material.get("visual_sampling_version") == VISUAL_SAMPLING_VERSION
             and capabilities.get("images")
             and all(expected.values())
             and all(part.get("visual_provider") == expected for part in parts)
-        )
+        ):
+            return False
+        tracks = material["parts"] if text_tracks is None else text_tracks
+        versions = {cid: VideoPartText(material["metadata"], cid, tracks).version()
+                    for cid in {str(part["cid"]) for part in parts}}
+        return all(part.get("visual_text_version") == versions[str(part["cid"])] for part in parts)
 
     def has_visual_provider(self):
         return bool(self.visual.capabilities().get("images"))
+
+    def requires_asr_read(self, material):
+        return any(part.get("asr") for part in material["parts"]) or (self.asr.enabled and bool(material.get("missing_parts")))
 
     def visual_batch_size(self):
         capabilities = self.visual.capabilities()
@@ -262,6 +271,7 @@ class BrowsingEvidence:
                                         for item in visual_source_ids}, key=repr))
         sampling = config.get("frame_sampling", "baseline")
         cached_cc = None
+        newest_text = None
         if not force:
             for row in self.store.all(
                 "SELECT id,expires_at FROM browsing_materials WHERE bvid=? AND expires_at>? ORDER BY created_at DESC LIMIT 4",
@@ -270,10 +280,17 @@ class BrowsingEvidence:
                 try:
                     material = self.load(row["id"])
                     if material["languages"] == config["languages"]:
-                        if any(part.get("asr") for part in material["parts"]) or (
-                            self.asr.enabled and material["missing_parts"]
-                        ):
-                            continue  # Re-read opt-in local clips by their current content, never stale ASR.
+                        if self.requires_asr_read(material):
+                            if newest_text is None:
+                                break  # Re-read local clips by their current content.
+                            continue
+                        text_version = (self.source_version(material | {"parts": [
+                            p for p in material["parts"] if not p.get("visual")
+                        ]}), VideoPartText.video_fields(material["metadata"]))
+                        if newest_text is None:
+                            newest_text = text_version
+                        elif newest_text != text_version:
+                            continue
                         reason = browsing_filter_reason(material["metadata"], config, complete=True)
                         if reason:
                             raise EvidenceUnavailable("filtered", reason)
@@ -306,6 +323,7 @@ class BrowsingEvidence:
                 self._visual_identity(),
                 sampling,
                 self.source_version(base),
+                json.dumps(VideoPartText.video_fields(base["metadata"]), ensure_ascii=False),
             )
             async with self._flight(
                 key,
@@ -453,6 +471,7 @@ class BrowsingEvidence:
 
     async def _add_visual(self, material, task, deadline, requests, sampling):
         metadata = material["metadata"]
+        text_tracks = [part for part in material["parts"] if not part.get("visual")]
         previous = {frame["id"]: frame for frame in material.get("visual_frames", [])}
         observed = {frame["id"] for part in material["parts"] for frame in part.get("frame_evidence", [])}
         scans = {scan["cid"]: scan for scan in material.get("visual_scan", [])}
@@ -492,12 +511,13 @@ class BrowsingEvidence:
         for cid, timestamps, windows, precise in batches:
             try:
                 if precise:
-                    parts, frames = await self.inspect_frame(metadata, task, deadline, cid, timestamps[0], known_frames=observed)
+                    parts, frames = await self.inspect_frame(metadata, task, deadline, cid, timestamps[0],
+                                                             known_frames=observed, text_tracks=text_tracks)
                 else:
                     parts, frames = await self._visual_parts(
                         metadata, task, deadline, cid=cid, timestamps=timestamps,
                         windows=[(window["start"], window["end"]) for window in windows] if windows else None,
-                        known_frames=observed, question=STORYBOARD_SCAN_QUESTION if windows else None,
+                        known_frames=observed, question=STORYBOARD_SCAN_QUESTION if windows else None, text_tracks=text_tracks,
                     )
             except BrowsingBudgetDeferred as error:
                 if not material["parts"]:
@@ -537,7 +557,7 @@ class BrowsingEvidence:
                 if targets:
                     try:
                         parts, _ = await self._visual_parts(metadata, task, deadline, cid=cid,
-                                                            timestamps=targets, known_frames=observed)
+                                                            timestamps=targets, known_frames=observed, text_tracks=text_tracks)
                     except (ValueError, TimeoutError, OSError) as error:
                         material["visual_error"] = public_error(error)
                         break
@@ -557,7 +577,7 @@ class BrowsingEvidence:
                     try:
                         parts, _ = await self._visual_parts(metadata, task, deadline, cid=cid,
                                                             timestamps=[timestamp], known_frames=observed, sparse_range=gap,
-                                                            known_times=observed_times(material["parts"], cid))
+                                                            known_times=observed_times(material["parts"], cid), text_tracks=text_tracks)
                         material["parts"].extend(parts)
                         observed.update(frame["id"] for part in parts for frame in part["frame_evidence"])
                     except (ValueError, TimeoutError, OSError) as error:
@@ -568,7 +588,7 @@ class BrowsingEvidence:
                     if gap in remaining() and hasattr(self.adapter, "video_stream_frame"):
                         try:
                             parts, _ = await self.inspect_frame(metadata, task, deadline, cid, timestamp,
-                                                                known_frames=observed, allow_fallback=False)
+                                                                known_frames=observed, allow_fallback=False, text_tracks=text_tracks)
                             material["parts"].extend(parts)
                             observed.update(frame["id"] for part in parts for frame in part["frame_evidence"])
                         except (ValueError, TimeoutError, OSError) as error:
@@ -634,11 +654,13 @@ class BrowsingEvidence:
     def _valid_time(value):
         return type(value) in (int, float) and math.isfinite(value) and value >= 0
 
-    async def inspect_frame(self, metadata, task, deadline, cid, timestamp, *, allow_fallback=True, known_frames=frozenset()):
+    async def inspect_frame(self, metadata, task, deadline, cid, timestamp, *, allow_fallback=True, known_frames=frozenset(),
+                            text_tracks=()):
         part = next((item for item in metadata["parts"] if str(item["cid"]) == str(cid)), None)
         if part is None or not self._valid_time(timestamp) or timestamp >= part["duration"]:
             raise EvidenceUnavailable("invalid_frames", "目标时码超出已核验分 P")
-        version = [str(metadata["aid"]), metadata.get("published_at"), str(cid), part["duration"]]
+        version = [str(metadata["aid"]), metadata.get("published_at"), str(cid), part["duration"],
+                   VideoPartText(metadata, str(cid), text_tracks).version()]
         provider = self._visual_identity()
         matches = self.store.all(
             "SELECT f.material_id FROM browsing_stream_frames f JOIN browsing_materials m ON m.id=f.material_id "
@@ -651,7 +673,7 @@ class BrowsingEvidence:
                 saved = self.load(item["material_id"])
             except EvidenceUnavailable:
                 continue
-            if saved.get("precision_version") != version or not self._current_visual(saved):
+            if saved.get("precision_version") != version or not self._current_visual(saved, text_tracks=text_tracks):
                 continue
             frame, = saved["visual_frames"]
             if frame["actual_time"] <= timestamp < frame["presentation_end"]:
@@ -666,14 +688,14 @@ class BrowsingEvidence:
         known_frames = frozenset(known_frames)
         async with self._flight(
             ("precise_frame", metadata["bvid"], tuple(version), timestamp, provider, allow_fallback, known_frames),
-            lambda: self._inspect_frame(metadata, task, deadline, cid, timestamp, version, allow_fallback, known_frames),
+            lambda: self._inspect_frame(metadata, task, deadline, cid, timestamp, version, allow_fallback, known_frames, text_tracks),
         ) as (parts, frames):
             return copy.deepcopy(parts), copy.deepcopy(frames)
 
-    async def _inspect_frame(self, metadata, task, deadline, cid, timestamp, version, allow_fallback, known_frames):
+    async def _inspect_frame(self, metadata, task, deadline, cid, timestamp, version, allow_fallback, known_frames, text_tracks):
         parts, frames = await self._visual_parts(
             metadata, task, deadline, cid=cid, timestamps=[timestamp], precise=True, allow_fallback=allow_fallback,
-            known_frames=known_frames,
+            known_frames=known_frames, text_tracks=text_tracks,
             question="描述目标帧实际可见的动作、界面和可读文字。区分可辨认内容和看不清的细节。",
         )
         if parts and frames and frames[0].get("kind") == "stream":
@@ -695,7 +717,7 @@ class BrowsingEvidence:
 
     async def _visual_parts(
         self, metadata, task, deadline, *, cid=None, timestamps=None, windows=None, known_frames=frozenset(), question=None,
-        precise=False, allow_fallback=True, sparse_range=None, known_times=(),
+        precise=False, allow_fallback=True, sparse_range=None, known_times=(), text_tracks=(),
     ):
         capabilities = dict(self.visual.capabilities())
         if not (
@@ -845,9 +867,12 @@ class BrowsingEvidence:
                 if not frame_map:
                     return [], []
                 frames[:] = frame_map.values()
+                cids = {frame["cid"] for frame in frames}
+                scoped_tracks = [track for track in text_tracks if not track.get("visual")
+                                 and track.get("bvid") == metadata["bvid"] and str(track.get("cid")) in cids]
                 result = await self.visual.analyze_video_evidence(
                     task,
-                    metadata,
+                    metadata | {"visual_text_tracks": scoped_tracks},
                     frames,
                     question or "描述这些画面中的人物、物品和动作，概括你看到的具体内容。",
                     deadline=deadline,
@@ -906,6 +931,7 @@ class BrowsingEvidence:
                             "is_ai": None,
                             "visual": True,
                             "visual_provider": provider,
+                            "visual_text_version": VideoPartText(metadata, cid, text_tracks).version(),
                             "limitations": limitations,
                             "segments": [
                                 {

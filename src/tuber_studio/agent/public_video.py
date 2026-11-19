@@ -86,9 +86,17 @@ async def read_public_part(request, selection, vision, granted, runtime_dir=None
 
         if not granted():
             return {"error": "任务授权已变化。"}
+        ranges = archive.ranges(start, end) if archive else [(start, end)]
+        text_tracks = []
         try:
             subtitles = await adapter.subtitles(selection.bvid, part["cid"])
-            rows = [row for row in subtitles["segments"] if start <= row["start"] < row["end"] <= end]
+            rows = []
+            if (isinstance(subtitles, dict) and subtitles.get("bvid", selection.bvid) == selection.bvid
+                    and str(subtitles.get("cid", part["cid"])) == str(part["cid"])):
+                rows = [row for row in subtitles.get("segments") or ()
+                        if any(a <= row["start"] < row["end"] <= b for a, b in ranges)]
+                text_tracks.append(subtitles | {"bvid": selection.bvid, "cid": part["cid"], "segments": rows}
+                                   | ({"retrieval": "archive"} if archive else {}))
             if rows:
                 for index in sorted({0, len(rows) // 2, len(rows) - 1}):
                     row = rows[index]
@@ -97,10 +105,9 @@ async def read_public_part(request, selection, vision, granted, runtime_dir=None
             restriction = video_read_restriction(error, selection.bvid, selection.part, "字幕")
         has_subtitles = bool(findings)
         if not has_subtitles:
-            gaps.append("此区间未取得可公开读取的字幕。")
+            gaps.append("归档中未取得此区间的字幕。" if archive else "此区间未取得可公开读取的字幕。")
         visual_count = 0
         seen = set()
-        ranges = archive.ranges(start, end) if archive else [(start, end)]
         targets = preview_times(start, end)
         provenance = {}
         if archive:
@@ -113,6 +120,9 @@ async def read_public_part(request, selection, vision, granted, runtime_dir=None
             gaps.append("画面与元数据来自已授权归档。每支原件只覆盖列出的左闭右开时窗。")
             targets = ([(a+b)/2 for a,b in ranges] if len(ranges) > 1
                        else [t for a,b in ranges for t in preview_times(a,b)])
+        vision_metadata = metadata | {"visual_text_tracks": text_tracks}
+        if archive:
+            vision_metadata["retrieval"] = "archive"
         for target in targets:
             if restriction:
                 break
@@ -127,7 +137,8 @@ async def read_public_part(request, selection, vision, granted, runtime_dir=None
                 if not granted():
                     return {"error": "任务授权已变化。"}
                 observed = await vision.analyze_video_evidence(
-                    {"id": request.id}, metadata, [frame], "描述该帧可见的人物位置、物件与构图。屏字清晰时保留原文。",
+                    {"id": request.id}, vision_metadata, [frame],
+                    "描述该帧可见的人物位置、物件与构图。屏字清晰时保留原文。",
                     deadline=time.time() + 90)
                 if frame["id"] not in observed.get("evidence_ids", []):
                     continue

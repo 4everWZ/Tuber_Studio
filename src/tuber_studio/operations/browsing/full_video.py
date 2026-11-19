@@ -7,6 +7,7 @@ from uuid import uuid4
 from ...generation_meter import BrowsingBudgetDeferred
 from ...operation_turns import operation_lane
 from ...providers import DemoProvider, public_error
+from ...video_vision import VideoPartText
 from .caption_corrections import CORRECTED_VIDEOS, corrected_caption
 from .comment_reader import commit_comment_context, enqueue_comment_visit, video_comment_context
 from .evidence import (
@@ -215,12 +216,13 @@ async def _visual_batch(browsing, row, identity, material, cid, *, timestamps=No
                  for frame in part.get("frame_evidence", [])}
         if precise:
             parts, _ = await browsing.evidence.inspect_frame(material["metadata"], task, row["deadline"], cid, timestamps[0],
-                                                            known_frames=known, allow_fallback=allow_fallback)
+                                                            known_frames=known, allow_fallback=allow_fallback,
+                                                            text_tracks=material["parts"])
         else:
             parts, _ = await browsing.evidence._visual_parts(
                 material["metadata"], task, row["deadline"], cid=cid, timestamps=timestamps, windows=windows,
                 question=STORYBOARD_SCAN_QUESTION if windows else None, known_frames=known,
-                sparse_range=sparse_range,
+                sparse_range=sparse_range, text_tracks=material["parts"],
                 known_times={segment["start"] for segment in _observations(material, cid, provider)}
                 if sparse_range else (),
             )
@@ -244,6 +246,9 @@ async def _watch_interval(browsing, row, identity, material, part, interval, cho
     bvid = material["metadata"]["bvid"]
     start, end = interval["start"], interval["end"]
     url = _source_url(bvid, part["part"], start)
+    text_version = VideoPartText(material["metadata"], cid, material["parts"]).version()
+    material["parts"] = [source for source in material["parts"] if not source.get("visual")
+                         or str(source["cid"]) != cid or source.get("visual_text_version") == text_version]
     interval["audio"] = {"state": "unavailable", "reason": "读不到音轨"}
     if not browsing.evidence.has_visual_provider() or not hasattr(browsing.adapter, "video_frames"):
         interval["visual"] = {"state": "unavailable", "reason": "未配置可用的视觉接口", "source_url": url}
@@ -251,7 +256,7 @@ async def _watch_interval(browsing, row, identity, material, part, interval, cho
         save()
         return
     batch_size = min(browsing.evidence.visual_batch_size(), 3 if row["config"]["frame_sampling"] == "baseline" else 6)
-    policy = str(list(provider.values()))
+    policy = str([*provider.values(), cid, text_version])
     completed = choices.setdefault(policy, [])
     current_scans = scans.setdefault(policy, {})
     visual = interval["visual"] = _visual_report(material, part, interval, provider, current_scans, bvid)
@@ -538,7 +543,9 @@ async def _inspect_target(browsing, row, identity, metadata, target):
     if not part or target["seconds"] >= part["duration"]:
         raise EvidenceUnavailable("invalid_frames", "目标时码超出已核验分 P")
     task = {"id": identity + ":inspection", "parent_id": identity, "round_id": row["id"]}
-    parts, frames = await browsing.evidence.inspect_frame(metadata, task, row["deadline"], str(part["cid"]), target["seconds"])
+    material, _, _ = _material(browsing, row, metadata)
+    parts, frames = await browsing.evidence.inspect_frame(metadata, task, row["deadline"], str(part["cid"]), target["seconds"],
+                                                        text_tracks=material["parts"])
     if not parts or not frames:
         raise EvidenceUnavailable("no_frames", "目标时码没有可分析的画面")
     frame = frames[0]

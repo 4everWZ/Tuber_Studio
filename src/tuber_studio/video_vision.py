@@ -13,6 +13,7 @@ import re
 import time
 from contextlib import nullcontext
 from functools import partial
+from heapq import nsmallest
 from typing import Literal
 from uuid import uuid4
 
@@ -28,6 +29,80 @@ from .models import Reply, StrictModel
 from .providers import public_error, validate_reply
 
 VIDEO_EVIDENCE_PROTOCOL = "sequential_captions_indexed_assessment_v2"
+
+
+class VideoPartText:
+    """Public text already read for one video part. Times are seconds on that part."""
+
+    def __init__(self, metadata, cid, tracks):
+        part = next(part for part in metadata["parts"] if str(part["cid"]) == cid)
+        self.video = self.video_fields(metadata)
+        self.part = {"CID": cid}
+        if isinstance(part.get("title"), str) and part["title"].strip():
+            self.part["分P名"] = part["title"].strip()[:160]
+        rows = set()
+        for track in tracks:
+            if (track.get("visual") or not metadata.get("bvid") or track.get("bvid") != metadata["bvid"]
+                    or str(track.get("cid")) != cid):
+                continue
+            source = "平台自动字幕" if track.get("is_ai") else "平台字幕"
+            if track.get("asr"):
+                source = "本地ASR"
+            elif track.get("retrieval") == "archive":
+                source = "归档字幕"
+            for segment in track.get("segments") or ():
+                start, end, text = segment.get("start"), segment.get("end"), segment.get("text")
+                if (all(type(t) in (float, int) and math.isfinite(t) for t in (start, end))
+                        and 0 <= start <= end and isinstance(text, str) and text.strip()):
+                    rows.add((start, end, source, text.strip()[:160]))
+        self.rows = sorted(rows)
+
+    @staticmethod
+    def video_fields(metadata):
+        owner = metadata.get("owner")
+        fields = [("标题", metadata.get("title"), 160), ("简介", metadata.get("description"), 400),
+                  ("UP主", owner.get("name") if isinstance(owner, dict) else owner, 100)]
+        video = {"BV": metadata.get("bvid"), "来源": "归档视频资料" if metadata.get("retrieval") == "archive" else "视频元数据"}
+        video.update({key: value.strip()[:limit] for key, value, limit in fields if isinstance(value, str) and value.strip()})
+        if metadata.get("retrieval") == "archive" and metadata.get("source_url"):
+            video["投稿资料原址"] = metadata["source_url"]
+            if origins := metadata.get("archived_programme_sources"):
+                video["归档节目资料"] = [{"原网址": row["url"], "节目资料": row["credits"]} for row in origins]
+        tags = metadata.get("tags")
+        if isinstance(tags, list):
+            labels = sorted({tag.strip()[:32] for tag in tags if isinstance(tag, str) and tag.strip()})[:6]
+            if labels:
+                video["标签"] = labels
+        return video
+
+    def version(self):
+        data = json.dumps([self.video, self.part, self.rows], ensure_ascii=False).encode()
+        return hashlib.sha256(data).hexdigest()
+
+    def nearby(self, times):
+        selected = set()
+        for timepoint in times:
+            candidates = ((max(0, row[0] - timepoint, timepoint - row[1]), abs(timepoint - row[0]), row)
+                          for row in self.rows if (row[0] <= timepoint < row[1] if row[2] == "归档字幕"
+                                                   else row[0] - 8 <= timepoint <= row[1] + 8))
+            selected.update(row for _, _, row in nsmallest(2, candidates))
+        return self.part | {"邻近文字": [
+            {"开始秒": start, "结束秒": end, "来源": source, "正文": text}
+            for start, end, source, text in sorted(selected)
+        ]}
+
+
+def frame_reading_context(sources, frames):
+    if not sources:
+        return {}
+    times = {}
+    for frame in frames:
+        times.setdefault(str(frame["cid"]), []).append(frame["actual_time"])
+    return {"视频资料": next(iter(sources.values())).video,
+            "分P资料": [sources[cid].nearby(points) for cid, points in times.items()]}
+
+
+TEXT_SOURCE_NOTE = "以下视频资料与带时码文字仅供理解语境。画面所见须以图像为据。"
 
 
 class VideoVisionAdmissionRequired(ValueError):
@@ -431,7 +506,7 @@ class ApiVideoEvidenceProvider:
             raise ValueError("直播画面输入超出实际窗口预算")
         return validate_reply(content, None, event_id)
 
-    async def _observe_sequential(self, task, frames, question, deadline, identity, expected, repository):
+    async def _observe_sequential(self, task, frames, question, deadline, identity, expected, repository, sources):
         captions, stages = [], []
         caption_schema = {
             "type": "object", "required": ["caption"], "additionalProperties": False,
@@ -441,6 +516,7 @@ class ApiVideoEvidenceProvider:
         structured_caption = self.config.adapter == "omni"
         for number, frame in enumerate(frames, 1):
             image, preprocessing = await self._image_content(frame)
+            context = frame_reading_context(sources, [frame])
             messages = [
                 {
                     "role": "user",
@@ -449,7 +525,8 @@ class ApiVideoEvidenceProvider:
                             "type": "text",
                             "text": f"这张画面来自分P {frame['cid']}，实际采样时间为"
                             f" {frame['actual_time']} 秒。描述这张画面中的人物、物品和动作，"
-                            "结合当前问题给出相关所见。当前问题：" + question,
+                            "结合当前问题给出相关所见。当前问题：" + question
+                            + ("\n" + TEXT_SOURCE_NOTE + json.dumps(context, ensure_ascii=False) if context else ""),
                         },
                         image,
                     ],
@@ -490,13 +567,14 @@ class ApiVideoEvidenceProvider:
                 "content": "围绕当前问题，根据下列逐帧观察作答。"
                 "sufficient是这些观察是否足以回答问题的判断；"
                 "used_frames填写所用观察的整数编号，summary写自然回答，"
-                "limitations写还需补充的相关信息。",
+                "limitations写还需补充的相关信息。" + (TEXT_SOURCE_NOTE if sources else ""),
             },
             {
                 "role": "user",
                 "content": json.dumps(
                     {
                         "question": question,
+                        **({"文字背景": frame_reading_context(sources, frames)} if sources else {}),
                         "observations": [
                             {
                                 "number": number,
@@ -525,7 +603,7 @@ class ApiVideoEvidenceProvider:
         stages.append(stage | {"stage": "assessment"})
         return captions, assessment, props, stages
 
-    async def _observe_joint(self, task, frames, question, deadline, identity, expected, repository):
+    async def _observe_joint(self, task, frames, question, deadline, identity, expected, repository, sources):
         content, preprocessing = [], []
         for number, frame in enumerate(frames, 1):
             image, metadata = await self._image_content(frame)
@@ -536,6 +614,8 @@ class ApiVideoEvidenceProvider:
             content.extend((image, label) if self.config.image_order == "image_first" else (label, image))
             preprocessing.append(metadata)
         content.append({"type": "text", "text": "当前问题：" + question})
+        if sources:
+            content[-1]["text"] += "\n" + TEXT_SOURCE_NOTE + json.dumps(frame_reading_context(sources, frames), ensure_ascii=False)
         messages = [
             {
                 "role": "system",
@@ -579,6 +659,8 @@ class ApiVideoEvidenceProvider:
         # Freeze the exact validated source fields before the first await.
         frames = [dict(frame) for frame in frames] if isinstance(frames, list) else frames
         self._validate_frames(metadata, frames)
+        sources = {cid: VideoPartText(metadata, cid, metadata.get("visual_text_tracks", ()))
+                   for cid in {str(frame["cid"]) for frame in frames}} if metadata.get("bvid") else {}
         if not isinstance(question, str) or not 0 < len(question) <= 8000:
             raise ValueError("视觉问题须为1至8000字")
         started = time.monotonic()
@@ -593,7 +675,7 @@ class ApiVideoEvidenceProvider:
                     self._observe_joint if self.config.frame_strategy == "joint" else self._observe_sequential
                 )
                 captions, assessment, props, stages = await observe(
-                    task, frames, question, deadline, identity, expected, repository
+                    task, frames, question, deadline, identity, expected, repository, sources
                 )
                 self._check_task(task, deadline)
                 final_props = await self._confirmed_properties(props, identity)
