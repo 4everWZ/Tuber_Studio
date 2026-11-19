@@ -1,0 +1,117 @@
+{
+  "review_commit": "2ae33bf",
+  "browser_run": "p2-memory-browser-8xgfqtp5",
+  "workstation_run": "p2-memory-c08b8481d9",
+  "https_port": 9444,
+  "empty_database": {
+    "operator_chat_turns": 0,
+    "agent_tasks": 0,
+    "creative_editions": 0,
+    "daily_highlights": 0,
+    "memory_source_tombstones": 0,
+    "account_writes": 0,
+    "publish_attempts": 0,
+    "dm_attempts": 0,
+    "agent_reply_attempts": 0
+  },
+  "chat_before_closing_A": true,
+  "second_browser_process": true,
+  "active_before_chat": "running",
+  "saved_chat_routes": [
+    "chat",
+    "chat",
+    "agent_task",
+    "chat"
+  ],
+  "task_revision": 1,
+  "task_status": "needs_input",
+  "tools": [
+    {
+      "tool": "inspect_video",
+      "error": "工具调用失败，参数无效或数据暂时不可用。",
+      "findings": 0
+    },
+    {
+      "tool": "web_search",
+      "error": null,
+      "findings": 0
+    },
+    {
+      "tool": "inspect_video",
+      "error": "工具调用失败，参数无效或数据暂时不可用。",
+      "findings": 0
+    },
+    {
+      "tool": "web_search",
+      "error": "工具调用失败，参数无效或数据暂时不可用。",
+      "findings": 0
+    },
+    {
+      "tool": "web_page",
+      "error": "工具调用失败，参数无效或数据暂时不可用。",
+      "findings": 0
+    }
+  ],
+  "same_core_readback": {
+    "anonymous_metadata_http": 412,
+    "adapter_error": "平台限制读取（HTTP 412），请稍后重试",
+    "independent_cctv_page_http": 200
+  },
+  "voice_session": "same isolated database, fresh authenticated recovery session after B closed on r1 needs_input",
+  "layout_preference": {
+    "id": 1,
+    "revision": 1,
+    "quote": "Group related points and separate distinct concerns. Use headings and lists when they improve readability.",
+    "source_key": "turn:7d3186b7-3574-45f9-a041-1ed64e855c8a"
+  },
+  "title_preference": {
+    "id": 2,
+    "revision": 1,
+    "quote": "以后写直播素材提纲，每个标题都用问句，以问号结尾。",
+    "source_key": "turn:6a8ffc15-a940-45ad-891b-ad06bada0fa3"
+  },
+  "voice": {
+    "protocol": "explicit_user_audio",
+    "signed_final_received": true,
+    "bound_final_transcript": "好的，以后直播提纲的标题都用陈述句，以句号结尾。",
+    "explicit_samples": 128000,
+    "final_transcript_events": 0,
+    "owner_confirmed_text": "以后直播提纲的标题都用陈述句，以句号结尾。",
+    "preview_edited_by_authorized_qa": true,
+    "confirmation_dialog_accepted": true,
+    "confirm_http_status": 200,
+    "correction": {
+      "id": 2,
+      "revision": 2
+    }
+  },
+  "independent_voice_source": {
+    "id": 2,
+    "revision": 2,
+    "source_key": "confirmed_voice:284e2ba5c3cbf54c8384dd7c5a8c53ee5cb09d91bcb0b2bf944f0b16dc905bb9",
+    "signature_verified": true,
+    "source_bound": true
+  },
+  "withdrawn": {
+    "id": 2,
+    "deleted": true
+  },
+  "withdrawn_source_count": 2,
+  "surviving_layout_revision": 1,
+  "workstation_inference": {
+    "/v1/chat/prompt_tokens": 10,
+    "/v1/chat/completions": 10,
+    "/llm/v1/responses": 4,
+    "/v1/browser-tickets": 2
+  },
+  "blocked_outbound_writes": 0,
+  "final_db_counts": {
+    "account_writes": 0,
+    "publish_attempts": 0,
+    "dm_attempts": 0,
+    "agent_reply_attempts": 0,
+    "creative_editions": 0,
+    "confirmed_voice_origins": 0
+  },
+  "r1_r2_r3_content_review": "unavailable; no saved editions or original clips"
+}
