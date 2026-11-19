@@ -1,0 +1,46 @@
+# 工作站 Omni 逐句朗读与播放器录音
+
+2026-11-19，工作台试听两种参考音色，直播使用正式角色当前绑定的 `whale_sovits_v2`。五段最终播放器 WAV 的独立中文识别均与送读字词一致。正式角色与仓库大肥鱼预设的 `yaoyao_sovits_v2` 使用不同参考。本机对应参考文件与工作站正式 Core 可读文件逐一比对，内容一致。
+
+## 实录与独立比对
+
+本机目录为 `runtime/evaluations/omni-reading-20261119/`。录音来自 Chromium 实际播放的 HTML 音频元素，其输出同时连接播放设备与录音轨。表中 WAV 从该轨的 MediaRecorder 录音解码，单声道 PCM16、24 kHz。记录覆盖浏览器播放链路。人耳的音质与相似度判断交号主独立对听。
+
+| 播放器实录文件 | 指定台词 | 对大肥鱼参考的余弦相似度 | 对瑶瑶参考的余弦相似度 |
+| --- | --- | ---: | ---: |
+| `whale_sovits_v2-preview.wav` | 把蓝色雨伞放在窗边。 | 0.780 | 0.420 |
+| `yaoyao_sovits_v2-preview.wav` | 把蓝色雨伞放在窗边。 | 0.613 | 0.651 |
+| `whale_sovits_v2-chat-0.wav` | 收到！ | 0.718 | 0.387 |
+| `whale_sovits_v2-chat-1.wav` | 大肥鱼这就切换游戏画面！ | 0.734 | 0.333 |
+| `whale_sovits_v2-chat-2.wav` | 暂别《星露谷物语》，马上进入《植物大战僵尸》！ | 0.808 | 0.433 |
+
+参考分别是 `assets/whale/ref.wav`（“什么嘛，这么简单的事情，你居然专门跑来问我。”）与 `runtime/tts/ref/yaoyao-reference32k.wav`（“甘雨姐姐，你没事吧？要不要喝点水，或者吃点别的什么调节一下？”）。库内另一个大肥鱼样本 `assets/whale/sample1.wav` 与大肥鱼参考的相似度为 0.846，两种角色参考之间为 0.543。正式角色的试听与本角色参考更接近。瑶瑶同词试读对两种参考的差值只有 0.038，声纹证据较弱。
+
+字词核对将导出的 WAV 解码为 16 kHz 单声道，交给 CPU SenseVoice（2024-07-17 INT8，中文、无提示词）。音色另用 CPU 3D-Speaker ERes2Net Base 200K 普通话模型抽取嵌入并计算余弦。两项均独立于生成引擎和网关盲转写。表中分数用于本次对照，音色结论仍须结合实听。[SenseVoice](https://github.com/FunAudioLLM/SenseVoice) · [3D-Speaker](https://github.com/modelscope/3D-Speaker)
+
+## 工作站与业务回执
+
+验收使用隔离的工坊业务库、独立服务仓库的候选网关和真实工作站已部署的 MiniCPM-o 4.5 AWQ（引擎 0.32.0）。测试转发在站内读取普通 Core 应用凭据，经正式网关准入。每次仅提交一个推理请求，未启用新 GPU 进程。浏览器回放包含切换语音来源、选择音色、提交试听、播放以及直播弹幕切换游戏。三段直播音轨各自收到真实播放器播完事件，最终任务为 `completed`，隔离库的该次对话只记一条完整台词。三段 TTS 合计 30.082 秒，含验收用 SSH 转发和逐段盲转写。正式 Core、业务卷和平台发布均未写入。
+
+早期候选把“收到！”读成了“收到就收到”，字词错误同时出现在原始 WAV 与浏览器录音中。已安装 Talker 的默认最短生成长度为 50 个 codec 帧。独立网关的朗读请求允许短句提前结束，再将实际音频单独交给同一工作站引擎转写，转写请求不带送读原文、参考录音或上一轮历史。最终录音的短句被工作站与独立识别器均读回“收到”。工坊负责句界、参考来源、台词、核对转写、保存 WAV 及播放器回执。现有显式预录、Genie、GPT-SoVITS 和兼容 API 保持各自配置。[上游 MiniCPM-o 服务接口](https://github.com/vllm-project/vllm-omni/blob/v0.32.0/recipes/OpenBMB/MiniCPM-o-4_5.md)
+
+## 正式发布与配置
+
+独立网关发布版本 `a567fc5` 包含朗读实现 `17248a9` 和 SDK 参考音色选择器，增加 `POST /v1/audio/speech`，仅需更新网关应用。建议在 P2、Avatar、直播与私聊使用方确认可暂停新请求后，检查 `GET /api/mode`、`GET /llm/api/mode` 均无活动或排队请求，并确认媒体客户端可断开。2026-11-19 11:19（台北）实查 Omni 的 Chat 为 1，Realtime 为 0，后台 LLM 和两条队列均为 0。该采样时刻仍有在途请求。
+
+号主完成 WAV 对听后发布工坊程序，停播并等待当前生成结束，在正式工作台「角色 → 语音」选择「工作站 Omni · 角色参考音色」。目标为正式 Core 的 `/data/business`。经已登录工作台的 `PUT /api/settings/providers` 保存以下字段，`base_url` 取正式工作台当前 Omni 聊天配置的完整值。若另存了旧 TTS 私有凭据，先按现有业务备份流程保留可回退副本；切换时在表单明确清除对应旧 Key。
+
+```json
+{
+  "tts": {
+    "kind": "omni_reference",
+    "base_url": "<正式 Omni 聊天 Base URL，含 /v1>",
+    "model": "omni-default"
+  },
+  "clear_credentials": ["tts"]
+}
+```
+
+同址时由 ComposeSettings 复用挂载的普通应用凭据。角色卡继续使用自己的 `voice_profile`。离线调整必须在服务停机且持有目标业务卷唯一写锁时进行。切换后用一条新台词核对试听及真实播完回执。回退可通过同一设置 API 恢复先前的 TTS 类型、端点与匹配凭据。
+
+回归覆盖网关鉴权、拒绝远程参考和引擎字段、共用准入、盲转写拒收错词，及工坊逐句请求、角色参考、同址凭据、缓存失效、旧 Provider 与播完历史。网关测试 36 项，工坊 Python 测试 84 项，工作台前端测试 19 项通过。

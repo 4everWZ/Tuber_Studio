@@ -99,7 +99,7 @@ def business_configuration(
         context_tokens=context_tokens,
         kv_cache_type="q4_0",
     )
-    if data["tts"]["kind"] != "openai_compatible":
+    if data["tts"]["kind"] not in {"openai_compatible", "omni_reference"}:
         select_local_voice(data["tts"], data["inference_broker"])
     data.update(deepcopy(data["work_mode_profiles"][mode]))
     return data

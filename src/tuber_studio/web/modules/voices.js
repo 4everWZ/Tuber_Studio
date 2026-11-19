@@ -1,6 +1,7 @@
 import { $, safeMessage } from "./core.js";
 
 const sourceNames = {
+  omni_reference: "工作站 Omni",
   gpt_sovits: "本地 Jetson",
   openai_compatible: "兼容 API",
   prerecorded: "预录配置",
@@ -9,7 +10,7 @@ const sourceNames = {
 function fillVoiceSettings(model) {
   const tts = model.settings?.tts || {};
   $("tts-kind").value = tts.kind || "gpt_sovits";
-  $("tts-base-url").value = tts.kind === "openai_compatible" ? tts.base_url : "";
+  $("tts-base-url").value = ["openai_compatible", "omni_reference"].includes(tts.kind) ? tts.base_url : "";
   $("tts-model").value = tts.model || "";
   $("tts-voice").value = tts.voice || "";
   $("tts-key").value = "";
@@ -19,20 +20,25 @@ function fillVoiceSettings(model) {
 function renderVoiceSettings(model, saving) {
   const selection = $("tts-kind").value;
   const saved = model.settings?.tts?.kind;
-  const external = selection === "openai_compatible";
+  const omni = selection === "omni_reference";
+  const external = selection === "openai_compatible" || omni;
+  $("tts-voice").closest("label").hidden = omni;
+  $("tts-voice").disabled = omni;
   $("tts-api-fields").hidden = !external;
   $("tts-api-fields").disabled = !external || saving;
   $("tts-kind").disabled = saving;
   $("tts-source-state").textContent = sourceNames[saved] ? "当前 · " + sourceNames[saved] : "待读取";
   $("tts-key-state").textContent = model.settings?.provider_credentials?.tts ?
     "已保存密钥。同一地址留空可保留。" : "服务需要认证时填写。";
-  $("tts-source-help").textContent = external ? "保存后用于试听和直播台词。" :
+  $("tts-source-help").textContent = omni ? "按角色参考录音朗读。与聊天端点地址相同时可共用其凭据。" :
+    external ? "保存后用于试听和直播台词。" :
     selection === "prerecorded" ? "当前使用预录音色。" :
       "使用已配置的语音服务试听角色音色。";
 }
 
 export function voiceAvailability(voice, model) {
   const kind = model.settings?.tts?.kind;
+  if (kind === "omni_reference") return voice?.provider === "gpt_sovits" && voice.reference_asset ? "" : "请选择带参考录音的角色音色";
   if (voice?.provider === "prerecorded") return "";
   if (voice?.provider !== kind) return "请选择当前语音来源的音色";
   return voice ? "" : "暂无可用音色";
@@ -42,11 +48,12 @@ export function renderVoicePreview(model, selectDefault = false) {
   const select = $("preview-voice");
   const kind = model.settings?.tts?.kind;
   const active = model.status?.character?.voice_profile || model.settings?.tts?.voice_id;
-  const preferred = model.voices.find(voice => voice.provider === kind && voice.id === active) ||
-    model.voices.find(voice => voice.provider === kind);
+  const provider = kind === "omni_reference" ? "gpt_sovits" : kind;
+  const preferred = model.voices.find(voice => voice.provider === provider && voice.id === active) ||
+    model.voices.find(voice => voice.provider === provider);
   for (const option of select.options) {
     const voice = model.voices.find(item => item.id === option.value);
-    option.hidden = voice?.provider !== kind && voice?.provider !== "prerecorded";
+    option.hidden = Boolean(voiceAvailability(voice, model));
     option.disabled = option.hidden;
   }
   if (selectDefault || !select.selectedOptions[0] || select.selectedOptions[0].hidden) {
@@ -70,18 +77,24 @@ export function initVoiceSettings(model, api, busy, apply) {
     dirty = true;
     render();
   });
+  $("tts-kind").addEventListener("change", () => {
+    if ($("tts-kind").value === "omni_reference" && model.settings?.llm?.kind === "openai_compatible") {
+      $("tts-base-url").value = model.settings.llm.base_url;
+      $("tts-model").value = model.settings.llm.model;
+    }
+  });
   $("tts-form").addEventListener("submit", event => {
     event.preventDefault();
     busy(event.submitter, async () => {
       const kind = $("tts-kind").value;
       const state = $("tts-save-state");
       const body = { tts: { kind } };
-      if (kind === "openai_compatible") {
+      if (kind === "openai_compatible" || kind === "omni_reference") {
         Object.assign(body.tts, {
           base_url: $("tts-base-url").value.trim(),
           model: $("tts-model").value.trim(),
-          voice: $("tts-voice").value.trim(),
         });
+        if (kind === "openai_compatible") body.tts.voice = $("tts-voice").value.trim();
         const key = $("tts-key").value.trim();
         if (key && $("tts-clear-key").checked) {
           state.textContent = "请在填写新密钥和清除旧密钥之间选一项。";

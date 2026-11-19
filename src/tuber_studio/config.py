@@ -119,6 +119,7 @@ class Settings:
         llm, tts = data["llm"], data["tts"]
         if llm["kind"] not in {"llama_cpp", "openai_compatible", "demo"} or tts["kind"] not in {
             "gpt_sovits",
+            "omni_reference",
             "openai_compatible",
             "prerecorded",
         }:
@@ -151,6 +152,10 @@ class Settings:
                 raise ValueError("请填写模型ID")
         if tts["kind"] != "prerecorded":
             endpoint(tts["base_url"])
+        if tts["kind"] == "omni_reference" and (
+            not isinstance(tts.get("model"), str) or not tts["model"].strip()
+        ):
+            raise ValueError("Omni 朗读需要模型 ID")
         if tts.get("local_backend", "compact") not in {"compact", "genie_onnx_int8"}:
             raise ValueError("未知固定本地语音引擎")
         if tts["kind"] == "openai_compatible" and any(
@@ -200,7 +205,14 @@ class Settings:
         return str(value) if value and base and value.base_url == base.rstrip("/") else None
 
     def provider_key(self, name):
-        return self._key_for(name, self._key_base(name))
+        base = self._key_base(name)
+        key = self._key_for(name, base)
+        if (
+            not key and name == "tts" and self.data["tts"]["kind"] == "omni_reference"
+            and self.data["llm"]["kind"] == "openai_compatible" and base == self._key_base("llm")
+        ):
+            return self.provider_key("llm")
+        return key
 
     def endpoint_key(self, name):
         """A paired node credential is scoped to its exact configured routes."""
@@ -265,7 +277,8 @@ class Settings:
         if Path(relative).anchor:
             raise ValueError("参考音频须使用项目相对路径")
         data_root = (
-            self.runtime if self.data.get("inference_broker", {}).get("deployment") == "remote" else None
+            self.runtime if self.data["tts"]["kind"] == "omni_reference"
+            or self.data.get("inference_broker", {}).get("deployment") == "remote" else None
         )
         return project_wav(self.root, relative, runtime=data_root)
 

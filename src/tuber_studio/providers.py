@@ -11,9 +11,11 @@ from functools import wraps
 from pathlib import Path
 from time import monotonic
 from typing import Protocol
+from uuid import uuid4
 
 import httpx
 
+from . import omni_speech
 from .compaction import ContextWindowExceeded, IncompleteCompaction, approx_token_count
 from .generation_meter import reserve_generation, settle_generation
 from .http_api import api_client, check_response_status, inference_transport, models_health, response_bytes
@@ -718,6 +720,8 @@ def wav_duration(path: Path, *, require_speech=False) -> float:
             raise ValueError("音频时长无效或超过90秒")
         if require_speech:
             pcm = audio.readframes(audio.getnframes())
+            if len(pcm) != audio.getnframes() * audio.getsampwidth() * audio.getnchannels():
+                raise ValueError("动态TTS返回截断音频")
             silent = all(value == 128 for value in pcm) if audio.getsampwidth() == 1 else not any(pcm)
             if silent:
                 raise ValueError("动态TTS返回全静音，未作为合成成功")
@@ -732,7 +736,7 @@ class VoiceService:
         tts_key = settings.endpoint_key("tts")
         self.client = (
             api_client(config, settings.provider_key("tts"))
-            if config["kind"] == "openai_compatible"
+            if config["kind"] in {"openai_compatible", "omni_reference"}
             else httpx.AsyncClient(
                 base_url=config["base_url"].rstrip("/") + "/",
                 timeout=config.get("timeout_seconds", 45),
@@ -748,7 +752,7 @@ class VoiceService:
     async def health(self):
         if self.settings.data["tts"]["kind"] == "prerecorded":
             return {"available": True, "detail": "预录路径；动态 TTS 尚未启用"}
-        if self.settings.data["tts"]["kind"] == "openai_compatible":
+        if self.settings.data["tts"]["kind"] in {"openai_compatible", "omni_reference"}:
             return await models_health(self.client, self.settings.data["tts"]["model"])
         if self.settings.data["tts"].get("local_backend") == "genie_onnx_int8":
             await self._genie_identity()
@@ -797,6 +801,8 @@ class VoiceService:
 
     def live_parts(self, text, voice_id):
         config = self.settings.data["tts"]
+        if config["kind"] == "omni_reference":
+            return omni_speech.sentences(text)
         if (
             config["kind"] != "gpt_sovits"
             or config.get("local_backend") != "genie_onnx_int8"
@@ -823,6 +829,8 @@ class VoiceService:
         return await self.synthesize(text, voice)
 
     async def _synthesize(self, text, voice):
+        if self.settings.data["tts"]["kind"] == "omni_reference":
+            return await self._api_speech(text, voice)
         if voice["provider"] == "prerecorded":
             audio = await self.prerecorded(voice["sample_asset"], voice["sample_text"])
             audio.warning = "当前为预录原型；字幕按实际录音台词显示，模型候选台词保留在任务详情"
@@ -890,7 +898,7 @@ class VoiceService:
         return await self._write_audio(path, data, require_speech=require_speech)
 
     async def _write_audio(self, path, data, *, require_speech):
-        temporary = path.with_suffix(".part")
+        temporary = path.with_suffix(f".{uuid4().hex}.part")
         try:
             await asyncio.to_thread(temporary.write_bytes, data)
             duration = await asyncio.to_thread(wav_duration, temporary, require_speech=require_speech)
@@ -902,44 +910,52 @@ class VoiceService:
             temporary.unlink(missing_ok=True)
 
     async def _api_speech(self, text, voice):
-        if voice["provider"] != "openai_compatible":
-            raise ValueError("当前音色属于本地模型；试听API请选择外部API音色，不会自动替换角色声音")
-        if not isinstance(text, str) or not 0 < len(text.strip()) <= 4096:
-            raise ValueError("API合成文本须为1到4096字")
         config = self.settings.data["tts"]
+        omni = config["kind"] == "omni_reference"
+        reference = None
+        if omni:
+            if voice["provider"] != "gpt_sovits":
+                raise ValueError("Omni 朗读需要带参考录音的角色音色")
+            source = self.settings.voice_reference_path(voice)
+            if not 0 < source.stat().st_size <= 8_000_000:
+                raise ValueError("角色参考录音为空或过大")
+            reference = await asyncio.to_thread(source.read_bytes)
+        elif voice["provider"] != "openai_compatible":
+            raise ValueError("当前音色属于本地模型；试听API请选择外部API音色，不会自动替换角色声音")
+        if not isinstance(text, str) or not text.strip() or len(text) > 4096:
+            raise ValueError("API合成文本须为1到4096字")
         identity = {
-            "provider": "openai_compatible",
+            "provider": config["kind"],
             "endpoint": config["base_url"],
             "model": config["model"],
-            "api_voice": config["voice"],
             "voice_profile": voice,
             "text": text,
             "credential_scope": hashlib.sha256(
                 (self.settings.provider_key("tts") or "").encode()
             ).hexdigest(),
         }
+        if omni:
+            identity.update(reference_bytes=hashlib.sha256(reference).hexdigest(), reader_version="audio-speech-readback-v1")
+        else:
+            identity["api_voice"] = config["voice"]
         digest = hashlib.sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         path = self.settings.audio / (digest + ".wav")
         if path.exists():
             try:
                 return Audio(path, await asyncio.to_thread(wav_duration, path, require_speech=True), text)
-            except (ValueError, wave.Error):
+            except (ValueError, EOFError, wave.Error):
                 path.unlink(missing_ok=True)
-        data = await response_bytes(
-            self.client,
-            "POST",
-            "audio/speech",
-            payload={
-                "model": config["model"],
-                "voice": config["voice"],
-                "input": text,
-                "response_format": "wav",
-            },
-            limit=20_000_000,
-        )
         try:
+            if omni:
+                data = await omni_speech.render(self.client, config["model"], text, reference)
+            else:
+                data = await response_bytes(
+                    self.client, "POST", "audio/speech",
+                    payload={"model": config["model"], "voice": config["voice"], "input": text, "response_format": "wav"},
+                    limit=20_000_000,
+                )
             duration = await self._store_audio(path, data)
-        except wave.Error:
+        except (EOFError, wave.Error):
             raise ValueError("语音API须返回有效WAV；未缓存不兼容格式") from None
         return Audio(path, duration, text)
 
