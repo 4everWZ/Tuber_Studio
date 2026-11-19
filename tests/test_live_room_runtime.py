@@ -83,7 +83,7 @@ async def test_lookup_once_only_and_timeout_still_allows_one_final(runtime, monk
         return {"spoken_text": "这次没读到。", "reply_to": ["event"]}
 
     runtime.llm.supports_operation_web_fetch = True
-    runtime.llm.config = {"max_tokens": 180}
+    runtime.llm.config = {**runtime.settings.data["omni"], "max_tokens": 180}
     runtime.llm.generate_json = generate
     monkeypatch.setattr(options, "fetch_excerpt", fetch)
     monkeypatch.setattr(options, "LOOKUP_TIMEOUT", 0.01)

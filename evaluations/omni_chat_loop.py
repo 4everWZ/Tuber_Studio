@@ -70,6 +70,7 @@ async def exercise(store, omni, operations, responses, *, explicit=False):
     character = next(seed for seed in seeds if seed["id"] == "whale") | {"version": 1}
     runtime = SimpleNamespace(
         store=store, character=character, llm=omni, operation_llm=operations, operator_generation=nullcontext,
+        offline_generation=nullcontext,
         settings=SimpleNamespace(data={"omni": omni.config}, responses_config=responses.config.model_dump()),
         daily_memory=SimpleNamespace(preference=lambda scope: {"enabled": False}),
         context=SimpleNamespace(record=lambda *args, **kwargs: None),
@@ -146,7 +147,7 @@ async def run(env, *, explicit=False):
         responses = await stack.enter_async_context(ResponsesClient(
             {"base_url": root + "/llm/v1", "model": env.get("OMNI_LLM_MODEL_ALIAS", "llm-default")}, token))
         operations = APIProvider(operation_profile(omni.config | {"responses_model": responses.config.model}),
-                                 token, text_only=True)
+                                 token, background=True)
         stack.push_async_callback(operations.close)
         async with asyncio.timeout(300):
             return await exercise(store, omni, operations, responses, explicit=explicit)

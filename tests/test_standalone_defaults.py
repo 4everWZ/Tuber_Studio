@@ -14,7 +14,9 @@ def test_fresh_install_uses_the_omni_service_without_pairing(tmp_path, monkeypat
     assert not {"inference_broker", "llm", "tts", "vision", "video_vision", "responses"} & data.keys()
     assert not (tmp_path / "inference-token").exists()
     assert data["omni"]["context_source"] == "model_card" and data["omni"]["enable_thinking"]
-    assert data["omni"]["model"] == settings.video_config["model"] == "omni-default"
+    assert data["omni"]["model"] == "omni-default"
+    assert settings.video_config["model"] == settings.responses_config["model"] == "llm-default"
+    assert settings.video_config["base_url"] == settings.responses_config["base_url"]
     assert settings.responses_config["base_url"] == "http://127.0.0.1:8000/llm/v1"
     assert data["voice_id"] == "whale_reference"
 

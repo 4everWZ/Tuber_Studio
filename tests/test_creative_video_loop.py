@@ -47,6 +47,22 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
             result = {"data": [{"id": "llm-default", "max_model_len": 262144}]}
         elif path in {"/v1/chat/prompt_tokens", "/llm/v1/chat/prompt_tokens"}:
             result = {"count": 128}
+        elif path == "/llm/v1/responses" and "text" in body:
+            fmt = body["text"]["format"]
+            assert fmt["type"] == "json_schema" and fmt["strict"]
+            assert set(fmt["schema"]["required"]) == {"color", "shape"}
+            encoded = next(part["image_url"] for item in body["input"] if isinstance(item["content"], list)
+                           for part in item["content"] if part["type"] == "input_image")
+            assert encoded.startswith("data:image/png;base64,")
+            with Image.open(io.BytesIO(base64.b64decode(encoded.split(",", 1)[1]))) as frame:
+                pixel = frame.convert("RGB").getpixel((160, 100))
+            color, shape = {(255, 255, 0): ("yellow", "triangle"), (0, 0, 255): ("blue", "square"),
+                            (255, 0, 0): ("red", "circle")}[pixel]
+            seen.append(shape)
+            result = {"status": "completed", "id": str(uuid4()), "usage": {"input_tokens": 128, "output_tokens": 12},
+                      "output": [{"type": "message", "content": [
+                          {"type": "output_text", "text": json.dumps({"color": color, "shape": shape})},
+                      ]}]}
         elif path == "/llm/v1/responses":
             assert {tool["name"] for tool in body["tools"]} == {"inspect_video", "web_page", "submit_materials", "ask_owner"}
             brief = json.loads(body["input"][1]["content"])
@@ -68,16 +84,8 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
             result = {"status": "completed", "id": str(uuid4()), "output": calls}
         elif path in {"/v1/chat/completions", "/llm/v1/chat/completions"}:
             content = body["messages"][-1]["content"]
-            if isinstance(content, list):
-                assert path == "/v1/chat/completions"
-                encoded = next(item["image_url"]["url"] for item in content if item["type"] == "image_url")
-                with Image.open(io.BytesIO(base64.b64decode(encoded.split(",")[1]))) as frame:
-                    pixel = frame.convert("RGB").getpixel((160, 100))
-                color, shape = {(255, 255, 0): ("yellow", "triangle"), (0, 0, 255): ("blue", "square"),
-                                (255, 0, 0): ("red", "circle")}[pixel]
-                decision = {"color": color, "shape": shape}
-                seen.append(shape)
-            elif "person_subject" in body["messages"][0]["content"]:
+            assert isinstance(content, str)
+            if "person_subject" in body["messages"][0]["content"]:
                 decision = {"person_subject": "地点、构图或物件"}
             elif content == replay.REQUEST:
                 if "requested_count" in body["messages"][0]["content"]:

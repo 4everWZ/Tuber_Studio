@@ -131,7 +131,7 @@ async def test_length_finish_preserves_diagnostic_and_never_becomes_an_operation
 
 
 async def test_long_browsing_candidate_enters_review_without_rewrite_or_style_cap(browsing):
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
     responses = []
 
     async def generate(messages, schema, *, max_tokens):
@@ -147,7 +147,7 @@ async def test_long_browsing_candidate_enters_review_without_rewrite_or_style_ca
             responses.append(value)
         return value
 
-    browsing.runtime.llm.generate_json = generate
+    browsing.runtime.operation_llm.generate_json = generate
     browsing.store.set("browsing_policy", browsing.policy() | {"public_max_chars": 20})
     row = await browsing_finished(browsing, preview=True)
     intent = browsing.intents()[0]
@@ -162,7 +162,7 @@ async def test_comment_and_private_drafts_keep_long_text_for_review(comments, me
     async def generate(*args, **kwargs):
         return OperationReply(spoken_text=LONG_TEXT)
 
-    comments.runtime.llm.generate = generate
+    comments.runtime.operation_llm.generate = generate
     row = await draft(comments, comments.store)
     assert row["status"] == "pending_review" and row["text"] == LONG_TEXT
     assert comments.review(row["id"], "approve")["text"] == LONG_TEXT
@@ -175,7 +175,7 @@ async def test_comment_and_private_drafts_keep_long_text_for_review(comments, me
 
 async def test_dynamic_keeps_long_body_and_uses_shared_operations_budget(service):
     public_memory(service)
-    previous = service.runtime.llm.generate_json
+    previous = service.runtime.operation_llm.generate_json
     budgets = []
 
     async def generate(messages, schema, *, max_tokens):
@@ -186,7 +186,7 @@ async def test_dynamic_keeps_long_body_and_uses_shared_operations_budget(service
             budgets.append(max_tokens)
         return value
 
-    service.runtime.llm.generate_json = generate
+    service.runtime.operation_llm.generate_json = generate
     service.settings.data["omni"]["operations_max_tokens"] = 16384
     result = await service.evaluate(manual=True)
     assert result["status"] == "pending_review" and result["content"] == LONG_TEXT
