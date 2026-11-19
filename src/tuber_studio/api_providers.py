@@ -30,7 +30,7 @@ from .providers import (
     single_system_messages,
     validate_reply,
 )
-from .responses_provider import generate_image_json
+from .responses_provider import generate_image_json, thinking_budget
 
 
 def create_llm(settings):
@@ -135,6 +135,8 @@ class APIProvider:
     async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None,
                         on_content=None):
         payload = self.chat_payload(messages) | {"max_tokens": budget, "stream": False}
+        if self.background and self.config.get("enable_thinking"):
+            payload["thinking_token_budget"] = thinking_budget(budget)
         if self.uses_model_card:
             payload["include_reasoning"] = False
         if not probe:

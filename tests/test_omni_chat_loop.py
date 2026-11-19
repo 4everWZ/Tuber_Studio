@@ -57,7 +57,7 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
                 if "candidate" in packet:
                     assert path == "/llm/v1/chat/completions"
                     assert body["model"] == "llm-default" and body["response_format"]["type"] == "json_schema"
-                    assert body["chat_template_kwargs"]["enable_thinking"] is False
+                    assert body["chat_template_kwargs"]["enable_thinking"] is True
                     assert all(isinstance(message["content"], str) for message in body["messages"])
                     chat_stages.append("evidence_editor")
                     assert body["max_tokens"] == 4096

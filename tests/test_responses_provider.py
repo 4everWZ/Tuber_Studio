@@ -65,10 +65,12 @@ async def test_real_http_roundtrip_uses_scoped_key_budget_and_all_call_ids(setti
     initial, follow = [payload for _, _, payload in requests]
     assert all((path, auth) == ("/service/llm/v1/responses", "Bearer worker-key") for path, auth, _ in requests)
     assert initial == {"input": "Read both tickets", "tools": [TOOL], "model": "local-worker",
-                       "max_output_tokens": 768, "store": True}
+                       "max_output_tokens": 768, "store": True, "thinking_token_budget": 192,
+                       "chat_template_kwargs": {"enable_thinking": True}}
     assert follow == initial | {"input": [{"type": "function_call_output", "call_id": "call_a", "output": '{"ok": true}'},
                                          {"type": "function_call_output", "call_id": "call_b", "output": "blocked"}],
-                                "instructions": "总结", "previous_response_id": "resp_first", "max_output_tokens": 128}
+                                "instructions": "总结", "previous_response_id": "resp_first", "max_output_tokens": 128,
+                                "thinking_token_budget": 32}
 
 
 @pytest.mark.parametrize("response", [

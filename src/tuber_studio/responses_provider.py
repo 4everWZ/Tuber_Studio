@@ -94,6 +94,10 @@ def _turn(data, allowed, output_budget):
     return ResponseTurn(identity, tuple(calls), "".join(text), data)
 
 
+def thinking_budget(max_tokens):
+    """Leave most of the output allowance for the tool call or visible text."""
+    return min(1024, max_tokens // 4)
+
 
 async def generate_image_json(client, model, messages, schema, max_tokens):
     """Read already bounded inline images through the background renderer."""
@@ -114,7 +118,8 @@ async def generate_image_json(client, model, messages, schema, max_tokens):
         items.append({"role": message["role"], "content": content})
     payload = {
         "model": model, "input": items, "store": False, "max_output_tokens": max_tokens,
-        "chat_template_kwargs": {"enable_thinking": False},
+        "chat_template_kwargs": {"enable_thinking": True},
+        "thinking_token_budget": thinking_budget(max_tokens),
         "text": {"format": {"type": "json_schema", "name": "frame_observation", "schema": schema, "strict": True}},
     }
     await prepare_model_request()
@@ -177,7 +182,8 @@ class ResponsesClient:
                 raise ValueError("Responses 工具名不能为空或重复")
             names.add(tool["name"])
         payload = {"model": self.config.model, "input": input, "tools": definitions,
-                   "max_output_tokens": budget, "store": store}
+                   "max_output_tokens": budget, "store": store,
+                   "chat_template_kwargs": {"enable_thinking": True}, "thinking_token_budget": thinking_budget(budget)}
         if previous_response_id is not None:
             payload["previous_response_id"] = previous_response_id
         if instructions is not None:

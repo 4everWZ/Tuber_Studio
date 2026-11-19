@@ -30,9 +30,7 @@ def operation_profile(omni):
         "base_url": profile["base_url"],
         "model": profile["model"],
         "structured_output": "json_schema",
-        # This Chat route must emit a bounded decision, even when the front
-        # engine's reasoning toggle is on. Agent Responses has its own policy.
-        "enable_thinking": False,
+        "enable_thinking": True,
     }
 
 
