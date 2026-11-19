@@ -7,14 +7,15 @@ export function hasPetSource(asset) {
     }));
 }
 
-export function initChatPet(api) {
+export function initChatPet(api, display, report) {
   const pet = document.getElementById("chat-pet");
   const image = document.getElementById("chat-agent-avatar");
   const toggle = document.getElementById("chat-pet-toggle");
   const motion = matchMedia("(prefers-reduced-motion: reduce)");
-  const key = "tuber.chat.pet.hidden";
-  let hidden = false, character = null, expression = null;
-  try { hidden = localStorage.getItem(key) === "true"; } catch {}
+  const dialog = document.getElementById("private-call-dialog");
+  const slot = document.getElementById("private-call-pet-slot");
+  const home = pet.parentElement;
+  let character = null, expression = null;
   const picker = new MemePicker(api, (id, asset) => {
     expression = asset;
     render();
@@ -26,8 +27,11 @@ export function initChatPet(api) {
     emptyText: "没有合适的表情。可到图库导入带作者、来源链接和许可链接的图片。",
   });
   function render() {
-    toggle.disabled = !character;
+    const hidden = !display.value?.pets_enabled;
+    toggle.disabled = !character || !display.value || display.saving;
     toggle.textContent = hidden ? "显示角色宠物" : "隐藏角色宠物";
+    const host = dialog.open ? slot : home;
+    if (pet.parentElement !== host) host.prepend(pet);
     pet.hidden = !character || hidden;
     let url = character?.avatar;
     if (motion.matches) url = url === "/assets/whale/idle.gif" ? "/assets/whale/memes/nap.png" : null;
@@ -40,14 +44,15 @@ export function initChatPet(api) {
   }
   image.onerror = () => { image.hidden = true; pet.classList.add("pet-placeholder"); };
   pet.onclick = () => picker.open(expression?.asset_id);
-  toggle.onclick = () => {
-    hidden = !hidden;
-    try { localStorage.setItem(key, String(hidden)); } catch {}
-    render();
+  toggle.onclick = async () => {
+    try { await display.save("pets_enabled", !display.value.pets_enabled); }
+    catch (error) { report(error.message); }
     document.getElementById("operator-chat-more-toggle").click();
     document.getElementById("operator-chat-more-toggle").focus();
   };
   motion.addEventListener("change", () => { picker.close(true); render(); });
+  display.addEventListener("change", render);
+  new MutationObserver(render).observe(dialog, {attributes: true, attributeFilter: ["open"]});
   render();
   return { setCharacter(next) {
     if (!next || character?.character_id !== next.character_id || character?.character_version !== next.character_version) {

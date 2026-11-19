@@ -1,7 +1,9 @@
 <section data-section="chat" class="operator-chat" hidden>
   <header class="operator-chat-heading">
     <div class="chat-agent-identity">
-      <button type="button" id="chat-pet" aria-label="为角色宠物选表情" title="换个表情" hidden><img id="chat-agent-avatar" alt=""></button>
+      <button type="button" id="chat-pet" aria-label="为角色宠物选表情" title="换个表情" hidden>
+        <img id="chat-agent-avatar" alt="">
+      </button>
       <h1 id="operator-chat-title">与大肥鱼对话</h1>
     </div>
     <div class="operator-chat-heading-actions">
@@ -94,8 +96,7 @@
   <label>通话话题（用于查找相关记忆）<input id="private-call-topic" maxlength="500"></label>
   <label><input type="checkbox" id="private-call-temporary">临时通话</label>
   <div id="private-call-citations"></div>
-  <canvas id="private-call-avatar" width="200" height="180" hidden role="img" aria-label="通话角色"></canvas>
-  <span id="private-call-avatar-fallback">语音通话</span>
+  <div id="private-call-pet-slot"></div>
   <p>声音只送往私聊推理服务，不接入直播、不写入聊天记录。建议佩戴耳机。</p>
   <p id="private-call-state" role="status">尚未开始通话</p>
   <p class="hint">仅当服务返回可核对的号主最终转写时，才可在这里确认交办。</p>

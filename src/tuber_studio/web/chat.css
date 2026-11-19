@@ -61,6 +61,7 @@
 #chat-pet.pet-placeholder::after { content: "选表情"; font-size: .8rem; }
 .chat-agent-identity img { display: block; width: 2.75rem; height: 2.75rem; object-fit: contain; }
 .chat-agent-identity img[hidden] { display: none; }
+#private-call-pet-slot img { width: min(12rem, 55vw); height: 10rem; object-fit: contain; }
 .operator-chat-heading h1 {
   margin: 0;
   overflow: hidden;

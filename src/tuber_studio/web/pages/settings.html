@@ -1,9 +1,23 @@
 <section data-section="settings" class="win-page-view" hidden>
 
   <div class="page-heading win-heading">
-    <h1>推理引擎端点与模型设置</h1>
+    <h1>工坊设置</h1>
     <a href="#voices" class="win-link-btn">前往配置语音 →</a>
   </div>
+
+  <fieldset class="win-group-box">
+    <legend>角色显示</legend>
+    <label><input type="checkbox" data-display-setting="pets_enabled" disabled> 显示角色宠物</label>
+    <label><input type="checkbox" data-display-setting="avatar_enabled" disabled> 直播优先使用实时形象（Ditto）</label>
+    <p class="hint">对话和电话只显示宠物。直播形象通过验收后才能使用，待验时按宠物设置显示。</p>
+  </fieldset>
+
+  <fieldset class="win-group-box" id="artwork-references">
+    <legend>生图参考图</legend>
+    <p class="hint" id="artwork-reference-scope"></p>
+    <div class="form-grid" id="artwork-reference-variants"></div>
+    <p class="hint" id="artwork-reference-result" role="status"></p>
+  </fieldset>
 
   <div class="win-group-box" id="providers-panel" data-workspace-anchor style="margin-top:16px;">
     <div class="panel-heading">

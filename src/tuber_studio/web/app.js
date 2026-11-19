@@ -4,6 +4,8 @@ import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
 import { initOperatorChat } from "./modules/operator-chat.js?v=20261118.1";
 import { initChatPet } from "./modules/chat-pet.js";
+import { characterDisplay, bindDisplaySettings } from "./modules/character-display.js";
+import { initArtworkReferences } from "./modules/artwork-references.js";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261114.01";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261115.2";
@@ -90,7 +92,9 @@ const messagesPanel = new MessagesPanel($("messages-panel"), api, notice, scope 
 messagesPanel.mountSettings($("message-policy-settings"));
 const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
 const issueLog = initIssueLog(api, () => model.page);
-const chatPet = initChatPet(api);
+bindDisplaySettings(message => notice(message, true));
+const loadArtworkReferences = initArtworkReferences();
+const chatPet = initChatPet(api, characterDisplay, message => notice(message, true));
 const operatorChat = initOperatorChat((path, options) => baseApi(path, options, showLogin), {
   setPet: chatPet.setCharacter,
   refreshAutomation: () => updatePermissionCapsule({ background: true }),
@@ -183,6 +187,8 @@ async function busy(button, action) {
 }
 
 function showLogin() {
+  void loadArtworkReferences(null);
+  characterDisplay.reset();
   model.authenticated = false;
   model.socket?.close();
   $("workspace").hidden = true;
@@ -212,7 +218,7 @@ async function refreshSettings() {
 
 async function enterWorkspace() {
   voiceSettings.reset();
-  await refreshSettings();
+  await Promise.all([refreshSettings(), characterDisplay.refresh().catch(error => notice(error.message, true))]);
   model.authenticated = true;
   $("login").hidden = true;
   $("workspace").hidden = false;
@@ -235,6 +241,7 @@ function renderStatus(status) {
   const hadStatus = model.status != null;
   const previousCharacter = model.status?.character;
   renderWorkspaceStatus(model, status);
+  if (model.page === "settings") void loadArtworkReferences(status.character);
   if (previousCharacter?.id !== status.character?.id || previousCharacter?.name !== status.character?.name) {
     characterStudio?.refreshActivation();
   }
@@ -399,6 +406,7 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
   } else if (model.page === "accounts") {
     await Promise.allSettled([accountPanel.active ? accountPanel.settingsOpened() : accountPanel.activate(), updatePermissionCapsule(), commentsModule?.loadPolicy()]);
   } else if (model.page === "settings") {
+    void loadArtworkReferences(model.status?.character, true);
     if (!inferenceProviders.dirty) await refreshSettings();
   }
 }
@@ -408,6 +416,7 @@ async function poll() {
   model.polling = true;
   try {
     const updates = model.socket?.readyState === WebSocket.OPEN && model.status ? [] : [api("/api/status").then(renderStatus)];
+    if (["chat", "settings"].includes(model.page)) updates.push(characterDisplay.refresh());
     if (workspaceSection(model.page) === "operations" || model.page === "accounts") updates.push(updatePermissionCapsule({ background: true }));
     if (["automation", "automation-settings", "comments"].includes(model.page)) updates.push(discoveryPanel.refresh());
     if (model.page === "chat") updates.push(operatorChat.refreshCards());

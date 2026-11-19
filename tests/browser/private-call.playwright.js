@@ -41,61 +41,45 @@ async page => {
   await handoff.waitFor();
   if (await handoff.count() !== 1 || mutations.join() !== "/api/chat/private-call/ticket") throw Error("unconfirmed handoff");
   await page.getByText("整理一份私有提纲", {exact:true}).waitFor();
-  const avatar = page.locator("#private-call-avatar");
-  await avatar.waitFor();
-  const picture = () => avatar.evaluate(canvas => canvas.toDataURL());
-  const mouth = value => page.waitForFunction(value =>
-    document.querySelector("#private-call-avatar").dataset.mouth === value, value, {timeout: 5000});
+  const pet = page.locator("#private-call-dialog #chat-pet");
+  await pet.waitFor();
+  if (await page.locator("#private-call-dialog video, #private-call-dialog canvas").count())
+    throw Error("voice-only call created a portrait or mouth renderer");
   const stimulate = async kind => {
     if (!(await page.request.post("http://127.0.0.1:18767/stimulus/" + kind)).ok()) throw Error("fixture not connected");
   };
-  await mouth("closed");
-  const closed = await picture();
   await page.evaluate(() => window.callContexts[0].suspend());
   await stimulate("speech");
   await page.waitForFunction(() => Number.isFinite(window.assistantStart));
   await page.waitForTimeout(600);
-  if (await picture() !== closed) throw Error("queued PCM opened mouth before playback");
   if ((await (await page.request.get("http://127.0.0.1:18767/observations")).json()).played !== before.played)
     throw Error("queued PCM was acknowledged before playback");
   await page.evaluate(() => window.callContexts[0].resume());
-  const position = () => page.evaluate(() => Math.round(1000 *
-    (window.callContexts[0].getOutputTimestamp().contextTime - window.assistantStart)));
-  await page.waitForFunction(() => window.callContexts[0].getOutputTimestamp().contextTime - window.assistantStart > .1);
-  if (await picture() !== closed) throw Error("silent lead-in animated");
-  await mouth("open");
-  const openedMs = await position();
-  if (openedMs < 500 || openedMs > 2500) throw Error("mouth outside the fixture's audible interval: " + openedMs);
-  if (await picture() === closed) throw Error("speaking frame did not change");
-  await mouth("closed");
-  const silentMs = await position();
-  if (silentMs < 2500 || silentMs >= 3000) throw Error("silent tail did not close within playback: " + silentMs);
-  if (await picture() !== closed) throw Error("silent tail did not restore closed frame");
+  const heard = async id => {
+    for (let i = 0; i < 60; i++) {
+      const response = await page.request.get("http://127.0.0.1:18767/observations");
+      if ((await response.json()).played_by_response[id] > 0) return;
+      await page.waitForTimeout(100);
+    }
+    throw Error("no audible samples acknowledged for " + id);
+  };
+  await heard("voice-1");
   await stimulate("speech");
-  await mouth("open");
+  await heard("voice-2");
   await stimulate("interrupt");
-  await mouth("closed");
   await stimulate("speech");
-  await mouth("open");
+  await heard("voice-3");
   const mute = page.locator("#private-call-mute");
   await mute.click();
-  await mouth("closed");
   await stimulate("speech");
-  await page.waitForTimeout(950);
-  if (await picture() !== closed) throw Error("muted voice animated");
+  await page.waitForTimeout(500);
   await mute.click();
-  await page.emulateMedia({reducedMotion: "reduce"});
-  await stimulate("speech");
-  await page.waitForTimeout(1400);
-  if (await picture() !== closed) throw Error("reduced-motion avatar animated");
-  await page.emulateMedia({reducedMotion: "no-preference"});
-  await mouth("open");
   const posted = page.waitForResponse(response => response.url() === base + "/api/agent/tasks" && response.request().method() === "POST");
   await handoff.click();
   const task = await (await posted).json();
   if (!task.id || task.goal !== "整理一份私有提纲") throw Error("incorrect handoff");
   await page.getByRole("button", {name:"挂断"}).click();
-  await mouth("closed");
+  await page.locator(".chat-agent-identity #chat-pet").waitFor();
   await page.waitForFunction(() => window.testTracks.length === 1 && window.testTracks[0].readyState === "ended" &&
     window.callContexts.length === 1 && window.callContexts[0].state === "closed");
   const after = await (await page.request.get("http://127.0.0.1:18767/observations")).json();
@@ -106,22 +90,16 @@ async page => {
   const retained = await (await page.request.get(base + "/api/agent/tasks/" + task.id)).json();
   if (retained.id !== task.id || retained.status === "cancelled") throw Error("hangup lost the task");
   await page.evaluate(() => { window.holdPermission = true; });
-  let missingFallback = false;
-  await page.route("**/assets/whale/{sing_open.png,sing_closed.png,idle.gif}", async route => {
-    if (route.request().url().endsWith("idle.gif")) missingFallback = true;
-    await route.fulfill({status:404, body:"missing fixture asset"});
-  });
   await page.getByRole("button", {name:"更多对话操作"}).click();
   await page.getByRole("button", {name:"私有语音通话"}).click();
   await page.getByRole("button", {name:"开始通话"}).click();
   await page.waitForFunction(() => typeof window.releasePermission === "function");
-  await page.locator("#private-call-avatar-fallback").getByText("大肥鱼", {exact:true}).waitFor();
-  if (!missingFallback || await avatar.isVisible()) throw Error("missing assets must leave a text-only call");
+  await pet.waitFor();
   await page.getByRole("button", {name:"挂断"}).click();
   await page.evaluate(() => window.releasePermission());
   await page.waitForFunction(() => window.testTracks.every(track => track.readyState === "ended") &&
     window.callContexts.every(context => context.state === "closed"));
   if (mutations.join() !== "/api/chat/private-call/ticket,/api/agent/tasks,/api/chat/private-call/ticket")
     throw Error("Late microphone permission triggered a business action");
-  return {...after, openedMs, silentMs};
+  return after;
 }

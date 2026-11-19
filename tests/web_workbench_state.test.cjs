@@ -162,24 +162,28 @@ test("pet follows chat identity, stays hidden across reload and never fetches th
   document.body = make();
   document.createElement = () => ({ ...make(), close() {} });
   const media = { matches: false, addEventListener() {} };
-  const preferences = new Map();
   globalThis.matchMedia = () => media;
-  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
-    getItem: key => preferences.get(key), setItem: (key, value) => preferences.set(key, value),
-  } });
-  t.after(() => { delete globalThis.matchMedia; delete globalThis.localStorage; });
+  globalThis.MutationObserver = class { observe() {} };
+  t.after(() => { delete globalThis.matchMedia; delete globalThis.MutationObserver; });
+  const { CharacterDisplay } = await import("../src/tuber_studio/web/modules/character-display.js");
+  let saved = {pets_enabled:true, avatar_enabled:false};
+  const request = async (_path, options) => saved = {...saved, ...options?.body};
+  const display = new CharacterDisplay(request);
+  await display.refresh();
   get("operator-chat-more-toggle").click = get("operator-chat-more-toggle").focus = () => {};
   const { initChatPet } = await import("../src/tuber_studio/web/modules/chat-pet.js");
   const api = () => assert.fail("unexpected gallery request");
-  const view = initChatPet(api);
+  const view = initChatPet(api, display, assert.fail);
   const character = {character_id: "whale", avatar: "/assets/whale/idle.gif"};
   view.setCharacter(character);
   assert.equal(get("chat-agent-avatar").src, character.avatar);
-  get("chat-pet-toggle").onclick();
-  const restored = initChatPet(api);
+  await get("chat-pet-toggle").onclick();
+  const remote = new CharacterDisplay(request);
+  await remote.refresh();
+  const restored = initChatPet(api, remote, assert.fail);
   restored.setCharacter(character);
   assert.equal(get("chat-pet").hidden, true);
-  get("chat-pet-toggle").onclick();
+  await get("chat-pet-toggle").onclick();
   assert.equal(get("chat-agent-avatar").src, character.avatar);
   restored.setCharacter(null);
   assert.equal(get("chat-pet").hidden, true);
