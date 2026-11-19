@@ -17,6 +17,7 @@ import httpx
 
 from . import omni_speech
 from .compaction import ContextWindowExceeded, IncompleteCompaction, approx_token_count
+from .front_persona import front_identity
 from .generation_meter import reserve_generation, settle_generation
 from .http_api import api_client, check_response_status, inference_transport, models_health, response_bytes
 from .llama_sampling import live_thinking_budget, llama_cpp_sampling, supports_live_thinking_budget
@@ -64,13 +65,16 @@ def single_system_messages(messages):
     return ([{"role": "system", "content": "\n\n".join(instructions)}] if instructions else []) + dialogue
 
 
-def build_messages(character, event, relationship, mode="live"):
+def build_messages(character, event, relationship, mode="live", *, history=()):
     operator_chat = mode == "operator_chat"
     if mode != "live":
         character = operation_character(character)
 
-    fixed = {"identity": character["core"], "style": character["style"], "rules": character["rules"]}
-    system_content = SYSTEM_RULES + json.dumps(fixed, ensure_ascii=False)
+    if operator_chat:
+        system_content = SYSTEM_RULES + front_identity(character)
+    else:
+        fixed = {"identity": character["core"], "style": character["style"], "rules": character["rules"]}
+        system_content = SYSTEM_RULES + json.dumps(fixed, ensure_ascii=False)
 
     messages = [
         {"role": "system", "content": system_content},
@@ -94,21 +98,26 @@ def build_messages(character, event, relationship, mode="live"):
             current_text_ref="当前观众消息.text",
         )
         messages[1]["content"] += "\n" + RESPONSE_ACTOR_INSTRUCTION
-    lore = [
-        entry["text"]
-        for entry in character.get("lore", [])
-        if any(word in event["text"] for word in entry.get("keywords", []))
-    ][:3]
     # Logical history and its compacted summary belong to ContextManager. Do not
     # inject a second, empty history snapshot after the actual conversation.
-    optional = {"active_lore": lore, "confirmed_relationship": relationship}
+    optional = {"confirmed_relationship": relationship}
     if operator_chat:
+        from .front_background import front_background
+
+        if background := front_background(character, event["text"], history=history):
+            optional["角色背景"] = background
         messages[1]["content"] += "\n" + private_participant_instructions(
             character, event.get("platform"), event.get("platform_user_id")
         )
-    elif owner := bilibili_owner_context(character, event.get("platform"), event.get("platform_user_id")):
-        optional.update(owner)
-        messages[1]["content"] += "\n" + BILIBILI_OWNER_INSTRUCTION
+    else:
+        optional["active_lore"] = [
+            entry["text"]
+            for entry in character.get("lore", [])
+            if any(word in event["text"] for word in entry.get("keywords", []))
+        ][:3]
+        if owner := bilibili_owner_context(character, event.get("platform"), event.get("platform_user_id")):
+            optional.update(owner)
+            messages[1]["content"] += "\n" + BILIBILI_OWNER_INSTRUCTION
     if actors:
         optional.update(self_actor=actors["self_actor"], reply_target=actors.get("reply_target"),
                         thread=actors.get("thread"))

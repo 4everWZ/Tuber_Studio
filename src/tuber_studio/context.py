@@ -214,8 +214,8 @@ class ContextManager:
         self.last_key = row["key"]
 
     @staticmethod
-    def parts(character, event, relationship, mode):
-        scaffold = build_messages(character, event, relationship, mode)
+    def parts(character, event, relationship, mode, *, history=()):
+        scaffold = build_messages(character, event, relationship, mode, history=history)
         prefix = scaffold[:2]
         initial_context = [dict(scaffold[2], kind="context")]
         pending = dict(
@@ -251,11 +251,13 @@ class ContextManager:
         extra=(), daily_memory_enabled=True, on_memory=None,
     ):
         row = self.window(scope, character)
+        history = self.history_for_model(scope, character, json.loads(row["history"]))
         prefix, initial, pending, suffix = self.parts(
             character,
             event or {"text": "", "event_id": "context:rebuild"},
             relationship or {},
             mode,
+            history=history,
         )
         if event is None:
             pending = None
@@ -289,7 +291,6 @@ class ContextManager:
             initial.extend(augmentations)
         compaction_context = [block for block in initial if id(block) not in recalled_blocks]
         initial.extend(extra)
-        history = self.history_for_model(scope, character, json.loads(row["history"]))
         messages = self.render(prefix, initial, history, pending, suffix)
         overflow = False
         try:

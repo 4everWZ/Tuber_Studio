@@ -342,7 +342,8 @@ class Runtime:
             on_memory=remember_dependency,
         )
         generation_identity = self.identity_snapshot(character, event.get("account_id"))
-        messages = identity_messages(messages, generation_identity)
+        if mode != "operator_chat":
+            messages = identity_messages(messages, generation_identity)
         operation = mode in {"comment_draft", "direct_message"}
         generate = (
             getattr(self.llm, "generate_operation", self.llm.generate) if operation else self.llm.generate
