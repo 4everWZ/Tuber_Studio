@@ -25,6 +25,7 @@ from ..store import dump
 
 # Only the isolated replay installs a sink. Private turns never enter general application logs.
 admission_receipt = ContextVar("private_memory_admission_receipt", default=None)
+_STATEMENT_LIMIT = 150
 
 
 class MemorySuggestion(StrictModel):
@@ -38,15 +39,14 @@ class MemorySuggestion(StrictModel):
 
 class OwnerUtterance(StrictModel):
     meaning: Literal["持续合作方式", "当前事项", "社交交谈", "其他"]
-    statement: str = Field(max_length=150, description="表达该意思的一句原话，保留条件和否定。")
-    scope_quote: str = Field(description="逐字摘出说明适用场合、时间或习惯的文字，未说明填空。")
-    practice_quote: str = Field(description="逐字摘出号主希望对方怎么做的文字，未说明填空。")
+    statement: str = Field(max_length=_STATEMENT_LIMIT, description="完整逐字摘录表达该意思的原句，包含下面有据的范围和做法，保留条件和否定。")
+    scope_quote: str = Field(description="从 statement 摘出适用场合、时间或习惯，未说明填空。")
+    practice_quote: str = Field(description="从 statement 摘出具体做法，与范围分别定位，未说明填空。")
 
 
 class AgreementReview(RoutineReview):
     topic_quote: str = Field(max_length=40, description="从原话摘取代表约定主题的短语。")
     existing_id: int | None = Field(description="更正同一件事时选原条目 ID，否则 null。")
-    replaces_source: str | None = Field(description="改掉本批较早约定时选其来源编号，否则 null。")
     summary_kind: Literal["preference", "decision"]
 
 
@@ -240,7 +240,7 @@ class MemoryOrganizer:
         with self.store.db:
             for source in sources:
                 if source.get("temporary"):
-                    self._apply(scope, source, None, [], {})
+                    self._apply(scope, source, None, [])
         sources = [source for source in sources if not source.get("temporary")]
         sources += [
             {"key": f"legacy:{row['id']}", "kind": "private", "text": row["quote"], "legacy": row}
@@ -249,27 +249,23 @@ class MemoryOrganizer:
         if not sources:
             self.status = "idle"
             return 0
-        existing = runtime.daily_memory.organized(scope, limit=100)
-        visible = {row["id"]: row for row in existing if row["status"] == "active"}
-        packet = []
+        # Public experiences are read as a batch. Private turns use the latest saved
+        # version, including earlier turns from this same wake-up.
+        def summaries(rows):
+            return [{"id": row["id"], "topic": row["headline"], "note": row["anecdote"]} for row in rows]
+
+        public = []
+        public_rows = {}
         for number, source in enumerate(sources, 1):
-            if source["kind"] == "unavailable":
-                continue
-            candidates = [row for row in visible.values() if row["memory_kind"] == source["kind"]]
-            if source.get("origin", scope) != scope:
-                candidates = [row for row in candidates if row["proof"].get("private_owner") == memory.private_owner]
-            candidates.sort(key=lambda row: -runtime.daily_memory.memory_match(row, source["text"]))
             if source["kind"] == "experience":
-                candidates = [row for row in candidates if row["source_ref"] == source["key"]]
-            original = source["text"] if source["kind"] == "private" else source["text"][:800]
-            packet.append({"key": f"source_{number}", "kind": source["kind"], "original": original,
-                           "has_confirmed_reply": source["kind"] == "experience",
-                           "existing": [{"id": row["id"], "topic": row["headline"], "note": row["anecdote"]}
-                                        for row in candidates[:4]]})
+                key = f"source_{number}"
+                rows = [row for row in memory.organized(scope, candidate_for=(source["key"], "experience", "", ""),
+                                                        memory_kind="experience") if row["status"] == "active"]
+                public_rows[key] = rows
+                public.append({"key": key, "kind": "experience", "original": source["text"][:800],
+                               "has_confirmed_reply": True, "existing": summaries(rows)})
         decisions = {}
-        public = [item for item in packet if item["kind"] == "experience"]
-        if packet:
-            self.status = "running"
+        self.status = "running"
         if public:
             schema = create_model("MemoryBatch", __base__=StrictModel,
                                   **{item["key"]: (MemorySuggestion, ...) for item in public})
@@ -279,53 +275,30 @@ class MemoryOrganizer:
                         {"role": "user", "content": dump(public)}]
             result = await self._generate(messages, schema)
             decisions.update({item["key"]: getattr(result, item["key"]) for item in public})
-        by_key = {item["key"]: item for item in packet}
-        earlier = {}
         for number, source in enumerate(sources, 1):
-            if source["kind"] != "private":
-                continue
             if scope != self.scope() or preference != memory.preference(scope):
-                break
+                self.status = "waiting"
+                return number - 1
             key = f"source_{number}"
-            origin = source.get("origin", scope)
-            if source.get("preference", preference) != memory.preference(origin):
-                continue
-            # Batch corrections can only supersede a previously qualified source in the same scope.
-            previous = earlier.setdefault(origin, {})
-            agreement = await self._read_agreement(source, by_key[key]["existing"], previous, scope, preference)
-            if not agreement:
-                continue
-            reading, rule, review = agreement
-            target = review.existing_id
-            known = {row["id"]: row["note"] for row in by_key[key]["existing"]}
-            if target is not None and not await self._replaces(source["key"], known.get(target), reading.statement):
-                target = None
-            if review.replaces_source in previous and await self._replaces(source["key"], previous[review.replaces_source], reading.statement):
-                old_key = review.replaces_source
-                if target is None:
-                    target = decisions[old_key].existing_id
-                previous.pop(old_key)
-                decisions.pop(old_key)
-            source["cooperation_rule"] = rule
-            headline = review.topic_quote.strip()
-            if not headline or headline not in reading.statement:
-                headline = reading.statement[:40]
-            decisions[key] = MemorySuggestion(action="update" if target is not None else "add", existing_id=target,
-                                              headline=headline, note=reading.statement, tags=[],
-                                              summary_kind=review.summary_kind)
-            previous[key] = reading.statement
-        supplied = {item["key"]: item["existing"] for item in packet}
-        if scope != self.scope() or preference != runtime.daily_memory.preference(scope):
-            self.status = "waiting"
-            return 0
-        with memory_transaction(self.store.db):
-            for number, source in enumerate(sources, 1):
-                key = f"source_{number}"
-                self._apply(scope, source, decisions.get(key), supplied.get(key, []), visible)
+            rows = public_rows.get(key, [])
+            decision = decisions.get(key)
+            if source["kind"] == "private":
+                origin = source.get("origin", scope)
+                if source.get("preference", preference) != memory.preference(origin):
+                    continue
+                rows = memory.recall_organized(scope, "operator", source["text"], memory_kind="private", limit=4)
+                if origin != scope:
+                    rows = [row for row in rows if row["proof"].get("private_owner") == memory.private_owner]
+                decision = await self._private_decision(source, summaries(rows), scope, preference)
+                if scope != self.scope() or preference != memory.preference(scope):
+                    self.status = "waiting"
+                    return number - 1
+            with memory_transaction(self.store.db):
+                self._apply(scope, source, decision, rows)
         self.status = "idle"
         return len(sources)
 
-    async def _read_agreement(self, source, existing, previous, scope, preference):
+    async def _private_decision(self, source, existing, scope, preference):
         origin = source.get("origin", scope)
         with without_model_identity():
             reading = await self._generate([
@@ -337,7 +310,23 @@ class MemoryOrganizer:
                 emit(source["key"], {"stage": "utterance", **reading.model_dump()})
             if reading.meaning != "持续合作方式" or not all((reading.statement, reading.scope_quote, reading.practice_quote)):
                 return None
-            rule = locate_rule(source["text"], reading)
+            original = source["text"]
+            rule = locate_rule(original, reading)
+            if rule:
+                # A comma-delimited excerpt can omit the subject or condition of a change.
+                # Have the existing reviewer judge the full sentence against the original.
+                start, end = rule["statement_span"]
+                boundaries = "。！？.!?\n"
+                while start and original[start - 1] not in boundaries:
+                    start -= 1
+                while end < len(original) and original[end - 1] not in boundaries:
+                    end += 1
+                sentence = original[start:end].strip()
+                if sentence != reading.statement:
+                    rule = None
+                    if len(sentence) <= _STATEMENT_LIMIT:
+                        reading = reading.model_copy(update={"statement": sentence})
+                        rule = locate_rule(original, reading)
             if not rule:
                 if emit:
                     emit(source["key"], {"stage": "rejected_unbound_proposal"})
@@ -349,15 +338,25 @@ class MemoryOrganizer:
             review = await self._generate([
                 {"role": "system", "content": "只按 original 判断说话人本人的持续合作约定。核对 scope_quote 是否说明跨次适用，"
                  "practice_quote 是否是可执行做法，两者是否是同一约定且 statement 保留条件和否定。一次邀约、"
-                 "转述与玩笑按原意判。existing 和 earlier 仅用于定位更正。不同的做法可以并存，即使都与写作有关。只有本句取代了"
-                 "原约定的同一具体做法才选对应 ID 或来源，新增做法均填 null。"},
+                 "转述与玩笑按原意判。existing 仅用于定位更正。不同的做法可以并存，即使都与写作有关。只有本句取代了"
+                 "原约定的同一具体做法才选对应 ID，新增做法填 null。"},
                 {"role": "user", "content": dump({"original": source["text"], **reading.model_dump(exclude={"meaning"}),
                  "scope_quote": source["text"][slice(*rule["scope_span"])],
-                 "existing": existing, "earlier": previous})}], AgreementReview)
+                 "existing": existing})}], AgreementReview)
         accepted = corroborates(source["text"], rule, review)
         if emit:
             emit(source["key"], {"stage": "review", "bound": rule, "judgment": review.model_dump(), "accepted": accepted})
-        return (reading, rule, review) if accepted else None
+        if not accepted:
+            return None
+        source["cooperation_rule"] = rule
+        target = next((row for row in existing if row["id"] == review.existing_id), None)
+        update = target and await self._replaces(source["key"], target["note"], reading.statement)
+        headline = review.topic_quote.strip()
+        if not headline or headline not in reading.statement:
+            headline = reading.statement[:40]
+        return MemorySuggestion(action="update" if update else "add", existing_id=target["id"] if update else None,
+                                headline=headline, note=reading.statement, tags=[],
+                                summary_kind=review.summary_kind)
 
     async def _replaces(self, key, existing, incoming):
         if not existing:
@@ -386,7 +385,7 @@ class MemoryOrganizer:
                                         messages, max_tokens=1000)
             return result_type.model_validate(value)
 
-    def _apply(self, scope, source, decision, supplied, visible):
+    def _apply(self, scope, source, decision, supplied):
         if "origin" in source:
             scope = source["origin"]
             if source["preference"] != self.runtime.daily_memory.preference(scope):
@@ -429,8 +428,7 @@ class MemoryOrganizer:
             return
         status = "skipped"
         if decision and decision.action != "skip" and not (deleted or processed):
-            allowed = {item["id"] for item in supplied}
-            existing = visible.get(decision.existing_id) if decision.existing_id in allowed else None
+            existing = next((row for row in supplied if row["id"] == decision.existing_id), None)
             if (not source["text"].strip() or not decision.note.strip() or not decision.headline.strip()
                     or decision.action == "update" and not existing):
                 status = "invalid"

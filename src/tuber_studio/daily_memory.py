@@ -235,7 +235,7 @@ class DailyMemoryService:
         return re.sub(r"\W", "", title).casefold()
 
     def organized(self, scope, *, limit=100, item_id=None, unclassified=False, recall=None, exact_title=None,
-                  candidate_for=None):
+                  candidate_for=None, memory_kind=None):
         private_unclassified = (
             "COALESCE(json_extract(source_evidence,'$.memory_kind'),'')='private' "
             "AND json_extract(source_evidence,'$.scene') IS NULL "
@@ -250,6 +250,9 @@ class DailyMemoryService:
             key, kind, signature, quote = candidate_for
             query = "AND (source_ref=? OR (?='private' AND (quote=? OR memory_title_key(headline)=?))) "
             parameters.extend((key, kind, quote, signature))
+        if memory_kind is not None:
+            query += "AND json_extract(source_evidence,'$.memory_kind')=? "
+            parameters.append(memory_kind)
         if recall is not None:
             channel, keywords, resource, thread = recall
             document = ("lower(headline || ' ' || quote || ' ' || anecdote || ' ' || tags)" if channel == "operator"
@@ -703,13 +706,13 @@ class DailyMemoryService:
         return self._score_highlight_match(row, self._extract_recall_keywords(text), text)
 
     def recall_organized(self, scope, channel, text, *, resource=None, thread=None, participant=None,
-                         specific_experiences=False, manual_inspection=False):
+                         specific_experiences=False, manual_inspection=False, memory_kind=None, limit=3):
         if not (manual_inspection and channel == "operator") and not self.preference(scope)["enabled"]:
             return []
         matched = []
         keywords = self._extract_recall_keywords(text)
         search = sorted(keywords, key=lambda word: (-len(word), word))[:18]
-        candidates = self.organized(scope, recall=(channel, search, resource, thread), limit=-1)
+        candidates = self.organized(scope, recall=(channel, search, resource, thread), memory_kind=memory_kind, limit=-1)
         keys = set(re.findall(r"BV[A-Za-z0-9]{10}|(?:turn|event|thread):[A-Za-z0-9_:/#.-]+", text))
         if resource:
             keys.add(f"thread:{resource}:{thread}" if thread else resource)
@@ -718,7 +721,7 @@ class DailyMemoryService:
         exact = {item["id"] for key in keys for item in self.lookup_source(scope, channel, key)}
         present = {row["id"] for row in candidates}
         for item_id in exact - present:
-            candidates.extend(self.organized(scope, item_id=item_id))
+            candidates.extend(self.organized(scope, item_id=item_id, memory_kind=memory_kind))
         for row in candidates:
             if row["status"] != "active" or channel != "operator" and channel not in row["channels"]:
                 continue
@@ -754,7 +757,7 @@ class DailyMemoryService:
             rules = [{key: row[key] for key in ("id", "revision", "updated_at", "headline", "anecdote")}
                      for row in self.live_preferences(scope)]
             return (rules + relevant)[:4]
-        return relevant[:3]
+        return relevant[:limit]
 
     def validate_organized(self, scope, channel, refs):
         for item in refs:

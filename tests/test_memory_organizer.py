@@ -243,7 +243,7 @@ class OrganizerModel:
             existing = packet["existing"]
             return {"meaning": "号主本人的持续协作约定", "scope_supported": True, "practice_supported": True,
                     "same_agreement": True, "topic_quote": "运营汇报", "existing_id": existing[0]["id"] if existing else None,
-                    "replaces_source": None, "summary_kind": "preference"}
+                    "summary_kind": "preference"}
         items = {}
         for item in packet:
             existing = item["existing"]
@@ -251,6 +251,86 @@ class OrganizerModel:
                           "existing_id": existing[0]["id"] if existing else None, "headline": "运营汇报顺序",
                           "note": item["original"], "tags": ["运营汇报"]}
         return items
+
+
+async def test_queued_private_chat_correction_preserves_both_turns_and_versions(settings):
+    class ChatProvider(OrganizerModel):
+        async def generate_assistant_json(self, messages, schema, **kwargs):
+            return {"action": "chat", "reply_markdown": "好，我们接着聊。"}
+
+    app = create_app(settings)
+    runtime = app.state.runtime
+    original = runtime.llm
+    runtime.llm = ChatProvider()
+    organizer = runtime.memory_organizer
+    turns = [(str(uuid4()), text) for text in ("以后运营汇报先说结论", "我改主意了，以后运营汇报先说风险")]
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://localhost",
+                                     headers={"Authorization": "Bearer " + settings.admin_token}) as client:
+            pref = (await client.get("/api/daily-memory/preferences")).raise_for_status().json()
+            assert pref["enabled"] and pref["revision"] == 0
+            for request_id, quote in turns:
+                reply = await client.post("/api/chat/intelligent", json={"request_id": request_id, "message": quote})
+                assert reply.raise_for_status().json()["card"] is None
+            assert await organizer.run_once() == 2
+            assert await organizer.run_once() == 0
+            scope = organizer.scope()
+            latest, = runtime.daily_memory.organized(scope)
+            versions = runtime.daily_memory.revisions(scope, latest["id"])
+            assert {(v["revision"], v["source_key"], v["note"]) for v in versions} == {
+                (n, "turn:" + rid, text) for n, (rid, text) in enumerate(turns, 1)
+            }
+            for rid, quote in turns:
+                source = "turn:" + rid
+                response = await client.post("/api/agent/memory.get", json={"id": latest["id"], "source_key": source})
+                item = response.raise_for_status().json()
+                assert (item["revision"], item["source_key"], item["quote"], item["note"]) == (
+                    2, source, quote, turns[-1][1])
+    finally:
+        await original.close()
+        await app.state.browsing.close()
+        runtime.store.close()
+
+
+async def test_correction_finds_older_topic_and_preserves_qualifying_clause(settings):
+    first = "以后运营汇报先说结论。"
+    correction = "运营汇报的顺序改一下，以后先说风险。"
+    app = create_app(settings)
+    runtime = app.state.runtime
+    original = runtime.llm
+    memory = runtime.daily_memory
+    scope = runtime.memory_organizer.scope()
+
+    class ExcerptModel(OrganizerModel):
+        async def generate_json(self, messages, schema, **kwargs):
+            reply = await super().generate_json(messages, schema, **kwargs)
+            if schema["title"] == "OwnerUtterance" and messages[-1]["content"] == correction:
+                reply["statement"] = "以后先说风险。"
+            if schema["title"] == "AgreementReview":
+                packet = json.loads(messages[-1]["content"])
+                assert packet["statement"] == packet["original"]
+                reply["topic_quote"] = "" if packet["original"] == first else "不在号主原话中的主题"
+            return reply
+
+    runtime.llm = ExcerptModel()
+    try:
+        add_turn(runtime, first)
+        assert await runtime.memory_organizer.run_once() == 1
+        old, = memory.organized(scope)
+        assert old["headline"] == first
+        for i in range(101):
+            note = f"资料夹编号{i}"
+            memory.save_organized(scope, {"kind": "private", "key": f"settings:{i}", "text": note, "at": time.time()},
+                                  MemorySuggestion(action="add", existing_id=None, headline=note, note=note, tags=[]), None)
+        assert old["id"] not in {row["id"] for row in memory.organized(scope)}
+        add_turn(runtime, correction)
+        assert await runtime.memory_organizer.run_once() == 1
+        latest, = memory.organized(scope, item_id=old["id"])
+        assert (latest["revision"], latest["headline"], latest["anecdote"]) == (2, correction, correction)
+    finally:
+        await original.close()
+        await app.state.browsing.close()
+        runtime.store.close()
 
 
 async def test_organization_cannot_create_memory_from_assistant_output(settings):

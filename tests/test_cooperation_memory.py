@@ -64,7 +64,7 @@ async def test_private_chat_admission_requires_independent_original_evidence(set
                 assert packet["scope_quote"] == SCOPE
             return {"meaning": EXAMPLES[quote][2], "scope_supported": quote == RULE,
                     "practice_supported": True, "same_agreement": quote == RULE, "existing_id": baseline["id"],
-                    "summary_kind":"preference", "topic_quote":"对稿", "replaces_source":None}
+                    "summary_kind":"preference", "topic_quote":"对稿"}
 
     try:
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://localhost",
