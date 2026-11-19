@@ -14,7 +14,7 @@ from pydantic import Field
 
 from ..media_cache import CachePolicy
 from ..models import Event, StrictModel
-from ..performance import performance, register_performance
+from ..performance import performance
 from .activity_filter import LivePoll
 from .avatar import LiveAvatar
 from .media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
@@ -30,7 +30,6 @@ class ConfirmSong(StrictModel):
 
 
 def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok, same_origin):
-    register_performance(app, runtime, require_admin)
     register_stardew_device(app, require_admin, runtime.tasks)
     media, store = runtime.live.media, runtime.store
     avatar = LiveAvatar(settings)

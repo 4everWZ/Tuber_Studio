@@ -36,6 +36,7 @@ from .config import Settings
 from .direct_messages import DirectMessages
 from .dynamics import Dynamics
 from .live.api import register_live_api
+from .performance import register_performance
 from .live.media import MAX_UPLOAD
 from .meme_api import MAX_REQUEST as MAX_MEME_REQUEST
 from .meme_api import register_meme_api
@@ -237,6 +238,7 @@ def create_app(
     register_operator_chat(app, runtime, store, browsing, dynamics, require_admin)
     register_private_call(app, runtime, require_admin)
     register_private_avatar(app, runtime, require_admin)
+    register_performance(app, runtime, require_admin)
     register_task_api(app, runtime.tasks, require_admin)
     register_reply_operations(app, runtime.tasks, comments, messages, require_admin)
     register_model_api(app, settings, runtime, require_admin)
