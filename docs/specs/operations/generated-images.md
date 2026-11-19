@@ -10,6 +10,6 @@
 
 每个 Core 写者运行一个配图队列。楼内回复在入队前按目标获得文字能力。视频一级评论、私信和动态分别保存图库与生图开关。后台 Responses 在同一次决定中从已启用的图库条目、已绑定原稿的 Q／常规版和保留正文中选择。图库图按 ID 和内容摘要绑定草稿。选图库或无需新图时，工坊不提交图片推理。没有工作站生图接口的旧部署仍可用原图库功能。生图使用普通应用凭据访问工作站 `/v1/images/jobs`，不持有 Studio 的前台 generation lock。当前部署固定 FLUX.2-klein-4B，无调用方模型选择字段。共享 GPU 的释放、优先级和队列由工作站管理。网关返回 429 时依照 Retry-After 等待；Core 已记录远端任务 ID 时重启后继续轮询。如果提交结果未知，任务保留失败原因以免重复生成。
 
-入队时按角色、Q／mature 和所选版本绑定参考摘要与来源。默认原稿为工作站业务卷 `private-artifacts/artwork-defaults/{original.png,Q_original.png}`。上传替代由参考设置服务私有持久化。实际发起推理时按入队时的 digest 取回原字节，再核对摘要。外部请求只得到经过 Base64 编码的内联参考和场景文字。任务工具没有路径、URL 或文件浏览参数。
+入队时按角色、Q／mature 和所选版本绑定参考摘要与来源。工作站业务卷按角色和版本在 `artwork-references` 中保存上传件，`active` 指向当前选择，`default` 指向号主指定的默认件。「恢复默认」清除当前选择。未指定默认件的大肥鱼角色使用 `private-artifacts/artwork-defaults/{original.png,Q_original.png}`。实际发起推理时按入队时的 digest 取回原字节，再核对摘要。外部请求只得到经过 Base64 编码的内联参考和场景文字。任务工具没有路径、URL 或文件浏览参数。
 
 `operation_image_jobs` 保存决策输入、草稿、工坊任务及远端 ID，`operation_image_references` 保存任务绑定，`operation_image_gateway_receipts` 保存工作站状态，`operation_image_artifacts` 保存经过解码验证的 PNG 和摘要。工件入库与任务变成 ready 在同一事务内。远端临时结果到期以后，渠道仍可用工坊工件 ID 回读。发布审核、目标绑定、上传与送达回执由渠道负责。[工作站实测](../../../evaluations/results/operations-artwork-20261119.md)

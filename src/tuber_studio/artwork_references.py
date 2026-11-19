@@ -37,15 +37,17 @@ def _selection(settings, character_id, variant):
 
 def _location(settings, character_id, variant, digest=None):
     folder = _selection(settings, character_id, variant)
+    baseline = folder / "default"
+    default_digest = baseline.read_text("ascii") if baseline.is_file() else None
     pointer = folder / "active"
-    if digest is None and pointer.is_file():
-        digest = pointer.read_text("ascii")
+    if digest is None:
+        digest = pointer.read_text("ascii") if pointer.is_file() else default_digest
     if digest is not None:
         if not re.fullmatch("[0-9a-f]{64}", digest):
             raise ValueError("参考图版本无效")
         upload = folder / digest
         if upload.is_file():
-            return upload, digest, "upload"
+            return upload, digest, "default" if digest == default_digest else "upload"
     name, approved = DEFAULTS[variant]
     if character_id == "whale" and digest in (None, approved):
         default = settings.runtime / "private-artifacts" / "artwork-defaults" / name

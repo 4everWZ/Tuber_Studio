@@ -30,9 +30,12 @@ def gateway(settings):
 
 def image_payload(brief, data):
     return {
-        "prompt": "Create one scene featuring the character in the reference. Preserve the reference's "
-                  "anatomy, appendages, proportions, face, colors, clothing and rendering style. "
-                  "Use a single composition. Scene: " + brief.prompt,
+        "prompt": "Draw one finished illustration of this character in the following scene: " + brief.prompt
+                  + "\nUse the reference for character design. Multiple views depict the same individual. "
+                  "Match the head-to-body ratio, facial features, hair and outfit details in the full-body views. "
+                  "When visible, draw the appendages with the attachment, orientation and silhouette shown "
+                  "in the detail views. Compose the requested action as one coherent scene without sheet "
+                  "panels, labels or duplicate views.",
         "reference_image_base64": base64.b64encode(data).decode("ascii"),
     }
 

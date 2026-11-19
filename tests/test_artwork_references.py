@@ -41,3 +41,13 @@ def test_owner_can_replace_preview_and_restore_without_changing_existing_job(set
         assert client.delete(path).json()["variants"]["q"]["source"] == "default"
         assert resolve_reference(settings, "whale", "q").data == default
         assert resolve_reference(settings, "whale", "q", sha256=selected["sha256"]).data == upload
+
+        # The owner promotes this upload to the persistent default for this role.
+        from tuber_studio.artwork_references import _selection
+        (_selection(settings, "whale", "q") / "default").write_text(selected["sha256"], "ascii")
+        other = client.put(path, content=default).json()["variants"]["q"]
+        assert other["source"] == "upload"
+        restored = client.delete(path).json()["variants"]["q"]
+        assert (restored["source"], restored["sha256"]) == ("default", selected["sha256"])
+        assert client.get(restored["preview_url"]).content == upload
+        assert client.get(other["preview_url"]).content == default
