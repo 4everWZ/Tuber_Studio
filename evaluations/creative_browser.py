@@ -9,7 +9,7 @@ import socket
 import sqlite3
 import sys
 import tempfile
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlsplit
@@ -26,7 +26,6 @@ from evaluations.creative_browser_receipt import (
     DEFAULT_BV,
     Mismatch,
     initial,
-    items,
     require,
     same_position,
     verify,
@@ -58,8 +57,8 @@ async def server(app):
             await job
 
 
-@asynccontextmanager
-async def isolated_studio(directory, endpoint, key):
+@contextmanager
+def isolated_app(directory, endpoint, key, *, traffic=None, realtime_ticket_url=None):
     # Override inherited paths before Settings is constructed. The ordinary
     # loopback owner entry works without passing any admin secret to a browser.
     os.environ.pop("TUBER_ADMIN_TOKEN", None)
@@ -83,23 +82,39 @@ async def isolated_studio(directory, endpoint, key):
     denied = []
 
     async def read_or_infer(self, request):
-        if request.method not in {"GET", "HEAD"} and not (request.method == "POST" and request.url in posts):
+        ticket = False
+        if realtime_ticket_url and request.url == httpx.URL(realtime_ticket_url) and request.method == "POST":
+            try:
+                ticket = json.loads(request.content) == {"path": "/v1/realtime"}
+            except (UnicodeDecodeError, ValueError):
+                pass
+        if request.method not in {"GET", "HEAD"} and not (request.method == "POST" and request.url in posts) and not ticket:
             denied.append(request.method)
             raise Mismatch("隔离传输拒绝对外写入")
-        return await transport(self, request)
+        response = await transport(self, request)
+        if traffic is not None and request.method == "POST" and response.is_success:
+            route = request.url.path
+            traffic[route] = traffic.get(route, 0) + 1
+        return response
 
     with patch.object(httpx.AsyncHTTPTransport, "handle_async_request", read_or_infer):
         app = create_app(settings)
         rt = app.state.runtime
         require(not rt.tasks.scope()[0], "隔离库已有平台账号")
         rt.tasks.tools = {k: rt.tasks.tools[k] for k in ("inspect_video", "web_search", "web_page")}
-        async with server(app) as origin:
-            yield origin
+        yield app, denied
         require(not denied, "隔离传输曾拒绝对外写入")
 
 
 @asynccontextmanager
-async def device(chromium, origin, args):
+async def isolated_studio(directory, endpoint, key):
+    with isolated_app(directory, endpoint, key) as (app, _):
+        async with server(app) as origin:
+            yield origin
+
+
+@asynccontextmanager
+async def device(chromium, origin, args, login=None):
     keep = {
         "PATH",
         "SYSTEMROOT",
@@ -117,7 +132,7 @@ async def device(chromium, origin, args):
     }
     env = {k: v for k, v in os.environ.items() if k.upper() in keep}
     browser = await chromium.launch(
-        executable_path=args.chromium, env=env, args=["--disable-background-networking"]
+        executable_path=args.chromium, env=env, args=["--disable-background-networking", "--autoplay-policy=no-user-gesture-required"]
     )
     try:
         context = await browser.new_context(service_workers="block")
@@ -136,6 +151,8 @@ async def device(chromium, origin, args):
         page = await context.new_page()
         page.set_default_timeout(args.turn_timeout * 1000)
         await page.goto(origin)
+        if login is not None:
+            await login(page)
         await page.locator("#operator-chat-input").wait_for()
         yield page
     finally:
@@ -196,7 +213,7 @@ async def anchor(page):
     }""")
 
 
-async def drill(page, origin, directory, first, second, report, args):
+async def drill(page, origin, first, second, report):
     task = report["task"]
     old, current = first["artifact"], second["artifact"]
     await page.reload()
@@ -215,10 +232,11 @@ async def drill(page, origin, directory, first, second, report, args):
     response = await read.value
     require(response.ok and await response.json() == old, "历史下钻正文与首版不符")
     report["historyEdition"] = [old["task_revision"], old["edition"]]
-    old_items = items(directory, old["body"], first["steps"], args.bvid, args.part)
+    frame = re.search(r"^主帧：[^\n]+ · <(https://www\.bilibili\.com/video/BV\w+/\?p=\d+&t=\d+)>$", old["body"], re.M)
+    require(frame, "历史正文缺主帧原片时码链接")
     link = (
         panel.locator("details[open] details[open]")
-        .get_by_role("link", name=old_items[0]["url"], exact=True)
+        .get_by_role("link", name=frame[1], exact=True)
         .first
     )
     await link.wait_for()
@@ -228,7 +246,7 @@ async def drill(page, origin, directory, first, second, report, args):
         await link.click()
     source = await popup.value
     try:
-        await source.wait_for_url(old_items[0]["url"], wait_until="commit")
+        await source.wait_for_url(frame[1], wait_until="commit")
         report["video"] = source.url
     finally:
         await source.close()
@@ -248,7 +266,7 @@ async def drill(page, origin, directory, first, second, report, args):
     )
 
 
-async def exercise(origin, directory, args):
+async def exercise(origin, directory, args, *, memory=None, login=None):
     report = {"schema": 1, "scenario": "unhinted", "initial": initial(args.bvid, args.part), "change": CHANGE}
 
     def phase(name):
@@ -257,8 +275,11 @@ async def exercise(origin, directory, args):
         print(name, flush=True)
 
     async with async_playwright() as pw:
-        phase("ordinary assignment")
-        async with device(pw.chromium, origin, args) as page:
+        phase("owner preferences in A" if memory else "ordinary assignment")
+        async with device(pw.chromium, origin, args, login) as page:
+            if memory:
+                await memory.prepare(page)
+                phase("ordinary assignment")
             original = await send(page, report["initial"])
             require(await original.get_by_role("button", name="查看任务").count(), "交办回复没有任务卡")
             task = str(UUID(await original.get_attribute("data-request-id")))
@@ -286,18 +307,30 @@ async def exercise(origin, directory, args):
             require(await turn.get_by_role("button", name="查看任务").count() == 0, "闲聊被识别为交办")
             after_chat = await page.request.get(f"{origin}/api/agent/tasks/{task}")
             require(after_chat.ok and (await after_chat.json())["revision"] == 1, "闲聊改变了原任务的要求")
-        async with device(pw.chromium, origin, args) as page:
+        async with device(pw.chromium, origin, args, login) as page:
             report["secondBrowserProcess"] = True
             phase("restore in B")
             restored = page.locator(f'.operator-chat-turn[data-request-id="{task}"]')
             await restored.get_by_role("button", name="查看任务").click()
-            first = await edition(page, origin, task, 1, directory, args.edition_timeout)
+            try:
+                first = await edition(page, origin, task, 1, directory, args.edition_timeout)
+            except Mismatch:
+                terminal = directory / "r1.json"
+                if memory and terminal.is_file():
+                    snapshot = json.loads(terminal.read_text(encoding="utf-8"))
+                    if snapshot["id"] == task and snapshot["status"] in {"failed", "needs_input"}:
+                        phase("r1 unavailable; independent voice check in B")
+                        await memory.voice_after_blocked_edition(page, snapshot)
+                raise
             await (
                 page.locator("#chat-activity")
                 .get_by_text(f"任务 r1 · 成果 v{first['artifact']['edition']}", exact=True)
                 .wait_for()
             )
             await page.locator("#chat-activity-close").click()
+            if memory:
+                phase("read first edition and correct preference in B")
+                await memory.correct(page, first)
             phase("natural revision")
             changed = await send(page, CHANGE)
             report["changeTurn"] = await changed.get_attribute("data-request-id")
@@ -307,7 +340,10 @@ async def exercise(origin, directory, args):
             await changed.get_by_role("button", name="查看任务").click()
             second = await edition(page, origin, task, 2, directory, args.edition_timeout)
             phase("open saved edition and return")
-            await drill(page, origin, directory, first, second, report, args)
+            await drill(page, origin, first, second, report)
+            if memory:
+                phase("read revised edition and withdraw preference in B")
+                await memory.withdraw(page, second)
             phase("browser passed")
 
 

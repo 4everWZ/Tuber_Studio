@@ -196,12 +196,13 @@ def inspect_file(path, clip):
     )
 
 
-def verify(directory: Path, bvid: str, part: int):
-    browser = load(directory / "browser.json")
+def verify(directory: Path, bvid: str, part: int, *, receipts=None, final_revision=2):
+    receipts = receipts or directory
+    browser = load(receipts / "browser.json")
     require(
         browser.get("scenario") == "unhinted"
         and not browser.get("recovery")
-        and not (directory / "original-browser.json").exists(),
+        and not any((root / "original-browser.json").exists() for root in (directory, receipts)),
         "仅接受全新无提示交办",
     )
     require(
@@ -245,10 +246,10 @@ def verify(directory: Path, bvid: str, part: int):
                 "交办或改口未指向同一任务",
             )
         row = db.execute("SELECT * FROM agent_tasks WHERE id=?", (task,)).fetchone()
-        require(row and row["status"] == "completed" and row["revision"] == 2, "原任务未完成 r2")
+        require(row and row["status"] == "completed" and row["revision"] == final_revision, "原任务终态不符")
         steps = json.loads(row["steps"])
         for rev in (1, 2):
-            snapshot = load(directory / f"r{rev}.json")
+            snapshot = load(receipts / f"r{rev}.json")
             artifact = snapshot.get("artifact") or {}
             saved = db.execute(
                 "SELECT * FROM creative_editions WHERE task_id=? AND task_revision=? AND edition=?",
@@ -267,7 +268,7 @@ def verify(directory: Path, bvid: str, part: int):
                 and saved["body"] == snapshot["message"],
                 f"r{rev} 浏览器成果与持久正文不符",
             )
-            if rev == 2:
+            if rev == final_revision:
                 require(saved["body"] == row["message"], "任务当前正文与 r2 不符")
             durable = items(directory, saved["body"], [s for s in steps if s["revision"] <= rev], bvid, part)
             require(
