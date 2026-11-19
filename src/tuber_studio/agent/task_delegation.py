@@ -37,10 +37,19 @@ def uses_responses(task):
     return isinstance(task["plan"], dict) and task["plan"].get("backend") == "responses"
 
 
+def active_goal_steps(task):
+    history = task["plan"].get("superseded_goals")
+    if not history:
+        return task["steps"]
+    last_revision = history[-1]["revision"]
+    # Revision zero holds the owner's task-scoped attachments and explicit grants.
+    return [step for step in task["steps"] if step["revision"] == 0 or step["revision"] > last_revision]
+
+
 def visible_steps(runtime, task):
     bound = video_binding(task)
     context = []
-    for step in task["steps"]:
+    for step in active_goal_steps(task):
         if step.get("invalid_call"):
             if step["revision"] == task["revision"]:
                 context.append(step)
@@ -206,7 +215,7 @@ async def advance(runtime, task):
         visual_reviews = task["plan"].setdefault("visual_reviews", []) if evidence.points else []
         previous_reviews = len(visual_reviews)
         try:
-            product = await runtime.edit_delivery(task, evidence)
+            product = await runtime.edit_delivery(task | {"steps": active_goal_steps(task)}, evidence)
         except AdditionalVideoRead as request:
             if runtime.scope() == task["scope"]:
                 plan = {k: v for k, v in task["plan"].items() if k not in {"candidate", "editor_draft", "editor_issues", "editor_locked_fields"}}
@@ -499,7 +508,7 @@ async def advance(runtime, task):
         if cached:
             step.update(result=cached["result"], reused_from=cached["id"])
         elif tool.reusable and tool.stop:
-            prior = next((item for item in reversed(task["steps"]) if item.get("paused_for_steer")
+            prior = next((item for item in reversed(active_goal_steps(task)) if item.get("paused_for_steer")
                           and item["tool"] == call.name and item["arguments"] == arguments), None)
             if prior:
                 step.update(resource_id=prior.get("resource_id", prior["id"]),

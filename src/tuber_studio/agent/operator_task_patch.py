@@ -13,6 +13,7 @@ class TaskPatch(StrictModel):
     field: str = Field(description="选该卡 editable 中的键")
     subject: str = Field(description="逐字摘取号主所指的工作、条件或项目")
     requirement: str = Field(description="逐字摘取号主要求实际执行的新内容或停止指令")
+    replacement_goal: str = Field(default="", description="仅在整项目标被替换时逐字摘取完整的新委托。局部改动、补充或依赖原要求时留空。")
 
 
 def editable_fields(runtime, task, history):
@@ -89,6 +90,9 @@ def grounded_patch(patch, card, message):
     subject, requirement = patch.subject.strip(), patch.requirement.strip()
     if not source or not subject or not requirement or subject not in message or requirement not in message:
         return False
+    if patch.replacement_goal and (patch.field != "goal" or not patch.replacement_goal.strip()
+                                   or patch.replacement_goal not in message):
+        return False
     # A copied utterance, or two nested copies of it, does not identify a change.
     if subject == requirement or requirement in subject:
         return False
@@ -151,8 +155,9 @@ async def review_change(client, message, card, proposal, choices, bindings):
                     "required": list(updates)}
     schema = {"type": "object", "additionalProperties": False, "properties": {
         "operation": {"type": "string", "enum": ["answer", "past_reason", "edit_existing", "stop_run", "new_task", "unclear"]},
-        "changes": state_schema, "separate_deliverable": {"type": "string"}},
-        "required": ["operation", "changes", "separate_deliverable"]}
+        "changes": state_schema, "separate_deliverable": {"type": "string"},
+        "replacement_goal": {"type": "string", "description": TaskPatch.model_fields["replacement_goal"].description}},
+        "required": ["operation", "changes", "separate_deliverable", "replacement_goal"]}
     data = {"owner_message": message, "existing_work": card.get("goal"), "editable": card.get("editable", {}),
             "owner_clauses": bindings, "omni_proposal": proposal}
     reply = await client(input=[{"role": "user", "content": dump(data)}], instructions=(
@@ -186,6 +191,8 @@ async def review_change(client, message, card, proposal, choices, bindings):
         # Every field in the diff has an owner-bound operand. The execution receives the
         # complete original request and the immutable edition; this quote proves the binding.
         witness = max(operands[changed[0]], key=lambda p: (len(p.requirement), len(p.subject)))
+        if changed == ["goal"] and operation == "edit_existing":
+            witness.replacement_goal = args.get("replacement_goal", "")
         goal_rule = max(operands["goal"], key=lambda p: len(p.requirement)).requirement if "goal" in changed else ""
         # A clause inside a new whole-task condition is not a second, unconditional
         # instruction to replace that item. Preserve its wording inside the condition.

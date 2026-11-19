@@ -293,11 +293,11 @@ class TaskRuntime:
                 and (item["tool"] not in self.tools or self.tools[item["tool"]].stop
                      or (self.tools[item["tool"]].checkpoint_submission and item.get("checkpoint")))]
 
-    async def control(self, identity, revision, action, goal=None, step_id=None, *, video_selection=None):
+    async def control(self, identity, revision, action, goal=None, step_id=None, *, video_selection=None, replace_goal=False):
         async with self.controls:
-            return await self._control(identity, revision, action, goal, step_id, video_selection)
+            return await self._control(identity, revision, action, goal, step_id, video_selection, replace_goal)
 
-    async def _control(self, identity, revision, action, goal, step_id, video_selection=None):
+    async def _control(self, identity, revision, action, goal, step_id, video_selection=None, replace_goal=False):
         task = self.current(identity)
         if not task:
             raise LookupError(identity)
@@ -312,6 +312,8 @@ class TaskRuntime:
             raise ValueError("关联操作的停止结果待核对")
         if video_selection is not None and action != "steer":
             raise ValueError("只有改口可以更换视频范围")
+        if replace_goal and (action != "steer" or not goal):
+            raise ValueError("整体替换须提供本轮目标")
         if action == "approve":
             step = task["steps"][-1] if task["steps"] else None
             if (status != "awaiting_approval" or not step or step["id"] != step_id
@@ -338,11 +340,19 @@ class TaskRuntime:
             final_status, due = "scheduled", task["due"]
         change = {"status": final_status, "message": final_message, "revision": revision + 1,
                   "goal": goal or task["goal"], "due": due, "plan": None, "plan_cursor": 0}
-        if task_delegation.uses_responses(task):
+        if replace_goal:
+            old = task["plan"] if task_delegation.uses_responses(task) else {}
+            history = [*old.get("superseded_goals", []), {"revision": revision, "goal": task["goal"],
+                       "prior_goals": old.get("prior_goals", [])}]
+            change["plan"] = {"backend": "responses", "prior_goals": [], "superseded_goals": history}
+        elif task_delegation.uses_responses(task):
             change["plan"] = {"backend": "responses", "prior_goals": [*task["plan"]["prior_goals"], task["goal"]],
                               "previous_delivery": task["plan"].get("previous_delivery")}
+            if "superseded_goals" in task["plan"]:
+                change["plan"]["superseded_goals"] = task["plan"]["superseded_goals"]
             if task["status"] == "completed":
                 change["plan"]["previous_delivery"] = task["message"]
+        if task_delegation.uses_responses(task):
             change["plan"].update({key: task["plan"][key] for key in ("video_selection", "video_parts") if key in task["plan"]})
         if video_selection is not None:
             if change["plan"] is None:
@@ -351,7 +361,7 @@ class TaskRuntime:
             change["plan"].update(selection_plan(video_selection, change["goal"]))
         if change["plan"] and task_delegation.uses_responses(task) and video_binding(task) != video_binding(task | change):
             change["plan"].pop("previous_delivery", None)
-        if change["plan"] and task_delegation.uses_responses(task) and video_binding(task) == video_binding(task | change):
+        if not replace_goal and change["plan"] and task_delegation.uses_responses(task) and video_binding(task) == video_binding(task | change):
             previous = task["plan"].get("private_previous_edition")
             if task["status"] == "completed" and (memory := task["plan"].get("editor_memory")):
                 fields = {key: change["plan"].pop(key) for key in ("previous_delivery", "previous_selection")

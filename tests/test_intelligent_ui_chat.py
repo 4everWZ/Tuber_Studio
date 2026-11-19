@@ -10,6 +10,7 @@ from test_browsing import BV, ControlledPlatform
 from test_browsing_evidence import PNG, TestVisual
 
 from tuber_studio.agent import operator_facts
+from tuber_studio.agent import task_delegation
 from tuber_studio.agent.assistant_output import AssistantTextStream, assistant_markdown
 from tuber_studio.app import create_app
 from tuber_studio.live.game_livestream import GameLivestreamService
@@ -194,6 +195,57 @@ async def test_nonchat_acknowledgement_is_neither_streamed_nor_saved(settings, m
         assert hidden not in str(turn)
 
 
+@pytest.mark.parametrize("replace", [False, True])
+async def test_chat_projects_only_active_goal_and_evidence_after_steer(settings, monkeypatch, replace):
+    app = create_app(settings, adapter=ControlledPlatform())
+    tasks = app.state.runtime.tasks
+    identity = str(uuid4())
+    path = "/api/chat/intelligent"
+    original = (f"写一份便笺，取 {BV} P2，给没看过的观众，不能剧透。" if not replace else
+                "交给后台准备一份私有交接便笺，先查工坊当前的直播状态。")
+    latest = "改为只检查自主运营是否启动，写进同一份便笺" if replace else "把第二段写短一点"
+    message = f"继续刚才的那份便笺，{latest}。"
+
+    async def decide(messages, schema, **options):
+        choices = schema["$defs"]["TaskPatch"]["anyOf"]
+        choice = next(p["properties"] for p in choices if p["properties"]["field"]["enum"] == ["goal"]
+                      and latest in p["properties"]["requirement"]["enum"])
+        assert "replacement_goal" in choice
+        return {"intent": "实际修改同一任务或成果的部分或全部", "reference": identity, "patch": {
+            "field": "goal", "subject": choice["subject"]["enum"][0], "requirement": latest,
+            "replacement_goal": latest if replace else ""}}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", decide, raising=False)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        (await client.post(path, json={"request_id": identity, "message": original,
+                                       "intent": {"action": "agent_task"}})).raise_for_status()
+        old = tasks.current(identity)
+        read = {"id": "old-source", "tool": "web_page", "revision": 1, "arguments": {"web_fetch": "https://example.org"},
+                "result": {"excerpt": "旧来源正文", "url": "https://example.org"}}
+        tasks._save(old, plan={"backend": "responses", "prior_goals": []},
+                    steps=[read], status="completed", message="已保存的原版正文")
+        reply = (await client.post(path, json={"request_id": str(uuid4()), "message": message})).raise_for_status()
+        assert reply.json()["card"]["data"]["revision"] == 2
+
+    current = tasks.current(identity)
+    context = task_delegation.visible_steps(tasks, current)
+    packet = json.loads(task_delegation.model_input(current, context)[1]["content"])
+    assert current["steps"] == [read] and tasks.workspace.latest(identity)["body"] == "已保存的原版正文"
+    if replace:
+        assert current["goal"] == packet["goal"] == latest
+        assert packet["prior_goals"] == [] and not packet["previous_delivery"] and not packet["saved_evidence"]
+        assert current["plan"]["superseded_goals"][-1]["goal"] == original
+        await tasks.control(identity, 2, "steer", "再压缩成一段")
+        current = tasks.current(identity)
+        assert current["plan"]["prior_goals"] == [latest]
+        assert task_delegation.visible_steps(tasks, current) == []
+    else:
+        assert packet["prior_goals"] == [original] and latest in packet["goal"]
+        assert task_delegation.video_binding(current) == {BV: {2: None}}
+        assert "不能剧透" in packet["goal"] and context == [read]
+        assert packet["previous_delivery"] == "已保存的原版正文"
+
+
 async def test_semantic_task_cards_bind_clarified_steering_without_approval(settings, monkeypatch):
     app = create_app(settings, adapter=ControlledPlatform())
     runtime = app.state.runtime
@@ -238,6 +290,42 @@ async def test_semantic_task_cards_bind_clarified_steering_without_approval(sett
         assert all(text in task["goal"] for text in [texts[0], texts[2], texts[3]])
         assert runtime.tasks.current(ids[1])["revision"] == 1
         assert (await client.post(path, json=payload)).json()["card"]["data"]["revision"] == 2
+
+
+@pytest.mark.parametrize("patch", [
+    None,
+    {"field": "goal", "subject": "便笺", "requirement": "改成逐日统计"},
+])
+async def test_unverified_card_revision_finishes_without_a_chat_success_claim(settings, monkeypatch, patch):
+    app = create_app(settings, adapter=ControlledPlatform())
+    tasks = app.state.runtime.tasks
+    path = "/api/chat/intelligent"
+    identity, turn_id = str(uuid4()), str(uuid4())
+    original = "交给后台准备一份私有交接便笺，先查工坊当前的直播状态。"
+    request = {"request_id": turn_id, "message": "继续刚才的那份便笺，改为只检查自主运营是否启动，写进同一份便笺。"}
+    stages = []
+
+    async def frozen(messages, schema, **options):
+        stages.append(schema["title"])
+        if schema["title"] == "CardTurnIntent":
+            effect = "实际修改同一任务或成果的部分或全部"
+            assert effect in schema["properties"]["intent"]["enum"]
+            return {"intent": effect, "reference": identity, "patch": patch}
+        return {"action": "chat", "reply_markdown": "明白啦，改好了：  - [ ] 自主运营账号是否已启动"}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", frozen, raising=False)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        (await client.post(path, json={"request_id": identity, "message": original,
+                                       "intent": {"action": "agent_task"}})).raise_for_status()
+        tasks._save(tasks.current(identity), status="running")
+        reply = (await client.post(path, json=request)).raise_for_status().json()
+        assert stages == ["CardTurnIntent"]
+        assert reply["card"] is None and "没有修改" in reply["reply_text"] and "请" in reply["reply_text"]
+        assert (await client.post(path, json=request)).raise_for_status().json() == reply
+        assert stages == ["CardTurnIntent"]
+    task = tasks.current(identity)
+    assert (task["goal"], task["status"], task["revision"], task["steps"]) == (original, "running", 1, [])
+    assert tasks.workspace.latest(identity) is None
 
 
 @pytest.mark.parametrize("ask_about_card", [True, False])

@@ -861,8 +861,10 @@ class OperatorChat:
             schema["$defs"]["TaskPatch"] = {"anyOf": [
                 {"type": "object", "additionalProperties": False,
                  "properties": {"requirement": {"enum": sorted(requirements)}, "subject": {"enum": [subject]},
-                                "field": {"enum": [field]}},
-                 "required": ["requirement", "subject", "field"]}
+                                "field": {"enum": [field]}, **({"replacement_goal": {
+                                    "type": "string", "description": TaskPatch.model_fields["replacement_goal"].description}}
+                                    if field == "goal" else {})},
+                 "required": ["requirement", "subject", "field"] + (["replacement_goal"] if field == "goal" else [])}
                 for (field, subject), requirements in sorted(choices.items())
             ]}
         else:
@@ -870,6 +872,7 @@ class OperatorChat:
         prefix = [{"role": "system", "content": (
             "判断本轮要实际发生的变化。有改动才填 patch：field 绑定可编辑项，subject 摘本句所指部分，"
             "requirement 另摘实际新要求。参考各项原话，选发生变化的项；取消执行绑定 execution，整项条件绑定 goal。"
+            "整体换工作目标才在 replacement_goal 摘取本轮足以独立执行的新要求；沿用原对象、受众、部分项目或增加条件时留空。"
             "只聊、只问、假设、维持现状均填 null，查过去的理由选查依据。"
             "实际修改原交付（包括礼貌请求）选修改，只有独立任务才另立。reference 选对应卡。"
             "opened_artifact 是号主打开的版本；历史卡只读。承接澄清填 clarification_id。"
@@ -941,10 +944,11 @@ class OperatorChat:
             clarification = packet.get("clarification") or {}
             clarified = bool(routed.clarification_id and str(routed.clarification_id) == clarification.get("id"))
             request = (clarification["request"] + "\n" + message) if clarified else message
-            if card and card.get("editable") and (not grounded_patch(routed.patch, card, request)
+            if (not grounded_patch(routed.patch, card, request)
                     or routed.intent == "cancel" and (routed.patch.field not in {"execution", "goal"} or "execution" not in card["editable"])
                     or routed.intent == "revise" and routed.patch.field == "execution"):
-                return CardTurnIntent(intent="discuss", reference=None)
+                return CardTurnIntent(intent="clarify", reference=None,
+                                      topic="这次没有修改任务。请确认要调整哪项要求，以及要改成什么。")
         if routed.intent == "recall_reason" and not routed.reference:
             return CardTurnIntent(intent="clarify", reference=None, topic="你想核对哪一份成果的理由？")
         if (routed.intent == "discuss" and "read_original" not in value and any(
@@ -1569,9 +1573,11 @@ class OperatorChat:
                     basis = f"（引用成果 r{coord['task_revision']} v{coord['edition']}）" + (states + "。" if states else "")
                     if patch:
                         change["task_patch"]["artifact"] = coord
+                replacement = patch.replacement_goal if patch and patch.field == "goal" else ""
                 task = await self.runtime.tasks.control(
-                    reference, target["revision"], "steer", goal=target["goal"] + "\n号主改口：" + basis + request,
-                    video_selection=selection,
+                    reference, target["revision"], "steer",
+                    goal=replacement or target["goal"] + "\n号主改口：" + basis + request,
+                    replace_goal=bool(replacement), video_selection=selection,
                 )
             except (ValueError, LookupError) as error:
                 raise HTTPException(409, "这项任务已变化，请查看最新任务卡后再改口。") from error
