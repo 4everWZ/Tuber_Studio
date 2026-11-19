@@ -15,6 +15,14 @@ async page => {
     return "voice-" + (await reply.json()).sequence;
   };
   await page.addInitScript(() => {
+    window.whepDiagnostics = [];
+    window.addEventListener("studio-whep-diagnostic", ({detail}) => window.whepDiagnostics.push(detail));
+    window.WebSocket = class extends WebSocket {
+      constructor(...args) {
+        super(...args);
+        if (new URL(this.url).pathname === "/v1/realtime") window.testRealtimeSocket = this;
+      }
+    };
     const Peer = window.RTCPeerConnection;
     window.RTCPeerConnection = class extends Peer {
       constructor(...args) { super(...args); window.lastWhepPeer = this; }
@@ -31,6 +39,17 @@ async page => {
     if (res.url().endsWith("/whep") && res.request().method() === "POST") exchanges.push(res.status());
   });
   const results = [];
+  async function realtimeError(code, expected) {
+    const diagnostic = await page.evaluate(value => {
+      const error = {code: value, message: "private fixture message", param: "/private-fixture"};
+      testRealtimeSocket.dispatchEvent(new MessageEvent("message", {data: JSON.stringify({type: "error", error})}));
+      return whepDiagnostics.at(-1);
+    }, code);
+    if (diagnostic.action !== "call_end" || diagnostic.cause !== "realtime_error_event" ||
+        diagnostic.code !== expected || JSON.stringify(diagnostic).includes("private"))
+      throw Error("Realtime error diagnostics");
+    await page.locator("#private-call-end").click();
+  }
   const smoothing = page.getByRole("checkbox", {name: "减少画面卡顿"});
   const expectTargets = target => page.waitForFunction(value => {
     const receivers = window.lastWhepPeer.getReceivers();
@@ -87,16 +106,22 @@ async page => {
   if (exchanges.some(status => status !== 201) || !sockets.some(url => url.includes("/events?ticket=")) ||
       sockets.some(url => url.includes("private-call-fixture"))) throw Error("browser transport credentials or WHEP");
   const subscriptions = exchanges.length;
+  const ends = await page.evaluate(() => whepDiagnostics.filter(row => row.action === "call_end"));
+  if (ends.length !== 2 || ends.some(row => row.cause !== "hangup_button" || row.peer !== "connected"))
+    throw Error("missing pre-close hangup state");
   await page.route("**/api/chat/private-call/avatars/*/whep", route => route.fulfill({status: 503}));
   await page.getByRole("button", {name: "更多对话操作"}).click();
   await page.getByRole("button", {name: "私有语音通话"}).click();
   await page.getByRole("combobox", {name: "通话形象", exact: true}).selectOption("original");
   await page.getByRole("button", {name: "开始通话"}).click();
   await page.getByText("实时形象不可用，继续语音通话").waitFor();
+  const fallback = await page.evaluate(() => whepDiagnostics.filter(row => row.action === "voice_fallback"));
+  if (fallback.length !== 1 || fallback[0].cause !== "whep_http_error" || fallback[0].code !== 503)
+    throw Error("missing WHEP HTTP fallback cause");
   await page.getByText(/麦克风已开启/).waitFor();
   const continued = await speech();
   await until(s => s.played_by_response[continued] > 0 && s.avatars[2].state === "closed", "native fallback");
-  await page.getByRole("button", {name: "挂断"}).click();
+  await realtimeError("private-provider-detail", "other");
   await page.unroute("**/api/chat/private-call/avatars/*/whep");
   const studio = await page.evaluate(() => location.origin);
   const request = async (method, path, data) => (await page.request.fetch(studio + path,
@@ -145,6 +170,6 @@ async page => {
   if (prompts[2]?.includes(updated) || prompts[2]?.includes(old)) throw Error("removed memory survived");
   const clean = await speech();
   await until(s => s.played_by_response[clean] > 0, "playback after removal");
-  await page.getByRole("button", {name: "挂断"}).click();
+  await realtimeError("response_not_active", "response_not_active");
   return {results, subscriptions, fallback: true, memoryCorrectionAndRemoval: true};
 }

@@ -35,6 +35,19 @@ new MutationObserver(async () => {
 }).observe(dialog, {attributes: true, attributeFilter: ["open"]});
 
 const release = path => path && fetch(path, {method: "DELETE", keepalive: true}).catch(() => {});
+const iceGatherTimeout = Symbol("ice_gather_timeout");
+
+// Only retain recognized Realtime control and transport codes. Providers may
+// put arbitrary strings in error.code, error.param and error.message.
+const realtimeCodes = new Set([
+  "bad_event", "bad_audio", "invalid_json", "unknown_event", "event_too_large",
+  "session_closed", "unknown_session", "response_not_active", "response_already_active",
+  "playback_ack_too_late", "playback_item_not_found", "playback_item_mismatch", "item_not_found",
+  "input_audio_buffer_empty", "input_backpressure", "output_backpressure", "resource_exhausted",
+  "internal_error", "engine_error", "commit_aborted", "runtime_append_failed",
+  "runtime_append_task_failed", "runtime_abort_failed", "runtime_signal_failed",
+  "runtime_data_plane_stream_failed", "runtime_data_plane_text_without_audio", "runtime_touch_failed",
+]);
 
 export function portraitPlayback(call, url) {
   select.disabled = true;
@@ -65,16 +78,34 @@ class PortraitPlayback {
       this.smooth.onchange = () => this.applyBufferTarget();
     }
     this.resetResponse();
-    this.deadline = setTimeout(() => this.fail(), 30000);
+    this.phase = "attach";
+    this.deadline = setTimeout(() => this.fail("attach_timeout"), 30000);
     caption.textContent = "正在连接实时形象…";
     call.abort.signal.addEventListener("abort", () => this.close(), {once: true});
     interrupt.hidden = false;
     interrupt.onclick = () => {
+      this.diagnose("interrupt", "interrupt_button");
       this.block();
       this.dropPeer();
       call.send({type: "response.cancel"});
       call.send({type: "output_audio_buffer.clear"});
     };
+  }
+
+  // Emit only local enums and counters, before closing the transports.
+  diagnose(action, cause, code = null) {
+    const peer = this.peer, socket = this.call.socket;
+    const diagnosticCode = cause === "realtime_error_event"
+      ? (realtimeCodes.has(code) ? code : "other")
+      : (Number.isInteger(code) ? code : null);
+    window.dispatchEvent(new CustomEvent("studio-whep-diagnostic", {detail: {
+      ms: performance.now(), action, cause, phase: this.phase, version: this.version,
+      generation: Number.isSafeInteger(this.generation) ? this.generation : null,
+      code: diagnosticCode, peer: peer?.connectionState ?? null,
+      ice: peer?.iceConnectionState ?? null, gathering: peer?.iceGatheringState ?? null,
+      signaling: peer?.signalingState ?? null, eventsWs: this.events?.readyState ?? null,
+      realtimeWs: socket?.readyState ?? null, realtimeBufferedBytes: socket?.bufferedAmount ?? null,
+    }}));
   }
 
   resetResponse() {
@@ -95,22 +126,25 @@ class PortraitPlayback {
     if (this.attaching || this.closed || this.failed) return;
     this.attaching = true;
     try {
-      if (!event.avatar_available || !event.source_session_id) throw Error();
+      if (!event.avatar_available || !event.source_session_id) { this.fail("source_unavailable"); return; }
       const joined = await api(base, {method: "POST", body: {profile: this.profile,
         selection: this.selection, source_session_id: event.source_session_id, guard: this.call.guard}});
       const path = base + "/" + joined.handle;
       if (this.closed || this.failed) { await release(path); return; }
       this.path = path;
       this.generation = joined.generation;
+      this.phase = "await_snapshot";
       this.events = new WebSocket(joined.events);
       this.events.onmessage = message => {
-        try { this.avatarEvent(JSON.parse(message.data)); } catch { this.fail(); }
+        try { this.avatarEvent(JSON.parse(message.data)); } catch { this.fail("avatar_event_error"); }
       };
-      this.events.onclose = this.events.onerror = () => this.fail();
+      this.events.onclose = event => this.fail("events_ws_close", event.code);
+      this.events.onerror = () => this.fail("events_ws_error");
       this.heartbeat = setInterval(async () => {
-        try { if ((await api(path)).state !== "active") this.fail(); } catch { this.fail(); }
+        try { if ((await api(path)).state !== "active") this.fail("heartbeat_inactive"); }
+        catch (error) { this.fail("heartbeat_error", error?.status); }
       }, 15000);
-    } catch { this.fail(); }
+    } catch (error) { this.fail("attach_error", error?.status); }
   }
 
   avatarEvent(event) {
@@ -121,9 +155,10 @@ class PortraitPlayback {
       this.spans = [];
       this.subtitles = [];
       caption.textContent = "";
+      this.diagnose("resubscribe", event.type);
       this.resubscribe();
     } else if (["avatar.failed", "avatar.closed", "avatar.resync_required"].includes(event.type)) {
-      this.fail();
+      this.fail(event.type);
     } else if (event.generation === this.generation) {
       if (event.type === "avatar.audio.queued") this.spans = [...this.spans.slice(-119), event];
       if (event.type === "avatar.subtitle") this.subtitles = [...this.subtitles.slice(-119), event];
@@ -152,14 +187,17 @@ class PortraitPlayback {
 
   resubscribe() {
     const dropped = this.dropPeer(), version = this.version;
+    this.phase = "release_previous";
     clearTimeout(this.deadline);
-    this.deadline = setTimeout(() => this.fail(), 20000);
+    this.deadline = setTimeout(() => this.fail("subscribe_timeout"), 20000);
     // cancel + clear + cleared can fence several generations in one turn.
     this.reconnect = setTimeout(async () => {
       await dropped;
       if (version !== this.version) return;
       try { await this.subscribe(version); }
-      catch { if (version === this.version) this.fail(); }
+      catch (error) {
+        if (version === this.version) this.fail(error === iceGatherTimeout ? "ice_gather_timeout" : "subscribe_error");
+      }
     }, 100);
   }
 
@@ -170,6 +208,7 @@ class PortraitPlayback {
   }
 
   async subscribe(version) {
+    this.phase = "local_offer";
     const peer = this.peer = new RTCPeerConnection({iceServers: []});
     const stream = new MediaStream();
     peer.addTransceiver("audio", {direction: "recvonly"});
@@ -177,12 +216,18 @@ class PortraitPlayback {
     if (this.smooth?.checked) this.applyBufferTarget();
     peer.ontrack = ({track}) => stream.addTrack(track);
     peer.onconnectionstatechange = () => {
-      if (this.peer === peer && peer.connectionState === "failed") this.fail();
+      if (this.peer !== peer) return;
+      this.diagnose("state", "peer_state_change");
+      if (peer.connectionState === "failed") this.fail("peer_failed");
+    };
+    peer.oniceconnectionstatechange = () => {
+      if (this.peer === peer) this.diagnose("state", "ice_state_change");
     };
     await peer.setLocalDescription(await peer.createOffer());
     if (version !== this.version) return;
+    this.phase = "ice_gathering";
     if (peer.iceGatheringState !== "complete") await new Promise((resolve, reject) => {
-      const timer = setTimeout(reject, 8000);
+      const timer = setTimeout(reject, 8000, iceGatherTimeout);
       this.stopGather = () => { clearTimeout(timer); resolve(); };
       peer.onicegatheringstatechange = () => {
         if (peer.iceGatheringState === "complete") { clearTimeout(timer); resolve(); }
@@ -190,13 +235,18 @@ class PortraitPlayback {
     });
     if (version !== this.version) return;
     this.stopGather = null;
+    this.phase = "whep_offer";
     const reply = await fetch(this.path + "/whep", {method: "POST", headers: {"Content-Type": "application/sdp"},
       body: peer.localDescription.sdp});
-    if (!reply.ok) throw Error();
+    if (!reply.ok) {
+      if (version === this.version) this.fail("whep_http_error", reply.status);
+      return;
+    }
     const location = reply.headers.get("Location");
     if (version !== this.version) { await release(location); return; }
     this.location = location;
     this.origin = Number(reply.headers.get("X-Avatar-Timeline-Origin-Ms"));
+    this.phase = "remote_answer";
     await peer.setRemoteDescription({type: "answer", sdp: await reply.text()});
     if (version !== this.version) return;
     video.srcObject = stream;
@@ -204,8 +254,11 @@ class PortraitPlayback {
     video.hidden = false;
     video.onplaying = () => { this.audibleStart = this.origin + video.currentTime * 1000; };
     video.onpause = video.onwaiting = () => { this.audibleStart = null; };
+    this.phase = "start_playback";
     await video.play();
     if (version === this.version) {
+      this.phase = "playing";
+      this.diagnose("playback", "video_play");
       if (this.smoothLabel) this.smoothLabel.hidden = false;
       clearTimeout(this.deadline);
     }
@@ -286,8 +339,9 @@ class PortraitPlayback {
     this.path = null;
   }
 
-  fail() {
+  fail(cause, code = null) {
     if (this.failed || this.closed) return;
+    this.diagnose("voice_fallback", cause, code);
     this.failed = true;
     this.blocked = this.response;
     this.detach();

@@ -1,4 +1,5 @@
 (() => {
+  window.addEventListener("studio-whep-diagnostic", ({detail}) => window.collectWhepDiagnostic(detail));
   const peers = [], frames = [], recordings = [];
   let previous, lastPresented, counter = 0, raf, start, sound;
   const Native = RTCPeerConnection;

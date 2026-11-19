@@ -120,10 +120,12 @@ async def exercise(
     ctx = await browser.new_context(
         service_workers="block", permissions=["microphone"], storage_state=storage_state
     )
+    diagnostics = []
     try:
         if window:
             from evaluations.oc_call_window import INIT, measure
 
+            await ctx.expose_function("collectWhepDiagnostic", lambda row: diagnostics.append(row))
             await ctx.add_init_script(path=INIT)
         page = await ctx.new_page()
         await page.goto(origin)
@@ -362,7 +364,11 @@ async def exercise(
                 if await end.is_visible() and await end.is_enabled():
                     await end.click(timeout=3000)
         finally:
-            await ctx.close()
+            try:
+                await ctx.close()
+            finally:
+                if window:
+                    (work / "whep-diagnostics.json").write_text(json.dumps(diagnostics, indent=2), encoding="utf-8")
 
 
 @asynccontextmanager

@@ -55,9 +55,10 @@ async function check() {
 }
 new MutationObserver(check).observe(menu, {attributes: true, attributeFilter: ["hidden"]});
 
-function finish(call, message) {
+function finish(call, cause, message, code = null) {
   if (call !== current || !call) return;
   current = null;
+  call.playback?.diagnose?.("call_end", cause, code);
   call.selection?.close();
   cancelAnimationFrame(call.frame);
   avatar.draw(false);
@@ -97,14 +98,14 @@ async function capture(call, identity) {
   if (current !== call) { stream.getTracks().forEach(track => track.stop()); return; }
   call.stream = stream;
   clearTimeout(call.deadline);
-  stream.getAudioTracks()[0].onended = () => finish(call, "麦克风已断开");
+  stream.getAudioTracks()[0].onended = () => finish(call, "microphone_ended", "麦克风已断开");
   call.capture = new AudioWorkletNode(call.context, "private-call-capture");
   call.source = call.context.createMediaStreamSource(stream);
   call.source.connect(call.capture);
   call.capture.connect(call.context.destination);
   call.capture.port.onmessage = ({data}) => {
     if (current !== call) return;
-    if (call.socket.bufferedAmount > 128000) { finish(call, "网络积压，通话已结束"); return; }
+    if (call.socket.bufferedAmount > 128000) { finish(call, "realtime_send_backlog", "网络积压，通话已结束"); return; }
     const audio = btoa(String.fromCharCode(...new Uint8Array(data)));
     call.send({type: "input_audio_buffer.append", format: "pcm16", sample_rate_hz: 16000, audio});
     call.selection?.afterChunk();
@@ -129,7 +130,7 @@ async function begin(previous = null) {
   start.disabled = true;
   end.textContent = "挂断";
   status.textContent = "正在连接私聊语音…";
-  call.deadline = setTimeout(() => finish(call, "语音握手超时"), 30000);
+  call.deadline = setTimeout(() => finish(call, "realtime_handshake_timeout", "语音握手超时"), 30000);
   try {
     call.context = new AudioContext({sampleRate: 16000});
     await call.context.resume();
@@ -150,7 +151,7 @@ async function begin(previous = null) {
       }
     }
     if (previous && config.call_scope !== previous.scope) {
-      finish(call, "角色或授权已变化，请重新开始通话"); return;
+      finish(call, "scope_changed", "角色或授权已变化，请重新开始通话"); return;
     }
     function invalidate(reason) {
       if (current !== call) return;
@@ -158,7 +159,7 @@ async function begin(previous = null) {
       const muted = !!call.playback?.muted;
       call.send({type: "response.cancel"});
       call.send({type: "output_audio_buffer.clear"});
-      finish(call, "通话记忆已变化，正在重新连接");
+      finish(call, reason === "changed" ? "memory_changed" : "memory_guard_closed", "通话记忆已变化，正在重新连接");
       if (reason === "changed" && dialog.open && !workspace.hidden) {
         void begin({scope: config.call_scope, muted});
       } else status.textContent = "记忆或授权暂时无法核对，通话已结束";
@@ -190,20 +191,23 @@ async function begin(previous = null) {
       instructions: config.instructions, modalities: ["audio", "text"], input_audio_format: "pcm16",
       output_audio_format: "pcm16", playback_commit_policy: "ack_only", extra_body: {auto_response: true},
     }});
-    call.socket.onerror = () => finish(call, "无法连接私聊语音服务");
-    call.socket.onclose = () => finish(call, "私聊连接已断开");
+    call.socket.onerror = () => finish(call, "realtime_ws_error", "无法连接私聊语音服务");
+    call.socket.onclose = event => finish(call, "realtime_ws_close", "私聊连接已断开", event.code);
     call.socket.onmessage = async ({data}) => {
       if (current !== call) return;
       try {
         const event = JSON.parse(data);
         if (event.type === "gateway.session.created") { void call.playback.gateway?.(event); return; }
-        if (event.type === "error") throw Error("服务未接受本次通话");
+        if (event.type === "error") {
+          finish(call, "realtime_error_event", "语音协议或设备不可用，通话已结束", event.error?.code);
+          return;
+        }
         if (event.type === "session.created" && !call.ready) {
           const caps = event.session?.capabilities;
           if (caps?.implementation_level !== "model_native_duplex" || (caps.chunk_period_ms ?? 1000) !== 1000)
             throw Error("未协商到支持的原生双工语音");
           clearTimeout(call.deadline);
-          call.deadline = setTimeout(() => finish(call, "麦克风授权超时，通话已结束"), 60000);
+          call.deadline = setTimeout(() => finish(call, "microphone_timeout", "麦克风授权超时，通话已结束"), 60000);
           call.ready = true;
           call.receipts = setInterval(() => call.playback.acknowledge(), 200);
           call.heartbeat = setInterval(() => call.send({type: "session.heartbeat"}), 20000);
@@ -220,18 +224,18 @@ async function begin(previous = null) {
           if (text && !ephemeral) showHandoff(byId("private-call-utterances"), text, config);
           if (config.memory_use && ["response.audio.delta", "response.output_audio.delta"].includes(event.type)) {
             call.pendingAudio = (call.pendingAudio || 0) + 1;
-            if (call.pendingAudio > 8) { finish(call, "记忆核对积压，通话已结束"); return; }
+            if (call.pendingAudio > 8) { finish(call, "memory_backlog", "记忆核对积压，通话已结束"); return; }
             call.audioQueue = (call.audioQueue || Promise.resolve()).then(async () => {
               if (current === call && await validateMemory()) call.playback.event(event);
-            }).catch(() => finish(call, "语音播放失败，通话已结束")).finally(() => { call.pendingAudio--; });
+            }).catch(() => finish(call, "playback_error", "语音播放失败，通话已结束")).finally(() => { call.pendingAudio--; });
           } else call.playback.event(event);
         }
       } catch (error) {
-        finish(call, error.name === "NotAllowedError" ? "未获麦克风权限，通话已结束" :
+        finish(call, "realtime_message_or_device_error", error.name === "NotAllowedError" ? "未获麦克风权限，通话已结束" :
           error.name === "NotFoundError" ? "未找到麦克风" : "语音协议或设备不可用，通话已结束");
       }
     };
-  } catch (error) { finish(call, error.status ? error.message : "无法建立私聊语音连接"); }
+  } catch (error) { finish(call, "call_setup_error", error.status ? error.message : "无法建立私聊语音连接"); }
 }
 
 open.onclick = () => {
@@ -241,10 +245,10 @@ open.onclick = () => {
   dialog.showModal();
 };
 start.onclick = () => begin();
-end.onclick = () => { finish(current, "通话已结束"); dialog.close(); };
-dialog.addEventListener("close", () => finish(current, "通话已结束"));
-function leave() { finish(current, "通话已结束"); if (dialog.open) dialog.close(); }
-window.addEventListener("pagehide", leave);
-window.addEventListener("hashchange", () => { if (!["", "#chat"].includes(location.hash)) leave(); });
-new MutationObserver(() => { if (workspace.hidden) { leave(); open.disabled = open.hidden = true; } })
+end.onclick = () => { finish(current, "hangup_button", "通话已结束"); dialog.close(); };
+dialog.addEventListener("close", () => finish(current, "dialog_closed", "通话已结束"));
+function leave(cause) { finish(current, cause, "通话已结束"); if (dialog.open) dialog.close(); }
+window.addEventListener("pagehide", () => leave("page_hide"));
+window.addEventListener("hashchange", () => { if (!["", "#chat"].includes(location.hash)) leave("navigation"); });
+new MutationObserver(() => { if (workspace.hidden) { leave("workspace_hidden"); open.disabled = open.hidden = true; } })
   .observe(workspace, {attributes: true, attributeFilter: ["hidden"]});
