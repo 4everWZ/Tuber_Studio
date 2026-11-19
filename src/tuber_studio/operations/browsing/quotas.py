@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo
 
 
 class DailyReplyLimitReached(ValueError):
-    def __init__(self, window):
-        super().__init__("达到该视频今日回复上限，草稿保留，次日可继续")
+    def __init__(self, window, *, message="达到该视频今日回复上限，草稿保留，次日可继续"):
+        super().__init__(message)
         self.next_at = window["next_at"]
         self.business_day = window["day"]
 

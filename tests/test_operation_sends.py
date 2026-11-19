@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 from types import SimpleNamespace
 
@@ -8,6 +9,7 @@ from test_browsing import BV, finished, wait_for_sends
 from test_browsing import browsing as browsing
 from test_direct_messages import Delivery, incoming
 from tuber_studio import operation_attachments, operation_images
+from tuber_studio.operations.browsing.quotas import day_window
 from tuber_studio.publication_errors import PublishUncertain
 
 
@@ -19,8 +21,8 @@ def arrival(browsing):
     )
 
 
-async def test_ready_direct_reply_gets_last_shared_send_slot(browsing):
-    await browsing.configure({"max_per_hour": 1, "max_per_day": 1, "recipient_cooldown_seconds": 0,
+async def test_ready_direct_reply_gets_last_shared_send_slot(browsing, monkeypatch):
+    await browsing.configure({"max_per_hour": 2, "max_per_day": 2, "recipient_cooldown_seconds": 0,
                               "top_level_auto_publish": True, "reply_enabled": True, "reply_auto_publish": True})
     await browsing.set_enabled(True)
     await browsing.sends.close()
@@ -32,6 +34,7 @@ async def test_ready_direct_reply_gets_last_shared_send_slot(browsing):
     top = next(item for item in browsing.intents() if item["kind"] == "top_level")
     arrival(browsing)
     await finished(browsing, automatic=True, interaction_only=True)
+    monkeypatch.setattr(browsing.comments, "publication_limits", lambda: {"max_per_hour": 1, "max_per_day": 1})
     browsing.sends.start = start
     start()
     await wait_for_sends(browsing)
@@ -48,6 +51,101 @@ async def test_ready_direct_reply_gets_last_shared_send_slot(browsing):
     browsing.sends.changed.set()
     await wait_for_sends(browsing)
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["502", "0"]
+
+
+@pytest.mark.parametrize("limits", [
+    {"max_per_hour": 1, "max_per_day": 1},
+    {"max_per_hour": 0, "max_per_day": 0, "max_replies_per_video": 1},
+])
+async def test_last_comment_slot_covers_generation_queue_and_submission(browsing, monkeypatch, limits):
+    await browsing.configure(limits | {"recipient_cooldown_seconds": 0,
+                              "top_level_auto_publish": True, "reply_enabled": True, "reply_auto_publish": True})
+    await browsing.set_enabled(True)
+    await browsing.sends.close()
+    start = browsing.sends.start
+    monkeypatch.setattr(browsing.sends, "start", lambda: None)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = browsing.decisions._response
+
+    async def response(row, material, context, allowed, kind, metrics, **options):
+        assert kind == "top_level", "a reply without a free slot reached drafting"
+        entered.set()
+        await release.wait()
+        return await original(row, material, context, allowed, kind, metrics, **options)
+
+    monkeypatch.setattr(browsing.decisions, "_response", response)
+    first = await browsing.run(automatic=True, video_only=True)
+    task = browsing.active[first["id"]]
+    await asyncio.wait_for(entered.wait(), 2)
+    arrival(browsing)
+    await finished(browsing, automatic=True, interaction_only=True)
+    assert not browsing.intents()
+    assert not browsing.store.all("SELECT * FROM operation_image_jobs")
+    blocked = browsing.store.one("SELECT status,error FROM browsing_events WHERE id='new'")
+    assert blocked["status"] == "received" and "暂不拟稿" in json.loads(blocked["error"])["message"]
+
+    release.set()
+    await asyncio.wait_for(task, 2)
+    assert len(browsing.store.all("SELECT * FROM operation_send_queue")) == 1
+    browsing.store.execute("UPDATE browsing_events SET error=NULL WHERE id='new'")
+    await finished(browsing, automatic=True, interaction_only=True)
+    assert [row["kind"] for row in browsing.intents()] == ["top_level"]
+    assert not browsing.adapter.sent
+
+    transmitting, receipt = asyncio.Event(), asyncio.Event()
+
+    async def publish(target, text, *, before_send):
+        before_send()
+        transmitting.set()
+        await receipt.wait()
+        return {"code": 0, "rpid": "900"}
+
+    monkeypatch.setattr(browsing.adapter, "publish_top_level", publish)
+    start()
+    await asyncio.wait_for(transmitting.wait(), 2)
+    assert browsing.store.one("SELECT resolved_status FROM operation_write_attempts")["resolved_status"] == "sending"
+    browsing.store.execute("UPDATE browsing_events SET error=NULL WHERE id='new'")
+    await finished(browsing, automatic=True, interaction_only=True)
+    assert [row["kind"] for row in browsing.intents()] == ["top_level"]
+    receipt.set()
+    await wait_for_sends(browsing)
+
+
+async def test_daily_capacity_resumes_original_source_after_local_midnight(browsing, monkeypatch):
+    clock = [time.time()]
+    monkeypatch.setattr(time, "time", lambda: clock[0])
+    await browsing.configure({"max_per_hour": 0, "max_per_day": 0, "max_replies_per_video": 1,
+                              "recipient_cooldown_seconds": 0, "top_level_auto_publish": True,
+                              "reply_enabled": True, "reply_auto_publish": True})
+    await browsing.set_enabled(True)
+    await finished(browsing, automatic=True, video_only=True)
+    await wait_for_sends(browsing)
+    assert len(browsing.adapter.sent) == 1
+
+    arrival(browsing)
+    calls = len(browsing.runtime.operation_llm.calls)
+    await finished(browsing, automatic=True, interaction_only=True)
+    event = browsing.store.one("SELECT status,error FROM browsing_events WHERE id='new'")
+    assert event["status"] == "received"
+    assert json.loads(event["error"])["next_at"] == day_window(now=clock[0])["next_at"]
+    assert len(browsing.runtime.operation_llm.calls) == calls
+    assert not browsing.store.all("SELECT * FROM operation_send_queue")
+
+    model = browsing.runtime.operation_llm
+    generate = model.generate_json
+
+    async def new_reply(*args, **kwargs):
+        draft = await generate(*args, **kwargs)
+        return draft | {"text": "多谢你补了这条，鱼鱼这次知道该留意实验的哪一步啦。"}
+
+    monkeypatch.setattr(model, "generate_json", new_reply)
+    clock[0] = day_window(now=clock[0])["next_at"] + 1
+    await finished(browsing, automatic=True, interaction_only=True)
+    await wait_for_sends(browsing)
+    assert [target["parent"] for target, _ in browsing.adapter.sent] == ["0", "502"]
+    assert browsing.store.one("SELECT status,error FROM browsing_events WHERE id='new'") == {
+        "status": "drafted", "error": None,
+    }
 
 
 async def test_stop_preserves_ready_send_until_reactivation(browsing):

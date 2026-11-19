@@ -19,6 +19,7 @@ from . import comment_reader as comment_reader_tasks
 from . import discovery as discovery_tasks
 from . import progress as progress_tasks
 from . import task_views as task_views_tasks
+from .comment_admission import CommentAdmission
 from .decisions import BrowsingDecisions
 from .discovery import BackgroundDiscovery
 from .evidence import BrowsingEvidence, EvidenceUnavailable
@@ -66,6 +67,7 @@ class BrowsingService:
         self.discovery = BackgroundDiscovery(self)
         self.decisions = BrowsingDecisions(self)
         self.publication = BrowsingPublication(self)
+        self.comment_admission = CommentAdmission(self)
         self.sends = OperationSends(store, self.operations, self.operation_scope, self._send_automatic,
                                     waiting_for_image=self._send_waiting_for_image)
         self.operations.on_reserved = self.sends.attempt_started
