@@ -4,6 +4,8 @@
 
 ## 常驻 Agent 与跨端记忆
 
+号主已暂停模型驱动的直播 Avatar，状态为 TBD。现阶段通话使用双工语音，直播使用播放器音频；两处均沿用 Pets 开关。保留已给定的 Q 版、mature 版和既有绑定。当前开发优先推进运营配图、参考图设置，以及同场 P2 创作和记忆验收。恢复模型演出前须单独验完整半身动作和角色一致性。[直播形象验收](../../evaluations/results/live-ditto-oc-20261119.md)
+
 11 月 18 日起以同一角色的创作交付为验收单位。长期目标、每次执行、授权和私有成果版本独立保存；改口可以复用仍适用的证据。迁移副本、浏览器和工作站接入的证据范围见[切换验收](../../evaluations/results/creative-partner-20261118.md)。
 
 开放式当天回顾、绑定号主主页和任务交办已进入 Chats 的工具入口。Agent 保存每轮计划、工具回执、进度和审批，交付以本轮回执为依据。共享记忆整理可核验用户原文及公开来源，私聊助手正文和无证据总结保留在各自的原记录。通用语义路由和主题归并仍待扩展。 [聊天路由](../../src/tuber_studio/agent/operator_chat.py) · [记忆整理](../../src/tuber_studio/agent/memory_organizer.py) · [中文回放](../../evaluations/results/agent-grounded-20261116.md)
@@ -43,7 +45,7 @@ Tuber Studio 通过 Provider 和媒体适配器使用独立服务。业务接入
 
 1. **共享推理 API。** 配置服务地址、身份和模型别名。用两个独立调用方验 Chat Completions 的普通／流式响应、结构化结果、视觉、长文语义、排队、取消与持续可用性。窗口采用模型卡实报值。Realtime 用独立客户端验证原生能力。 [服务契约](https://github.com/4everWZ/omni-avatar-api/blob/main/docs/api.md) · [接入准入](../specs/foundation/omni-deployment.md#接入验收与切换)
 2. **常驻 Agent 与现有业务接入。** 通过同一网关验证 Chats、工具回执、视频取材、运营和游戏，验证关闭浏览器后任务续跑、取消及重启恢复。通过对应能力实测后切业务 Provider。正式数据另走唯一写入者迁移，使用隔离数据验收且平台写入为零。 [常驻 Agent](#常驻-agent-与跨端记忆) · [数据迁移](../specs/foundation/distributed-runtime.md#迁移备份与恢复)
-3. **演出与媒体。** 接入已验的双工与 Avatar 会话 API，核对浏览器采集、打断、音画同步和实际播放回执。核心验收后再接 OBS、节目制作和持续直播。 [节目准入](../specs/foundation/omni-deployment.md#接入验收与切换)
+3. **语音与直播。** 核对浏览器采集、打断和播放器实际播完回执。核心验收后再接 OBS、节目制作和持续直播。模型 Avatar 待号主恢复后另验。 [节目准入](../specs/foundation/omni-deployment.md#接入验收与切换)
 
 - [ ] **工作站端到端准入**。Omni 前台使用 Chat／Realtime；后台文本走 `POST /llm/v1/responses`。服务端已经提供函数调用和 Avatar 会话，工坊按实际客户端分别验工具往返、改口后的成果、取消和私聊播放。
 
