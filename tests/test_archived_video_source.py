@@ -1,11 +1,13 @@
 import json
 import shutil
+import sqlite3
 import subprocess
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 import httpx
+from evaluations.creative_archive_handoff import export
 
 from tuber_studio.agent import task_tools
 from tuber_studio.agent.archived_video import ArchivedVideo
@@ -110,6 +112,24 @@ async def test_archive_tools_read_pixels_and_preserve_half_open_source_window(pa
     assert [f["seconds"] for f in result["findings"]] == observed and all(20 <= s < 21 for s in observed)
     assert all(f["source_kind"] == "archived_video" for f in result["findings"])
     assert clip_path(tmp_path, request.id).stat().st_size > 0
+    primary = result["findings"][0]
+    body = (
+        f"**开场**\n选材理由：测试画面。\n主帧：{BV} · 单帧采样 · 分 P 2 · {primary['seconds']} 秒 · "
+        f"<{primary['url']}>\n\n- 第 1 项 · {BV} P2 · 连续取材入点 20 秒、出点 21 秒（不含），保存 25 个连续原帧。"
+    )
+    with sqlite3.connect(tmp_path / "studio.sqlite3") as db:
+        db.execute("CREATE TABLE creative_editions(task_id,task_revision,edition,body)")
+        db.execute("CREATE TABLE agent_tasks(id,steps)")
+        db.execute("INSERT INTO creative_editions VALUES ('task',3,1,?)", (body,))
+        db.execute(
+            "INSERT INTO agent_tasks VALUES ('task',?)",
+            (json.dumps([{"id": request.id, "revision": 3, "tool": "inspect_video", "result": result}]),),
+        )
+    out = export(tmp_path, tmp_path / "manifest.json", tmp_path / "handoff", 3, "task")
+    assert out.name == "r3-v1" and (out / "edition.md").read_bytes() == body.encode()
+    (binding,) = json.loads((out / "evidence.json").read_text(encoding="utf-8"))["items"][0]["bindings"]
+    assert binding["source_file"] == "example.mp4" and binding["source_start"] == 20
+    assert (out / binding["delivered_file"]).read_bytes() == clip_path(tmp_path, request.id).read_bytes()
     outside = await read_public_part(
         SimpleNamespace(id=str(uuid4())),
         Video(bvid=BV, part=2, start=22, end=24),

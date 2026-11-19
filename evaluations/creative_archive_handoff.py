@@ -8,7 +8,7 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from evaluations.creative_browser_receipt import inspect_file, require
+from evaluations.creative_browser_receipt import Mismatch, inspect_file, require
 from tuber_studio.agent.public_video import clip_path
 
 
@@ -81,17 +81,27 @@ def export(runtime, manifest, directory, revision, task_id):
             ]
             if not findings:
                 continue
-            (source,) = [
+            sources = [
                 w
                 for w in package["clips"]
-                if w["source_url"] == clip["archive_url"]
+                if w["source_url"] == clip.get("archive_url")
                 and w["source_start_seconds"]
                 <= clip["start"]
                 < clip["end"]
                 <= w["source_end_seconds_exclusive"]
             ]
             original = clip_path(runtime, result.get("request_id", step["id"]))
-            inspect_file(original, clip)
+            if len(sources) != 1 or not original.is_file():
+                item.setdefault("unverified", []).append(
+                    {"step": step["id"], "reason": "缺少唯一归档窗口或交付文件"}
+                )
+                continue
+            source = sources[0]
+            try:
+                inspect_file(original, clip)
+            except Mismatch as error:
+                item.setdefault("unverified", []).append({"step": step["id"], "reason": str(error)})
+                continue
             shutil.copyfile(original, destination / original.name)
             item["bindings"].append(
                 {
