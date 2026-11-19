@@ -8,7 +8,7 @@ from typing import Literal
 from urllib.parse import quote
 
 from fastapi import Depends, HTTPException, Request, Response
-from PIL import Image
+from PIL import Image, ImageOps
 
 from .config import atomic_bytes
 
@@ -87,18 +87,26 @@ def register_artwork_references(app, settings, store, require_admin):
             try:
                 _, digest, source = _location(settings, character_id, variant)
                 url = f"{PREFIX}/{quote(character_id, safe='')}/{variant}?sha256={digest}"
-                variants[variant] = dict(available=True, source=source, sha256=digest, preview_url=url)
+                variants[variant] = dict(available=True, source=source, sha256=digest, preview_url=url,
+                                         thumbnail_url=url + "&thumbnail=true")
             except FileNotFoundError:
                 variants[variant] = dict(available=False, source=None, sha256=None, preview_url=None)
         return dict(character_id=character_id, variants=variants)
 
     @app.get(route + "/{variant}", dependencies=auth)
-    def preview(character_id: str, variant: Variant, sha256: str | None = None):
+    def preview(character_id: str, variant: Variant, sha256: str | None = None, thumbnail: bool = False):
         store.character(character_id)
         try:
             ref = resolve_reference(settings, character_id, variant, sha256=sha256)
         except FileNotFoundError:
             raise HTTPException(404, "该版本参考图不可用") from None
+        if thumbnail:
+            with Image.open(io.BytesIO(ref.data)) as picture:
+                picture.thumbnail((224, 224), Image.Resampling.LANCZOS)
+                thumb = ImageOps.exif_transpose(picture).convert("RGBA")
+                out = io.BytesIO()
+                thumb.save(out, "PNG")
+            return Response(out.getvalue(), media_type="image/png")
         mime = "image/png" if ref.data.startswith(b"\x89PNG") else "image/jpeg"
         return Response(ref.data, media_type=mime)
 

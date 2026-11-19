@@ -31,6 +31,8 @@ def test_owner_can_replace_preview_and_restore_without_changing_existing_job(set
         selected = client.put(path, content=upload).json()["variants"]["q"]
         assert selected["source"] == "upload"
         assert client.get(selected["preview_url"]).content == upload
+        with Image.open(io.BytesIO(client.get(selected["thumbnail_url"]).content)) as thumbnail:
+            assert thumbnail.size == (224, 224)
         assert client.get(f"{PREFIX}/whale/mature").status_code == 404
         assert client.get(f"{PREFIX}/another/q", params={"sha256": selected["sha256"]}).status_code == 404
         assert client.put(path, content=b"not an image").status_code == 400

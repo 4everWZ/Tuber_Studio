@@ -17,7 +17,8 @@ export function initArtworkReferences() {
       slot.preview.hidden = !ref?.available;
       if (ref?.available && ref.preview_url) {
         const url = new URL(ref.preview_url, location.origin);
-        if (slot.image.src !== url.href) slot.image.src = url.href;
+        const thumbnail = new URL(ref.thumbnail_url || ref.preview_url, location.origin);
+        if (slot.image.src !== thumbnail.href) slot.image.src = thumbnail.href;
         slot.preview.href = url.href;
       } else {
         slot.image.removeAttribute("src");
