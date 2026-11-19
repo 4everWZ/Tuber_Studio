@@ -149,6 +149,11 @@ class Settings:
     def public_data(self):
         return redact_credentials(self.data) | {"provider_credentials": {"omni": bool(self.provider_key("omni"))}}
 
+    def migrate_connection(self):
+        """Persist the converted connection once the application owns the business writer."""
+        if self._legacy_public:
+            self.save_public(self.data)
+
     def save_public(self, data):
         self._validate(data)
         if self._legacy_public and self.credentials_path.exists():

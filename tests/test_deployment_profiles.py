@@ -1,9 +1,26 @@
 import json
 
 import pytest
+from fastapi.testclient import TestClient
 
+from tuber_studio.app import create_app
 from tuber_studio.config import Settings
 from tuber_studio.deployment_profiles import RETIRED_SECTIONS
+from tuber_studio.runtime_authority import BusinessAuthorityError, acquire_business_writer
+
+
+def test_first_authoritative_start_rewrites_the_old_connection(tmp_path):
+    path = tmp_path / "studio.json"
+    old = {"tts": {"voice_id": "yaoyao_sovits_v2"}}
+    path.write_text(json.dumps(old))
+    settings = Settings(runtime=tmp_path)
+    with acquire_business_writer(tmp_path), pytest.raises(BusinessAuthorityError):
+        create_app(settings)
+    assert json.loads(path.read_text()) == old
+    with TestClient(create_app(settings)):
+        assert json.loads(path.read_text()) == settings.data
+        assert settings.data["voice_id"] == "yaoyao_reference"
+        assert not settings.data.keys() & RETIRED_SECTIONS
 
 
 def test_new_configuration_has_one_connection_and_two_protocols(tmp_path):

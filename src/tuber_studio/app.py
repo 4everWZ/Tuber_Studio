@@ -69,6 +69,7 @@ def create_app(
     writer = acquire_business_writer(settings.runtime)
     writer.__enter__()
     try:
+        settings.migrate_connection()
         AuthSessions.prepare_runtime(settings)
         seeds = json.loads((settings.root / "config/characters.json").read_text(encoding="utf-8"))
         store = Store(settings.runtime / "studio.sqlite3", seeds)

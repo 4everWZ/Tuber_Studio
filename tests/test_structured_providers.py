@@ -31,10 +31,11 @@ async def providers(settings):
         content='{"entries":["甲"]}',
         message_extra=None,
         thinking=False,
+        context_source="declared",
         stream_response=None,
     ):
         config = settings.data["omni"] | {
-            "context_source": "declared", "prompt_token_endpoint": False, "structured_output": "json_object",
+            "context_source": context_source, "prompt_token_endpoint": False, "structured_output": "json_object",
             "base_url": "https://model.test/v1",
             "model": "actual-model",
             "context_tokens": 4096,
@@ -49,6 +50,8 @@ async def providers(settings):
 
         def respond(request):
             captured.append(request)
+            if request.url.path == "/v1/models":
+                return httpx.Response(200, json={"data": [{"id": config["model"], "max_model_len": 32768}]})
             body = json.loads(request.content)
             if stream_response is not None and body.get("stream"):
                 return stream_response(body)

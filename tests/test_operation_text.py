@@ -103,32 +103,27 @@ def test_operations_keep_long_text_but_live_schema_and_style_limits_are_independ
         validate_operation_text("鲸" * (MAX_OPERATION_TEXT_BYTES // 3 + 1))
 
 
-@pytest.mark.parametrize("kind", ["local", "api"])
-async def test_native_and_api_operation_generation_use_explicit_budget_and_no_text_maxlength(providers, kind):
+async def test_omni_operation_generation_uses_explicit_budget_and_no_text_maxlength(providers):
     provider, requests = await providers(
-        kind, content=json.dumps({"spoken_text": LONG_TEXT, "reply_to": ["source"]}), thinking=True
+        content=json.dumps({"spoken_text": LONG_TEXT, "reply_to": ["source"]}), thinking=True, context_source="model_card"
     )
     provider.config["operations_max_tokens"] = 3000
+    provider.config["structured_output"] = "json_schema"
     live_budget = provider.config["max_tokens"]
     reply = await provider.generate_operation([{"role": "user", "content": "交流"}], {}, "source")
     assert reply.spoken_text == LONG_TEXT
     body = json.loads(requests[-1].content)
     assert body["max_tokens"] == 3000 and provider.config["max_tokens"] == live_budget
-    if kind == "local":
-        schema = body["response_format"]["schema"]
-        assert "maxLength" not in schema["properties"]["spoken_text"]
-        assert schema["properties"]["reply_to"]["items"]["enum"] == ["source"]
-        assert body["chat_template_kwargs"]["enable_thinking"] is True
-    else:
-        schema_text = body["messages"][0]["content"]
-        assert '"maxLength": 120' not in schema_text
+    schema = body["response_format"]["json_schema"]["schema"]
+    assert "maxLength" not in schema["properties"]["spoken_text"]
+    assert schema["properties"]["reply_to"]["items"]["enum"] == ["source"]
+    assert body["chat_template_kwargs"]["enable_thinking"] is True
     with pytest.raises(ValueError, match="角色JSON"):
         await provider.generate([{"role": "user", "content": "直播"}], {}, "source")
 
 
-@pytest.mark.parametrize("kind", ["local", "api"])
-async def test_length_finish_preserves_diagnostic_and_never_becomes_an_operation_reply(providers, kind):
-    provider, _ = await providers(kind, finish="length", content='{"spoken_text":"未完成')
+async def test_length_finish_preserves_diagnostic_and_never_becomes_an_operation_reply(providers):
+    provider, _ = await providers(finish="length", content='{"spoken_text":"未完成')
     provider.config["operations_max_tokens"] = 3000
     with pytest.raises(ValueError, match="finish_reason=length"):
         await provider.generate_operation([{"role": "user", "content": "交流"}], {}, "source")
