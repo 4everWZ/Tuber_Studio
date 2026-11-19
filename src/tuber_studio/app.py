@@ -29,6 +29,7 @@ from .auth_sessions import (
     EnvironmentManagedToken,
     InvalidAdminCredential,
 )
+from .artwork_references import MAX_BYTES as MAX_REFERENCE_BYTES, PREFIX as REFERENCE_PREFIX, register_artwork_references
 from .bilibili_account import BilibiliAccount
 from .comments import Comments
 from .config import Settings
@@ -201,9 +202,12 @@ def create_app(
             uploading = request.url.path == "/api/live/uploads" and request.method == "POST"
             meme_upload = request.url.path == "/api/memes" and request.method == "POST"
             limit = MAX_UPLOAD if uploading else MAX_MEME_REQUEST if meme_upload else 2_100_000
+            reference_upload = request.method == "PUT" and request.url.path.startswith(REFERENCE_PREFIX + "/")
+            if reference_upload:
+                limit = MAX_REFERENCE_BYTES
             if int(request.headers.get("content-length", "0")) > limit:
                 return JSONResponse({"detail": "请求过大"}, status_code=413)
-            if not uploading:
+            if not uploading and not reference_upload:
                 body = await request.body()
                 if len(body) > limit:
                     return JSONResponse({"detail": "请求过大"}, status_code=413)
@@ -239,6 +243,7 @@ def create_app(
     register_operations_api(app, store, account, comments, browsing, dynamics, require_admin)
     register_message_api(app, messages, require_admin)
     register_meme_api(app, memes, runtime, require_admin)
+    register_artwork_references(app, settings, store, require_admin)
     register_browsing_api(app, browsing, require_admin)
     register_operation_recovery_api(
         app,
