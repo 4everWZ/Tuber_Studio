@@ -32,7 +32,8 @@ async def test_gallery_shows_one_bundled_error_and_rejects_a_broken_upload(setti
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
-        server = uvicorn.Server(uvicorn.Config(app, lifespan="off", log_level="error"))
+        server = uvicorn.Server(uvicorn.Config(app, lifespan="off", log_level="error",
+                                               timeout_graceful_shutdown=2))
         serving = asyncio.create_task(server.serve(sockets=[listener]))
         try:
             async with asyncio.timeout(10):

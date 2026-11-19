@@ -423,6 +423,9 @@ async def advance(runtime, task):
     name = calls[0].name
     if nominate and (len(calls) != 1 or name != "submit_materials"):
         raise DelegationError("后台没有按本轮委派提交实际材料。")
+    offered = {item["name"] for item in options}
+    if any(call.name not in offered for call in calls):
+        raise DelegationError("后台请求的工具超出本轮委派范围。")
     if len(calls) == 1 and name == "ask_owner":
         question = Clarification.model_validate(calls[0].arguments).question
         if (evidence.points and "inspect_video" in allowed and getattr(runtime, "can_nominate_video", None)

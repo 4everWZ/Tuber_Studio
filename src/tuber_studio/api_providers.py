@@ -336,6 +336,9 @@ class APIProvider:
             on_content=on_content if self.config.get("structured_output") in {"json_schema", "structural_tag"} else None,
         )
 
+    async def choose_front_effect(self, messages, schema, *, on_stage=None):
+        return await self.generate_assistant_json(messages, schema, max_tokens=256, on_stage=on_stage)
+
 class VisionProvider(Protocol):
     async def describe(self, prompt: str, image: bytes, mime_type: str) -> str: ...
     async def close(self) -> None: ...
