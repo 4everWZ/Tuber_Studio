@@ -59,7 +59,11 @@ class BilibiliAccountUI {
     this.dialog.addEventListener("cancel", event => { if (this.resetPending || this.tokenPresented) event.preventDefault(); });
   }
   setLocalAccess(enabled) { if (this.settings) this.s("[data-remote-management]").hidden = enabled; }
-  async activate() { this.active = true; await this.load(); await this.verifyIfNeeded(); }
+  async activate({ verify = true } = {}) {
+    this.active = true;
+    await this.load();
+    if (verify) await this.verifyIfNeeded();
+  }
   async settingsOpened() { await this.load(); await this.verifyIfNeeded(); }
   async verifyIfNeeded() { if (this.value?.configured?.sessdata && this.value.state === "unverified" && Date.now() - this.lastRefreshAttempt > 30000) await this.refreshProfile(); }
   deactivate() {
@@ -78,7 +82,7 @@ class BilibiliAccountUI {
   }
   async load() {
     if (!this.active || this.loading || this.pending) return;
-    const sequence = ++this.sequence; this.loading = true; this.renderControls();
+    const sequence = ++this.sequence; this.loading = true; this.render();
     try { const value = await this.api("/api/account/bilibili"); if (this.active && sequence === this.sequence) this.accept(value); }
     catch (error) { if (this.active && sequence === this.sequence) { this.requestError = this.safeError(error); this.render(); } }
     finally { if (sequence === this.sequence) { this.loading = false; this.renderControls(); } }
@@ -90,6 +94,7 @@ class BilibiliAccountUI {
   }
   stateLabel() {
     if (this.requestError) return "状态读取失败";
+    if (this.loading && !this.value) return "读取中";
     return ({not_configured: "未配置", unverified: "已配置 · 未验证", logged_in: "已登录", expired: "凭证已过期", restricted: "读取受限", error: "读取失败"})[this.value?.state] || "待读取";
   }
   number(value) { return typeof value === "number" && Number.isFinite(value) ? new Intl.NumberFormat("zh-CN", {maximumFractionDigits: 2}).format(value) : "—"; }

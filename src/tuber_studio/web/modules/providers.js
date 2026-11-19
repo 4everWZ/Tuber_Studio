@@ -32,7 +32,6 @@ export function initInferenceProvidersUI(model, { api, busy, apply }) {
   const sync = () => {
     if (!dirty && model.settings?.omni) {
       const { omni, provider_credentials } = model.settings;
-      $("omni-connection-summary").textContent = `对话与通话 · ${omni.model}　后台任务 · ${omni.responses_model}`;
       $("omni-base-url").value = omni.base_url;
       $("omni-model").value = omni.model;
       $("omni-responses-model").value = omni.responses_model;
@@ -63,7 +62,7 @@ export function initInferenceProvidersUI(model, { api, busy, apply }) {
         const result = await api("/api/settings/providers", { method: "PUT", body: readOmniSettings() });
         dirty = false;
         apply(result);
-        state.textContent = "Omni 设置已保存。";
+        state.textContent = "推理设置已保存。";
         $("providers-check-result").textContent = "";
       } catch (error) {
         state.textContent = "保存失败：" + safeMessage(error.message);
@@ -89,7 +88,7 @@ export function initInferenceProvidersUI(model, { api, busy, apply }) {
       try {
         const result = await api("/api/providers/models");
         for (const alias of result.models || []) options.append(new Option(alias, alias));
-        note.textContent = result.error ? safeMessage(result.error) : `服务报告了 ${options.options.length} 个别名。`;
+        note.textContent = result.error ? safeMessage(result.error) : `前台报告了 ${options.options.length} 个别名。`;
       } catch (error) {
         note.textContent = safeMessage(error.message);
       }

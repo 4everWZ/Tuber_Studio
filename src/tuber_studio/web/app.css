@@ -212,7 +212,10 @@ p { margin-block: .55em 1em; }
 .panel > summary { cursor: pointer; font-weight: 650; }
 #providers-panel { margin-top: 16px; }
 #provider-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
-#provider-fields details { padding-block: .7rem; border-top: 1px solid var(--win-border-light); }
+#provider-fields .provider-section { padding-block: 1rem; border-top: 1px solid var(--win-border-light); }
+#provider-fields .provider-section > h3 { margin-bottom: 4px; }
+#provider-fields .provider-section > h3 + .hint { margin-block-start: 0; }
+#provider-fields label + .actions { margin-top: 8px; }
 #provider-fields summary { cursor: pointer; font-weight: 600; }
 #provider-fields details[open] > summary { margin-bottom: .8rem; }
 #providers-panel [role=status]:empty { display: none; }

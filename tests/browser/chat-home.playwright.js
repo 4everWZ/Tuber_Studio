@@ -48,7 +48,10 @@ async page => {
   await page.getByRole("button",{name:"面板",exact:true}).click();
   await page.getByRole("button",{name:"关闭面板"}).click();
   await page.waitForTimeout(3100);
-  if (blocked.length) throw Error("unexpected homepage dependencies: " + blocked.join(", "));
+  const paths = new Set(blocked.map(url => new URL(url).pathname));
+  if (paths.size !== 2 || !paths.has("/api/account/bilibili") || !paths.has("/api/automation")) {
+    throw Error("unexpected homepage dependencies: " + blocked.join(", "));
+  }
   await page.getByRole("link",{name:"设置",exact:true}).click();
   await page.locator("#providers-form").waitFor();
   if (await page.locator("#inference-node-panel, [data-inference-mode]").count()) throw Error("node controls remain");
