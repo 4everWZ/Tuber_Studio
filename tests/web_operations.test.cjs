@@ -94,7 +94,7 @@ test("a published browsing comment opens in the shared history, including legacy
 test("publishing saves the current draft and a failed attempt remains retryable", async t => {
   const byId = setupDOM(t);
   const { initCommentQueue } = await import("../src/tuber_studio/web/modules/comment-queue.js");
-  let row = { id: "draft", channel: "comments", source: "interaction", status: "pending_review", text: "原稿", can_publish: true };
+  let row = { id: "draft", channel: "comments", source: "interaction", status: "pending_review", text: "原稿", updated_at: 75, can_publish: true };
   let fail = true;
   const writes = [];
   const api = async (path, options) => {
@@ -123,7 +123,7 @@ test("publishing saves the current draft and a failed attempt remains retryable"
   await detail.querySelectorAll("button").find(button => button.textContent === "发布").onclick();
   assert.equal(byId("queue-feedback").textContent, "发布失败：临时网络错误");
   assert.deepEqual(writes, [
-    ["/api/comments/drafts/draft/review", { action: "approve", text: "编辑后的内容" }],
+    ["/api/comments/drafts/draft/review", { action: "approve", text: "编辑后的内容", updated_at: 75, expected_image: null }],
     ["/api/comments/drafts/draft/publish", undefined],
   ]);
   const retry = detail.querySelectorAll("button").find(button => button.textContent === "发布");
@@ -254,9 +254,9 @@ test("batch approval keeps cross-page selections and routes uncertain and failed
   finishBatch();
   await publishing;
   assert.deepEqual(writes, [["/api/comments/workbench/batch-publish", { method: "POST", headers: { Accept: "text/event-stream" }, body: { items: [
-    { channel: "comments", id: "11", updated_at: 110 },
-    { channel: "comments", id: "1", updated_at: 100, text: "确认过的正文" },
-    { channel: "comments", id: "10", updated_at: 109 },
+    { channel: "comments", id: "11", updated_at: 110, expected_image: null },
+    { channel: "comments", id: "1", updated_at: 100, text: "确认过的正文", expected_image: null },
+    { channel: "comments", id: "10", updated_at: 109, expected_image: null },
   ] } }]]);
   assert.match(byId("queue-batch-summary").textContent, /已发送 1 · 待核对 1 · 已跳过 0 · 未发送 1/);
   const [sent, failed, uncertain] = byId("queue-batch-results").children;
@@ -525,7 +525,7 @@ test("filtering browser tasks clears a now unrelated right-hand inspector", t =>
 test("dynamic text edits survive refresh, save the submitted text and clear only after rejection", async t => {
   const byId = setupDOM(t);
   const { initDynamicsModule } = await import("../src/tuber_studio/web/modules/dynamics.js");
-  const post = { id: 1, content: "原动态", status: "pending_review" };
+  const post = { id: 1, content: "原动态", status: "pending_review", review_key: "observed-draft-key" };
   const model = { dynamicPosts: [post], dynamicPostId: 1, dynamicMemeCache: new Map(), dynamicMemePending: new Set(), dynamicMemorySaving: new Set() };
   const writes = [];
   const module = initDynamicsModule(model, { ...sourceDependencies(async (url, options) => {
@@ -545,7 +545,7 @@ test("dynamic text edits survive refresh, save the submitted text and clear only
   await module.refreshDynamics();
   assert.equal(byId("dynamic-post-text").value, "修改后的动态");
   await byId("approve-dynamic").listeners.click();
-  assert.deepEqual(writes[0], { action: "approve", text: "修改后的动态" });
+  assert.deepEqual(writes[0], { action: "approve", text: "修改后的动态", review_key: "observed-draft-key" });
   assert.equal(model.dynamicPostId, 1);
   assert.equal(model.dynamicPostDirty, false);
   await byId("reject-dynamic").listeners.click();
@@ -749,7 +749,7 @@ test("task reasons preserve specific model explanations and separate scheduler s
 
 test("round settings preserve unlimited quotas and matrix saves leave them intact", async t => {
   const byId = setupDOM(t);
-  const { initOperationsModule, savePermissionMatrix, updatePermissionCapsule } = await import("../src/tuber_studio/web/modules/operations.js");
+  const { initOperationsModule, updatePermissionCapsule } = await import("../src/tuber_studio/web/modules/operations.js");
   const calls = [];
   const status = {
     settings: { workers: 2, max_replies_per_video: 1, max_per_hour: 3, max_per_day: 10, interval_seconds: 600, visual_enabled: true },
@@ -778,14 +778,12 @@ test("round settings preserve unlimited quotas and matrix saves leave them intac
   assert.equal(byId("op-preview-round").disabled, false);
   for (const id of ["op-max-replies", "op-max-per-hour", "matrix-max-per-day"]) assert.equal(byId(id).value, 0);
 
-  document.querySelector = query => query.includes('name="matrix_dm"') ? { value: "0" } : null;
-  await savePermissionMatrix(api, null);
-  const [shared, matrix] = calls.filter(([path]) => path === "/api/automation/settings").map(([, { body }]) => body);
-  for (const quota of ["max_replies_per_video", "max_per_hour", "max_per_day"]) assert.equal(shared[quota], 0);
-  for (const field of Object.keys(shared)) assert.ok(!Object.hasOwn(matrix, field), field);
-  const messageSave = calls.find(([path]) => path === "/api/messages/policy");
-  assert.equal(messageSave[1].body.enabled, false);
-  assert.equal(messageSave[1].body.auto_send, false);
+  const fields = byId("matrix-fields");
+  await fields.listeners.change({ target: { name: "matrix_reply", value: "1" } });
+  const [shared, change] = calls.filter(([path]) => path === "/api/automation/settings").map(([, { body }]) => body);
+  assert.equal(shared.max_per_day, 0);
+  assert.deepEqual(change, { reply_enabled: true, reply_auto_publish: false });
+  assert.equal(calls.some(([path]) => path === "/api/messages/policy"), false);
 });
 
 test("one parent start action uses saved permissions without enabling additional channels", async t => {
@@ -893,20 +891,24 @@ test("a delayed stop response cannot overwrite the newer stopped state", async t
   assert.equal(byId("op-toggle-auto").disabled, false);
 });
 
-test("matrix uses the stored message policy and displays partial failure", async t => {
+test("permission controls serialize a change and reload after an unconfirmed write", async t => {
   const byId = setupDOM(t);
-  const { savePermissionMatrix } = await import("../src/tuber_studio/web/modules/operations.js");
-  document.querySelector = query => query.includes('name="matrix_dm"') ? { value: "2" } : null;
-  const messages = { enabled: true, allow_comment_handoff: true, auto_send: false, max_per_day: 12 };
-  const api = async (path, options) => {
-    if (path === "/api/messages/policy") {
-      assert.deepEqual(options.body, { ...messages, auto_send: true });
-      throw new Error("写入失败");
-    }
-    return { settings: {}, base: { messages } };
-  };
-  await savePermissionMatrix(api, null);
-  assert.equal(byId("matrix-save-feedback").textContent, "运营设置已保存，私信设置保存失败：写入失败");
+  const { initPermissionMatrix } = await import("../src/tuber_studio/web/modules/permission-matrix.js");
+  const fields = byId("matrix-fields");
+  const writes = [];
+  let reject, reloads = 0;
+  initPermissionMatrix(change => {
+    writes.push(change);
+    return new Promise((_, fail) => { reject = fail; });
+  }, async () => { fields.disabled = false; reloads++; });
+  const pending = fields.listeners.change({target: {name: "matrix_video_fav", value: "0"}});
+  assert.equal(fields.disabled, true);
+  await fields.listeners.change({target: {name: "matrix_reply", value: "2"}});
+  reject(new Error("连接中断"));
+  await pending;
+  assert.deepEqual(writes, [{video_fav_enabled: false, video_fav_auto_publish: false}]);
+  assert.equal(reloads, 1);
+  assert.match(byId("matrix-save-feedback").textContent, /保存未确认/);
 });
 
 test("sending readiness reports actual blockers without inventing an approval gate", async t => {
@@ -916,19 +918,4 @@ test("sending readiness reports actual blockers without inventing an approval ga
     blockers: ["模型不可用：连接失败"] }, { configured: { sessdata: true, csrf: true }, state: "logged_in", profile: { uid: "test" } });
   assert.match(byId("automatic-sending-state").textContent, /模型不可用：连接失败/);
   assert.doesNotMatch(byId("automatic-sending-state").textContent, /语义|验收|需审核/);
-});
-
-test("matrix enables private messages when selecting automatic handoff without enabling polling", async t => {
-  const byId = setupDOM(t);
-  const { savePermissionMatrix } = await import("../src/tuber_studio/web/modules/operations.js");
-  document.querySelector = query => query.includes('name="matrix_dm"') ? { value: "2" } : null;
-  const messages = { enabled: false, auto_poll: false, allow_comment_handoff: true, auto_send: false, max_per_day: 12 };
-  let saved;
-  const api = async (path, options) => {
-    if (path === "/api/messages/policy") saved = options.body;
-    return { settings: {}, base: { messages } };
-  };
-  await savePermissionMatrix(api, null);
-  assert.deepEqual(saved, { ...messages, enabled: true, auto_send: true });
-  assert.match(byId("matrix-save-feedback").textContent, /已保存/);
 });

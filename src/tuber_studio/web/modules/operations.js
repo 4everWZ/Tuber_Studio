@@ -1,5 +1,5 @@
 import { $, safeMessage, notice } from "./core.js";
-import { initPermissionMatrix, renderPermissionStatus, saveMatrixSettings } from "./permission-matrix.js?v=20261113.01";
+import { initPermissionMatrix, renderPermissionStatus } from "./permission-matrix.js";
 import { renderOperationCapabilities } from "./operation-capabilities.js?v=20261114.1";
 
 let currentAutomationStatus = null;
@@ -122,13 +122,11 @@ export function renderOperationsQuickBar(status) {
   }
 }
 
-export async function savePermissionMatrix(api, accountPanel, options) {
-  await saveMatrixSettings(api, options);
-  await updatePermissionCapsule(api, accountPanel);
-}
-
 export function initOperationsModule(api, accountPanel) {
-  initPermissionMatrix(options => savePermissionMatrix(api, accountPanel, options));
+  initPermissionMatrix(async change => {
+    const status = await api("/api/automation/settings", { method: "PUT", body: change });
+    applyAutomationStatus(status, accountPanel);
+  }, () => updatePermissionCapsule(api, accountPanel));
 
   async function changeControl(url, body, success) {
     const command = ++controlRequest;
