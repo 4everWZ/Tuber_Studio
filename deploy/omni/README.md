@@ -30,7 +30,9 @@ curl --fail http://127.0.0.1:9020/healthz
 docker compose -f deploy/omni/app-compose.yml -f deploy/omni/workstation.compose.yml up -d --build --wait tuber-core studio-edge
 ```
 
-已有业务卷的部署再叠加 `app-business-data.compose.yml`。在浏览器地址栏输入工作站 IP，HTTP 自动转向 HTTPS。TLS 代理服务工作台、静态文件、SSE 和私有通话 WebSocket。Core 使用回环入口签发短时票据，浏览器在当前 HTTPS IP 订阅。WHEP 音视频遵循协商得到的 ICE 路径。验证实际收帧、冻结和音画同步时使用号主浏览器所在网络。
+已有业务卷的部署再叠加 `app-business-data.compose.yml`。正式工坊同时启用可接管的网页阅读，在该文件后追加 `-f deploy/omni/reading-worker.compose.yml`，Compose 会先启动独立阅读 worker。[阅读进程部署](reading-worker/README.md)
+
+在浏览器地址栏输入工作站 IP，HTTP 自动转向 HTTPS。TLS 代理服务工作台、静态文件、SSE 和私有通话 WebSocket。Core 使用回环入口签发短时票据，浏览器在当前 HTTPS IP 订阅。WHEP 音视频遵循协商得到的 ICE 路径。验证实际收帧、冻结和音画同步时使用号主浏览器所在网络。
 
 Core 提供工作台、静态素材、管理 API、SSE 和 WebSocket。浏览器连接实际业务主机，任务和 SQLite 由该 Core 实例持有。使用独立候选卷时，管理令牌、聊天和平台登录按该卷读取。
 
