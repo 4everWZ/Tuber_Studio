@@ -25,3 +25,7 @@ Jetson 的文字来源可在运营账号简介的 `profile.bio` 查到。当前�
 本地私有证据目录为 `runtime/private-artifacts/operator-owner-turns-20261119/`。`formal.json` 保存选取的正式字段，`before/`、`after/` 各自的 `turn-26.json`、`turn-27.json` 保存实发消息、回复和路由。提交中仅保留脱敏结论。
 
 `uv run --locked pytest -q tests/test_character_oc_types.py tests/test_intelligent_ui_chat.py` 通过 66 项。角色测试覆盖更名、解绑、平台 UID 匹配以及私聊无平台 UID。平台写入为零，未部署。
+
+## 私有电话票据
+
+普通电话和临时电话通过同一参与者构造读取当前角色卡。隔离测试从 `POST /api/chat/private-call/ticket` 取回实际 `instructions`，两种模式都先绑定再解绑。绑定时昵称和 UID 匹配测试卡；解绑后绑定字段为空，指令中没有旧昵称。临时电话即使带有能命中记忆的话题，也没有把记忆注入指令。此次验证覆盖票据内容，语音服务签票使用测试替身。

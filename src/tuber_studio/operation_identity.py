@@ -41,6 +41,19 @@ def bilibili_owner_context(character, platform, speaker_uid):
     }
 
 
+def private_participant_instructions(character, platform=None, speaker_uid=None):
+    owner = bilibili_owner_context(character, platform, speaker_uid)
+    participants = {"当前交谈者": "工坊号主", "角色": character["name"],
+                    "bilibili_owner": owner.get("bilibili_owner")}
+    if owner and platform == "bilibili" and speaker_uid:
+        participants["speaker_is_bilibili_owner"] = owner["speaker_is_bilibili_owner"]
+    return (
+        "角色卡中的 bilibili_owner 是这名角色的主人，空值表示尚未绑定。"
+        "运营账号的昵称和简介描述的是角色使用的平台账号。\n私聊参与者："
+        + json.dumps(participants, ensure_ascii=False)
+    )
+
+
 def identity_snapshot(account_actor, character):
     """Version identity facts, excluding profile-check times and credentials."""
     value = {

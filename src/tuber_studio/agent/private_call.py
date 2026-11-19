@@ -25,6 +25,7 @@ from ..daily_memory import contains_memory_credential
 from ..http_api import endpoint
 from ..memory_sources import original_turn
 from ..operation_continuations import content_hash
+from ..operation_identity import private_participant_instructions
 from ..performance import performance
 from ..store import dump
 from .memory_organizer import is_chat_turn
@@ -201,6 +202,7 @@ def register_private_call(app, runtime, require_admin):
                                  "history_revision": history_preference(runtime)["history_revision"]}} if inherited and rows else {}),
             "instructions": "\n".join(text for text in (
                 f"你是{character['name']}，正在和号主私下通话。",
+                private_participant_instructions(character),
                 character.get("core", {}).get("identity"), character.get("style", {}).get("instructions"),
             ) if isinstance(text, str))[:6000] + ("\n与本次私聊话题有关的记忆资料：" + dump(notes) if notes else ""),
         }

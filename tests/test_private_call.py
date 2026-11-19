@@ -8,6 +8,30 @@ from fastapi.testclient import TestClient
 
 from tuber_studio.agent import private_call
 from tuber_studio.app import create_app
+from tuber_studio.store import editable_character
+
+
+@pytest.mark.parametrize("temporary", [False, True])
+def test_ticket_instructions_follow_current_character_owner(settings, monkeypatch, temporary):
+    async def mint(origin, token):
+        return "test-ticket"
+
+    monkeypatch.setattr(private_call, "private_service", lambda: ("https://voice.example", "test-key"))
+    monkeypatch.setattr(private_call, "mint_ticket", mint)
+    app = create_app(settings)
+    runtime = app.state.runtime
+    auth = {"Authorization": "Bearer " + settings.admin_token}
+    with TestClient(app) as browser:
+        for owner in ({"uid": "123", "name": "示例号主"}, None):
+            runtime.store.replace_character(editable_character(runtime.character) | {"bilibili_owner": owner})
+            ticket = browser.post("/api/chat/private-call/ticket", headers=auth, json={
+                "temporary": temporary, "topic": "来聊聊吧",
+            }).raise_for_status().json()
+            instructions = ticket["instructions"]
+            participants = json.loads(instructions.split("私聊参与者：", 1)[1].splitlines()[0])
+            assert participants == {"当前交谈者": "工坊号主", "角色": runtime.character["name"], "bilibili_owner": owner}
+            if owner is None:
+                assert "示例号主" not in instructions
 
 
 async def test_ticket_uses_only_the_eligible_chat_topic_and_revalidates_it(settings, monkeypatch):
@@ -47,7 +71,8 @@ async def test_ticket_uses_only_the_eligible_chat_topic_and_revalidates_it(setti
         })).raise_for_status()
         assert (await ticket(topic_turn=off_topic))["memory_use"] is None
         assert (await ticket(topic_turn=turn, topic="月亮的背面"))["memory_use"] is None
-        assert (await ticket(topic_turn=turn, topic=related, temporary=True))["memory_use"] is None
+        temporary = await ticket(topic_turn=turn, topic=related, temporary=True)
+        assert temporary["memory_use"] is None and related not in temporary["instructions"]
         prefs = (await client.get("/api/daily-memory/preferences")).json()
         for enabled in (False, True):
             (await client.put("/api/daily-memory/preferences", json={
