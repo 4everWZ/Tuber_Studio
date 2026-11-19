@@ -18,9 +18,17 @@ async page => {
     window.whepDiagnostics = [];
     window.addEventListener("studio-whep-diagnostic", ({detail}) => window.whepDiagnostics.push(detail));
     window.WebSocket = class extends WebSocket {
+      interruptCommands = [];
       constructor(...args) {
         super(...args);
         if (new URL(this.url).pathname === "/v1/realtime") window.testRealtimeSocket = this;
+      }
+      send(message) {
+        if (this === window.testRealtimeSocket) {
+          const {type} = JSON.parse(message);
+          if (type === "response.cancel" || type === "output_audio_buffer.clear") this.interruptCommands.push(type);
+        }
+        super.send(message);
       }
     };
     const Peer = window.RTCPeerConnection;
@@ -39,16 +47,15 @@ async page => {
     if (res.url().endsWith("/whep") && res.request().method() === "POST") exchanges.push(res.status());
   });
   const results = [];
-  async function realtimeError(code, expected) {
+  async function realtimeError(code, expected, action = "call_end") {
     const diagnostic = await page.evaluate(value => {
-      const error = {code: value, message: "private fixture message", param: "/private-fixture"};
+      const error = {type: "invalid_request_error", code: value, message: "private fixture message", param: "/private-fixture"};
       testRealtimeSocket.dispatchEvent(new MessageEvent("message", {data: JSON.stringify({type: "error", error})}));
       return whepDiagnostics.at(-1);
     }, code);
-    if (diagnostic.action !== "call_end" || diagnostic.cause !== "realtime_error_event" ||
+    if (diagnostic.action !== action || diagnostic.cause !== "realtime_error_event" ||
         diagnostic.code !== expected || JSON.stringify(diagnostic).includes("private"))
       throw Error("Realtime error diagnostics");
-    await page.locator("#private-call-end").click();
   }
   const smoothing = page.getByRole("checkbox", {name: "减少画面卡顿"});
   const expectTargets = target => page.waitForFunction(value => {
@@ -91,6 +98,8 @@ async page => {
     await page.getByRole("button", {name: "打断回答"}).click();
     await until(s => s.avatars[index].generation > 0 && exchanges.length > before &&
       s.avatars[index].ack.generation === s.avatars[index].generation, "new generation and peer");
+    const commands = await page.evaluate(() => testRealtimeSocket.interruptCommands);
+    if (commands.length !== 1 || commands[0] !== "output_audio_buffer.clear") throw Error("duplicate interrupt command");
     if (index === 0) {
       if (!await smoothing.isChecked()) throw Error("interrupt lost smoothing preference");
       await expectTargets(240);
@@ -122,6 +131,7 @@ async page => {
   const continued = await speech();
   await until(s => s.played_by_response[continued] > 0 && s.avatars[2].state === "closed", "native fallback");
   await realtimeError("private-provider-detail", "other");
+  await page.locator("#private-call-end").click();
   await page.unroute("**/api/chat/private-call/avatars/*/whep");
   const studio = await page.evaluate(() => location.origin);
   const request = async (method, path, data) => (await page.request.fetch(studio + path,
@@ -170,6 +180,11 @@ async page => {
   if (prompts[2]?.includes(updated) || prompts[2]?.includes(old)) throw Error("removed memory survived");
   const clean = await speech();
   await until(s => s.played_by_response[clean] > 0, "playback after removal");
-  await realtimeError("response_not_active", "response_not_active");
+  await realtimeError("response_not_active", "response_not_active", "response_error");
+  const afterError = await speech();
+  await until(s => s.played_by_response[afterError] > 0 && s.avatars[5].peers === 1, "playback after inactive response");
+  await realtimeError("session_closed", "session_closed");
+  await until(s => s.avatars[5].state === "closed" && !s.avatars[5].peers, "terminal session error");
+  await page.locator("#private-call-end").click();
   return {results, subscriptions, fallback: true, memoryCorrectionAndRemoval: true};
 }

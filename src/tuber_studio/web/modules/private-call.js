@@ -199,6 +199,11 @@ async function begin(previous = null) {
         const event = JSON.parse(data);
         if (event.type === "gateway.session.created") { void call.playback.gateway?.(event); return; }
         if (event.type === "error") {
+          // A response can finish on the engine while its audio is still playing.
+          if (call.ready && event.error?.type === "invalid_request_error" && event.error.code === "response_not_active") {
+            call.playback.diagnose?.("response_error", "realtime_error_event", event.error.code);
+            return;
+          }
           finish(call, "realtime_error_event", "语音协议或设备不可用，通话已结束", event.error?.code);
           return;
         }

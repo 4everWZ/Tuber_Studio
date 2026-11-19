@@ -87,7 +87,8 @@ class PortraitPlayback {
       this.diagnose("interrupt", "interrupt_button");
       this.block();
       this.dropPeer();
-      call.send({type: "response.cancel"});
+      // The native duplex engine cancels active output and clears queued playback
+      // with one clear. A separate cancel also fences the Avatar source.
       call.send({type: "output_audio_buffer.clear"});
     };
   }
@@ -190,7 +191,7 @@ class PortraitPlayback {
     this.phase = "release_previous";
     clearTimeout(this.deadline);
     this.deadline = setTimeout(() => this.fail("subscribe_timeout"), 20000);
-    // cancel + clear + cleared can fence several generations in one turn.
+    // The clear and its acknowledgement can fence successive generations.
     this.reconnect = setTimeout(async () => {
       await dropped;
       if (version !== this.version) return;
