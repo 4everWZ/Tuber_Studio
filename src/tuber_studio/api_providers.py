@@ -11,11 +11,11 @@ from typing import Protocol
 from .compaction import ContextWindowExceeded, IncompleteCompaction
 from .config import uses_broker_llm
 from .generation_meter import reserve_generation, settle_generation
-from .http_api import InferenceBudgetExceeded, api_client, inference_model_card, models_health, response_json
+from .http_api import InferenceBudgetExceeded, InferenceQueueBusy, api_client, inference_model_card, models_health, response_json
 from .image_preprocessing import prepare_image
 from .llama_sampling import LlamaCppSampling, llama_cpp_sampling
 from .operation_identity import provider_identity_messages
-from .operation_turns import mark_model_request, prepare_model_request
+from .operation_turns import defer_background_request, mark_model_request, prepare_model_request
 from .providers import (
     DemoProvider,
     LlamaCppProvider,
@@ -178,7 +178,14 @@ class APIProvider:
         mark_model_request()
         timeout = self.config.get("compaction_timeout_seconds" if summary else "prefill_timeout_seconds", 600)
         if on_content is None:
-            data = await response_json(self.client, "POST", "chat/completions", payload=payload, timeout=timeout)
+            deadline = time.monotonic() + timeout
+            while True:
+                try:
+                    data = await response_json(self.client, "POST", "chat/completions", payload=payload, timeout=timeout)
+                    break
+                except InferenceQueueBusy as busy:
+                    if time.monotonic() + busy.retry_after > deadline or not await defer_background_request(busy.retry_after):
+                        raise
         else:
             async with self.client.stream("POST", "chat/completions", json=chat_stream_payload(payload),
                                           timeout=timeout) as response:

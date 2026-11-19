@@ -93,6 +93,12 @@ class OperationTurns:
             ticket.ready_at = ticket.queued_at = monotonic()
             await self._acquire(ticket)
 
+    async def wait_for_admission(self, ticket, retry_after):
+        self.release(ticket)
+        await asyncio.sleep(retry_after)
+        ticket.ready_at = ticket.queued_at = monotonic()
+        await self._acquire(ticket)
+
     def started(self, ticket):
         ticket.calls += 1
         sample = self.stats[ticket.lane]
@@ -121,3 +127,12 @@ def mark_model_request():
     if context := operation_ticket.get():
         turns, ticket = context
         turns.started(ticket)
+
+
+async def defer_background_request(retry_after):
+    context = operation_ticket.get()
+    if not context or context[1].lane not in {"background", "priority"}:
+        return False
+    turns, ticket = context
+    await turns.wait_for_admission(ticket, retry_after)
+    return True

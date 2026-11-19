@@ -1,3 +1,4 @@
+import asyncio
 import json
 import wave
 from io import BytesIO
@@ -13,7 +14,46 @@ from tuber_studio.app import create_app
 from tuber_studio.compaction import ContextWindowExceeded, IncompleteCompaction
 from tuber_studio.generation_meter import GenerationMeter
 from tuber_studio.operations.browsing.models import BrowsingPolicy
+from tuber_studio.operation_turns import OperationTurns, operation_ticket
 from tuber_studio.providers import VoiceService
+
+
+async def test_workstation_congestion_releases_background_turn_for_chat(settings):
+    settings.data["llm"].update(kind="openai_compatible", base_url="https://model.test/v1", model="remote-model")
+    provider = create_llm(settings)
+    refused = asyncio.Event()
+    attempts = []
+    turns = OperationTurns(asyncio.Lock(), lambda: False)
+
+    def gateway(request):
+        attempts.append(request.content)
+        if len(attempts) == 1:
+            refused.set()
+            return httpx.Response(429, headers={"Retry-After": "1"}, json={"error": {"code": "gateway_busy"}})
+        return httpx.Response(200, json={"usage": {"prompt_tokens": 4}, "choices": [
+            {"finish_reason": "stop", "message": {"content": "done"}}
+        ]})
+
+    async def watch():
+        ticket = await turns.acquire("background")
+        scope = operation_ticket.set((turns, ticket))
+        try:
+            return await provider._complete([{"role": "user", "content": "看这一帧"}], budget=20)
+        finally:
+            operation_ticket.reset(scope)
+            turns.release(ticket)
+
+    await provider.client.aclose()
+    async with httpx.AsyncClient(base_url="http://model/v1/", transport=httpx.MockTransport(gateway)) as client:
+        provider.client = client
+        background = asyncio.create_task(watch())
+        await asyncio.wait_for(refused.wait(), 2)
+        chat = await asyncio.wait_for(turns.acquire("chat"), 0.5)
+        assert len(attempts) == 1
+        turns.release(chat)
+        assert await asyncio.wait_for(background, 3) == ("done", 4)
+    assert len(attempts) == 2 and attempts[0] == attempts[1]
+    assert turns.stats["background"]["calls"] == 1
 
 
 @pytest.fixture
