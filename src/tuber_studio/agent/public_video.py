@@ -100,7 +100,10 @@ async def read_public_part(request, selection, vision, granted, runtime_dir=None
             if rows:
                 for index in sorted({0, len(rows) // 2, len(rows) - 1}):
                     row = rows[index]
-                    findings.append(finding(row["start"], row["text"], "公开字幕抽样"))
+                    excerpt = finding(row["start"], row["text"], "归档字幕抽样" if archive else "公开字幕抽样")
+                    if archive:
+                        excerpt.update(end=row["end"], source_kind="archived_subtitle", archive_url=url)
+                    findings.append(excerpt)
         except (PlatformReadError, httpx.HTTPError) as error:
             restriction = video_read_restriction(error, selection.bvid, selection.part, "字幕")
         has_subtitles = bool(findings)

@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from ..platforms.bilibili import PlatformReadError
 from ..platforms.bilibili_frames import FfmpegTiles, MAX_FRAME_BYTES
 from ..platforms.bilibili_stream_frame import _timestamps
+from ..video_vision import VideoPartText, frame_reading_context
 
 
 class ArchiveUnavailable(ValueError):
@@ -51,6 +52,19 @@ class MountedArchive:
         except ArchiveUnavailable:
             return None
 
+    async def saved_frame_context(self, step, point, grant):
+        clip = (step.get("result") or {}).get("clip") or {}
+        if ((point.bvid, point.part) != (self.bvid, self.part) or not self.matches(grant)
+                or clip.get("source_kind") != "archived_video"):
+            return {}
+        if (point.bvid, point.part, point.cid) != (clip["bvid"], clip["part"], str(clip["cid"])):
+            return {}
+        bounds = (clip["start"], clip["end"])
+        for a, b in grant.get(point.bvid, {}).get(point.part) or [bounds]:
+            if a <= point.seconds < b and (package := self.optional()):
+                return await package.frame_context(point, clip.get("archive_url"), (max(a, bounds[0]), min(b, bounds[1])))
+        return {}
+
 
 class ArchivedVideo:
     def __init__(self, manifest):
@@ -71,6 +85,14 @@ class ArchivedVideo:
             if not all(isinstance(row[key], str) and row[key] for key in ("title", field)):
                 raise ValueError("归档来源页缺少可核实的正文")
         self.clips = []
+        self.subtitle_segments = self.source.get("subtitle_segments", [])
+        if not isinstance(self.source.get("description", ""), str) or not isinstance(self.subtitle_segments, list):
+            raise ValueError("归档简介或字幕格式无效")
+        for row in self.subtitle_segments:
+            if (not isinstance(row, dict) or not isinstance(row.get("text"), str) or not row["text"].strip()
+                    or not all(type(row.get(k)) in (int, float) for k in ("start", "end"))
+                    or not 0 <= row["start"] < row["end"] <= self.source["part_duration_seconds"]):
+                raise ValueError("归档字幕必须有本分 P 的起止时间及原文")
         for row in package["clips"]:
             file = (path.parent / row["file"]).resolve(strict=True)
             start, end = row["source_start_seconds"], row["source_end_seconds_exclusive"]
@@ -128,10 +150,20 @@ class ArchivedVideo:
 
     async def video_metadata(self, bvid):
         s = self.source
+        if bvid != s["bvid"]:
+            raise ArchiveUnavailable("视频不在当前归档授权内")
         return {
             "bvid": s["bvid"],
             "title": s["upload_title"],
+            "description": s.get("description", ""),
+            "description_complete": "description" in s,
             "owner": s["uploader"],
+            "retrieval": "archive",
+            "source_url": s["url"],
+            "archived_programme_sources": [
+                {"url": row["url"], "credits": row["archived_programme_credits"]}
+                for row in self.pages.values() if row.get("archived_programme_credits") and row["url"] != s["url"]
+            ],
             "parts": [
                 {
                     "page": s["part"],
@@ -143,7 +175,29 @@ class ArchivedVideo:
         }
 
     async def subtitles(self, bvid, cid):
-        return {"segments": []}
+        if bvid != self.source["bvid"] or str(cid) != self.source["cid"]:
+            raise ArchiveUnavailable("字幕不属于当前归档分 P")
+        return {"bvid": bvid, "cid": self.source["cid"], "segments": self.subtitle_segments,
+                "source_url": self.source["url"], "retrieval": "archive"}
+
+    async def frame_context(self, point, archive_url, bounds):
+        """Resolve a saved frame against its own mounted source and current read window."""
+        s = self.source
+        if (point.bvid, point.part, point.cid) != (s["bvid"], s["part"], s["cid"]):
+            return {}
+        for start, end, _, row in self.clips:
+            if row["source_url"] == archive_url and start <= point.seconds < end:
+                break
+        else:
+            return {}
+        lo, hi = max(start, bounds[0]), min(end, bounds[1])
+        if not lo <= point.seconds < hi:
+            return {}
+        track = await self.subtitles(point.bvid, point.cid)
+        track["segments"] = [r for r in track["segments"] if lo <= r["start"] <= point.seconds < r["end"] <= hi]
+        metadata = await self.video_metadata(point.bvid)
+        part = VideoPartText(metadata, point.cid, [track])
+        return frame_reading_context({point.cid: part}, [{"cid": point.cid, "actual_time": point.seconds}])
 
     async def close(self):
         pass

@@ -1166,6 +1166,7 @@ def create_task_runtime(runtime, store, browsing):
         inventories = dict(task["plan"].get("frame_reviews", {}))
         images = {}
         uses = {}
+        reading_contexts = {}
         visual_reviews = task["plan"].setdefault("visual_reviews", []) if evidence.points else []
         retry_incomplete_previews(task["plan"])
         window_reviews = dict(task["plan"].get("window_reviews", {}))
@@ -1240,16 +1241,29 @@ def create_task_runtime(runtime, store, browsing):
                 uses[slot] = [f"用在开场，{proposals.opening}", f"用在讲述中间，{proposals.main}", f"用作转场，{proposals.transition}"]
             return pixel_caption_options(inventories[key], uses[slot])
 
+        async def archived_frame_context(key):
+            if not archive:
+                return {}
+            if key not in reading_contexts:
+                read_id = key.rsplit(":", 1)[0]
+                step = next((s for s in task.get("steps", ()) if s["id"] == read_id), {})
+                reading_contexts[key] = await archive.saved_frame_context(step, evidence.points[key], video_binding(task))
+            return reading_contexts[key]
+
         async def inspect_primary(key):
             if key not in images:
                 images[key] = await clip_review_image(runtime.settings.runtime, task, evidence, key)
             image = images[key]
             if image and key not in inventories:
-                observed = await request_json([{"role": "system", "content": "请用简体中文。你只看这一张图，不知道节目或情节。"
+                reading = {"type": "text", "text": "用中文列出这张图的构图、可见细节和屏字。"}
+                context = await archived_frame_context(key)
+                if context:
+                    reading["text"] += "\n来源文字供理解片段大意，具体画面以此帧为据。\n" + dump(context)
+                observed = await request_json([{"role": "system", "content": "请用简体中文。"
                     "为静帧建立可见内容清单。用位置、颜色、形状和相互关系描述构图，屏字保留原文。"
                     "若多种器物、材质或身份都符合外观，用那些解释下都成立的称呼。只写能用手指指出的事实，不给人物安上剧中身份，"
                     "不从静态姿势推定事件、谈话或意图。读不清的字略过。"},
-                    {"role": "user", "content": [image, {"type": "text", "text": "用中文列出这张图的构图、可见细节和屏字。"}]}],
+                    {"role": "user", "content": [image, reading]}],
                     VisibleFrame.model_json_schema(), max_tokens=budget)
                 inventories[key] = VisibleFrame.model_validate(observed).model_dump()
             return image
@@ -1257,6 +1271,8 @@ def create_task_runtime(runtime, store, browsing):
         async def compose_frame_title(key, facts, image, *, rejected_relations=()):
             packet = {"号主本次交办": task["goal"], "已核画面事实": facts,
                       "写作偏好": task.get("owner_writing_preferences", [])}
+            if context := await archived_frame_context(key):
+                packet["归档来源背景"] = context
             if rejected_relations:
                 packet["原稿未获依据的关系类型"] = sorted(set(rejected_relations))
             schema = {"type":"object","properties":{"title_action":{"type":"string","enum":["沿用观察原句","另拟标题"]},
@@ -1661,6 +1677,8 @@ def create_task_runtime(runtime, store, browsing):
                               "item_evidence": {k: sources[k] for k in item["sources"]},
                               "observations_in_read": observations,
                               "video_read_coverage": read}
+                    if context := await archived_frame_context(key):
+                        packet["归档来源背景"] = context
                     if task.get("owner_writing_preferences"):
                         packet["owner_writing_preferences"] = task["owner_writing_preferences"]
                     decision_schema = ClipDecision.model_json_schema()
@@ -1694,6 +1712,8 @@ def create_task_runtime(runtime, store, browsing):
                         origins = [k for k in item["sources"] if k not in pool.points]
                         caption_packet = {"goal": task["goal"].rsplit("\n号主改口：", 1)[-1], "primary_frame": reply.primary_frame,
                                           "coordinate": pool.points[reply.primary_frame].coordinate()}
+                        if context := await archived_frame_context(reply.primary_frame):
+                            caption_packet["归档来源背景"] = context
                         if task.get("owner_writing_preferences"):
                             caption_packet["owner_writing_preferences"] = task["owner_writing_preferences"]
                         image = await inspect_primary(reply.primary_frame)

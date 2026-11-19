@@ -10,14 +10,16 @@ import httpx
 from evaluations.creative_archive_handoff import export
 
 from tuber_studio.agent import task_tools
-from tuber_studio.agent.archived_video import ArchivedVideo
+from tuber_studio.agent.archived_video import ArchivedVideo, MountedArchive
 from tuber_studio.agent.public_video import clip_path, read_public_part
-from tuber_studio.agent.task_delivery import evidence_index
+from tuber_studio.agent.task_delivery import VideoPoint, evidence_index
 from tuber_studio.agent.task_runtime import ToolRequest
 from tuber_studio.agent.task_tools import Search, Video, video_provenance
+from tuber_studio.agent.task_video_scope import scoped_video_step
 from tuber_studio.app import create_app
 from tuber_studio.web_fetch import WebFetchRequest
 from tuber_studio.platforms.bilibili import PlatformReadError
+from tuber_studio.video_vision import VideoPartText, frame_reading_context
 
 BV = "BV1aa1234567"
 URL = f"https://www.bilibili.com/video/{BV}/?p=2"
@@ -144,6 +146,60 @@ async def test_archive_tools_read_pixels_and_preserve_half_open_source_window(pa
         await package.video_stream_frame({}, cid="27", timestamp=22)
     with pytest.raises(PlatformReadError, match="归档原件"):
         await package.video_stream_clip({}, cid="28", start=20, end=21)
+
+
+async def test_archive_metadata_and_timed_text_stay_with_the_selected_part(package, tmp_path):
+    source = await package.video_metadata(BV)
+    assert source["description"] == "" and not source["description_complete"]
+    assert source["retrieval"] == "archive" and source["source_url"] == URL
+    assert source["archived_programme_sources"] == [
+        {"url": "https://tv.cctv.com/2020/01/01/VIDA100.shtml", "credits": "节目名：示例作品；导演：某某"}]
+    assert not (await package.subtitles(BV, "27"))["segments"]
+    manifest = tmp_path / "manifest.json"
+    data = json.loads(manifest.read_text())
+    segment = {"start": 20, "end": 21, "text": "本段字幕。"}
+    data["source"].update(description="作者写的投稿简介。", subtitle_segments=[segment])
+    manifest.write_text(json.dumps(data))
+    archived = ArchivedVideo(manifest)
+    assert (await archived.video_metadata(BV))["description"] == "作者写的投稿简介。"
+    assert (await archived.subtitles(BV, "27"))["segments"] == [segment]
+    with pytest.raises(ValueError, match="归档分 P"):
+        await archived.subtitles(BV, "28")
+    mount = MountedArchive(manifest, URL)
+    clip = {"bvid": BV, "part": 2, "cid": "27", "start": 20, "end": 22,
+            "archive_url": URL + "&t=20", "source_kind": "archived_video"}
+    step = {"result": {"clip": clip}}
+    point = VideoPoint(BV, 2, "27", 20.5, "单帧采样", None)
+    context = await mount.saved_frame_context(step, point, {BV: {2: None}})
+    assert context["视频资料"]["标题"] == "《示例作品》合集" and context["视频资料"]["简介"] == "作者写的投稿简介。"
+    assert context["视频资料"]["投稿资料原址"] == URL
+    assert context["视频资料"]["归档节目资料"] == [
+        {"原网址":"https://tv.cctv.com/2020/01/01/VIDA100.shtml", "节目资料":"节目名：示例作品；导演：某某"}]
+    assert context["分P资料"][0]["分P名"] == "第二段"
+    assert context["分P资料"][0]["邻近文字"] == [{"开始秒":20, "结束秒":21, "来源":"归档字幕", "正文":"本段字幕。"}]
+    narrower = await mount.saved_frame_context(step, point, {BV: {2: [(20.5, 21.5)]}})
+    assert narrower["分P资料"][0]["邻近文字"] == []
+    assert not await mount.saved_frame_context(step, point, {BV: {1: None}})
+    assert not await mount.saved_frame_context(step, point, {BV: {2: [(21, 22)]}})
+    assert not await mount.saved_frame_context({"result": {"clip": clip | {"cid":"28"}}}, point, {BV: {2: None}})
+
+    first_read = []
+
+    async def capture(task, metadata, frames, question, *, deadline):
+        source = VideoPartText(metadata, "27", metadata["visual_text_tracks"])
+        first_read.append(frame_reading_context({"27": source}, frames))
+        return {"evidence_ids": [frames[0]["id"]], "observations": "可见画面"}
+
+    receipt = await read_public_part(SimpleNamespace(id=str(uuid4())), Video(bvid=BV, part=2, start=20, end=21),
+                                     SimpleNamespace(analyze_video_evidence=capture), lambda: True, archive=archived)
+    pictures = [f for f in receipt["findings"] if f["kind"] == "实际视频帧"]
+    assert len(first_read) == len(pictures) == 3
+    assert all(seen == context for seen in first_read)
+    sub = next(f for f in receipt["findings"] if f["kind"] == "归档字幕抽样")
+    assert sub["seconds"] == 20 and sub["end"] == 21 and sub["archive_url"] == URL
+    scoped = scoped_video_step({"arguments":{"bvid":BV, "part":2, "start":20, "end":21}, "result":receipt},
+                               {BV: {2: [(20.0, 20.6)]}})
+    assert sub not in scoped["result"]["findings"] and any(scoped["result"]["findings"])
 
 
 def test_archived_pages_retain_original_byline_credits_and_provenance(package):

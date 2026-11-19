@@ -108,6 +108,10 @@ def scoped_video_step(step, bound):
                  and (arguments.get("part") in (None, part))
                  and (arguments.get("start") is None or arguments["start"] <= seconds < arguments["end"])
                  and permits(bound, {"bvid": video, "part": part, "seconds": seconds}, point=True))
+        if valid and item.get("source_kind") == "archived_subtitle":
+            end = item.get("end")
+            valid = (type(end) in (int, float) and seconds < end
+                     and permits(bound, {"bvid":video, "part":part, "start":seconds, "end":end}))
         findings.append(item if valid else {})
     if not whole_request:
         if not any(findings):
