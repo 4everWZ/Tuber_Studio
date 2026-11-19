@@ -157,6 +157,20 @@ SCAFFOLDING_WORDS = {
     "这个",
 }
 
+# Topic-free framing in casual questions and standing preferences. Remove whole
+# phrases before expanding Chinese n-grams, so their boundaries cannot match.
+_FRONT_FRAMING = re.compile(
+    r"平时|平常|通常|一般|以后|现在|每次|总是|喜欢|习惯|自己|我们|咱俩|咱们|"
+    r"可以|一下|讲讲|聊聊|聊一下|是什么|怎么样|什么样|感觉|你好|您好|早上好|晚上好|"
+    r"\b(?:the|and|are|was|you|your|what|how|usually|like|would|about|with)\b",
+    re.I,
+)
+
+
+def front_topic_keywords(query: str) -> set[str]:
+    return DailyMemoryService._extract_recall_keywords(_FRONT_FRAMING.sub(" ", query))
+
+
 class DailyMemoryService:
     def __init__(self, store):
         self.store = store
@@ -726,7 +740,8 @@ class DailyMemoryService:
         if not (manual_inspection and channel == "operator") and not self.preference(scope)["enabled"]:
             return []
         matched = []
-        keywords = self._extract_recall_keywords(text)
+        keywords = (front_topic_keywords(text) if channel == "operator" and not manual_inspection
+                    else self._extract_recall_keywords(text))
         search = sorted(keywords, key=lambda word: (-len(word), word))[:18]
         candidates = self.organized(scope, recall=(channel, search, resource, thread), memory_kind=memory_kind, limit=-1)
         keys = set(re.findall(r"BV[A-Za-z0-9]{10}|(?:turn|event|thread):[A-Za-z0-9_:/#.-]+", text))
