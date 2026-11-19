@@ -288,7 +288,7 @@ async def test_operations_images_browser(settings, monkeypatch):
     )
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
-        server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
+        server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False, timeout_graceful_shutdown=2))
         running = asyncio.create_task(server.serve(sockets=[listener]))
         try:
             while not server.started:

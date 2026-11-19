@@ -62,7 +62,7 @@ async def test_gallery_filters_on_context_and_works_with_generation_off(runtime,
         "whale", picture, title="街角", tags=["雨天", "撑伞"], description="她撑着一把蓝伞。", **common,
     )
     await catalog.register("whale", picture, title="雨天原稿", tags=["雨天"], enabled=False, **common)
-    store.set("message_policy", {"use_memes": True, "generate_images": False})
+    store.set("illustration_policy", {"use_memes": True, "generate_images": False})
     monkeypatch.setattr(ops, "resolve_reference", lambda *_: pytest.fail("关闭生图后不应读取生图参考"))
     monkeypatch.setattr(ops, "gateway", lambda *_: pytest.fail("选图库不应调用图片网关"))
 
