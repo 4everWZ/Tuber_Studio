@@ -1,7 +1,7 @@
 "use strict";
 (() => {
   const get = id => document.getElementById(id), audio = new Audio(); audio.preload = "auto";
-  const renderer = new LiveScene(get("scene"), {readMouth: () => mouth(active)});
+  const renderer = new LiveScene(get("scene"));
   let socket, active, knownOwner = false, generation = 0, reconnectTimer, view = null, loading = false;
   function status(text, error = false) { get("connection").textContent = text; get("connection").classList.toggle("error",error); }
   function send(data) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data)); }

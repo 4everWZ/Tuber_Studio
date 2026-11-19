@@ -2,11 +2,10 @@
 
 // The same renderer is used by the silent editor and the playback-only OBS page.
 window.LiveScene = class {
-  constructor(viewport, {editable = false, onChange = () => {}, onSelect = () => {}, onWarning = () => {}, readMouth} = {}) {
+  constructor(viewport, {editable = false, onChange = () => {}, onSelect = () => {}, onWarning = () => {}} = {}) {
     this.viewport = viewport; this.editable = editable; this.onChange = onChange; this.onSelect = onSelect; this.onWarning = onWarning;
     this.failedAssets = new Set();
-    this.readMouth = readMouth;
-    this.avatars = new Map();
+    this.reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
     this.canvas = document.createElement("div"); this.canvas.className = "scene-canvas";
     viewport.classList.add("scene-viewport"); viewport.replaceChildren(this.canvas);
     this.nodes = new Map(); this.selected = null; this.signature = "";
@@ -24,8 +23,6 @@ window.LiveScene = class {
     this.canvas.style.top = `${(this.viewport.clientHeight-this.scene.height*this.scale)/2}px`;
   }
   load(scene) {
-    for (const entry of this.avatars.values()) entry.renderer?.destroy();
-    this.avatars.clear();
     this.scene = structuredClone(scene); this.signature = JSON.stringify(scene);
     this.canvas.className = `scene-canvas ${scene.background} ${this.editable ? "editing" : ""}`;
     this.canvas.replaceChildren(); this.nodes.clear();
@@ -92,24 +89,29 @@ window.LiveScene = class {
     label.textContent = "虚构 AI 同人角色 · 非官方" + (state.weather_attribution ? " · 天气：Open-Meteo" : "");
     const playback = state.playback, media = playback?.song, song = media?.song;
     const position = playback?.position || 0;
+    const characterSlot = this.scene.items.find(item => item.kind === "avatar" && item.visible);
     const make = (tag, text, cls) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; };
     for (const item of this.scene.items) {
       const body = this.nodes.get(item.id).firstElementChild;
       if (item.kind === "avatar") {
+        if (item !== characterSlot || !state.performance?.pets_enabled) {
+          if (body.childElementCount) body.replaceChildren();
+          continue;
+        }
         const assets = (state.assets || []).filter(a=>!this.failedAssets.has(a.url || "/"+a.path));
-        const active = playback?.started && !playback.paused && !state.muted;
-        const tags = song && active ? [playback.mouth > .012 ? "sing_open" : "sing_closed", "idle"] : active ? [playback.animation_id,playback.emotion,"talking","idle"] : ["idle"];
-        const asset = tags.map(tag=>assets.find(a=>a.id===tag)).find(Boolean) || assets[0];
+        const asset = assets.find(a => a.id === "idle") || assets[0];
         let image = body.querySelector("img");
         if (asset) {
           if (!image) { image = make("img"); image.alt = state.character?.name || "角色"; image.draggable = false; body.prepend(image); image.onerror = () => { this.failedAssets.add(image.getAttribute("src")); this.onWarning("角色素材加载失败，画面已降级为可用素材"); this.update(this.state); }; }
-          const source = asset.url || "/" + asset.path; if (image.getAttribute("src") !== source) image.src = source;
+          const url = asset.url || "/" + asset.path;
+          const source = this.reducedMotion.matches && url === "/assets/whale/idle.gif" &&
+            !this.failedAssets.has("/assets/whale/memes/nap.png") ? "/assets/whale/memes/nap.png" : url;
+          if (image.getAttribute("src") !== source) image.src = source;
           body.querySelector(".avatar-empty")?.remove();
         } else {
           image?.remove();
           if (!body.querySelector(".avatar-empty")) body.prepend(make("span", "等待角色素材", "avatar-empty"));
         }
-        this.avatar(item.id, body, state.live2d, state.character, active ? playback : null);
       } else if (item.kind === "title") {
         body.replaceChildren(make("strong", this.scene.title), make("small", state.muted ? "已静音 · 深海休息中" : "水下小窝 · 聊聊天 · 唱首歌"));
       } else if (item.kind === "now") {
@@ -140,22 +142,4 @@ window.LiveScene = class {
     }
   }
 
-  avatar(id, body, manifest, character, playback) {
-    const key = JSON.stringify([character?.id, character?.version, manifest]);
-    let entry = this.avatars.get(id);
-    if (entry?.key !== key) {
-      entry?.renderer?.destroy();
-      entry = {key, ready:false};
-      this.avatars.set(id, entry);
-      if (manifest?.status === "available" && window.Live2DAvatar) {
-        entry.renderer = new window.Live2DAvatar(body, manifest, ready => {
-          entry.ready = ready;
-          if (!ready) this.onWarning("Live2D 加载失败，使用角色 GIF");
-          this.update(this.state);
-        }, this.readMouth);
-      } else if (manifest?.message) this.onWarning(manifest.message);
-    }
-    for (const fallback of body.querySelectorAll("img,.avatar-empty")) fallback.hidden = entry.ready;
-    entry.renderer?.update(playback);
-  }
 };

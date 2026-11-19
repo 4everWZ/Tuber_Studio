@@ -64,6 +64,13 @@ async page => {
     throw Error("no audible samples acknowledged for " + id);
   };
   await heard("voice-1");
+  const changeDisplay = async data => {
+    const reply = await page.request.put(base + "/api/settings/performance", {data});
+    if (!reply.ok()) throw Error("display update failed");
+  };
+  await changeDisplay({pets_enabled:false, avatar_enabled:true});
+  await pet.waitFor({state:"hidden"});
+  if (!await page.evaluate(() => window.testTracks[0].readyState === "live")) throw Error("display change stopped microphone");
   await stimulate("speech");
   await heard("voice-2");
   await stimulate("interrupt");
@@ -79,6 +86,7 @@ async page => {
   const task = await (await posted).json();
   if (!task.id || task.goal !== "整理一份私有提纲") throw Error("incorrect handoff");
   await page.getByRole("button", {name:"挂断"}).click();
+  await changeDisplay({pets_enabled:true});
   await page.locator(".chat-agent-identity #chat-pet").waitFor();
   await page.waitForFunction(() => window.testTracks.length === 1 && window.testTracks[0].readyState === "ended" &&
     window.callContexts.length === 1 && window.callContexts[0].state === "closed");

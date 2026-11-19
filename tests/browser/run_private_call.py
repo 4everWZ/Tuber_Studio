@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -24,7 +25,8 @@ const {chromium} = require(require.resolve("playwright", {
     await page.route("**/*",route=>new URL(route.request().url()).hostname==="127.0.0.1"?route.continue():route.abort());
     const whep=process.env.STUDIO_TEST_WHEP==="1";
     await page.goto("http://127.0.0.1:"+(whep?18865:18765));
-    const scenario=eval("("+fs.readFileSync("tests/browser/"+(whep?"private-whep":"private-call")+".playwright.js","utf8")+")");
+    const name = process.env.STUDIO_DISPLAY_TEST === "1" ? "character-display" : whep ? "private-whep" : "private-call";
+    const scenario=eval("("+fs.readFileSync("tests/browser/"+name+".playwright.js","utf8")+")");
     console.log(JSON.stringify(await scenario(page)));
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1});
@@ -41,6 +43,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gateway-repo", type=Path, default=ROOT.parent / "omni-avatar-api")
     parser.add_argument("--whep", action="store_true")
+    parser.add_argument("--display", action="store_true", help="Test display settings, calls, live preview and overlay")
+    parser.add_argument("--reference-defaults", type=Path, help="Seed the isolated runtime with the two approved default images")
     parser.add_argument("--rig-dir", type=Path, help="Exercise registered regular/model.inp and q/model.inp on WHEP")
     args = parser.parse_args()
     if args.rig_dir:
@@ -58,10 +62,18 @@ def main():
     tmp.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(dir=tmp) as folder, ExitStack() as cleanup:
         runtime = Path(folder)
+        if args.reference_defaults:
+            from tuber_studio.artwork_references import DEFAULTS
+            dest = runtime / "private-artifacts/artwork-defaults"
+            dest.mkdir(parents=True)
+            for name, _ in DEFAULTS.values():
+                shutil.copyfile(args.reference_defaults / name, dest / name)
         token = runtime / "fixture-token"
         token.write_text("private-call-fixture", encoding="utf-8")
         config = json.loads((ROOT / "config/studio.example.json").read_text(encoding="utf-8"))
         config["llm"]["kind"] = "demo"
+        if args.display:
+            config["features"]["live_enabled"] = True
         config.pop("responses", None)
         config.pop("video_vision", None)
         target = runtime / "studio.json"
@@ -80,7 +92,7 @@ def main():
                     key: {"avatar_id": rig if args.rig_dir else "portrait_" + char * 32,
                           "driver": "inochi2d" if args.rig_dir else "ditto", "accepted": True}
                     for key, rig, char in (("original", "regular", "a"), ("q", "q", "b"))}}))
-        env.update(STUDIO_TEST_WHEP=str(int(args.whep)), TUBER_RUNTIME=folder, TUBER_CONFIG=str(target), TUBER_PRIVATE_REALTIME_ORIGIN=origin,
+        env.update(STUDIO_DISPLAY_TEST=str(int(args.display)), STUDIO_TEST_WHEP=str(int(args.whep)), TUBER_RUNTIME=folder, TUBER_CONFIG=str(target), TUBER_PRIVATE_REALTIME_ORIGIN=origin,
                    TUBER_PRIVATE_REALTIME_TOKEN_FILE=str(token))
         for command, port, paths in (
             ([str(engine_python), "tests/browser/private_call_fixture.py"], base + 1, str(repo)),
