@@ -14,6 +14,8 @@
 
 ### 对照 Dots 的当前缺口与实施入口
 
+11 月 19 日，工作站已托管前端、Core 和迁入的业务卷。号主选定第二版 Omni 参考音色，正式工作台已播完新台词，隔离直播播放器也已核实同一任务的唯一播完回执。常规版 Avatar 打断后提前挂断的故障已修复，持续帧率与音画偏差继续按 90 秒窗验收。P2 新场需从实际写入的私有成果核对记忆的作用。[工作站入口与朗读](../../evaluations/results/workstation-studio-ip-20261119.md) · [直播播放器](../../evaluations/results/omni-voice-conditioning-20261119.md) · [打断与恢复](../../evaluations/results/oc-mature-realtime-interrupt-20261119.md) · [P2 同场回执](../../evaluations/results/creative-memory-p2-20261119.md)
+
 | 能力 | 现有边界 | 后续实现与证据 |
 | --- | --- | --- |
 | 聊天交办与精细约束 | 历史场次保留原评定。封存的真实 P2 失败片段在同组五项标题／理由对照中由 3/5 提升到 5/5：拒绝盔帽、屏风，接受红帽、龙纹装饰和火焰状光点。 [真实审稿回放](../../evaluations/results/p2-visual-specificity-replay-20261119.md) · [既有双版逐帧复核](../../evaluations/results/creative-video-independent-20261119.md) | 工作站新空库从普通聊天起步，同一目标联合验证双端改口、引用的偏好版本、撤回及片段内容。 |
