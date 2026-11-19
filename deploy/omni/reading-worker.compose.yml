@@ -1,0 +1,41 @@
+services:
+  tuber-core:
+    environment:
+      TUBER_READING_WORKER_SOCKET: /run/tuber-reading/reader.sock
+    volumes:
+      - reading-socket:/run/tuber-reading:ro
+    depends_on:
+      reading-worker:
+        condition: service_healthy
+
+  reading-worker:
+    build:
+      context: ../..
+      dockerfile: deploy/omni/Dockerfile
+      target: reading-worker
+    init: true
+    restart: unless-stopped
+    user: "65532:65532"
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    # Chromium's zygote chroots inside its own user namespace.
+    cap_add: [SYS_CHROOT]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./reading-worker/seccomp.json
+    shm_size: 256m
+    mem_limit: 1900m
+    pids_limit: 256
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
+    volumes:
+      - reading-socket:/run/tuber-reading
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(socket.AF_UNIX); s.connect('/run/tuber-reading/reader.sock'); s.close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  reading-socket:

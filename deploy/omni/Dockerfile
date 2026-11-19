@@ -5,7 +5,7 @@ WORKDIR /songs
 COPY components/song_requests/package.json components/song_requests/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm AS core
 COPY --from=uv /uv /usr/local/bin/uv
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
@@ -32,3 +32,18 @@ ENV PATH="/opt/tuber/.venv/bin:$PATH" \
 EXPOSE 9020
 USER 65532:65532
 CMD ["python", "/opt/tuber/core_entrypoint.py"]
+
+FROM core AS reading-worker
+USER root
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
+    TUBER_READING_BROWSER_CHANNEL=chromium-headless-shell \
+    HOME=/tmp
+RUN python -m playwright install --with-deps --only-shell chromium \
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -o 65532 -g 65532 -m 0700 /run/tuber-reading
+COPY deploy/omni/reading-worker/server.py /opt/tuber/reading_server.py
+USER 65532:65532
+CMD ["python", "/opt/tuber/reading_server.py"]
+
+# The default target remains the workbench used by app-compose.yml.
+FROM core AS workbench

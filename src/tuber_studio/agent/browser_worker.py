@@ -4,6 +4,7 @@ import base64
 import html
 import json
 import os
+import socket
 import sys
 from html.parser import HTMLParser
 from urllib.parse import unquote, urldefrag, urljoin
@@ -169,9 +170,10 @@ def render(page, data, previous_url):
 def serve():
     with sync_playwright() as pw:
         channel = os.environ.get("TUBER_READING_BROWSER_CHANNEL") or ("msedge" if sys.platform == "win32" else "chromium")
-        if channel not in {"msedge", "chrome", "chromium"}:
+        if channel not in {"msedge", "chrome", "chromium", "chromium-headless-shell"}:
             raise ValueError("不支持的 Chromium 安装渠道")
-        browser = pw.chromium.launch(channel=channel, chromium_sandbox=True, args=["--disable-background-networking",
+        browser = pw.chromium.launch(channel=None if channel == "chromium-headless-shell" else channel,
+            chromium_sandbox=True, args=["--disable-background-networking",
             "--disable-extensions", "--disable-sync", "--host-resolver-rules=MAP * ~NOTFOUND",
             "--proxy-server=http://unreachable.invalid:9", "--proxy-bypass-list=<-loopback>"])
         context = browser.new_context(offline=True, java_script_enabled=False, service_workers="block",
@@ -195,5 +197,22 @@ def serve():
         browser.close()
 
 
+def relay(path):
+    """One connection per leased page. Closing the pipe revokes the remote page."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.connect(path)
+        with connection.makefile("rb") as replies:
+            for request in sys.stdin.buffer:
+                connection.sendall(request)
+                reply = replies.readline(1024 * 1024)
+                if not reply.endswith(b"\n"):
+                    raise ValueError("阅读进程未返回完整视口")
+                sys.stdout.buffer.write(reply)
+                sys.stdout.buffer.flush()
+
+
 if __name__ == "__main__":
-    serve()
+    if worker_socket := os.environ.get("TUBER_READING_WORKER_SOCKET"):
+        relay(worker_socket)
+    else:
+        serve()

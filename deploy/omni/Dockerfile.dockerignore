@@ -21,4 +21,6 @@
 !deploy/omni
 !deploy/omni/core_entrypoint.py
 !deploy/omni/check_batch.py
+!deploy/omni/reading-worker
+!deploy/omni/reading-worker/server.py
 **/__pycache__

@@ -16,7 +16,8 @@ class ChromiumPage:
         self.directory = tempfile.TemporaryDirectory(prefix="studio-reading-")
         path = self.directory.name
         env = {k: os.environ[k] for k in ("SystemRoot", "WINDIR", "LOCALAPPDATA", "PLAYWRIGHT_BROWSERS_PATH",
-                                          "HOME", "PATH", "ProgramFiles", "ProgramFiles(x86)", "TUBER_READING_BROWSER_CHANNEL")
+                                          "HOME", "PATH", "ProgramFiles", "ProgramFiles(x86)", "TUBER_READING_BROWSER_CHANNEL",
+                                          "TUBER_READING_WORKER_SOCKET")
                if k in os.environ}
         env.update(TEMP=path, TMP=path, TMPDIR=path)
         worker = Path(__file__).with_name("browser_worker.py")
