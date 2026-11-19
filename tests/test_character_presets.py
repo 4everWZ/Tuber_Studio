@@ -60,7 +60,7 @@ def test_startup_does_not_reintroduce_an_archived_preset(tmp_path):
 
 
 @pytest.mark.parametrize("custom", [False, True])
-def test_resident_fields_upgrade_only_the_unmodified_previous_seed(tmp_path, custom):
+def test_resident_fields_preserve_previous_active_version_and_history(tmp_path, custom):
     previous = presets()[0]
     del previous["self_description"], previous["speaking_style"]
     if custom:
@@ -69,15 +69,12 @@ def test_resident_fields_upgrade_only_the_unmodified_previous_seed(tmp_path, cus
     path = tmp_path / "profiles.sqlite3"
     old = Store(path, [previous])
     original = old.character()
+    history = old.all("SELECT * FROM character_versions")
     old.close()
     reopened = Store(path, presets())
     try:
-        assert reopened.character("whale", 1) == original
-        current = reopened.character()
-        if custom:
-            assert current == original
-        else:
-            assert current["version"] == 2 and current["self_description"] == presets()[0]["self_description"]
+        assert reopened.character() == original
+        assert reopened.all("SELECT * FROM character_versions") == history
     finally:
         reopened.close()
 
@@ -159,8 +156,6 @@ def test_upgrade_appends_preserves_history_voice_relations_and_drafts(tmp_path, 
         assert store.character(target["id"], 1) == before
         assert current == before | {
             "version": version,
-            "self_description": target["self_description"],
-            "speaking_style": target["speaking_style"],
             "core": target["core"],
             "style": target["style"],
             "rules": target["rules"],
@@ -273,7 +268,8 @@ def test_operator_edited_seeds_are_not_migration_targets(tmp_path):
     store.close()
 
 
-def test_known_old_voice_history_upgrades_without_replacing_selected_voice(tmp_path):
+@pytest.mark.parametrize("with_resident_fields", [False, True])
+def test_known_old_voice_history_upgrades_without_replacing_selected_voice(tmp_path, with_resident_fields):
     path = tmp_path / "known-history.sqlite3"
     items = legacy()
     items[0]["voice_profile"] = "whale_sovits_v2"
@@ -282,7 +278,10 @@ def test_known_old_voice_history_upgrades_without_replacing_selected_voice(tmp_p
     store.save_character(second)
     original_rows = store.all("SELECT * FROM character_versions WHERE character_id='whale' ORDER BY version")
     store.close()
-    store = Store(path, presets())
+    targets = presets()
+    if not with_resident_fields:
+        del targets[0]["self_description"], targets[0]["speaking_style"]
+    store = Store(path, targets)
     assert store.character("whale")["version"] == 3
     assert store.character("whale")["voice_profile"] == "yaoyao_sovits_v2"
     assert (
@@ -355,4 +354,6 @@ def test_fresh_install_uses_clean_presets_without_extra_version(tmp_path):
     store = Store(tmp_path / "fresh.sqlite3", presets())
     assert all(role["version"] == 1 for role in store.characters())
     assert all(len(store.versions(role["id"])) == 1 for role in presets())
+    for field in ("self_description", "speaking_style"):
+        assert store.character("whale")[field] == presets()[0][field]
     store.close()
