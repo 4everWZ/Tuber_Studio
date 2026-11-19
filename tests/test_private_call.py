@@ -55,6 +55,25 @@ def test_private_avatar_pair_is_not_inherited_by_name_or_manifest(settings):
         }
 
 
+def test_review_recordings_are_owner_only_and_role_bound(settings):
+    app = create_app(settings)
+    role = app.state.runtime.character["id"]
+    root = settings.runtime / "private-call-previews" / role
+    root.mkdir(parents=True)
+    (root / "mature.mp4").write_bytes(b"private clip")
+    with TestClient(app) as browser:
+        auth = {"Authorization": "Bearer " + settings.admin_token}
+        listed = browser.get("/api/chat/private-call", headers=auth).json()["recordings"]
+        assert set(listed) == {"mature"}
+        path = listed["mature"]
+        assert browser.get(path).status_code == 401
+        clip = browser.get(path, headers=auth | {"Range": "bytes=0-3"})
+        assert (clip.status_code, clip.content) == (206, b"priv")
+        assert "no-store" in clip.headers["cache-control"]
+        assert browser.get(path.replace("/" + role + "/", "/another/"), headers=auth).status_code == 404
+        assert browser.get(path.replace("mature.mp4", "q.mp4"), headers=auth).status_code == 404
+
+
 @pytest.mark.parametrize("origin", ["", "http://192.0.2.3", "https://voice.example/llm", "https://user@voice.example"])
 def test_unconfigured_or_insecure_service_is_not_offered(monkeypatch, tmp_path, origin):
     key = tmp_path / "token"

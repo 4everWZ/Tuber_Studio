@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from ..config import validate_api_key
@@ -92,9 +93,35 @@ def call_avatar(settings, character):
 
 
 def register_private_call(app, runtime, require_admin):
+    recording_route = "/api/chat/private-call/recordings"
+
+    def recordings(character):
+        if character != runtime.character["id"] or not re.fullmatch("[a-zA-Z0-9_-]+", character):
+            return {}
+        base = runtime.settings.runtime / "private-call-previews" / character
+        if base.is_symlink() or base.parent.is_symlink():
+            return {}
+        files = {}
+        for profile in ("mature", "q"):
+            path = base / (profile + ".mp4")
+            if path.is_file() and not path.is_symlink():
+                files[profile] = path
+        return files
+
     @app.get("/api/chat/private-call", dependencies=[Depends(require_admin)])
     async def availability():
-        return {"configured": private_service() is not None}
+        character = runtime.character["id"]
+        result = {"configured": private_service() is not None}
+        if profiles := recordings(character):
+            result["recordings"] = {p: f"{recording_route}/{character}/{p}.mp4" for p in profiles}
+        return result
+
+    @app.get(recording_route + "/{character}/{profile}.mp4", dependencies=[Depends(require_admin)])
+    async def recording(character: str, profile: str):
+        path = recordings(character).get(profile)
+        if path is None:
+            raise HTTPException(404, "当前角色没有这段通话实录")
+        return FileResponse(path, media_type="video/mp4")
 
     @app.post("/api/chat/private-call/ticket", dependencies=[Depends(require_admin)])
     async def create_ticket(options: CallOptions = CallOptions()):

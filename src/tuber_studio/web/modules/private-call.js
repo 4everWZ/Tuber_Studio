@@ -34,7 +34,23 @@ mute.onclick = () => {
 async function check() {
   if (menu.hidden || workspace.hidden || !window.isSecureContext || !navigator.mediaDevices?.getUserMedia ||
       !window.AudioWorkletNode || !window.AudioContext) return;
-  try { open.disabled = open.hidden = !(await api("/api/chat/private-call")).configured || workspace.hidden; }
+  try {
+    const state = await api("/api/chat/private-call");
+    open.disabled = open.hidden = !state.configured || workspace.hidden;
+    const recordings = byId("private-call-recordings");
+    recordings.replaceChildren();
+    for (const [profile, label] of [["mature", "常规版通话实录"], ["q", "Q 版通话实录"]]) {
+      const url = state.recordings?.[profile];
+      if (!url) continue;
+      const link = document.createElement("a");
+      link.href = url;
+      link.textContent = label;
+      link.target = "_blank";
+      link.rel = "noopener";
+      recordings.append(link);
+    }
+    recordings.hidden = !recordings.childElementCount;
+  }
   catch { open.disabled = open.hidden = true; }
 }
 new MutationObserver(check).observe(menu, {attributes: true, attributeFilter: ["hidden"]});
