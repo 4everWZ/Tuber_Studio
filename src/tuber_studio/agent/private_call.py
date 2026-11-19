@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from ..config import validate_api_key
 from ..daily_memory import contains_memory_credential
+from ..front_persona import front_identity
 from ..http_api import endpoint
 from ..memory_sources import original_turn
 from ..operation_continuations import content_hash
@@ -181,13 +182,29 @@ def register_private_call(app, runtime, require_admin):
         if runtime.tasks.scope() != grant:
             raise HTTPException(409, "角色或授权已变化，请重新开始通话")
         character = runtime.character
-        topic = options.topic.strip()
+        topic = "" if options.temporary else options.topic.strip()
         inherited = not options.temporary and not topic and options.topic_turn is not None
         if inherited:
             topic = inherited_topic(runtime, options.topic_turn)
-        rows = private_rows(runtime, topic) if topic and not options.temporary else []
+        rows = private_rows(runtime, topic) if topic else []
+        # A corrected chat turn can resolve an existing memory by ID, but its ID is not spoken wording.
+        source_lookup = inherited and topic == f"turn:{options.topic_turn}"
+        background = []
+        if topic and not source_lookup:
+            from ..front_background import front_background
+
+            background = front_background(character, topic)
+        topic_source = None
+        if inherited and (rows or background):
+            topic_source = {"turn_id": options.topic_turn, "history_revision": history_preference(runtime)["history_revision"],
+                            "topic_stamp": content_hash(topic)}
         # A retained headline or source quote may contain the superseded preference.
         notes = [row["anecdote"] for row in rows]
+        instructions = [front_identity(character), private_participant_instructions(character)]
+        if background:
+            instructions.append("与本次话题有关的角色背景：" + dump(background))
+        if notes:
+            instructions.append("与本次私聊话题有关的记忆资料：" + dump(notes))
         show = performance(runtime.store)
         return {
             "socket": browser_socket_origin(origin) + "/v1/realtime",
@@ -201,12 +218,8 @@ def register_private_call(app, runtime, require_admin):
             },
             "memory_citations": [citation(row) for row in rows],
             "correction_targets": [row["id"] for row in rows if correctable_preference(row, runtime.daily_memory.private_owner)],
-            "memory_use": {"ids": [row["id"] for row in rows], "stamp": read_stamp(runtime, rows)} if rows else None,
-            **({"topic_source": {"turn_id": options.topic_turn,
-                                 "history_revision": history_preference(runtime)["history_revision"]}} if inherited and rows else {}),
-            "instructions": "\n".join(text for text in (
-                f"你是{character['name']}，正在和号主私下通话。",
-                private_participant_instructions(character),
-                character.get("core", {}).get("identity"), character.get("style", {}).get("instructions"),
-            ) if isinstance(text, str))[:6000] + ("\n与本次私聊话题有关的记忆资料：" + dump(notes) if notes else ""),
+            "memory_use": {"ids": [row["id"] for row in rows], "stamp": read_stamp(runtime, rows)}
+            if rows or topic_source else None,
+            **({"topic_source": topic_source} if topic_source else {}),
+            "instructions": "\n".join(instructions),
         }

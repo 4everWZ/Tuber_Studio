@@ -9,6 +9,7 @@ from starlette.responses import StreamingResponse
 
 from ..daily_memory import MemoryChanged
 from ..models import StrictModel
+from ..operation_continuations import content_hash
 from .owner_memory import history_preference
 from .owner_memory_use import MemoryUse, check_use
 from .private_call import inherited_topic
@@ -17,6 +18,7 @@ from .private_call import inherited_topic
 class TopicSource(StrictModel):
     turn_id: UUID
     history_revision: int
+    topic_stamp: str | None = None
 
 
 class CallUse(MemoryUse):
@@ -26,8 +28,9 @@ class CallUse(MemoryUse):
 def check_call_use(runtime, use):
     check_use(runtime, use)
     if source := use.topic_source:
-        if (history_preference(runtime)["history_revision"] != source.history_revision
-                or not inherited_topic(runtime, source.turn_id)):
+        topic = inherited_topic(runtime, source.turn_id)
+        if (not topic or history_preference(runtime)["history_revision"] != source.history_revision
+                or source.topic_stamp is not None and content_hash(topic) != source.topic_stamp):
             raise MemoryChanged("私聊话题已失效")
 
 

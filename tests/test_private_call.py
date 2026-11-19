@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 
 from tuber_studio.agent import private_call
 from tuber_studio.app import create_app
+from tuber_studio.front_persona import front_identity
+from tuber_studio.operation_identity import private_participant_instructions
 from tuber_studio.store import editable_character
 
 
@@ -99,6 +101,56 @@ async def test_ticket_uses_only_the_eligible_chat_topic_and_revalidates_it(setti
         revoked = fresh["memory_use"] | {"topic_source": fresh["topic_source"]}
         assert (await client.post(path + "/memory-validate", json=revoked)).status_code == 409
         assert (await ticket(topic_turn=turn))["memory_use"] is None
+    await app.state.comments.adapter.close()
+    app.state.store.close()
+
+
+async def test_role_background_is_selected_at_open_and_its_inherited_source_can_be_withdrawn(settings, monkeypatch):
+    app = create_app(settings)
+    runtime = app.state.runtime
+    passage = "白塔码头的铜钟曾被海浪冲走。"
+    unrelated = "北岭茶馆的招牌是紫色的。"
+    card = editable_character(runtime.character)
+    card.update(self_description="码头看守", speaking_style="轻声慢讲",
+                core={"identity": "旧卡身份长段，后面还有旧设定。"},
+                style={"instructions": "旧卡风格长段，后面还有旧示例。"},
+                lore=[{"keywords": ["白塔码头"], "text": passage}, {"keywords": ["北岭茶馆"], "text": unrelated}])
+    runtime.store.replace_character(card)
+    base = "\n".join([front_identity(runtime.character), private_participant_instructions(runtime.character)])
+    assert all(word in base for word in ("码头看守", "轻声慢讲", runtime.character["name"]))
+    monkeypatch.setattr(private_call, "private_service", lambda: ("https://voice.example", "test-key"))
+
+    async def mint(*args):
+        return "test-ticket"
+
+    monkeypatch.setattr(private_call, "mint_ticket", mint)
+    path = "/api/chat/private-call"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        async def ticket(**body):
+            return (await client.post(path + "/ticket", json=body)).raise_for_status().json()
+
+        query = "聊聊白塔码头吧。"
+        assert (await ticket())["instructions"] == base
+        assert (await ticket(topic="晚饭吃西瓜吗"))["instructions"] == base
+        assert (await ticket(temporary=True, topic=query))["instructions"] == base
+        explicit = await ticket(topic=query)
+        assert explicit["instructions"].startswith(base) and passage in explicit["instructions"]
+        assert unrelated not in explicit["instructions"] and "旧卡" not in explicit["instructions"]
+        turn = str(uuid4())
+        (await client.post("/api/chat/intelligent", json={
+            "request_id": turn, "message": query, "intent": {"action": "chat"},
+        })).raise_for_status()
+        inherited = await ticket(topic_turn=turn)
+        assert inherited["instructions"] == explicit["instructions"]
+        assert not inherited["memory_citations"] and inherited["memory_use"]["ids"] == []
+        use = inherited["memory_use"] | {"topic_source": inherited["topic_source"]}
+        assert (await client.post(path + "/memory-validate", json=use)).status_code == 200
+        runtime.store.execute("UPDATE operator_chat_turns SET message=? WHERE request_id=?", ("今天吃西瓜吧。", turn))
+        assert (await client.post(path + "/memory-validate", json=use)).status_code == 409
+        assert (await ticket(topic_turn=turn))["instructions"] == base
+        runtime.store.execute("DELETE FROM operator_chat_turns WHERE request_id=?", (turn,))
+        assert (await client.post(path + "/memory-validate", json=use)).status_code == 409
+        assert (await ticket(topic_turn=turn))["instructions"] == base
     await app.state.comments.adapter.close()
     app.state.store.close()
 
