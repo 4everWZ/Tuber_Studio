@@ -743,6 +743,12 @@ def settle_aliases(browsing, event_row, row, target, source):
 
 
 async def event_unlocked(browsing, event_row, row, metrics, event, thread):
+    target, source = thread["target"], thread["source"]
+    with browsing.comment_admission.slot(row, "reply_public", target.get("bvid"), source["author_uid"]) as admission:
+        return await decide_event(browsing, event_row, row, metrics, event, thread, admission)
+
+
+async def decide_event(browsing, event_row, row, metrics, event, thread, admission):
     config = row["config"]
     source, target = thread["source"], dict(thread["target"])
     target["parent"] = str(source["comment_id"])
@@ -816,7 +822,7 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
         return like_intent
     reply_limited = bool(target.get("bvid") and config["reply_enabled"] and
                          browsing.repo.video_reply_limit_reached(row, target["bvid"]))
-    allow_public = config["reply_enabled"] and not (like_enabled and reply_limited)
+    allow_public = config["reply_enabled"] and not admission and not (like_enabled and reply_limited)
     allow_like = like_enabled and not source_row.get("liked_by_self")
     group_ids = event.get("grouped_ids") or []
     if group_ids:
@@ -836,6 +842,8 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
     if event_row["kind"] == "own_comment":
         thread["resource_author_uid"] = str(row["account_id"])
     reply = browsing.decisions.invited_private_response(row, thread)
+    if reply is None and admission and not allow_like:
+        raise admission
     material, keys = None, []
     allowed = {"public:" + str(source["comment_id"])}
     if thread["resource_type"] == "video":
@@ -897,6 +905,8 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
             browsing.decisions.comment_progress.save(row, resource, source, reply)
     if reply.action == "reply_public" and not allow_public or reply.action == "like_comment" and not allow_like:
         raise ValueError("回应动作未获当前任务授权")
+    if admission and reply.action in {"skip", "wait"}:
+        raise admission
     if like_enabled and reply_limited and reply.action in {"skip", "wait"}:
         limit = DailyReplyLimitReached(day_window(config.get("business_timezone", "Asia/Taipei")))
         browsing.store.execute(
@@ -952,6 +962,6 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
             return
         if intent["auto_authorized"]:
             browsing.queue_publication(intent["id"])
-    browsing.store.execute("UPDATE browsing_events SET status='drafted' WHERE id=?", (event_row["id"],))
+    browsing.store.execute("UPDATE browsing_events SET status='drafted',error=NULL WHERE id=?", (event_row["id"],))
     settle_aliases(browsing, event_row, row, target, source)
     return intent

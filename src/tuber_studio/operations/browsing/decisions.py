@@ -5,6 +5,7 @@ import json
 import re
 import time
 import unicodedata
+from contextlib import ExitStack
 from difflib import SequenceMatcher
 
 from ...comment_materials import model_comment_materials, prepare_comment_materials
@@ -723,6 +724,14 @@ class BrowsingDecisions:
         references = {segment["id"] for segment in self.browsing._segments(material)}
         if not references or active["config"]["top_level_limit"] <= 0:
             return
+        with self.browsing.comment_admission.slot(active, "top_level", bvid) as admission:
+            if admission:
+                return
+            return await self._priority_comment(active, row, material, context, references, metrics)
+
+    async def _priority_comment(self, active, row, material, context, references, metrics):
+        metadata = material["metadata"]
+        bvid = metadata["bvid"]
         response = await self._response(row, material, context, references, "top_level", metrics)
         self.browsing.repo.save_main_decision(row, bvid, response)
         if response.action != "reply_public" or not self.browsing.operations.accepting_work:
@@ -756,6 +765,7 @@ class BrowsingDecisions:
         decisions, followup = [], {}
         direct_response, context = None, None
         payload = {}
+        slots = ExitStack()
         try:
             progress = self.browsing.repo.content_progress(row, material["metadata"]["bvid"])
             main_decision = (progress or {}).get("main_decision")
@@ -794,6 +804,11 @@ class BrowsingDecisions:
                     ),
                 )
                 if references and not existing_top and not main_decision:
+                    admission = slots.enter_context(self.browsing.comment_admission.slot(
+                        row, "top_level", material["metadata"]["bvid"],
+                    ))
+                    if admission:
+                        raise admission
                     context = (
                         (await self.browsing.video_comment_context(row, material["metadata"]["bvid"]))
                         if row["config"]["top_level_enabled"]
@@ -811,6 +826,8 @@ class BrowsingDecisions:
                         self.browsing.repo.save_main_decision(
                             row, material["metadata"]["bvid"], direct_response
                         )
+                    if not direct_response or direct_response.action != "reply_public":
+                        slots.close()
                 action = direct_response.action if direct_response else "read_comments"
                 if result.get("task_kind") == "comment_visit" and action in {"skip", "wait", "finish"}:
                     action = "read_comments"
@@ -944,6 +961,10 @@ class BrowsingDecisions:
                     < row["config"]["top_level_limit"]
                 )
             ):
+                if not direct_response or main_decision:
+                    admission = slots.enter_context(self.browsing.comment_admission.slot(row, "top_level", bvid))
+                    if admission:
+                        raise admission
                 self.browsing.repo.reserve_budget(row["id"], top_levels=1)
                 if context is None:
                     context = await self.browsing.video_comment_context(row, bvid)
@@ -969,6 +990,7 @@ class BrowsingDecisions:
                     if intent["auto_authorized"]:
                         self.browsing.queue_publication(intent["id"])
 
+            slots.close()
             like_enabled = row["config"].get("video_like_enabled", False)
             fav_enabled = row["config"].get("video_fav_enabled", False)
             if (like_enabled or fav_enabled) and actionable:
@@ -1154,6 +1176,7 @@ class BrowsingDecisions:
                 public_error(error),
             )
         finally:
+            slots.close()
             heartbeat.cancel()
             await asyncio.gather(heartbeat, return_exceptions=True)
 
@@ -1169,6 +1192,7 @@ class BrowsingDecisions:
         bvid = metadata["bvid"]
         scope = (str(row["account_id"]), row["character_id"], bvid, root_id)
         lane = operation_lane.set("background")
+        slots = ExitStack()
         try:
             async with self.browsing.runtime.conversation_turn(scope) as waited:
                 self.browsing._check_round(row)
@@ -1227,6 +1251,11 @@ class BrowsingDecisions:
                     source = source | {"grouped_comments": grouped}
                 thread_response = self.invited_private_response(row, thread_context)
                 if thread_response is None:
+                    admission = slots.enter_context(
+                        self.browsing.comment_admission.slot(row, "reply_public", bvid, author_uid)
+                    )
+                    if admission:
+                        raise admission
                     thread_response = self.comment_progress.get(row, bvid, source)
                     if thread_response:
                         try:
@@ -1280,6 +1309,7 @@ class BrowsingDecisions:
                     self.browsing.queue_publication(thread_intent["id"])
                 return thread_intent
         finally:
+            slots.close()
             operation_lane.reset(lane)
 
     @staticmethod
