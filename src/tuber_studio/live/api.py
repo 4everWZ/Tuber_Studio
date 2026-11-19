@@ -135,10 +135,7 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
 
     @app.put("/api/live/music", dependencies=[Depends(require_admin)])
     async def save_music(data: MusicSettings):
-        if data.default_mode == "sing" and not media.singing.describe(runtime.character)["available"]:
-            raise ValueError("演唱模型尚未接入，当前点歌使用直接播放")
-        store.set("music_settings", data.model_dump())
-        return media.config()
+        return media.save_music_settings(data, runtime.character)
 
     @app.put("/api/live/songs/{identity}", dependencies=[Depends(require_admin)])
     async def save_song(identity: str, data: dict = Body(...)):

@@ -233,9 +233,9 @@ class BrowsingService:
         config = BrowsingPolicy.model_validate(merged).model_dump()
         # Saved channel permissions remain independent from the runtime switch.
         self.store.set("browsing_policy", config)
-        self.operations.configure(
-            {k: config[k] for k in ("max_per_hour", "max_per_day", "recipient_cooldown_seconds")}
-        )
+        limits = {k: config[k] for k in ("max_per_hour", "max_per_day", "recipient_cooldown_seconds") if k in data}
+        if limits:
+            self.operations.configure(limits)
         self.changed.set()
         self.interactions_changed.set()
         self.notification_schedule.set()

@@ -184,6 +184,12 @@ class LiveMedia:
     def config(self):
         return MusicSettings.model_validate(self.store.get("music_settings", {})).model_dump()
 
+    def save_music_settings(self, data, character):
+        if data.default_mode == "sing" and not self.singing.describe(character)["available"]:
+            raise ValueError("演唱模型尚未接入，当前点歌使用直接播放")
+        self.store.set("music_settings", data.model_dump())
+        return self.config()
+
     def scene(self):
         return self.store.get("live_scene", default_scene())
 
