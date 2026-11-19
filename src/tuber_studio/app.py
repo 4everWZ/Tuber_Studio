@@ -79,6 +79,7 @@ def create_app(
     account = BilibiliAccount(comments)
     runtime.account = account
     memes = MemeCatalog(settings, store)
+    comments.memes = memes
     dynamics = Dynamics(settings, store, runtime, comments, memes=memes)
     messages = DirectMessages(settings, store, runtime, comments, message_adapter, memes=memes)
     comments.direct_messages = messages

@@ -16,6 +16,8 @@ from .dynamic_comment_card import comment_card, render_comment_card
 from .dynamic_grounding import review_caption
 from .generation_meter import budgeted_json
 from .meme_selection import select_meme
+from .operation_attachments import (checked_image, decision, image_payload, image_scope, queue_image,
+                                    record_upload, row_ref, uploads, wait_decision)
 from .operation_continuations import content_hash
 from .operation_feedback import (
     FeedbackPublication,
@@ -154,6 +156,8 @@ class Dynamics:
             " WHERE status IN ('submitting','pending_verification')",
         ):
             store.execute(sql)
+        if "image_ref" not in {r[1] for r in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
+            store.execute("ALTER TABLE dynamic_posts ADD COLUMN image_ref TEXT")
         if "meme_id" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
             store.execute("ALTER TABLE dynamic_posts ADD COLUMN meme_id TEXT")
         if "account_id" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
@@ -376,7 +380,7 @@ class Dynamics:
         scope = organizer.scope() if organizer and getattr(self.runtime, "browsing", None) else None
         return scope, self.daily_memory.preference(scope) if scope else {"enabled": True, "revision": 0}
 
-    def _sources(self):
+    def _sources(self, *, bound_videos=()):
         char = self._character()
         scope, preference = self._memory_preference()
         result = []
@@ -430,6 +434,29 @@ class Dynamics:
         if browsing := getattr(self.runtime, "browsing", None):
             account_id = browsing.account or self.comments.display_account_id()
             if account_id:
+                watched = self.store.all(
+                    "WITH watched AS (SELECT bvid,material,updated_at FROM browsing_video_progress "
+                    "WHERE account_id=? AND character_id=? AND read_state IN ('complete','viewed')) "
+                    "SELECT bvid,material FROM watched WHERE bvid IN (SELECT bvid FROM watched ORDER BY updated_at DESC LIMIT 8) "
+                    "OR bvid IN (SELECT value FROM json_each(?)) ORDER BY updated_at DESC",
+                    (account_id, char["id"], _json(bound_videos)),
+                )
+                for video in watched:
+                    material = json.loads(video["material"])
+                    bvid = video["bvid"]
+                    if material.get("metadata", {}).get("bvid") != bvid or not re.fullmatch(r"BV[0-9A-Za-z]{10}", bvid):
+                        continue
+                    excerpts = []
+                    for part in material.get("parts", []):
+                        for segment in part.get("segments", []):
+                            if segment.get("text") and len(excerpts) < 4:
+                                excerpts.append(f"CID {part['cid']} · {segment['start']}s · {segment['text'][:240]}")
+                        if len(excerpts) == 4:
+                            break
+                    if excerpts:
+                        result.append({"id": f"video:{bvid}", "type": "watched_video", "fictional": False,
+                                       "text": material["metadata"].get("title", "") + " · 已读片段\n" + "\n".join(excerpts),
+                                       "source_url": f"https://www.bilibili.com/video/{bvid}"})
                 for row in self.store.all(
                     "SELECT id,text,target,receipt FROM browsing_intents WHERE kind='reply_public' AND status='published' "
                     "AND json_extract(target,'$.memory_audit') IS NULL "
@@ -516,8 +543,15 @@ class Dynamics:
     def _post_view(self, row):
         post = self._decode(row)
         post.pop("send_payload", None)
+        post["image_ref"] = row_ref(post)
+        post["illustration"] = decision(self.runtime, "dynamics", post, post["image_ref"])
+        if post["image_ref"] or post.get("meme_id") or post.get("comment_card_snapshot"):
+            post["image_uploads"] = uploads(self.store, "dynamics", post["id"])
         snapshot = post.pop("comment_card_snapshot", None)
         post["comment_card"] = json.loads(snapshot) if snapshot is not None else comment_card(post["sources"], legacy=True)
+        post["review_key"] = content_hash([post.get(k) for k in (
+            "id", "account_id", "character_id", "character_version", "updated_at", "content",
+            "sources", "meme_id", "illustration", "comment_card")])
         return continuation_view(self.runtime, "dynamics", post)
 
     def _comment_card(self, sources, actor):
@@ -543,7 +577,8 @@ class Dynamics:
                 and decision is not None
                 and json.loads(decision["sources"]) == sources
             )
-        current = {s["id"]: s for s in self._sources()}
+        bound_videos = [s["id"].removeprefix("video:") for s in sources if s.get("type") == "watched_video"]
+        current = {s["id"]: s for s in (self._sources(bound_videos=bound_videos) if bound_videos else self._sources())}
         dependencies = [item for source in sources for item in source.get("memory_dependencies", [])]
         dependencies.extend(json.loads(row.get("context_sources") or "[]"))
         originals = [{key: value for key, value in source.items() if key != "memory_dependencies"} for source in sources]
@@ -561,14 +596,19 @@ class Dynamics:
             "rejected",
         }:
             raise ValueError("当前动态不能执行该审核操作")
+        if options.pop("review_key", row["review_key"]) != row["review_key"]:
+            raise ValueError("草稿已变化，请刷新配图与正文")
         if set(options) - {"meme_id"} or options and action != "edit":
             raise ValueError("更换配图需要edit并重新审核")
         meme_id = options.get("meme_id", row.get("meme_id"))
         if not self._valid_sources(row):
             self._status(post_id, "invalidated", "人物版本或公开来源已变化")
             raise ValueError("人物版本或公开来源已变化，需重新评估")
+        illustration = None if "meme_id" in options else row["illustration"]
+        if action == "approve":
+            image_payload(illustration)
         if action == "copy":
-            if meme_id or row["comment_card"]:
+            if illustration or meme_id or row["comment_card"]:
                 raise ValueError("图文动态不能复制成纯文字，请审核后发布图文")
             if row["status"] != "approved":
                 raise ValueError("请先审核动态再复制")
@@ -582,10 +622,14 @@ class Dynamics:
                 raise ValueError("表情组件尚未启用")
             self.memes.pin(meme_id, row["character_id"], owner)
         status = {"approve": "approved", "reject": "rejected", "edit": "pending_review"}[action]
+        bound_ref = illustration if action == "approve" else row["image_ref"]
+        if "meme_id" in options:
+            bound_ref = None
         try:
             self.store.execute(
-                "UPDATE dynamic_posts SET status=?,content=?,content_hash=?,meme_id=?,error=NULL,updated_at=? WHERE id=?",
-                (status, content, _content_hash(content), meme_id, time.time(), post_id),
+                "UPDATE dynamic_posts SET status=?,content=?,content_hash=?,meme_id=?,image_ref=?,error=NULL,updated_at=? WHERE id=?",
+                (status, content, _content_hash(content), meme_id, _json(bound_ref) if bound_ref else None,
+                 time.time(), post_id),
             )
         except BaseException:
             if self.memes and meme_id != row.get("meme_id"):
@@ -700,6 +744,8 @@ class Dynamics:
                 raise ValueError("配图组件未挂载")
             asset = self.memes.resolve(row["meme_id"], character)
             value |= {"meme_id": row["meme_id"], "asset_sha256": asset["sha256"]}
+        elif row.get("illustration"):
+            value.update(image_payload(row["illustration"]))
         return value
 
     async def _refresh_post_identity(self, post_id, automatic, epoch):
@@ -936,7 +982,7 @@ class Dynamics:
                 return {"status": "unsupported"}
             payload = row["feedback"]["sent_payload"]
             target = row["binding"]["target"] | {
-                "message_kind": "image" if payload.get("meme_id") or payload.get("comment_card_sha256") else "text"
+                "message_kind": "image" if payload.get("asset_sha256") or payload.get("comment_card_sha256") else "text"
             }
             if payload.get("prepared_images"):
                 target["images"] = payload["prepared_images"]
@@ -967,6 +1013,14 @@ class Dynamics:
             self.runtime.settings = self.settings
         control = self.operations.policy()
         epoch = control["epoch"] if automatic and control["enabled"] else None
+        if automatic:
+            await wait_decision(self.runtime, "dynamics", self._post(post_id), lambda:
+                                self.policy()["auto_publish"] and self.operations.policy()["epoch"] == epoch)
+        confirmed_hash = None
+        if expected_text is not None:
+            confirmed = self._post(post_id)
+            char = self.store.character(confirmed["character_id"], confirmed["character_version"])
+            confirmed_hash = content_hash(self._outgoing(confirmed, char))
         return await FeedbackPublication(self.runtime, self.store, self.operations).submit(
             "dynamics",
             post_id,
@@ -976,7 +1030,7 @@ class Dynamics:
                 automatic,
                 revision_ticket=ticket,
                 binding=binding,
-                body_hash=body_hash,
+                body_hash=confirmed_hash or body_hash,
                 authorization_epoch=epoch,
                 expected_text=expected_text,
                 submission=submission,
@@ -1062,6 +1116,9 @@ class Dynamics:
                 if not self.memes:
                     raise ValueError("图文草稿缺少表情组件，保留待审")
                 image = self.memes.read(row["meme_id"], row["character_id"])
+            elif row.get("illustration"):
+                image = checked_image(self.memes, row["illustration"], row["character_id"],
+                                      runtime=self.runtime, scope=image_scope("dynamics", row))
             adapter = self.comments.adapter
             account_id = (
                 await self.comments.account_id()
@@ -1079,6 +1136,15 @@ class Dynamics:
             actual_binding = self._publication_binding(row, account_id, character)
             payload = self._outgoing(row, character)
             prepared_images = []
+
+            def record_uploaded(index, picture):
+                ref = row.get("illustration")
+                if row.get("meme_id"):
+                    ref = {"asset_id": row["meme_id"], "sha256": payload["asset_sha256"]}
+                elif card:
+                    hashes = payload.get("comment_card_page_sha256") or [payload["comment_card_sha256"]]
+                    ref = {"asset_id": f"comment-card:{post_id}:{index + 1}", "sha256": hashes[index]}
+                record_upload(self.store, "dynamics", post_id, ref, picture)
 
             def record_prepared_images(images):
                 prepared_images.extend(
@@ -1127,10 +1193,10 @@ class Dynamics:
                     or fresh["content"] != row["content"]
                     or fresh["sources"] != row["sources"]
                     or fresh["comment_card"] != row["comment_card"]
-                    or fresh.get("meme_id") != row.get("meme_id")
+                    or fresh.get("meme_id") != row.get("meme_id") or fresh.get("illustration") != row.get("illustration")
                 ):
                     raise PublishCancelled("人物版本或公开来源已变化，取消发送")
-                if image and not card:
+                if image and row.get("meme_id") and not card:
                     try:
                         current_asset = self.memes.resolve(row["meme_id"], character)
                         if current_asset["sha256"] != image["asset"]["sha256"]:
@@ -1202,7 +1268,7 @@ class Dynamics:
                         image,
                         before_send=before_send,
                         prepare_authorized=lambda: before_send(reserve=False),
-                        on_prepared=record_prepared_images,
+                        on_prepared=record_prepared_images, on_uploaded=record_uploaded,
                     )
                 else:
                     receipt = await publish_text(adapter, payload["text"], before_send=before_send)
@@ -1363,7 +1429,8 @@ class Dynamics:
         return data
 
     def _save_decision(
-        self, char, manual, data, sources, error=None, *, generation_identity=None, schedule=True, account_id=None
+        self, char, manual, data, sources, error=None, *, generation_identity=None, schedule=True, account_id=None,
+        decide_image=True
     ):
         now = time.time()
         selected = [s for s in sources if s["id"] in data["source_ids"]]
@@ -1426,6 +1493,14 @@ class Dynamics:
                     "UPDATE dynamic_posts SET generation_identity=? WHERE id=?",
                     (_json(generation_identity or runtime_identity(self.runtime, char)), post_id),
                 )
+        if data["action"] == "post" and decide_image and not comment_card(selected):
+            post = self._post(post_id)
+            # Only selected public sources cross into the illustration prompt.
+            public = [{k: source[k] for k in ("id", "type", "text", "source_url") if k in source}
+                      for source in selected]
+            ref = queue_image(self.runtime, "dynamics", post, public, data["content"])
+            if ref:
+                self.store.execute("UPDATE dynamic_posts SET image_ref=? WHERE id=?", (_json(ref), post_id))
         if schedule:
             self._schedule(data["next_evaluation_seconds"], error)
         return next(d for d in self.list_decisions(100) if d["id"] == decision_id)
@@ -1785,6 +1860,7 @@ class Dynamics:
                     sources,
                     "长正文含大量重复段落，保留原文待审" if output_review else None,
                     generation_identity=generation_identity,
+                    decide_image=not selected and not selection_failed,
                 )
                 if generation_continuation:
                     self.store.execute(

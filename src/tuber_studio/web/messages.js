@@ -1,3 +1,4 @@
+import { illustrationUrl, illustrationStatus } from "./modules/operation-image.js";
 "use strict";
 import { MemePicker, memePreviewUrl } from "./memes.js?v=20261118.1";
 import { contactLabel, contactReason, contactStatus } from "./modules/message-labels.js?v=20261107.20";
@@ -64,12 +65,13 @@ export class MessagesPanel {
     const imageActions=this.element('div',null,'actions dm-meme-actions');
     const pick=this.element('button','选择表情包');pick.type='button';pick.dataset.pickMeme='';
     const clear=this.element('button','改用文字');clear.type='button';clear.dataset.clearMeme='';
-    const manage=this.element('a','管理表情包图库 →');manage.href='#assets';imageActions.append(pick,clear,manage);
+    const manage=this.element('a','管理表情包图库 →');manage.href='#assets';const attach=this.element('button','附图并保留正文');attach.type='button';attach.dataset.attachImage='';imageActions.append(pick,attach,clear,manage);
     const imagePreview=this.element('div',null,'dm-meme-preview');imagePreview.dataset.memePreview='';imagePreview.hidden=true;
-    imagePreview.innerHTML='<strong data-meme-name></strong><figure><img data-meme-image alt="已选表情包" hidden><span data-meme-fallback class="hint" hidden>图片预览不可用，请检查图库。</span></figure><p data-meme-availability class="hint"></p><p class="hint">发送时只有这一张图片；下方文字仅供审阅或切回文字，不会一并发送。</p>';
+    imagePreview.innerHTML='<strong data-meme-name></strong><figure><img data-meme-image alt="已选表情包" hidden><span data-meme-fallback class="hint" hidden>图片预览不可用，请检查图库。</span></figure><p data-meme-availability class="hint"></p><p data-image-mode class="hint">发送时只有这一张图片；下方文字仅供审阅或切回文字，不会一并发送。</p>';
     const textLabel=this.$('[data-text]').parentElement;const title=this.element('span','私信内容');title.dataset.textLabel='';textLabel.firstChild.replaceWith(title);textLabel.before(imageActions,imagePreview);
-    this.memePicker=new MemePicker(api,(id,asset)=>this.chooseMeme(id,asset,this.pickerContext));
-    pick.onclick=()=>{const row=this.value?.drafts.find(item=>item.id===this.selected);if(!row)return;this.pickerContext={id:row.id,account:this.value.account_id,character:row.character_id};this.memePicker.open(row.meme_id);};
+    this.memePicker=new MemePicker(api,(id,asset)=>this.chooseMeme(id,asset,this.pickerContext),{description:'选择启用的图片，保存后重新审核。'});
+    pick.onclick=()=>{const row=this.value?.drafts.find(item=>item.id===this.selected);if(!row)return;this.pickerContext={id:row.id,account:this.value.account_id,character:row.character_id,updated_at:row.updated_at};this.memePicker.open(row.meme_id);};
+    attach.onclick=()=>{const row=this.value?.drafts.find(item=>item.id===this.selected);if(!row)return;this.pickerContext={id:row.id,account:this.value.account_id,character:row.character_id,updated_at:row.updated_at,attach:true};this.memePicker.open(row.illustration?.asset_id);};
     clear.onclick=()=>this.chooseMeme(null).catch(error=>{this.$('[data-error]').textContent=error.message;});
     this.$('[data-refresh]').onclick=()=>this.refresh();
     this.$('[data-sync]').onclick=()=>this.action(async()=>{const result=await api('/api/messages/sync',{method:'POST'});notify(`读取完成，新增 ${result.imported} 条私信${result.errors.length?'，部分会话读取失败':''}`);await this.refresh();});
@@ -91,9 +93,9 @@ export class MessagesPanel {
       this.conversation();
     };
     this.$('[data-text]').oninput=()=>{const row=this.value?.drafts.find(item=>item.id===this.selected);this.dirty=this.$('[data-text]').value!==(row?.text||'');if(this.dirty)this.rememberDraft();else this.edits.delete(this.editKey());this.renderEditor();};
-    for(const button of root.querySelectorAll('[data-review]'))button.onclick=()=>this.action(async()=>{const id=this.selected;const result=await api(`/api/messages/drafts/${id}/review`,{method:'POST',body:{action:button.dataset.review,text:this.$('[data-text]').value}});this.applyDraftResult(result,id);await this.refresh();});
+    for(const button of root.querySelectorAll('[data-review]'))button.onclick=()=>this.action(async()=>{const id=this.selected,row=this.value?.drafts.find(item=>item.id===id);const result=await api(`/api/messages/drafts/${id}/review`,{method:'POST',body:{action:button.dataset.review,text:this.$('[data-text]').value,updated_at:row.updated_at,expected_image:row.illustration??null}});this.applyDraftResult(result,id);await this.refresh();});
     this.$('[data-copy]').onclick=()=>this.action(async()=>{const id=this.selected;await navigator.clipboard.writeText(this.$('[data-text]').value);const result=await api(`/api/messages/drafts/${id}/review`,{method:'POST',body:{action:'copy'}});this.applyDraftResult(result,id);await this.refresh();});
-    this.$('[data-send]').onclick=()=>this.action(async()=>{const row=this.value?.drafts.find(item=>item.id===this.selected);if(!row)return;try{if(row.message_kind==='image')await api(`/api/messages/drafts/${row.id}/review`,{method:'POST',body:{action:'approve'}});const result=await api(`/api/messages/drafts/${row.id}/send`,{method:'POST'});this.applyDraftResult(result,row.id);if(result.status==='published')notify(row.message_kind==='image'?'单张图片已发送，平台回执已保存。':'私信已发送，平台回执已保存。');}finally{await this.refresh();}});
+    this.$('[data-send]').onclick=()=>this.action(async()=>{const row=this.value?.drafts.find(item=>item.id===this.selected);if(!row)return;try{if(row.message_kind==='image')await api(`/api/messages/drafts/${row.id}/review`,{method:'POST',body:{action:'approve',updated_at:row.updated_at,expected_image:row.illustration??null}});const result=await api(`/api/messages/drafts/${row.id}/send`,{method:'POST'});this.applyDraftResult(result,row.id);if(result.status==='published')notify(row.message_kind==='image'?'单张图片已发送，平台回执已保存。':'私信已发送，平台回执已保存。');}finally{await this.refresh();}});
     this.$('[data-retry]').onclick=()=>this.action(async()=>{await api(`/api/messages/drafts/${this.selected}/retry`,{method:'POST'});await this.refresh();});
     this.renderEditor();
   }
@@ -112,7 +114,7 @@ export class MessagesPanel {
     if(context&&(context.id!==row.id||context.account!==this.value.account_id||context.character!==row.character_id))throw new Error('账号或草稿已变化，请重新选图。');
     const account=this.value.account_id,id=row.id,text=this.$('[data-text]').value;
     this.busy=true;this.renderEditor();this.$('[data-error]').textContent='';
-    try{await this.api(`/api/messages/drafts/${id}/review`,{method:'POST',body:{action:'edit',meme_id,...(text.trim()?{text}:{})}});if(this.value.account_id!==account||this.selected!==id)return;if(asset)this.memeCache.set(`${row.character_id}:${asset.asset_id}`,asset);row.message_kind=meme_id?'image':'text';row.meme_id=meme_id;row.meme=asset;row.status='pending_review';this.dirty=false;await this.refresh();}
+    try{await this.api(`/api/messages/drafts/${id}/review`,{method:'POST',body:{action:'edit',updated_at:context?.updated_at??row.updated_at,...(context?.attach?{image_ref:{asset_id:meme_id,sha256:asset.sha256}}:{meme_id}),...(text.trim()?{text}:{})}});if(this.value.account_id!==account||this.selected!==id)return;if(asset)this.memeCache.set(`${row.character_id}:${asset.asset_id}`,asset);row.message_kind=meme_id?'image':'text';row.meme_id=meme_id;row.meme=asset;row.status='pending_review';this.dirty=false;await this.refresh();}
     catch(error){this.$('[data-error]').textContent=error.message;throw error;}
     finally{this.busy=false;this.renderEditor();}
   }
@@ -253,18 +255,25 @@ export class MessagesPanel {
     this.updateDelegateButton();
     for (const check of this.root.querySelectorAll('[data-drafts] input[type=checkbox]')) check.disabled=this.busy;
     for(const radio of this.$('[data-draft-views]').querySelectorAll('input'))radio.disabled=this.busy;
-    const image=row?.message_kind==='image',asset=row?.meme||this.memeCache.get(`${row?.character_id}:${row?.meme_id}`),unavailable=image&&asset&&(!asset.enabled||asset.missing);
-    this.$('[data-text-label]').textContent=image?'审阅文字 / 文字备选（不会随图片发送）':'私信内容';
+    const ref=row?.illustration,legacy=row?.message_kind==='image',image=legacy||!!ref,asset=row?.meme||this.memeCache.get(`${row?.character_id}:${row?.meme_id}`),unavailable=image&&asset&&(!asset.enabled||asset.missing);
+    this.$('[data-text-label]').textContent=legacy?'审阅文字 / 文字备选（不会随图片发送）':'私信内容';
     this.$('[data-pick-meme]').disabled=!editable||this.busy;this.$('[data-clear-meme]').disabled=!editable||this.busy||!image;this.$('[data-pick-meme]').hidden=!editable;this.$('[data-clear-meme]').hidden=!editable;
+    this.$('[data-attach-image]').disabled=!editable||this.busy||!row?.account_id;this.$('[data-attach-image]').hidden=!editable;
+    this.$('[data-image-mode]').textContent=legacy?'只发一条图片消息，正文保留作备选。':'先发图片，再向同一 UID 发送正文，各自取得平台回执。';
     this.$('[data-meme-preview]').hidden=!image;
-    if(image){this.$('[data-meme-name]').textContent=asset?.title||row.meme_id||'已选图片';this.$('[data-meme-availability]').textContent=unavailable?'当前图片已禁用或缺失，请更换图片或改用文字。':'图片将在发送前重新检查可用性。';const key=`${row.character_id}:${row.meme_id}`;if(this.previewKey!==key){this.previewKey=key;const preview=this.$('[data-meme-image]');preview.hidden=true;this.$('[data-meme-fallback]').hidden=true;preview.onload=()=>{preview.hidden=false;this.$('[data-meme-fallback]').hidden=true;};preview.onerror=()=>{preview.hidden=true;this.$('[data-meme-fallback]').hidden=false;};preview.src=memePreviewUrl({asset_id:row.meme_id});}}
+    if(ref){
+      this.$('[data-meme-name]').textContent='私信配图';
+      this.$('[data-meme-availability]').textContent=illustrationStatus(ref);
+      const url=illustrationUrl('messages',row.id,ref),preview=this.$('[data-meme-image]');
+      if(this.previewKey!==url){this.previewKey=url;preview.hidden=true;preview.onload=()=>{preview.hidden=false;};preview.onerror=()=>{this.$('[data-meme-fallback]').hidden=false;};this.$('[data-meme-fallback]').hidden=true;if(url)preview.src=url;else preview.removeAttribute('src');}
+    }else if(legacy){this.$('[data-meme-name]').textContent=asset?.title||row.meme_id||'已选图片';this.$('[data-meme-availability]').textContent=unavailable?'当前图片已禁用或缺失，请更换图片或改用文字。':'图片将在发送前重新检查可用性。';const key=`${row.character_id}:${row.meme_id}`;if(this.previewKey!==key){this.previewKey=key;const preview=this.$('[data-meme-image]');preview.hidden=true;this.$('[data-meme-fallback]').hidden=true;preview.onload=()=>{preview.hidden=false;this.$('[data-meme-fallback]').hidden=true;};preview.onerror=()=>{preview.hidden=true;this.$('[data-meme-fallback]').hidden=false;};preview.src=memePreviewUrl({asset_id:row.meme_id});}}
     else if(this.previewKey){this.previewKey=null;this.$('[data-meme-image]').removeAttribute('src');}
     this.$('[data-source]').textContent=row?`${this.contactLabel(row)} · ${row.display_name||row.platform_user_id} · UID ${row.platform_user_id} · ${row.source_kind==='comment'?'评论转入':row.source_kind==='message'?'对方来信':'来源记录'} #${row.source_id} · ${contactReason(row.reason)} · ${row.character_id}`:'选择草稿查看来源和回复。';this.renderTrigger(row);
-    this.$('[data-draft-status]').textContent=this.dirty&&!editable?'原记录已处理或不在当前列表；本地修改已保留，可复制文字。':row?`${state.label}${row.purpose&&state.waiting?' · '+row.purpose:''}${row.error?' · '+row.error:''}${this.dirty?' · 有未保存修改':''}`:'';this.$('[data-receipt]').textContent=row?.receipt||'';
+    this.$('[data-draft-status]').textContent=this.dirty&&!editable?'原记录已处理或不在当前列表；本地修改已保留，可复制文字。':row?`${state.label}${row.purpose&&state.waiting?' · '+row.purpose:''}${row.error?' · '+row.error:''}${this.dirty?' · 有未保存修改':''}`:'';this.$('[data-receipt]').textContent=row?.image_uploads?.length||row?.delivery_steps?.length?JSON.stringify({图片上传:row.image_uploads,分步送达:row.delivery_steps,最终回执:row.receipt},null,2):row?.receipt||'';
     for(const button of this.root.querySelectorAll('[data-review]')){button.disabled=!editable||this.busy;button.hidden=!editable;}
     this.$('[data-copy]').disabled=image||!row||!['approved','copied'].includes(row.status)||this.dirty||this.busy;
-    this.$('[data-send]').textContent=image?'批准并发送图片':'发送已审核私信';
-    this.$('[data-send]').disabled=!row||!(image?['pending_review','approved','copied']:['approved','copied']).includes(row.status)||this.dirty||this.busy||!!unavailable||!this.value.policy.enabled||!this.value.policy.credentials_configured;
+    this.$('[data-send]').textContent=legacy?'批准并发送图片':'发送已审核私信';
+    this.$('[data-send]').disabled=!row||!(legacy?['pending_review','approved','copied']:['approved','copied']).includes(row.status)||this.dirty||this.busy||!!unavailable||!this.value.policy.enabled||!this.value.policy.credentials_configured;
     this.$('[data-send]').hidden=!editable;this.$('[data-copy]').hidden=!editable;
     for(const button of this.root.querySelectorAll('[data-drafts] button'))button.disabled=this.busy;
     const canRetry=state.continueAgreement||['failed','cancelled'].includes(row?.status);

@@ -24,6 +24,27 @@ from ..sse import encode_event
 def register_operations_api(app, store, account, comments, browsing, dynamics, require_admin):
     comment_batch_lock = asyncio.Lock()
 
+    @app.get("/api/operations/illustrations/{channel}/{identity}/{artifact_id}", dependencies=[Depends(require_admin)])
+    async def illustration(channel: Literal["comments", "browsing", "dynamics", "messages"], identity: str, artifact_id: str):
+        from ..operation_attachments import checked_image, decision, image_scope, row_ref
+
+        if channel == "comments":
+            row = comments._draft_source(identity)
+        elif channel == "browsing":
+            row = browsing.repo.decode(store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
+        elif channel == "messages":
+            row = store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+        else:
+            row = store.one("SELECT * FROM dynamic_posts WHERE id=?", (identity,))
+        if not row or row["account_id"] != comments.display_account_id():
+            raise HTTPException(404)
+        ref = decision(comments.runtime, channel, row, row_ref(row))
+        if not ref or ref.get("artifact_id") != artifact_id:
+            raise HTTPException(404)
+        image = checked_image(comments.memes, ref, row["character_id"], runtime=comments.runtime,
+                              scope=image_scope(channel, row))
+        return Response(image["content"], media_type=image["mime_type"], headers={"Cache-Control":"private, no-store"})
+
     def can_write_comments():
         return comments.policy()["credentials_configured"]
 
@@ -183,7 +204,8 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
 
     @app.post("/api/comments/drafts/{draft_id}/review", dependencies=[Depends(require_admin)])
     async def review(draft_id: int, data: dict = Body(...)):
-        return comments.review(draft_id, data.get("action"), data.get("text"))
+        return comments.review(draft_id, data.get("action"), data.get("text"),
+                               **{k: data[k] for k in ("image_ref", "updated_at", "expected_image") if k in data})
 
     @app.post("/api/comments/drafts/{draft_id}/copy", dependencies=[Depends(require_admin)])
     async def copy(draft_id: int):
@@ -235,21 +257,23 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
 
     @app.post("/api/dynamics/posts/{post_id}/review", dependencies=[Depends(require_admin)])
     async def review_dynamic(post_id: int, data: dict = Body(...)):
-        if set(data) - {"action", "text", "meme_id"}:
+        if set(data) - {"action", "text", "meme_id", "review_key"}:
             raise ValueError("未知动态审核字段")
-        options = {"meme_id": data["meme_id"]} if "meme_id" in data else {}
+        options = {key: data[key] for key in ("meme_id", "review_key") if key in data}
         return dynamics.review(post_id, data.get("action"), data.get("text"), **options)
 
     @app.post("/api/dynamics/posts/{post_id}/publish", dependencies=[Depends(require_admin)])
     async def publish_dynamic(post_id: int, data: dict = Body(default={})):
         expected = None
         if data:
-            if set(data) != {"text"} or not isinstance(data["text"], str):
+            if set(data) - {"text", "review_key"} or not isinstance(data.get("text"), str):
                 raise ValueError("仅可提交当前动态正文")
             row = dynamics._post(post_id)
             if row["status"] == "published":
                 return row
             if row["status"] in {"pending_review", "approved"} and not row.get("attempted_at"):
+                if ("review_key" in data or row["illustration"] or row["meme_id"] or row["comment_card"]) and data.get("review_key") != row["review_key"]:
+                    raise ValueError("正文、账号或配图已变化，请查看当前草稿后重新确认")
                 expected = dynamics.review(post_id, "approve", data["text"])["content"]
         return await dynamics.publish(post_id, expected_text=expected) if expected else await dynamics.publish(post_id)
 

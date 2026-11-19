@@ -5,6 +5,7 @@ import math
 import re
 from datetime import datetime
 
+from .operation_attachments import decision, row_ref, uploads
 from .operation_feedback import continuation_view
 from .operations.browsing.thread_context import COMMENT_ID, VIDEO_ID, public_discussion_url
 from .providers import public_error
@@ -96,7 +97,7 @@ def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, t
                    'manual' AS source, CASE WHEN d.status='private_handoff' THEN NULL ELSE c.video_id END AS video_id,
                    CASE WHEN d.status='private_handoff' THEN '' ELSE substr(c.content,1,180) END AS excerpt,
                    d.updated_at,d.comment_id,d.generation_task_id,c.platform,
-                   c.comment_id AS platform_comment_id
+                   c.comment_id AS platform_comment_id, d.image_ref
               FROM drafts d JOIN comments c ON c.id=d.comment_id
             UNION ALL
             SELECT 'browsing', i.id, i.status,
@@ -107,11 +108,11 @@ def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, t
                    CASE WHEN i.kind='private_handoff' OR i.status='private_handoff' THEN ''
                         ELSE substr(coalesce(json_extract(i.target,'$.source_text'),i.text),1,180) END,
                    i.updated_at,NULL,NULL,'bilibili',
-                   json_extract(i.target,'$.parent')
+                   json_extract(i.target,'$.parent'),json_extract(i.target,'$.image_ref')
               FROM browsing_intents i WHERE i.kind IN (?,?,?)
               AND i.status NOT IN ('automatic_pending','automatic_skipped','archived')
             UNION ALL
-            SELECT 'jobs', id, status, 'manual', NULL, '评论生成任务', updated_at,NULL,NULL,NULL,NULL FROM comment_tasks
+            SELECT 'jobs', id, status, 'manual', NULL, '评论生成任务', updated_at,NULL,NULL,NULL,NULL,NULL FROM comment_tasks
         ), filtered AS (SELECT * FROM queue WHERE """
         + condition
         + """)
@@ -125,6 +126,18 @@ def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, t
     total = rows[0]["total"] if rows else 0
     for row in rows:
         del row["total"]
+        ref = json.loads(row.pop("image_ref") or "null")
+        if ref and row["status"] != "private_handoff":
+            if "job_id" in ref:
+                job = store.one("SELECT j.status,j.error,a.sha256,a.artifact_id FROM operation_image_jobs j "
+                                "LEFT JOIN operation_image_artifacts a ON a.job_id=j.job_id WHERE j.job_id=?", (ref["job_id"],))
+                if job and job["status"] == "ready":
+                    ref = {key: job[key] for key in ("artifact_id", "sha256")}
+                elif job and job["status"] == "text_only":
+                    ref = None
+                elif job:
+                    ref = ref | {"status": job["status"], "error": job["error"]}
+            row["illustration"] = ref
         row["can_publish"] = (
             bool(can_write and row["status"] in REVIEW_STATES) if row["channel"] == "browsing"
             else _publishable_import(row, can_write)
@@ -139,7 +152,7 @@ def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, t
 def queue_selection(store, *, can_write, **scope):
     rows = list_queue(store, "review", -1, 0, can_write=can_write, **scope)["items"]
     items = [
-        {key: row[key] for key in ("channel", "id", "comment_id", "excerpt", "updated_at")}
+        {key: row[key] for key in ("channel", "id", "comment_id", "excerpt", "updated_at", "illustration") if key in row}
         for row in rows if row["can_publish"]
     ]
     return {"items": items, "total": len(items)}
@@ -178,7 +191,7 @@ def prepare_queue_selection(store, data):
         raise ValueError("请选择要发布的回复")
     selection, seen = [], set()
     for item in data["items"]:
-        if not isinstance(item, dict) or set(item) - {"channel", "id", "text", "updated_at"}:
+        if not isinstance(item, dict) or set(item) - {"channel", "id", "text", "updated_at", "expected_image"}:
             raise ValueError("批量发布条目格式无效")
         channel, identity = item.get("channel"), item.get("id")
         if channel not in ("comments", "browsing") or not isinstance(identity, str) or not 1 <= len(identity) <= 100:
@@ -236,7 +249,7 @@ async def publish_queue_selection(store, comments, browsing, selection):
                 if current["updated_at"] != expected:
                     raise ValueError("草稿在选择后已变化，请检查最新正文")
                 if current["status"] != "approved" or "text" in item:
-                    service.review(service_id, "approve", item.get("text"))
+                    service.review(service_id, "approve", item.get("text"), expected_image=item.get("expected_image"))
                 await service.publish(service_id)
         except Exception as exc:
             error = public_error(exc)
@@ -255,7 +268,7 @@ def queue_detail(store, comments, browsing, channel, identity):
     elif channel == "comments":
         row = store.one(
             """SELECT d.id, d.text, d.status, d.character_id, d.character_version,
-                      d.model, d.answer_check, d.error, d.receipt, d.updated_at,d.comment_id,d.generation_task_id,
+                      d.model, d.image_ref, d.account_id, c.platform_user_id, d.answer_check, d.error, d.receipt, d.updated_at,d.comment_id,d.generation_task_id,
                       c.video_id, c.content AS source_text, c.display_name AS author,
                       c.comment_id AS platform_comment_id, c.thread_id
                FROM drafts d JOIN comments c ON c.id=d.comment_id WHERE d.id=?""",
@@ -263,6 +276,7 @@ def queue_detail(store, comments, browsing, channel, identity):
         )
         if row and row["status"] != "private_handoff":
             row = continuation_view(comments.runtime, channel, row)
+            row["image_ref"] = json.loads(row["image_ref"] or "null")
             row["can_publish"] = comments.policy()["credentials_configured"]
             row["source_url"] = public_discussion_url(row["video_id"], row["platform_comment_id"])
     else:
@@ -272,4 +286,7 @@ def queue_detail(store, comments, browsing, channel, identity):
     if row and channel == "browsing":
         target = row["target"]
         row["source_url"] = public_discussion_url(target.get("bvid"), target.get("parent"), target.get("dynamic_id"))
+    if row and channel in {"comments", "browsing"}:
+        row["illustration"] = decision(comments.runtime, channel, row, row_ref(row))
+        row["image_uploads"] = uploads(store, channel, identity)
     return row

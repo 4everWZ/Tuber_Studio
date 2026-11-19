@@ -83,25 +83,31 @@ class BilibiliMessagesAdapter(BilibiliAdapter):
             self._get, target, author_uid=author_uid, text=text, started_at=started_at, receipt=receipt
         )
 
-    async def send(self, uid, text, *, authorized=None):
+    async def send(self, uid, text, *, authorized=None, expected_sender=None):
         text = validate_operation_text(text, label="私信内容")
-        return await self._send(uid, {"content": text}, authorized=authorized)
+        return await self._send(uid, {"content": text}, authorized=authorized, expected_sender=expected_sender)
 
-    async def send_image(self, uid, image, *, authorized=None, prepare_authorized=None):
+    async def send_image(self, uid, image, *, authorized=None, prepare_authorized=None, on_uploaded=None, expected_sender=None):
         return await self._send(
-            uid, image, image_message=True, authorized=authorized, prepare_authorized=prepare_authorized
+            uid, image, image_message=True, authorized=authorized, prepare_authorized=prepare_authorized,
+            on_uploaded=on_uploaded, expected_sender=expected_sender,
         )
 
-    async def _send(self, uid, content, *, image_message=False, authorized=None, prepare_authorized=None):
+    async def _send(self, uid, content, *, image_message=False, authorized=None, prepare_authorized=None,
+                    on_uploaded=None, expected_sender=None):
         if not self._sessdata or not self._csrf:
             raise ValueError("发送私信需要 SESSDATA 和 bili_jct")
         receiver = _positive_id(uid)
         try:
             sender = await self.self_uid()
+            if expected_sender is not None and sender != expected_sender:
+                raise ValueError("当前发送账号与已审核 UID 不符")
             if receiver == sender:
                 raise ValueError("不能向当前账号自己发送自动私信")
             if image_message:
                 content = await upload_image(self, content, authorized=prepare_authorized)
+                if on_uploaded:
+                    on_uploaded(content)
             params = await self.wbi_params({"w_sender_uid": sender, "w_receiver_id": receiver})
         except asyncio.CancelledError:
             raise MessagePreparationCancelled from None

@@ -1,3 +1,4 @@
+import { illustrationUrl } from "./operation-image.js";
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
 import { renderArtifact, renderAssistantAnswer } from "./operator-chat-answer.js";
 import { mountFollowup } from "./goal-followup.js";
@@ -388,6 +389,18 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
     if (task.can_control !== false && task.status === "awaiting_approval") {
       const step = task.steps.at(-1);
       const action = node("p", `${step.approval.target} · ${step.approval.text || step.arguments.action}`);
+      if (["publish_dynamic_draft", "submit_selected_reply"].includes(step.tool)) {
+        const {payload, channel, draft_id, post_id} = step.approval;
+        const ref = {asset_id: channel && payload.meme_id, artifact_id: payload.artifact_id};
+        const url = illustrationUrl(channel || "dynamics", draft_id || post_id, ref);
+        if (url) {
+          const image = node("img", null, "dynamic-comment-card");
+          image.src = url;
+          image.alt = "本次审批绑定的图片";
+          action.append(image);
+        }
+        if (payload.message_kind === "text_image") action.append(node("small", "先发图片，再发正文，各有一条平台回执。"));
+      }
       if (step.tool === "publish_dynamic_draft") {
         const { payload, post_id: postId, sources } = step.approval;
         for (const source of sources) {

@@ -559,6 +559,14 @@ class MemeCatalog:
         row = self._row(asset_id)
         if row["enabled"]:
             raise ValueError("删除前请先禁用表情")
+        for table, field, path in (("drafts", "image_ref", "$.asset_id"),
+                                   ("dm_drafts", "image_ref", "$.asset_id"),
+                                   ("browsing_intents", "target", "$.image_ref.asset_id")):
+            if field in {column["name"] for column in self.store.all(f"PRAGMA table_info({table})")} and self.store.one(
+                f"SELECT 1 FROM {table} WHERE status IN ('pending_review','approved','publishing','publish_uncertain') "
+                f"AND json_extract({field},?)=? LIMIT 1", (path, asset_id)
+            ):
+                raise ValueError("表情正在被草稿或发送任务使用，不能删除")
         if self.store.one(
             "SELECT owner FROM meme_pins WHERE asset_id=? AND (expires_at IS NULL OR expires_at>?)",
             (asset_id, time.time()),

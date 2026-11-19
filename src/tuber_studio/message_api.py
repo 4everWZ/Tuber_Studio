@@ -13,6 +13,9 @@ class ReviewMessage(StrictModel):
     action: Literal["approve", "reject", "edit", "copy"]
     text: str | None = Field(default=None, min_length=1, max_length=1000)
     meme_id: str | None = Field(default=None, pattern=r"^meme_[a-f0-9]{32}$")
+    image_ref: dict | None = None
+    updated_at: float | None = None
+    expected_image: dict | None = None
 
 
 def register_message_api(app, messages, require_admin):
@@ -46,7 +49,7 @@ def register_message_api(app, messages, require_admin):
 
     @app.post("/api/messages/drafts/{identity}/review", dependencies=auth)
     async def review(identity: int, value: ReviewMessage):
-        options = {"meme_id": value.meme_id} if "meme_id" in value.model_fields_set else {}
+        options = value.model_dump(exclude_unset=True, exclude={"action", "text"})
         return messages.review(identity, value.action, value.text, **options)
 
     @app.post("/api/messages/drafts/{identity}/send", dependencies=auth)

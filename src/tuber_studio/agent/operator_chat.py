@@ -1070,7 +1070,8 @@ class OperatorChat:
     def _draft_view(row):
         if row is None:
             return {"status": "unavailable"}
-        return {key: row.get(key) for key in ("id", "content", "status", "receipt", "error")}
+        return {key: row.get(key) for key in ("id", "content", "status", "receipt", "error", "account_id",
+                                              "illustration", "meme_id", "comment_card", "review_key", "image_uploads")}
 
     def _turn(self, request_id):
         return self.store.one("SELECT * FROM operator_chat_turns WHERE request_id=?", (request_id,))

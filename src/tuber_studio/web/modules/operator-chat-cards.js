@@ -1,3 +1,4 @@
+import { illustrationUrl, illustrationStatus } from "./operation-image.js";
 import { node, safeMessage } from "./core.js?v=20261105.32";
 import { citations, rememberButton } from "./owner-memory.js";
 import { memoryGroupNames, memoryVisibility } from "./personalization.js?v=20261116.1";
@@ -80,10 +81,23 @@ function dynamicCard(root, initial, api) {
       body.oninput = () => { dirty = body.value !== data.content; revision++; };
     }
     root.append(body);
+    if (data.account_id) root.append(node("p", `发布账号 UID ${data.account_id}`, "hint"));
+    const ref = data.illustration || (data.meme_id ? {asset_id: data.meme_id} : null);
+    if (ref) root.append(node("p", illustrationStatus(ref), "hint"));
+    const urls = data.comment_card ? Array.from({length: data.comment_card.page_count || 1}, (_, i) =>
+      `/api/dynamics/posts/${data.id}/comment-card?page=${i + 1}`) : [illustrationUrl("dynamics", data.id, ref)];
+    for (const url of urls.filter(Boolean)) {
+      const image = node("img", null, "dynamic-comment-card");
+      image.src = url;
+      image.alt = "随正文发布的动态配图";
+      root.append(image);
+    }
+    if (data.image_uploads?.length) root.append(node("p", `已收到 ${data.image_uploads.length} 条图片上传回执`, "hint"));
     const actions = node("div", null, "actions");
     if (editable || data.status === "publish_uncertain") {
       const submit = button(editable ? "发布" : "核对回执");
       submit.className = "primary";
+      submit.disabled = !!ref?.job_id;
       actions.append(submit);
       submit.onclick = async () => {
         if (busy) return;
@@ -92,7 +106,7 @@ function dynamicCard(root, initial, api) {
         outcome.textContent = "正在处理…";
         try {
           const updated = await api(`/api/dynamics/posts/${data.id}/publish`, {
-            method: "POST", ...(editable ? { body: { text: body.value.trim() } } : {}),
+            method: "POST", ...(editable ? { body: { text: body.value.trim(), review_key: data.review_key } } : {}),
           });
           dirty = busy = false;
           signature = null;

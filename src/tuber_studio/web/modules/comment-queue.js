@@ -1,3 +1,5 @@
+import { MemePicker } from "../memes.js";
+import { illustrationUrl, illustrationStatus } from "./operation-image.js";
 import { $, node, safeMessage } from "./core.js";
 import { commentFinished } from "./comment-state.js?v=20261107.13";
 import { replyHandoff } from "./reply-handoff.js";
@@ -63,6 +65,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
   let view = "review", offset = 0, routeKey = null, inferRouteView = false, selected = null, version = 0;
   let rows = [], listSignature = "", detailSignature = "", active = false, busy = false, loaded = false, focusedKey = null;
   let generation = null;
+  let picker, savePickedImage;
   let sourceVersion = 0;
   let selectionCleared = false;
   let batchMode = false, batchScope = null, selectionRequest = 0, selectionLoading = false, allSelected = false;
@@ -151,6 +154,16 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
         const id = keyOf(row);
         const item = link("", `#comments/${view}/${id}`);
         item.dataset.queueKey = id;
+        if (row.illustration) {
+          const url = illustrationUrl(row.channel, row.id, row.illustration);
+          if (url) {
+            const image = node("img");
+            image.src = url;
+            image.alt = "回复配图";
+            image.width = image.height = 52;
+            item.append(image);
+          } else item.append(node("small", illustrationStatus(row.illustration)));
+        }
         item.className = "queue-row";
         if (id === selected) item.setAttribute("aria-current", "true");
         item.append(
@@ -213,7 +226,8 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     const target = row.target || {}, video = row.video_id || target.bvid;
     const original = row.source_text || target.source_text;
     const metadata = [video, row.author || target.recipient_name, row.thread_id && `楼 ${row.thread_id}`,
-      row.character_id].filter(Boolean);
+      row.account_id && `账号 ${row.account_id}`, (row.platform_user_id || target.recipient) && `对方 UID ${row.platform_user_id || target.recipient}`,
+      (row.platform_comment_id || target.parent) && `父评 ${row.platform_comment_id || target.parent}`, row.character_id].filter(Boolean);
     if (metadata.length) detail.append(node("p", metadata.join(" · "), "hint"));
     if (original) detail.append(node("blockquote", original, "quoted-text"));
     let sourceUrl;
@@ -247,7 +261,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     function syncActions() {
       const dirty = draftEdits.has(key);
       if (publish) publish.disabled = !canPublish || busy;
-      if (copy) copy.disabled = busy;
+      if (copy) copy.disabled = busy || Boolean(row.image_ref || target.image_ref);
       continuation.render(row.continuation, { channel, localId: row.id, dirty, entityStatus: status });
     }
     editor.addEventListener("input", () => {
@@ -296,12 +310,42 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
       return button;
     };
     const post = (endpoint, body) => api(`${base}${encodeURIComponent(row.id)}/${endpoint}`, { method: "POST", body });
+    const imageRef = row.illustration;
+    if (imageRef) {
+      const url = illustrationUrl(channel, row.id, imageRef);
+      if (url) {
+        const image = node("img", null, "dynamic-comment-card");
+        image.src = url;
+        image.alt = "将随这条评论发布的图片";
+        detail.append(image);
+      }
+      detail.append(node("small", illustrationStatus(imageRef)));
+    }
+    if (row.image_uploads?.length) detail.append(details("图片上传回执", node("pre", receiptText(row.image_uploads))));
+    if (editable && video && row.account_id && (channel === "comments" || ["reply_public", "top_level"].includes(row.kind))) {
+      const save = async ref => {
+        if (selected !== key) throw Error("当前草稿已变化");
+        await post("review", {action: "edit", text: editor.value, image_ref: ref, updated_at: row.updated_at});
+        draftEdits.delete(key);
+        await refresh(true);
+      };
+      const choose = node("button", "选择配图");
+      choose.type = "button";
+      choose.onclick = () => {
+        picker ||= new MemePicker(api, (_id, asset) => savePickedImage({asset_id: asset.asset_id, sha256: asset.sha256}),
+          {title: "选择评论配图", description: "选图后与正文一同送审。", showSources: true});
+        savePickedImage = save;
+        picker.open(imageRef?.asset_id);
+      };
+      actions.append(choose);
+      if (imageRef) action("移除配图", () => save(null));
+    }
     if (editable) {
-      action("保存", () => post("review", { action: "approve", text: editor.value }), "primary", "已保存，草稿审核通过。");
+      action("保存", () => post("review", { action: "approve", text: editor.value, updated_at: row.updated_at, expected_image: imageRef ?? null }), "primary", "已保存，草稿审核通过。");
       action("拒绝", () => post("review", { action: "reject" }));
       publish = action("发布", async () => {
         if (status !== "approved" || draftEdits.has(key)) {
-          await post("review", { action: "approve", text: editor.value });
+          await post("review", { action: "approve", text: editor.value, updated_at: row.updated_at, expected_image: imageRef ?? null });
           draftEdits.delete(key);
         }
         return post("publish");
@@ -406,7 +450,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
         feedback.append("此视图暂无记录。", link(idle ? " 前往开始自动刷视频" : " 查看自动刷视频状态", "#automation"));
       }
       if (!selected) emptyDetail(selectionCleared ? "本条已处理，可在「已执行与历史」中查看。请选择下一条记录。" : generation ? ["completed", "failed", "cancelled"].includes(data.task?.status) ? "本次任务已结束，未生成可审核的回复；请查看任务进度中的原因。" : "正在生成回复，完成后会在这里显示并自动选中。" : "选择一条记录查看来源和下一步操作。");
-      else if (routedDetail || forceDetail || !detailSignature || previous !== selected || previousRow?.updated_at !== current?.updated_at || (routeKey && !current)) {
+      else if (routedDetail || forceDetail || !detailSignature || previous !== selected || previousRow?.updated_at !== current?.updated_at || JSON.stringify(previousRow?.illustration) !== JSON.stringify(current?.illustration) || (routeKey && !current)) {
         const key = selected;
         const row = routedDetail || (key === previous ? departedDetail : null) || await api(`/api/comments/workbench/${key}`);
         if (request === version && active) renderDetail(key, row);
@@ -535,8 +579,8 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     if (busy || selectionLoading || view !== "review" || !checkedDrafts.size) return;
     const submitted = new Map(checkedDrafts);
     const scope = batchScope;
-    const items = [...submitted].map(([key, { channel, id, updated_at }]) => ({
-      channel, id, updated_at, ...(draftEdits.has(key) ? { text: draftEdits.get(key) } : {}),
+    const items = [...submitted].map(([key, { channel, id, updated_at, illustration }]) => ({
+      channel, id, updated_at, expected_image: illustration ?? null, ...(draftEdits.has(key) ? { text: draftEdits.get(key) } : {}),
     }));
     busy = detail.inert = true;
     ++version;

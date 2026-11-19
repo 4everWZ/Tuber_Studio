@@ -85,8 +85,8 @@ class BrowsingService:
     def has_intent(self, comment, character):
         return self.publication.has_intent(comment, character)
 
-    def review(self, identity, action, text=None):
-        return self.publication.review(identity, action, text)
+    def review(self, identity, action, text=None, **options):
+        return self.publication.review(identity, action, text, **options)
 
     async def publish(self, identity, *, automatic=False):
         return await self.publication.publish(identity, automatic=automatic)

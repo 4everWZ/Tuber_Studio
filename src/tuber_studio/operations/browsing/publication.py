@@ -14,6 +14,8 @@ from ...operation_feedback import (
     publication_binding,
 )
 from ...operation_generation import generate_with_recovery, generation_requires_review
+from ...operation_attachments import (checked_image, comment_image, comment_payload, decision, image_scope,
+                                      queue_image, record_upload, row_ref, wait_decision)
 from ...operation_identity import runtime_identity
 from ...operation_text import (
     comment_body_issue,
@@ -107,6 +109,19 @@ class BrowsingPublication:
             or self.source_intent(row, source_key)
         ):
             return None
+        if kind in _COMMENT_KINDS and target.get("bvid"):
+            def public_material():
+                segments = []
+                for key in material_keys:
+                    evidence = self.browsing.evidence.load(key)
+                    if evidence["metadata"]["bvid"] == target["bvid"]:
+                        segments.extend({k: s[k] for k in ("id", "cid", "start", "end", "text") if k in s}
+                                        for s in self.browsing._segments(evidence) if s["id"] in evidence_ids)
+                return {"bvid": target["bvid"], "public_comment": target.get("source_text", ""), "evidence": segments}
+
+            image_ref = queue_image(self.browsing.runtime, "browsing", row | {"target": target}, public_material, response.text)
+            if image_ref:
+                target = target | {"image_ref": image_ref}
         identity, now = str(uuid4()), time.time()
         body_issue = (
             comment_body_issue(response.text, recipient_name=target.get("recipient_name") or "")
@@ -188,7 +203,7 @@ class BrowsingPublication:
             (resource, str(comment_id), row["account_id"], row["character_id"]),
         ))
 
-    def review(self, identity, action, text=None):
+    def review(self, identity, action, text=None, **options):
         row = self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
         if (
             not row
@@ -207,14 +222,41 @@ class BrowsingPublication:
             issue = comment_body_issue(text, recipient_name=recipient_name)
             if issue and action == "approve":
                 raise ValueError(issue)
+        target = json.loads(row["target"])
+        expected = options.pop("updated_at", None)
+        if "expected_image" in options and options.pop("expected_image") != decision(
+            self.browsing.runtime, "browsing", row | {"target": target}, target.get("image_ref")
+        ):
+            raise ValueError("配图已变化，请核对当前候选")
+        if expected is not None and expected != row["updated_at"]:
+            raise ValueError("候选版本已变化，请刷新")
+        if action == "approve" and target.get("image_ref"):
+            ref = decision(self.browsing.runtime, "browsing", row | {"target": target}, target["image_ref"])
+            if ref:
+                checked_image(self.browsing.comments.memes, ref, row["character_id"], runtime=self.browsing.runtime,
+                              scope=image_scope("browsing", row | {"target": target}))
+                target["image_ref"] = ref
+            else:
+                target.pop("image_ref")
+        if options:
+            if action != "edit" or set(options) != {"image_ref"} or row["kind"] not in _COMMENT_KINDS:
+                raise ValueError("配图变更须保存为待审的评论")
+            if options["image_ref"] is None:
+                target.pop("image_ref", None)
+            else:
+                if not target.get("bvid") or not row["account_id"]:
+                    raise ValueError("配图评论需要已绑定的账号和视频")
+                checked_image(self.browsing.comments.memes, options["image_ref"], row["character_id"],
+                              runtime=self.browsing.runtime, scope=image_scope("browsing", row | {"target": target}))
+                target["image_ref"] = options["image_ref"]
         new_status = (
-            ("pending_review" if issue else row["status"])
+            ("pending_review" if issue or options or target.get("image_ref") and text != row["text"] else row["status"])
             if action in {"edit", "save"}
             else ("approved" if action == "approve" else "rejected")
         )
         self.browsing.store.execute(
-            "UPDATE browsing_intents SET status=?,text=?,auto_authorized=0,error=?,updated_at=? WHERE id=?",
-            (new_status, text, issue if row["kind"] in _COMMENT_KINDS else row["error"], time.time(), identity),
+            "UPDATE browsing_intents SET status=?,text=?,target=?,auto_authorized=0,error=?,updated_at=? WHERE id=?",
+            (new_status, text, dump(target), issue if row["kind"] in _COMMENT_KINDS else row["error"], time.time(), identity),
         )
         self.browsing.sends.withdraw("browsing", identity)
         return self.browsing.repo.decode(
@@ -350,6 +392,8 @@ class BrowsingPublication:
             max_tokens=parent["config"]["decision_max_tokens"]
             if active
             else self.browsing.policy()["decision_max_tokens"],
+            payload=comment_payload(row, self.browsing.runtime, "browsing"),
+            encode_revision=lambda value: comment_payload(row, self.browsing.runtime, "browsing") | {"text": value},
             on_defer=lambda prepared, state: self._defer_revision(identity, prepared, state),
             manual_approved=row["status"] == "approved",
         )
@@ -559,7 +603,7 @@ class BrowsingPublication:
                             identity,
                             attempt["token"],
                             attempt["binding"],
-                            {"text": intent["text"]},
+                            comment_payload(self.browsing.repo.decode(intent), self.browsing.runtime, "browsing"),
                             "恢复发送回执核对",
                         )
 
@@ -582,6 +626,8 @@ class BrowsingPublication:
                 if self._liked_target(source, target):
                     return {"status": "visible", "receipt": self._like_observation(target)}
                 return {"status": "not_found"}
+            if intent_row and comment_payload(intent_row, self.browsing.runtime, "browsing").get("asset_sha256") and not (attempt["receipt"] or {}).get("rpid"):
+                return {"status": "unsupported", "reason": "image_receipt_required"}
             if not hasattr(self.browsing.adapter, "reconcile_publication"):
                 return {"status": "unsupported"}
             return await self.browsing.adapter.reconcile_publication(
@@ -601,7 +647,11 @@ class BrowsingPublication:
         return await feedback.reconcile("browsing", identity, read, commit)
 
     async def publish(self, identity, *, automatic=False):
-        row = self.browsing.store.one("SELECT epoch,kind,text FROM browsing_intents WHERE id=?", (identity,))
+        row = self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
+        row = self.browsing.repo.decode(row)
+        if automatic and row:
+            await wait_decision(self.browsing.runtime, "browsing", row, lambda:
+                                self.browsing.operations.policy()["enabled"] and self.browsing.operations.policy()["epoch"] == row["epoch"])
         manual_comment = row and row["kind"] in _COMMENT_KINDS and not automatic
         try:
             if row and row["kind"] == "comment_like":
@@ -614,7 +664,7 @@ class BrowsingPublication:
                 prepare=lambda: self._publication_context(identity, automatic),
                 send=lambda ticket, binding, body_hash: self._publish_once(
                     identity, automatic=automatic, revision_ticket=ticket, binding=binding,
-                    body_hash=content_hash({"text": row["text"]}) if manual_comment else body_hash,
+                    body_hash=content_hash(comment_payload(row, self.browsing.runtime, "browsing")) if manual_comment else body_hash,
                 ),
                 apply_revision=lambda prepared, text: self._apply_revision(identity, prepared, text),
                 automatic=automatic,
@@ -720,17 +770,25 @@ class BrowsingPublication:
             actual_binding = self._publication_binding(
                 row, character, [item["metadata"] for item in materials]
             )
+            payload = comment_payload(row, self.browsing.runtime, "browsing")
+            image = (comment_image(self.browsing.comments.memes, payload, character, runtime=self.browsing.runtime,
+                                   scope=image_scope("browsing", row)) if payload.get("asset_sha256") else None)
+            if image and not any(str(m["metadata"].get("aid")) == str(row["target"]["oid"])
+                                 and m["metadata"].get("bvid") == row["target"].get("bvid") for m in materials):
+                meta = await self.browsing.adapter.video_metadata(row["target"]["bvid"])
+                if (str(meta.get("aid")) != str(row["target"]["oid"])
+                        or meta.get("bvid") != row["target"]["bvid"]):
+                    raise ValueError("配图评论的视频与原材料不符")
             if (
                 binding is not None
                 and binding != actual_binding
                 or body_hash is not None
-                and body_hash != content_hash({"text": row["text"]})
+                and body_hash != content_hash(payload)
             ):
                 raise ValueError("发送前原始绑定或正文已变化")
             token = None
 
-            def before_send():
-                nonlocal token
+            def authorize():
                 self.browsing.runtime.validate_memory_delivery(row["target"].get("memory_audit"))
                 if token is not None:
                     raise ValueError("同一意图不能二次进入提交边界")
@@ -773,6 +831,14 @@ class BrowsingPublication:
                 )
                 for key in row["material_keys"]:
                     self.browsing.evidence.load(key, allow_expired=True)
+                if image:
+                    comment_image(self.browsing.comments.memes, payload, character, runtime=self.browsing.runtime,
+                                  scope=image_scope("browsing", row))
+                return True
+
+            def before_send():
+                nonlocal token
+                authorize()
                 token = self.browsing.operations.reserve(
                     account,
                     character,
@@ -783,7 +849,7 @@ class BrowsingPublication:
                     limits=None if is_like else self.browsing.comments.publication_limits(),
                     epoch=row["epoch"] if automatic else None,
                     binding=actual_binding,
-                    content_hash=content_hash({"text": row["text"]}),
+                    content_hash=content_hash(payload),
                     revision_ticket=revision_ticket,
                     admission_hook=lambda ticket: self._reserve_daily_reply(ticket, row),
                 )
@@ -793,6 +859,11 @@ class BrowsingPublication:
                 )
 
             try:
+                options = {}
+                if image:
+                    ref = decision(self.browsing.runtime, "browsing", row, row_ref(row))
+                    options.update(image=image, prepare_authorized=authorize,
+                                   on_uploaded=lambda pic: record_upload(self.browsing.store, "browsing", identity, ref, pic))
                 if is_like:
                     receipt = await self.browsing.adapter.like_comment(row["target"], before_send=before_send)
                 elif row["kind"] == "video_like":
@@ -805,12 +876,14 @@ class BrowsingPublication:
                     )
                 elif row["kind"] == "top_level":
                     receipt = await self.browsing.adapter.publish_top_level(
-                        row["target"], row["text"], before_send=before_send
+                        row["target"], row["text"], before_send=before_send, **options
                     )
                 else:
                     receipt = await self.browsing.adapter.publish_resource_reply(
-                        row["target"], row["text"], before_send=before_send
+                        row["target"], row["text"], before_send=before_send, **options
                     )
+                if image and isinstance(receipt, dict):
+                    receipt.update(image_ref=ref)
                 if (
                     not token
                     or not isinstance(receipt, dict)
@@ -836,7 +909,7 @@ class BrowsingPublication:
                             identity,
                             token,
                             actual_binding,
-                            {"text": row["text"]},
+                            payload,
                             public_error(error),
                         )
                     self.browsing.store.execute(
@@ -854,8 +927,8 @@ class BrowsingPublication:
                     )
                     if isinstance(error, PlatformRejected):
                         error.write_token = token
-                        error.body_hash = content_hash({"text": row["text"]})
-                        error.sent_payload = {"text": row["text"]}
+                        error.body_hash = content_hash(payload)
+                        error.sent_payload = payload
                     elif uncertain and not isinstance(error, asyncio.CancelledError):
                         raise UnknownPublication(public_error(error), token) from None
                 raise
@@ -876,7 +949,7 @@ class BrowsingPublication:
                     identity,
                     token,
                     actual_binding,
-                    {"text": row["text"]},
+                    payload,
                     "平台成功后本地保存失败",
                 )
                 self.browsing.store.execute(

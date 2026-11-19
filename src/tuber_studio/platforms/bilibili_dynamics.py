@@ -54,7 +54,7 @@ async def publish_text(adapter, text, *, before_send=None):
     return await _create(adapter, params, body, before_send=before_send)
 
 
-async def publish_image(adapter, text, image, *, before_send=None, prepare_authorized=None, on_prepared=None):
+async def publish_image(adapter, text, image, *, before_send=None, prepare_authorized=None, on_prepared=None, on_uploaded=None):
     text = validate_text(text)
     if not (adapter._sessdata and adapter._csrf):
         raise ValueError("发布动态需要先配置账号登录凭证")
@@ -64,7 +64,10 @@ async def publish_image(adapter, text, image, *, before_send=None, prepare_autho
             raise ValueError("动态配图数量须为 1 至 9 张")
         prepared = []
         for asset in images:
-            prepared.append(await upload_image(adapter, asset, authorized=prepare_authorized))
+            picture = await upload_image(adapter, asset, authorized=prepare_authorized)
+            prepared.append(picture)
+            if on_uploaded is not None:
+                on_uploaded(len(prepared) - 1, picture)
         params = await adapter.wbi_params({"csrf": adapter._csrf})
     except PublishCancelled:
         raise

@@ -36,6 +36,10 @@ class Store:
         self.db.executescript("""
             PRAGMA journal_mode=WAL;
             PRAGMA foreign_keys=ON;
+            CREATE TABLE IF NOT EXISTS operation_image_uploads(
+                id INTEGER PRIMARY KEY,channel TEXT NOT NULL,draft_id TEXT NOT NULL,asset_id TEXT NOT NULL,
+                sha256 TEXT NOT NULL,picture TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS operation_image_upload_draft ON operation_image_uploads(channel,draft_id);
             CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY,value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS characters(id TEXT PRIMARY KEY,active_version INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS character_versions(

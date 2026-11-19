@@ -22,6 +22,8 @@ from .message_outreach import (
 )
 from .models import OperationReply, StrictModel
 from .operation_continuations import GenerationFeedback, content_hash
+from .operation_attachments import (checked_image, decision as image_decision, image_payload, image_scope,
+                                    queue_image, record_upload, row_ref, uploads, wait_decision)
 from .operation_feedback import (
     FeedbackPublication,
     PublicationContext,
@@ -121,6 +123,8 @@ class DirectMessages:
             CREATE TABLE IF NOT EXISTS dm_inbox(id INTEGER PRIMARY KEY,platform TEXT NOT NULL,message_id TEXT NOT NULL,platform_user_id TEXT NOT NULL,display_name TEXT,content TEXT NOT NULL,sent_at REAL,character_id TEXT,received_at REAL,UNIQUE(platform,message_id));
             CREATE TABLE IF NOT EXISTS dm_drafts(id INTEGER PRIMARY KEY,platform TEXT NOT NULL,platform_user_id TEXT NOT NULL,display_name TEXT,source_kind TEXT,source_id INTEGER,character_id TEXT,character_version INTEGER,status TEXT,text TEXT,reason TEXT,answer_check TEXT,model TEXT,error TEXT,receipt TEXT,created_at REAL,updated_at REAL,UNIQUE(source_kind,source_id,character_id));
             CREATE TABLE IF NOT EXISTS dm_attempts(id INTEGER PRIMARY KEY,draft_id INTEGER,platform_user_id TEXT,started_at REAL,status TEXT,receipt TEXT,error TEXT);
+            CREATE TABLE IF NOT EXISTS dm_delivery_steps(attempt_id INTEGER,kind TEXT,receipt TEXT NOT NULL,write_token TEXT,
+                PRIMARY KEY(attempt_id,kind));
             CREATE TABLE IF NOT EXISTS dm_operator_replies(id INTEGER PRIMARY KEY,platform TEXT NOT NULL,account_id TEXT NOT NULL,platform_user_id TEXT NOT NULL,message_id TEXT NOT NULL,content TEXT NOT NULL,sent_at REAL NOT NULL,character_id TEXT NOT NULL,UNIQUE(platform,account_id,message_id));
             CREATE INDEX IF NOT EXISTS dm_inbox_user ON dm_inbox(platform,platform_user_id,character_id,id);
             CREATE INDEX IF NOT EXISTS dm_operator_replies_lookup ON dm_operator_replies(platform,account_id,platform_user_id,character_id,sent_at);
@@ -132,6 +136,8 @@ class DirectMessages:
             "UPDATE dm_drafts SET status='publish_uncertain',error='发送中重启，请核对平台，禁止重发' WHERE status='publishing'"
         )
         store.execute("UPDATE dm_attempts SET status='uncertain',error='发送中重启' WHERE status='sending'")
+        if "image_submission" not in {r[1] for r in store.db.execute("PRAGMA table_info(dm_attempts)")}:
+            store.execute("ALTER TABLE dm_attempts ADD COLUMN image_submission TEXT")
         if "account_id" not in {row[1] for row in store.db.execute("PRAGMA table_info(dm_inbox)")}:
             store.execute("ALTER TABLE dm_inbox ADD COLUMN account_id TEXT DEFAULT ''")
         if "account_id" not in {row[1] for row in store.db.execute("PRAGMA table_info(dm_drafts)")}:
@@ -170,6 +176,7 @@ class DirectMessages:
         for name, definition in (
             ("message_kind", "TEXT NOT NULL DEFAULT 'text'"),
             ("meme_id", "TEXT"),
+            ("image_ref", "TEXT"),
             ("generation_continuation_id", "TEXT"),
             ("resume_pending", "INTEGER NOT NULL DEFAULT 0"),
             ("next_attempt_at", "REAL NOT NULL DEFAULT 0"),
@@ -462,7 +469,7 @@ class DirectMessages:
 
     def _require_unchanged_draft(self, draft):
         fresh = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (draft["id"],))
-        fields = ("status", "text", "source_kind", "source_id", "account_id", "platform_user_id", "character_id", "character_version", "message_kind", "meme_id")
+        fields = ("status", "text", "source_kind", "source_id", "account_id", "platform_user_id", "character_id", "character_version", "message_kind", "meme_id", "image_ref")
         if not fresh or any(fresh.get(key) != draft.get(key) for key in fields):
             raise ValueError("准备期间私信草稿已变化，保留最新编辑或审核状态")
 
@@ -1196,7 +1203,7 @@ class DirectMessages:
                LIMIT 1""", (*scope, time.time()),
         ))
 
-    async def _generate_owned(self, identity, automatic):
+    async def _generate_owned(self, identity, automatic, *, preserve_attachments=False):
         draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         if not draft or draft["status"] != "queued":
             return
@@ -1361,7 +1368,7 @@ class DirectMessages:
                     if draft["source_kind"] == "message":
                         reply_ids = list(refs.values())
                 selected, selection_failed = None, False
-                if reply and self.policy()["use_memes"] and self.memes:
+                if reply and not preserve_attachments and self.policy()["use_memes"] and self.memes:
                     try:
                         selected = await select_meme(
                             self.runtime, self.memes, character, event, reply.spoken_text
@@ -1390,13 +1397,22 @@ class DirectMessages:
                             "号主已在平台手动回复，无需重复发送" if complete else decision.reason, time.time(), identity))
                 if not reply:
                     return
+            ref = row_ref(draft) if preserve_attachments else None
+            if not preserve_attachments and draft["source_kind"] == "message" and not selected and not selection_failed:
+                ref = queue_image(self.runtime, "messages", draft,
+                                  {"incoming": source["content"], "recipient_uid": draft["platform_user_id"],
+                                   "reply_incoming_ids": reply_ids}, reply.spoken_text)
             self.store.execute(
-                "UPDATE dm_drafts SET status=?,resume_pending=0,next_attempt_at=0,text=?,answer_check=?,model=?,error=NULL,updated_at=? WHERE id=?",
+                "UPDATE dm_drafts SET status=?,resume_pending=0,next_attempt_at=0,text=?,answer_check=?,model=?,"
+                "image_ref=?,message_kind=?,meme_id=?,error=NULL,updated_at=? WHERE id=?",
                 (
                     "pending_review",
                     reply.spoken_text,
                     json.dumps(check, ensure_ascii=False),
                     self.settings.data["llm"].get("model", "demo"),
+                    json.dumps(ref) if ref else None,
+                    draft["message_kind"] if preserve_attachments else "text",
+                    draft["meme_id"] if preserve_attachments else None,
                     time.time(),
                     identity,
                 ),
@@ -1457,10 +1473,23 @@ class DirectMessages:
             raise ValueError("当前私信草稿不能编辑或审核")
         if action not in {"approve", "reject", "edit", "copy"}:
             raise ValueError("未知私信审核操作")
-        if set(options) - {"meme_id"} or options and action != "edit":
+        expected = options.pop("updated_at", None)
+        if "expected_image" in options and options.pop("expected_image") != image_decision(self.runtime, "messages", row, row_ref(row)):
+            raise ValueError("配图已变化，请核对当前私信")
+        if expected is not None and expected != row["updated_at"]:
+            raise ValueError("草稿版本已变化，请刷新")
+        if set(options) - {"meme_id", "image_ref"} or len(options) > 1 or options and action != "edit":
             raise ValueError("更换表情需要重新编辑并审核")
-        meme_id = options.get("meme_id", row.get("meme_id"))
-        if action == "copy" and meme_id:
+        ref = None if "meme_id" in options else options.get("image_ref", row_ref(row))
+        if action == "approve":
+            ref = image_decision(self.runtime, "messages", row, ref)
+        if ref and ("image_ref" in options or action == "approve"):
+            if not row["account_id"] or not row["platform_user_id"]:
+                raise ValueError("图文私信需要绑定账号和收件人")
+            checked_image(self.memes, ref, row["character_id"], runtime=self.runtime, scope=image_scope("messages", row))
+        meme_id = None if "image_ref" in options else options.get("meme_id", row.get("meme_id"))
+        kind = "text_image" if ref else ("image" if meme_id else "text")
+        if action == "copy" and (meme_id or ref):
             raise ValueError("图片私信不能复制为文本，请使用发送图片")
         if meme_id and action != "reject":
             if not self.memes:
@@ -1478,8 +1507,8 @@ class DirectMessages:
             self.memes.pin(meme_id, row["character_id"], owner)
         try:
             self.store.execute(
-                "UPDATE dm_drafts SET text=?,status=?,message_kind=?,meme_id=?,error=NULL,updated_at=? WHERE id=?",
-                (text.strip(), status, "image" if meme_id else "text", meme_id, time.time(), identity),
+                "UPDATE dm_drafts SET text=?,status=?,message_kind=?,meme_id=?,image_ref=?,error=NULL,updated_at=? WHERE id=?",
+                (text.strip(), status, kind, meme_id, json.dumps(ref) if ref else None, time.time(), identity),
             )
         except BaseException:
             if self.memes and meme_id != row.get("meme_id"):
@@ -1494,7 +1523,7 @@ class DirectMessages:
         return {
             "status": status,
             "text": text.strip(),
-            "message_kind": "image" if meme_id else "text",
+            "message_kind": kind,
             "meme_id": meme_id,
         }
 
@@ -1523,6 +1552,9 @@ class DirectMessages:
         )
 
     def _outgoing(self, row, character):
+        ref = image_decision(self.runtime, "messages", row, row_ref(row))
+        if ref:
+            return {"message_kind": "text_image", "text": row["text"]} | image_payload(ref)
         if row.get("message_kind") == "image":
             if not self.memes or not row.get("meme_id"):
                 raise ValueError("图片草稿缺少已登记表情")
@@ -1556,6 +1588,7 @@ class DirectMessages:
                     "text",
                     "message_kind",
                     "meme_id",
+                    "image_ref",
                     "character_id",
                     "character_version",
                     "account_id",
@@ -1588,7 +1621,7 @@ class DirectMessages:
 
         def encode(value):
             if isinstance(value, str):
-                return {"text": validate_operation_text(value)}
+                return self._outgoing(row | {"text": validate_operation_text(value)}, character) if row_ref(row) else {"text": validate_operation_text(value)}
             if not isinstance(value, dict):
                 raise ValueError("私信修订内容无效")
             candidate = row | value
@@ -1703,6 +1736,15 @@ class DirectMessages:
 
     async def _reconcile(self, identity, *, guard=None):
         feedback = FeedbackPublication(self.runtime, self.store, self.operations)
+        if not feedback.coordinator.find("messages", identity):
+            saved = self.store.one("SELECT image_submission FROM dm_attempts WHERE draft_id=? AND status='uncertain' "
+                                   "ORDER BY id DESC LIMIT 1", (identity,))
+            if saved and saved["image_submission"]:
+                checkpoint = json.loads(saved["image_submission"])
+                original = self.operations.get_attempt(checkpoint["token"])
+                if original and original["binding"] == checkpoint["binding"]:
+                    feedback.record_unknown("messages", identity, original["token"], original["binding"],
+                                            checkpoint["payload"], "按原图文私信提交核对")
 
         async def read(row, attempt):
             adapter = await self._adapter()
@@ -1718,13 +1760,31 @@ class DirectMessages:
             if guard:
                 guard(row, attempt)
             credential = dict(self.comments.credentials)
-            result = await adapter.reconcile_publication(
-                target,
-                author_uid=row["binding"]["account_id"],
-                text=payload.get("text", ""),
-                started_at=attempt["started_at"],
-                receipt=attempt["receipt"],
-            )
+            async def verify(kind, receipt):
+                return await adapter.reconcile_publication(
+                    target | {"message_kind": kind}, author_uid=row["binding"]["account_id"],
+                    text=payload.get("text", ""), started_at=attempt["started_at"], receipt=receipt)
+
+            if target["message_kind"] == "text_image":
+                steps = {item["kind"]: json.loads(item["receipt"]) for item in self.store.all(
+                    "SELECT s.kind,s.receipt FROM dm_delivery_steps s JOIN dm_attempts a ON a.id=s.attempt_id "
+                    "WHERE a.draft_id=? AND s.write_token=?", (identity, attempt["token"]))}
+                if not all(steps.get(kind, {}).get("msg_key") for kind in ("image", "text")):
+                    return {"status": "unsupported", "reason": "图文私信尚未取得两条独立消息 ID"}
+                checks = []
+                for kind in ("image", "text"):
+                    check = await verify(kind, steps[kind])
+                    if check["status"] not in {"visible", "not_visible"}:
+                        return check
+                    if check["receipt"]["msg_key"] != steps[kind]["msg_key"]:
+                        return {"status": "check_failed", "reason": "消息 ID 与原回执不符"}
+                    checks.append(check["status"])
+                ref = ({"asset_id": payload["meme_id"]} if "meme_id" in payload else {"artifact_id": payload["artifact_id"]})
+                receipt = steps["text"] | {"message_kind": "text_image", "image_msg_key": steps["image"]["msg_key"],
+                                          "image_ref": ref | {"sha256": payload["asset_sha256"]}}
+                result = {"status": "not_visible" if "not_visible" in checks else "visible", "receipt": receipt}
+            else:
+                result = await verify(target["message_kind"], attempt["receipt"])
             if guard:
                 if self.adapter is not adapter or self.comments.credentials != credential:
                     raise ValueError("核对期间私信账号连接已变化")
@@ -1786,6 +1846,9 @@ class DirectMessages:
             async with self.runtime.conversation_turn(scope):
                 return await self.send(identity, automatic=automatic, authorization_epoch=authorization_epoch,
                                        _conversation_owned=True, submission=submission)
+        if automatic and row_ref(draft):
+            await wait_decision(self.runtime, "messages", draft, lambda:
+                                self.policy()["auto_send"] and self.operations.policy()["epoch"] == authorization_epoch)
         if not await self._refresh_conversation_inbox(draft):
             if submission:
                 raise ValueError("原会话尚未同步完整，须重新核对")
@@ -1818,7 +1881,7 @@ class DirectMessages:
         if previous != observed:
             approved = draft["status"] in {"approved", "copied"}
             self.store.execute("UPDATE dm_drafts SET status='queued',proposed_text='',outreach_check=NULL,error=NULL WHERE id=?", (identity,))
-            await self._generate_owned(identity, False)
+            await self._generate_owned(identity, False, preserve_attachments=True)
             draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
             if draft["status"] != "pending_review":
                 return self._draft_view(draft)
@@ -1933,6 +1996,7 @@ class DirectMessages:
                 "text",
                 "message_kind",
                 "meme_id",
+                "image_ref",
                 "character_id",
                 "character_version",
                 "account_id",
@@ -1953,10 +2017,17 @@ class DirectMessages:
             ):
                 raise ValueError("发送前私信原始绑定或内容已变化")
             image = None
-            if row.get("message_kind") == "image":
+            composite = payload.get("message_kind") == "text_image"
+            if composite:
+                ref = image_decision(self.runtime, "messages", row, row_ref(row))
+                image = checked_image(self.memes, ref, character, runtime=self.runtime, scope=image_scope("messages", row))
+                if not isinstance(adapter, BilibiliMessagesAdapter):
+                    raise ValueError("当前平台未提供图文私信接口")
+            elif row.get("message_kind") == "image":
                 if not self.memes or not row.get("meme_id"):
                     raise ValueError("图片草稿缺少已登记表情")
                 image = self.memes.read(row["meme_id"], character)
+                ref = {"asset_id": row["meme_id"], "sha256": image["asset"]["sha256"]}
                 if not hasattr(adapter, "send_image"):
                     raise ValueError("当前平台未提供图片私信接口，保留草稿")
             previous, now = row["status"], time.time()
@@ -1973,12 +2044,20 @@ class DirectMessages:
             )
             try:
 
+                def admit(ticket):
+                    if submission:
+                        submission.admit(ticket, actual_binding, payload, attempt)
+                    if composite:
+                        self.store.db.execute("UPDATE dm_attempts SET image_submission=? WHERE id=?",
+                                              (json.dumps({"token": ticket, "binding": actual_binding,
+                                                           "payload": payload}), attempt))
+
                 def authorized(*, reserve=True):
                     nonlocal token
                     if submission:
                         submission.check(publishing=True)
                     audit = json.loads(row.get("answer_check") or "{}")
-                    if not image:
+                    if not image or composite:
                         self.runtime.validate_memory_delivery(audit)
                     generated = audit.get("generation_identity")
                     if not self._conversation_matches(row, audit.get("conversation_sha256")):
@@ -1988,18 +2067,19 @@ class DirectMessages:
                     if not submission and row["source_kind"] == "message" and self._newer_incoming(row, source):
                         raise MessageInputChanged("提交前收到新来信，重新合并回复")
                     policy = self.policy()
-                    if image:
+                    if image and not composite:
                         asset = self.memes.resolve(row["meme_id"], character)
                         if asset["sha256"] != image["asset"]["sha256"]:
                             return False
+                    if composite:
+                        checked_image(self.memes, ref, character, runtime=self.runtime, scope=image_scope("messages", row))
                     latest = self.store.one(
-                        "SELECT status,meme_id,text FROM dm_drafts WHERE id=?", (identity,)
+                        "SELECT * FROM dm_drafts WHERE id=?", (identity,)
                     )
                     if (
                         not latest
                         or latest["status"] != "publishing"
-                        or latest["meme_id"] != row.get("meme_id")
-                        or latest["text"] != row["text"]
+                        or any(latest[k] != row[k] for k in reviewed_fields if k != "status")
                     ):
                         return False
                     if automatic:
@@ -2055,23 +2135,59 @@ class DirectMessages:
                             binding=actual_binding,
                             content_hash=content_hash(payload),
                             revision_ticket=revision_ticket,
-                            admission_hook=(lambda ticket: submission.admit(ticket, actual_binding, payload, attempt))
-                            if submission else None,
+                            admission_hook=admit,
                         )
                     return True
 
                 if image:
+                    options = {}
+                    if isinstance(adapter, BilibiliMessagesAdapter):
+                        options["on_uploaded"] = lambda pic: record_upload(self.store, "messages", identity, ref, pic)
+                        if composite:
+                            options["expected_sender"] = account_id
                     receipt = await adapter.send_image(
                         row["platform_user_id"],
                         image,
                         authorized=authorized,
                         prepare_authorized=lambda: authorized(reserve=False),
+                        **options,
                     )
                 else:
                     receipt = await adapter.send(row["platform_user_id"], row["text"], authorized=authorized)
                 if not isinstance(receipt, dict) or not receipt.get("msg_key"):
                     raise PublishUncertain("平台没有返回有效消息ID")
-                if image:
+                if composite:
+                    image_receipt = receipt
+                    text_submitted = False
+
+                    def step(kind, value):
+                        self.store.execute(
+                            "INSERT INTO dm_delivery_steps VALUES(?,?,?,?) ON CONFLICT(attempt_id,kind) "
+                            "DO UPDATE SET receipt=excluded.receipt", (attempt, kind, json.dumps(value), token))
+
+                    def authorize_text():
+                        nonlocal text_submitted
+                        if not authorized():
+                            return False
+                        step("text", {"status": "submitting"})
+                        text_submitted = True
+                        return True
+
+                    try:
+                        step("image", image_receipt)
+                        receipt = await adapter.send(row["platform_user_id"], row["text"], authorized=authorize_text,
+                                                     expected_sender=account_id)
+                        if not receipt.get("msg_key") or receipt["msg_key"] == image_receipt["msg_key"]:
+                            raise ValueError("图文回执须有两个独立消息 ID")
+                        step("text", receipt)
+                    except (Exception, asyncio.CancelledError) as error:
+                        state = "not_submitted" if not text_submitted else (
+                            "rejected" if isinstance(error, PlatformRejected) else "uncertain")
+                        step("text", {"status": state})
+                        raise PublishUncertain("图片已送达，正文须独立核对，禁止重发") from error
+                    receipt = receipt | {"message_kind": "text_image", "image_ref": ref,
+                                         "image_msg_key": image_receipt["msg_key"]}
+                elif image:
                     receipt = receipt | {
                         "message_kind": "image",
                         "meme_id": row["meme_id"],
@@ -2145,6 +2261,9 @@ class DirectMessages:
                         "UPDATE dm_drafts SET status='published',receipt=?,error=NULL,updated_at=? WHERE id=?",
                         (encoded, time.time(), identity),
                     )
+                    if composite:
+                        self.store.db.execute("UPDATE dm_drafts SET message_kind='text_image',image_ref=? WHERE id=?",
+                                              (json.dumps(ref), identity))
                     self.store.db.execute(
                         "UPDATE dm_attempts SET status='published',receipt=? WHERE id=?", (encoded, attempt)
                     )
@@ -2160,16 +2279,16 @@ class DirectMessages:
                 self._uncertain(identity, attempt)
                 raise UnknownPublication("平台已返回发送成功，本地记账失败，禁止重发", token) from None
             check = json.loads(row.get("answer_check") or "{}")
-            if image:
+            if image and self.memes:
                 self.memes.release(f"dm-draft:{identity}")
-            spoken = f"[发送表情包：{image['asset']['title']}]" if image else row["text"]
+            spoken = f"[发送表情包：{image['asset']['title']}]" if image and not composite else row["text"]
             self.runtime.context.record(
                 self.scope(row),
                 character,
                 self._delivered_event(row, character),
                 None if "memory_preference_revision" in check else spoken,
                 "direct_message",
-                memory_kind=None if image else check.get("memory_kind"),
+                memory_kind=None if image and not composite else check.get("memory_kind"),
             )
             return {"status": "published", "receipt": receipt}
 
@@ -2233,6 +2352,12 @@ class DirectMessages:
         }
 
     def _draft_view(self, row):
+        ref = row_ref(row)
+        row = row | {"illustration": image_decision(self.runtime, "messages", row, ref),
+                     "image_ref": ref, "image_uploads": uploads(self.store, "messages", row["id"]),
+                     "delivery_steps": [step | {"receipt": json.loads(step["receipt"])} for step in self.store.all(
+                         "SELECT s.attempt_id,s.kind,s.receipt FROM dm_delivery_steps s JOIN dm_attempts a ON a.id=s.attempt_id "
+                         "WHERE a.draft_id=? ORDER BY a.id,s.rowid", (row["id"],))]}
         row = row | {"type": row.get("contact_type") or ("reply" if row["source_kind"] == "message" else "outreach"),
                      "contact_state": contact_state(row)}
         for field in ("trigger_source", "outreach_check"):

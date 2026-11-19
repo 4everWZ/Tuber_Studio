@@ -805,11 +805,14 @@ class BrowsingAdapter(BilibiliAdapter):
             "coverage": coverage,
         }
 
-    async def _publish_target(self, target, text, before_send):
+    async def _publish_target(self, target, text, before_send, *, image=None, prepare_authorized=None, on_uploaded=None):
         if not self._sessdata or not self._csrf:
             raise ValueError("发布需要当前账号SESSDATA及CSRF")
         text = validate_comment_body(text)
         params = await self.wbi_params()
+        from .bilibili_images import comment_pictures
+
+        pictures = await comment_pictures(self, image, prepare_authorized, on_uploaded)
         if before_send is not None:
             before_send()
         try:
@@ -822,6 +825,7 @@ class BrowsingAdapter(BilibiliAdapter):
                     "root": target["root"],
                     "parent": target["parent"],
                     "message": text,
+                    **pictures,
                     "plat": 1,
                     "csrf": self._csrf,
                     "csrf_token": self._csrf,
@@ -847,13 +851,13 @@ class BrowsingAdapter(BilibiliAdapter):
             **{key: target[key] for key in ("oid", "type", "root", "parent")},
         }
 
-    async def publish_top_level(self, target, text, before_send=None):
+    async def publish_top_level(self, target, text, before_send=None, **images):
         target = self._target(target, top_level=True)
-        return await self._publish_target(target, text, before_send)
+        return await self._publish_target(target, text, before_send, **images)
 
-    async def publish_resource_reply(self, target, text, before_send=None):
+    async def publish_resource_reply(self, target, text, before_send=None, **images):
         target = self._target(target)
-        return await self._publish_target(target, text, before_send)
+        return await self._publish_target(target, text, before_send, **images)
 
     async def like_comment(self, target, *, before_send=None):
         target = self._target(target)

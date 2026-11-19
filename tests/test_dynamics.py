@@ -201,7 +201,7 @@ async def test_dynamic_from_public_reply_publishes_the_reviewed_text_and_comment
         assert rendered.format == "PNG" and rendered.width == 960
     observed = []
 
-    async def send(adapter, text, image, *, before_send, prepare_authorized, on_prepared):
+    async def send(adapter, text, image, *, before_send, prepare_authorized, on_prepared, on_uploaded):
         assert prepare_authorized()
         before_send()
         observed.append((text, image))

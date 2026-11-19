@@ -39,7 +39,7 @@ async def handoff(service, monkeypatch):
     outcome = {"disconnect": False, "visible": False}
     sends, reads = [], []
 
-    async def send(actual_adapter, text, image, *, before_send, prepare_authorized, on_prepared):
+    async def send(actual_adapter, text, image, *, before_send, prepare_authorized, on_prepared, on_uploaded):
         assert actual_adapter is adapter and image["content"] and prepare_authorized()
         before_send()
         sends.append(text)
@@ -143,7 +143,7 @@ def test_model_cannot_select_an_unspecified_draft(goal):
 async def test_revoke_at_transport_boundary_does_not_reserve_or_send(handoff, monkeypatch):
     data = handoff
 
-    async def revoke(adapter, text, image, *, before_send, prepare_authorized, on_prepared):
+    async def revoke(adapter, text, image, *, before_send, prepare_authorized, on_prepared, on_uploaded):
         assert prepare_authorized()
         data.scope[-1] = "different-identity"
         before_send()

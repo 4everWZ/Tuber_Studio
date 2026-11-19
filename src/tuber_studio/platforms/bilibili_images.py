@@ -83,3 +83,16 @@ async def upload_image(adapter, image, *, authorized):
     if extension not in {"png", "jpg", "jpeg", "gif", "webp"}:
         raise ValueError("平台图片格式无效，尚未提交消息／动态")
     return {"url": url, "height": height, "width": width, "imageType": extension, "original": 1, "size": size}
+
+
+async def comment_pictures(adapter, image, authorized, on_uploaded):
+    """bilibili-api-python 17.4.2 comment.send_comment uses dynamic.upload_image."""
+    if image is None:
+        return {}
+    if authorized is None or on_uploaded is None:
+        raise ValueError("配图评论需要绑定上传授权和回执")
+    uploaded = await upload_image(adapter, image, authorized=authorized)
+    picture = {"img_src": uploaded["url"], "img_width": uploaded["width"],
+               "img_height": uploaded["height"], "img_size": uploaded["size"]}
+    on_uploaded(picture)
+    return {"pictures": json.dumps([picture])}

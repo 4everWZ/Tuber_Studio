@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from fastapi import Depends, HTTPException
 from pydantic import Field
 
+from ..operation_attachments import comment_payload
 from ..models import StrictModel
 from ..operation_continuations import content_hash
 from ..operation_feedback import FeedbackPublication
@@ -76,7 +77,7 @@ class ReplyOperations:
             sources = [row["platform_comment_id"]]
             source_hash = binding["source"]["content_sha256"]
             destination = f"公开评论 {row['video_id']} 楼 {row['thread_id']}"
-            payload = {"text": row["text"]}
+            payload = comment_payload(row, service.runtime)
         else:
             if row["source_kind"] != "message" or row["platform"] != "bilibili":
                 raise ValueError("须选择由实际来信产生的私信草稿")
@@ -183,8 +184,14 @@ class ReplyOperations:
                 binding = service._publication_binding(row, source, account, character)
             else:
                 return None
-            if (binding != approval["binding"] or "text" in approval["payload"] and row["text"] != approval["payload"]["text"]
-                    or row.get("meme_id") != approval["payload"].get("meme_id")):
+            if is_comment:
+                payload = comment_payload(row, service.runtime)
+            elif row.get("message_kind") == "image" and approval["payload"].get("message_kind") == "image":
+                # A disabled or retired catalog image can still have a confirmed historical receipt.
+                payload = approval["payload"] | {"meme_id": row.get("meme_id")}
+            else:
+                payload = service._outgoing(row, character)
+            if binding != approval["binding"] or payload != approval["payload"]:
                 return None
             return row
 

@@ -25,6 +25,8 @@ from .operation_feedback import (
     generation_view,
     publication_binding,
 )
+from .operation_attachments import (bound_comment, checked_image, comment_image, comment_payload, decision, image_scope,
+                                    queue_image, record_upload, row_ref, wait_decision)
 from .operation_identity import runtime_identity
 from .operation_text import validate_comment_body, validate_operation_text
 from .operations.browsing.models import BrowsingPolicy
@@ -61,6 +63,9 @@ def category(text, attachments=()):
 class Comments:
     def __init__(self, settings, store, runtime, adapter=None):
         self.settings, self.store, self.runtime = settings, store, runtime
+        self.memes = None
+        if "image_ref" not in {r[1] for r in store.db.execute("PRAGMA table_info(drafts)")}:
+            store.execute("ALTER TABLE drafts ADD COLUMN image_ref TEXT")
         self.operations = getattr(runtime, "operations", None) or OperationsControl(store)
         runtime.operations = self.operations
         self.credential_path = settings.runtime / "bilibili-credentials.json"
@@ -733,6 +738,12 @@ class Comments:
                             self._comment_event(row) | {"account_id": account_id},
                             "comment_draft",
                         )
+                    image_row = row | {"character_id": character["id"], "character_version": character["version"],
+                                       "account_id": account_id}
+                    image_ref = None
+                    if bound_comment(row):
+                        image_ref = queue_image(self.runtime, "comments", image_row,
+                                                {"comment": row["content"], "video": row["video_id"]}, reply.spoken_text)
                     # The staged history, new draft and its new source index are
                     # installed together, with no await inside the SQL transaction.
                     with self.store.db:
@@ -756,8 +767,8 @@ class Comments:
                             return
                         draft_id = cursor.lastrowid
                         self.store.db.execute(
-                            "UPDATE drafts SET account_id=?,generation_task_id=? WHERE id=?",
-                            (account_id, self.active_task_id, draft_id),
+                            "UPDATE drafts SET account_id=?,generation_task_id=?,image_ref=? WHERE id=?",
+                            (account_id, self.active_task_id, dump(image_ref) if image_ref else None, draft_id),
                         )
                         if candidate:
                             context.install_candidate(scope, character, candidate)
@@ -791,23 +802,37 @@ class Comments:
             (int(error is not None), error, time.time(), task_id),
         )
 
-    def review(self, draft_id, action, text=None):
+    def review(self, draft_id, action, text=None, **options):
         row = self._draft_source(draft_id)
         if not row:
             raise ValueError("草稿不存在")
         if row["status"] in {"published", "publishing", "publish_uncertain", "private_handoff", "operator_replied"}:
             raise ValueError("已发布或结果不确定的回复不能覆盖；请核对平台")
-        if action not in {"approve", "reject"}:
+        expected = options.pop("updated_at", None)
+        if "expected_image" in options and options.pop("expected_image") != decision(self.runtime, "comments", row, row_ref(row)):
+            raise ValueError("配图已变化，请核对当前草稿")
+        if expected is not None and expected != row["updated_at"]:
+            raise ValueError("草稿版本已变化，请刷新")
+        if options and (set(options) != {"image_ref"} or action != "edit"):
+            raise ValueError("图片变更须保存为待审草稿")
+        if action not in {"approve", "reject", "edit"}:
             raise ValueError("未知审核动作")
         text = text if text is not None else row["text"]
         if action == "approve":
             text = validate_comment_body(text, recipient_name=row["display_name"] or "")
         else:
             text = validate_operation_text(text, label="回复")
-        status = "approved" if action == "approve" else "rejected"
+        ref = options.get("image_ref", row_ref(row))
+        if "image_ref" not in options and action == "approve":
+            ref = decision(self.runtime, "comments", row, ref)
+        if ref is not None and (action == "approve" or "image_ref" in options):
+            if not row["account_id"] or not row["platform_user_id"]:
+                raise ValueError("配图回复需要已绑定的账号和目标 UID")
+            checked_image(self.memes, ref, row["character_id"], runtime=self.runtime, scope=image_scope("comments", row))
+        status = {"approve": "approved", "reject": "rejected", "edit": "pending_review"}[action]
         self.store.execute(
-            "UPDATE drafts SET text=?,status=?,error=NULL,updated_at=? WHERE id=?",
-            (text, status, time.time(), draft_id),
+            "UPDATE drafts SET text=?,status=?,image_ref=?,error=NULL,updated_at=? WHERE id=?",
+            (text, status, dump(ref) if ref else None, time.time(), draft_id),
         )
         if action == "reject":
             source = self.store.one("SELECT * FROM comments WHERE id=?", (row["comment_id"],))
@@ -819,6 +844,8 @@ class Comments:
 
     def copy(self, draft_id):
         row = self.store.one("SELECT * FROM drafts WHERE id=?", (draft_id,))
+        if row and row.get("image_ref"):
+            raise ValueError("配图草稿不能仅以复制文字完成")
         if not row or row["status"] not in {"approved", "copied"}:
             raise ValueError("先审核通过再复制")
         self.store.execute(
@@ -850,7 +877,7 @@ class Comments:
 
     def _draft_source(self, draft_id):
         return self.store.one(
-            "SELECT d.*,c.video_id,c.thread_id,c.platform_user_id,c.display_name,c.content,c.comment_id AS platform_comment_id FROM drafts d "
+            "SELECT d.*,c.platform,c.video_id,c.thread_id,c.platform_user_id,c.display_name,c.content,c.comment_id AS platform_comment_id FROM drafts d "
             "JOIN comments c ON c.id=d.comment_id WHERE d.id=?",
             (draft_id,),
         )
@@ -875,6 +902,7 @@ class Comments:
                     fresh[key] != row[key]
                     for key in ("status", "text", "account_id", "character_id", "character_version")
                 )
+                or comment_payload(fresh, self.runtime) != comment_payload(row, self.runtime)
                 or self._publication_binding(fresh, account, character) != binding
             ):
                 raise ValueError("恢复期间草稿、角色或原始来源已变化")
@@ -898,6 +926,8 @@ class Comments:
                 "read_context": summary,
             },
             guard,
+            payload=comment_payload(row, self.runtime),
+            encode_revision=lambda value: comment_payload(row, self.runtime) | {"text": value},
             on_defer=lambda prepared, state: self._defer_revision(draft_id, prepared, state),
             manual_approved=row["status"] in {"approved", "copied"},
         )
@@ -1020,6 +1050,8 @@ class Comments:
         feedback = FeedbackPublication(self.runtime, self.store, self.operations)
 
         async def read(row, attempt):
+            if row["feedback"]["sent_payload"].get("asset_sha256") and not (attempt["receipt"] or {}).get("rpid"):
+                return {"status": "unsupported", "reason": "image_receipt_required"}
             if not hasattr(self.adapter, "reconcile_publication"):
                 return {"status": "unsupported"}
             try:
@@ -1092,11 +1124,15 @@ class Comments:
         )
 
     async def publish(self, draft_id, automatic=False, *, authorization_epoch=None, submission=None):
+        if automatic:
+            await wait_decision(self.runtime, "comments", self._draft_source(draft_id) or {}, lambda:
+                                self.policy()["auto_reply"] and self.operations.policy()["epoch"] == authorization_epoch)
         if submission is not None:
             submission.check()
             return await self._publish_once(draft_id, submission=submission)
         feedback = FeedbackPublication(self.runtime, self.store, self.operations)
-        confirmed = None if automatic else self.store.one("SELECT text FROM drafts WHERE id=?", (draft_id,))
+        confirmed = None if automatic else self._draft_source(draft_id)
+        confirmed_hash = content_hash(comment_payload(confirmed, self.runtime)) if confirmed else None
         return await feedback.submit(
             "comments",
             draft_id,
@@ -1107,7 +1143,7 @@ class Comments:
                 authorization_epoch=authorization_epoch,
                 revision_ticket=ticket,
                 binding=binding,
-                body_hash=content_hash(confirmed) if confirmed else body_hash,
+                body_hash=confirmed_hash or body_hash,
             ),
             apply_revision=lambda prepared, text: self._apply_revision(draft_id, prepared, text),
             automatic=automatic,
@@ -1203,17 +1239,22 @@ class Comments:
                     "platform_comment_id",
                     "platform_user_id",
                     "display_name",
+                    "image_ref",
                     "thread_id",
                     "video_id",
                 )
             ):
                 raise ValueError("发送准备期间草稿或来源已变化")
+            payload = comment_payload(row, self.runtime)
+            image = None
+            if payload.get("asset_sha256"):
+                image = comment_image(self.memes, payload, character, runtime=self.runtime, scope=image_scope("comments", row))
             actual_binding = self._publication_binding(row, account_id, character)
             if (
                 binding is not None
                 and binding != actual_binding
                 or body_hash is not None
-                and body_hash != content_hash({"text": row["text"]})
+                and body_hash != content_hash(payload)
             ):
                 raise ValueError("发送前原始绑定或正文已变化")
             token = None
@@ -1221,10 +1262,9 @@ class Comments:
             def admit(ticket):
                 self._reserve_daily_video_reply(ticket, row, account_id)
                 if submission:
-                    submission.admit(ticket, actual_binding, {"text": row["text"]}, attempt)
+                    submission.admit(ticket, actual_binding, payload, attempt)
 
-            def before_send():
-                nonlocal token
+            def authorize():
                 audit = json.loads(row["answer_check"] or "{}")
                 self.runtime.validate_memory_delivery(audit)
                 captured = audit.get("generation_identity")
@@ -1243,7 +1283,8 @@ class Comments:
                     or fresh["platform_user_id"] != row["platform_user_id"]
                     or fresh["display_name"] != row["display_name"]
                     or fresh["status"] != "publishing"
-                    or fresh["text"] != row["text"]
+                    or comment_payload(fresh, self.runtime) != payload
+                    or self._publication_binding(fresh, account_id, character) != actual_binding
                     or (automatic and not self.policy()["auto_reply"])
                 ):
                     raise ValueError("发送前账号、来源或授权已变化，保留草稿")
@@ -1258,6 +1299,15 @@ class Comments:
                     character=character,
                     epoch=authorization_epoch,
                 )
+                if submission:
+                    submission.check(publishing=True)
+                if image:
+                    comment_image(self.memes, payload, character, runtime=self.runtime, scope=image_scope("comments", row))
+                return True
+
+            def before_send():
+                nonlocal token
+                authorize()
                 token = self.operations.reserve(
                     account_id,
                     character,
@@ -1270,7 +1320,7 @@ class Comments:
                     limits=self.publication_limits(),
                     epoch=authorization_epoch,
                     binding=actual_binding,
-                    content_hash=content_hash({"text": row["text"]}),
+                    content_hash=content_hash(payload),
                     revision_ticket=revision_ticket,
                     admission_hook=admit,
                 )
@@ -1288,6 +1338,12 @@ class Comments:
                 options = (
                     {"thread_id": row["thread_id"]} if row["thread_id"] != row["platform_comment_id"] else {}
                 )
+                if image:
+                    if not isinstance(adapter, BilibiliAdapter) or not hasattr(adapter, "read_video_thread"):
+                        raise ValueError("适配器无法核验评论配图提交")
+                    ref = decision(self.runtime, "comments", row, row_ref(row))
+                    options.update(image=image, prepare_authorized=authorize,
+                                   on_uploaded=lambda pic: record_upload(self.store, "comments", draft_id, ref, pic))
                 if isinstance(adapter, BilibiliAdapter):
                     options["before_send"] = before_send
                 else:
@@ -1295,6 +1351,8 @@ class Comments:
                 receipt = await self.adapter.publish(
                     row["video_id"], row["platform_comment_id"], row["text"], **options
                 )
+                if image and isinstance(receipt, dict):
+                    receipt.update(image_ref=ref)
                 if not isinstance(receipt, dict) or not re.fullmatch(
                     r"[1-9][0-9]{0,19}", str(receipt.get("rpid", ""))
                 ):
@@ -1313,7 +1371,7 @@ class Comments:
                 if token:
                     self.operations.finish(token, "uncertain")
                     FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
-                        "comments", draft_id, token, actual_binding, {"text": row["text"]}, "发布结果不确定"
+                        "comments", draft_id, token, actual_binding, payload, "发布结果不确定"
                     )
                 message = "发布结果不确定，请先核对平台，禁止自动重试"
                 self.store.execute(
@@ -1339,15 +1397,15 @@ class Comments:
                 )
                 if isinstance(error, PlatformRejected):
                     error.write_token = token
-                    error.body_hash = content_hash({"text": row["text"]})
-                    error.sent_payload = {"text": row["text"]}
+                    error.body_hash = content_hash(payload)
+                    error.sent_payload = payload
                     raise
                 raise ValueError(message) from None
             except Exception:
                 if token:
                     self.operations.finish(token, "uncertain")
                     FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
-                        "comments", draft_id, token, actual_binding, {"text": row["text"]}, "发布结果不确定"
+                        "comments", draft_id, token, actual_binding, payload, "发布结果不确定"
                     )
                 self.store.execute(
                     "UPDATE drafts SET status='publish_uncertain',error=? WHERE id=?",
@@ -1377,7 +1435,7 @@ class Comments:
                         draft_id,
                         token,
                         actual_binding,
-                        {"text": row["text"]},
+                        payload,
                         "平台成功后本地保存失败",
                     )
                 self.store.execute(

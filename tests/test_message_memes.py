@@ -76,6 +76,8 @@ async def image_http(settings):
             assert request.method == "GET"
             return httpx.Response(200, json={"code": 0, "data": {"messages": []}})
         assert request.url.host == "api.vc.bilibili.com" and request.url.path == "/web_im/v1/web_im/send_msg"
+        if callback := state.get("on_message"):
+            return callback(parse_qs(request.content.decode()))
         if state["final"] == "timeout":
             raise httpx.ReadTimeout("controlled unknown final write")
         if state["final"] == "no_receipt":
@@ -455,3 +457,32 @@ async def test_review_while_account_nav_waits_preserves_latest_draft_before_any_
     assert len(uploads(state)) == int(with_image) and len(writes(state)) == 1
     assert len(messages.store.all("SELECT * FROM dm_attempts")) == 1
     assert not messages.store.one("SELECT * FROM meme_pins WHERE owner=?", (owner,))
+
+@pytest.mark.parametrize("failure", ["disconnect", "revoke"])
+async def test_two_message_partial_delivery_keeps_first_receipt_and_never_reposts(meme_messages, failure):
+    messages, _, asset, state = meme_messages
+    identity = await prepared(meme_messages, image=False, account_id="900")
+    ref = {k: asset[k] for k in ("asset_id", "sha256")}
+    messages.review(identity, "edit", image_ref=ref)
+    messages.review(identity, "approve")
+
+    def intercept(form):
+        assert form["msg[receiver_id]"] == ["123"]
+        if form["msg[msg_type]"] == ["2"]:
+            if failure == "revoke":
+                messages.store.set("message_policy", messages.policy()["base"] | {"enabled": False})
+            return httpx.Response(200, json={"code": 0, "data": {"msg_key": "432"}})
+        raise httpx.ReadTimeout("after text POST")
+
+    state["on_message"] = intercept
+    with pytest.raises(ValueError, match="待核对"):
+        await messages.send(identity)
+    view = messages._draft_view(messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,)))
+    assert len(view["image_uploads"]) == 1 and view["status"] == "publish_uncertain"
+    steps = {item["kind"]: item["receipt"] for item in view["delivery_steps"]}
+    assert steps["image"]["msg_key"] == "432"
+    assert steps["text"]["status"] == ("not_submitted" if failure == "revoke" else "uncertain")
+    with pytest.raises(ValueError):
+        await messages.send(identity)
+    assert len(uploads(state)) == 1 and len(writes(state)) == (1 if failure == "revoke" else 2)
+    assert not messages.store.all("SELECT * FROM dm_incoming_settlements")
