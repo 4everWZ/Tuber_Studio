@@ -617,7 +617,7 @@ class Comments:
         """Caller owns generation_lock; rebuild only retained originals, never old drafts."""
         character = character or self.runtime.character
         scope = self.account_context_scope(video_id, thread_id, platform)
-        context = self.runtime.context
+        context = self.runtime.operation_context
         previous = context.existing(scope, character)
         if previous and json.loads(previous["history"]):
             raise ValueError("当前楼已有非空上下文，请先清除后再重建")
@@ -627,7 +627,7 @@ class Comments:
         candidate = context.source_candidate(scope, character, [self._comment_event(row) for row in rows])
         try:
             messages = await candidate.prepare(scope, character, None, mode="comment_draft")
-            prefilled = await self.runtime.llm.prefill(messages)
+            prefilled = await self.runtime.operation_llm.prefill(messages)
             self._check_sources(rows, video_id, thread_id, platform)
             context.install_candidate(scope, character, candidate)
             status = context.status(scope, character)
@@ -676,7 +676,7 @@ class Comments:
                     "input_summary,created_at,updated_at,account_id) VALUES(?,?,'private_handoff',?,?,?,?,?,?,?)",
                     (
                         cid, f"已转私信草稿 #{handoff}", character["id"], character["version"],
-                        self.settings.data["omni"]["model"], json.dumps(event, ensure_ascii=False),
+                        self.settings.data["omni"]["responses_model"], json.dumps(event, ensure_ascii=False),
                         now, now, account_id,
                     ),
                 )
@@ -701,7 +701,7 @@ class Comments:
                     return
                 if browsing and browsing.has_intent(row, character):
                     return
-                context = self.runtime.context
+                context = self.runtime.operation_context
                 previous = context.existing(scope, character)
                 sources = (
                     self._thread_sources(row["video_id"], row["thread_id"], row["platform"], cid)
@@ -766,7 +766,7 @@ class Comments:
                                 reply.spoken_text,
                                 character["id"],
                                 character["version"],
-                                self.settings.data["omni"]["model"],
+                                self.settings.data["omni"]["responses_model"],
                                 json.dumps(event, ensure_ascii=False),
                                 json.dumps(check, ensure_ascii=False),
                                 time.time(),
@@ -849,7 +849,7 @@ class Comments:
             character = self.store.character(row["character_id"], row["character_version"])
             scope = self.account_context_scope(source["video_id"], source["thread_id"], source["platform"],
                                                account_id=row.get("account_id") or "")
-            self.runtime.context.remove_unsent_reply(scope, character, self._comment_event(source)["event_id"])
+            self.runtime.operation_context.remove_unsent_reply(scope, character, self._comment_event(source)["event_id"])
         return self.store.one("SELECT * FROM drafts WHERE id=?", (draft_id,))
 
     def copy(self, draft_id):
@@ -974,7 +974,7 @@ class Comments:
             self.operations.assert_allowed(automatic=automatic, channel="comments", account_id=account,
                                            character=character, epoch=epoch)
             sources = self._thread_sources(row["video_id"], row["thread_id"], "bilibili", source["id"])
-            candidate = self.runtime.context.source_candidate(scope, character, [self._comment_event(item) for item in sources])
+            candidate = self.runtime.operation_context.source_candidate(scope, character, [self._comment_event(item) for item in sources])
             try:
                 reply, check = await self.runtime.generate_reply(
                     scope, character, event, mode="comment_draft", context=candidate,
@@ -1112,7 +1112,7 @@ class Comments:
         scope = self.account_context_scope(source["video_id"], source["thread_id"], source["platform"], account_id=account_id)
         check = json.loads(draft["answer_check"] or "{}")
         used_memory = check.get("organized_memory") or "memory_preference_revision" in check
-        self.runtime.context.record(scope, character, event, None if used_memory else draft["text"], "comment_draft",
+        self.runtime.operation_context.record(scope, character, event, None if used_memory else draft["text"], "comment_draft",
                                     memory_kind=check.get("memory_kind"))
 
     def publication_limits(self):

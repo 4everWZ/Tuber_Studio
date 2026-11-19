@@ -75,7 +75,7 @@ class Model:
 def service(settings, store, monkeypatch):
     comments = SimpleNamespace(adapter=object(), publish_lock=asyncio.Lock(), configured=True)
     comments.policy = lambda: {"credentials_configured": comments.configured}
-    runtime = SimpleNamespace(llm=Model(), generation_lock=asyncio.Lock())
+    runtime = SimpleNamespace(operation_llm=Model(), generation_lock=asyncio.Lock())
     runtime.offline_generation = lambda lane: runtime.generation_lock
     service = Dynamics(settings, store, runtime, comments)
     service.operations.configure(
@@ -151,7 +151,7 @@ async def test_public_incident_is_factual_cited_and_removed_from_draft_sources(s
     assert not service.sent
     assert post["sources"][0]["id"] == f"incident:{identifier}"
     assert post["sources"][0]["fictional"] is False
-    payload = json.loads(service.runtime.llm.calls[-1][1]["content"])
+    payload = json.loads(service.runtime.operation_llm.calls[-1][1]["content"])
     assert payload["public_sources"][0]["fictional"] is False
     assert payload["public_sources"][0]["public_sources"][0]["quote"] == "你消息是不是回错了"
     original, = post["comment_card"]["comments"]
@@ -328,7 +328,7 @@ async def test_dynamic_refreshes_identity_regenerates_and_keeps_existing_approva
         return service.runtime.identity_snapshot(character, account_id)
 
     service.runtime.refresh_identity = refresh
-    service.runtime.llm.output = json.dumps(
+    service.runtime.operation_llm.output = json.dumps(
         {
             "action": "post",
             "reason": "按当前身份分享",
@@ -345,8 +345,8 @@ async def test_dynamic_refreshes_identity_regenerates_and_keeps_existing_approva
     identity = json.loads(service._post(post_id)["generation_identity"])
     assert identity["account_display_name"] == "新名字"
     assert identity["identity_version"] != previous["identity_version"]
-    assert "新名字" in service.runtime.llm.calls[-1][0]["content"]
-    assert json.loads(service.runtime.llm.calls[-1][1]["content"])["recent_public_posts"] == []
+    assert "新名字" in service.runtime.operation_llm.calls[-1][0]["content"]
+    assert json.loads(service.runtime.operation_llm.calls[-1][1]["content"])["recent_public_posts"] == []
 
 
 async def test_dynamic_identity_verification_failure_keeps_approved_draft_unsent(service):
@@ -391,7 +391,7 @@ async def test_automatic_dynamic_identity_refresh_preserves_automatic_authorizat
     assert json.loads(post["generation_identity"])["account_display_name"] == "新名字"
     decisions = [
         packet
-        for packet in service.runtime.llm.calls
+        for packet in service.runtime.operation_llm.calls
         if "task" not in json.loads(packet[1]["content"])
     ]
     assert len(decisions) == 2  # Initial generation and the necessary identity-bound replacement.
@@ -405,7 +405,7 @@ def test_incident_internal_source_id_cannot_become_public_body():
 
 async def test_dynamic_can_read_one_page_without_changing_public_source(service, monkeypatch):
     public_memory(service)
-    model = service.runtime.llm
+    model = service.runtime.operation_llm
     model.supports_operation_web_fetch = True
     original = model.generate_json
     fetched = []
@@ -433,7 +433,7 @@ async def test_disabled_default_and_manual_never_auto_sends(service):
     assert service.policy()["enabled"] is False
     assert service.policy()["auto_publish"] is True
     assert (await service.evaluate())["status"] == "skipped"
-    assert not service.runtime.llm.calls
+    assert not service.runtime.operation_llm.calls
     result = await service.evaluate(manual=True)
     assert result["action"] == "post" and result["status"] == "pending_review"
     assert service.sent == []
@@ -460,9 +460,9 @@ async def test_enabled_auto_publishes_only_new_background_decision(service):
 @pytest.mark.parametrize("verdict", ["expression", "unsupported"])
 async def test_autonomous_dynamic_can_share_a_thought_without_comment_sources(service, monkeypatch, verdict):
     caption = "海底小窝的灯一亮，我就想把今天的灵感画下来。"
-    service.runtime.llm.output = json.dumps({"action": "post", "reason": "分享随想", "content": caption,
+    service.runtime.operation_llm.output = json.dumps({"action": "post", "reason": "分享随想", "content": caption,
                                              "source_ids": [], "next_evaluation_seconds": 1800})
-    generate = service.runtime.llm.generate_json
+    generate = service.runtime.operation_llm.generate_json
 
     async def model(messages, schema, *, max_tokens):
         payload = json.loads(messages[1]["content"])
@@ -471,7 +471,7 @@ async def test_autonomous_dynamic_can_share_a_thought_without_comment_sources(se
             return {"checks": [{"sentence": 1, "verdict": verdict, "quotes": []}]}
         return await generate(messages, schema, max_tokens=max_tokens)
 
-    monkeypatch.setattr(service.runtime.llm, "generate_json", model)
+    monkeypatch.setattr(service.runtime.operation_llm, "generate_json", model)
     await service.set_policy({"enabled": True})
     decision = await service.evaluate()
     post = service._post(decision["post_id"])
@@ -515,8 +515,8 @@ async def test_memory_and_operations_do_not_disclose_chat(service, manual, with_
     finally:
         store.db.set_trace_callback(None)
     assert not any("operator_chat_turns" in sql or "dynamic_chat_material" in sql for sql in queries)
-    assert runtime.llm.calls
-    prompt = json.dumps(runtime.llm.calls, ensure_ascii=False)
+    assert runtime.operation_llm.calls
+    prompt = json.dumps(runtime.operation_llm.calls, ensure_ascii=False)
     assert all(value not in prompt for value in (original, paraphrase, turn, "daily-chat:test"))
     if with_public:
         assert decision["action"] == "post" and queued == [("dynamics", decision["post_id"])]
@@ -572,7 +572,7 @@ async def test_legacy_chat_draft_blocked_and_receipts_preserved(service, origin)
 
 async def test_unselected_memory_revocation_invalidates_an_unsourced_draft(service):
     identifier = public_memory(service)
-    service.runtime.llm.output = json.dumps({"action": "post", "reason": "分享随想", "content": "我想画一幅画。",
+    service.runtime.operation_llm.output = json.dumps({"action": "post", "reason": "分享随想", "content": "我想画一幅画。",
                                              "source_ids": [], "next_evaluation_seconds": 1800})
     decision = await service.evaluate(manual=True)
     post = service._post(decision["post_id"])
@@ -617,11 +617,11 @@ async def test_automatic_dynamic_checks_actual_caption_against_public_thread(ser
         "我在评论区连着认错对象。第三次才翻回原楼找人把话接对。尾巴乱拍，先看看眼睛指哪儿！"
         if case == "invented" else "评论区有人说以后卖我赛博保险，还认真算起了养鱼成本。"
     )
-    service.runtime.llm.output = json.dumps({
+    service.runtime.operation_llm.output = json.dumps({
         "action": "post", "reason": "分享评论区互动", "content": caption,
         "source_ids": [source["id"]], "next_evaluation_seconds": 1800,
     })
-    generate = service.runtime.llm.generate_json
+    generate = service.runtime.operation_llm.generate_json
 
     async def model(messages, schema, *, max_tokens):
         packet = json.loads(messages[1]["content"])
@@ -643,7 +643,7 @@ async def test_automatic_dynamic_checks_actual_caption_against_public_thread(ser
         quote = "第三次才接对" if case == "invented_quote" else "以后我卖你赛博保险。还有养鱼其实很费钱的"
         return {"checks": [{"sentence": 1, "verdict": "supported", "quotes": [quote]}]}
 
-    monkeypatch.setattr(service.runtime.llm, "generate_json", model)
+    monkeypatch.setattr(service.runtime.operation_llm, "generate_json", model)
     sent = []
 
     async def publish_image(adapter, text, image, *, before_send, **kwargs):
@@ -684,11 +684,11 @@ async def test_only_explicit_public_memory_enters_prompt(service):
     memory(service, "用户的私人数据XYZ", role="user")
     memory(service, "未执行的角色计划", kind="role_plan")
     assert (await service.evaluate(manual=True))["action"] == "wait"
-    assert json.loads(service.runtime.llm.calls[-1][1]["content"])["public_sources"] == []
+    assert json.loads(service.runtime.operation_llm.calls[-1][1]["content"])["public_sources"] == []
     assert [m["id"] for m in service.list_memories()] == [private_id]
     public_memory(service, text="明确允许公开的虚构角色故事")
     await service.evaluate(manual=True)
-    prompt = json.dumps(service.runtime.llm.calls, ensure_ascii=False)
+    prompt = json.dumps(service.runtime.operation_llm.calls, ensure_ascii=False)
     assert "明确允许公开" in prompt and "fictional" in prompt
     assert "秘密ABC" not in prompt and "私人数据XYZ" not in prompt and "未执行的角色计划" not in prompt
 
@@ -745,7 +745,7 @@ async def test_deleted_public_comment_invalidates(service):
 )
 async def test_invalid_or_ungrounded_model_output_never_posts(service, output):
     public_memory(service)
-    service.runtime.llm.output = output
+    service.runtime.operation_llm.output = output
     await service.set_policy({"enabled": True})
     result = await service.evaluate()
     assert result["action"] == "error" and service.sent == [] and service.list_posts() == []
@@ -759,7 +759,7 @@ async def test_generation_holds_unique_runtime_lock_and_character_rechecked(serv
         assert service.runtime.generation_lock.locked()
         service.store.save_character(service.store.character())
 
-    service.runtime.llm.hook = change
+    service.runtime.operation_llm.hook = change
     result = await service.evaluate(manual=True)
     assert result["action"] == "error" and not service.list_posts()
 
@@ -771,7 +771,7 @@ async def test_disable_while_model_running_prevents_send(service):
     async def disable():
         await service.set_policy({"enabled": False})
 
-    service.runtime.llm.hook = disable
+    service.runtime.operation_llm.hook = disable
     result = await service.evaluate()
     assert result["status"] == "pending_review" and not service.sent
 
@@ -868,10 +868,10 @@ async def test_normalized_duplicate_and_used_sources_block_repetition(service):
     first = await service.evaluate(manual=True)
     service.review(first["post_id"], "approve", "海底 小剧场！")
     await service.publish(first["post_id"])
-    calls = len(service.runtime.llm.calls)
+    calls = len(service.runtime.operation_llm.calls)
     assert (await service.evaluate(manual=True))["action"] == "wait"
-    assert len(service.runtime.llm.calls) == calls + 1
-    assert json.loads(service.runtime.llm.calls[-1][1]["content"])["public_sources"] == []
+    assert len(service.runtime.operation_llm.calls) == calls + 1
+    assert json.loads(service.runtime.operation_llm.calls[-1][1]["content"])["public_sources"] == []
     public_memory(service, text="另一条公开的虚构故事")
     second = await service.evaluate(manual=True)
     service.review(second["post_id"], "approve", "海底小剧场。")
@@ -935,7 +935,7 @@ async def test_enable_requires_credentials_and_worker_disabled_by_default(servic
     await service.open()
     await asyncio.sleep(0)
     await service.close()
-    assert service.runtime.llm.calls == [] and service.sent == [] and service.worker is None
+    assert service.runtime.operation_llm.calls == [] and service.sent == [] and service.worker is None
 
 
 @pytest.mark.parametrize("change", ["stop", "review_mode", "unmark", "character", "account"])
@@ -984,7 +984,7 @@ async def test_live_priority_checked_before_and_inside_generation_lock(service, 
         live.busy = True
         result = await service.evaluate()
     assert result["action"] == "wait" and "直播" in result["reason"]
-    assert not service.runtime.llm.calls and not service.sent
+    assert not service.runtime.operation_llm.calls and not service.sent
     assert result["next_evaluation_at"] >= result["created_at"] + 300
 
 
@@ -995,7 +995,7 @@ async def test_public_revoke_while_waiting_for_model_lock_never_enters_prompt(se
         await asyncio.sleep(0)
         service.mark_memory(mid, False)
     result = await task
-    assert result["action"] == "wait" and not service.runtime.llm.calls
+    assert result["action"] == "wait" and not service.runtime.operation_llm.calls
 
 
 async def test_old_draft_cannot_reuse_already_attempted_source(service):
@@ -1030,7 +1030,7 @@ async def test_operational_prompt_contains_timezone_and_only_published_history(s
     await service.publish(first["post_id"])
     public_memory(service, text="新公开的虚构记忆")
     await service.evaluate(manual=True)
-    payload = json.loads(service.runtime.llm.calls[-1][1]["content"])
+    payload = json.loads(service.runtime.operation_llm.calls[-1][1]["content"])
     assert payload["current_time"][-6] in {"+", "-"}
     assert payload["recent_public_posts"] == [
         {
@@ -1060,7 +1060,7 @@ async def test_receipt_persistence_failure_is_uncertain_even_for_value_error(ser
 
 async def test_operations_summary_exact_quote_only_prompt_full_original_saved(service):
     mid = public_memory(service, text="在虚构的海底厨房，我又盛了一碗饭。另一个无关细节不应进入决定。")
-    service.runtime.llm.summary_output = json.dumps(
+    service.runtime.operation_llm.summary_output = json.dumps(
         {
             "entries": [
                 {"source_id": f"memory:{mid}", "quote": "在虚构的海底厨房，我又盛了一碗饭。"},
@@ -1070,7 +1070,7 @@ async def test_operations_summary_exact_quote_only_prompt_full_original_saved(se
     )
     decision = await service.evaluate(manual=True)
     assert decision["status"] == "pending_review"
-    decision_prompt = service.runtime.llm.calls[-1]
+    decision_prompt = service.runtime.operation_llm.calls[-1]
     public_sources = json.loads(decision_prompt[1]["content"])["public_sources"]
     assert public_sources == [
         {
@@ -1089,7 +1089,7 @@ async def test_operations_summary_exact_quote_only_prompt_full_original_saved(se
 
 async def test_summary_reused_without_append_new_source_updates_and_budget_invalidates(service):
     public_memory(service)
-    service.runtime.llm.output = json.dumps(
+    service.runtime.operation_llm.output = json.dumps(
         {
             "action": "wait",
             "reason": "暂不发布",
@@ -1105,7 +1105,7 @@ async def test_summary_reused_without_append_new_source_updates_and_budget_inval
     def summary_counts():
         return [
             messages
-            for messages in service.runtime.llm.count_calls
+            for messages in service.runtime.operation_llm.count_calls
             if len(messages) == 1 and "entries" in json.loads(messages[0]["content"])
         ]
 
@@ -1124,9 +1124,8 @@ async def test_summary_reused_without_append_new_source_updates_and_budget_inval
     "field,value",
     [
         ("base_url", "https://api.example.test/v1"),
-        ("model", "different-model"),
-        ("enable_thinking", False),
-    ],
+        ("responses_model", "different-model"),
+        ],
 )
 async def test_omni_configuration_invalidates_token_measurement(service, field, value):
     public_memory(service)
@@ -1151,7 +1150,7 @@ async def test_summary_failure_never_falls_back_to_original_source_decision(serv
     mid = public_memory(service)
     await service.set_policy({"enabled": True})
     if failure == "rewrite":
-        service.runtime.llm.summary_output = json.dumps(
+        service.runtime.operation_llm.summary_output = json.dumps(
             {
                 "entries": [
                     {"source_id": f"memory:{mid}", "quote": "改写而非原句"},
@@ -1160,17 +1159,17 @@ async def test_summary_failure_never_falls_back_to_original_source_decision(serv
             ensure_ascii=False,
         )
     elif failure == "incomplete":
-        service.runtime.llm.summary_output = '{"entries":['
+        service.runtime.operation_llm.summary_output = '{"entries":['
     elif failure == "overbudget":
 
         async def count(messages):
             assert service.runtime.generation_lock.locked()
             return 2049
 
-        monkeypatch.setattr(service.runtime.llm, "count_tokens", count)
+        monkeypatch.setattr(service.runtime.operation_llm, "count_tokens", count)
     else:
         second = public_memory(service, text="第二条未选入摘要的公开来源")
-        service.runtime.llm.summary_output = json.dumps(
+        service.runtime.operation_llm.summary_output = json.dumps(
             {
                 "entries": [
                     {"source_id": f"memory:{mid}", "quote": "我又盛了一碗饭。"},
@@ -1178,7 +1177,7 @@ async def test_summary_failure_never_falls_back_to_original_source_decision(serv
             },
             ensure_ascii=False,
         )
-        service.runtime.llm.output = json.dumps(
+        service.runtime.operation_llm.output = json.dumps(
             {
                 "action": "post",
                 "reason": "wrong source",
@@ -1190,13 +1189,13 @@ async def test_summary_failure_never_falls_back_to_original_source_decision(serv
     result = await service.evaluate()
     assert result["action"] == "error" and not service.list_posts() and not service.sent
     if failure != "unquoted_id":
-        assert len(service.runtime.llm.calls) == 1
+        assert len(service.runtime.operation_llm.calls) == 1
         assert not service.summary_status()["valid"]
 
 
 async def test_summary_and_its_token_measurement_hold_same_gpu_generation_lock(service, monkeypatch):
     public_memory(service)
-    counted = service.runtime.llm.count_tokens
+    counted = service.runtime.operation_llm.count_tokens
 
     async def assert_count(messages):
         assert service.runtime.generation_lock.locked()
@@ -1205,11 +1204,11 @@ async def test_summary_and_its_token_measurement_hold_same_gpu_generation_lock(s
     async def assert_summary():
         assert service.runtime.generation_lock.locked()
 
-    service.runtime.llm.summary_hook = assert_summary
-    service.runtime.llm.hook = assert_summary
-    monkeypatch.setattr(service.runtime.llm, "count_tokens", assert_count)
+    service.runtime.operation_llm.summary_hook = assert_summary
+    service.runtime.operation_llm.hook = assert_summary
+    monkeypatch.setattr(service.runtime.operation_llm, "count_tokens", assert_count)
     await service.evaluate(manual=True)
-    assert len(service.runtime.llm.calls) == 2 and len(service.runtime.llm.count_calls) == 2
+    assert len(service.runtime.operation_llm.calls) == 2 and len(service.runtime.operation_llm.count_calls) == 2
 
 
 async def test_revoke_during_summary_generation_prevents_commit_and_decision(service):
@@ -1218,9 +1217,9 @@ async def test_revoke_during_summary_generation_prevents_commit_and_decision(ser
     async def revoke():
         service.mark_memory(mid, False)
 
-    service.runtime.llm.summary_hook = revoke
+    service.runtime.operation_llm.summary_hook = revoke
     result = await service.evaluate(manual=True)
-    assert result["action"] == "error" and len(service.runtime.llm.calls) == 1
+    assert result["action"] == "error" and len(service.runtime.operation_llm.calls) == 1
     assert not service.summary_status()["valid"] and not service.list_posts()
 
 
@@ -1243,7 +1242,7 @@ async def test_posting_does_not_clear_summary_preview_but_does_not_reuse_source(
 async def test_decision_grammar_references_only_actual_summary_sources(service):
     chosen = public_memory(service)
     omitted = public_memory(service, text="不进入摘要的另一条公开故事")
-    service.runtime.llm.summary_output = json.dumps(
+    service.runtime.operation_llm.summary_output = json.dumps(
         {
             "entries": [
                 {"source_id": f"memory:{chosen}", "quote": "我又盛了一碗饭。"},
@@ -1253,7 +1252,7 @@ async def test_decision_grammar_references_only_actual_summary_sources(service):
     )
     result = await service.evaluate(manual=True)
     assert result["action"] == "post"
-    schema = service.runtime.llm.schemas[-1]
+    schema = service.runtime.operation_llm.schemas[-1]
     assert schema["type"] == "object" and schema["additionalProperties"] is False
     assert set(schema["required"]) == {"action", "reason", "content", "source_ids", "next_evaluation_seconds"}
     props = schema["properties"]
@@ -1283,14 +1282,14 @@ async def test_decision_grammar_references_only_actual_summary_sources(service):
 async def test_decision_input_echo_extra_fields_or_non_object_never_publishes(service, monkeypatch, invalid):
     public_memory(service)
     await service.set_policy({"enabled": True})
-    original = service.runtime.llm.generate_json
+    original = service.runtime.operation_llm.generate_json
 
     async def incorrect(messages, schema, *, max_tokens):
         if json.loads(messages[1]["content"]).get("task") == "operations_memory_summary":
             return await original(messages, schema, max_tokens=max_tokens)
         return invalid
 
-    monkeypatch.setattr(service.runtime.llm, "generate_json", incorrect)
+    monkeypatch.setattr(service.runtime.operation_llm, "generate_json", incorrect)
     result = await service.evaluate()
     assert result["action"] == "error" and service.list_posts() == [] and service.sent == []
 
@@ -1299,17 +1298,17 @@ async def test_rejected_source_is_not_regenerated_by_autonomous_publisher(servic
     public_memory(service)
     decision = await service.evaluate(manual=True)
     service.review(decision["post_id"], "reject")
-    count = len(service.runtime.llm.calls)
+    count = len(service.runtime.operation_llm.calls)
     await service.set_policy({"enabled": True})
     due(service)
     assert (await service.evaluate())["action"] == "wait"
-    assert len(service.runtime.llm.calls) == count + 1 and service.sent == []
-    assert json.loads(service.runtime.llm.calls[-1][1]["content"])["public_sources"] == []
+    assert len(service.runtime.operation_llm.calls) == count + 1 and service.sent == []
+    assert json.loads(service.runtime.operation_llm.calls[-1][1]["content"])["public_sources"] == []
 
 
 async def test_decision_with_internal_source_id_in_body_is_not_a_publishable_draft(service):
     identifier = public_memory(service)
-    service.runtime.llm.output = json.dumps(
+    service.runtime.operation_llm.output = json.dumps(
         {
             "action": "post",
             "reason": "想分享故事",

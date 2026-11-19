@@ -221,7 +221,7 @@ class FeedbackModel:
         candidates = [
             value for value in candidates if value is not None and content_hash(value) not in summaries
         ]
-        if not candidates or not hasattr(self.runtime.llm, "summarize"):
+        if not candidates or not hasattr(self.runtime.operation_llm, "summarize"):
             raise ContextWindowExceeded("当前原始材料与工作输出超窗，保留检查点")
         value = max(candidates, key=lambda item: len(dump(item)))
         summary_messages = [
@@ -234,8 +234,8 @@ class FeedbackModel:
         summary_messages = identity_messages(summary_messages, self._identity(row))
         maximum = min(self.max_tokens, self.runtime.settings.data["omni"].get("compaction_max_tokens", 4096))
         summary = await budgeted_call(
-            self.runtime.llm,
-            lambda: self.runtime.llm.summarize(summary_messages, max_tokens=maximum),
+            self.runtime.operation_llm,
+            lambda: self.runtime.operation_llm.summarize(summary_messages, max_tokens=maximum),
             summary_messages,
             max_tokens=maximum,
         )
@@ -248,7 +248,7 @@ class FeedbackModel:
             output=summary,
             context={
                 "source_output_sha256": content_hash(value),
-                "usage": getattr(self.runtime.llm, "last_usage", {}),
+                "usage": getattr(self.runtime.operation_llm, "last_usage", {}),
             },
         )
 
@@ -274,7 +274,7 @@ class FeedbackModel:
                         try:
                             attempted = True
                             result = await budgeted_json(
-                                self.runtime.llm, identity_messages(make_messages(), self._identity(current)),
+                                self.runtime.operation_llm, identity_messages(make_messages(), self._identity(current)),
                                 schema, max_tokens=self.max_tokens
                             )
                             break
@@ -285,21 +285,21 @@ class FeedbackModel:
         except (ContextWindowExceeded, GenerationBudgetExceeded):
             raise
         except ValueError as error:
-            if getattr(self.runtime.llm, "last_content", None) is None:
+            if getattr(self.runtime.operation_llm, "last_content", None) is None:
                 raise
             raise GenerationFeedback(
-                public_error(error), original_output=getattr(self.runtime.llm, "last_content", None)
+                public_error(error), original_output=getattr(self.runtime.operation_llm, "last_content", None)
             ) from None
         finally:
             self.coordinator._step(
                 row,
                 "model_" + phase,
                 "completed" if result is not None else "interrupted",
-                output=(getattr(self.runtime.llm, "last_content", None) or result) if attempted else None,
+                output=(getattr(self.runtime.operation_llm, "last_content", None) or result) if attempted else None,
                 context={
                     "elapsed_ms": (time.perf_counter() - started) * 1000,
-                    "usage": getattr(self.runtime.llm, "last_usage", {}),
-                    "finish_reason": getattr(self.runtime.llm, "last_finish_reason", None),
+                    "usage": getattr(self.runtime.operation_llm, "last_usage", {}),
+                    "finish_reason": getattr(self.runtime.operation_llm, "last_finish_reason", None),
                 },
             )
         return result

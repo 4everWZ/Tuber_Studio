@@ -13,7 +13,7 @@ from tuber_studio.operations.browsing.models import BrowsingPolicy
 async def test_invalid_generation_requires_explicit_resume_with_original_material_and_stays_preview(browsing):
     service = browsing
     service.store.set("browsing_policy", service.policy() | {"max_output_tokens": 32768})
-    platform, model = service.adapter, service.runtime.llm
+    platform, model = service.adapter, service.runtime.operation_llm
     original = model.generate_json
     repairing = False
     calls = []
@@ -64,7 +64,7 @@ async def test_invalid_generation_requires_explicit_resume_with_original_materia
 
 async def test_private_failed_response_is_redacted_from_public_task_and_visible_only_in_dm(browsing):
     service = browsing
-    platform, model = service.adapter, service.runtime.llm
+    platform, model = service.adapter, service.runtime.operation_llm
     original = model.generate_json
     private_body = "这段仅用于私域查看的候选正文"
 
@@ -130,7 +130,7 @@ async def test_full_prepared_input_chunks_preserve_text_with_65536_output_reserv
         "missing_parts": [],
     }
     original = deepcopy(material)
-    counts, reservations = full_input_counter(browsing.runtime.llm, 57000)
+    counts, reservations = full_input_counter(browsing.runtime.operation_llm, 57000)
     chunks = await browsing.decisions._chunks(material, row)
     assert [source["id"] for chunk in chunks for source in chunk] == [str(index) for index in range(10)]
     assert [len(chunk) for chunk in chunks] == [3, 3, 3, 1]
@@ -149,11 +149,11 @@ async def test_fixed_role_and_output_capacity_checkpoint_does_not_retry_same_set
         decision_max_tokens=65536,
     ).model_dump()
     browsing.store.set("browsing_policy", config)
-    counts, reservations = full_input_counter(browsing.runtime.llm, 60000)
+    counts, reservations = full_input_counter(browsing.runtime.operation_llm, 60000)
     await finished(browsing, preview=True)
     task = browsing.tasks()[0]
     assert task["status"] == "checkpoint" and task["capacity_signature"]
-    assert "输出预留" in task["error"] and not browsing.runtime.llm.calls
+    assert "输出预留" in task["error"] and not browsing.runtime.operation_llm.calls
     count = len(counts)
     await finished(browsing, preview=True)
     assert len(counts) == count and len(browsing.tasks()) == 1

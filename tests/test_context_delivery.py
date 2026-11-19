@@ -21,7 +21,7 @@ def original_and_draft(comments, *, status="published", receipt=None, suffix="1"
         (source["id"], text, status, char["id"], char["version"], json.dumps(receipt) if receipt else None)).lastrowid
     scope = comments.account_context_scope(source["video_id"], source["thread_id"], account_id="100")
     event = comments._comment_event(source) | {"account_id": "100"}
-    comments.runtime.context.record(scope, char, event, text, "comment_draft")
+    comments.runtime.operation_context.record(scope, char, event, text, "comment_draft")
     return scope, source, event, text, identity
 
 
@@ -35,10 +35,10 @@ def original_and_draft(comments, *, status="published", receipt=None, suffix="1"
 def test_grounded_recall_and_history_require_matching_published_receipt(comments, status, receipt, allowed):
     scope, _, event, text, _ = original_and_draft(comments, status=status, receipt=receipt)
     runtime, char = comments.runtime, comments.runtime.character
-    recalled = runtime.context.memory.retrieve(scope, char, "上次银月书店是谁送了你三本诗集？")
+    recalled = runtime.operation_context.memory.retrieve(scope, char, "上次银月书店是谁送了你三本诗集？")
     assert bool(recalled["evidence"]) is allowed
-    assert bool([item for item in runtime.context.history_for_model(scope, char) if item["role"] == "assistant"]) is allowed
-    assert text in runtime.context.existing(scope, char)["history"]
+    assert bool([item for item in runtime.operation_context.history_for_model(scope, char) if item["role"] == "assistant"]) is allowed
+    assert text in runtime.operation_context.existing(scope, char)["history"]
     assert comments.store.one("SELECT text FROM grounded_memory WHERE event_id=? AND role='assistant'", (event["event_id"],))["text"] == text
 
 
@@ -66,7 +66,7 @@ async def test_runtime_retrieve_before_prepare_excludes_rejected_source(comments
                                                "text": "上次银月书店是谁送了你三本诗集？"}
     captured = []
     recovery_contexts = []
-    original = runtime.llm.generate_operation
+    original = runtime.operation_llm.generate_operation
     original_recovery = runtime_module.generate_with_recovery
 
     async def recovery(*args, **kwargs):
@@ -77,20 +77,20 @@ async def test_runtime_retrieve_before_prepare_excludes_rejected_source(comments
         captured.append(json.dumps(messages, ensure_ascii=False))
         return await original(messages, character, event_id, source_text)
 
-    monkeypatch.setattr(runtime.llm, "generate_operation", generate)
+    monkeypatch.setattr(runtime.operation_llm, "generate_operation", generate)
     monkeypatch.setattr(runtime_module, "generate_with_recovery", recovery)
     async with runtime.offline_generation():
         _, audit = await runtime.generate_reply(scope, runtime.character, event, mode="comment_draft")
     assert audit["sources"] == [] and text not in captured[0]
     assert recovery_contexts and all(text not in packet for packet in recovery_contexts)
-    assert text in runtime.context.existing(scope, runtime.character)["history"]
+    assert text in runtime.operation_context.existing(scope, runtime.character)["history"]
 
 
 async def test_mixed_old_summary_is_never_resummarized_and_original_audit_survives(comments):
     scope, _, _, delivered, draft_id = original_and_draft(comments, receipt={"rpid": "901"})
     _, _, _, unsent, _ = original_and_draft(comments, status="rejected", suffix="bad")
     runtime, store, char = comments.runtime, comments.store, comments.runtime.character
-    row = runtime.context.existing(scope, char)
+    row = runtime.operation_context.existing(scope, char)
     raw = json.loads(row["history"]) + [{"role": "user", "kind": "summary", "content": "旧污染摘要：" + unsent}]
     store.execute("UPDATE context_windows SET history=? WHERE key=?", (json.dumps(raw, ensure_ascii=False), row["key"]))
 
@@ -121,7 +121,7 @@ async def test_mixed_old_summary_is_never_resummarized_and_original_audit_surviv
 
 def test_context_audit_expires_with_parent_or_disappears_on_explicit_window_delete(comments):
     scope, _, _, _, _ = original_and_draft(comments, status="rejected")
-    manager, store, char = comments.runtime.context, comments.store, comments.runtime.character
+    manager, store, char = comments.runtime.operation_context, comments.store, comments.runtime.character
     row = manager.existing(scope, char)
     manager._archive_history(row, "test old pollution")
     store.execute("UPDATE context_windows SET oldest_source_at=? WHERE key=?", (1, row["key"]))
@@ -146,9 +146,9 @@ def test_profile_clear_or_opt_out_never_reintroduces_unsent_memory(comments):
     runtime, char = comments.runtime, comments.runtime.character
     runtime.relationships.set_profile("100", char["id"], "bilibili", "neighbor",
                                      profile=UserProfile(personalization_enabled=False, nickname="", preferences=[], important_events=[]))
-    assert runtime.context.memory.retrieve(scope, char, "你刚才去银月书店了吗")["evidence"] == []
+    assert runtime.operation_context.memory.retrieve(scope, char, "你刚才去银月书店了吗")["evidence"] == []
     runtime.relationships.set_profile("100", char["id"], "bilibili", "neighbor")
-    assert runtime.context.memory.retrieve(scope, char, "你刚才去银月书店了吗")["evidence"] == []
+    assert runtime.operation_context.memory.retrieve(scope, char, "你刚才去银月书店了吗")["evidence"] == []
 
 
 def test_dynamic_public_mark_and_cached_summary_do_not_launder_an_unsent_memory(comments, monkeypatch):

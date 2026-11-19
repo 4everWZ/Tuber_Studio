@@ -43,7 +43,7 @@ async def test_later_search_batches_continue_to_other_pages_after_title_skips(br
             "has_more": page < 3,
         }
 
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
 
     async def skip(messages, schema, *, max_tokens):
         if schema["title"] == "CandidateBatchPlan":
@@ -59,7 +59,7 @@ async def test_later_search_batches_continue_to_other_pages_after_title_skips(br
         return await original(messages, schema, max_tokens=max_tokens)
 
     monkeypatch.setattr(browsing.adapter, "discover", search)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", skip)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", skip)
     await authorize(browsing)
     pages.clear()  # Account/source preflight is separate from durable retrieval.
     for _ in range(3):
@@ -151,7 +151,7 @@ async def test_pause_and_restart_resume_original_plan_and_watch_task(browsing, m
     assert resumed["config"]["autonomous_batch"]
     assert resumed["status"] == "completed"
     assert task_id in {task["id"] for task in browsing.tasks(round_id=result["id"])}
-    assert sum(name == "CandidateBatchPlan" for name, _ in browsing.runtime.llm.calls) == 1
+    assert sum(name == "CandidateBatchPlan" for name, _ in browsing.runtime.operation_llm.calls) == 1
     assert len(browsing.adapter.sent) == 1
     assert browsing.repo.quotas.watch_status("100", "whale", 0)["started"] == 1
 
@@ -190,12 +190,12 @@ async def test_retrieval_resumes_after_last_saved_page_and_merges_sources(browsi
     first = next(item for item in candidates if item["bvid"] == BV)
     assert {source["page"] for source in first["sources"]} == {1, 2}
     assert len(first["sources"]) == 2
-    assert sum(name == "CandidateBatchPlan" for name, _ in browsing.runtime.llm.calls) == 1
+    assert sum(name == "CandidateBatchPlan" for name, _ in browsing.runtime.operation_llm.calls) == 1
 
 
 async def test_title_skips_are_durable_and_do_not_create_watch_records(browsing, monkeypatch):
     await authorize(browsing)
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
 
     async def skip(messages, schema, *, max_tokens):
         if schema["title"] == "CandidateBatchPlan":
@@ -210,7 +210,7 @@ async def test_title_skips_are_durable_and_do_not_create_watch_records(browsing,
                 ], explanation="这批标题没有想看的内容。")
         return await original(messages, schema, max_tokens=max_tokens)
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", skip)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", skip)
     first = await finished(browsing, automatic=True, video_only=True)
     second = await finished(browsing, automatic=True, video_only=True)
     assert first["id"] != second["id"]

@@ -63,6 +63,8 @@ async def test_editor_requests_new_subclip_with_objections_or_respects_fixed_len
         pytest.fail(str(props))
 
     monkeypatch.setattr(runtime.llm, "generate_json", model)
+
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", model)
     editor = create_task_runtime(runtime, store, None).edit_delivery
     if fixed is None:
         with pytest.raises(AdditionalVideoRead) as request:

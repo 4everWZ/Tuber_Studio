@@ -64,14 +64,18 @@ async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):
                 await expect(page.locator('#providers-form input[type=password]')).to_have_count(1)
                 await expect(page.locator("#llm-kind,#tts-kind,#background-base,#tts-form,#llm-model-select")).to_have_count(0)
                 await page.get_by_text("思考与任务额度", exact=True).click()
+                await expect(page.locator("#video-max-frames")).to_have_value("5")
+                await page.locator("#video-max-frames").fill("7")
                 await page.locator("#llm-operations-tokens").fill("2300")
                 async with page.expect_request("**/api/settings/providers") as saved:
                     await page.get_by_role("button", name="保存 Omni 设置").click()
                 body = (await saved.value).post_data_json
                 assert set(body) == {"omni"} and body["omni"]["operations_max_tokens"] == 2300
+                assert body["omni"]["video_options"] == {"max_frames": 7}
                 await expect(page.locator("#providers-save-state")).to_have_text("Omni 设置已保存。")
                 await page.reload()
                 await expect(page.locator("#llm-operations-tokens")).to_have_value("2300")
+                await expect(page.locator("#video-max-frames")).to_have_value("7")
                 await page.get_by_text("编辑连接与凭据", exact=True).click()
                 await page.route("**/api/providers/models", lambda route: route.fulfill(json={"models": ["fixture-alias"]}))
                 await page.get_by_role("button", name="读取已保存服务的模型别名").click()

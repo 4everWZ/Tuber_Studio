@@ -9,7 +9,7 @@ import psutil
 
 from .agent.memory_organizer import MemoryOrganizer
 from .agent_tools import build_default_tool_registry
-from .api_providers import VisionService, create_llm
+from .api_providers import VisionService, create_llm, create_operation_llm
 from .context import ContextManager
 from .context_delivery import comment_scope
 from .daily_memory import DailyMemoryService, MemoryChanged
@@ -48,6 +48,7 @@ class Runtime:
         )
         self.relationships = Relationships(store)
         self.llm = create_llm(settings)
+        self.operation_llm = create_operation_llm(settings)
         self.voices = VoiceService(settings)
         self.vision = VisionService(settings.data["omni"], settings.provider_key("omni"))
         self.daily_memory = DailyMemoryService(store)
@@ -66,6 +67,11 @@ class Runtime:
             daily_memory=self.daily_memory,
             game_livestream=self.live.game_livestream,
             draw_and_guess=self.live.draw_and_guess,
+            tool_registry=self.tool_registry,
+        )
+        self.operation_context = ContextManager(
+            settings, store, self.operation_llm, daily_memory=self.daily_memory,
+            game_livestream=self.live.game_livestream, draw_and_guess=self.live.draw_and_guess,
             tool_registry=self.tool_registry,
         )
         self.retention = RetentionManager(settings, store)
@@ -92,6 +98,17 @@ class Runtime:
     def llm(self, provider):
         self._llm = provider
         provider.identity_resolver = self.identity_snapshot
+
+    @property
+    def operation_llm(self):
+        return self._operation_llm
+
+    @operation_llm.setter
+    def operation_llm(self, provider):
+        self._operation_llm = provider
+        provider.identity_resolver = self.identity_snapshot
+        if hasattr(self, "operation_context"):
+            self.operation_context.provider = provider
 
     def identity_snapshot(self, character=None, account_id=None):
         from .bilibili_account import cached_account_actor
@@ -222,6 +239,7 @@ class Runtime:
         await self.live.online_songs.close()
         await self.live.stop_worker()
         await self.llm.close()
+        await self.operation_llm.close()
         await self.live.media.singing.close()
         await self.voices.close()
         await self.vision.close()
@@ -295,7 +313,9 @@ class Runtime:
         """Generate once with source memory; lexical diagnostics never rewrite speech."""
         if mode == "live" and event.get("platform") == HANDOFF_PLATFORM:
             return await self._generate_handoff_reply(character, event)
-        context = context or self.context
+        operation = mode in {"comment_draft", "direct_message"}
+        context = context or (self.operation_context if operation else self.context)
+        provider = self.operation_llm if operation else self.llm
         evidence = context.memory.retrieve(scope, character, event["text"])
         channel = {"operator_chat": "operator", "live": "live", "comment_draft": "comment",
                    "direct_message": "direct_message"}.get(mode)
@@ -341,10 +361,7 @@ class Runtime:
         generation_identity = self.identity_snapshot(character, event.get("account_id"))
         if mode != "operator_chat":
             messages = identity_messages(messages, generation_identity)
-        operation = mode in {"comment_draft", "direct_message"}
-        generate = (
-            getattr(self.llm, "generate_operation", self.llm.generate) if operation else self.llm.generate
-        )
+        generate = getattr(provider, "generate_operation", provider.generate) if operation else provider.generate
         continuation = None
         if operation:
             maximum = self.settings.data["omni"].get("operations_max_tokens", 8192)
@@ -363,7 +380,7 @@ class Runtime:
             async def invoke(packet, *, web_fetch=None):
                 options = {"web_fetch": web_fetch} if web_fetch is not None else {}
                 return await budgeted_call(
-                    self.llm,
+                    provider,
                     lambda: generate(packet, character, event["event_id"], event["text"], **options),
                     packet,
                     max_tokens=maximum,
@@ -466,8 +483,8 @@ class Runtime:
             audit.update(memory_audit)
         if operation:
             audit["output"] = operation_output_diagnostics(reply.spoken_text) | {
-                "finish_reason": getattr(self.llm, "last_finish_reason", None),
-                "usage": dict(getattr(self.llm, "last_usage", {})),
+                "finish_reason": getattr(provider, "last_finish_reason", None),
+                "usage": dict(getattr(provider, "last_usage", {})),
             }
             if audit["output"]["needs_review"]:
                 audit["warning"] = "长正文含大量重复段落，保留原文待审"

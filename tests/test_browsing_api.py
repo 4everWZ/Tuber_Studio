@@ -28,7 +28,7 @@ def make_app(settings):
     # Only transport/model inference is controlled. Routes, authorization,
     # SQLite, workers, evidence storage and cancellation are production code.
     app = create_app(settings, ControlledPlatform(), message_adapter=ControlledMessages())
-    app.state.runtime.llm = ControlledModel()
+    app.state.runtime.operation_llm = ControlledModel()
     app.state.comments.credentials = {"sessdata": "controlled-session", "csrf": "controlled-csrf"}
     app.state.browsing.read_interval = 0
     return app

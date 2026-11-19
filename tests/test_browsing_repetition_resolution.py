@@ -101,7 +101,7 @@ async def test_repeated_main_reply_stays_reviewable_without_parking_the_batch(br
     async def source(target):
         return {"author_uid": "300", "text": "鸡蛋浮起来需要多少盐？"}
 
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
 
     async def different_response(messages, schema, *, max_tokens):
         result = await original(messages, schema, max_tokens=max_tokens)
@@ -111,7 +111,7 @@ async def test_repeated_main_reply_stays_reviewable_without_parking_the_batch(br
 
     monkeypatch.setattr(browsing.adapter, "fetch", comments)
     monkeypatch.setattr(browsing.adapter, "read_video_reply", source, raising=False)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", different_response)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", different_response)
     await browsing.configure({"reply_enabled": True})
     revisit = await finished(browsing, automatic=True, video_only=True)
     assert revisit["status"] == "completed"
@@ -127,7 +127,7 @@ async def test_repeated_main_reply_stays_reviewable_without_parking_the_batch(br
 
 async def isolated_output_limit_provider(browsing, *, comments=False, network=False, private=None, malformed_body=None):
     """Exercise the real HTTP provider, feedback coordinator and task executor."""
-    original = browsing.runtime.llm
+    original = browsing.runtime.operation_llm
     calls = []
     fault = {"pending": True}
 
@@ -190,7 +190,7 @@ async def isolated_output_limit_provider(browsing, *, comments=False, network=Fa
     } | {"structured_output":"json_schema", "context_source":"declared", "prompt_token_endpoint":False})
     await provider.client.aclose()
     provider.client = httpx.AsyncClient(base_url="https://isolated.invalid/v1", transport=httpx.MockTransport(respond))
-    browsing.runtime.llm = provider
+    browsing.runtime.operation_llm = provider
     return original, provider, calls
 
 
@@ -225,7 +225,7 @@ async def test_valid_outer_json_with_protocol_in_comment_body_requires_an_edit(b
         assert [body for _, body in browsing.adapter.sent] == [corrected]
     finally:
         await provider.close()
-        browsing.runtime.llm = original
+        browsing.runtime.operation_llm = original
 
 
 @pytest.mark.parametrize("comments", [False, True])
@@ -269,7 +269,7 @@ async def test_output_limit_keeps_diagnostic_without_feedback_or_cross_round_mod
         assert not browsing.adapter.sent
     finally:
         await provider.close()
-        browsing.runtime.llm = original
+        browsing.runtime.operation_llm = original
 
 
 async def test_real_http_timeout_keeps_checkpoint_without_inventing_a_model_wait(browsing):
@@ -287,7 +287,7 @@ async def test_real_http_timeout_keeps_checkpoint_without_inventing_a_model_wait
         assert not browsing.repo.content_progress(row, BV)["main_decision"]
     finally:
         await provider.close()
-        browsing.runtime.llm = original
+        browsing.runtime.operation_llm = original
 
 
 @pytest.mark.parametrize("private", ["parsed", "unresolved"])
@@ -315,7 +315,7 @@ async def test_actual_deferred_private_candidate_is_only_visible_in_private_cont
         assert not browsing.adapter.sent
     finally:
         await provider.close()
-        browsing.runtime.llm = original
+        browsing.runtime.operation_llm = original
 
 
 @pytest.mark.parametrize("on_resume", [False, True])

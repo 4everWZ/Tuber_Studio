@@ -86,7 +86,7 @@ async def test_first_contact_check_does_not_authorize_from_arbitrary_history(bro
     async def check(packet, schema, *, max_tokens):
         pytest.fail("A verified invitation must not require another channel-selection model call")
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", check)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", check)
     character = browsing.runtime.character
     draft = {"account_id": "100", "platform_user_id": "300", "character_id": character["id"],
              "character_version": character["version"], "purpose": "查明此事后联系", "text": "当前候选"}
@@ -285,8 +285,8 @@ async def test_schema_ignoring_fake_handoff_is_rejected_before_creating_private_
     await enable_comment_choices(browsing, monkeypatch)
     attach_comment_source(browsing, monkeypatch)
     forbid_video_content(browsing, monkeypatch)
-    browsing.runtime.llm.response_action = "handoff_private"
-    original = browsing.runtime.llm.generate_json
+    browsing.runtime.operation_llm.response_action = "handoff_private"
+    original = browsing.runtime.operation_llm.generate_json
     schemas = []
 
     async def generic(packet, schema, *, max_tokens):
@@ -296,7 +296,7 @@ async def test_schema_ignoring_fake_handoff_is_rejected_before_creating_private_
             return {"action": "abandon", "reason": "该来源不存在我方受邀关系", "read": ""}
         return await original(packet, schema, max_tokens=max_tokens)
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generic)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", generic)
     main = await finished(browsing, automatic=True, video_only=True)
     assert main["status"] == "completed"
     assert schemas and all("handoff_private" not in actions(schema) for schema in schemas)

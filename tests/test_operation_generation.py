@@ -68,8 +68,8 @@ async def model_for(
     provider.client = httpx.AsyncClient(
         base_url="https://isolated.invalid/v1", transport=httpx.MockTransport(respond)
     )
-    await runtime.llm.close()
-    runtime.llm = provider
+    await runtime.operation_llm.close()
+    runtime.operation_llm = provider
     return requests, generated, corrected
 
 
@@ -81,6 +81,8 @@ async def test_runtime_operation_web_fetch_is_model_selected(
     url = "https://example.org/penguin"
     first = {"web_fetch": url} if mode != "live" else {"spoken_text": "本鲸在呢。"}
     requests, generated, _ = await model_for(runtime, settings, first=first)
+    if mode == "live":
+        runtime.llm, runtime.operation_llm = runtime.operation_llm, runtime.llm
     fetched = []
 
     async def fetch(target):
@@ -197,7 +199,7 @@ async def generate(runtime, *, diagnose=None, parent=None, guard=lambda: True):
                 },
                 character=runtime.character,
                 messages=[{"role": "user", "content": "今天有点累，想找个软垫歇歇。"}],
-                generate=lambda messages: runtime.llm.generate_json(messages, schema, max_tokens=8192),
+                generate=lambda messages: runtime.operation_llm.generate_json(messages, schema, max_tokens=8192),
                 validate=validate,
                 max_tokens=8192,
                 guard=guard,
@@ -348,7 +350,7 @@ async def test_valid_model_wait_is_deferred_without_cross_parent_automatic_recon
     async def request(parent=None):
         return await generate_with_recovery(runtime, channel="test-wait", identity="same-source", binding=binding,
             character=runtime.character, messages=[{"role": "user", "content": "当前原讨论"}],
-            generate=lambda packet: runtime.llm.generate_json(packet, ResponseDecision.model_json_schema(), max_tokens=8192),
+            generate=lambda packet: runtime.operation_llm.generate_json(packet, ResponseDecision.model_json_schema(), max_tokens=8192),
             validate=ResponseDecision.model_validate, max_tokens=8192, guard=lambda: True, parent_round_id=parent)
 
     value, record = await request()
@@ -378,7 +380,7 @@ async def test_invalid_evidence_is_not_repaired_and_keeps_original_source_bindin
     with pytest.raises(GenerationInvalid):
         await generate_with_recovery(runtime, channel="test-source-decision", identity="source-1", binding=binding,
             character=runtime.character, messages=[{"role": "user", "content": "当前原资料"}],
-            generate=lambda packet: runtime.llm.generate_json(packet, schema, max_tokens=8192),
+            generate=lambda packet: runtime.operation_llm.generate_json(packet, schema, max_tokens=8192),
             validate=validate, max_tokens=8192, guard=lambda: True)
     row = runtime.continuations.find("test-source-decision", "source-1")
     assert row["state"] == "invalid" and {k: v for k, v in row["binding"].items() if k != "self_identity"} == binding

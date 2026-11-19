@@ -5,7 +5,7 @@ from schema_contract import validate_schema_complexity
 
 from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
 from tuber_studio.operations.browsing.models import response_schema
-from tuber_studio.web_fetch import OperationWebFetch
+from tuber_studio.web_fetch import MAX_URL, OperationWebFetch
 
 
 def test_new_private_decisions_offer_invited_contact_only_while_old_audits_remain_readable():
@@ -55,6 +55,8 @@ async def test_long_video_keeps_all_sources_and_actions_through_optional_web_fet
     for branch in wire_schema["oneOf"]:
         properties = branch["properties"]
         if "web_fetch" in properties:
+            assert properties["web_fetch"]["maxLength"] == MAX_URL
+            assert "pattern" not in properties["web_fetch"]
             continue
         action = properties["action"]["enum"][0]
         actions.add(action)

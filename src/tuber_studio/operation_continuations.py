@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import uuid4
 
+import httpx
 from pydantic import Field, ValidationError
 
 from .compaction import ContextWindowExceeded
@@ -27,6 +28,7 @@ from .generation_meter import (
     reserve_counters,
     settle_counters,
 )
+from .http_api import InferenceBudgetExceeded
 from .models import StrictModel
 from .store import dump
 
@@ -711,13 +713,15 @@ class ContinuationCoordinator:
                 identity, "checkpoint", feedback={"kind": "capacity", "message": str(error)}, owner=owner
             )
             return ContinuationResult("checkpoint", continuation_id=identity)
+        except InferenceBudgetExceeded as error:
+            self._state(identity, "checkpoint", feedback={"kind": "capacity", "message": str(error)}, owner=owner)
+            return ContinuationResult("checkpoint", continuation_id=identity)
         except Exception as error:
-            self._state(
-                identity,
-                "checkpoint",
-                feedback={"kind": "interrupted", "error_type": type(error).__name__},
-                owner=owner,
-            )
+            feedback = {"kind": "interrupted", "error_type": type(error).__name__}
+            if isinstance(error, httpx.HTTPStatusError):
+                status = error.response.status_code
+                feedback.update(http_status=status, message=f"推理请求返回 HTTP {status}，已保存当前生成检查点")
+            self._state(identity, "checkpoint", feedback=feedback, owner=owner)
             raise
         finally:
             heartbeat.cancel()

@@ -115,7 +115,7 @@ async def test_overflow_from_retries_or_multiple_sources_is_bounded_and_carried_
             ])
 
     monkeypatch.setattr(browsing.adapter, "discover", discover)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", skip)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", skip)
     original_retries = browsing.repo.retry_candidates
     if source_mode == "retry":
         monkeypatch.setattr(browsing.repo, "retry_candidates", lambda row: [candidate(999)])
@@ -174,7 +174,7 @@ async def test_resuming_a_completed_retrieval_with_21_raw_candidates_uses_a_fres
                 for item in entries
             ])
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", choose)
     assert await browsing._discover(row) == []
     assert (
         browsing.store.one(
@@ -210,7 +210,7 @@ async def test_ordered_choices_are_the_single_plan_even_if_a_provider_adds_a_sta
             result["videos"] = redundant_videos
         return result
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", choose)
     selected = await browsing._plan_batch(row, [{"bvid": BV, "title": "实验"}, second, skipped])
     assert [item["bvid"] for item in selected] == [second["bvid"], BV]
     assert [item["task_kind"] for item in selected] == ["comment_visit", "new_video"]
@@ -233,7 +233,7 @@ async def test_disabled_comments_are_absent_from_the_plan_schema_and_candidate_a
         assert "comments" not in schema["properties"]["choices"]["properties"][BV]["properties"]["action"]["enum"]
         return batch_plan_wire([{"bvid": BV, "action": "skip", "explanation": "先略过这个标题"}])
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", choose)
     assert await browsing._plan_batch(row, [{"bvid": BV, "title": "实验"}]) == []
 
 
@@ -277,7 +277,7 @@ async def test_old_plan_checkpoint_does_not_retrap_the_saved_batch_or_restart_re
         return batch_plan_wire([{"bvid": BV, "action": "comments", "explanation": "想聊聊楼里的讨论"}])
 
     monkeypatch.setattr(browsing.adapter, "discover", no_retrieval)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", choose)
     selected = await browsing._discover(row)
     assert generated == ["CandidateBatchPlan"]
     assert selected[0]["task_kind"] == "comment_visit"
@@ -331,10 +331,10 @@ async def test_candidate_plan_keeps_all_sources_and_records_one_invalid_result_w
         assert [item["bvid"] for item in packet["candidates"]] == [item["bvid"] for item in candidates]
         assert all(item["title"] and item["available_actions"] for item in packet["candidates"])
         calls.append(deepcopy(messages))
-        browsing.runtime.llm.last_content = json.dumps(invalid, ensure_ascii=False)
+        browsing.runtime.operation_llm.last_content = json.dumps(invalid, ensure_ascii=False)
         return deepcopy(invalid)
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", generate)
     coordinator = browsing.runtime.continuations
     with pytest.raises(GenerationInvalid) as error:
         await browsing._plan_batch(row, candidates)
@@ -380,10 +380,10 @@ async def test_partial_candidate_plan_is_invalid_without_dropping_or_filling_cho
 
     async def generate(messages, schema, *, max_tokens):
         calls.append(schema["title"])
-        browsing.runtime.llm.last_content = json.dumps(invalid, ensure_ascii=False)
+        browsing.runtime.operation_llm.last_content = json.dumps(invalid, ensure_ascii=False)
         return invalid
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", generate)
     with pytest.raises(GenerationInvalid) as error:
         await browsing._plan_batch(row, candidates)
     assert calls == ["CandidateBatchPlan"]
@@ -418,10 +418,10 @@ async def test_keyed_wire_version_plans_the_same_candidates_without_reusing_an_o
     async def generate(messages, schema, *, max_tokens):
         calls.append(schema)
         result = legacy if len(calls) == 1 else batch_plan_wire(choices)
-        browsing.runtime.llm.last_content = json.dumps(result, ensure_ascii=False)
+        browsing.runtime.operation_llm.last_content = json.dumps(result, ensure_ascii=False)
         return result
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", generate)
     original = decisions.generate_with_recovery
 
     async def old_wire_result(*args, **kwargs):

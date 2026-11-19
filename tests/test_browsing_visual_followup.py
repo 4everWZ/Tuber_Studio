@@ -83,7 +83,7 @@ def install_visual(service, *, ask=True, ask_again=False, initial_time=8):
         ]
 
     service.adapter.video_frames = frames
-    original = service.runtime.llm.generate_json
+    original = service.runtime.operation_llm.generate_json
     inputs = []
 
     async def generate(messages, schema, *, max_tokens):
@@ -125,7 +125,7 @@ def install_visual(service, *, ask=True, ask_again=False, initial_time=8):
             }
         return await original(messages, schema, max_tokens=max_tokens)
 
-    service.runtime.llm.generate_json = generate
+    service.runtime.operation_llm.generate_json = generate
     return visual, inputs
 
 
@@ -189,7 +189,7 @@ async def test_followup_uses_the_cited_part_and_preserves_only_reply_citations(b
     metadata = browsing.adapter.video_metadata
     subtitles = browsing.adapter.subtitles
     frames = browsing.adapter.video_frames
-    generate = browsing.runtime.llm.generate_json
+    generate = browsing.runtime.operation_llm.generate_json
     frame_requests = []
     response_inputs = []
 
@@ -225,7 +225,7 @@ async def test_followup_uses_the_cited_part_and_preserves_only_reply_citations(b
     browsing.adapter.video_metadata = two_parts
     browsing.adapter.subtitles = later_subtitles
     browsing.adapter.video_frames = part_frames
-    browsing.runtime.llm.generate_json = cite_second_part
+    browsing.runtime.operation_llm.generate_json = cite_second_part
     await finished(browsing, preview=True)
 
     assert frame_requests == [("22", [73])]

@@ -39,7 +39,7 @@ def test_authenticated_single_connection_save_restart_and_clear(settings, monkey
     with TestClient(app, raise_server_exceptions=True) as client:
         headers = {"Authorization": "Bearer " + settings.admin_token}
         url = "/api/settings/providers"
-        body = {"omni": {"base_url": "https://studio.test/proxy/v1", "model": "omni-a", "responses_model": "worker-a"},
+        body = {"omni": {"base_url": "https://studio.test/proxy/v1", "model": "omni-a", "responses_model": "worker-a", "video_options": {"max_frames": 7}},
                 "credentials": {"omni": "unit-key"}}
         assert client.put(url, json=body).status_code == 401
         saved = client.put(url, headers=headers, json=body)
@@ -48,12 +48,19 @@ def test_authenticated_single_connection_save_restart_and_clear(settings, monkey
         for service in (runtime.llm, runtime.vision, runtime.voices, runtime.browsing.visual_provider.api):
             assert service.client.headers["Authorization"] == "Bearer unit-key"
             assert str(service.client.base_url).rstrip("/") == body["omni"]["base_url"]
+        assert runtime.operation_llm.client.headers["Authorization"] == "Bearer unit-key"
+        assert str(runtime.operation_llm.client.base_url).rstrip("/") == "https://studio.test/proxy/llm/v1"
+        assert runtime.operation_llm.config["model"] == "worker-a"
+        assert runtime.operation_llm.config["structured_output"] == "json_schema"
+        assert runtime.operation_context.provider is runtime.operation_llm
+        assert runtime.browsing.evidence.visual_batch_size() == 7
         assert saved.json()["provider_credentials"] == {"omni": True}
         assert "unit-key" not in saved.text and "unit-key" not in settings.path.read_text()
         loaded = Settings(runtime=settings.runtime)
         assert loaded.provider_key("omni") == "unit-key"
         assert loaded.responses_config["base_url"] == "https://studio.test/proxy/llm/v1"
         assert loaded.video_config["model"] == "omni-a"
+        assert loaded.video_config["max_frames"] == 7
         assert json.loads(loaded.credentials_path.read_text()) == {
             "omni": {"base_url": "https://studio.test/proxy/v1", "key": "unit-key"}}
         if os.name != "nt":
@@ -68,7 +75,7 @@ def test_authenticated_single_connection_save_restart_and_clear(settings, monkey
 async def test_failed_config_save_restores_files_and_runtime(runtime, monkeypatch):
     settings = runtime.settings
     await apply_settings(runtime, {"credentials": {"omni": "original-key"}})
-    before = settings.path.read_bytes(), settings.credentials_path.read_bytes(), runtime.llm, runtime.voices, runtime.vision
+    before = settings.path.read_bytes(), settings.credentials_path.read_bytes(), runtime.llm, runtime.operation_llm, runtime.voices, runtime.vision
 
     from tuber_studio import config
     write = config.atomic_json
@@ -81,7 +88,7 @@ async def test_failed_config_save_restores_files_and_runtime(runtime, monkeypatc
     monkeypatch.setattr(config, "atomic_json", fail_public)
     with pytest.raises(OSError):
         await apply_settings(runtime, {"credentials": {"omni": "replacement-key"}})
-    assert before == (settings.path.read_bytes(), settings.credentials_path.read_bytes(), runtime.llm, runtime.voices, runtime.vision)
+    assert before == (settings.path.read_bytes(), settings.credentials_path.read_bytes(), runtime.llm, runtime.operation_llm, runtime.voices, runtime.vision)
     assert settings.provider_key("omni") == "original-key"
 
 

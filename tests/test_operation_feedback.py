@@ -139,8 +139,8 @@ async def prepared_service(
         base_url="https://isolated.invalid/v1", transport=httpx.MockTransport(model)
     )
     await previous.aclose()
-    await runtime.llm.close()
-    runtime.llm = provider
+    await runtime.operation_llm.close()
+    runtime.operation_llm = provider
     return service, identity, posted, model_requests
 
 

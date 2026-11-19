@@ -50,7 +50,7 @@ async def prepare_handoff(browsing, monkeypatch, *, automatic):
     await enable_comment_choices(browsing, monkeypatch)
     attach_invitation_source(browsing, monkeypatch)
     forbid_video_content(browsing, monkeypatch)
-    browsing.runtime.llm.response_action = "handoff_private"
+    browsing.runtime.operation_llm.response_action = "handoff_private"
     transport = PrivateDelivery()
     browsing.messages.adapter = transport
     browsing.messages.injected = False
@@ -166,8 +166,8 @@ async def test_watched_video_handoff_reuses_caption_evidence_and_private_pipelin
     mode["action"] = "watch"
     await browsing.configure({"top_level_enabled": False})
     attach_invitation_source(browsing, monkeypatch)
-    browsing.runtime.llm.response_action = "handoff_private"
-    original = browsing.runtime.llm.generate_json
+    browsing.runtime.operation_llm.response_action = "handoff_private"
+    original = browsing.runtime.operation_llm.generate_json
 
     async def discuss(messages, schema, *, max_tokens):
         value = await original(messages, schema, max_tokens=max_tokens)
@@ -175,7 +175,7 @@ async def test_watched_video_handoff_reuses_caption_evidence_and_private_pipelin
             value.update(action="read_comments", text="")
         return value
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", discuss)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", discuss)
     row = await finished(browsing, automatic=True, video_only=True)
     assert row["status"] == "completed", row
     draft = await finish_private_handoff(browsing)

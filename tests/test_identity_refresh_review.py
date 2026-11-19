@@ -37,7 +37,7 @@ async def test_dm_identity_replacement_requires_new_review_for_diagnostic_text(m
 
     monkeypatch.setattr(messages.runtime, "identity_snapshot", current)
     monkeypatch.setattr(messages.runtime, "refresh_identity", refresh)
-    monkeypatch.setattr(messages.runtime.llm, "generate", generate)
+    monkeypatch.setattr(messages.runtime.operation_llm, "generate", generate)
     if diagnostic:
         with pytest.raises(ValueError):
             await messages.send(draft_id)
@@ -72,7 +72,7 @@ async def test_dynamic_identity_replacement_requires_new_review_for_diagnostic_t
 
     service.runtime.refresh_identity = refresh
     text = "我是新名字，" + "海底厨房今天照常开饭。" * (8 if diagnostic else 1)
-    service.runtime.llm.output = json.dumps({
+    service.runtime.operation_llm.output = json.dumps({
         "action": "post", "reason": "按当前身份分享", "content": text,
         "source_ids": service._post(post_id)["source_ids"], "next_evaluation_seconds": 1800,
     }, ensure_ascii=False)
@@ -90,6 +90,6 @@ async def test_dynamic_identity_replacement_requires_new_review_for_diagnostic_t
     assert len(service.sent) == 1 and service.sent[0][1] == text
     version = json.loads(service._post(post_id)["generation_identity"])["identity_version"]
     assert version == service.runtime.identity_snapshot(character)["identity_version"] != old_version
-    generation_calls = [packet for packet in service.runtime.llm.calls
+    generation_calls = [packet for packet in service.runtime.operation_llm.calls
                         if json.loads(packet[1]["content"]).get("task") != "operations_memory_summary"]
     assert len(generation_calls) == 2  # Initial draft and one identity replacement.

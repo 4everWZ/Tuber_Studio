@@ -28,7 +28,7 @@ async def test_manual_browsing_publish_preserves_approved_text_without_the_model
 
     monkeypatch.setattr(browsing.adapter, "account_profile", unexpected, raising=False)
     monkeypatch.setattr(browsing.runtime, "refresh_identity", unexpected)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", unexpected)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", unexpected)
     monkeypatch.setattr(browsing, "_prepare_evidence", unexpected)
     if rejected:
         browsing.adapter.failure = PlatformRejected(12051, "请修改正文")

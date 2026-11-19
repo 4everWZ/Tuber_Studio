@@ -109,6 +109,7 @@ async def test_agent_model_deadline_starts_after_background_admission(settings, 
         tasks.make_plan = None
     monkeypatch.setattr(runtime.operation_turns, "acquire", notice_queue)
     monkeypatch.setattr(runtime.llm, "generate_json", generate, raising=False)
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", generate, raising=False)
     monkeypatch.setattr(loop, "time", lambda: monotonic() + offset)
     identity = str(uuid4())
     async with app.router.lifespan_context(app):
@@ -273,6 +274,8 @@ async def test_agent_web_page_is_bound_to_user_or_current_search_receipts(settin
         return {"action": "tool", "tool": "web_page", "arguments": {"web_fetch": searched}}
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", decide)
+
+    monkeypatch.setattr(app.state.runtime.operation_llm, "generate_json", decide)
     async with app.router.lifespan_context(app):
         spec = tasks.tools["web_page"]
         catalog = {"web_page": {"description": spec.description, "arguments": spec.arguments.model_json_schema()}}
@@ -293,6 +296,8 @@ async def test_explicit_fallback_condition_tracks_video_receipt_without_model_re
         raise AssertionError("The explicit video/source order does not require model planning")
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", planned)
+
+    monkeypatch.setattr(app.state.runtime.operation_llm, "generate_json", planned)
     catalog = {name: {"description": spec.description, "requires_approval": spec.review is not None,
                       "arguments": spec.arguments.model_json_schema()}
                for name, spec in tasks.tools.items()}
@@ -331,6 +336,8 @@ async def test_planning_requires_sources_before_page_read_or_a_separate_question
         return model_reply
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", planned)
+
+    monkeypatch.setattr(app.state.runtime.operation_llm, "generate_json", planned)
     catalog = {name: {"description": spec.description, "requires_approval": spec.review is not None}
                for name, spec in tasks.tools.items()}
     async with app.router.lifespan_context(app):
@@ -359,6 +366,8 @@ async def test_planner_only_collapses_unrequested_single_source_reads(settings, 
         return {"steps": proposed.copy()}
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", planned)
+
+    monkeypatch.setattr(app.state.runtime.operation_llm, "generate_json", planned)
     catalog = {name: {"description": spec.description, "requires_approval": spec.review is not None}
                for name, spec in tasks.tools.items()}
     async with app.router.lifespan_context(app):

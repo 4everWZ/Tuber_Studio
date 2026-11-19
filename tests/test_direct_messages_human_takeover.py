@@ -78,7 +78,7 @@ async def test_platform_sequence_orders_takeover_and_settles_only_bound_answers(
             ],
         }
 
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", decide)
+    monkeypatch.setattr(messages.runtime.operation_llm, "generate_json", decide)
     if coverage == "unverified":
         with pytest.raises(GenerationInvalid, match="实际号主回复"):
             await messages._generate(identity, True)

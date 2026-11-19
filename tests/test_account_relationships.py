@@ -172,7 +172,7 @@ async def test_legacy_private_context_is_not_inherited_by_new_account_generation
         prompts.extend(messages)
         return Reply(spoken_text="鱼宝，我们慢慢聊。", reply_to=[event_id])
 
-    monkeypatch.setattr(service.runtime.llm, "generate", generate)
+    monkeypatch.setattr(service.runtime.operation_llm, "generate", generate)
     identity = service.enqueue("message", incoming(service, "901"))
     await service._generate(identity, False)
     prompt = json.dumps(prompts, ensure_ascii=False)

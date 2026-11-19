@@ -43,6 +43,9 @@ def settings(tmp_path, monkeypatch):
 
     create_chat = runtime_module.create_llm
     monkeypatch.setattr(runtime_module, "create_llm", lambda current: OfflineChat() if current is config else create_chat(current))
+    create_operations = runtime_module.create_operation_llm
+    monkeypatch.setattr(runtime_module, "create_operation_llm",
+                        lambda current: OfflineChat() if current is config else create_operations(current))
     config.data["features"]["live_enabled"] = True
     config.data["queue_limit"] = 3
     config.data["playback_wait_seconds"] = 0.15

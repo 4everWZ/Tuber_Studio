@@ -18,7 +18,7 @@ async def prepare_invalid_body(messages):
     requests, generated, _ = await model_for(messages.runtime, messages.settings,
         first={"spoken_text": "这项配置在设置页。", "reply_to": [event["event_id"]]},
         first_finish="length")
-    messages.runtime.context.provider = messages.runtime.llm
+    messages.runtime.context.provider = messages.runtime.operation_llm
     messages._schedule(identity, False)
     await asyncio.wait_for(messages.queue.join(), 3)
     saved = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
@@ -38,7 +38,7 @@ async def test_invalid_body_explicit_resume_uses_same_source_and_leaves_a_privat
     assert len(old_requests) == previous_count
     requests, generated, _ = await model_for(messages.runtime, messages.settings,
         corrected={"spoken_text": "这项配置在设置页，可以接着聊你问的选项。", "reply_to": [event["event_id"]]})
-    messages.runtime.context.provider = messages.runtime.llm
+    messages.runtime.context.provider = messages.runtime.operation_llm
     queued = await messages.resume_continuation("generation:" + str(identity), original["id"])
     assert queued["status"] == "queued"
     await asyncio.wait_for(messages.queue.join(), 3)

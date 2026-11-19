@@ -112,6 +112,7 @@ async def generate_with_recovery(
     web_search_links=(),
 ):
     """Callers retain their existing generation-lock contract and source validator."""
+    provider = runtime.operation_llm
     actor = captured_identity(messages) or runtime_identity(runtime, character, binding.get("account_id"))
     messages = identity_messages(messages, actor)
     binding = binding | {"self_identity": actor}
@@ -175,7 +176,7 @@ async def generate_with_recovery(
     can_fetch = (
         allow_web_fetch
         and character["id"] == "whale"
-        and getattr(runtime.llm, "supports_operation_web_fetch", False)
+        and getattr(provider, "supports_operation_web_fetch", False)
     )
 
     async def invoke(current, web_fetch):
@@ -183,25 +184,26 @@ async def generate_with_recovery(
         value = None
         # Preparation may fail before the provider starts a new generation.
         # Never attribute an earlier task's visible output to this failure.
-        if getattr(runtime.llm, "generation_metered", False):
+        if getattr(provider, "generation_metered", False):
             for name, empty in (("last_content", None), ("last_usage", {}), ("last_finish_reason", None)):
-                setattr(runtime.llm, name, empty)
+                setattr(provider, name, empty)
         try:
             raw = (
                 await generate(messages, web_fetch=web_fetch) if web_fetch else await generate(messages)
             )
-            value = checked(raw, getattr(runtime.llm, "last_content", None))
+            value = checked(raw, getattr(provider, "last_content", None))
         except ValueError as error:
-            raise recoverable_feedback(error, runtime.llm) from None
+            raise recoverable_feedback(error, provider) from None
         finally:
             coordinator._step(
                 current,
                 "generation_model",
                 "completed" if value is not None else "interrupted",
-                output=getattr(runtime.llm, "last_content", None),
+                output=getattr(provider, "last_content", None),
                 context={
-                    "usage": getattr(runtime.llm, "last_usage", {}),
-                    "finish_reason": getattr(runtime.llm, "last_finish_reason", None),
+                    "model": getattr(provider, "config", {}).get("model"),
+                    "usage": getattr(provider, "last_usage", {}),
+                    "finish_reason": getattr(provider, "last_finish_reason", None),
                     "elapsed_ms": (time.perf_counter() - started) * 1000,
                     "max_tokens": max_tokens,
                 },

@@ -23,6 +23,19 @@ def responses_profile(omni):
             "model": omni["responses_model"]}
 
 
+def operation_profile(omni):
+    """Operational decisions share the background text engine and gateway credential."""
+    profile = responses_profile(omni)
+    return omni | {
+        "base_url": profile["base_url"],
+        "model": profile["model"],
+        "structured_output": "json_schema",
+        # This Chat route must emit a bounded decision, even when the front
+        # engine's reasoning toggle is on. Agent Responses has its own policy.
+        "enable_thinking": False,
+    }
+
+
 def video_profile(omni):
     return {**omni.get("video_options", {}), "base_url": omni["base_url"], "model": omni["model"],
             "enable_thinking": omni["enable_thinking"]}

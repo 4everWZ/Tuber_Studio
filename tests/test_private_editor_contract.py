@@ -6,14 +6,19 @@ from test_video_delivery import selection, short_read
 
 from tuber_studio.agent.editor_contract import (
     FormatCheck,
+    layout_clauses,
     literal_checks,
     literal_evidence,
-    layout_clauses,
     review_preferences,
-    semantic_clauses,
     scoped_fields,
+    semantic_clauses,
 )
-from tuber_studio.agent.task_delivery import DelegationError, PrivateDelivery, evidence_index, render_private_delivery
+from tuber_studio.agent.task_delivery import (
+    DelegationError,
+    PrivateDelivery,
+    evidence_index,
+    render_private_delivery,
+)
 
 
 def rendered_sample(product):
@@ -347,6 +352,7 @@ async def test_verified_title_goes_verbatim_to_the_final_image_review(runtime, s
     monkeypatch.setattr(task_tools, "clip_review_image", image)
     monkeypatch.setattr(task_tools, "review_work_claims", claims)
     monkeypatch.setattr(runtime.llm, "generate_json", omni)
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", omni)
     editor = task_tools.create_task_runtime(runtime, store, None).edit_delivery
     if reject:
         with pytest.raises(DelegationError, match="核对未通过"):

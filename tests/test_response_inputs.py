@@ -115,7 +115,7 @@ async def test_video_main_reply_uses_video_material_without_unrelated_comment_fl
         captured.append(model_packet(messages[-1]["content"]))
         return ResponseDecision(action="reply_public", reason="specific_detail", explanation="想聊鸡蛋浮起来的细节", text="盐水还能托住鸡蛋，鱼鱼想试试。", evidence_ids=["ref:1"], video_preference="like", preference_reason="这个实验挺有意思").model_dump()
 
-    browsing.runtime.llm.generate_json = generate
+    browsing.runtime.operation_llm.generate_json = generate
     result = await browsing.decisions._response(row, material, context, {source_id}, "top_level", {"lock_wait_seconds": 0}, video_actions=True)
     assert "另一楼的私聊口号" not in json.dumps(captured, ensure_ascii=False)
     assert captured[0]["video_source"]["title"] == "盐水实验"
@@ -141,7 +141,7 @@ async def test_live_response_packet_binds_current_account_before_reference_forma
         calls.append(copy.deepcopy(messages))
         return reply(["ref:1"]).model_dump()
 
-    browsing.runtime.llm.generate_json = generate
+    browsing.runtime.operation_llm.generate_json = generate
     result = await browsing.decisions._model(
         row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
     )
@@ -291,7 +291,7 @@ async def test_video_comment_uses_cached_video_only_after_quoting_the_request(br
         assert target["parent"] == source["comment_id"]
         return {"author_uid": "200", "text": source["content"]}
 
-    browsing.runtime.llm.generate_json = generate
+    browsing.runtime.operation_llm.generate_json = generate
     monkeypatch.setattr(browsing.adapter, "read_video_reply", read_reply, raising=False)
     result = await browsing.decisions._reply_to_video_comment(
         row, material, key, {segment["id"] for segment in browsing._segments(material)},
@@ -311,7 +311,7 @@ async def test_automatic_comment_uses_search_receipt_to_gate_publication(browsin
     from tuber_studio import web_fetch
 
     row = await prepared_row(browsing)
-    monkeypatch.setattr(browsing.runtime.llm, "supports_operation_web_fetch", True, raising=False)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "supports_operation_web_fetch", True, raising=False)
     queries = []
 
     async def discover(query):
@@ -330,7 +330,7 @@ async def test_automatic_comment_uses_search_receipt_to_gate_publication(browsin
 
     monkeypatch.setattr(web_fetch, "search_public_web", discover)
     monkeypatch.setattr(web_fetch, "fetch_excerpt", read)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", generate)
     context = {"source": {"comment_id": "501", "author_uid": "200", "text": "请问这工具能导出单声道吗？"},
                "target": {"oid": "900", "root": "501", "parent": "501"}}
     value = await browsing.decisions._response(row, None, context, {"public:501"}, "reply_public",
@@ -476,7 +476,7 @@ async def test_canonical_id_in_wire_is_invalid_without_an_automatic_repair_call(
         calls.append((schema["title"], copy.deepcopy(messages), copy.deepcopy(schema)))
         return bad
 
-    browsing.runtime.llm.generate_json = generate
+    browsing.runtime.operation_llm.generate_json = generate
     with pytest.raises(GenerationInvalid):
         await browsing.decisions._model(
             row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
@@ -507,7 +507,7 @@ async def test_format_version_change_does_not_reuse_previous_wire_checkpoint(bro
         calls.append(schema["title"])
         return reply(["ref:1"]).model_dump()
 
-    browsing.runtime.llm.generate_json = generate
+    browsing.runtime.operation_llm.generate_json = generate
     first = await browsing.decisions._model(
         row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
     )

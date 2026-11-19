@@ -9,8 +9,7 @@ from fastapi.testclient import TestClient
 from test_browsing import BV, ControlledPlatform
 from test_browsing_evidence import PNG, TestVisual
 
-from tuber_studio.agent import operator_facts
-from tuber_studio.agent import task_delegation
+from tuber_studio.agent import operator_facts, task_delegation
 from tuber_studio.agent.assistant_output import AssistantTextStream, assistant_markdown
 from tuber_studio.app import create_app
 from tuber_studio.live.game_livestream import GameLivestreamService
@@ -592,6 +591,7 @@ def test_chat_persists_private_turns_and_resolves_real_task_cards(settings, monk
         writes.append(params)
         return {"id": params["request_id"], "status": "queued", "preview": True}
 
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", dynamic_model)
     monkeypatch.setattr(runtime.llm, "generate_json", dynamic_model)
     monkeypatch.setattr(runtime.llm, "generate", private_model)
     monkeypatch.setattr(app.state.browsing, "run", fake_preview)
@@ -712,6 +712,7 @@ def test_chat_corrects_original_dynamic_without_reposting(settings, monkeypatch,
     monkeypatch.setattr(module, "read_dynamic_caption", read)
     monkeypatch.setattr(module, "edit_dynamic_caption", write)
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", generate)
+    monkeypatch.setattr(app.state.runtime.operation_llm, "generate_json", generate)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         app.state.browsing.discovery.remember_account("100")
         store = app.state.runtime.store
@@ -1046,7 +1047,7 @@ def test_operator_discussion_to_dynamic_uses_only_sanitized_material(settings, m
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", assistant, raising=False)
     monkeypatch.setattr(runtime.llm, "generate_operator_json", sanitize, raising=False)
-    monkeypatch.setattr(runtime.llm, "generate_json", draft)
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", draft)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         client.cookies.set("tuber_overlay", settings.overlay_token)
         path = "/api/chat/intelligent"

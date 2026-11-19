@@ -7,6 +7,17 @@ from contextlib import nullcontext
 from uuid import uuid4
 
 from ...comment_materials import model_comment_materials, validate_comment_material_sources
+from ...operation_attachments import (
+    checked_image,
+    comment_image,
+    comment_payload,
+    decision,
+    image_scope,
+    queue_image,
+    record_upload,
+    row_ref,
+    wait_decision,
+)
 from ...operation_continuations import content_hash
 from ...operation_feedback import (
     FeedbackPublication,
@@ -14,8 +25,6 @@ from ...operation_feedback import (
     publication_binding,
 )
 from ...operation_generation import generate_with_recovery, generation_requires_review
-from ...operation_attachments import (checked_image, comment_image, comment_payload, decision, image_scope,
-                                      queue_image, record_upload, row_ref, wait_decision)
 from ...operation_identity import runtime_identity
 from ...operation_text import (
     comment_body_issue,
@@ -473,7 +482,7 @@ class BrowsingPublication:
                                                character=character, epoch=row["epoch"] if automatic else None)
 
         async def invoke(packet):
-            return await browsing.runtime.llm.generate_json(packet, schema, max_tokens=request["config"]["decision_max_tokens"])
+            return await browsing.runtime.operation_llm.generate_json(packet, schema, max_tokens=request["config"]["decision_max_tokens"])
 
         async with browsing.runtime.offline_generation("background"):
             wire, audit = await generate_with_recovery(
@@ -561,9 +570,12 @@ class BrowsingPublication:
                     and not policy["mention_reply_enabled"]
                 ):
                     raise ValueError("通知回应尚未启用")
-                self.browsing.runtime.continuations.resume(
-                    continuation_id, binding=continuation["binding"]
-                )
+                # A provider change starts a new generation for this source.
+                # Leave the previous engine's failed attempt readable.
+                if continuation["binding"].get("model") in (None, self.browsing.model_signature()):
+                    self.browsing.runtime.continuations.resume(
+                        continuation_id, binding=continuation["binding"]
+                    )
                 self.browsing.store.execute(
                     "UPDATE browsing_events SET status='received' WHERE id=? AND status IN ('checkpoint','invalid')",
                     (source["id"],),

@@ -872,7 +872,16 @@ def create_task_runtime(runtime, store, browsing):
 
     async def request_json(messages, schema, *, max_tokens=1024):
         async with runtime.operator_generation("background"), asyncio.timeout(120):
-            provider = runtime.llm
+            parts = [part for message in messages if isinstance(message["content"], list)
+                     for part in message["content"]]
+            needs_media = any(part.get("type") != "text" for part in parts)
+            provider = runtime.llm if needs_media else runtime.operation_llm
+            if parts and not needs_media:
+                messages = [
+                    message | {"content": "\n".join(part["text"] for part in message["content"])}
+                    if isinstance(message["content"], list) else message
+                    for message in messages
+                ]
             options = {"use_remaining_window": True} if isinstance(provider, APIProvider) and provider.uses_model_card else {}
             try:
                 return await budgeted_call(provider, lambda: provider.generate_json(messages, schema, max_tokens=max_tokens, **options),

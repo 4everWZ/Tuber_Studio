@@ -136,7 +136,7 @@ async def test_comment_like_after_reply_quota_is_full_is_single_and_reconcilable
     await browsing.configure({"comment_like_enabled": True, "comment_like_auto_publish": mode != "review",
                               "max_replies_per_video": 1})
     monkeypatch.setattr(browsing.comments, "publication_limits", lambda: {"max_per_day": 1})
-    generate = browsing.runtime.llm.generate_json
+    generate = browsing.runtime.operation_llm.generate_json
     offered = []
 
     async def choose(messages, schema, *, max_tokens):
@@ -150,7 +150,7 @@ async def test_comment_like_after_reply_quota_is_full_is_single_and_reconcilable
                         "evidence_ids": [data["reply_target"]["evidence_ref"]]}
         return await generate(messages, schema, max_tokens=max_tokens)
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", choose)
     await finish_comment_round(browsing)
     assert len(offered) == 2 and "reply_public" in offered[0] and "reply_public" not in offered[1]
     assert "like_comment" in offered[1]

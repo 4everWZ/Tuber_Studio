@@ -60,7 +60,7 @@ async def test_web_product_keeps_its_name_when_reusing_a_comment_decision(browsi
     from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
 
     await browsing.preflight()
-    browsing.runtime.llm.supports_operation_web_fetch = True
+    browsing.runtime.operation_llm.supports_operation_web_fetch = True
     row, _ = browsing.repo.create_round(
         browsing.account, browsing.runtime.character,
         browsing.configured() | {"autonomous_batch": True}, 0, True,
@@ -82,11 +82,11 @@ async def test_web_product_keeps_its_name_when_reusing_a_comment_decision(browsi
         calls.append(schema["title"])
         result = ({"web_fetch": "https://example.org/R84", "source_quote": "R84 这款键盘"}
                   if len(calls) == 1 else response("R84这款键盘我也想看看。"))
-        browsing.runtime.llm.last_content = json.dumps(result, ensure_ascii=False)
+        browsing.runtime.operation_llm.last_content = json.dumps(result, ensure_ascii=False)
         return result
 
     monkeypatch.setattr(web_fetch, "fetch_excerpt", fetch)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", generate)
 
     async def run():
         return await browsing.decisions._model(row, ResponseDecision, data, RESPONSE_INSTRUCTION)
@@ -112,7 +112,7 @@ async def test_reference_in_speech_keeps_candidate_for_review_without_repair_or_
 
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({"sources": ["specified"], "watch_videos": [BV], "recent_sample_limit": 0})
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
     calls = []
 
     async def generate(messages, schema, *, max_tokens):
@@ -120,10 +120,10 @@ async def test_reference_in_speech_keeps_candidate_for_review_without_repair_or_
         value = await original(messages, schema, max_tokens=max_tokens)
         if schema["title"] == "ResponseDecision":
             value["text"] = "先看ref:1吧，这里加盐以后鸡蛋浮起来了。"
-        browsing.runtime.llm.last_content = json.dumps(value, ensure_ascii=False)
+        browsing.runtime.operation_llm.last_content = json.dumps(value, ensure_ascii=False)
         return value
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", generate)
     row = await finished(browsing, automatic=True, video_only=True)
     assert row["status"] == "completed"
     assert calls == ["CandidateBatchPlan", "ResponseDecision"]

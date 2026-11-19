@@ -76,10 +76,10 @@ async def test_runtime_provider_replacement_and_remote_refresh_singleflight(runt
     results = await asyncio.gather(*(runtime.refresh_identity(account_id="100") for _ in range(3)))
     assert len(calls) == 1 and all(result["account_uid"] == "100" for result in results)
     new = SimpleNamespace()
-    previous = runtime.llm
-    runtime.llm = new
+    previous = runtime.operation_llm
+    runtime.operation_llm = new
     assert new.identity_resolver()["character_id"] == runtime.character["id"]
-    runtime.llm = previous
+    runtime.operation_llm = previous
     del runtime.account
 
 

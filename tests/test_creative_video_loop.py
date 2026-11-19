@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from front_effects import effect
 from PIL import Image
 
 from evaluations import creative_video_loop as replay
@@ -42,7 +43,9 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
         path = request.url.path
         if path == "/v1/models":
             result = {"data": [{"id": "omni-default", "max_model_len": 32768}]}
-        elif path == "/v1/chat/prompt_tokens":
+        elif path == "/llm/v1/models":
+            result = {"data": [{"id": "llm-default", "max_model_len": 262144}]}
+        elif path in {"/v1/chat/prompt_tokens", "/llm/v1/chat/prompt_tokens"}:
             result = {"count": 128}
         elif path == "/llm/v1/responses":
             assert {tool["name"] for tool in body["tools"]} == {"inspect_video", "web_page", "submit_materials", "ask_owner"}
@@ -63,9 +66,10 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                     item["primary_frame"] = item["sources"][0]
                 calls = [function("submit_materials", {"items": items, "gaps": ["只有一个合格镜头"] if len(items) == 1 else []})]
             result = {"status": "completed", "id": str(uuid4()), "output": calls}
-        elif path == "/v1/chat/completions":
+        elif path in {"/v1/chat/completions", "/llm/v1/chat/completions"}:
             content = body["messages"][-1]["content"]
             if isinstance(content, list):
+                assert path == "/v1/chat/completions"
                 encoded = next(item["image_url"]["url"] for item in content if item["type"] == "image_url")
                 with Image.open(io.BytesIO(base64.b64decode(encoded.split(",")[1]))) as frame:
                     pixel = frame.convert("RGB").getpixel((160, 100))
@@ -80,11 +84,14 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                     decision = {"requested_count": 2, "usage": "列出形状、理由和时码", "playable": False,
                                 "trace_origin": True, "clip_seconds": None}
                 else:
-                    decision = {"action": "agent_task"}
+                    schema = json.loads(body["structured_outputs"]["structural_tag"])["format"]["json_schema"]
+                    decision = ({"effect": effect("agent_task")} if schema["title"] == "FrontToolDiscovery"
+                                else {"action": "agent_task"})
             else:
                 packet = (json.loads(body["messages"][1]["content"]) | {"message": content}
                           if content == replay.CHANGE else json.loads(content))
                 if "candidate" in packet:
+                    assert path == "/llm/v1/chat/completions"
                     decision = packet["candidate"]
                     for item in decision["items"]:
                         frame = packet["evidence"][item["primary_frame"]]

@@ -9,6 +9,7 @@ from collections import OrderedDict
 from typing import Protocol
 
 from .compaction import ContextWindowExceeded, IncompleteCompaction
+from .deployment_profiles import operation_profile
 from .generation_meter import reserve_generation, settle_generation
 from .http_api import (
     InferenceBudgetExceeded,
@@ -37,6 +38,10 @@ def create_llm(settings):
     return APIProvider(settings.data["omni"], settings.provider_key("omni"))
 
 
+def create_operation_llm(settings):
+    return APIProvider(operation_profile(settings.data["omni"]), settings.provider_key("omni"), text_only=True)
+
+
 class APIProvider:
     generation_metered = True
     supports_operation_web_fetch = True
@@ -45,8 +50,9 @@ class APIProvider:
     token_accounting = "api_usage_probe"
     is_sleeping = None
 
-    def __init__(self, config, api_key=None):
+    def __init__(self, config, api_key=None, *, text_only=False):
         self.config = config
+        self.text_only = text_only
         self.client = api_client(config, api_key)
         self.last_tokens = self.server_tokens = None
         self.profile_error = None
@@ -121,6 +127,11 @@ class APIProvider:
                 raise ValueError("思考设置须为布尔值或None")
             payload["chat_template_kwargs"] = {"enable_thinking": thinking}
         return payload
+
+    def _reserve_counted(self, count, output):
+        # The text engine counts the exact Chat template at the same backend.
+        upper = count if self.text_only else self.capacity_window - output
+        return reserve_generation(upper, output, conservative_input=True)
 
     async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None,
                         on_content=None):
@@ -206,6 +217,8 @@ class APIProvider:
     async def count_tokens(self, messages):
         await self.ensure_capacity()
         normalized = single_system_messages(provider_identity_messages(self, messages))
+        if self.text_only and any(not isinstance(message.get("content"), str) for message in normalized):
+            raise ValueError("后台文本生成只接受已记录的文本观察，图像和音频须经对应取材工具")
         digest = hashlib.sha256(
             json.dumps(normalized, ensure_ascii=False, sort_keys=True).encode()
         ).hexdigest()
@@ -228,6 +241,10 @@ class APIProvider:
             return count
 
     async def prefill(self, messages):
+        if self.text_only:
+            if await self.count_tokens(messages) + 1 > self.capacity_window:
+                raise ContextWindowExceeded("重建原文超出API窗口预算")
+            return True
         await self.ensure_capacity()
         _, count = await self._complete(messages, budget=1, probe=True)
         if count + 1 > self.capacity_window:
@@ -239,9 +256,7 @@ class APIProvider:
         count = await self.count_tokens(messages)
         if count + budget > self.capacity_window:
             raise ContextWindowExceeded("API压缩输入超窗")
-        reservation = reserve_generation(
-            self.capacity_window - budget, budget, conservative_input=True
-        )
+        reservation = self._reserve_counted(count, budget)
         content, _ = await self._complete(messages, budget=budget, summary=True)
         if not content.strip():
             raise IncompleteCompaction("API摘要为空；原上下文保留")
@@ -253,9 +268,7 @@ class APIProvider:
         count = await self.count_tokens(messages)
         if count + budget > self.capacity_window:
             raise ContextWindowExceeded("输入超出API窗口预算；禁止静默丢弃历史")
-        reservation = reserve_generation(
-            self.capacity_window - budget, budget, conservative_input=True
-        )
+        reservation = self._reserve_counted(count, budget)
         schema = Reply.model_json_schema()
         schema["properties"]["reply_to"] |= {"items": {"type": "string", "enum": [event_id]}, "maxItems": 1}
         content, _ = await self._complete(messages, budget=budget, structured=True, schema=schema)
@@ -274,11 +287,7 @@ class APIProvider:
         count = await self.count_tokens(messages)
         if count + max_tokens > self.capacity_window:
             raise ContextWindowExceeded("文本输入超出API窗口预算；禁止静默丢弃数据")
-        reservation = reserve_generation(
-            self.capacity_window - max_tokens,
-            max_tokens,
-            conservative_input=True,
-        )
+        reservation = self._reserve_counted(count, max_tokens)
         content, actual = await self._complete(messages, budget=max_tokens)
         if actual + max_tokens > self.capacity_window:
             raise ContextWindowExceeded("API文本实际计量超窗；未采用结果")
@@ -316,9 +325,7 @@ class APIProvider:
         if max_tokens < 1 or count + max_tokens > self.capacity_window:
             raise ContextWindowExceeded(f"结构化输入 {count} tokens，请求输出 {requested_output} tokens，"
                                         f"有效窗口 {self.capacity_window} tokens。")
-        reservation = reserve_generation(
-            self.capacity_window - max_tokens, max_tokens, conservative_input=True
-        )
+        reservation = self._reserve_counted(count, max_tokens)
         content, actual = await self._complete(messages, budget=max_tokens, structured=True, schema=schema,
                                                on_content=on_content)
         if actual + max_tokens > self.capacity_window:

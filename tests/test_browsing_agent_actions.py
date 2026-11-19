@@ -29,7 +29,7 @@ async def test_agent_chooses_comments_without_a_main_reply_or_interest_classific
     async def read_reply(target):
         return {"author_uid": "300", "text": "鸡蛋浮起来需要多少盐？"}
 
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
     actions = []
 
     async def choose(messages, schema, *, max_tokens):
@@ -52,14 +52,14 @@ async def test_agent_chooses_comments_without_a_main_reply_or_interest_classific
 
     browsing.adapter.fetch = fetch
     browsing.adapter.read_video_reply = read_reply
-    browsing.runtime.llm.generate_json = choose
+    browsing.runtime.operation_llm.generate_json = choose
     await browsing._current_account()
     row = await finished(browsing, automatic=True, video_only=True)
     assert row["status"] == "completed"
     assert actions == ["read_comments"]
     await wait_for_sends(browsing)
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["601"]
-    assert not [name for name, _ in browsing.runtime.llm.calls if name == "ContentDecision"]
+    assert not [name for name, _ in browsing.runtime.operation_llm.calls if name == "ContentDecision"]
     assert not browsing.repo.video_retry(row, BV)
     task = next(
         item for item in browsing.tasks(round_id=row["id"])
@@ -73,7 +73,7 @@ async def test_agent_chooses_comments_without_a_main_reply_or_interest_classific
 async def test_no_main_reply_decision_survives_revisit_and_character_version(browsing):
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({"reply_enabled": True, "recent_sample_limit": 0})
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
     decisions = []
 
     async def choose(messages, schema, *, max_tokens):
@@ -90,7 +90,7 @@ async def test_no_main_reply_decision_survives_revisit_and_character_version(bro
             }
         return await original(messages, schema, max_tokens=max_tokens)
 
-    browsing.runtime.llm.generate_json = choose
+    browsing.runtime.operation_llm.generate_json = choose
     await browsing._current_account()
     first = await finished(browsing, automatic=True, video_only=True)
     assert first["status"] == "completed"

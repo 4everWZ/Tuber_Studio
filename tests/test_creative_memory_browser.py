@@ -377,6 +377,8 @@ async def test_chat_memory_migration_in_chromium(settings, monkeypatch):
         generate_operator_json = generate_json
 
     monkeypatch.setattr(runtime, "llm", Model())
+
+    monkeypatch.setattr(runtime, "operation_llm", Model())
     old_quote = "上次提纲里的开场"
     cited = {"id": 91, "revision": 1, "note": old_quote, "quote": old_quote, "source_key": "turn:" + str(uuid4())}
     task = {"id": str(uuid4()), "revision": 1, "status": "completed", "message": "提纲已整理好。",

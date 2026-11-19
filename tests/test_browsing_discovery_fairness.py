@@ -64,7 +64,7 @@ async def test_twenty_later_items_leave_a_fresh_slot_without_hiding_the_backlog(
         return {"items": [candidate(100 + page)], "has_more": True}
 
     monkeypatch.setattr(browsing.adapter, "discover", discover)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", planning_model(windows, old_ids))
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", planning_model(windows, old_ids))
     for _ in range(2):
         row = await finished(browsing, automatic=True, video_only=True)
         assert row["status"] == "completed"
@@ -88,7 +88,7 @@ async def test_backlog_fills_the_window_when_discovery_has_no_new_items(browsing
         return {"items": [], "has_more": False}
 
     monkeypatch.setattr(browsing.adapter, "discover", discover)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", planning_model(windows, old_ids))
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", planning_model(windows, old_ids))
     row = await finished(browsing, automatic=True, video_only=True)
     assert row["status"] == "completed"
     assert {item["bvid"] for item in windows[0]} == old_ids
@@ -112,7 +112,7 @@ async def test_discovery_cursor_advances_across_batches_for_each_source(browsing
         return {"items": [candidate(page)], "has_more": True}
 
     monkeypatch.setattr(browsing.adapter, "discover", discover)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", planning_model(windows))
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", planning_model(windows))
     for _ in range(2):
         assert (await finished(browsing, automatic=True, video_only=True))["status"] == "completed"
     assert pages == [1, 2]
@@ -135,7 +135,7 @@ async def test_page_ten_wraps_next_batch_without_requesting_or_storing_eleven(br
         return {"items": [candidate(page)], "has_more": page == 10}
 
     monkeypatch.setattr(browsing.adapter, "discover", discover)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", planning_model(windows))
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", planning_model(windows))
     assert (await finished(browsing, automatic=True, video_only=True))["status"] == "completed"
     assert browsing.store.get(key) == 1
     assert (await finished(browsing, automatic=True, video_only=True))["status"] == "completed"
@@ -158,7 +158,7 @@ async def test_overlapping_sources_preserve_one_candidate_and_all_source_binding
         }
 
     monkeypatch.setattr(browsing.adapter, "discover", discover)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", planning_model(windows))
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", planning_model(windows))
     row = await finished(browsing, automatic=True, video_only=True)
     assert row["status"] == "completed", row
     assert len(windows[0]) == 3
@@ -183,7 +183,7 @@ async def test_full_retry_prefix_does_not_skip_fresh_retrieval(browsing, monkeyp
         return {"items": [candidate(100)], "has_more": False}
 
     monkeypatch.setattr(browsing.adapter, "discover", discover)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", planning_model(windows))
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", planning_model(windows))
     assert (await finished(browsing, automatic=True, video_only=True))["status"] == "completed"
     assert len(reads) == 1
     assert candidate(100)["bvid"] in {item["bvid"] for item in windows[0]}

@@ -27,7 +27,7 @@ async def test_prepared_task_stays_running_until_real_pause_then_resumes_same_ba
     await browsing.configure({"sources": ["specified"], "watch_videos": [BV], "recent_sample_limit": 0})
     await authorize(browsing)
     entered = asyncio.Event()
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
 
     async def paused_model(messages, schema, *, max_tokens):
         if schema["title"] == "ResponseDecision":
@@ -35,7 +35,7 @@ async def test_prepared_task_stays_running_until_real_pause_then_resumes_same_ba
             await asyncio.Future()
         return await original(messages, schema, max_tokens=max_tokens)
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", paused_model)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", paused_model)
     start = await browsing.run(automatic=True, video_only=True)
     await asyncio.wait_for(entered.wait(), 3)
     row = browsing.repo.round(start["id"])
@@ -48,7 +48,7 @@ async def test_prepared_task_stays_running_until_real_pause_then_resumes_same_ba
     assert browsing.repo.round(row["id"])["status"] == "paused"
     assert browsing.store.one("SELECT status FROM browsing_batch_items WHERE task_id=?", (task["id"],))["status"] == "paused"
     browsing.repo.recover()
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", original)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", original)
     restored = await finished(browsing, automatic=True, video_only=True)
     assert restored["id"] == row["id"] and restored["status"] == "completed"
     assert browsing.store.one(

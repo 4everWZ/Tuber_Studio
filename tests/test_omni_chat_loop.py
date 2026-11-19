@@ -32,9 +32,11 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
         body = json.loads(request.content) if request.content else {}
         if path == "/v1/models":
             result = {"data": [{"id": "omni-default", "max_model_len": 32768}]}
-        elif path == "/v1/chat/prompt_tokens":
+        elif path == "/llm/v1/models":
+            result = {"data": [{"id": "llm-default", "max_model_len": 262144}]}
+        elif path in {"/v1/chat/prompt_tokens", "/llm/v1/chat/prompt_tokens"}:
             result = {"count": 128}
-        elif path == "/v1/chat/completions":
+        elif path in {"/v1/chat/completions", "/llm/v1/chat/completions"}:
             content = body["messages"][-1]["content"]
             if content == replay.REQUEST:
                 schema = json.loads(body["structured_outputs"]["structural_tag"])["format"]["json_schema"]
@@ -53,6 +55,8 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
                 packet = (json.loads(body["messages"][1]["content"]) | {"message": content}
                           if content == replay.CHANGE else json.loads(content))
                 if "candidate" in packet:
+                    assert path == "/llm/v1/chat/completions"
+                    assert body["model"] == "llm-default" and body["response_format"]["type"] == "json_schema"
                     chat_stages.append("evidence_editor")
                     assert body["max_tokens"] == 4096
                     assert replay.CHANGE in packet["goal"] and packet["evidence"] == evidence and evidence
@@ -62,6 +66,7 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
                                            "sources": list(evidence) if behavior != "invented_editor_source"
                                            else ["unverified"]}], "gaps": []}
                 else:
+                    assert path == "/v1/chat/completions"
                     chat_stages.append("card_steering")
                     assert packet["message"] == replay.CHANGE
                     card, = packet["recent_task_cards"]
@@ -128,4 +133,4 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
     assert chat_stages == ["FrontToolDiscovery", "WorkLifecycle", "card_steering", "evidence_editor"]
     assert [path for path in calls if path.endswith(("chat/completions", "responses"))] == [
         "/v1/chat/completions", "/v1/chat/completions", "/v1/chat/completions", "/llm/v1/responses", "/llm/v1/responses",
-        "/v1/chat/completions"]
+        "/llm/v1/chat/completions"]

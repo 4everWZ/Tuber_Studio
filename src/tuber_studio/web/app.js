@@ -9,7 +9,7 @@ import { initArtworkReferences } from "./modules/artwork-references.js";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261114.01";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261115.2";
-import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261118.1";
+import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261119.2";
 import { renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js?v=20261118.1";
 import { MessagesPanel } from "./messages.js?v=20261118.1";

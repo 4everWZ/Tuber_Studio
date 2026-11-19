@@ -15,7 +15,7 @@ async def select_meme(runtime, catalog, character, event, text, *, mode="direct_
         if mode == "dynamic"
         else "私信是简单问候、致谢或情绪互动时，可以用一张表情代替文字。解释、引用或其他重要信息使用文字回复。"
     )
-    value = await runtime.llm.generate_json(
+    value = await runtime.operation_llm.generate_json(
         [
             {
                 "role": "system",

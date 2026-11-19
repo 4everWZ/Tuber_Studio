@@ -263,7 +263,7 @@ async def _watch_interval(browsing, row, identity, material, part, interval, cho
     choice_key = str([cid, start, end, interval["subtitle"].get("segments")])
     chosen_intervals = choices.setdefault("classified:" + policy, [])
     if (interval["subtitle"]["state"] == "available" and choice_key not in chosen_intervals
-            and getattr(browsing.runtime.llm, "supports_video_research", True)):
+            and getattr(browsing.runtime.operation_llm, "supports_video_research", True)):
         subtitle = [source | {"segments": [segment for segment in source["segments"]
                                           if segment["start"] < end and segment["end"] > start]}
                     for source in material["parts"] if str(source["cid"]) == cid and not source.get("visual")]

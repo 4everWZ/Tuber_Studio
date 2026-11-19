@@ -563,8 +563,8 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
     native.client = httpx.AsyncClient(
         base_url="http://offline.invalid/v1/", transport=httpx.MockTransport(handle)
     )
-    controlled = browsing.runtime.llm
-    browsing.runtime.llm = native
+    controlled = browsing.runtime.operation_llm
+    browsing.runtime.operation_llm = native
     browsing.settings.data["omni"]["context_tokens"] = 4096
     browsing.store.set("browsing_policy", browsing.policy() | {"decision_max_tokens": 1024})
     try:
@@ -602,7 +602,7 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
                 for branch in responses[-1]["response_format"]["json_schema"]["schema"]["oneOf"]
             )
     finally:
-        browsing.runtime.llm = controlled
+        browsing.runtime.operation_llm = controlled
         await native.close()
 
 
@@ -615,7 +615,7 @@ async def test_invalid_or_original_model_ref_is_retained_without_repair_or_adopt
         assert schema["title"] == "ContentDecision"
         return decision([bad_ref]).model_dump()
 
-    browsing.runtime.llm.generate_json = generate
+    browsing.runtime.operation_llm.generate_json = generate
     row = await finished(browsing, preview=True)
     task = browsing.tasks()[0]
     assert row["status"] == "partial" and task["status"] == "invalid"
@@ -646,7 +646,7 @@ async def test_two_real_model_invocations_reuse_alias_but_keep_chunk_ownership(b
     row, _ = browsing.repo.create_round("100", browsing.runtime.character, browsing.policy(), 0, True)
     decisions = await browsing.decisions._content_decisions(value, row, {"lock_wait_seconds": 0})
     assert [d.evidence_ids for d in decisions] == [["101:human:0", "101:human:1"], ["202:ai:0"]]
-    calls = [data for kind, data in browsing.runtime.llm.calls if kind == "ContentDecision"]
+    calls = [data for kind, data in browsing.runtime.operation_llm.calls if kind == "ContentDecision"]
     assert [data["segments"][0]["id"] for data in calls] == ["e1", "e1"]
     assert row["config"]["max_model_calls"] >= 2
 
@@ -661,7 +661,7 @@ async def test_interrupted_read_resumes_at_unfinished_chunk(browsing):
     browsing.decisions._chunks = split
     await browsing.preflight(for_automation=False)
     row, _ = browsing.repo.create_round("100", browsing.runtime.character, browsing.policy(), 0, True)
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
     attempts = 0
 
     async def interrupted(messages, schema, *, max_tokens):
@@ -671,7 +671,7 @@ async def test_interrupted_read_resumes_at_unfinished_chunk(browsing):
             raise ConnectionError("network disconnected during second chunk")
         return await original(messages, schema, max_tokens=max_tokens)
 
-    browsing.runtime.llm.generate_json = interrupted
+    browsing.runtime.operation_llm.generate_json = interrupted
     with pytest.raises(ConnectionError):
         await browsing.decisions._content_decisions(value, row, {"lock_wait_seconds": 0})
     assert len(browsing.store.all("SELECT * FROM browsing_read_progress")) == 1
@@ -681,10 +681,10 @@ async def test_interrupted_read_resumes_at_unfinished_chunk(browsing):
             return {"action": "revise", "reason": "网络恢复，继续未完成的内容块", "read": ""}
         return await original(messages[:3], schema, max_tokens=max_tokens)
 
-    browsing.runtime.llm.generate_json = resumed
+    browsing.runtime.operation_llm.generate_json = resumed
     decisions = await browsing.decisions._content_decisions(value, row, {"lock_wait_seconds": 0})
     assert [d.evidence_ids for d in decisions] == [["101:human:0", "101:human:1"], ["202:ai:0"]]
-    assert len([kind for kind, _ in browsing.runtime.llm.calls if kind == "ContentDecision"]) == 2
+    assert len([kind for kind, _ in browsing.runtime.operation_llm.calls if kind == "ContentDecision"]) == 2
 
 
 async def test_one_group_expands_to_twelve_segments_but_intent_keeps_only_reply_citations(browsing):
@@ -711,9 +711,9 @@ async def test_one_group_expands_to_twelve_segments_but_intent_keeps_only_reply_
     cached = browsing.evidence.load(browsing.intents()[0]["material_keys"][0])
     assert [segment["id"] for segment in cached["parts"][0]["segments"]] == expected
     assert cached["parts"][0]["content_hash"] == "unchanged-subtitle-version"
-    model_calls = [packet for kind, packet in browsing.runtime.llm.calls if kind == "ContentDecision"]
+    model_calls = [packet for kind, packet in browsing.runtime.operation_llm.calls if kind == "ContentDecision"]
     assert model_calls[0]["segments"] == [{"id": "e1"}]
-    response = next(packet for kind, packet in browsing.runtime.llm.calls if kind == "ResponseDecision")
+    response = next(packet for kind, packet in browsing.runtime.operation_llm.calls if kind == "ResponseDecision")
     assert [item["id"] for item in response["evidence"]] == [f"ref:{i}" for i in range(1, 13)]
     assert not browsing.adapter.sent
 
@@ -735,7 +735,7 @@ async def test_inconsistent_intent_keeps_invalid_output_without_an_automatic_rep
         assert schema["title"] == "ContentDecision"
         return copy.deepcopy(bad)
 
-    browsing.runtime.llm.generate_json = generate
+    browsing.runtime.operation_llm.generate_json = generate
     await browsing.preflight(for_automation=False)
     row, _ = browsing.repo.create_round("100", browsing.runtime.character, browsing.policy(), 0, True)
     with pytest.raises(GenerationInvalid):

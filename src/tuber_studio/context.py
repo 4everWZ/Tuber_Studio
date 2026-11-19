@@ -64,7 +64,7 @@ class BudgetedSummary:
 
 class ContextManager:
     def effective_llm_config(self):
-        config = self.settings.data["omni"]
+        config = getattr(self.provider, "config", None) or self.settings.data["omni"]
         if getattr(self.provider, "uses_model_card", False):
             window = self.provider.server_tokens
             return config | {"context_tokens": window, "native_context_tokens": window}

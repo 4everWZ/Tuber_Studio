@@ -10,7 +10,7 @@ from tuber_studio.operations.browsing.models import response_schema
 async def test_watch_only_records_real_preference_without_fetching_comments_or_generating_a_reply(
     browsing, monkeypatch, preference
 ):
-    browsing.runtime.llm.interest = preference
+    browsing.runtime.operation_llm.interest = preference
     await browsing.configure({"top_level_enabled": False, "reply_enabled": False})
     await browsing.preflight()
     browsing.operations.configure(
@@ -28,7 +28,7 @@ async def test_watch_only_records_real_preference_without_fetching_comments_or_g
     assert decision["video_preference"] == preference
     assert "鸡蛋浮起来" in decision["preference_reason"]
     assert not browsing.intents() and not browsing.adapter.sent
-    assert [name for name, _ in browsing.runtime.llm.calls] == ["CandidateBatchPlan", "ResponseDecision"]
+    assert [name for name, _ in browsing.runtime.operation_llm.calls] == ["CandidateBatchPlan", "ResponseDecision"]
 
 
 def test_video_preference_is_independent_of_permission_to_reply():

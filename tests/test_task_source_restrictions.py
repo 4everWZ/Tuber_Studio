@@ -157,6 +157,8 @@ async def test_gap_repair_receives_read_scope_and_is_reviewed_again(
         return {"supported": True, "issues": []}
 
     monkeypatch.setattr(runtime.llm, "generate_json", editor)
+
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", editor)
     tasks = create_task_runtime(runtime, store, None)
     task = {
         "goal": "整理画面",
@@ -194,6 +196,8 @@ async def test_continue_before_first_edition_can_request_missing_clips(runtime, 
         return {"requested_count": 1, "usage": "开场", "playable": True, "trace_origin": False}
 
     monkeypatch.setattr(runtime.llm, "generate_json", brief)
+
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", brief)
     tasks = create_task_runtime(runtime, store, None)
     with pytest.raises(AdditionalVideoRead) as pending:
         await tasks.edit_delivery(task, evidence_index([read]))

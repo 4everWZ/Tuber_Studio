@@ -351,7 +351,7 @@ async def test_invalid_selector_preserves_pending_text_and_blocks_auto_send(
         assert kwargs["max_tokens"] == 2048
         return selection
 
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", select)
+    monkeypatch.setattr(messages.runtime.operation_llm, "generate_json", select)
     identity = await prepared(meme_messages, image=False, automatic=True, account_id="900")
     row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
     assert row["status"] == "pending_review" and row["text"] and row["message_kind"] == "text"
@@ -367,7 +367,7 @@ async def test_explicit_null_selector_can_keep_the_existing_automatic_text_path(
     async def select(*args, **kwargs):
         return {"asset_id": None}
 
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", select)
+    monkeypatch.setattr(messages.runtime.operation_llm, "generate_json", select)
     identity = await prepared(meme_messages, image=False, automatic=True, account_id="900")
     row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
     assert row["status"] == "published" and not uploads(state) and len(writes(state)) == 1
@@ -410,7 +410,7 @@ async def test_selector_service_error_preserves_generated_text_for_review(
     async def select(*args, **kwargs):
         raise failure
 
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", select)
+    monkeypatch.setattr(messages.runtime.operation_llm, "generate_json", select)
     identity = await prepared(meme_messages, image=False, automatic=True, account_id="900")
     row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
     assert row["status"] == "pending_review" and row["text"] and row["message_kind"] == "text"

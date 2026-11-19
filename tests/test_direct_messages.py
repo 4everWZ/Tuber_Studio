@@ -246,7 +246,7 @@ async def test_confirmed_handoff_never_records_private_reply_in_public_context(m
         pytest.fail("已确认的邀请可直接使用原评论，不依赖视频取材")
 
     monkeypatch.setattr(messages.runtime, "generate_reply", generate)
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", no_channel_decision, raising=False)
+    monkeypatch.setattr(messages.runtime.operation_llm, "generate_json", no_channel_decision, raising=False)
     with monkeypatch.context() as source_preparation:
         source_preparation.setattr(messages.runtime, "browsing", SimpleNamespace(
             has_intent=lambda *_: False, comment_evidence=unavailable_video_evidence,

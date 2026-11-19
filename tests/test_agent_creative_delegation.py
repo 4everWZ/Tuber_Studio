@@ -67,6 +67,7 @@ async def test_front_delivery_uses_measured_remaining_window(runtime, store, mon
     provider = APIProvider({"base_url": "https://example.org/v1", "model": "omni", "context_source": "model_card",
                             "structured_output": "json_schema", "prompt_token_endpoint": True})
     monkeypatch.setattr(runtime, "llm", provider)
+    monkeypatch.setattr(runtime, "operation_llm", provider)
     monkeypatch.setitem(runtime.settings.data["omni"], "max_tokens", 4096)
     tasks = task_tools.create_task_runtime(runtime, store, None)
     evidence = evidence_index([{"id": "origin", "tool": "web_page", "result": {"url": "https://example.org/s", "excerpt": text}}])
@@ -282,6 +283,8 @@ async def test_responses_parallel_checkpoint_child_isolation_and_steering(runtim
         return product
 
     monkeypatch.setattr(runtime.llm, "generate_json", edit)
+
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", edit)
     monkeypatch.setattr(task_tools, "fetch_excerpt", fetch)
     tasks = task_tools.create_task_runtime(runtime, store, None)
     identity = str(uuid4())
@@ -335,6 +338,8 @@ async def test_bound_part_reaches_domain_and_only_selected_evidence_returns(sett
         return json.loads(messages[1]["content"])["candidate"]
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", edit)
+
+    monkeypatch.setattr(app.state.runtime.operation_llm, "generate_json", edit)
     browsing = app.state.browsing
     tasks = app.state.runtime.tasks
     browsing.discovery.remember_account("100")
@@ -402,6 +407,8 @@ async def test_only_front_editor_can_complete_saved_candidate(runtime, settings,
         return candidate
 
     monkeypatch.setattr(runtime.llm, "generate_json", edit)
+
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", edit)
     tasks = task_tools.create_task_runtime(runtime, store, None)
     identity = str(uuid4())
     tasks.create(identity, "核对直播状态")
@@ -542,6 +549,7 @@ async def test_front_chat_and_background_responses_use_distinct_http_contracts(r
     provider = APIProvider({"base_url": "https://example.org/v1", "model": "omni-front", "context_tokens": 32768,
                             "native_context_tokens": 32768, "structured_output": "json_schema", "prompt_token_endpoint": True})
     monkeypatch.setattr(runtime, "llm", provider)
+    monkeypatch.setattr(runtime, "operation_llm", provider)
     tasks = task_tools.create_task_runtime(runtime, store, None)
     identity = str(uuid4())
     tasks.create(identity, "请核对开播状态并给个建议")

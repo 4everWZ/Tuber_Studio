@@ -3,14 +3,14 @@
 import asyncio
 import copy
 
-from .api_providers import VisionService, create_llm
+from .api_providers import VisionService, create_llm, create_operation_llm
 from .config import validate_api_key
 from .deployment_profiles import omni_base
 from .providers import VoiceService
 from .video_vision import ApiVideoEvidenceProvider
 
 EDITABLE = {"base_url", "model", "responses_model", "operations_max_tokens", "max_tokens",
-            "enable_thinking", "responses_options"}
+            "enable_thinking", "responses_options", "video_options"}
 
 
 class ProviderConfigurationError(RuntimeError):
@@ -57,6 +57,11 @@ def proposal(settings, body):
         if not isinstance(patch["responses_options"], dict):
             raise ValueError("后台参数无效")
         updated["responses_options"] = previous.get("responses_options", {}) | patch["responses_options"]
+    if "video_options" in patch:
+        video = patch["video_options"]
+        if not isinstance(video, dict) or set(video) != {"max_frames"}:
+            raise ValueError("视觉设置仅支持视频抽帧上限")
+        updated["video_options"] = previous.get("video_options", {}) | video
     if (previous["base_url"], previous["model"]) != (updated["base_url"], updated["model"]):
         updated.get("video_options", {}).pop("model_revision", None)
     keys = dict(settings.provider_keys)
@@ -105,6 +110,8 @@ async def apply_settings(runtime, body):
         try:
             llm = create_llm(staged)
             created.append(llm)
+            operation_llm = create_operation_llm(staged)
+            created.append(operation_llm)
             voices = VoiceService(staged)
             created.append(voices)
             voices.cache = runtime.cache
@@ -119,10 +126,11 @@ async def apply_settings(runtime, body):
         except BaseException:
             await _settle_cleanup(_close_clients(created))
             raise
-        old_clients = [runtime.llm, runtime.voices, runtime.vision]
+        old_clients = [runtime.llm, runtime.operation_llm, runtime.voices, runtime.vision]
         settings.data, settings.provider_keys = data, staged.provider_keys
         runtime.llm, runtime.voices, runtime.vision = llm, voices, vision
         runtime.context.provider = llm
+        runtime.operation_llm = operation_llm
         runtime.error = None
         if video is not None:
             old_clients.append(runtime.browsing.replace_visual_provider(video))

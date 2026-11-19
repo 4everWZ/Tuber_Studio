@@ -17,7 +17,7 @@ async def enable_comment_choices(browsing, monkeypatch, *, automatic=False):
     })
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.set_enabled(True)
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
     mode = {"action": "comments"}
     calls = []
 
@@ -31,7 +31,7 @@ async def enable_comment_choices(browsing, monkeypatch, *, automatic=False):
             ])
         return await original(messages, schema, max_tokens=max_tokens)
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", choose)
     return mode, calls
 
 
@@ -205,7 +205,7 @@ async def test_comment_only_agent_can_wait_without_inventing_video_content_or_ma
     await enable_comment_choices(browsing, monkeypatch)
     attach_comment_source(browsing, monkeypatch)
     forbid_video_content(browsing, monkeypatch)
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
 
     async def wait(messages, schema, *, max_tokens):
         if schema["title"] == "ResponseDecision":
@@ -213,7 +213,7 @@ async def test_comment_only_agent_can_wait_without_inventing_video_content_or_ma
                     "explanation": "对方还没说盐水比例，等这层补充再聊"}
         return await original(messages, schema, max_tokens=max_tokens)
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", wait)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", wait)
     row = await finish_comment_round(browsing)
     assert row["status"] == "completed" and not browsing.intents()
     decision = browsing.store.one("SELECT decision FROM browsing_comment_progress")
@@ -226,7 +226,7 @@ async def test_invalid_comment_keeps_model_selection_reason_and_separate_validat
     await enable_comment_choices(browsing, monkeypatch)
     attach_comment_source(browsing, monkeypatch)
     forbid_video_content(browsing, monkeypatch)
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
     calls = []
 
     async def pause(messages, schema, *, max_tokens):
@@ -236,7 +236,7 @@ async def test_invalid_comment_keeps_model_selection_reason_and_separate_validat
                     "evidence_ids": ["missing-reference"], "explanation": "想问清楚这层用的比例"}
         return await original(messages, schema, max_tokens=max_tokens)
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", pause)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", pause)
     row = await finish_comment_round(browsing)
     task = browsing.tasks(round_id=row["id"])[0]
     assert task["status"] == "comments_checked"

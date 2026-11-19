@@ -340,23 +340,23 @@ class BrowsingDecisions:
                 guard()
                 tokens = None
                 with GenerationMeter(self.browsing.repo, row["id"]):
-                    if video_response and getattr(self.browsing.runtime.llm, "generation_metered", False):
-                        generate_video = getattr(self.browsing.runtime.llm, "generate_video_response", None)
+                    if video_response and getattr(self.browsing.runtime.operation_llm, "generation_metered", False):
+                        generate_video = getattr(self.browsing.runtime.operation_llm, "generate_video_response", None)
                         if generate_video is not None:
                             return await generate_video(packet, wire_schema, max_tokens=output)
-                    if not getattr(self.browsing.runtime.llm, "generation_metered", False):
+                    if not getattr(self.browsing.runtime.operation_llm, "generation_metered", False):
                         counted = (
-                            self.browsing.runtime.llm.prepare_json_messages(
+                            self.browsing.runtime.operation_llm.prepare_json_messages(
                                 packet, wire_schema, max_tokens=output
                             )
-                            if hasattr(self.browsing.runtime.llm, "prepare_json_messages")
+                            if hasattr(self.browsing.runtime.operation_llm, "prepare_json_messages")
                             else packet
                         )
-                        tokens = await self.browsing.runtime.llm.count_tokens(counted)
+                        tokens = await self.browsing.runtime.operation_llm.count_tokens(counted)
                         if tokens + output > self.browsing.settings.data["omni"]["context_tokens"] * 95 // 100:
                             raise ContextWindowExceeded("浏览输入超出真实窗口，未静默截断材料")
                     return await budgeted_json(
-                        self.browsing.runtime.llm,
+                        self.browsing.runtime.operation_llm,
                         packet,
                         wire_schema,
                         max_tokens=output,
@@ -539,7 +539,7 @@ class BrowsingDecisions:
         )
 
     def _capacity_signature(self, config):
-        llm = self.browsing.runtime.context.effective_llm_config()
+        llm = self.browsing.runtime.operation_context.effective_llm_config()
         return content_hash(
             {
                 "context_tokens": llm["context_tokens"],
@@ -563,7 +563,7 @@ class BrowsingDecisions:
         segments = self.browsing._segments(material)
         presentation = self._content_presentation(material, row)
         output = row["config"]["decision_max_tokens"]
-        provider = self.browsing.runtime.llm
+        provider = self.browsing.runtime.operation_llm
         if getattr(provider, "uses_model_card", False):
             await provider.ensure_capacity()
             available = provider.capacity_window - output
@@ -580,14 +580,14 @@ class BrowsingDecisions:
         async def count(source):
             data, _ = presentation.present(source)
             _, messages, schema = self._model_input(row, ContentDecision, data, self._content_instruction())
-            if hasattr(self.browsing.runtime.llm, "prepare_json_messages"):
-                messages = self.browsing.runtime.llm.prepare_json_messages(
+            if hasattr(self.browsing.runtime.operation_llm, "prepare_json_messages"):
+                messages = self.browsing.runtime.operation_llm.prepare_json_messages(
                     messages, schema, max_tokens=output
                 )
             async with self.browsing.runtime.offline_generation():
                 self.browsing._check_round(row)
                 with GenerationMeter(self.browsing.repo, row["id"]):
-                    return await self.browsing.runtime.llm.count_tokens(messages)
+                    return await self.browsing.runtime.operation_llm.count_tokens(messages)
 
         chunks, start = [], 0
         while start < len(segments):

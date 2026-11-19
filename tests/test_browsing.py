@@ -268,14 +268,14 @@ async def browsing(settings, store, runtime):
     comments.direct_messages = messages
     service = BrowsingService(settings, store, runtime, comments, messages, dynamics, read_interval=0)
     runtime.browsing = service
-    previous = runtime.llm
-    runtime.llm = ControlledModel()
+    previous = runtime.operation_llm
+    runtime.operation_llm = ControlledModel()
     settings.data["omni"]["model"] = "omni-default"
     service.store.set("browsing_policy", BrowsingPolicy(top_level_enabled=True).model_dump())
     yield service
     await service.close()
     await comments.close()
-    runtime.llm = previous
+    runtime.operation_llm = previous
 
 
 async def authorize_automation(service):
@@ -326,7 +326,7 @@ async def test_discovery_batch_has_no_hidden_shared_request_allowance(browsing):
     await wait_for_sends(browsing)
     assert first["config"]["max_model_calls"] == 0
     assert first["budget"]["model_calls"] == 2
-    assert [name for name, _ in browsing.runtime.llm.calls] == [
+    assert [name for name, _ in browsing.runtime.operation_llm.calls] == [
         "CandidateBatchPlan",
         "ResponseDecision",
     ]
@@ -488,7 +488,7 @@ async def test_background_discovery_uses_shared_worker_limit(browsing, monkeypat
         await active
     await browsing.set_enabled(False)
     assert peak == workers
-    assert browsing.runtime.llm.peak == 1
+    assert browsing.runtime.operation_llm.peak == 1
     assert {task["bvid"] for task in browsing.tasks() if task["status"] == "selected"} == set(videos)
 
 
@@ -849,19 +849,19 @@ async def test_missing_cc_never_uses_title_or_comments(browsing):
     row = await finished(browsing, preview=True)
     assert row["status"] == "completed"
     assert browsing.tasks()[0]["reason"] == "no_subtitles"
-    assert not browsing.runtime.llm.calls and not browsing.intents()
+    assert not browsing.runtime.operation_llm.calls and not browsing.intents()
 
 
 async def test_content_decision_requests_required_sources_before_generation(browsing):
     captured = []
-    generate = browsing.runtime.llm.generate_json
+    generate = browsing.runtime.operation_llm.generate_json
 
     async def observe(messages, schema, *, max_tokens):
         if schema["title"] == "ContentDecision":
             captured.append(schema)
         return await generate(messages, schema, max_tokens=max_tokens)
 
-    browsing.runtime.llm.generate_json = observe
+    browsing.runtime.operation_llm.generate_json = observe
     row = await finished(browsing, preview=True)
     assert row["status"] == "completed" and browsing.intents()
     branches = {branch["properties"]["worth_commenting"]["const"]: branch for branch in captured[0]["oneOf"]}
@@ -957,13 +957,13 @@ async def test_visual_evidence_cannot_charge_a_different_parent_round(browsing):
 
 
 async def test_invalid_citation_cannot_create_candidate(browsing):
-    browsing.runtime.llm.bad_ref = True
+    browsing.runtime.operation_llm.bad_ref = True
     row = await finished(browsing, preview=True)
     assert row["status"] == "partial" and not browsing.intents()
 
 
 async def test_liking_does_not_require_comment(browsing):
-    browsing.runtime.llm.worth = False
+    browsing.runtime.operation_llm.worth = False
     await finished(browsing, preview=True)
     assert browsing.tasks()[0]["status"] == "viewed_without_comment"
     assert not browsing.intents()
@@ -1171,7 +1171,7 @@ async def test_long_cc_chunks_use_provider_tokens_and_keep_every_reference(brows
     presentation = ContentDecisionInput(material)
     for chunk in chunks:
         assert (
-            await browsing.runtime.llm.count_tokens(
+            await browsing.runtime.operation_llm.count_tokens(
                 [{"role": "user", "content": json.dumps(presentation.present(chunk)[0], ensure_ascii=False)}]
             )
             <= 2048
@@ -1205,7 +1205,7 @@ async def test_notification_private_handoff_owned_by_round_and_never_public_body
             "timestamp": time.time(),
         }
     ]
-    browsing.runtime.llm.response_action = "handoff_private"
+    browsing.runtime.operation_llm.response_action = "handoff_private"
     original_thread = browsing.adapter.read_public_thread
 
     async def invited_thread(event):
@@ -1308,7 +1308,7 @@ async def test_automatic_queue_wait_rechecks_old_source_draft(browsing):
     finally:
         browsing.runtime.generation_lock.release()
     await browsing.active[response["id"]]
-    assert not browsing.intents() and not browsing.runtime.llm.calls
+    assert not browsing.intents() and not browsing.runtime.operation_llm.calls
 
 
 async def test_reread_really_refreshes_raw_material_but_keeps_rejection(browsing):
@@ -1392,7 +1392,7 @@ async def test_model_selects_batch_order_and_parallel_agent_count(browsing):
             "decision_max_tokens": 512,
         }
     )
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
 
     async def choose(messages, schema, *, max_tokens):
         if schema["title"] == "CandidateBatchPlan":
@@ -1404,7 +1404,7 @@ async def test_model_selects_batch_order_and_parallel_agent_count(browsing):
             ])
         return await original(messages, schema, max_tokens=max_tokens)
 
-    browsing.runtime.llm.generate_json = choose
+    browsing.runtime.operation_llm.generate_json = choose
     await browsing._current_account()
     row = await finished(browsing, automatic=True, video_only=True)
     plan = row["metrics"]["batch_plan"]
@@ -1472,8 +1472,8 @@ async def test_revisited_video_replies_to_new_comments_without_another_main_repl
         browsing.operations.last_send_error,
         browsing.store.all("SELECT status,error FROM browsing_events"),
     )
-    assert not [name for name, _ in browsing.runtime.llm.calls if name == "ContentDecision"]
-    assert len([name for name, _ in browsing.runtime.llm.calls if name == "ResponseDecision"]) == 3
+    assert not [name for name, _ in browsing.runtime.operation_llm.calls if name == "ContentDecision"]
+    assert len([name for name, _ in browsing.runtime.operation_llm.calls if name == "ResponseDecision"]) == 3
     assert len([item for item in browsing.intents() if item["kind"] == "top_level"]) == 1
     assert len([call for call in browsing.adapter.calls if call[0] == "subtitles"]) == 1
     assert browsing.repo.content_progress({"account_id": "another", "character_id": "whale"}, BV) is None

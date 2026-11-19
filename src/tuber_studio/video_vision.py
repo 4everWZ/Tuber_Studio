@@ -112,7 +112,7 @@ class VideoVisionConfig(StrictModel):
     model: str = Field(min_length=1)
     model_revision: str = ""
     runtime_revision: str = ""
-    max_frames: int = Field(default=3, ge=1, le=16, strict=True)
+    max_frames: int = Field(default=5, ge=1, le=16, strict=True)
     max_pixels: int = Field(default=1024 * 1024, ge=1, le=4096 * 4096, strict=True)
     max_bytes: int = Field(default=1024 * 1024, ge=1, le=4 * 1024 * 1024, strict=True)
     max_output_tokens: int = Field(default=2048, ge=256, le=65536, strict=True)

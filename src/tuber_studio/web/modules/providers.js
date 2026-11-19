@@ -7,6 +7,7 @@ export function readOmniSettings() {
     responses_model: $("omni-responses-model").value.trim(),
     operations_max_tokens: $("llm-operations-tokens").valueAsNumber,
     enable_thinking: $("llm-enable-thinking").checked,
+    video_options: { max_frames: $("video-max-frames").valueAsNumber },
     responses_options: {
       parallel_reads: $("background-parallel").valueAsNumber,
       max_output_tokens: $("background-budget").valueAsNumber,
@@ -42,6 +43,8 @@ export function initInferenceProvidersUI(model, { api, busy, apply }) {
       $("llm-enable-thinking").checked = omni.enable_thinking;
       $("background-parallel").value = omni.responses_options?.parallel_reads ?? 2;
       $("background-budget").value = omni.responses_options?.max_output_tokens ?? 4096;
+      $("video-max-frames").value = omni.video_options?.max_frames ?? 5;
+      $("video-max-frames").max = omni.video_options?.frame_strategy === "joint" ? 8 : 16;
     }
     render();
   };

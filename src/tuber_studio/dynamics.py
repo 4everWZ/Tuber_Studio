@@ -12,6 +12,7 @@ import httpx
 
 from .context_delivery import memory_source_allowed
 from .daily_memory import DailyMemoryService
+from .deployment_profiles import operation_profile
 from .dynamic_comment_card import comment_card, render_comment_card
 from .dynamic_grounding import review_caption
 from .generation_meter import budgeted_json
@@ -263,12 +264,13 @@ class Dynamics:
 
     def _summary_model(self):
         fields = ("base_url", "model", "enable_thinking", "structured_output", "context_source", "prompt_token_endpoint")
-        active = getattr(self.runtime.llm, "config", {})
+        active = getattr(self.runtime.operation_llm, "config", {})
         active = active if isinstance(active, dict) else {}
+        profile = operation_profile(self.settings.data["omni"])
         identity = {
-            "settings": {k: self.settings.data["omni"].get(k) for k in fields},
+            "settings": {k: profile.get(k) for k in fields},
             "provider": {k: active.get(k) for k in fields},
-            "implementation": type(self.runtime.llm).__module__ + "." + type(self.runtime.llm).__qualname__,
+            "implementation": type(self.runtime.operation_llm).__module__ + "." + type(self.runtime.operation_llm).__qualname__,
         }
         return hashlib.sha256(_json(identity).encode()).hexdigest()
 
@@ -820,7 +822,7 @@ class Dynamics:
 
         async def invoke(packet):
             return await budgeted_json(
-                self.runtime.llm, packet, self.decision_schema(row["sources"]), max_tokens=maximum
+                self.runtime.operation_llm, packet, self.decision_schema(row["sources"]), max_tokens=maximum
             )
 
         async with self.runtime.offline_generation("background"):
@@ -1076,7 +1078,7 @@ class Dynamics:
                     self._check_automatic_draft(checked, self.policy())
                     if self._post(post_id) != checked or not self._valid_sources(checked):
                         raise ValueError("草稿或公开来源已变化")
-                    supported = await review_caption(self.runtime.llm, checked["content"], checked["sources"])
+                    supported = await review_caption(self.runtime.operation_llm, checked["content"], checked["sources"])
             except (ValueError, TimeoutError, httpx.HTTPError):
                 error = "动态事实核对未完成，保留待审"
             else:
@@ -1449,7 +1451,7 @@ class Dynamics:
         if selected and memory_dependencies:
             selected[0] = selected[0] | {"memory_dependencies": memory_dependencies}
             memory_dependencies = []
-        model = str(self.settings.data["omni"]["model"])
+        model = str(self.settings.data["omni"]["responses_model"])
         next_at = now + data["next_evaluation_seconds"]
         with self.store.db:
             decision_id = self.store.db.execute(
@@ -1545,7 +1547,7 @@ class Dynamics:
             })
             async with self.runtime.offline_generation("background"):
                 result = await budgeted_json(
-                    self.runtime.llm, identity_messages(messages, identity), self.decision_schema(sources),
+                    self.runtime.operation_llm, identity_messages(messages, identity), self.decision_schema(sources),
                     max_tokens=512,
                 )
             current = self._character()
@@ -1593,7 +1595,7 @@ class Dynamics:
         if not self._valid_sources(row):
             raise ValueError("原动态的公开来源已变化")
         async with self.runtime.offline_generation("background"):
-            result = await budgeted_json(self.runtime.llm, [
+            result = await budgeted_json(self.runtime.operation_llm, [
                 {"role": "system", "content": (
                     "按号主的要求改写一条已经发布的动态。只输出可直接使用的正文。"
                     "事实以公开来源为准，原动态可能有错。可以只写一句日常感想。"
@@ -1773,7 +1775,7 @@ class Dynamics:
                     stories = [source for source in sources if source["type"] == "public_memory"]
                     if stories:
                         summary = await self.memory_summary.build(
-                            self.runtime.llm, char, stories, budget, model_identity, authorized=authorized,
+                            self.runtime.operation_llm, char, stories, budget, model_identity, authorized=authorized,
                         )
                         public_sources.extend(self.memory_summary.public_sources(summary))
                     used_ids = self._used_source_ids()
@@ -1796,7 +1798,7 @@ class Dynamics:
                     }
 
                     async def invoke_model(packet, schema):
-                        return await budgeted_json(self.runtime.llm, packet, schema, max_tokens=maximum)
+                        return await budgeted_json(self.runtime.operation_llm, packet, schema, max_tokens=maximum)
 
                     async def invoke(packet, *, web_fetch=None):
                         schema = self.decision_schema(public_sources)

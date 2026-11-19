@@ -57,7 +57,7 @@ async def setup_delivery(messages, monkeypatch, *, auto_send=True):
         pytest.fail("邀请和渠道由程序绑定，不应请求模型：" + schema["title"])
 
     monkeypatch.setattr(messages.runtime, "generate_reply", generate)
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", conversation, raising=False)
+    monkeypatch.setattr(messages.runtime.operation_llm, "generate_json", conversation, raising=False)
     return generated, checked
 
 
@@ -97,7 +97,7 @@ async def test_route_uses_real_invitation_not_model_channel_choice(messages, mon
         model_requests.append(schema["title"])
         return {"channel": "comment" if mentioned == ACTOR else "direct_message", "reason": "user_requested"}
 
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", opposite_model_choice, raising=False)
+    monkeypatch.setattr(messages.runtime.operation_llm, "generate_json", opposite_model_choice, raising=False)
     routed = await messages.route_comment(source, messages.runtime.character, event, automatic=True)
     await asyncio.wait_for(messages.queue.join(), 2)
     assert not model_requests and not checks
@@ -569,11 +569,11 @@ async def test_agreement_is_checked_before_waiting_and_rechecks_actual_result_af
 
     from tuber_studio import web_fetch
 
-    previous = messages.runtime.llm
+    previous = messages.runtime.operation_llm
     original_generate = messages.runtime.generate_reply
     requests, _, _ = await model_for(messages.runtime, messages.settings,
         first={"web_fetch": "https://example.org/config"}, corrected={"spoken_text": "查到了，配置说明在设置页。"})
-    provider = messages.runtime.llm
+    provider = messages.runtime.operation_llm
 
     async def fetch(url):
         return {"url": url, "title": "配置说明", "excerpt": "具体配置位于设置页", "truncated": False}
@@ -598,7 +598,7 @@ async def test_agreement_is_checked_before_waiting_and_rechecks_actual_result_af
         assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "queued"
     finally:
         await provider.close()
-        messages.runtime.llm = previous
+        messages.runtime.operation_llm = previous
         messages.runtime.generate_reply = original_generate
         messages.runtime.browsing = None
         messages.operations_resumed = True

@@ -7,6 +7,7 @@ import re
 import time
 from uuid import uuid4
 
+from ...deployment_profiles import operation_profile
 from ...direct_messages import MessagePolicy
 from ...operation_sends import OperationSends
 from ...operation_turns import operation_checkpoint, operation_lane
@@ -142,10 +143,10 @@ class BrowsingService:
         ))
 
     def model_signature(self):
-        llm, character = self.settings.data["omni"], self.runtime.character
+        llm, character = operation_profile(self.settings.data["omni"]), self.runtime.character
         return dump(
             [
-                "omni",
+                "operations_text",
                 llm.get("model"),
                 llm.get("base_url"),
                 llm.get("enable_thinking"),
@@ -257,7 +258,7 @@ class BrowsingService:
         return self.account
 
     async def check_browsing_model(self):
-        health = await self.runtime.llm.health()
+        health = await self.runtime.operation_llm.health()
         if health.get("ok") is False:
             raise ValueError("请连接实际运营模型；离线演示不支持自主决策")
 

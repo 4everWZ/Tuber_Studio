@@ -147,7 +147,7 @@ async def dynamic_memes(settings, store):
         return "900"
 
     comments.account_id = account
-    runtime = SimpleNamespace(llm=Model(), generation_lock=asyncio.Lock())
+    runtime = SimpleNamespace(operation_llm=Model(), generation_lock=asyncio.Lock())
     runtime.offline_generation = lambda lane: runtime.generation_lock
     service = Dynamics(settings, store, runtime, comments, memes=catalog)
     GroundedMemory(store).record(
@@ -406,9 +406,9 @@ async def test_invalid_selector_keeps_caption_pending_and_does_not_auto_publish(
     service.operations.configure({"enabled": True}, account_id="900", character=service.store.character())
     service.comments.display_account_id = lambda: "900"
     await service.set_policy({"enabled": True, "auto_publish": True, "use_memes": True})
-    service.runtime.llm.selection = {"asset_id": "meme_" + "0" * 32}
+    service.runtime.operation_llm.selection = {"asset_id": "meme_" + "0" * 32}
     if bad == "model_error":
-        service.runtime.llm.selector_error = RuntimeError("controlled model failure")
+        service.runtime.operation_llm.selector_error = RuntimeError("controlled model failure")
     decision = await service.evaluate()
     row = service._post(decision["post_id"])
     assert row["status"] == "pending_review" and row["content"] == CAPTION and row["meme_id"] is None
@@ -419,11 +419,11 @@ async def test_dynamic_selector_attaches_to_the_unchanged_caption(dynamic_memes)
     service, _, asset, state, _ = dynamic_memes
     assert service.policy()["use_memes"] is False
     await service.set_policy({"use_memes": True})
-    service.runtime.llm.selection = {"asset_id": asset["asset_id"]}
+    service.runtime.operation_llm.selection = {"asset_id": asset["asset_id"]}
     decision = await service.evaluate(manual=True)
     row = service._post(decision["post_id"])
     assert row["meme_id"] == asset["asset_id"] and row["content"] == CAPTION and not posts(state)
-    calls = [call for call in service.runtime.llm.requests if "asset_id" in call[1].get("properties", {})]
+    calls = [call for call in service.runtime.operation_llm.requests if "asset_id" in call[1].get("properties", {})]
     assert len(calls) == 1 and calls[0][2] == 2048
     assert json.loads(calls[0][0][1]["content"])["mode"] == "dynamic"
 
@@ -435,7 +435,7 @@ async def test_valid_automatic_selection_posts_once_with_original_caption(dynami
     service.comments.display_account_id = lambda: "900"
     await service.set_policy({"enabled": True, "auto_publish": True, "use_memes": True})
     if with_image:
-        service.runtime.llm.selection = {"asset_id": asset["asset_id"]}
+        service.runtime.operation_llm.selection = {"asset_id": asset["asset_id"]}
     result = await service.evaluate()
     row = service._post(result["post_id"])
     assert row["status"] == "published" and row["content"] == CAPTION

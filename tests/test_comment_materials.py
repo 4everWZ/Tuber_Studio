@@ -112,7 +112,7 @@ async def test_real_reply_entry_uses_current_attachment_and_falls_back_on_articl
         async def close(self):
             pass
 
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
 
     async def collect(messages, schema, *, max_tokens):
         if schema["title"] == "ResponseDecision":
@@ -122,7 +122,7 @@ async def test_real_reply_entry_uses_current_attachment_and_falls_back_on_articl
     monkeypatch.setattr(browsing.adapter, "fetch", fetch)
     monkeypatch.setattr(browsing.adapter, "read_comment_article", unavailable, raising=False)
     monkeypatch.setattr(browsing.adapter, "read_comment_image", read_image, raising=False)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", collect)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", collect)
     browsing.replace_visual_provider(Visual())
     result = await finish_comment_round(browsing)
     assert result["metrics"]["failures"] == 0 and not browsing.adapter.sent

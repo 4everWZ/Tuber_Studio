@@ -89,7 +89,7 @@ async def allow_generation(lane):
 
 async def run_case(db, provider, case, timeout):
     store = Store(db, [])
-    runtime = SimpleNamespace(llm=provider, operator_generation=allow_generation, character={"_edit_identity": "eval"})
+    runtime = SimpleNamespace(llm=provider, operation_llm=provider, operator_generation=allow_generation, character={"_edit_identity": "eval"})
     browsing = SimpleNamespace(discovery=SimpleNamespace(history_scope=lambda: ("fixture", "fixture", 1)))
     task = create_task_runtime(runtime, store, browsing)
     calls, plans, outputs, failures = Counter(), [], [], []

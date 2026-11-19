@@ -30,7 +30,7 @@ async def test_manual_draft_dedup_is_bound_to_account_and_oc(browsing, route, dr
         key, material = await browsing._prepare_evidence(BV, config)
         await browsing.decisions._reply_to_video_comment(row, material, key, {"11:0"}, source, [source], {"lock_wait_seconds": 0})
     assert len(browsing.intents()) == (0 if blocks else 1)
-    assert len(browsing.runtime.llm.calls) == (0 if blocks else 1)
+    assert len(browsing.runtime.operation_llm.calls) == (0 if blocks else 1)
     assert not browsing.adapter.sent
 
 

@@ -89,9 +89,9 @@ async def real_protocol(settings, runtime, *, failure=None, first_large=False):
         )
 
     provider.client = httpx.AsyncClient(base_url="http://model/v1/", transport=httpx.MockTransport(respond))
-    await runtime.llm.close()
-    runtime.llm = provider
-    runtime.context.provider = provider
+    await runtime.operation_llm.close()
+    runtime.operation_llm = provider
+    runtime.operation_context.provider = provider
     return requests, entered, closed
 
 
@@ -106,7 +106,7 @@ async def test_manual_rebuild_prefills_only_original_floor_data_and_indexes_view
     )
     character = runtime.character
     scope = service.context_scope("import-rebuild", "floor")
-    runtime.context.record(
+    runtime.operation_context.record(
         scope,
         character | {"version": character["version"] + 1},
         {"event_id": "other-version", "text": "另一角色版本的秘密"},
@@ -130,7 +130,7 @@ async def test_manual_rebuild_prefills_only_original_floor_data_and_indexes_view
         and "不同平台的秘密" not in prompt
         and "另一角色版本的秘密" not in prompt
     )
-    window = runtime.context.existing(result["scope"], runtime.character)
+    window = runtime.operation_context.existing(result["scope"], runtime.character)
     history = json.loads(window["history"])
     assert all(item["role"] == "user" and item["reconstructed"] for item in history)
     assert all(item["created_at"] >= window["oldest_source_at"] for item in history)
@@ -155,15 +155,15 @@ async def test_demo_rebuild_is_explicitly_not_a_real_prefill(settings, store, ru
 async def test_rebuild_refuses_nonempty_or_absent_originals_without_overwrite(settings, store, runtime):
     service = Comments(settings, store, runtime, LocalOnly())
     scope = service.context_scope("import-rebuild", "floor")
-    runtime.context.record(scope, runtime.character, {"event_id": "kept", "text": "已有问题"}, "已有答复")
-    original = copy.deepcopy(runtime.context.existing(scope, runtime.character))
+    runtime.operation_context.record(scope, runtime.character, {"event_id": "kept", "text": "已有问题"}, "已有答复")
+    original = copy.deepcopy(runtime.operation_context.existing(scope, runtime.character))
     with pytest.raises(ValueError, match="非空"):
         await service.rebuild_context("import-rebuild", "floor")
-    assert runtime.context.existing(scope, runtime.character) == original
+    assert runtime.operation_context.existing(scope, runtime.character) == original
     with pytest.raises(ValueError, match="没有保留"):
         await service.rebuild_context("import-rebuild", "absent")
     assert (
-        runtime.context.existing(service.context_scope("import-rebuild", "absent"), runtime.character) is None
+        runtime.operation_context.existing(service.context_scope("import-rebuild", "absent"), runtime.character) is None
     )
 
 
@@ -174,7 +174,7 @@ async def test_failed_or_cancelled_prefill_never_installs_history_or_source_inde
     service = Comments(settings, store, runtime, LocalOnly())
     originals(service)
     scope = service.context_scope("import-rebuild", "floor")
-    previous = copy.deepcopy(runtime.context.window(scope, runtime.character))
+    previous = copy.deepcopy(runtime.operation_context.window(scope, runtime.character))
     _, entered, closed = await real_protocol(settings, runtime, failure=failure)
     work = asyncio.create_task(service.rebuild_context("import-rebuild", "floor"))
     await entered.wait()
@@ -182,7 +182,7 @@ async def test_failed_or_cancelled_prefill_never_installs_history_or_source_inde
         work.cancel()
     with pytest.raises((ValueError, httpx.HTTPError, asyncio.CancelledError)):
         await work
-    assert runtime.context.existing(scope, runtime.character) == previous
+    assert runtime.operation_context.existing(scope, runtime.character) == previous
     assert not store.all("SELECT * FROM grounded_memory WHERE scope=?", (scope,))
     if failure == "cancel":
         assert closed.is_set()
@@ -197,7 +197,7 @@ async def test_dataset_removed_during_prefill_is_not_reanimated(settings, store,
     with pytest.raises(ValueError, match="清理"):
         await service.rebuild_context("import-rebuild", "floor")
     assert (
-        runtime.context.existing(service.context_scope("import-rebuild", "floor"), runtime.character) is None
+        runtime.operation_context.existing(service.context_scope("import-rebuild", "floor"), runtime.character) is None
     )
 
 
@@ -222,7 +222,7 @@ async def test_auto_rebuild_excludes_current_comment_and_uses_generation_prefill
         and "其他楼的秘密" not in content
     )
     history = json.loads(
-        runtime.context.existing(service.context_scope("import-rebuild", "floor"), runtime.character)[
+        runtime.operation_context.existing(service.context_scope("import-rebuild", "floor"), runtime.character)[
             "history"
         ]
     )
@@ -259,13 +259,13 @@ async def test_rebuild_reuses_existing_core_compaction_and_preserves_ingestion_a
     calls = [body for path, body in requests if path == "/v1/chat/completions"]
     assert len(calls) == 2 and calls[-1]["max_tokens"] == 1
     scope = result["scope"]
-    row = runtime.context.existing(scope, runtime.character)
+    row = runtime.operation_context.existing(scope, runtime.character)
     assert row["oldest_source_at"] == clock[0]
     assert all(
         item["created_at"] == clock[0] for item in json.loads(row["history"]) if item["kind"] == "viewer"
     )
     clock[0] += 100
-    runtime.context.record(scope, runtime.character, {"event_id": "new", "text": "新问题"}, "新答复")
-    await runtime.context.compact(scope, runtime.character, "comment_draft")
-    row = runtime.context.existing(scope, runtime.character)
+    runtime.operation_context.record(scope, runtime.character, {"event_id": "new", "text": "新问题"}, "新答复")
+    await runtime.operation_context.compact(scope, runtime.character, "comment_draft")
+    row = runtime.operation_context.existing(scope, runtime.character)
     assert row["oldest_source_at"] == 1800000000.0 and row["updated_at"] == clock[0]

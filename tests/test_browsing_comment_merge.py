@@ -81,7 +81,7 @@ async def test_group_owns_only_covered_sources_and_new_followup_uses_its_real_ta
             result["covered_comments"] = branch["properties"]["covered_comments"]["items"]["enum"]
         return result
 
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", reply)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", reply)
 
     async def run(items):
         return await browsing.decisions._reply_to_video_comment(

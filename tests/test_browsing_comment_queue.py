@@ -132,7 +132,7 @@ async def test_invalid_comment_does_not_block_other_floors_or_retry_its_model(br
     async def fetch(video, max_pages=1, *, start_page=1, newest=False):
         return {"items": [comment(), comment("602", "602")], "next_page": start_page + 1}
 
-    original = browsing.runtime.llm.generate_json
+    original = browsing.runtime.operation_llm.generate_json
 
     async def generate(messages, schema, *, max_tokens):
         value = await original(messages, schema, max_tokens=max_tokens)
@@ -140,11 +140,11 @@ async def test_invalid_comment_does_not_block_other_floors_or_retry_its_model(br
             calls.append(schema["title"])
             if len(calls) == 1:
                 value["evidence_ids"] = ["ref:999"]
-        browsing.runtime.llm.last_content = json.dumps(value, ensure_ascii=False)
+        browsing.runtime.operation_llm.last_content = json.dumps(value, ensure_ascii=False)
         return value
 
     monkeypatch.setattr(browsing.adapter, "fetch", fetch)
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", generate)
     first = await finished(browsing, automatic=True, video_only=True)
     assert first["status"] == "completed"
     assert [item["target"]["parent"] for item in browsing.intents()] == ["602"]

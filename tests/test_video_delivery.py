@@ -138,6 +138,8 @@ async def test_playable_request_returns_to_collection_but_single_frame_can_finis
         return candidate
 
     monkeypatch.setattr(runtime.llm, "generate_json", model)
+
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", model)
     tasks = create_task_runtime(runtime, store, None)
     with pytest.raises(AdditionalVideoRead) as research:
         await tasks.edit_delivery(task, evidence)
@@ -181,6 +183,8 @@ async def test_source_lookup_uses_the_work_named_by_public_metadata(runtime, sto
         return {"title": "例作", "kind": "影视节目"}
 
     monkeypatch.setattr(runtime.llm, "generate_json", model)
+
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", model)
     tasks = create_task_runtime(runtime, store, None)
     with pytest.raises(AdditionalVideoRead) as research:
         await tasks.edit_delivery(task, evidence_index(task["steps"]))
@@ -427,6 +431,7 @@ async def test_real_image_inventory_and_caption_do_not_inherit_worker_plot(runti
 
     monkeypatch.setattr("tuber_studio.agent.task_tools.clip_review_image", pixels)
     monkeypatch.setattr(runtime.llm, "generate_json", omni)
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", omni)
     tasks = create_task_runtime(runtime, store, None)
     if invented_title:
         with pytest.raises(EditorialCorrection) as correction:
@@ -532,6 +537,8 @@ async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, mon
                                                    for p, keys in packet["field_visual_sources"].items()}}
 
     monkeypatch.setattr(runtime.llm, "generate_json", editor)
+
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", editor)
     with pytest.raises(AdditionalVideoRead):
         await tasks.edit_delivery(task, evidence_index(task["steps"]))
     task["steps"].extend([short_read("overlap", 12, revision=2), short_read("new", 0, revision=2)])
@@ -590,6 +597,8 @@ async def test_failed_window_after_narrowing_keeps_good_item_and_reads_an_unused
         pytest.fail(f"unexpected call: {list(props)}")
 
     monkeypatch.setattr(runtime.llm, "generate_json", editor)
+
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", editor)
     tasks = create_task_runtime(runtime, store, None)
     with pytest.raises(AdditionalVideoRead) as again:
         await tasks.edit_delivery(task, evidence_index(task["steps"]))
@@ -639,6 +648,8 @@ async def test_saved_clip_omni_decides_each_item_and_displays_attribution(runtim
                                                    for p in packet["field_visual_sources"]}}
 
     monkeypatch.setattr(runtime.llm, "generate_json", editor)
+
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", editor)
     tasks = create_task_runtime(runtime, store, None)
     if unverified_effect:
         with pytest.raises(EditorialCorrection) as patch:
@@ -702,6 +713,7 @@ async def test_exhausted_video_field_keeps_only_reviewed_items(runtime, store, m
 
     monkeypatch.setattr("tuber_studio.agent.task_tools.clip_review_image", no_pixels)
     monkeypatch.setattr(runtime.llm, "generate_json", editor)
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", editor)
     tasks = create_task_runtime(runtime, store, None)
     if outcome != "bound":
         with pytest.raises(DelegationError) as failure:
@@ -792,6 +804,8 @@ async def test_front_and_reviewer_share_scoped_media_and_unread_page_receipts(ru
         return product if "candidate" in packet else {"supported": True, "issues": []}
 
     monkeypatch.setattr(runtime.llm, "generate_json", editor)
+
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", editor)
     tasks = create_task_runtime(runtime, store, None)
     task = {"goal": "整理", "plan": {"candidate": product, "prior_goals": []}}
     selected = await tasks.edit_delivery(task, evidence)
@@ -826,6 +840,8 @@ async def test_keep_original_frame_item_and_review_only_rendered_fields(runtime,
         return {"supported": True, "issues": []}
 
     monkeypatch.setattr(runtime.llm, "generate_json", editor)
+
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", editor)
     tasks = create_task_runtime(runtime, store, None)
     task = {"goal": "保留第一项，换第二项", "plan": {"previous_selection": original.model_dump(),
                                                   "prior_goals": [], "candidate": original.model_dump()}}
@@ -915,6 +931,8 @@ async def test_invalid_video_delivery_cannot_complete(runtime, settings, store, 
         return {"supported": False}
 
     monkeypatch.setattr(runtime.llm, "generate_json", editor)
+
+    monkeypatch.setattr(runtime.operation_llm, "generate_json", editor)
     tasks = create_task_runtime(runtime, store, None)
     identity = str(uuid4())
     tasks.create(identity, f"请为 {BV} P2 选材")

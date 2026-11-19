@@ -11,7 +11,12 @@ from fastapi import Body, Depends, HTTPException, Path, Query
 from pydantic import Field, StrictBool, StringConstraints, ValidationError
 
 from ..bilibili_account import space_uid
-from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER, DailyMemoryService, MemoryChanged, contains_memory_credential
+from ..daily_memory import (
+    HIGHLIGHT_ACCOUNT_FILTER,
+    DailyMemoryService,
+    MemoryChanged,
+    contains_memory_credential,
+)
 from ..generation_meter import budgeted_call
 from ..models import Character, StrictModel
 from ..operation_continuations import content_hash
@@ -422,7 +427,7 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
         if video_id is not None or thread_id is not None:
             if not video_id or not thread_id:
                 raise ValueError("请同时指定视频与对话楼ID")
-            return runtime.context.status(comments.account_context_scope(video_id, thread_id), runtime.character)
+            return runtime.operation_context.status(comments.account_context_scope(video_id, thread_id), runtime.character)
         return runtime.context.status()
 
     @app.post("/api/context/rebuild", dependencies=[Depends(require_admin)])
@@ -436,7 +441,7 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
         async with runtime.generation_lock:
             window = store.one(
                 "SELECT history FROM context_windows WHERE key=?",
-                (runtime.context.key(scope, runtime.character),),
+                (runtime.operation_context.key(scope, runtime.character),),
             )
             if window and json.loads(window["history"]):
                 raise HTTPException(409, "当前楼已有上下文，无需覆盖重建")
@@ -463,5 +468,6 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
             scope, mode = comments.account_context_scope(video_id, thread_id), "comment_draft"
         else:
             raise ValueError("scope应为live或comments")
+        context = runtime.context if mode == "live" else runtime.operation_context
         async with runtime.generation_lock:
-            return await runtime.context.compact(scope, runtime.character, mode)
+            return await context.compact(scope, runtime.character, mode)

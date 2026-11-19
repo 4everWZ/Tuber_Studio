@@ -677,7 +677,7 @@ class DirectMessages:
             )
             event["public_source_thread"] = (
                 event.get("video_evidence", {}).get("public_source_thread")
-                or self.runtime.context.history_for_model(scope, character)
+                or self.runtime.operation_context.history_for_model(scope, character)
             )
             invitation = confirmed_invitation(
                 event["public_source_thread"], draft.get("account_id"), draft["platform_user_id"]
@@ -856,7 +856,7 @@ class DirectMessages:
         }
         snapshot = runtime_identity(self.runtime, character, draft["account_id"])
         binding["self_identity"] = snapshot
-        messages = await self.runtime.context.prepare(
+        messages = await self.runtime.operation_context.prepare(
             scope,
             character,
             event,
@@ -917,7 +917,7 @@ class DirectMessages:
                 raise ValueError("私信生成期间账号或角色已变化")
 
         async def generate(packet, wire_schema):
-            return await budgeted_json(self.runtime.llm, packet, wire_schema, max_tokens=maximum)
+            return await budgeted_json(self.runtime.operation_llm, packet, wire_schema, max_tokens=maximum)
 
         async def invoke(packet, *, web_fetch=None):
             if web_fetch is not None:
@@ -1422,7 +1422,7 @@ class DirectMessages:
                     "pending_review",
                     reply.spoken_text,
                     json.dumps(check, ensure_ascii=False),
-                    self.settings.data["omni"]["model"],
+                    self.settings.data["omni"]["responses_model"],
                     json.dumps(ref) if ref else None,
                     draft["message_kind"] if preserve_attachments else "text",
                     draft["meme_id"] if preserve_attachments else None,
@@ -1824,7 +1824,7 @@ class DirectMessages:
                 else payload["text"]
             )
             check = json.loads(draft.get("answer_check") or "{}")
-            self.runtime.context.record(
+            self.runtime.operation_context.record(
                 self.scope(draft),
                 character,
                 self._delivered_event(draft, character),
@@ -2295,7 +2295,7 @@ class DirectMessages:
             if image and self.memes:
                 self.memes.release(f"dm-draft:{identity}")
             spoken = f"[发送表情包：{image['asset']['title']}]" if image and not composite else row["text"]
-            self.runtime.context.record(
+            self.runtime.operation_context.record(
                 self.scope(row),
                 character,
                 self._delivered_event(row, character),

@@ -25,6 +25,7 @@ from tuber_studio.agent.operator_chat import ChatTurn, OperatorChat
 from tuber_studio.agent.task_delivery import evidence_index
 from tuber_studio.agent.task_tools import create_task_runtime
 from tuber_studio.api_providers import APIProvider, VisionService
+from tuber_studio.deployment_profiles import operation_profile
 from tuber_studio.responses_provider import ResponsesClient
 from tuber_studio.store import Store
 
@@ -223,10 +224,10 @@ class PrivateChat(OperatorChat):
         return await super()._action(intent, *args)
 
 
-async def exercise(store, omni, responses, vision, archive, transport):
+async def exercise(store, omni, operations, responses, vision, archive, transport):
     seeds = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
     character = next(seed for seed in seeds if seed["id"] == "whale") | {"version": 1}
-    runtime = SimpleNamespace(store=store, character=character, llm=omni, operator_generation=nullcontext,
+    runtime = SimpleNamespace(store=store, character=character, llm=omni, operation_llm=operations, operator_generation=nullcontext,
                               settings=SimpleNamespace(data={"omni": omni.config}, responses_config=responses.config.model_dump()),
                               daily_memory=SimpleNamespace(preference=lambda scope: {"enabled": False}),
                               context=SimpleNamespace(record=lambda *args, **kwargs: None),
@@ -296,10 +297,13 @@ async def run(env):
         stack.push_async_callback(vision.close)
         responses = await stack.enter_async_context(ResponsesClient(
             {"base_url": root + "/llm/v1", "model": env.get("OMNI_LLM_MODEL_ALIAS", "llm-default")}, token))
+        operations = APIProvider(operation_profile(omni.config | {"responses_model": responses.config.model}),
+                                 token, text_only=True)
+        stack.push_async_callback(operations.close)
         transport = Archive()
         archive = await stack.enter_async_context(httpx.AsyncClient(base_url=ORIGIN, transport=httpx.MockTransport(transport.serve)))
         async with asyncio.timeout(600):
-            return await exercise(store, omni, responses, vision, archive, transport)
+            return await exercise(store, omni, operations, responses, vision, archive, transport)
 
 
 def main():

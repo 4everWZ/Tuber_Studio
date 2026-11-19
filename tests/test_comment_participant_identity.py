@@ -35,13 +35,13 @@ async def test_comment_account_switch_does_not_inherit_other_account_or_unbound_
                                    "platform_user_id": "neighbor", "content": "新账号来接这句话。"}])
     active["uid"] = "200"
     seen = []
-    original = runtime.llm.generate
+    original = runtime.operation_llm.generate
 
     async def capture(messages, character, event_id, source_text=None):
         seen.append(json.dumps(messages, ensure_ascii=False))
         return await original(messages, character, event_id, source_text)
 
-    monkeypatch.setattr(runtime.llm, "generate", capture)
+    monkeypatch.setattr(runtime.operation_llm, "generate", capture)
     comments.enqueue([store.one("SELECT id FROM comments")["id"]])
     await asyncio.wait_for(comments.queue.join(), 3)
     assert len(seen) == 1
@@ -69,7 +69,7 @@ async def test_manual_comment_keeps_real_mentions_and_speaking_account_through_g
     comments.import_items("import-actors", rows)
     source = store.one("SELECT * FROM comments WHERE comment_id='source'")
     assert json.loads(source["mentions"]) == rows[1]["mentions"]
-    original = comments.runtime.llm.generate
+    original = comments.runtime.operation_llm.generate
     captured = []
 
     async def capture(messages, character, event_id, source_text=None):
@@ -78,7 +78,7 @@ async def test_manual_comment_keeps_real_mentions_and_speaking_account_through_g
         captured.append(context)
         return await original(messages, character, event_id, source_text)
 
-    monkeypatch.setattr(comments.runtime.llm, "generate", capture)
+    monkeypatch.setattr(comments.runtime.operation_llm, "generate", capture)
     comments.enqueue([source["id"]])
     await asyncio.wait_for(comments.queue.join(), 3)
     assert store.one("SELECT status FROM drafts")["status"] == "pending_review"
@@ -142,7 +142,7 @@ async def test_manual_publish_keeps_reviewed_text_and_verifies_current_uid(comme
     monkeypatch.setattr(comments.adapter, "account_profile", unexpected, raising=False)
     monkeypatch.setattr(runtime, "refresh_identity", unexpected)
     monkeypatch.setattr(runtime, "generate_reply", unexpected)
-    monkeypatch.setattr(runtime.llm, "generate", unexpected)
+    monkeypatch.setattr(runtime.operation_llm, "generate", unexpected)
     if account_changed:
         with pytest.raises(ValueError, match="该草稿属于其他账号"):
             await comments.publish(row["id"])
@@ -200,7 +200,7 @@ async def test_automatic_publish_refreshes_comment_profile_and_honors_new_diagno
         text = state["account_display_name"] + "，" + "本鲸记住新门牌了。" * (8 if diagnostic else 1)
         return Reply(spoken_text=text, emotion="cheerful", animation_id="talk_happy", reply_to=[event_id])
 
-    monkeypatch.setattr(comments.runtime.llm, "generate", generate)
+    monkeypatch.setattr(comments.runtime.operation_llm, "generate", generate)
     if not profile_available:
         with pytest.raises(ValueError, match="主页暂不可读"):
             await comments.publish(row["id"], automatic=True)

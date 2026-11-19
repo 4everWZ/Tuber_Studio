@@ -226,7 +226,7 @@ class BrowsingEvidence:
     def visual_batch_size(self):
         capabilities = self.visual.capabilities()
         maximum = capabilities.get("max_frames")
-        return min(maximum, 6) if capabilities.get("multiple_images") and type(maximum) is int and maximum > 0 else 1
+        return maximum if capabilities.get("multiple_images") and type(maximum) is int and maximum > 0 else 1
 
     @staticmethod
     def pending_visual_scan(material):

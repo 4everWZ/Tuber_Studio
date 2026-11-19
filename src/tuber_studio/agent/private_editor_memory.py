@@ -94,7 +94,7 @@ def connect_private_editor(runtime):
         async def generate(messages, schema, use):
             async with runtime.operator_generation("background"):
                 check_use(runtime, use)
-                provider = runtime.llm
+                provider = runtime.operation_llm
                 limit = runtime.settings.data["omni"]["max_tokens"]
                 options = {"use_remaining_window":True} if isinstance(provider, APIProvider) else {}
                 result = await budgeted_call(

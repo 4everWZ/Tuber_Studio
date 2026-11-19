@@ -37,7 +37,7 @@ class Platform:
 async def comments(settings, store, runtime, monkeypatch):
     async def generate(scope, character, event, relationship=None, mode="live", *, context=None):
         messages = await (context or runtime.context).prepare(scope, character, event, relationship, mode)
-        reply = await runtime.llm.generate(messages, character, event["event_id"], event["text"])
+        reply = await runtime.operation_llm.generate(messages, character, event["event_id"], event["text"])
         return reply, {"sources": [], "missing": [], "retried": False, "memory_kind": "role_story"}
 
     # Comments owns scheduling, not the runtime's fact checking/retry algorithm.

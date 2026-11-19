@@ -67,6 +67,15 @@ COMMENT_WEB_FETCH_SCHEMA = CommentWebFetchRequest.model_json_schema()
 COMMENT_WEB_FETCH_SCHEMA["properties"]["web_fetch"] = WEB_FETCH_SCHEMA["properties"]["web_fetch"]
 
 
+def operations_fetch_schema(schema):
+    # Decode a bounded string. The nested finite-repeat URL regexp crashes
+    # XGrammar when composed with comment/search alternatives. Validate the
+    # full HTTPS pattern with WebFetchRequest before any outbound read.
+    field = {"type": "string", "minLength": 1, "maxLength": MAX_URL,
+             "description": "完整公开 HTTPS 链接"}
+    return schema | {"properties": schema["properties"] | {"web_fetch": field}}
+
+
 def source_url(value):
     url = httpx.URL(value)
     return url.copy_with(raw_path=url.raw_path, fragment=None)
@@ -86,9 +95,9 @@ class OperationWebFetch:
     async def complete(self, messages, schema, invoke):
         if self.context is None:
             instruction = WEB_FETCH_INSTRUCTION
-            tools = [WEB_FETCH_SCHEMA]
+            tools = [operations_fetch_schema(WEB_FETCH_SCHEMA)]
             if self.search_source:
-                tools = [COMMENT_WEB_FETCH_SCHEMA, WEB_SEARCH_SCHEMA]
+                tools = [operations_fetch_schema(COMMENT_WEB_FETCH_SCHEMA), WEB_SEARCH_SCHEMA]
                 instruction += (
                     ' 当前评论问到不熟悉的术语、外部事实或具体工具能力时，先查证。'
                     ' 用 {"web_search":["检索词"],"source_quote":"需要查证的原评片段"}，'

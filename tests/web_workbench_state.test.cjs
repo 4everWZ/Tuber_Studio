@@ -128,8 +128,9 @@ test("one Omni connection owns both aliases and patches only explicit credential
   get("llm-enable-thinking").checked = false;
   get("background-parallel").valueAsNumber = 3;
   get("background-budget").valueAsNumber = 1024;
+  get("video-max-frames").valueAsNumber = 7;
   const omni = { base_url: "http://127.0.0.1:8000/v1", model: "foreground", responses_model: "background",
-    operations_max_tokens: 2048, enable_thinking: false, responses_options: { parallel_reads: 3, max_output_tokens: 1024 } };
+    operations_max_tokens: 2048, enable_thinking: false, video_options: { max_frames: 7 }, responses_options: { parallel_reads: 3, max_output_tokens: 1024 } };
   assert.deepEqual(readOmniSettings(), { omni });
   get("omni-key").value = "fixture";
   assert.deepEqual(readOmniSettings(), { omni, credentials: { omni: "fixture" } });
