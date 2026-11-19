@@ -237,11 +237,11 @@ async def drill(page, origin, first, second, report):
     reading = await anchor(page)
     await reopen.click()
     panel = page.locator("#chat-activity")
-    await panel.get_by_text(f"任务 r2 · 成果 v{current['edition']}", exact=True).wait_for()
+    await panel.get_by_text(f"任务 r{current['task_revision']} · 成果 v{current['edition']}", exact=True).wait_for()
     await panel.get_by_text("历史成果", exact=True).click()
-    url = f"{origin}/api/agent/tasks/{task}/artifacts/1/{old['edition']}"
+    url = f"{origin}/api/agent/tasks/{task}/artifacts/{old['task_revision']}/{old['edition']}"
     async with page.expect_response(lambda r: r.url == url and r.request.method == "GET") as read:
-        await panel.get_by_text(f"任务 r1 · 成果 v{old['edition']}", exact=True).click()
+        await panel.get_by_text(f"任务 r{old['task_revision']} · 成果 v{old['edition']}", exact=True).click()
     response = await read.value
     require(response.ok and await response.json() == old, "历史下钻正文与首版不符")
     report["historyEdition"] = [old["task_revision"], old["edition"]]
