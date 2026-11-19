@@ -21,6 +21,7 @@ async def test_long_background_text_counts_and_generates_at_the_same_engine(sett
         assert request.url.path == "/llm/v1/chat/completions"
         assert body["max_tokens"] == 128
         assert body["thinking_token_budget"] == 32
+        assert "include_reasoning" not in body
         assert body["response_format"]["type"] == "json_schema"
         assert "structured_outputs" not in body
         return httpx.Response(200, json={
