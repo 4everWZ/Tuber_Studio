@@ -9,4 +9,4 @@ services:
 volumes:
   business-data:
     external: true
-    name: ${TUBER_CORE_BUSINESS_VOLUME:?set the separately restored AGX business volume}
+    name: ${TUBER_CORE_BUSINESS_VOLUME:?set the restored business volume for this Core}
