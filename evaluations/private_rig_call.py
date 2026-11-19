@@ -20,6 +20,7 @@ import httpx
 import uvicorn
 from playwright.async_api import async_playwright
 
+from evaluations.browser_login import fill_private_login
 from evaluations.omni_chat_loop import ROOT, connection
 from tuber_studio.app import create_app
 from tuber_studio.config import Settings
@@ -113,18 +114,23 @@ async def exercise(
     oc_id=None,
     storage_state=None,
     portrait=None,
+    window=None,
 ):
     mouth_center = MOUTH_CENTERS[oc_id or profile]
     ctx = await browser.new_context(
         service_workers="block", permissions=["microphone"], storage_state=storage_state
     )
     try:
+        if window:
+            from evaluations.oc_call_window import INIT, measure
+
+            await ctx.add_init_script(path=INIT)
         page = await ctx.new_page()
         await page.goto(origin)
         if oc_id and os.environ.get("OC_QA_LOGIN_TOKEN"):
             if page.url.rstrip("/") != origin or not origin.startswith("https://"):
                 raise RuntimeError("Unexpected Studio login origin")
-            await page.locator("#token").fill(os.environ["OC_QA_LOGIN_TOKEN"])
+            await fill_private_login(page, os.environ["OC_QA_LOGIN_TOKEN"])
             await page.locator("#login-form button[type=submit]").click()
         await page.locator("#operator-chat-more-toggle").click()
         await page.locator("#private-call-open").click()
@@ -228,6 +234,9 @@ async def exercise(
         )
         if not await page.get_by_label("实时通话形象").is_visible():
             raise RuntimeError("The WHEP player is hidden")
+        if window:
+            state["source_verified"] = bool(source_id and actual.get("source_session_id") == source_id)
+            return await measure(page, work, gateway, token, joined, state, *window)
         await page.evaluate(
             Path(__file__).with_name("private_rig_capture.js").read_text(encoding="utf-8-sig"), mouth_center
         )

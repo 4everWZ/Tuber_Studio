@@ -56,6 +56,12 @@ def remote_origin(url):
 
 
 async def run(args):
+    if (
+        args.window
+        and args.worker_switched
+        and (not args.storage_state or os.environ.get("OC_QA_LOGIN_TOKEN"))
+    ):
+        raise ValueError("Supply an authenticated QA storage state, without a login token, for full windows")
     for executable in ("ffmpeg", "ffprobe"):
         if not shutil.which(executable):
             raise RuntimeError(f"Missing {executable}")
@@ -98,7 +104,7 @@ async def run(args):
                     "-i",
                     str(args.wav),
                     "-af",
-                    "adelay=6000:all=1,apad=pad_dur=45",
+                    "adelay=6000:all=1,apad=pad_dur=" + ("8" if args.window else "45"),
                     "-ac",
                     "1",
                     "-ar",
@@ -124,7 +130,8 @@ async def run(args):
             )
             failures = []
             try:
-                for profile, (identity, filename, _) in CASES.items():
+                for profile in args.profiles:
+                    identity, filename, _ = CASES[profile]
                     work = args.output / identity
                     work.mkdir()
                     try:
@@ -140,7 +147,12 @@ async def run(args):
                             oc_id=identity,
                             storage_state=args.storage_state,
                             portrait=args.portraits / filename,
+                            window=(args.window, args.mixed) if args.window else None,
                         )
+                        if args.window:
+                            result["admission"] = "pending_sender_clock_join"
+                            (work / "metrics.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+                            continue
                         subprocess.run(
                             [
                                 "ffmpeg",
@@ -181,7 +193,7 @@ async def run(args):
                             for entry in traceback.extract_tb(error.__traceback__)
                             if Path(entry.filename).name == "private_rig_call.py"
                         ]
-                        print(identity, result, str(error).splitlines()[0].split("?")[0][:160], flush=True)
+                        print(identity, result, flush=True)
                     (work / "metrics.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
                     if not result["passed"]:
                         failures.append(identity)
@@ -193,6 +205,9 @@ async def run(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--window", type=int, choices=[90, 1200])
+    parser.add_argument("--mixed", action="store_true")
+    parser.add_argument("--profiles", nargs="+", choices=CASES, default=list(CASES))
     parser.add_argument("--worker-switched", action="store_true", help="Only after explicit cutover notice")
     parser.add_argument("--studio", help="Deployed workstation Studio HTTPS origin")
     parser.add_argument("--storage-state", type=Path, help="Private Playwright Studio login state")
