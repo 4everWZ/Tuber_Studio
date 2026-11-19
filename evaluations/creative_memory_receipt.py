@@ -36,11 +36,26 @@ def check_citations(memory, phase, wire, editor):
         records(wire) == records(memory[phase + "_api"]) == records(editor),
         f"{phase} 编辑、任务接口与浏览器引用快照不符",
     )
-    require(
-        Counter((r["quote"], r["source"]) for r in visible)
-        == Counter((r["quote"], f"来源 {r['source_key']} · v{r['revision']}") for r in wire),
-        f"{phase} 缺页面原话或来源版本",
-    )
+    if memory.get("citation_surface") == "settings":
+        expected_settings = [
+            {"quote": r["quote"], "history_path": f"/api/daily-memory/organized/{r['id']}/revisions",
+             "source_key": r["source_key"], "revision": r["revision"],
+             "visible_revision": f"v{r['revision']} · {r['note']}"}
+            for r in wire
+        ]
+        require(
+            Counter(tuple(sorted(r.items())) for r in visible)
+            == Counter(tuple(sorted(r.items())) for r in expected_settings),
+            f"{phase} 设置原话、来源或可见版本不符",
+        )
+    else:
+        # Existing private receipts predate the settings-only inspection surface.
+        require("citation_surface" not in memory, "未知的浏览器引用查验入口")
+        require(
+            Counter((r["quote"], r["source"]) for r in visible)
+            == Counter((r["quote"], f"来源 {r['source_key']} · v{r['revision']}") for r in wire),
+            f"{phase} 缺页面原话或来源版本",
+        )
     expected = [memory["layout"]]
     if phase != "r3":
         expected.append(memory["original" if phase == "r1" else "corrected"])
@@ -166,7 +181,7 @@ def verify_memory(runtime, receipts):
             + memory["voice"]["bound_final_transcript"]
             + "\n号主确认："
             + memory["voice"]["owner_confirmed_text"],
-            "缺 r2 成果卡的语音来源展开回执",
+            "缺 r2 语音来源展开回执",
         )
         require(
             original["id"] == corrected["id"] != layout["id"]

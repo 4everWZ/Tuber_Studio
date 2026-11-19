@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+from contextlib import asynccontextmanager
 from functools import partial
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -139,6 +140,46 @@ def serve(args):
             write(directory / "p2-host.json", receipt)
 
 
+async def check_chat_controls(turn):
+    controls = turn.locator('summary,button,[role="button"]')
+    for text in ("原话操作", "记住这句话", "为何提到它", "查看记忆建议"):
+        require(not await controls.and_(turn.get_by_text(text, exact=True)).count(), f"对话中仍有旧记忆控件：{text}")
+
+
+@asynccontextmanager
+async def settings_entries(page):
+    await page.locator('a[data-page="settings"]').click()
+    await page.locator('a[data-workspace-tab="personalization"]').click()
+    await page.locator("#open-memory-summary").click()
+    await page.locator("#open-memory-items").click()
+    try:
+        yield page.locator("#organized-memory-list article")
+    finally:
+        await page.get_by_role("button", name="关闭记忆摘要").click()
+        await page.locator('a[data-page="chat"]').click()
+
+
+async def open_source(page, entries, citation):
+    quote = page.locator("blockquote").and_(page.get_by_text(citation["quote"], exact=True))
+    entry = entries.filter(has=quote)
+    await entry.get_by_text("来源与编辑", exact=True).click()
+    await entry.locator("blockquote:visible").wait_for()
+    path = f"/api/daily-memory/organized/{citation['id']}/revisions"
+    async with page.expect_response(lambda r: urlsplit(r.url).path == path and r.request.method == "GET") as event:
+        await entry.get_by_text("更正历史", exact=True).click()
+    response = await event.value
+    require(response.ok, "设置未读回该条目的更正历史")
+    history = (await response.json())["revisions"]
+    require(history and history[0]["source_key"] == citation["source_key"]
+            and history[0]["revision"] == citation["revision"], "设置中的当前来源或修订与本次引用不符")
+    latest = history[0]
+    revision = entry.get_by_text(f"v{latest['revision']} · {latest['note']}", exact=True)
+    await revision.wait_for()
+    return entry, {"quote": await entry.locator("blockquote:visible").inner_text(),
+                   "history_path": urlsplit(response.url).path, "source_key": latest["source_key"],
+                   "revision": latest["revision"], "visible_revision": await revision.inner_text()}
+
+
 class MemoryScenario:
     def __init__(self, origin, directory, args):
         self.origin = origin
@@ -171,25 +212,14 @@ class MemoryScenario:
         await fill_private_login(page, token)
         await page.locator("#login-form button[type=submit]").click()
 
-    async def preference(self, page, message, label, *, confirm=False):
+    async def preference(self, page, message, label):
         turn = await send(page, message)
         identity = str(UUID(await turn.get_attribute("data-request-id")))
         source = "turn:" + identity
         self.record(label + "_turn", identity)
         await turn.locator(".operator-chat-reply").wait_for()
         require(not await turn.get_by_role("button", name="查看任务").count(), "偏好话轮被识别为交办")
-        if confirm:
-            await turn.get_by_text("原话操作", exact=True).click()
-
-            async def accept(dialog):
-                if message in dialog.message:
-                    await dialog.accept()
-                else:
-                    await dialog.dismiss()
-
-            page.once("dialog", accept)
-            await turn.get_by_role("button", name="记住这句话").click()
-            await turn.get_by_text("已保存", exact=True).wait_for()
+        await check_chat_controls(turn)
         try:
             async with asyncio.timeout(self.args.turn_timeout):
                 while True:
@@ -215,7 +245,8 @@ class MemoryScenario:
             "当前网页已有号主业务数据",
         )
         self.record("run", self.args.run)
-        actual = await self.preference(page, CONFIRMED, "layout", confirm=True)
+        self.record("citation_surface", "settings")
+        actual = await self.preference(page, CONFIRMED, "layout")
         title = await self.preference(page, AUTO, "original")
         require(actual["id"] != title["id"], "两项独立偏好发生覆盖")
 
@@ -223,33 +254,29 @@ class MemoryScenario:
         await self.checkpoint(page)
         # Reload the card from persisted history even after A has closed.
         await page.reload()
-        card = page.locator(f'.operator-chat-turn[data-request-id="{card_turn}"] .operator-chat-card')
+        turn = page.locator(f'.operator-chat-turn[data-request-id="{card_turn}"]')
+        card = turn.locator(".operator-chat-card")
         await card.get_by_role("button", name="查看任务").wait_for()
         citations = task.get("memory_citations", [])
         self.record(label + "_api", citations)
+        await check_chat_controls(turn)
+        await self.inspect_settings(page, citations, label)
+
+    async def inspect_settings(self, page, citations, label):
         seen = []
-        for details in await card.locator(".owner-memory-citations").all():
-            await details.locator("summary").click()
-            quotes = await details.locator("blockquote:visible").all_inner_texts()
-            sources = await details.locator("small:visible").all_inner_texts()
-            seen.extend(
-                {"quote": quote, "source": source} for quote, source in zip(quotes, sources, strict=True)
-            )
-            inspect_voice = details.get_by_role("button", name="核对语音来源")
-            if label == "r2" and await inspect_voice.count():
-                voice = self.report["voice"]
-                expected = (
-                    "机器转写："
-                    + voice["bound_final_transcript"]
-                    + "\n号主确认："
-                    + voice["owner_confirmed_text"]
-                )
-                await inspect_voice.click()
-                text = details.locator("p").filter(has_text="机器转写：")
-                await text.wait_for()
-                actual = await text.text_content()
-                self.record("r2_voice_source_visible", actual)
-                require(actual == expected, "卡片上的机器原稿或号主确认稿与通话来源不符")
+        async with settings_entries(page) as entries:
+            for citation in citations:
+                entry, inspected = await open_source(page, entries, citation)
+                seen.append(inspected)
+                if label == "r2" and citation["source_key"].startswith("confirmed_voice:"):
+                    voice = self.report["voice"]
+                    expected = "机器转写：" + voice["bound_final_transcript"] + "\n号主确认：" + voice["owner_confirmed_text"]
+                    await entry.get_by_role("button", name="核对语音来源").click()
+                    text = entry.locator("p").filter(has_text="机器转写：")
+                    await text.wait_for()
+                    actual = await text.text_content()
+                    self.record("r2_voice_source_visible", actual)
+                    require(actual == expected, "设置中的机器转写或号主确认稿与通话来源不符")
         self.record(label + "_visible", seen)
 
     async def current(self, page, row):
@@ -345,9 +372,21 @@ class MemoryScenario:
     async def forget_title(self, page):
         row = self.report["corrected"]
         await self.current(page, row)
-        deleted = await self.api(
-            page, "DELETE", f"/api/daily-memory/organized/{row['id']}?expected_revision={row['revision']}"
-        )
+        async with settings_entries(page) as entries:
+            entry, _ = await open_source(page, entries, row)
+            path = f"/api/daily-memory/organized/{row['id']}"
+            async def confirm_delete(dialog):
+                if dialog.message == "确认删除这条记忆吗？":
+                    await dialog.accept()
+                else:
+                    await dialog.dismiss()
+            page.once("dialog", confirm_delete)
+            async with page.expect_response(lambda r: urlsplit(r.url).path == path and r.request.method == "DELETE") as event:
+                await entry.get_by_role("button", name="删除", exact=True).click()
+            response = await event.value
+            require(response.ok, "设置中的删除未成功")
+            deleted = await response.json()
+            await entry.wait_for(state="detached")
         require(deleted == {"id": row["id"], "deleted": True}, "撤回回执不符")
         for key in ("original", "corrected"):
             source = self.report[key]["source_key"]
