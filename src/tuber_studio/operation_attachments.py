@@ -10,6 +10,8 @@ from .operation_images import image_permissions
 from .operations.browsing.thread_context import COMMENT_ID, VIDEO_ID
 from .workstation_images import gateway_base
 
+PENDING_IMAGE_STATES = ("queued", "deciding", "submitting", "running")
+
 
 def bound_comment(row):
     parent = row.get("platform_comment_id") or row.get("comment_id")
@@ -123,14 +125,20 @@ def decision(runtime, channel, row, ref):
     return {"artifact_id": artifact["artifact_id"], "sha256": artifact["sha256"]}
 
 
+def image_decision_pending(runtime, channel, row):
+    ref = row_ref(row)
+    if not ref or "job_id" not in ref:
+        return False
+    status = runtime.operation_images.status(image_scope(channel, row), ref["job_id"])["status"]
+    return status in PENDING_IMAGE_STATES
+
+
 async def wait_decision(runtime, channel, row, authorized):
     ref = row_ref(row)
     if not ref or "job_id" not in ref:
         return
-    scope = image_scope(channel, row)
     while authorized():
-        status = runtime.operation_images.status(scope, ref["job_id"])["status"]
-        if status in {"text_only", "gallery", "ready", "failed"}:
+        if not image_decision_pending(runtime, channel, row):
             return
         await asyncio.sleep(0.5)
     raise ValueError("等待配图期间原发送授权已停止")

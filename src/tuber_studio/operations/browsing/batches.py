@@ -9,6 +9,7 @@ from contextlib import nullcontext
 import psutil
 
 from ...generation_meter import BrowsingBudgetDeferred
+from ...operation_attachments import PENDING_IMAGE_STATES
 from ...operation_turns import operation_checkpoint, operation_lane
 from ...providers import public_error
 from ...publication_errors import SendLimitReached
@@ -241,10 +242,44 @@ class BrowsingBatches:
         return bool(self.store.one(
             "SELECT 1 FROM browsing_batches b JOIN browsing_rounds r ON r.id=b.round_id "
             "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? "
+            "AND json_extract(r.config,'$.autonomous_batch')=1 "
+            "AND COALESCE(json_extract(r.config,'$.discovery_publish'),0)=0 "
             "AND r.preview=0 AND COALESCE(json_extract(r.config,'$.review_session_id'),'')=? "
             "AND b.state IN ('retrieving','ready','paused') LIMIT 1",
             (row["account_id"], row["character_id"], row["character_version"],
              row["config"].get("review_session_id", "")),
+        ))
+
+    def pending_publication_preparation(self, row, now, *, process_handoffs):
+        return bool(self.store.one(
+            """
+            WITH rounds AS (
+                SELECT r.id FROM browsing_rounds r JOIN browsing_batches b ON b.round_id=r.id
+                WHERE r.account_id=:account AND r.character_id=:character AND r.character_version=:version
+                  AND r.preview=0 AND b.state<>'invalid'
+                  AND r.status NOT IN ('cancelled','invalid')
+                  AND COALESCE(json_extract(r.config,'$.review_session_id'),'')=:review
+            ), images AS (
+                SELECT job_id FROM operation_image_jobs WHERE status IN (SELECT value FROM json_each(:image_states))
+            )
+            SELECT 1 FROM rounds r JOIN browsing_intents i ON i.round_id=r.id
+            JOIN images j ON j.job_id=json_extract(i.target,'$.image_ref.job_id')
+            WHERE i.status='pending_review' AND i.kind='top_level' AND NOT EXISTS (
+                SELECT 1 FROM operation_send_queue q WHERE q.channel='browsing' AND q.source_id=i.id AND q.wake_at>:now
+            )
+            UNION ALL
+            SELECT 1 FROM rounds r JOIN dm_drafts d ON r.id=json_extract(d.video_evidence,'$.origin_round_id')
+            WHERE d.account_id=:account AND d.character_id=:character AND d.character_version=:version
+              AND d.source_kind='comment' AND (
+                (:handoffs AND d.status IN ('queued','generating') AND d.next_attempt_at<=:now)
+                OR (d.status='pending_review' AND json_extract(d.image_ref,'$.job_id') IN (SELECT job_id FROM images)
+                    AND NOT EXISTS (SELECT 1 FROM operation_send_queue q WHERE q.channel='messages'
+                                    AND q.source_id=CAST(d.id AS TEXT) AND q.wake_at>:now))
+            ) LIMIT 1
+            """,
+            {"account": row["account_id"], "character": row["character_id"], "version": row["character_version"],
+             "review": row["config"].get("review_session_id", ""), "now": now,
+             "image_states": dump(PENDING_IMAGE_STATES), "handoffs": process_handoffs},
         ))
 
     def pending_comment_events(self, row):

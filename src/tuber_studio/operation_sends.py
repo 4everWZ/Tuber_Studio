@@ -12,9 +12,11 @@ from .publication_errors import SendLimitReached
 
 current_send = ContextVar("current_operation_send", default=None)
 
+
 class OperationSends:
-    def __init__(self, store, control, scope, dispatch):
+    def __init__(self, store, control, scope, dispatch, *, waiting_for_image):
         self.store, self.control, self.scope, self.dispatch = store, control, scope, dispatch
+        self.waiting_for_image = waiting_for_image
         self.changed = asyncio.Event()
         self.worker = None
         self.active = None
@@ -69,6 +71,12 @@ class OperationSends:
         self.store.execute("DELETE FROM operation_send_queue WHERE channel=? AND source_id=?",
                            (item["channel"], item["source_id"]))
 
+    def due_background(self, scope, epoch, now):
+        return self.store.all(
+            "SELECT * FROM operation_send_queue WHERE account_id=? AND character_id=? AND character_version=? "
+            "AND epoch=? AND direct=0 AND wake_at<=?", (*scope, epoch, now),
+        )
+
     async def run(self):
         while True:
             self.changed.clear()
@@ -76,11 +84,17 @@ class OperationSends:
             if self.control.accepting_work:
                 scope = self.scope()
                 now = time.time()
-                item = self.store.one(
-                    "SELECT * FROM operation_send_queue WHERE account_id=? AND character_id=? "
-                    "AND character_version=? AND wake_at<=? ORDER BY direct DESC,ready_at,source_id LIMIT 1",
+                # Keep background FIFO and preserve order within each direct
+                # channel. An image wait leaves the sender free for other heads.
+                heads = self.store.all(
+                    "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+                    "(PARTITION BY direct, CASE WHEN direct=1 THEN channel END "
+                    "ORDER BY ready_at,source_id) AS position FROM operation_send_queue "
+                    "WHERE account_id=? AND character_id=? AND character_version=? AND wake_at<=?) "
+                    "WHERE position=1 ORDER BY direct DESC,ready_at,source_id",
                     (*scope, now),
                 )
+                item = next((head for head in heads if not self.waiting_for_image(head)), None)
                 if item:
                     async with self.control.automatic_work() as admitted:
                         if admitted:
@@ -106,10 +120,12 @@ class OperationSends:
                         continue
                 next_item = self.store.one(
                     "SELECT MIN(wake_at) AS wake_at FROM operation_send_queue WHERE account_id=? "
-                    "AND character_id=? AND character_version=?", scope,
+                    "AND character_id=? AND character_version=? AND wake_at>?", (*scope, now),
                 )
                 if next_item["wake_at"] is not None:
                     delay = max(0.05, next_item["wake_at"] - time.time())
+                if heads:
+                    delay = min(0.5, delay) if delay is not None else 0.5
             try:
                 await asyncio.wait_for(self.changed.wait(), delay)
             except TimeoutError:

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from ...deployment_profiles import operation_profile
 from ...direct_messages import MessagePolicy
+from ...operation_attachments import can_attach_comment_image, image_decision_pending
 from ...operation_sends import OperationSends
 from ...operation_turns import operation_checkpoint, operation_lane
 from ...providers import public_error
@@ -65,7 +66,8 @@ class BrowsingService:
         self.discovery = BackgroundDiscovery(self)
         self.decisions = BrowsingDecisions(self)
         self.publication = BrowsingPublication(self)
-        self.sends = OperationSends(store, self.operations, self.operation_scope, self._send_automatic)
+        self.sends = OperationSends(store, self.operations, self.operation_scope, self._send_automatic,
+                                    waiting_for_image=self._send_waiting_for_image)
         self.operations.on_reserved = self.sends.attempt_started
         self.drain_task = None
         self.abort_task = None
@@ -804,8 +806,11 @@ class BrowsingService:
             character = self.runtime.character
             scope = {"account_id": self.account, "character_id": character["id"],
                      "character_version": character["version"], "config": config}
-            if not self.repo.batches.has_open_round(scope) and not self.page_capacity():
-                return {"status": "deferred", "reason": "评论积压达到高水位"}
+            if not self.repo.batches.has_open_round(scope):
+                if self._background_publications_pending(scope):
+                    return {"status": "deferred", "reason": "上一轮配图或自动发送尚未结清"}
+                if not self.page_capacity():
+                    return {"status": "deferred", "reason": "评论积压达到高水位"}
         row, created = self.repo.create_round(
             self.account, self.runtime.character, config, self.operations.policy()["epoch"], preview,
             request_id=request_id,
@@ -936,6 +941,44 @@ class BrowsingService:
         state = self.backlog_status()
         return not state["discovery_paused"] and state["ready_heads"] < state["high_heads"]
 
+    def _background_publications_pending(self, scope):
+        now = time.time()
+        for item in self.sends.due_background(self.operation_scope(), self.operations.policy()["epoch"], now):
+            draft = self._send_draft(item)
+            if draft and draft["status"] in {"pending_review", "publishing"}:
+                return True
+        return self.repo.batches.pending_publication_preparation(
+            scope, now, process_handoffs=self.messages._processing_authorized(),
+        )
+
+    def _send_draft(self, item):
+        identity, channel = item["source_id"], item["channel"]
+        if channel == "browsing":
+            return self.repo.decode(self.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
+        if channel == "messages":
+            return self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+        if channel == "dynamics":
+            return self.dynamics._post(identity)
+
+    def _send_waiting_for_image(self, item):
+        if item["epoch"] != self.operations.policy()["epoch"]:
+            return False
+        draft, channel = self._send_draft(item), item["channel"]
+        if not draft or draft["status"] != "pending_review":
+            return False
+        if channel == "browsing" and (not draft["auto_authorized"] or not can_attach_comment_image(channel, draft)
+                                      or not self.publication._action_allowed(draft["kind"], self.effective())):
+            return False
+        if channel == "messages" and not self.messages.policy()["auto_send"]:
+            return False
+        if channel == "dynamics" and not self.dynamics.policy()["auto_publish"]:
+            return False
+        try:
+            return image_decision_pending(self.runtime, channel, draft)
+        except (LookupError, ValueError):
+            # Let the normal publishing path handle an invalid attachment.
+            return False
+
     async def _send_automatic(self, item):
         identity, channel = item["source_id"], item["channel"]
         control = self.operations.policy()
@@ -943,10 +986,9 @@ class BrowsingService:
             return False
         if item["epoch"] != control["epoch"]:
             return True
+        draft = self._send_draft(item)
         if channel == "browsing":
-            candidate = self.store.one(
-                "SELECT status,kind,round_id FROM browsing_intents WHERE id=? AND auto_authorized=1", (identity,)
-            )
+            candidate = draft if draft and draft["auto_authorized"] else None
             if candidate and candidate["status"] == "publish_uncertain":
                 await self.publication._reconcile(identity)
             elif candidate and candidate["status"] == "pending_review" and self.publication._action_allowed(
@@ -958,12 +1000,11 @@ class BrowsingService:
                 self.store.execute("UPDATE browsing_intents SET epoch=? WHERE id=?", (control["epoch"], identity))
                 await self.publish(identity, automatic=True)
         elif channel == "messages":
-            draft = self.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))
             if draft and draft["status"] == "pending_review" and self.messages.policy()["auto_send"]:
                 self.messages.authorizations[int(identity)] = control["epoch"]
                 await self.messages.send(int(identity), automatic=True, authorization_epoch=control["epoch"])
         elif channel == "dynamics":
-            post = self.dynamics._post(identity)
+            post = draft
             if post and post["status"] == "pending_review" and self.dynamics.policy()["auto_publish"]:
                 self.dynamics._automatic_post_id = post["id"]
                 try:
