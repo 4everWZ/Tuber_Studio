@@ -16,7 +16,7 @@
 
 私有视频成果中，若某项标题或理由在局部返修后仍未通过，工坊可交付本轮已审通过、引用仍有效的其余项。缺口按原项号注明未通过的字段和原因。号主从另一端打开该版时能看到保留的正文、证据和缺口，也可查看先前版本。
 
-[Chats](../tuber-studio.md#号主对话与任务)提供 Higgs 式带 Avatar 的双工语音会话。语音、文字、获准视觉输入与后台任务接入同一 Agent。实时 Provider 负责感知、重叠语音与输出，Agent 负责状态、统一记忆、授权、后台工具和任务结果。原生双工工具可用时接入同一工具校验与审计。也支持由确认后的用户语句把工作交给后台 Agent，结果按任务 ID 回流，挂断或推理断线后从活动恢复。 [Omni 与 Avatar API](omni-deployment.md) · [Higgs Realtime Duplex](https://www.boson.ai/blog/higgs-realtime-duplex)
+[Chats](../tuber-studio.md#号主对话与任务)提供 Higgs 式双工语音会话。语音、文字、获准视觉输入与后台任务接入同一 Agent。实时 Provider 负责感知、重叠语音与输出，Agent 负责状态、统一记忆、授权、后台工具和任务结果。原生双工工具可用时接入同一工具校验与审计。也支持由确认后的用户语句把工作交给后台 Agent，结果按任务 ID 回流，挂断或推理断线后从活动恢复。 [Omni 与 Avatar API](omni-deployment.md) · [Higgs Realtime Duplex](https://www.boson.ai/blog/higgs-realtime-duplex)
 
 目标参照 ChatGPT Dots 公布的持续运行、跨入口接续、多任务、主动查资料、进度查看、纠偏和审批体验，及 ChatGPT 的记忆摘要与控制。产品资料用于确定可观察行为。Tuber Studio 的状态存储、工具权限、终端和模型属于本项目设计。 [Introducing dots](https://openai.com/index/introducing-dots/) · [Meet dots](https://learn.chatgpt.com/docs/dots) · [Dots 权限与活动](https://help.openai.com/en/articles/20001529-dots-privacy-security-and-safety-faqs) · [ChatGPT 记忆整理](https://openai.com/index/chatgpt-memory-dreaming/)
 
@@ -30,7 +30,7 @@
 
 | 入口 | Agent 能做的工作 | 适配器拥有的状态与约束 |
 | --- | --- | --- |
-| 号主 Chats、双工通话与活动 | 日常对话、带附件取材、查证、读写记忆、安排与接续工作、收取结果。通话有 Avatar，可同时打字、插话和查看活动。 | 认证、采集权限、输入及交付状态、会话消息与引用。网页和移动端从同一后端同步。 |
+| 号主 Chats、双工通话与活动 | 日常对话、带附件取材、查证、读写记忆、安排与接续工作、收取结果。语音通话中可打字、插话和查看活动。 | 认证、采集权限、输入及交付状态、会话消息与引用。网页和移动端从同一后端同步。 |
 | 刷视频与 B 站运营 | 查绑定号主的公开主页与投稿、日常发现、按目标搜索和观看、精查时码、评论和私信处理、动态取材与回执。能续看及从查看结果交接直播或后续任务。 | [运营调度](../operations/autonomous-browsing.md)管理账号单轮、额度、阅读、队列和授权。[续跑规范](../operations/operation-continuations.md)管理平台写入和原回执核对。 |
 | 直播与 OBS | 理解弹幕、主动选话题、用已获准的文字讲解、点歌、与游戏协作。活动超出发言窗口时交到后台，结果适时再用。 | [直播与媒体](../live/live-and-media.md)管理场次、节奏、台词、音画和播完回执。节目控制和接管优先于推理。 |
 | 游戏模拟与实机 | 读取当前局面、拆目标、选动作、检查结果及调整，和弹幕及号主交接，记住做过什么与未完成目标。 | [游戏规范](../live/game-livestream.md)管理适配器能力、状态版本、存档、动作确认、控制权和接管。模拟与实机各自出证据。 |

@@ -1,4 +1,13 @@
-# 私聊中的实时 Avatar
+# 私有语音电话与直播演出
+
+电话始终使用原生双工语音。点击开始才签发限定到 `/v1/realtime` 的普通应用票据。电话的 Avatar 发现接口兼容旧客户端，固定返回空列表；服务端已移除电话媒体绑定与 WHEP 订阅路由。当前角色的历史验收录像仍由已登录的号主通过原录像入口播放。
+
+号主通过 `GET /api/settings/performance` 获取 `{"pets_enabled":true,"avatar_enabled":false}` 初始值。向同一路径 PUT 一个或两个布尔字段，返回完整的持久设置。电话和聊天可显示当前角色的同一只 pet，口型只用于直播。
+
+`/api/live/view` 与 `/api/live/studio` 同时返回 `performance` 和 `lip_sync`。本次工作站 Ditto 验收未通过，`lip_sync.provider` 为 `ditto`，`status` 随 Avatar 开关返回 `off` 或 `tbd`，`renderer` 随 Pets 开关返回 `pet` 或 `none`。播放器复用既有 play 消息的音频包络 `activity.envelope`、采样间隔 `activity.step` 和实际音频时钟；工作台可读 `playback.started/paused/mouth`。静音、暂停和结束时收口。演出开关不改变播放回执。[工作站 Ditto 复核](../../evaluations/results/live-ditto-oc-20261119.md)
+
+<details>
+<summary>历史电话 Avatar 登记、实录与复现（旧版 04ee084）</summary>
 
 在工作站 HTTPS 对话页打开「更多对话操作 → 私有语音通话」。默认仅语音。两套形象均已验收、当前角色匹配，并且服务实报两者均已就绪时，可在开始通话前选择「常规版」或「Q 版」。造型采用号主选定的两张 OC 成图。原始设计图用于核对生物结构、人物比例、鳍耳和发饰，原稿绑定保留用于回归。
 
@@ -40,3 +49,5 @@ WHEP 播放器接收音频和视频。Avatar 回执使用订阅起点加播放�
 要核对真实 rig 渲染与记忆撤回，可执行 `python tests/browser/run_private_call.py --rig-dir runtime/releases/dafeiyu-avatar/master-rigs`。[两套原画与跨端撤回验收](../../evaluations/results/private-rig-memory-20261119.md)
 
 要验证真实 Omni 语音，配置 `OMNI_GATEWAY_URL` 和普通应用的 `OMNI_CORE_TOKEN_FILE` 或 `OMNI_STUDIO_TOKEN`，执行 `uv run --locked python -m evaluations.private_rig_call`。命令使用同一个临时工坊依次呼叫两套原画，默认把仓库的 `assets/whale/sample1.wav` 接入 Chromium 麦克风。可用 `--wav` 指定获准发送的语音。运行环境需要 FFmpeg、Chromium 和相邻独立服务的项目环境。每套形象输出一行实测结果；任一项未达标会以非零状态退出。[真实语音与原画播放读回](../../evaluations/results/private-rig-omni-voice-20261119.md)
+
+</details>

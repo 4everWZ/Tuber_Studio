@@ -5,7 +5,7 @@
 - [业务部署、服务连接与数据恢复](guides/deployment.md)
 - [对话、视频、评论、私信与动态](guides/operations.md)
 - [长期目标、来信与评论跟踪](guides/goal-event-tracking.md)
-- [私有语音与两套 OC Avatar](guides/private-avatar-call.md) · [在工作台交办选定回复](guides/selected-replies.md)
+- [私有语音电话与直播演出](guides/private-avatar-call.md) · [在工作台交办选定回复](guides/selected-replies.md)
 - [角色卡、音色与形象](guides/characters.md)
 - 角色素材 · [历史语料与来源](../tools/training/README.md)
 - 直播 · [工作台与点歌](guides/live/workbench.md) · [可选 Live2D](guides/live/avatar.md)
