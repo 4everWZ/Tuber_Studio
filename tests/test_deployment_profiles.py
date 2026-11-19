@@ -28,7 +28,9 @@ def test_new_configuration_has_one_connection_and_two_protocols(tmp_path):
     omni = settings.data["omni"]
     assert not settings.data.keys() & RETIRED_SECTIONS
     assert settings.responses_config["base_url"] == omni["base_url"].removesuffix("/v1") + "/llm/v1"
-    assert settings.video_config["base_url"] == omni["base_url"]
+    assert settings.video_config["base_url"] == settings.responses_config["base_url"]
+    assert settings.video_config["model"] == settings.responses_config["model"]
+    assert not settings.video_config["enable_thinking"]
     assert settings.data["voice_id"] == "whale_reference"
     assert not (tmp_path / "inference-token").exists()
 
@@ -63,7 +65,10 @@ def test_existing_gateway_profile_migrates_in_memory_and_persists_on_save(tmp_pa
     assert loaded.data["voice_id"] == loaded.voice(old_voice)["id"] == current
     assert loaded.data["operator_extension"] == "original"
     assert loaded.data["omni"]["operations_max_tokens"] == 3011
-    assert loaded.video_config["model_revision"] == "pin" and not loaded.video_config["enable_thinking"]
+    assert loaded.video_config["base_url"] == root + "/llm/v1"
+    assert loaded.video_config["model"] == "worker"
+    # The old pin described the foreground checkpoint, not the background model.
+    assert loaded.video_config["model_revision"] == "" and not loaded.video_config["enable_thinking"]
     assert (loaded.responses_config["model"], loaded.responses_config["parallel_reads"]) == ("worker", 3)
     assert loaded.provider_keys == {"omni": "front-key"}
     assert "old-key" not in str(loaded.public_data())
@@ -74,3 +79,14 @@ def test_existing_gateway_profile_migrates_in_memory_and_persists_on_save(tmp_pa
     assert again.data == loaded.data and again.provider_key("omni") == "front-key"
     assert not again.data.keys() & RETIRED_SECTIONS
     assert set(json.loads(again.credentials_path.read_text())) == {"omni"}
+
+
+def test_video_checkpoint_pin_is_specific_to_background_model(tmp_path):
+    settings = Settings(runtime=tmp_path)
+    current = settings.data["omni"] | {
+        "video_options": {"model_revision": "old-front-pin", "background_model_revision": "background-pin"},
+    }
+    settings.path.write_text(json.dumps(settings.data | {"omni": current}), encoding="utf-8")
+    loaded = Settings(runtime=tmp_path)
+    assert loaded.video_config["model_revision"] == "background-pin"
+    assert "model_revision" not in loaded.data["omni"]["video_options"]
