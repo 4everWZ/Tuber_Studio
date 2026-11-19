@@ -16,12 +16,12 @@
 
 | 能力 | 现有边界 | 后续实现与证据 |
 | --- | --- | --- |
-| 聊天交办与精细约束 | 恢复场次的两版各有两个经过逐帧复核的无声片段。全新双浏览器场次已走通交办、闲聊、关页、普通改口、历史版下钻与返回。较早场次首版合格两项，修订版合格一项。最新场次 `11c74_er` 两版各合格一项：首版把红帽定名为盔帽，修订版完整保留合格首段并说明替换素材仍缺一项。 [双版成品复核](../../evaluations/results/creative-video-independent-20261119.md) | 继续核验从空库开始的同一场次能否连续交付两版各两项合格片段，分别记录内容与工作流。 |
+| 聊天交办与精细约束 | 历史场次保留原评定。封存的真实 P2 失败片段在同组五项标题／理由对照中由 3/5 提升到 5/5：拒绝盔帽、屏风，接受红帽、龙纹装饰和火焰状光点。 [真实审稿回放](../../evaluations/results/p2-visual-specificity-replay-20261119.md) · [既有双版逐帧复核](../../evaluations/results/creative-video-independent-20261119.md) | 工作站新空库从普通聊天起步，同一目标联合验证双端改口、引用的偏好版本、撤回及片段内容。 |
 | 号主私有记忆 | 同一认证号主与稳定角色共享偏好。真实 Omni 在同一 P2 主帧上分别交付问句、关于宝座和黄色坐垫的完整陈述、撤回后的名词标题「宫殿内部」。独立设备逐份读回正文。前两版引用同一条偏好的 v2、v3；撤回后的引用为空。 [记忆验收](../../evaluations/results/owner-memory-20261119.md) · [历史选材理由](../../evaluations/results/private-task-history-20261119.md) | 持续按真实原话、最终成品和所引画面核对跨任务偏好。 |
 | 领域动作与收件人 | 号主可指定动态草稿，在评论或私信工作台勾选草稿后可直接交给大肥鱼。每条审批绑定实际对象、正文或配图，断线后按原提交查领域回执。 [限定回复](../guides/selected-replies.md) · [动态规范](../specs/operations/dynamic-operations.md) | 真实模型对运营指令的选择另行验收。 |
 | 常驻调度与跨端 | 支持一次预约及[周期跟进](../../src/tuber_studio/agent/goal_followups.py)：按本地日／周时间重读授权来源，错过多期合并，夏令时缺失时刻跳过、重复时刻只取第一次。长期目标可独立跟踪指定 UID 的来信和指定公开评论楼的首次入库事件，去重后进入私有提醒。关闭目标或执行 epoch 变化后停用。 [事件跟踪](../guides/goal-event-tracking.md) | 扩展其他受限领域来源、按资源调度与主动调研；跟踪不执行外部动作。共享记忆继续保留原始来源。 |
 | 连接器、文件与委派 | 私有附件可独立交办并按明确授权执行受限计算。成果可以编辑、下载。公开 HTTPS 文档可在独立 Chromium 阅读页交办、接管、交回和终止。 [浏览器指南](../guides/private-browser.md) · [隔离验收](../../evaluations/results/private-browser-20261119.md) | 扩展连接器、文件格式与隔离工作区；不得授予工作站 Shell。 |
-| 私有通话与 Avatar | 常规与 Q 版原画均能在工坊通话。已修复长静默后的弱音脉冲误张口，浏览器实际收听并在挂断时结算已播时长。号主可以确认最终转写、更正指定偏好。 [原画与真实语音](../../evaluations/results/windows-local-avatar-placement-20261119.md) · [通话撤回](../../evaluations/results/private-rig-memory-20261119.md) | 工作站到桌面的 20 分钟混跑中，常规与 Q 的实呈分别为 24.99、24.30 fps，峰值 RTP 偏差 460、4880 ms。正式双形象选择仍待两套在目标网络达到 160 ms 门槛。 [逐层发送、接收与播放实测](../../evaluations/results/inochi-whep-master-rigs-20261119.md) |
+| 私有通话与 Avatar | 正式工作站网关已加载 Q 与 mature 两套获选成图，以及按生理设定稿建立的两套原稿绑定。笔电由工作站 HTTPS IP 登录和建立真实语音会话。 [IP 实测](../../evaluations/results/workstation-studio-ip-20261119.md) · [身份与姿态核对](../../evaluations/results/approved-oc-rigs-20261119.md) | 两套获选 OC 分别验证跨网中文口型、帧率、音画最大偏差 160 ms 与长通话。原稿长测和分片／收端缓冲对照独立保存。 [媒体传输](../../evaluations/results/workstation-whep-ip-20261119.md) |
 | 直播与游戏 | 演出页播完才写入台词，跳过保持取消。星露谷在隔离存档完成播种、状态读回与人工接管。 [播放回执](../../evaluations/results/live-handoff-ended-20261119.md) · [星露谷实机](../../evaluations/results/stardew-device-20261119.md) | 植物大战僵尸实机需要可启动的授权安装。直播平台开播及持续负载单独验收。 |
 
 | 顺序 | 实施入口 | 通过条件 |
