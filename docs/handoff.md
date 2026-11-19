@@ -1,6 +1,6 @@
-# 项目交接 · 2026-11-16
+# 项目交接 · 2026-11-19
 
-下一阶段先接共享推理 API，再完成 Dots 式精细化委派。Chats、视频取材、运营和游戏经 Provider 使用同一服务。双工和 Avatar 通过独立服务的 API 协商，OBS、节目合成和 Remotion 随演出阶段验收。 [当前计划](plans/current.md#共享推理与-avatar-api)
+工作站已承载工坊前端、业务 Core、正式数据库、Omni 和 Avatar。号主从笔电浏览器直接访问工作站 IP。HTTP 会转向 HTTPS，私有通话在同一入口换取短时网关票据。两张获选 OC 成图和两套原稿已独立登记。OBS、节目合成和 Remotion 随演出阶段验收。[IP 入口实测](../evaluations/results/workstation-studio-ip-20261119.md) · [当前计划](plans/current.md#共享推理与-avatar-api)
 
 ## 从哪里接手
 
@@ -23,4 +23,4 @@
 ## 验收缺口与业务数据
 
 - 已有候选历史记录中的长文答复和持续共驻失败，接新端点时用同一业务场景复测。 [历史证据](../evaluations/results/omni-deployment-20261116.md)
-- 业务快照已有经核验的暂存副本与本机备份，正式写入权尚未交接。推理 API 验收用隔离数据，迁移另按唯一写入者流程执行。 [迁移与恢复](specs/foundation/distributed-runtime.md#迁移备份与恢复)
+- 笔电的原库已退役，正式写入权已交给工作站 Core。原库和迁移快照保留。后续回退须核对切换后新增的任务及回执。空库创作验收独立运行。[正式迁移记录](../evaluations/results/workstation-business-cutover-20261119.md) · [迁移与恢复](specs/foundation/distributed-runtime.md#迁移备份与恢复)
