@@ -36,6 +36,58 @@ async def save(client, source="settings", **fields):
     return response.raise_for_status().json()["id"]
 
 
+@pytest.mark.parametrize(("owner_limit", "input_tokens", "expected"), [
+    (4096, 2650, 4096), (4096, 5200, 2992), (512, 2650, 512), (4096, 8192, None)])
+async def test_private_writing_budget_on_the_counted_structured_request(owner, monkeypatch, owner_limit, input_tokens, expected):
+    from tuber_studio import http_api
+    from tuber_studio.agent.private_editor_memory import connect_private_editor
+    from tuber_studio.agent.task_delivery import PrivateDelivery, evidence_index
+    from tuber_studio.api_providers import APIProvider
+    from tuber_studio.compaction import ContextWindowExceeded
+
+    client, state = owner
+    rt = state.runtime
+    turn = str(uuid4())
+    (await client.post(CHAT, json={"request_id":turn, "message":NOTE, "intent":{"action":"chat"}})).raise_for_status()
+    await save(client, "turn", turn_id=turn)
+    budgets = {}
+    def service(request):
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data":[{"id":"fixture", "max_model_len":8192}]})
+        body = json.loads(request.content)
+        if request.url.path.endswith("/prompt_tokens"):
+            assert "JSON Schema" in str(body["messages"])
+            return httpx.Response(200, json={"count":input_tokens})
+        assert request.url.path == "/v1/chat/completions"
+        name = body["response_format"]["json_schema"]["schema"]["title"]
+        budgets[name] = body["max_tokens"]
+        result = {"WritingSelection":{"applies":True, "checks":[], "title_form":None},
+                  "WritingJudgment":{"basis":"已核对组织要求", "violations":[], "document_blocker":None}}[name]
+        return httpx.Response(200, json={"choices":[{"finish_reason":"stop", "message":{"content":json.dumps(result)}}],
+                                         "usage":{"prompt_tokens":input_tokens, "completion_tokens":24}})
+
+    monkeypatch.setattr(http_api, "inference_transport", lambda *_: httpx.MockTransport(service))
+    provider = APIProvider({"base_url":"https://example.org/v1", "model":"fixture", "context_source":"model_card",
+                            "prompt_token_endpoint":True, "structured_output":"json_schema"})
+    async def editor(task, evidence):
+        return PrivateDelivery(items=[], gaps=["待补资料"])
+    monkeypatch.setattr(rt, "llm", provider)
+    monkeypatch.setitem(rt.settings.data["llm"], "max_tokens", owner_limit)
+    monkeypatch.setattr(rt.tasks, "edit_delivery", editor)
+    connect_private_editor(rt)
+    task = {"goal":NOTE, "steps":[{"tool":"owner_attachment"}], "plan":{}}
+    try:
+        if expected is None:
+            with pytest.raises(ContextWindowExceeded):
+                await rt.tasks.edit_delivery(task, evidence_index([]))
+            assert not budgets
+        else:
+            await rt.tasks.edit_delivery(task, evidence_index([]))
+            assert budgets == {"WritingSelection":expected, "WritingJudgment":expected}
+    finally:
+        await provider.close()
+
+
 async def test_owner_citations_voice_and_temporary_window(owner, monkeypatch):
     client, state = owner
     given = {"request_id": str(uuid4()), "message": NOTE, "intent": {"action": "chat"}}
