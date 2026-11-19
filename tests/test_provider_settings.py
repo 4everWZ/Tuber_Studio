@@ -103,3 +103,13 @@ async def test_active_work_blocks_provider_change(runtime):
     runtime.operations.configure({"enabled": True}, account_id="100", character=runtime.character)
     with pytest.raises(RuntimeError, match="自主运营"):
         await apply_settings(runtime, {"omni": {"enable_thinking": False}})
+
+def test_saved_foreground_vision_pin_does_not_block_background_vision(settings):
+    saved = settings.data | {"omni": settings.data["omni"] | {
+        "video_options": {"model_revision": "prior-omni-pin", "max_frames": 7},
+    }}
+    settings.path.write_text(json.dumps(saved), encoding="utf-8")
+    reloaded = Settings(runtime=settings.runtime)
+    assert reloaded.video_config["model"] == reloaded.responses_config["model"]
+    assert reloaded.video_config["model_revision"] == ""
+    assert reloaded.video_config["max_frames"] == 7

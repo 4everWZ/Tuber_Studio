@@ -615,7 +615,7 @@ def render_private_delivery(product, evidence):
                 if reviewed:
                     times = "、".join(f"{s['seconds']:g}" for s in review["observations"])
                     windows.append(f"- 第 {len(blocks) + 1} 项 · 逐帧检测画面及下方屏字变化；"
-                                   f"Omni 审读代表帧 {times} 秒，检测到的状态均有代表帧。")
+                                   f"后台模型审读代表帧 {times} 秒，检测到的状态均有代表帧。")
             if interval:
                 samples = sorted({t for _, part, t, medium in read["samples"] if part == point.part and
                                   medium == "单帧采样" and interval[0] <= t < interval[1]})

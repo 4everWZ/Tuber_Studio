@@ -56,6 +56,10 @@ def load_profile(saved, defaults):
         if not isinstance(saved["omni"], dict):
             raise ValueError("Omni 配置须为对象")
         profile.update(saved["omni"])
+        if isinstance(profile.get("video_options"), dict):
+            # A saved Omni checkpoint pin belongs to the former vision route.
+            profile["video_options"] = {key: value for key, value in profile["video_options"].items()
+                                        if key != "model_revision"}
     elif old.get("kind") == "openai_compatible" and (
         old.get("context_source") == "model_card" and old.get("model") == "omni-default"
         or video.get("adapter") == "omni" and video.get("base_url") == old.get("base_url")

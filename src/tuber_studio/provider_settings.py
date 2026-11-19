@@ -62,7 +62,7 @@ def proposal(settings, body):
         if not isinstance(video, dict) or set(video) != {"max_frames"}:
             raise ValueError("视觉设置仅支持视频抽帧上限")
         updated["video_options"] = previous.get("video_options", {}) | video
-    if (previous["base_url"], previous["model"]) != (updated["base_url"], updated["model"]):
+    if (previous["base_url"], previous["responses_model"]) != (updated["base_url"], updated["responses_model"]):
         updated.get("video_options", {}).pop("background_model_revision", None)
     keys = dict(settings.provider_keys)
     if previous["base_url"] != updated["base_url"] and keys and not (key or clear):

@@ -552,7 +552,7 @@ class TaskRuntime:
                 if isinstance(error, (DelegationError, InferenceBudgetExceeded)):
                     reason = str(error)
                 elif task_delegation.uses_responses(fresh) and "candidate" in fresh["plan"]:
-                    reason = "前台未能完成选材；已保留候选材料，尚未交付。"
+                    reason = "后台未能完成选材；已保留候选材料，尚未交付。"
                 if task_delegation.uses_responses(fresh):
                     # Unedited source excerpts can reveal the plot behind a spoiler-free brief.
                     self._save(fresh, status="failed", message=reason)

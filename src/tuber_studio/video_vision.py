@@ -369,21 +369,25 @@ class ApiVideoEvidenceProvider:
         return {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{data}"}}, None
 
     async def generate_live_reply(self, scene, messages, llm, event_id):
-        if (not self.capabilities()["admitted"] or llm.get("model") != self.config.model
-                or llm.get("base_url", "").rstrip("/") != self.config.base_url.rstrip("/")):
-            return None
         if (type(scene.width) is not int or type(scene.height) is not int
                 or not 0 < scene.width <= 4096 or not 0 < scene.height <= 4096
                 or scene.width * scene.height > self.config.max_pixels
                 or not isinstance(scene.image, bytes) or len(scene.image) > self.config.max_bytes):
             return None
         validate_image(scene.image, scene.mime_type)
-        api, identity, expected = self.api, self.identity(), self._probe["properties"]
-        try:
-            props = await self._confirmed_properties(expected, identity)
-        except (ValueError, httpx.HTTPError):
-            return None
-        api.adopt_context_window(props["context_tokens"])
+        if self.api.background:
+            api = self.runtime.llm
+        else:
+            if (not self.capabilities()["admitted"] or llm.get("model") != self.config.model
+                    or llm.get("base_url", "").rstrip("/") != self.config.base_url.rstrip("/")):
+                return None
+            api = self.api
+            identity, expected = self.identity(), self._probe["properties"]
+            try:
+                props = await self._confirmed_properties(expected, identity)
+            except (ValueError, httpx.HTTPError):
+                return None
+            api.adopt_context_window(props["context_tokens"])
         image, _ = await self._image_content({"image": scene.image, "mime_type": scene.mime_type})
         if not scene.current(scene.session_id):
             return None
@@ -391,7 +395,10 @@ class ApiVideoEvidenceProvider:
         schema["properties"]["reply_to"] |= {"items": {"type": "string", "enum": [event_id]}, "maxItems": 1}
         async with asyncio.timeout(self.config.timeout_seconds):
             value = await api.generate_json(scene.annotate(messages, image=image), schema, max_tokens=llm["max_tokens"])
-        self._check_properties(props, expected, identity)
+        if not scene.current(scene.session_id):
+            return None
+        if not self.api.background:
+            self._check_properties(props, expected, identity)
         return validate_reply(json.dumps(value), None, event_id)
 
     async def _observe_sequential(self, task, frames, question, deadline, identity, expected, repository, sources):
