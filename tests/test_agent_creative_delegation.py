@@ -156,6 +156,43 @@ async def test_bad_tool_arguments_return_a_diagnostic_without_execution(runtime,
         await tasks.close()
 
 
+@pytest.mark.parametrize("order", [("live_status", "operation_status"), ("operation_status", "live_status")])
+async def test_steered_task_can_submit_evidence_from_both_status_reads(settings, monkeypatch, order):
+    monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS_URL", raising=False)
+    calls = {"operation_status": "operations", "live_status": "live"}
+
+    def worker(payload):
+        receipts = {item["call_id"]: json.loads(item["output"]) for item in payload["input"]
+                    if item.get("type") == "function_call_output"}
+        if not receipts:
+            return [call(name, {}, calls[name]) for name in order]
+        assert set(receipts) == {"operations", "live"}
+        assert receipts["live"]["receipt"]["state"] == "stopped"
+        assert receipts["operations"]["receipt"]["state"] == "off"
+        return [call("submit_materials", {"items": [{"title": "自主运营", "rationale": "未启动",
+                     "sources": list(receipts["operations"]["evidence"])}], "gaps": []}, "submit")]
+
+    requests = gateway(settings, monkeypatch, worker)
+    app = create_app(settings)
+    tasks = app.state.runtime.tasks
+    identity = str(uuid4())
+    tasks.create(identity, "交给后台准备一份私有交接便笺，先查工坊当前的直播状态。")
+    await tasks.control(identity, 1, "steer", "继续刚才的那份便笺，改为只检查自主运营是否启动。")
+    for _ in range(4):
+        task = tasks.current(identity)
+        if (task["plan"] or {}).get("candidate") or task["status"] == "failed":
+            break
+        await tasks._advance(task)
+
+    task = tasks.current(identity)
+    assert task["status"] == "queued", task["message"]
+    assert task["revision"] == 2 and len(requests) == 2
+    assert [step["call_id"] for step in task["steps"]] == [calls[name] for name in order]
+    assert all(step["revision"] == 2 and not step.get("reused_from") for step in task["steps"])
+    operations = next(step for step in task["steps"] if step["tool"] == "operation_status")
+    assert task["plan"]["candidate"]["items"][0]["sources"] == [operations["id"]]
+
+
 async def test_mixed_video_and_source_batch_returns_each_call_its_own_receipt(runtime, settings, store, monkeypatch):
     url = "https://example.org/public-origin"
     fetched = []
