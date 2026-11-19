@@ -6,6 +6,7 @@ The BV and player links are fixture identifiers, not a real Bilibili upload.
 """
 
 import asyncio
+import base64
 import io
 import json
 import os
@@ -24,7 +25,7 @@ from evaluations.omni_chat_loop import ROOT, ReplayMismatch, connection
 from tuber_studio.agent.operator_chat import ChatTurn, OperatorChat
 from tuber_studio.agent.task_delivery import evidence_index
 from tuber_studio.agent.task_tools import create_task_runtime
-from tuber_studio.api_providers import APIProvider, VisionService
+from tuber_studio.api_providers import APIProvider
 from tuber_studio.deployment_profiles import operation_profile
 from tuber_studio.responses_provider import ResponsesClient
 from tuber_studio.store import Store
@@ -93,8 +94,8 @@ class Archive:
 
 
 class LocalVideo:
-    def __init__(self, archive, vision):
-        self.archive, self.vision = archive, vision
+    def __init__(self, archive, operations):
+        self.archive, self.operations = archive, operations
         self.discovery = SimpleNamespace(history_scope=lambda: ("rehearsal", "whale", 1))
         self.adapter = self.repo = self
         self.jobs = {}
@@ -135,10 +136,17 @@ class LocalVideo:
             for index, (seconds, image) in enumerate(frames):
                 if not interval["start"] <= seconds < interval["end"]:
                     continue
-                answer = await self.vision.describe(
-                    "识别白底上唯一有色几何图形。只返回 JSON，color 用英文小写颜色名，shape 用英文小写图形名。", image, "image/png")
+                encoded = base64.b64encode(image).decode("ascii")
                 try:
-                    observed = json.loads(answer.strip().removeprefix("```json").removesuffix("```").strip())
+                    observed = await self.operations.generate_json(
+                        [{"role": "user", "content": [
+                            {"type": "text", "text": "识别白底上唯一有色几何图形。color 用英文小写颜色名，shape 用英文小写图形名。"},
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded}"}},
+                        ]}],
+                        {"type": "object", "properties": {"color": {"type": "string"}, "shape": {"type": "string"}},
+                         "required": ["color", "shape"], "additionalProperties": False},
+                        max_tokens=256,
+                    )
                 except ValueError as error:
                     raise ReplayMismatch(f"invalid_visual_receipt_at_{seconds:g}s") from error
                 color, shape, _ = PARTS[2][index]
@@ -224,15 +232,16 @@ class PrivateChat(OperatorChat):
         return await super()._action(intent, *args)
 
 
-async def exercise(store, omni, operations, responses, vision, archive, transport):
+async def exercise(store, omni, operations, responses, archive, transport):
     seeds = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
     character = next(seed for seed in seeds if seed["id"] == "whale") | {"version": 1}
     runtime = SimpleNamespace(store=store, character=character, llm=omni, operation_llm=operations, operator_generation=nullcontext,
+                              offline_generation=nullcontext,
                               settings=SimpleNamespace(data={"omni": omni.config}, responses_config=responses.config.model_dump()),
                               daily_memory=SimpleNamespace(preference=lambda scope: {"enabled": False}),
                               context=SimpleNamespace(record=lambda *args, **kwargs: None),
                               validate_memory_delivery=lambda *args, **kwargs: None)
-    video = LocalVideo(archive, vision)
+    video = LocalVideo(archive, operations)
     tasks = runtime.tasks = create_task_runtime(runtime, store, video)
     runtime.memory_organizer = SimpleNamespace(scope=tasks.scope, schedule=lambda: None)
     chat = PrivateChat(runtime, store, video, SimpleNamespace())
@@ -292,18 +301,17 @@ async def run(env):
         front = {"kind": "openai_compatible", "base_url": root + "/v1", "model": env.get("OMNI_MODEL_ALIAS", "omni-default"),
                  "context_source": "model_card", "prompt_token_endpoint": True, "structured_output": "structural_tag",
                  "max_tokens": 4096}
-        omni, vision = APIProvider(front, token), VisionService(front, token)
+        omni = APIProvider(front, token)
         stack.push_async_callback(omni.close)
-        stack.push_async_callback(vision.close)
         responses = await stack.enter_async_context(ResponsesClient(
             {"base_url": root + "/llm/v1", "model": env.get("OMNI_LLM_MODEL_ALIAS", "llm-default")}, token))
         operations = APIProvider(operation_profile(omni.config | {"responses_model": responses.config.model}),
-                                 token, text_only=True)
+                                 token, background=True)
         stack.push_async_callback(operations.close)
         transport = Archive()
         archive = await stack.enter_async_context(httpx.AsyncClient(base_url=ORIGIN, transport=httpx.MockTransport(transport.serve)))
         async with asyncio.timeout(600):
-            return await exercise(store, omni, operations, responses, vision, archive, transport)
+            return await exercise(store, omni, operations, responses, archive, transport)
 
 
 def main():
