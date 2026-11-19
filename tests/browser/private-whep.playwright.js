@@ -15,6 +15,10 @@ async page => {
     return "voice-" + (await reply.json()).sequence;
   };
   await page.addInitScript(() => {
+    const Peer = window.RTCPeerConnection;
+    window.RTCPeerConnection = class extends Peer {
+      constructor(...args) { super(...args); window.lastWhepPeer = this; }
+    };
     navigator.mediaDevices.getUserMedia = async () => {
       const ctx = new AudioContext(), tone = ctx.createOscillator(), out = ctx.createMediaStreamDestination();
       tone.connect(out); tone.start(); await ctx.resume(); return out.stream;
@@ -27,7 +31,13 @@ async page => {
     if (res.url().endsWith("/whep") && res.request().method() === "POST") exchanges.push(res.status());
   });
   const results = [];
+  const smoothing = page.getByRole("checkbox", {name: "减少画面卡顿"});
+  const expectTargets = target => page.waitForFunction(value => {
+    const receivers = window.lastWhepPeer.getReceivers();
+    return receivers.length === 2 && receivers.every(r => r.jitterBufferTarget === value);
+  }, target);
   for (const [index, profile] of ["original", "q"].entries()) {
+    if (index === 1) await page.evaluate(() => { delete RTCRtpReceiver.prototype.jitterBufferTarget; });
     await page.getByRole("button", {name: "更多对话操作"}).click();
     await page.getByRole("button", {name: "私有语音通话"}).click();
     await page.getByRole("combobox", {name: "通话形象", exact: true}).selectOption(profile);
@@ -40,6 +50,13 @@ async page => {
       return v.currentTime > .15 && v.videoWidth === 640 && v.videoHeight === 720 &&
         v.srcObject.getAudioTracks().length === 1 && v.getVideoPlaybackQuality().totalVideoFrames > 2;
     });
+    if (index === 0) {
+      await smoothing.waitFor();
+      if (await smoothing.isChecked()) throw Error("smoothing must start off");
+      await expectTargets(null);
+      await smoothing.check();
+      await expectTargets(240);
+    } else if (await smoothing.isVisible()) throw Error("unsupported smoothing control");
     const id = await speech();
     const heard = await until(s => s.played_by_response[id] > 200 && s.avatars[index]?.ack.played_ms > 0, "playback ack");
     const row = heard.avatars[index];
@@ -55,6 +72,12 @@ async page => {
     await page.getByRole("button", {name: "打断回答"}).click();
     await until(s => s.avatars[index].generation > 0 && exchanges.length > before &&
       s.avatars[index].ack.generation === s.avatars[index].generation, "new generation and peer");
+    if (index === 0) {
+      if (!await smoothing.isChecked()) throw Error("interrupt lost smoothing preference");
+      await expectTargets(240);
+      await smoothing.uncheck();
+      await expectTargets(null);
+    }
     const resumed = await speech();
     await until(s => s.played_by_response[resumed] > 0, "ack after interrupt");
     results.push({profile, played_ms: heard.played_by_response[id], timeline_ms: row.ack.played_ms});

@@ -54,6 +54,16 @@ class PortraitPlayback {
     this.subtitles = [];
     this.version = 0;
     this.generation = 0;
+    if ("jitterBufferTarget" in (window.RTCRtpReceiver?.prototype || {})) {
+      this.smooth = document.createElement("input");
+      this.smooth.type = "checkbox";
+      this.smoothLabel = document.createElement("label");
+      this.smoothLabel.append(this.smooth, "减少画面卡顿");
+      this.smoothLabel.title = "音视频同时增加接收缓冲，播放可能稍晚";
+      this.smoothLabel.hidden = true;
+      interrupt.before(this.smoothLabel);
+      this.smooth.onchange = () => this.applyBufferTarget();
+    }
     this.resetResponse();
     this.deadline = setTimeout(() => this.fail(), 30000);
     caption.textContent = "正在连接实时形象…";
@@ -153,11 +163,18 @@ class PortraitPlayback {
     }, 100);
   }
 
+  applyBufferTarget() {
+    for (const receiver of this.peer?.getReceivers() || []) {
+      receiver.jitterBufferTarget = this.smooth.checked ? 240 : null;
+    }
+  }
+
   async subscribe(version) {
     const peer = this.peer = new RTCPeerConnection({iceServers: []});
     const stream = new MediaStream();
     peer.addTransceiver("audio", {direction: "recvonly"});
     peer.addTransceiver("video", {direction: "recvonly"});
+    if (this.smooth?.checked) this.applyBufferTarget();
     peer.ontrack = ({track}) => stream.addTrack(track);
     peer.onconnectionstatechange = () => {
       if (this.peer === peer && peer.connectionState === "failed") this.fail();
@@ -189,6 +206,7 @@ class PortraitPlayback {
     video.onpause = video.onwaiting = () => { this.audibleStart = null; };
     await video.play();
     if (version === this.version) {
+      if (this.smoothLabel) this.smoothLabel.hidden = false;
       clearTimeout(this.deadline);
     }
   }
@@ -259,6 +277,7 @@ class PortraitPlayback {
   }
 
   detach() {
+    this.smoothLabel?.remove();
     clearTimeout(this.deadline);
     clearInterval(this.heartbeat);
     if (this.events) { this.events.onclose = this.events.onerror = null; this.events.close(); }
