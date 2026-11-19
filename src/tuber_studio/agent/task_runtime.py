@@ -19,7 +19,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..http_api import InferenceBudgetExceeded, InferenceQueueBusy
 from ..store import dump
 from . import task_delegation
+from .archived_video import ArchiveUnavailable
 from .creative_workspace import CreativeWorkspace
+from .public_sources import restriction_messages
 from .task_delivery import LABELS, DelegationError, deliver_from_receipts
 from .task_identity import TaskIdentity
 from .task_video_scope import selection_plan, video_binding
@@ -89,6 +91,7 @@ class ToolRequest:
     checkpoint: dict | None
     approval: dict | None
     receipts: tuple[dict, ...] = ()
+    video_grant: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -601,6 +604,12 @@ class TaskRuntime:
         if not task:
             return
         steps = task["steps"]
+        current_steps = self._current_steps(task)
+        if all("result" in step for step in current_steps):
+            blocked = restriction_messages(current_steps, blocking_only=True)
+            if blocked:
+                self._save(task, status="needs_input", message=blocked)
+                return
         if task_delegation.uses_responses(task):
             await task_delegation.advance(self, task)
             return
@@ -612,7 +621,6 @@ class TaskRuntime:
             tools = {name: {"description": tool.description, "arguments": tool.arguments.model_json_schema(),
                             "requires_approval": tool.review is not None}
                      for name, tool in self.tools.items() if not tool.responses_only}
-            current_steps = self._current_steps(task)
             used = len(current_steps)
             planned = None
             if task["plan"] is None and self.make_plan and not current_steps:
@@ -653,14 +661,26 @@ class TaskRuntime:
         tool = self.tools[step["tool"]]
         try:
             arguments = tool.arguments.model_validate(step["arguments"])
+            if step["tool"] == "inspect_video":
+                for prior in self._current_steps(task):
+                    result = prior.get("result") or {}
+                    restriction = result.get("read_restriction")
+                    if (prior["tool"] == "inspect_video" and restriction and
+                            (restriction["bvid"], restriction["part"]) == (arguments.bvid, arguments.part)):
+                        blocked = {"read_restriction": restriction, "message": result["message"],
+                                   "error": result["message"], "blocked_by_step": prior["id"]}
+                        return step | {"result": blocked}, "queued", time.time()
             if tool.accepts_goal and not tool.accepts_goal(task["goal"], arguments):
                 return step | {"result": {"error": "本轮目标没有明确指定该草稿 ID。"}}, "queued", time.time()
             if tool.review and not step.get("approved"):
                 step = step | {"approval": tool.review(arguments)}
                 return step, "awaiting_approval", time.time()
             receipts = tuple(item for item in context if "result" in item)
+            binding = video_binding(task | {"plan": {"prior_goals": [], **(task["plan"] or {})}}) if (
+                step["tool"] in {"inspect_video", "web_search", "web_page"} and isinstance(task["plan"], (dict,type(None)))
+            ) else None
             request = ToolRequest(step.get("resource_id", step["id"]), goal, task["scope"], step.get("checkpoint"),
-                                  step.get("approval"), receipts)
+                                  step.get("approval"), receipts, binding)
             if tool.checkpoint_submission and not step.get("checkpoint"):
                 if not step.get("approved") or not request.approval:
                     raise ValueError("没有当前步骤的明确审批")
@@ -671,7 +691,7 @@ class TaskRuntime:
                 result = await tool.run(request, arguments)
         except InferenceQueueBusy as busy:
             return step, "waiting", time.time() + busy.retry_after
-        except InferenceBudgetExceeded as error:
+        except (ArchiveUnavailable, InferenceBudgetExceeded) as error:
             result = {"error": str(error)}
         except Exception as error:
             log.info("Agent tool %s failed: %s", step["tool"], type(error).__name__)

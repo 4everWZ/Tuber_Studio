@@ -481,6 +481,8 @@ def evidence_index(steps):
                     if result.get("source_kind") == "bilibili_public_metadata":
                         # The adapter keeps its public byline and part metadata before the synopsis field.
                         header, marker, _ = result["excerpt"].partition(" 秒。投稿简介：")
+                        if result.get("retrieval") == "archive":
+                            header, marker, _ = result["excerpt"].partition(" 秒。")
                         if marker and header.startswith(f"投稿《{result.get('title')}》，UP 主："):
                             evidence.video_byline[step["id"]] = f"{_text(header)} 秒。 {_source(result['url'])}"
                             url = urlsplit(result["url"])

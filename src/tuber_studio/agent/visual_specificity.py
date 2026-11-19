@@ -88,7 +88,9 @@ async def _read_under_alternative(assertion, hypothesis, proof, image, generate,
     return CounterfactualReading.model_validate(reply)
 
 
-async def shared_visual_facts(image, primary, raw_observation, inventory, terms, generate, budget):
+async def shared_visual_facts(image, primary, raw_observation, inventory, terms, generate, budget,
+                              *, field=None, candidate_reviews=None):
+    audit = candidate_reviews if candidate_reviews is not None else []
     observations = [*inventory, raw_observation]
     reply = await generate(
         [
@@ -119,10 +121,13 @@ async def shared_visual_facts(image, primary, raw_observation, inventory, terms,
         options = {str(i): text for i, text in enumerate(dict.fromkeys(candidates)) if text.strip()}
         if options:
             disputed = await review_visual_specificity(options, image, primary, raw_observation, generate, budget)
+            for candidate, row in disputed.items():
+                audit.append(row | {"field": field or row["field"], "candidate": options[candidate],
+                                    "stage": "review_repair_candidate"})
             supported = [fact for i, fact in options.items() if i not in disputed]
             if supported:
                 return supported
-    raise DelegationError("主帧复读仍缺少足以确定称呼的画面依据。")
+    raise DelegationError("主帧复读仍缺少足以确定称呼的画面依据。", attribution_reviews=audit)
 
 
 async def review_visual_specificity(fields, image, primary, raw_observation, generate, budget):
@@ -266,8 +271,12 @@ async def review_visual_specificity(fields, image, primary, raw_observation, gen
                     if comparison.conflict:
                         targets.append(h.term)
                         field_claim = field_claim | {"name_comparison": comparison.model_dump()}
-                if not targets and reading.unsupported_modifiers:
-                    raise DelegationError("反事实复核未将有异议的修饰语定位到原句。")
+                missing = [term for term in reading.unsupported_modifiers if not term.strip() or term not in assertion]
+                if missing:
+                    row = receipts.setdefault(path, {"field": path, "text": fields[path], "primary_frame": primary,
+                                                      "claims": [], "pages": []})
+                    row.setdefault("unlocated", []).append({"modifiers": missing, "hypothesis": h.model_dump(),
+                        "basis": reading.basis, "counterfactual": reading.model_dump()})
                 if not targets:
                     continue
             objections.append((path, h, field_claim, targets))

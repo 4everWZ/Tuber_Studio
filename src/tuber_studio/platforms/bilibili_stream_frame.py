@@ -111,6 +111,8 @@ class RangeReader:
         try:
             response = await self.adapter.client.send(request, stream=True, follow_redirects=False)
             try:
+                if response.status_code in {412, 429}:
+                    raise PlatformReadError.restricted(response.status_code)
                 if response.status_code in {401, 403, 404, 410}:
                     raise _error("播放地址已过期或当前账号无读取权限")
                 match = _CONTENT_RANGE.fullmatch(response.headers.get("content-range", ""))

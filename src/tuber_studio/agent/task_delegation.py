@@ -12,6 +12,7 @@ from ..store import dump
 from ..web_fetch import programme_credit_text
 from .clip_refinement import positive_subwindows, subwindow_brief
 from .private_code import private_tools
+from .public_sources import restriction_messages
 from .task_delivery import (
     AdditionalVideoRead,
     DelegationError,
@@ -279,6 +280,8 @@ async def advance(runtime, task):
             plan["attribution_rejections"] = [*plan.get("attribution_rejections", []), *product._attribution_reviews]
         if verified and plan.get("attribution_rejections"):
             for row in plan["attribution_rejections"]:
+                if row.get("stage") == "review_repair_candidate":
+                    continue
                 parts = row["field"].split(".")
                 if len(parts) == 3 and parts[0] == "items" and parts[2] in {"title", "rationale"}:
                     slot = int(parts[1])
@@ -408,7 +411,8 @@ async def advance(runtime, task):
                 runtime._save(task, status="queued", due=time.time(), steps=[*task["steps"], step],
                               message="前台已根据公开资料继续核对出处。")
                 return
-        runtime._save(task, status="needs_input", message=question)
+        restriction = restriction_messages(current)
+        runtime._save(task, status="needs_input", message="\n".join(filter(None, (restriction, question))))
         return
     if len(calls) == 1 and name == "submit_materials":
         try:

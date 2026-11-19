@@ -79,6 +79,8 @@ def _duration(value):
 class BrowsingAdapter(BilibiliAdapter):
     """No browser emulation, generated fingerprints, or platform-write retries."""
 
+    read_video_tags = True
+
     def __init__(self, credential=None):
         super().__init__(credential)
         self.request_gate = None
@@ -133,9 +135,7 @@ class BrowsingAdapter(BilibiliAdapter):
                         "permission", f"平台拒绝读取（HTTP {response.status_code}），请检查登录与权限"
                     )
                 if response.status_code in {412, 429}:
-                    raise PlatformReadError(
-                        "restricted", f"平台限制读取（HTTP {response.status_code}），请稍后重试"
-                    )
+                    raise PlatformReadError.restricted(response.status_code)
                 response.raise_for_status()
                 body = bytearray()
                 async for chunk in response.aiter_bytes():
@@ -386,7 +386,7 @@ class BrowsingAdapter(BilibiliAdapter):
             )
         tags = await self._read(
             "/x/web-interface/view/detail/tag", {"bvid": bvid, "aid": aid, "cid": int(parts[0]["cid"])}
-        )
+        ) if self.read_video_tags else []
         if not isinstance(tags, list):
             raise PlatformReadError("invalid", "平台标签格式无效")
         return {
@@ -483,9 +483,7 @@ class BrowsingAdapter(BilibiliAdapter):
                 if response.status_code in {401, 403}:
                     raise PlatformReadError("permission", f"字幕下载权限不足（HTTP {response.status_code}）")
                 if response.status_code in {412, 429}:
-                    raise PlatformReadError(
-                        "restricted", f"字幕下载受平台限制（HTTP {response.status_code}）"
-                    )
+                    raise PlatformReadError.restricted(response.status_code)
                 response.raise_for_status()
                 buffer = bytearray()
                 async for chunk in response.aiter_bytes():

@@ -133,9 +133,14 @@ def _data(payload: object) -> dict:
 
 
 class PlatformReadError(ValueError):
-    def __init__(self, kind, message):
+    def __init__(self, kind, message, *, http_status=None):
         self.kind = kind
+        self.http_status = http_status
         super().__init__(message)
+
+    @classmethod
+    def restricted(cls, status):
+        return cls("restricted", f"平台限制读取（HTTP {status}），请稍后重试", http_status=status)
 
 
 class BilibiliAccountExpired(PlatformReadError):

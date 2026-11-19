@@ -10,6 +10,7 @@ import httpx
 from ..http_api import InferenceBudgetExceeded, InferenceQueueBusy
 from ..platforms.bilibili import PlatformReadError
 from ..platforms.bilibili_browsing import BrowsingAdapter
+from .public_sources import video_read_restriction
 
 
 def clip_path(runtime_dir, step_id):
@@ -44,17 +45,31 @@ async def save_clip(adapter, metadata, part, start, end, request, granted, runti
                 staged.unlink(missing_ok=True)
         return {"clip": {"bvid": metadata["bvid"], "part": part["page"], **clip}}
     except (PlatformReadError, httpx.HTTPError, TimeoutError, OSError) as error:
+        if isinstance(error, PlatformReadError) and error.kind == "archive_window":
+            return {"clip_error": str(error)}
+        restriction = video_read_restriction(error, metadata["bvid"], part["page"], "连续短片")
+        if restriction:
+            return restriction | {"clip_error": restriction["message"]}
         return {"clip_error": f"该窗口未保存连续画面（{type(error).__name__}）。"}
 
 
-async def read_public_part(request, selection, vision, granted, runtime_dir=None):
+async def read_public_part(request, selection, vision, granted, runtime_dir=None, *, archive=None):
     if selection.part is None:
         return {"error": "匿名视频取材需要指定分 P。"}
-    adapter = BrowsingAdapter()
+    adapter = archive or BrowsingAdapter()
+    if archive is None:
+        adapter.read_video_tags = False
     try:
         if not granted():
             return {"error": "任务授权已变化。"}
-        metadata = await adapter.video_metadata(selection.bvid)
+        url = f"https://www.bilibili.com/video/{selection.bvid}/?p={selection.part}"
+        try:
+            metadata = await adapter.video_metadata(selection.bvid)
+        except PlatformReadError as error:
+            restriction = video_read_restriction(error, selection.bvid, selection.part, "分 P 资料")
+            if not restriction:
+                raise
+            return restriction | {"error": restriction["message"], "url": url, "request_id": request.id}
         part = next((p for p in metadata["parts"] if p["page"] == selection.part), None)
         if metadata["bvid"] != selection.bvid or not part:
             return {"error": "公开视频没有指定的分 P。"}
@@ -63,7 +78,7 @@ async def read_public_part(request, selection, vision, granted, runtime_dir=None
         if start >= end:
             return {"error": "指定区间超出该分 P 的实际时长。", "part_duration": part["duration"]}
         findings, gaps = [], []
-        url = f"https://www.bilibili.com/video/{selection.bvid}/?p={selection.part}"
+        restriction = {}
 
         def finding(seconds, text, kind):
             return {"part": selection.part, "cid": part["cid"], "seconds": seconds, "text": text,
@@ -78,14 +93,29 @@ async def read_public_part(request, selection, vision, granted, runtime_dir=None
                 for index in sorted({0, len(rows) // 2, len(rows) - 1}):
                     row = rows[index]
                     findings.append(finding(row["start"], row["text"], "公开字幕抽样"))
-        except (PlatformReadError, httpx.HTTPError):
-            pass
+        except (PlatformReadError, httpx.HTTPError) as error:
+            restriction = video_read_restriction(error, selection.bvid, selection.part, "字幕")
         has_subtitles = bool(findings)
         if not has_subtitles:
             gaps.append("此区间未取得可公开读取的字幕。")
         visual_count = 0
         seen = set()
-        for target in preview_times(start, end):
+        ranges = archive.ranges(start, end) if archive else [(start, end)]
+        targets = preview_times(start, end)
+        provenance = {}
+        if archive:
+            windows = "、".join(f"[{a:g}, {b:g})" for a, b in archive.windows)
+            provenance = {"source_kind": "archived_video", "available_windows": archive.windows,
+                          "message": f"已读取归档来源目录，P{selection.part} 可用时窗（秒）为 {windows}。"}
+            if not ranges:
+                provenance["message"] = "请求时段与归档原件没有交集。" + provenance["message"]
+                gaps.append(provenance["message"])
+            gaps.append("画面与元数据来自已授权归档。每支原件只覆盖列出的左闭右开时窗。")
+            targets = ([(a+b)/2 for a,b in ranges] if len(ranges) > 1
+                       else [t for a,b in ranges for t in preview_times(a,b)])
+        for target in targets:
+            if restriction:
+                break
             if not granted():
                 return {"error": "任务授权已变化。"}
             try:
@@ -105,15 +135,23 @@ async def read_public_part(request, selection, vision, granted, runtime_dir=None
                 if isinstance(text, str) and text.strip():
                     seen.add(actual)
                     visual_count += 1
-                    findings.append(finding(actual, text.strip(), "实际视频帧"))
+                    point = finding(actual, text.strip(), "实际视频帧")
+                    if archive:
+                        point.update(source_kind="archived_video", archive_url=frame["archive_url"])
+                    findings.append(point)
             except (InferenceQueueBusy, InferenceBudgetExceeded):
                 raise
             except (PlatformReadError, httpx.HTTPError, ValueError, TimeoutError) as error:
+                restriction = video_read_restriction(error, selection.bvid, selection.part, "视频画面")
+                if restriction:
+                    break
                 gaps.append(f"请求 {target:.2f} 秒处未取得可用画面（{type(error).__name__}）。")
         if not granted():
             return {"error": "任务授权已变化。"}
         clip_receipt = {}
-        if (runtime_dir is not None and selection.end is not None and end - start <= 10
+        if restriction:
+            gaps.append(restriction["message"])
+        elif (runtime_dir is not None and selection.end is not None and end - start <= 10
                 and hasattr(adapter, "video_stream_clip")):
             clip_receipt = await save_clip(adapter, metadata, part, start, end, request, granted, runtime_dir)
             if "error" in clip_receipt:
@@ -127,7 +165,10 @@ async def read_public_part(request, selection, vision, granted, runtime_dir=None
                     (False, False): "unavailable"}
         return {"status": "partial", "request_id": request.id, "viewing": coverage[has_subtitles, bool(visual_count)],
             "findings": findings, "gaps": gaps,
-            "selection": {"bvid": selection.bvid, "ranges": [{"part": selection.part, "start": start, "end": end}]},
-            "url": url, "part_duration": part["duration"], "error": None, **clip_receipt}
+            "selection": {"bvid": selection.bvid, "ranges": [
+                {"part": selection.part, "start": a, "end": b} for a,b in ranges]}, **provenance,
+            "url": url, "part_duration": part["duration"], "cid": part["cid"],
+            "error": None if findings else (restriction or clip_receipt).get("message")
+                     or (provenance.get("message") if not ranges else None), **restriction, **clip_receipt}
     finally:
         await adapter.close()

@@ -19,18 +19,20 @@ from ..http_api import InferenceQueueBusy, response_json
 from ..live.game_livestream import PvZAdapter, StardewValleyAdapter
 from ..models import StrictModel
 from ..operation_identity import visual_editor_context
+from ..platforms.bilibili import PlatformReadError
 from ..platforms.bilibili_frames import FfmpegTiles
 from ..responses_provider import ResponsesClient
 from ..store import dump
 from ..web_fetch import WebFetchRequest, fetch_excerpt, programme_credit_text, source_url
 from ..web_search import search_broadcast_programmes, search_public_web
 from . import operator_facts
+from .archived_video import MountedArchive
 from .clip_refinement import positive_subwindows, subwindow_brief
 from .clip_review import review_clip_window, unreviewed_preview
 from .clip_screening import fit_review_group, observe_clip_batch
 from .dynamic_publication import register_dynamic_publication
 from .handoff import PublicText, handoff_text, supplied_private_fragments, video_findings
-from .public_sources import fetch_task_source
+from .public_sources import fetch_task_source, video_read_restriction
 from .public_video import clip_path, read_public_part, save_clip
 from .task_delivery import (
     NO_SPOILERS,
@@ -439,6 +441,9 @@ def unused_starts(task, reads, clips, seconds):
             continue
         duration = step["result"]["part_duration"]
         regions = (parts or {}).get(part) or [(0, duration)]
+        if "available_windows" in step["result"]:
+            regions = [(max(lo, a), min(hi, b)) for lo, hi in regions
+                       for a, b in step["result"]["available_windows"] if max(lo,a) < min(hi,b)]
         occupied = sorted((c["start"], c["end"]) for c in clips if c["bvid"] == bv and c["part"] == part)
         intervals = []
         for left, right in regions:
@@ -822,6 +827,9 @@ async def observed_live_status(runtime):
 
 
 def create_task_runtime(runtime, store, browsing):
+    manifest = os.environ.get("TUBER_PRIVATE_SOURCE_MANIFEST")
+    archive = MountedArchive(manifest, os.environ.get("TUBER_PRIVATE_SOURCE_URL")) if manifest else None
+
     def binding():
         character = runtime.character
         account = browsing.discovery.history_scope()[0] if browsing is not None else None
@@ -1456,10 +1464,17 @@ def create_task_runtime(runtime, store, browsing):
                       "owner_request": task["goal"], "writing_preferences": task.get("owner_writing_preferences", []),
                       "request": "依据被指出字段自身的画面与号主要求，填写完整替换文字。"}
             draft_fields = editorial_fields(PrivateDelivery.model_validate(draft))
+            if any(path.startswith("gaps.") for path in pending):
+                repair["gap_evidence"] = evidence.prompt_sources()
+                repair["video_read_coverage"] = evidence.video_coverage
+                repair["pages_without_body_receipts"] = evidence.unread_pages
+                repair["gap_instruction"] = "按本轮实读取材范围说明仍待核实的内容。对原片、人物及原出处的肯定判断须有对应回执。"
             if receipts := [row for row in task["plan"].get("attribution_rejections", ())
-                            if row["field"] in correction and row["text"] == draft_fields.get(row["field"])]:
+                            if row.get("stage") != "review_repair_candidate"
+                            and row["field"] in correction and row["text"] == draft_fields.get(row["field"])]:
                 repair["work_attribution_rejections"] = receipts
             repair_images = []
+            candidate_reviews = []
             repair_choices = {}
             title_facts = {}
             missing_anchors = {}
@@ -1474,11 +1489,13 @@ def create_task_runtime(runtime, store, browsing):
                     repair_images.extend([{"type": "text", "text": path}, image])
                     disputed_names = [c for r in receipts if r["primary_frame"] == key and r["field"] == path
                                       for c in r["claims"] if c.get("relation") == "画面具体称呼"]
-                    if disputed_names and key not in shared_details:
+                    unlocated = any(r.get("unlocated") and r["primary_frame"] == key and r["field"] == path
+                                    for r in receipts)
+                    if (disputed_names or unlocated) and key not in shared_details:
                         shared_details[key] = await shared_visual_facts(
                             image, key, evidence.observations[key], inventories[key]["details"],
                             list(dict.fromkeys(c["term"] for c in disputed_names)),
-                            request_json, budget)
+                            request_json, budget, field=path, candidate_reviews=candidate_reviews)
                         inventories[key] = inventories[key] | {"details": list(dict.fromkeys(
                             [*inventories[key]["details"], *shared_details[key]]))}
                     if parts[2] == "title":
@@ -1486,7 +1503,7 @@ def create_task_runtime(runtime, store, browsing):
                                     for c in r["claims"] if c.get("issue")}
                         facts = [v for v in dict.fromkeys([*inventories[key]["labels"], *inventories[key]["details"]])
                                  if not any(name and name in v for name in disputed)]
-                        if disputed_names:
+                        if disputed_names or unlocated:
                             facts = [v for v in shared_details[key] if v in facts]
                             if not facts:
                                 raise DelegationError("主帧复读未给出可区分的画面依据。")
@@ -1509,7 +1526,7 @@ def create_task_runtime(runtime, store, browsing):
                                     "title": title_schema}}
                     elif parts[2] == "rationale":
                         options = await pixel_choices(key, int(parts[1]) + 1)
-                        if disputed_names:
+                        if disputed_names or unlocated:
                             options["detail"] = shared_details[key]
                         rejected_phrases = []
                         for receipt in receipts:
@@ -1559,6 +1576,7 @@ def create_task_runtime(runtime, store, browsing):
                 if fixed[path] in shared_details.get(key, ()):
                     specificity_checked[path] = (key, fixed[path])
             product = correct_editorial_fields(draft, correction, fixed)
+            product._attribution_reviews.extend(candidate_reviews)
         else:
             clip_candidates = candidate["items"]
             if physical_revision or (not prior and clip_candidates and all(i.get("primary_observation") for i in clip_candidates)):
@@ -1821,6 +1839,8 @@ def create_task_runtime(runtime, store, browsing):
                         for path, row in disputed.items():
                             product._attribution_reviews.append(row)
                             issues[path] = " ".join(f"「{c['term']}」{c['issue']} 可见：{c['observation']}" for c in row["claims"])
+                            if row.get("unlocated"):
+                                issues[path] += " 复核报告的修饰语未能定位到原句，本候选仍待核实。请选用同帧其它经核实的观察。"
                             rejected.append((path, "画面缺少区分具体称呼的依据"))
                     works = set().union(*(cited_programme_names(task.get("steps", ()), product.items[int(p.split(".")[1])].sources)
                                           for p in attribution_fields))
@@ -1918,6 +1938,10 @@ def create_task_runtime(runtime, store, browsing):
         return {"draft": turn.text, "sources": args.sources, "response_id": turn.id}
 
     async def web_search(request, args):
+        if archive and archive.matches(request.video_grant):
+            package = archive.open() if archive.bvid in args.query else archive.optional()
+            if package and (found := package.search(args.query, args.catalog))["links"]:
+                return found
         if args.catalog == "央视节目库":
             return {"links": await search_broadcast_programmes(args.query), "catalog": args.catalog}
         links = await search_public_web(args.query)
@@ -1927,6 +1951,14 @@ def create_task_runtime(runtime, store, browsing):
         addresses = available_web_addresses(request.goal, request.receipts)
         if str(source_url(args.web_fetch)) not in addresses:
             return {"error": "网页地址须来自本轮目标或检索回执。请使用完整获准地址，保留查询参数。", "allowed_urls": addresses}
+        url = str(source_url(args.web_fetch))
+        if archive and archive.matches(request.video_grant):
+            known = url == archive.url or any(
+                s["tool"] == "web_search" and s["result"].get("source_kind") == "archived_page_index"
+                and url in s["result"].get("links", []) for s in request.receipts)
+            package = archive.open() if known else archive.optional()
+            if package and url in package.pages:
+                return package.page(url)
         return await fetch_task_source(args.web_fetch, fetch_excerpt)
 
     async def owner(request, args):
@@ -1950,13 +1982,22 @@ def create_task_runtime(runtime, store, browsing):
         return {"simulated": True, "game": state["active_game_id"], "state": state["active_status"]}
 
     async def video(request, args):
-        if not request.scope[0]:
+        archived = (archive and archive.matches(request.video_grant) and
+                    (args.bvid, args.part) == (archive.bvid, archive.part) and permits(request.video_grant, args.model_dump()))
+        if archived or not request.scope[0]:
             async with asyncio.timeout(360):
                 return await read_public_part(request, args, browsing.evidence.visual,
                                               lambda: tasks.scope() == request.scope,
-                                              getattr(runtime.settings, "runtime", None))
+                                              getattr(runtime.settings, "runtime", None),
+                                              archive=archive.open() if archived else None)
         async with asyncio.timeout(20):
-            return await account_video(request, args)
+            try:
+                return await account_video(request, args)
+            except PlatformReadError as error:
+                restriction = video_read_restriction(error, args.bvid, args.part, "视频资料")
+                if not restriction:
+                    raise
+                return restriction | {"error": restriction["message"], "request_id": request.id}
 
     async def account_video(request, args):
         char = runtime.character
@@ -2023,7 +2064,8 @@ def create_task_runtime(runtime, store, browsing):
                     clip = await save_clip(browsing.adapter, metadata, part, ranges[0]["start"], ranges[0]["end"],
                                            request, lambda: tasks.scope() == request.scope, runtime.settings.runtime)
             except (ValueError, TimeoutError, httpx.HTTPError) as error:
-                clip = {"clip_error": f"未取得该窗口的连续画面（{type(error).__name__}）。"}
+                clip = video_read_restriction(error, args.bvid, args.part, "连续短片")
+                clip["clip_error"] = clip.get("message", f"未取得该窗口的连续画面（{type(error).__name__}）。")
         return {"status": status, "request_id": request.id, "viewing": coverage.get("viewing"), **limits,
                 "selection": selection, "findings": materials,
                 "comments": finding["comments"], "error": finding["error"],
