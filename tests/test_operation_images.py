@@ -2,6 +2,8 @@ import base64
 import hashlib
 import io
 import json
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -9,6 +11,31 @@ from PIL import Image
 
 from tuber_studio import operation_images as ops
 from tuber_studio.artwork_references import Reference
+from tuber_studio.memes import MemeCatalog
+
+
+async def test_chooser_offers_only_available_images_and_binds_gallery_digest(monkeypatch):
+    settings = SimpleNamespace(data={"responses": {"base_url": "http://gateway/llm/v1"}})
+    monkeypatch.setattr(ops, "gateway_base", lambda _: "http://gateway/v1")
+    entry = {"asset_id": "gallery-1", "title": "海边", "emotions": ["idle"], "sha256": "c" * 64}
+    material = json.dumps({"variants": ["q"], "gallery": [entry], "draft": "想去看海。"})
+    selection = {"choice": "gallery-1", "prompt": ""}
+
+    async def create(messages, *, tools, **kwargs):
+        assert tools[0]["parameters"]["properties"]["choice"]["enum"] == ["text_only", "q", "gallery-1"]
+        shown, = json.loads(messages[0]["content"])["gallery"]
+        assert shown == {key: entry[key] for key in ("asset_id", "title", "emotions")}
+        return SimpleNamespace(calls=[SimpleNamespace(name="choose_illustration", arguments=selection)])
+
+    @asynccontextmanager
+    async def client(_):
+        yield SimpleNamespace(create=create)
+
+    monkeypatch.setattr(ops.ResponsesClient, "from_settings", client)
+    assert await ops.choose(settings, material) == ops.GalleryImage(asset_id="gallery-1", sha256=entry["sha256"])
+    selection.update(choice="mature", prompt="海边")
+    with pytest.raises(ValueError, match="本轮可用"):
+        await ops.choose(settings, material)
 
 
 @pytest.fixture
@@ -95,6 +122,35 @@ async def test_text_only_does_not_submit(fixture, store, monkeypatch):
     job = service.decide(scope, request_key="1", context="", draft="下午见。")
     await service._process(store.one("SELECT * FROM operation_image_jobs WHERE job_id=?", (job["job_id"],)))
     assert service.status(scope, job["job_id"])["status"] == "text_only"
+    assert not monitor["posts"]
+
+
+@pytest.mark.parametrize("channel,key", [("comment", "browsing_policy"), ("direct_message", "message_policy"),
+                                          ("dynamic", "dynamic_policy")])
+async def test_gallery_and_generated_scene_share_scoped_choice(fixture, store, monkeypatch, channel, key):
+    images, scope, monitor = fixture
+    scope = scope.model_copy(update={"channel": channel})
+    images.catalog = MemeCatalog(images.settings, store)
+    asset = await images.catalog.register("whale", monitor["selection"].data, title="海边", emotions=["idle"],
+                                          source={"kind": "user_upload", "author": "test"},
+                                          license={"name": "test"})
+    store.set(key, {"use_memes": True, "generate_images": True})
+    async def pick(settings, material):
+        offer = json.loads(material)
+        assert offer["variants"] == ["q", "mature"]
+        assert asset["asset_id"] in [item["asset_id"] for item in offer["gallery"]]
+        return ops.GalleryImage(asset_id=asset["asset_id"], sha256=asset["sha256"])
+    monkeypatch.setattr(ops, "choose", pick)
+    job = images.decide(scope, request_key="gallery", context="海边", draft="想去看海。")
+    row = store.one("SELECT * FROM operation_image_jobs WHERE job_id=?", (job["job_id"],))
+    await images._process(row)
+    result = images.status(scope, job["job_id"])
+    assert (result["status"], result["asset_id"], result["asset_sha256"]) == ("gallery", asset["asset_id"], asset["sha256"])
+    assert not monitor["posts"]
+    other = images.decide(scope, request_key="changed", context="海边", draft="一起看海。")
+    store.set(key, {"use_memes": False, "generate_images": False})
+    await images._process(store.one("SELECT * FROM operation_image_jobs WHERE job_id=?", (other["job_id"],)))
+    assert images.status(scope, other["job_id"])["status"] == "text_only"
     assert not monitor["posts"]
 
 

@@ -564,13 +564,19 @@ class MemeCatalog:
         row = self._row(asset_id)
         if row["enabled"]:
             raise ValueError("删除前请先禁用表情")
-        for table, field, path in (("drafts", "image_ref", "$.asset_id"),
-                                   ("dm_drafts", "image_ref", "$.asset_id"),
-                                   ("browsing_intents", "target", "$.image_ref.asset_id")):
-            if field in {column["name"] for column in self.store.all(f"PRAGMA table_info({table})")} and self.store.one(
-                f"SELECT 1 FROM {table} WHERE status IN ('pending_review','approved','publishing','publish_uncertain') "
-                f"AND json_extract({field},?)=? LIMIT 1", (path, asset_id)
-            ):
+        has_jobs = self.store.one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='operation_image_jobs'")
+        for table, field, path in (("drafts", "image_ref", "$"), ("dm_drafts", "image_ref", "$"),
+                                   ("dynamic_posts", "image_ref", "$"), ("browsing_intents", "target", "$.image_ref")):
+            if field not in {column["name"] for column in self.store.all(f"PRAGMA table_info({table})")}:
+                continue
+            references = [f"json_extract({field},'{path}.asset_id')=:asset"]
+            if has_jobs:
+                references.append(f"json_extract({field},'{path}.job_id') IN "
+                                  "(SELECT job_id FROM operation_image_jobs WHERE status='gallery' "
+                                  "AND json_extract(brief,'$.asset_id')=:asset)")
+            if self.store.one(f"SELECT 1 FROM {table} WHERE status IN "
+                              "('pending_review','approved','publishing','publish_uncertain') AND ("
+                              + " OR ".join(references) + ") LIMIT 1", {"asset": asset_id}):
                 raise ValueError("表情正在被草稿或发送任务使用，不能删除")
         if self.store.one(
             "SELECT owner FROM meme_pins WHERE asset_id=? AND (expires_at IS NULL OR expires_at>?)",

@@ -48,15 +48,23 @@ def register_dynamic_publication(tasks, dynamics):
     def snapshot(row):
         bound(row)
         if (row["status"] not in {"pending_review", "approved"} or row["attempted_at"] is not None
-                or row.get("continuation") or not row["sources"] or not dynamics._valid_sources(row)):
+                or row.get("continuation") or not dynamics._valid_sources(row)):
             raise ValueError("草稿已有尝试、来源失效或不在可审核状态")
+        decision = dynamics.store.one("SELECT sources FROM dynamic_decisions WHERE id=? AND post_id=? AND action='post'",
+                                      (row["decision_id"], row["id"]))
+        if decision is None or json.loads(decision["sources"]) != row["sources"]:
+            raise ValueError("无法核对草稿的原始公开来源")
         sources = []
         for source in row["sources"]:
-            if (source["type"] not in {"published_reply", "public_incident"} or
-                    not (source.get("source_url") or source.get("public_sources"))):
-                raise ValueError("这条限定发布路径只接收带公开出处的草稿")
-            sources.append({key: source[key] for key in ("id", "type", "text", "source_url", "public_sources", "receipt_id")
-                            if key in source})
+            kind = source["type"]
+            if kind not in {"published_reply", "public_incident", "watched_video", "public_memory"} or (
+                    kind != "public_memory" and not (source.get("source_url") or source.get("public_sources"))):
+                raise ValueError("这条限定发布路径只能使用已核实的公开出处")
+            item = {key: source[key] for key in ("id", "type", "text", "source_url", "public_sources", "receipt_id")
+                    if key in source}
+            if kind == "public_memory":
+                item["fictional"] = source["fictional"]
+            sources.append(item)
         character = dynamics._character()
         binding = dynamics._publication_binding(row, row["account_id"], character)
         payload = dynamics._outgoing(row, character)

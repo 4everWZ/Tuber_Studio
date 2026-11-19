@@ -55,6 +55,8 @@
     <form id="op-round-settings" class="operation-settings-form">
       <fieldset class="settings-form-group">
         <legend>观看与回复数量</legend>
+        <div class="checks"><label><input type="checkbox" id="op-comment-memes"> 允许评论选用图库图片</label>
+          <label><input type="checkbox" id="op-comment-generate-images"> 允许评论调用生图模型</label></div>
         <p class="hint">各项填 0 表示该项不限额。是否发出由各渠道的权限设置决定。</p>
         <div class="form-grid settings-grid-3">
           <label>每日观看视频数
@@ -193,13 +195,14 @@
         <div class="policy-checks win-checks-bar">
           <label><input id="dynamic-enabled" type="checkbox"> 允许动态</label>
           <label><input id="dynamic-auto-publish" type="checkbox" checked> 自动发布（关闭则存为草稿待人工审核）</label>
-          <label><input id="dynamic-use-memes" type="checkbox"> 允许模型为动态附加 1 张图库表情包</label>
+          <label><input id="dynamic-use-memes" type="checkbox"> 允许动态选用图库图片</label>
+          <label><input id="dynamic-generate-images" type="checkbox"> 允许动态调用生图模型</label>
         </div>
         <div class="form-grid" style="margin-top:12px;">
-          <label>评估间隔（秒）<input id="dynamic-evaluate-interval" type="number" min="300" max="86400" step="1" value="1800" required></label>
-          <label>最短发布间隔（秒）<input id="dynamic-min-post-interval" type="number" min="21600" max="604800" step="1" value="21600" required></label>
-          <label>24 小时最大尝试次数<input id="dynamic-max-posts" type="number" min="1" max="2" step="1" value="2" required></label>
-          <label>运营记忆摘要预算 (tokens)<input id="dynamic-memory-summary-max" type="number" min="256" max="4096" step="1" value="2048" required></label>
+          <label>评估间隔（秒）<input id="dynamic-evaluate-interval" type="number" min="1" step="1" required></label>
+          <label>最短发布间隔（秒，0 表示不限）<input id="dynamic-min-post-interval" type="number" min="0" step="1" required></label>
+          <label>24 小时最大尝试次数（0 表示不限）<input id="dynamic-max-posts" type="number" min="0" step="1" required></label>
+          <label>运营记忆摘要预算 (tokens)<input id="dynamic-memory-summary-max" type="number" min="1" step="1" required></label>
         </div>
       </fieldset>
       <div class="actions" style="margin-top:14px;">

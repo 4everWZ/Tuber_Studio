@@ -9,11 +9,11 @@ export function localDateTime(value, display) {
   return Number.isNaN(date.getTime()) ? (display ? display(value) : String(value)) : date.toLocaleString("zh-CN", { hour12: false });
 }
 
-export function boundedInteger(id, title, minimum, maximum) {
+function policyInteger(id, title) {
   const el = $(id);
   const value = Number(el?.value);
-  if (!el?.value.trim() || !Number.isSafeInteger(value) || value < minimum || value > maximum) {
-    throw new Error(`${title}须为 ${minimum} 至 ${maximum} 的整数。`);
+  if (!el?.value.trim() || !Number.isSafeInteger(value) || value < Number(el.min)) {
+    throw new Error(`${title}须为不小于 ${el.min} 的有效整数。`);
   }
   return value;
 }
@@ -53,11 +53,12 @@ export function dynamicPolicyFromServer(policy, model, describe, display) {
   if (!model.dynamicPolicyDirty) {
     if ($("dynamic-enabled")) $("dynamic-enabled").checked = !!saved.enabled;
     if ($("dynamic-auto-publish")) $("dynamic-auto-publish").checked = saved.auto_publish !== false;
+    if ($("dynamic-generate-images")) $("dynamic-generate-images").checked = saved.generate_images !== false;
     if ($("dynamic-use-memes")) $("dynamic-use-memes").checked = !!saved.use_memes;
-    if ($("dynamic-evaluate-interval")) $("dynamic-evaluate-interval").value = saved.evaluate_interval_seconds ?? 1800;
-    if ($("dynamic-min-post-interval")) $("dynamic-min-post-interval").value = saved.min_post_interval_seconds ?? 21600;
-    if ($("dynamic-max-posts")) $("dynamic-max-posts").value = saved.max_posts_per_day ?? 2;
-    if ($("dynamic-memory-summary-max")) $("dynamic-memory-summary-max").value = saved.memory_summary_max_tokens ?? 2048;
+    if ($("dynamic-evaluate-interval")) $("dynamic-evaluate-interval").value = saved.evaluate_interval_seconds;
+    if ($("dynamic-min-post-interval")) $("dynamic-min-post-interval").value = saved.min_post_interval_seconds;
+    if ($("dynamic-max-posts")) $("dynamic-max-posts").value = saved.max_posts_per_day;
+    if ($("dynamic-memory-summary-max")) $("dynamic-memory-summary-max").value = saved.memory_summary_max_tokens;
   }
   renderDynamicPolicy(model, describe, display);
 }
@@ -149,7 +150,8 @@ export function renderDynamicPost(model, {
   const terminalInPending = model.dynamicPostView !== "history" && ["published", "rejected", "invalidated"].includes(post?.status);
   const editable = !!post && !terminalInPending && ["pending_review", "approved", "rejected"].includes(post.status);
   const card = post?.comment_card;
-  const commentLinks = commentCardLinks(card);
+  const sourceCard = post?.source_comment_card || card;
+  const commentLinks = commentCardLinks(sourceCard);
   const memeId = card ? null : post?.meme_id;
   const imageInfo = memeId ? model.dynamicMemeCache.get(`${post.character_id}:${memeId}`) : null;
   const ref = post?.illustration;
@@ -173,9 +175,9 @@ export function renderDynamicPost(model, {
     $("publish-dynamic").disabled = !post || post.status !== "approved" || model.dynamicPostDirty || model.dynamicPostPending || unavailable || !model.dynamicPolicy?.credentials_configured;
     $("publish-dynamic").textContent = card || memeId || ref ? "发布已审核图文" : "发布已审核动态";
   }
-  if ($("dynamic-pick-meme")) $("dynamic-pick-meme").disabled = !editable || model.dynamicPostPending || !!card;
+  if ($("dynamic-pick-meme")) $("dynamic-pick-meme").disabled = !editable || model.dynamicPostPending;
   if ($("dynamic-clear-meme")) $("dynamic-clear-meme").disabled = !editable || model.dynamicPostPending || !(memeId || ref);
-  if ($("dynamic-meme-actions")) $("dynamic-meme-actions").hidden = !!card;
+
 
   if ($("dynamic-posts")) {
     for (const button of $("dynamic-posts").querySelectorAll("button")) {
@@ -184,7 +186,8 @@ export function renderDynamicPost(model, {
   }
   for (const option of $("dynamic-post-views")?.querySelectorAll("input") || []) option.disabled = !!model.dynamicPostPending;
   if ($("dynamic-meme-preview")) $("dynamic-meme-preview").hidden = !card && !memeId && !ref;
-  if ($("dynamic-comment-sources")) $("dynamic-comment-sources").hidden = !card;
+  if ($("dynamic-comment-sources")) $("dynamic-comment-sources").hidden = !sourceCard;
+  if (sourceCard && $("dynamic-comment-conversation")) renderCommentConversation($("dynamic-comment-conversation"), sourceCard, commentLinks, node);
   if (card) {
     if ($("dynamic-meme-name")) $("dynamic-meme-name").textContent = "原评论图";
     const key = `comment-card:${post.id}:${JSON.stringify(card)}`;
@@ -206,10 +209,10 @@ export function renderDynamicPost(model, {
       }
       $("dynamic-meme-image")?.replaceChildren(...images);
       $("dynamic-comment-sources").open = false;
-      renderCommentConversation($("dynamic-comment-conversation"), card, commentLinks, node);
+
     }
   } else if (ref) {
-    $("dynamic-meme-name").textContent = "创作配图";
+    $("dynamic-meme-name").textContent = ref.asset_id ? "图库配图" : ref.artifact_id ? "生成配图" : "动态配图";
     $("dynamic-meme-availability").textContent = illustrationStatus(ref);
     const url = illustrationUrl("dynamics", post.id, ref);
     if (model.dynamicMemePreviewKey !== url) {
@@ -624,10 +627,11 @@ export function initDynamicsModule(model, {
       enabled: $("dynamic-enabled")?.checked,
       auto_publish: $("dynamic-auto-publish")?.checked,
       use_memes: $("dynamic-use-memes")?.checked,
-      evaluate_interval_seconds: boundedInteger("dynamic-evaluate-interval", "动态评估间隔", 300, 86400),
-      min_post_interval_seconds: boundedInteger("dynamic-min-post-interval", "最短发布间隔", 21600, 604800),
-      max_posts_per_day: boundedInteger("dynamic-max-posts", "每日动态数", 1, 2),
-      memory_summary_max_tokens: boundedInteger("dynamic-memory-summary-max", "运营记忆摘要长度", 256, 4096),
+      generate_images: $("dynamic-generate-images")?.checked,
+      evaluate_interval_seconds: policyInteger("dynamic-evaluate-interval", "动态评估间隔"),
+      min_post_interval_seconds: policyInteger("dynamic-min-post-interval", "最短发布间隔"),
+      max_posts_per_day: policyInteger("dynamic-max-posts", "每日动态数"),
+      memory_summary_max_tokens: policyInteger("dynamic-memory-summary-max", "运营记忆摘要长度"),
     };
     model.dynamicSaving = true;
     doRenderPolicy();

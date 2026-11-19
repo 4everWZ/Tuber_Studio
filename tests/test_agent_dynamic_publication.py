@@ -157,6 +157,20 @@ async def test_revoke_at_transport_boundary_does_not_reserve_or_send(handoff, mo
     assert "待核对" in data.tasks.view(archived)["message"]
 
 
+async def test_named_original_thought_can_be_reviewed_without_an_external_source(handoff):
+    service = handoff.service
+    caption = "我想画一幅海底小窝。"
+    decision = service._save_decision(service._character(), False, {
+        "action": "post", "reason": "分享随想", "content": caption, "source_ids": [], "next_evaluation_seconds": 30,
+    }, [], schedule=False, account_id="100", decide_image=False)
+    tool = handoff.tasks.tools["inspect_dynamic_draft"]
+    result = await tool.run(None, ExistingDraft(post_id=decision["post_id"]))
+    assert result["text"] == caption and result["sources"] == [] and not handoff.sends
+    service.store.execute("UPDATE dynamic_posts SET sources='[]', source_ids='[]' WHERE id=?", (handoff.draft,))
+    with pytest.raises(ValueError, match="原始公开来源"):
+        await tool.run(None, ExistingDraft(post_id=handoff.draft))
+
+
 async def test_private_topic_and_unbound_draft_are_not_disclosed(handoff):
     data = handoff
     tool = data.tasks.tools["inspect_dynamic_draft"]

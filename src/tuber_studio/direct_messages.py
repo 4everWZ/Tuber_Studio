@@ -21,9 +21,19 @@ from .message_outreach import (
     verified_agreement,
 )
 from .models import OperationReply, StrictModel
+from .operation_attachments import (
+    checked_image,
+    image_payload,
+    image_scope,
+    queue_image,
+    record_upload,
+    row_ref,
+    uploads,
+    wait_decision,
+    workstation_image_decisions,
+)
+from .operation_attachments import decision as image_decision
 from .operation_continuations import GenerationFeedback, content_hash
-from .operation_attachments import (checked_image, decision as image_decision, image_payload, image_scope,
-                                    queue_image, record_upload, row_ref, uploads, wait_decision)
 from .operation_feedback import (
     FeedbackPublication,
     PublicationContext,
@@ -52,6 +62,7 @@ class MessagePolicy(StrictModel):
     auto_poll: bool = False
     auto_send: bool = False
     use_memes: bool = False
+    generate_images: bool = True
     allow_comment_handoff: bool = True
     channel_max_tokens: int = Field(default=2048, ge=256, le=65536)
     poll_interval_seconds: int = Field(default=60, ge=20, le=86400)
@@ -1368,7 +1379,8 @@ class DirectMessages:
                     if draft["source_kind"] == "message":
                         reply_ids = list(refs.values())
                 selected, selection_failed = None, False
-                if reply and not preserve_attachments and self.policy()["use_memes"] and self.memes:
+                if (reply and not preserve_attachments and self.policy()["use_memes"] and self.memes
+                        and not workstation_image_decisions(self.runtime)):
                     try:
                         selected = await select_meme(
                             self.runtime, self.memes, character, event, reply.spoken_text
@@ -1398,9 +1410,10 @@ class DirectMessages:
                 if not reply:
                     return
             ref = row_ref(draft) if preserve_attachments else None
-            if not preserve_attachments and draft["source_kind"] == "message" and not selected and not selection_failed:
+            if not preserve_attachments and not selected and not selection_failed:
                 ref = queue_image(self.runtime, "messages", draft,
-                                  {"incoming": source["content"], "recipient_uid": draft["platform_user_id"],
+                                  {("incoming" if draft["source_kind"] == "message" else "public_comment"): source["content"],
+                                   "recipient_uid": draft["platform_user_id"],
                                    "reply_incoming_ids": reply_ids}, reply.spoken_text)
             self.store.execute(
                 "UPDATE dm_drafts SET status=?,resume_pending=0,next_attempt_at=0,text=?,answer_check=?,model=?,"

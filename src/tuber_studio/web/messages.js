@@ -12,7 +12,7 @@ export class MessagesPanel {
     root.innerHTML=`<div class="page-heading"><div><p class="eyebrow">PRIVATE MESSAGES</p><h1>私信工作台</h1></div><div class="actions"><button data-sync>读取最新私信</button><button data-refresh>刷新</button><a href="#message-policy-settings">私信设置 →</a></div></div>
       <p class="hint">回复对方主动发来的私信；收到真实私聊邀请或完成约定后，可主动联系一次，无回应则等待。收件人绑定原消息作者，不能由模型改成其他用户。同一OC与平台用户共享好感度，评论与私信正文各自保留。</p>
       <p data-override class="feature-note" hidden><span data-override-text></span> <a href="#automation">自主浏览与互动 →</a></p>
-      <details class="panel"><summary>私信策略与发送限额</summary><form data-policy><div class="checks"><label><input type="checkbox" name="enabled">启用私信</label><label><input type="checkbox" name="auto_poll">自动读取来信</label><label><input type="checkbox" name="auto_send">自动发送有来源触发的回复</label><label><input type="checkbox" name="allow_comment_handoff">收到私聊邀请或完成约定后联系</label></div><div class="fields"><label>读取间隔（秒）<input name="poll_interval_seconds" type="number" min="20" max="86400"></label><label>每小时最多发送<input name="max_per_hour" type="number" min="0" max="30" required></label><label>每天最多发送<input name="max_per_day" type="number" min="0" max="200" required></label><label>同用户冷却（秒）<input name="recipient_cooldown_seconds" type="number" min="10" max="86400"></label></div><button type="submit">保存私信策略</button><p class="hint">发送限额填 0 表示不限。启用私信、自动读取与自动发送后，将启用后新收到的连续来信合并回复，不追发历史来信，也无需逐条审核。真实私聊邀请或完成约定可触发首次联系一次，无回应则等待；普通来信回复不额外做首发联系核对。关闭自动发送时保留待审核草稿，手工生成仍先审核。明确邀请由程序按真实UID和原话入队，大肥鱼负责正文。B站账号凭证在设置页统一管理。允许表情包时，仅简单情绪回复可选择图片；知识问答与引用仍使用文字。</p></form></details>
+      <details class="panel"><summary>私信策略与发送限额</summary><form data-policy><div class="checks"><label><input type="checkbox" name="enabled">启用私信</label><label><input type="checkbox" name="auto_poll">自动读取来信</label><label><input type="checkbox" name="auto_send">自动发送有来源触发的回复</label><label><input type="checkbox" name="allow_comment_handoff">收到私聊邀请或完成约定后联系</label><label><input type="checkbox" name="use_memes">允许私信选用图库图片</label><label><input type="checkbox" name="generate_images">允许私信调用生图模型</label></div><div class="fields"><label>读取间隔（秒）<input name="poll_interval_seconds" type="number" min="20" max="86400"></label><label>每小时最多发送<input name="max_per_hour" type="number" min="0" max="30" required></label><label>每天最多发送<input name="max_per_day" type="number" min="0" max="200" required></label><label>同用户冷却（秒）<input name="recipient_cooldown_seconds" type="number" min="10" max="86400"></label></div><button type="submit">保存私信策略</button><p class="hint">发送限额填 0 表示不限。启用私信、自动读取与自动发送后，将启用后新收到的连续来信合并回复，不追发历史来信，也无需逐条审核。真实私聊邀请或完成约定可触发首次联系一次，无回应则等待；普通来信回复不额外做首发联系核对。关闭自动发送时保留待审核草稿，手工生成仍先审核。明确邀请由程序按真实UID和原话入队，大肥鱼负责正文。B站账号凭证在设置页统一管理。大肥鱼根据来信和回复决定是否配图，生图使用角色的 Q 版或常规版参考。</p></form></details>
       <p data-status role="status"></p><p data-error class="error-text" role="alert"></p>
       <div class="message-layout"><section class="panel"><h2>用户与来信</h2><label>会话<select data-users><option value="">选择用户</option></select></label><p data-relation class="hint"></p><div data-inbox></div></section><section class="panel"><h2>私信草稿与回执</h2><div data-drafts class="message-drafts"></div><p data-source class="quoted-text">选择草稿查看来源和回复。</p><p data-draft-status></p><label>私信内容<textarea data-text rows="6" disabled></textarea></label><div class="actions"><button data-review="edit">保存草稿</button><button data-review="approve" class="primary">审核通过</button><button data-review="reject">拒绝</button><button data-copy>复制已审核内容</button><button data-send class="primary">发送已审核私信</button><button data-retry>重试生成</button></div><pre data-receipt class="code-small"></pre></section></div>`;
     this.$=selector=>root.querySelector(selector);
@@ -61,13 +61,12 @@ export class MessagesPanel {
     const privateList=this.element('div',null,'message-drafts');privateList.dataset.privateGenerationList='';
     const privateProgress=this.element('div');privateProgress.dataset.privateGenerationProgress='';privateSection.append(privateList,privateProgress);root.append(privateSection);
     this.privateContinuation=new OperationContinuationView(privateProgress,api,notify,()=>this.refresh());
-    const memePolicy=document.createElement('label');const memeToggle=document.createElement('input');memeToggle.type='checkbox';memeToggle.name='use_memes';memePolicy.append(memeToggle,'允许模型用表情包替代简单情绪回复');this.$('[data-policy] .checks').append(memePolicy);
     const imageActions=this.element('div',null,'actions dm-meme-actions');
     const pick=this.element('button','选择表情包');pick.type='button';pick.dataset.pickMeme='';
     const clear=this.element('button','改用文字');clear.type='button';clear.dataset.clearMeme='';
     const manage=this.element('a','管理表情包图库 →');manage.href='#assets';const attach=this.element('button','附图并保留正文');attach.type='button';attach.dataset.attachImage='';imageActions.append(pick,attach,clear,manage);
     const imagePreview=this.element('div',null,'dm-meme-preview');imagePreview.dataset.memePreview='';imagePreview.hidden=true;
-    imagePreview.innerHTML='<strong data-meme-name></strong><figure><img data-meme-image alt="已选表情包" hidden><span data-meme-fallback class="hint" hidden>图片预览不可用，请检查图库。</span></figure><p data-meme-availability class="hint"></p><p data-image-mode class="hint">发送时只有这一张图片；下方文字仅供审阅或切回文字，不会一并发送。</p>';
+    imagePreview.innerHTML='<strong data-meme-name></strong><figure><img data-meme-image alt="已选私信配图" hidden><span data-meme-fallback class="hint" hidden>图片暂时无法预览。</span></figure><p data-meme-availability class="hint"></p><p data-image-mode class="hint"></p>';
     const textLabel=this.$('[data-text]').parentElement;const title=this.element('span','私信内容');title.dataset.textLabel='';textLabel.firstChild.replaceWith(title);textLabel.before(imageActions,imagePreview);
     this.memePicker=new MemePicker(api,(id,asset)=>this.chooseMeme(id,asset,this.pickerContext),{description:'选择启用的图片，保存后重新审核。'});
     pick.onclick=()=>{const row=this.value?.drafts.find(item=>item.id===this.selected);if(!row)return;this.pickerContext={id:row.id,account:this.value.account_id,character:row.character_id,updated_at:row.updated_at};this.memePicker.open(row.meme_id);};
@@ -106,7 +105,7 @@ export class MessagesPanel {
     container.append(this.policyRoot);
     this.$=selector=>this.root.querySelector(selector)||this.policyRoot.querySelector(selector);
   }
-  settings(){const value={},base=this.value.policy.base||this.value.policy;for(const name of ['enabled','auto_poll','auto_send','allow_comment_handoff','use_memes','poll_interval_seconds','max_per_hour','max_per_day','recipient_cooldown_seconds'])value[name]=base[name];return value;}
+  settings(){const value={},base=this.value.policy.base||this.value.policy;for(const name of ['enabled','auto_poll','auto_send','allow_comment_handoff','use_memes','generate_images','poll_interval_seconds','max_per_hour','max_per_day','recipient_cooldown_seconds'])value[name]=base[name];return value;}
   closeImagePicker(){this.pickerContext=null;this.memePicker.close(true);}
   async chooseMeme(meme_id,asset=null,context=null){
     if(this.busy)throw new Error('草稿正在处理中，请稍后再选图。');
@@ -262,7 +261,7 @@ export class MessagesPanel {
     this.$('[data-image-mode]').textContent=legacy?'只发一条图片消息，正文保留作备选。':'先发图片，再向同一 UID 发送正文，各自取得平台回执。';
     this.$('[data-meme-preview]').hidden=!image;
     if(ref){
-      this.$('[data-meme-name]').textContent='私信配图';
+      this.$('[data-meme-name]').textContent=ref.asset_id?'图库配图':ref.artifact_id?'生成配图':'私信配图';
       this.$('[data-meme-availability]').textContent=illustrationStatus(ref);
       const url=illustrationUrl('messages',row.id,ref),preview=this.$('[data-meme-image]');
       if(this.previewKey!==url){this.previewKey=url;preview.hidden=true;preview.onload=()=>{preview.hidden=false;};preview.onerror=()=>{this.$('[data-meme-fallback]').hidden=false;};this.$('[data-meme-fallback]').hidden=true;if(url)preview.src=url;else preview.removeAttribute('src');}

@@ -14,7 +14,16 @@ from .http_api import InferenceBudgetExceeded
 from .models import StrictModel
 from .responses_provider import ResponsesClient
 from .store import dump
-from .workstation_images import ImageBrief, MODEL, REVISION, gateway, gateway_base, image_payload, result_png, submit
+from .workstation_images import (
+    MODEL,
+    REVISION,
+    ImageBrief,
+    gateway,
+    gateway_base,
+    image_payload,
+    result_png,
+    submit,
+)
 
 
 class ImageScope(StrictModel):
@@ -28,37 +37,59 @@ def scope_key(scope):
     return ImageScope.model_validate(scope).model_dump_json()
 
 
+def image_permissions(store, channel):
+    key = {"comment": "browsing_policy", "direct_message": "message_policy", "dynamic": "dynamic_policy"}[channel]
+    policy = store.get(key, {})
+    return policy.get("use_memes", False), policy.get("generate_images", True)
+
+
+class GalleryImage(StrictModel):
+    asset_id: str
+    sha256: str
+
+
 async def choose(settings, material):
     # Only the background service receives this channel's material.
     base = gateway_base(settings).removesuffix("/v1")
     if settings.data.get("responses", {}).get("base_url", "").rstrip("/") != base + "/llm/v1":
         raise ValueError("工作站后台 Responses 未配置")
+    options = json.loads(material)
+    gallery = {item["asset_id"]: item for item in options.get("gallery", [])}
+    choices = ["text_only", *options.get("variants", ["q", "mature"]), *gallery]
+    options["gallery"] = [{key: entry[key] for key in ("asset_id", "title", "emotions")}
+                          for entry in gallery.values()]
     tool = {"type": "function", "name": "choose_illustration", "strict": True,
-            "description": "给当前草稿选纯文字、Q 版或常规版角色配图。",
+            "description": "根据正文选择纯文字、已有图库图片或生成新的角色场景。",
             "parameters": {"type": "object", "additionalProperties": False,
-                           "properties": {"choice": {"type": "string", "enum": ["text_only", "q", "mature"]},
+                           "properties": {"choice": {"type": "string", "enum": choices},
                                           "prompt": {"type": "string", "description": "图中可见场景；纯文字则留空。"}},
                            "required": ["choice", "prompt"]}}
     async with ResponsesClient.from_settings(settings) as client:
-        turn = await client.create([{"role": "user", "content": material}], tools=[tool], tool_choice="required",
+        turn = await client.create([{"role": "user", "content": dump(options)}], tools=[tool], tool_choice="required",
                                    instructions="你为当前渠道的这条草稿决定配图。先看 context 和 draft："
-                                   "图片能展示这次交流中具体的事物、动作或情绪时，可选择生成。"
-                                   "正文已完整回答且图片没有新增信息时选择 text_only，prompt 留空。"
-                                   "时间确认通常只需文字。角色卡用于保持形象，不能凭角色设定另起一个场景。"
-                                   "需要画图时选择 q 或 mature，prompt 描述本次材料中的可见场景。")
+                                   "按这次交流的内容和你的表达意图决定，图片可以展示事物、动作、情绪或你的想象。"
+                                   "只需正文或沿用已有原评论图时选择 text_only。角色卡用于保持形象。"
+                                   "图库有合适图片时可以选对应的 asset_id。需要新画面时选可用的 q 或 mature，"
+                                   "prompt 描述本次材料中的可见场景。选择图库或纯文字时 prompt 留空。")
     if len(turn.calls) != 1:
         raise ValueError("后台未给出唯一配图决定")
     action, = turn.calls
     if action.name != "choose_illustration" or set(action.arguments) != {"choice", "prompt"}:
         raise ValueError("后台配图决定无效")
-    if action.arguments["choice"] == "text_only":
+    choice = action.arguments["choice"]
+    if choice not in choices:
+        raise ValueError("所选图片不在本轮可用选项中")
+    if choice == "text_only":
         return None
+    if choice in gallery:
+        return GalleryImage(asset_id=choice, sha256=gallery[choice]["sha256"])
     return ImageBrief(variant=action.arguments["choice"], prompt=action.arguments["prompt"])
 
 
 class OperationImages:
     def __init__(self, settings, store):
         self.settings, self.store = settings, store
+        self.catalog = None
         self.wake = asyncio.Event()
         self.worker = None
         store.db.executescript("""
@@ -97,19 +128,32 @@ class OperationImages:
                 raise ValueError("已绑定的请求键不能替换渠道材料或草稿")
             return self.status(scope, row["job_id"])
         card = self.store.character(scope.character_id, character_version)
-        material = dump({"character": {k: card.get(k) for k in ("name", "core", "style", "version")},
-                         "channel": scope.channel, "context": context, "draft": draft})
-        if len(material.encode()) > 128 * 1024:
-            raise ValueError("渠道材料过大")
+        use_gallery, generate = image_permissions(self.store, scope.channel)
         identity = uuid4().hex
         bindings = []
-        for variant in ("q", "mature"):
+        for variant in (("q", "mature") if generate else ()):
             try:
                 ref = resolve_reference(self.settings, scope.character_id, variant)
             except (FileNotFoundError, LookupError, ValueError):
                 continue
             bindings.append((identity, variant, card["version"], ref.source,
                              str(getattr(ref, "revision", ref.sha256)), ref.sha256))
+        packet = {"character": {k: card.get(k) for k in ("name", "core", "style", "version")},
+                  "channel": scope.channel, "context": context, "draft": draft,
+                  "variants": [binding[1] for binding in bindings], "gallery": []}
+        remaining = 128 * 1024 - len(dump(packet).encode())
+        if remaining < 0:
+            raise ValueError("渠道材料过大")
+        if use_gallery and self.catalog:
+            for item in self.catalog.list(card["id"]):
+                if item["missing"]:
+                    continue
+                candidate = {k: item[k] for k in ("asset_id", "sha256", "title", "emotions")}
+                size = len(dump(candidate).encode()) + 2
+                if size <= remaining:
+                    packet["gallery"].append(candidate)
+                    remaining -= size
+        material = dump(packet)
         with self.store.db as db:
             db.execute("INSERT INTO operation_image_jobs(job_id,scope,request_key,material,status,created) "
                        "VALUES(?,?,?,?,?,?)", (identity, bound, request_key, material, "queued", time.time()))
@@ -119,6 +163,7 @@ class OperationImages:
 
     def status(self, scope, job_id):
         row = self.store.one("SELECT j.job_id,j.status,j.artifact_id,j.error,g.state AS remote_state,g.seed,"
+                             "json_extract(j.brief,'$.asset_id') AS asset_id,json_extract(j.brief,'$.sha256') AS asset_sha256,"
                              "r.character_version,r.variant,r.source AS reference_source,r.sha256 AS reference_sha256,"
                              "r.revision AS reference_revision "
                              "FROM operation_image_jobs j LEFT JOIN operation_image_gateway_receipts g "
@@ -186,9 +231,23 @@ class OperationImages:
         scope = ImageScope.model_validate_json(job["scope"])
         if job["status"] == "queued":
             self.store.execute("UPDATE operation_image_jobs SET status='deciding' WHERE job_id=?", (identity,))
-            brief = await choose(self.settings, job["material"])
-            if brief is None:
+            material = json.loads(job["material"])
+            use_gallery, generate = image_permissions(self.store, scope.channel)
+            if not use_gallery:
+                material["gallery"] = []
+            if not generate:
+                material["variants"] = []
+            offered = material.get("variants", ["q", "mature"]) or material.get("gallery")
+            brief = await choose(self.settings, dump(material)) if offered else None
+            use_gallery, generate = image_permissions(self.store, scope.channel)
+            if brief is None or (isinstance(brief, GalleryImage) and not use_gallery) or (isinstance(brief, ImageBrief) and not generate):
                 self.store.execute("UPDATE operation_image_jobs SET status='text_only' WHERE job_id=?", (identity,))
+                return
+            if isinstance(brief, GalleryImage):
+                if not self.catalog or self.catalog.resolve(brief.asset_id, scope.character_id)["sha256"] != brief.sha256:
+                    raise ValueError("选中的图库图片已变化")
+                self.store.execute("UPDATE operation_image_jobs SET status='gallery',brief=? WHERE job_id=?",
+                                   (brief.model_dump_json(), identity))
                 return
             job["brief"] = brief.model_dump_json()
             job["endpoint"] = gateway_base(self.settings)
@@ -204,6 +263,9 @@ class OperationImages:
             raise ValueError("入队时此角色版本没有可用的所选参考")
         async with gateway(self.settings) as client:
             if not job["remote_id"]:
+                if not image_permissions(self.store, scope.channel)[1]:
+                    self.store.execute("UPDATE operation_image_jobs SET status='text_only' WHERE job_id=?", (identity,))
+                    return
                 ref = resolve_reference(self.settings, scope.character_id, brief.variant, sha256=binding["sha256"])
                 if hashlib.sha256(ref.data).hexdigest() != binding["sha256"]:
                     raise ValueError("图片参考与入队时绑定的内容不一致")

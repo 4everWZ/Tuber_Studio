@@ -52,6 +52,8 @@ export function renderOperationsQuickBar(status) {
   const settings = status.settings || {};
   if (!roundSettingsDirty) {
     for (const [name, id, fallback] of roundNumberFields) $(id).value = settings[name] ?? fallback;
+    $("op-comment-memes").checked = !!settings.use_memes;
+    $("op-comment-generate-images").checked = settings.generate_images !== false;
     $("exp-frame-sampling").value = settings.frame_sampling || "baseline";
     $("op-business-timezone").value = settings.business_timezone || "Asia/Taipei";
   }
@@ -161,6 +163,8 @@ export function initOperationsModule(api, accountPanel) {
       const save = $("op-save-quick-config");
       if (save.disabled) return;
       const payload = Object.fromEntries(roundNumberFields.map(([name, id]) => [name, Number($(id).value)]));
+      payload.use_memes = $("op-comment-memes").checked;
+      payload.generate_images = $("op-comment-generate-images").checked;
       payload.business_timezone = $("op-business-timezone").value.trim() || "Asia/Taipei";
       payload.frame_sampling = $("exp-frame-sampling").value;
       const fields = [...roundForm.querySelectorAll("input, select")];

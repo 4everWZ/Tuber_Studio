@@ -16,8 +16,18 @@ from .dynamic_comment_card import comment_card, render_comment_card
 from .dynamic_grounding import review_caption
 from .generation_meter import budgeted_json
 from .meme_selection import select_meme
-from .operation_attachments import (checked_image, decision, image_payload, image_scope, queue_image,
-                                    record_upload, row_ref, uploads, wait_decision)
+from .operation_attachments import (
+    checked_image,
+    decision,
+    image_payload,
+    image_scope,
+    queue_image,
+    record_upload,
+    row_ref,
+    uploads,
+    wait_decision,
+    workstation_image_decisions,
+)
 from .operation_continuations import content_hash
 from .operation_feedback import (
     FeedbackPublication,
@@ -49,10 +59,13 @@ from .platforms.bilibili_dynamics import (
 from .platforms.bilibili_images import bfs_image_path
 from .publication_errors import PlatformRejected, UnknownPublication
 
+MAX_SAFE_INTEGER = (1 << 53) - 1  # Exact integer range shared with browser JSON.
+
 DEFAULT_POLICY = {
     "enabled": False,
     "auto_publish": True,
     "use_memes": False,
+    "generate_images": True,
     "evaluate_interval_seconds": 1800,
     "min_post_interval_seconds": 21600,
     "max_posts_per_day": 2,
@@ -228,17 +241,17 @@ class Dynamics:
         if not isinstance(patch, dict) or not set(patch) <= set(DEFAULT_POLICY):
             raise ValueError("未知动态运营策略字段")
         data = DEFAULT_POLICY | self.store.get("dynamic_policy", {}) | patch
-        for name in ("enabled", "auto_publish", "use_memes"):
+        for name in ("enabled", "auto_publish", "use_memes", "generate_images"):
             if type(data[name]) is not bool:
                 raise ValueError("运营开关须为布尔值")
-        for name, minimum, maximum in (
-            ("evaluate_interval_seconds", 300, 86400),
-            ("min_post_interval_seconds", 21600, 604800),
-            ("max_posts_per_day", 1, 2),
-            ("memory_summary_max_tokens", 256, 4096),
+        for name, minimum in (
+            ("evaluate_interval_seconds", 1),
+            ("min_post_interval_seconds", 0),
+            ("max_posts_per_day", 0),
+            ("memory_summary_max_tokens", 1),
         ):
-            if type(data[name]) is not int or not minimum <= data[name] <= maximum:
-                raise ValueError(f"{name} 须在 {minimum} 到 {maximum} 之间")
+            if type(data[name]) is not int or not minimum <= data[name] <= MAX_SAFE_INTEGER:
+                raise ValueError(f"{name} 须为不小于 {minimum} 的有效整数")
         if data["enabled"] and not self.policy()["credentials_configured"]:
             raise ValueError("开启动态运营需要先配置账号登录凭证")
         self.store.set("dynamic_policy", data)
@@ -549,6 +562,9 @@ class Dynamics:
             post["image_uploads"] = uploads(self.store, "dynamics", post["id"])
         snapshot = post.pop("comment_card_snapshot", None)
         post["comment_card"] = json.loads(snapshot) if snapshot is not None else comment_card(post["sources"], legacy=True)
+        if post["comment_card"] and post["illustration"]:
+            post["source_comment_card"] = post["comment_card"]
+            post["comment_card"] = None
         post["review_key"] = content_hash([post.get(k) for k in (
             "id", "account_id", "character_id", "character_version", "updated_at", "content",
             "sources", "meme_id", "illustration", "comment_card")])
@@ -615,8 +631,6 @@ class Dynamics:
             return row | {"copy_text": row["content"]}
         content = validate_text(text) if text is not None else row["content"]
         owner = f"dynamic-draft:{post_id}"
-        if meme_id and row["comment_card"]:
-            meme_id = None
         if meme_id and action != "reject":
             if not self.memes:
                 raise ValueError("表情组件尚未启用")
@@ -625,6 +639,9 @@ class Dynamics:
         bound_ref = illustration if action == "approve" else row["image_ref"]
         if "meme_id" in options:
             bound_ref = None
+            if meme_id and (row["comment_card"] or row.get("source_comment_card")):
+                asset = self.memes.resolve(meme_id, row["character_id"])
+                bound_ref = {"asset_id": meme_id, "sha256": asset["sha256"]}
         try:
             self.store.execute(
                 "UPDATE dynamic_posts SET status=?,content=?,content_hash=?,meme_id=?,image_ref=?,error=NULL,updated_at=? WHERE id=?",
@@ -680,7 +697,7 @@ class Dynamics:
         )
         if row["last"] and now - row["last"] < policy["min_post_interval_seconds"]:
             raise ValueError("尚未达到动态最小发布间隔")
-        if (row["daily"] or 0) >= policy["max_posts_per_day"]:
+        if policy["max_posts_per_day"] and (row["daily"] or 0) >= policy["max_posts_per_day"]:
             raise ValueError("已达到24小时动态发布上限")
 
     def _publication_binding(self, row, account, character):
@@ -710,7 +727,7 @@ class Dynamics:
 
     @staticmethod
     def _comment_links(row):
-        if card := row["comment_card"]:
+        if card := row.get("source_comment_card") or row["comment_card"]:
             links = card["comments"] if card.get("legacy") else card["links"]
             return list(dict.fromkeys(item["url"] for item in links))
         return []
@@ -1393,7 +1410,7 @@ class Dynamics:
                     "maxItems": min(len(sources), 1),
                     "items": {"type": "string", **({"enum": [source["id"] for source in sources]} if sources else {})},
                 },
-                "next_evaluation_seconds": {"type": "integer", "minimum": 300, "maximum": 86400},
+                "next_evaluation_seconds": {"type": "integer", "minimum": 1, "maximum": MAX_SAFE_INTEGER},
             },
         }
 
@@ -1420,7 +1437,7 @@ class Dynamics:
         if not set(ids) <= allowed:
             raise ValueError("模型引用了未授权来源")
         seconds = data["next_evaluation_seconds"]
-        if type(seconds) is not int or not 300 <= seconds <= 86400:
+        if type(seconds) is not int or not 1 <= seconds <= MAX_SAFE_INTEGER:
             raise ValueError("模型下次评估间隔无效")
         if data["action"] == "post":
             data["content"] = validate_text(data["content"])
@@ -1493,7 +1510,7 @@ class Dynamics:
                     "UPDATE dynamic_posts SET generation_identity=? WHERE id=?",
                     (_json(generation_identity or runtime_identity(self.runtime, char)), post_id),
                 )
-        if data["action"] == "post" and decide_image and not comment_card(selected):
+        if data["action"] == "post" and decide_image:
             post = self._post(post_id)
             # Only selected public sources cross into the illustration prompt.
             public = [{k: source[k] for k in ("id", "type", "text", "source_url") if k in source}
@@ -1827,7 +1844,7 @@ class Dynamics:
                     selected_sources = [by_id[source_id] for source_id in data["source_ids"]]
                     if (
                         data["action"] == "post" and not comment_card(selected_sources)
-                        and self.policy()["use_memes"] and self.memes
+                        and self.policy()["use_memes"] and self.memes and not workstation_image_decisions(self.runtime)
                     ):
                         try:
                             selected = await select_meme(

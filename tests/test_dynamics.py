@@ -219,6 +219,21 @@ async def test_dynamic_from_public_reply_publishes_the_reviewed_text_and_comment
     )]
 
 
+async def test_public_comment_can_illustrate_its_story_without_losing_the_source_link(service, monkeypatch):
+    published_reply(service)
+    generated = {"artifact_id": "a" * 32, "sha256": "b" * 64}
+    monkeypatch.setattr(module, "queue_image", lambda *args: generated)
+    draft = await service.evaluate(manual=True)
+    row = service._post(draft["post_id"])
+    assert row["comment_card"] is None and row["source_comment_card"]
+    reviewed = service.review(row["id"], "approve")
+    payload = service._outgoing(reviewed, service._character())
+    assert payload == {"text": reviewed["content"] + "\n\n原评论：https://www.bilibili.com/video/BV1d8pU6xEZX#reply42",
+                       "artifact_id": generated["artifact_id"], "asset_sha256": generated["sha256"]}
+    without_illustration = service.review(row["id"], "edit", meme_id=None)
+    assert without_illustration["comment_card"] == row["source_comment_card"]
+
+
 def test_old_dynamic_card_preserves_the_original_quote_order_for_reconciliation():
     from tuber_studio.dynamic_comment_card import comment_card
 
@@ -824,7 +839,7 @@ async def test_inflight_cancel_pauses_and_restart_never_retries(service, monkeyp
     assert again.list_posts()[0]["status"] == "publish_uncertain"
 
 
-async def test_six_hour_and_two_per_rolling_day_hard_limits(service):
+async def test_default_dynamic_frequency(service):
     for index in range(3):
         public_memory(service, text=f"公开虚构故事{index}")
         decision = await service.evaluate(manual=True)
@@ -867,6 +882,21 @@ async def test_normalized_duplicate_and_used_sources_block_repetition(service):
         await service.publish(second["post_id"])
 
 
+async def test_operator_controls_dynamic_quota_and_interval_independently(service):
+    await service.set_policy({"max_posts_per_day": 24, "min_post_interval_seconds": 0})
+    for _ in range(23):
+        service.store.execute("INSERT INTO dynamic_posts(attempted_at) VALUES(?)", (time.time(),))
+    service._quota()
+    service.store.execute("INSERT INTO dynamic_posts(attempted_at) VALUES(?)", (time.time(),))
+    with pytest.raises(ValueError, match="24小时"):
+        service._quota()
+    await service.set_policy({"max_posts_per_day": 0})
+    service._quota()
+    await service.set_policy({"min_post_interval_seconds": 15})
+    with pytest.raises(ValueError, match="间隔"):
+        service._quota()
+
+
 async def test_publish_shares_comment_lock_and_rechecks_source_after_wait(service):
     mid = public_memory(service)
     decision = await service.evaluate(manual=True)
@@ -884,10 +914,10 @@ async def test_publish_shares_comment_lock_and_rechecks_source_after_wait(servic
 @pytest.mark.parametrize(
     "patch",
     [
-        {"evaluate_interval_seconds": 299},
+        {"evaluate_interval_seconds": 0},
         {"evaluate_interval_seconds": True},
-        {"min_post_interval_seconds": 21599},
-        {"max_posts_per_day": 3},
+        {"min_post_interval_seconds": -1},
+        {"max_posts_per_day": -1},
         {"enabled": 1},
         {"auto_publish": "true"},
         {"csrf": "secret"},
@@ -1195,7 +1225,7 @@ async def test_revoke_during_summary_generation_prevents_commit_and_decision(ser
     assert not service.summary_status()["valid"] and not service.list_posts()
 
 
-@pytest.mark.parametrize("value", [255, 4097, True, "2048"])
+@pytest.mark.parametrize("value", [0, -1, True, "2048"])
 async def test_summary_budget_policy_bounds(service, value):
     with pytest.raises(ValueError):
         await service.set_policy({"memory_summary_max_tokens": value})
@@ -1231,7 +1261,7 @@ async def test_decision_grammar_references_only_actual_summary_sources(service):
     assert props["action"]["enum"] == ["post", "wait"]
     assert props["source_ids"]["items"]["enum"] == [f"memory:{chosen}"]
     assert f"memory:{omitted}" not in props["source_ids"]["items"]["enum"]
-    assert props["next_evaluation_seconds"] == {"type": "integer", "minimum": 300, "maximum": 86400}
+    assert props["next_evaluation_seconds"] == {"type": "integer", "minimum": 1, "maximum": module.MAX_SAFE_INTEGER}
 
 
 @pytest.mark.parametrize(

@@ -22,6 +22,9 @@ from .agent.private_call import register_private_call
 from .agent.reply_operations import register_reply_operations
 from .agent.task_api import register_task_api
 from .agent.task_tools import create_task_runtime
+from .artwork_references import MAX_BYTES as MAX_REFERENCE_BYTES
+from .artwork_references import PREFIX as REFERENCE_PREFIX
+from .artwork_references import register_artwork_references
 from .auth_sessions import (
     COOKIE_MAX_AGE,
     COOKIE_NAME,
@@ -29,14 +32,12 @@ from .auth_sessions import (
     EnvironmentManagedToken,
     InvalidAdminCredential,
 )
-from .artwork_references import MAX_BYTES as MAX_REFERENCE_BYTES, PREFIX as REFERENCE_PREFIX, register_artwork_references
 from .bilibili_account import BilibiliAccount
 from .comments import Comments
 from .config import Settings
 from .direct_messages import DirectMessages
 from .dynamics import Dynamics
 from .live.api import register_live_api
-from .performance import register_performance
 from .live.media import MAX_UPLOAD
 from .meme_api import MAX_REQUEST as MAX_MEME_REQUEST
 from .meme_api import register_meme_api
@@ -47,6 +48,7 @@ from .operation_recovery_api import register_operation_recovery_api
 from .operations.api import register_operations_api
 from .operations.browsing.api import register_browsing_api
 from .operations.browsing.service import BrowsingService
+from .performance import register_performance
 from .providers import public_error
 from .runtime import Runtime
 from .runtime_authority import acquire_business_writer
@@ -79,6 +81,7 @@ def create_app(
     account = BilibiliAccount(comments)
     runtime.account = account
     memes = MemeCatalog(settings, store)
+    runtime.operation_images.catalog = memes
     comments.memes = memes
     dynamics = Dynamics(settings, store, runtime, comments, memes=memes)
     messages = DirectMessages(settings, store, runtime, comments, message_adapter, memes=memes)

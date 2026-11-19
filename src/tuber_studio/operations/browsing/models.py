@@ -60,6 +60,8 @@ class BrowsingPolicy(StrictModel):
     )
     keywords: list[str] = Field(default_factory=list, max_length=20)
     watch_videos: list[str] = Field(default_factory=list, max_length=20)
+    use_memes: bool = False
+    generate_images: bool = True
     autonomous_topics: bool = False
     discovery_enabled: bool = False
     top_level_enabled: bool = False

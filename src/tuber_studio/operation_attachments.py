@@ -5,6 +5,7 @@ import hashlib
 import json
 
 from .operation_continuations import content_hash
+from .operation_images import image_permissions
 from .operations.browsing.thread_context import COMMENT_ID, VIDEO_ID
 from .workstation_images import gateway_base
 
@@ -62,17 +63,26 @@ def image_scope(channel, row):
     }
 
 
-def queue_image(runtime, channel, row, context, text):
-    if not row.get("account_id") or not hasattr(runtime, "operation_images"):
-        return None
+def workstation_image_decisions(runtime):
+    if not hasattr(runtime, "operation_images"):
+        return False
     try:
         gateway_base(runtime.settings)
     except ValueError:
+        return False
+    return True
+
+
+def queue_image(runtime, channel, row, context, text):
+    if not row.get("account_id") or not workstation_image_decisions(runtime):
         return None
     scope = image_scope(channel, row)
+    options = image_permissions(runtime.store, scope["channel"])
+    if not any(options):
+        return None
     if callable(context):
         context = context()
-    key = content_hash([scope, row["character_version"], text, context])
+    key = content_hash([scope, row["character_version"], text, context, options])
     job = runtime.operation_images.decide(
         scope, request_key=key, context=context, draft=text, character_version=row["character_version"]
     )
@@ -89,6 +99,8 @@ def decision(runtime, channel, row, ref):
         return {"job_id": ref["job_id"], "status": "failed", "error": "配图任务与当前草稿来源不符"}
     if job["status"] == "text_only":
         return None
+    if job["status"] == "gallery":
+        return {"asset_id": job["asset_id"], "sha256": job["asset_sha256"]}
     if job["status"] != "ready":
         return {"job_id": job["job_id"], "status": job["status"], "error": job.get("error")}
     artifact = runtime.operation_images.read(scope, job["artifact_id"])
@@ -104,7 +116,7 @@ async def wait_decision(runtime, channel, row, authorized):
     scope = image_scope(channel, row)
     while authorized():
         status = runtime.operation_images.status(scope, ref["job_id"])["status"]
-        if status in {"text_only", "ready", "failed"}:
+        if status in {"text_only", "gallery", "ready", "failed"}:
             return
         await asyncio.sleep(0.5)
     raise ValueError("等待配图期间原发送授权已停止")
