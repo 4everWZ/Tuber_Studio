@@ -4,6 +4,8 @@
 
 ## 登记本站验收结果
 
+工作站现有四份可独立登记的 INP：两套设定母稿绑定，加上最初认可的 Q、mature 正面 OC 绑定。四件资产不等于四个已启用的 Studio 选项。新 OC 的私有交付目录有 `registry.proposed.json`，路径相对于该文件；正式登记由部署方协调，请保留旧 ID，不要原位替换模型。成图的身份、重建命令及已验范围见[工作站 OC 绑定记录](../../evaluations/results/approved-oc-rigs-20261119.md)。
+
 沿用普通私聊服务的 `TUBER_PRIVATE_REALTIME_ORIGIN`、`TUBER_PRIVATE_REALTIME_TOKEN_FILE`。由独立媒体服务加载两个原画 INP 文件，在它的私有登记表中各分配一个形象 ID。工坊使用自己的普通应用凭据查询这两个 ID。返回 404 表示该服务没有登记此形象，503 表示需要检查服务侧素材或驱动。两套分别完成接收端形象、中文口型、打断及混合负载验收后，在 Studio 的运行目录下写入 `private-call-avatars.json`。下例中的 ID 为占位值。原稿、真实 ID、凭据和验收配置留在本站。
 
 ```json

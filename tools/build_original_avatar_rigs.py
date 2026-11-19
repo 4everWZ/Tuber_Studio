@@ -8,13 +8,12 @@ import argparse
 import io
 import json
 import math
-from pathlib import Path
 import struct
+from pathlib import Path
 
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
-
 
 SIZE = (640, 720)
 CASES = {
@@ -498,7 +497,7 @@ class Puppet:
                 out.write(struct.pack(">IB", len(texture), 0) + texture)
 
 
-def build(source, output, case):
+def sheet_portrait(source, case):
     spec = CASES[case]
     with Image.open(source / spec["filename"]) as sheet:
         if sheet.size != (1448, 1086):
@@ -506,7 +505,10 @@ def build(source, output, case):
         crop = sheet.convert("RGBA").crop(spec["crop"])
         portrait = Image.new("RGB", crop.size, "#ece7df")
         portrait.paste(crop, mask=crop.getchannel("A"))
-    master = ImageOps.pad(portrait, SIZE, method=Image.Resampling.LANCZOS, color="#ece7df")
+    return ImageOps.pad(portrait, SIZE, method=Image.Resampling.LANCZOS, color="#ece7df")
+
+
+def bind_portrait(master, spec, *, open_layer=None, closed_layer=None):
     model = Puppet()
     body = model.node("Upper body", model.root)
     head = model.node("Head", body)
@@ -528,12 +530,16 @@ def build(source, output, case):
     ):
         feature = model.part(name, head, cut(master, region), z)
         model.bind("HeadX", feature, "transform.t.x", [-delta, 0, delta])
-    mouth = model.part("Mouth interior and lip", head, cut(master, regions[0]), 7)
+    if open_layer is None:
+        open_layer = cut(master, regions[0])
+    mouth = model.part("Mouth interior and lip", head, open_layer, 7)
     model.bind("MouthOpen", mouth, "transform.s.y", [0.06, 0.23, 1])
-    model.bind("MouthOpen", mouth, "transform.t.y", [-8, -6, 0])
+    model.bind("MouthOpen", mouth, "transform.t.y", spec.get("mouth_y", [-8, -6, 0]))
     model.bind("MouthOpen", mouth, "opacity", [0, 1, 1])
     model.bind("MouthForm", mouth, "transform.s.x", [0.74, 1, 1.15])
-    lips = model.part("Closed lip seam", head, line(spec["lips"], (163, 99, 94, 255), 2.4), 8)
+    if closed_layer is None:
+        closed_layer = line(spec["lips"], (163, 99, 94, 255), 2.4)
+    lips = model.part("Closed lip seam", head, closed_layer, 8)
     model.bind("MouthOpen", lips, "opacity", [1, 0, 0])
     for side, (outline, iris_points, lid_points), area in zip(("L", "R"), spec["eyes"], eye_masks):
         eye_center = tuple(sum(x) / len(x) for x in zip(*outline))
@@ -555,6 +561,11 @@ def build(source, output, case):
     model.bind("HeadX", head, "transform.s.x", [0.995, 1, 0.995])
     model.bind("HeadY", head, "transform.t.y", [-2.2, 0, 2.2])
     model.bind("Breath", body, "transform.s.y", [1, 1.002])
+    return model
+
+
+def build(source, output, case):
+    model = bind_portrait(sheet_portrait(source, case), CASES[case])
     model.save(output / case, "大肥鱼 · " + ("常规" if case == "regular" else "Q"))
 
 
