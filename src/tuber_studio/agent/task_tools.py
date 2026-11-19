@@ -366,6 +366,32 @@ def pixel_rationale(choices, answer):
     return f"画面依据：{answer['detail'].rstrip('。')}。剪辑安排：{answer['use']}"
 
 
+def apply_repair_candidate_receipts(disputed, fields, primary, receipts):
+    """Keep the objection if the same rejected fact is reused verbatim on the same primary frame."""
+    for path, text in fields.items():
+        detail, separator, _ = text.partition("。剪辑安排：")
+        fact = detail.removeprefix("画面依据：") if (
+            path.endswith(".rationale") and detail.startswith("画面依据：") and separator
+        ) else text
+        for prior in receipts:
+            if prior.get("stage") != "review_repair_candidate" or prior.get("primary_frame") != primary:
+                continue
+            candidate = prior["candidate"]
+            if candidate.rstrip("。") != fact.rstrip("。"):
+                continue
+            located = [claim for claim in prior["claims"] if claim.get("target") and claim["target"] in fact]
+            if not located:
+                continue
+            row = disputed.setdefault(path, {"field": path, "text": text, "primary_frame": primary,
+                                             "claims": [], "pages": []})
+            for claim in located:
+                if claim not in row["claims"]:
+                    row["claims"].append(claim)
+            source = {"field": prior["field"], "candidate": candidate}
+            if source not in row.setdefault("repair_candidate_sources", []):
+                row["repair_candidate_sources"].append(source)
+
+
 class ClipBrief(StrictModel):
     requested_count: int | None = Field(description="号主明确要求的独立素材数量；没有指定则填 null。", ge=1)
     usage: str = Field(description="号主要求的选材用途和取舍标准。")
@@ -1859,6 +1885,10 @@ def create_task_runtime(runtime, store, browsing):
                             evidence.observations[primary], request_json, budget, reviews=visual_reviews,
                             inventory=[*inventory["details"], *inventory["labels"]],
                             frame=asdict(evidence.points[primary]), purpose="repair" if correction else "submission")
+                        if correction:
+                            apply_repair_candidate_receipts(
+                                disputed, visual_fields, primary,
+                                [*task["plan"].get("attribution_rejections", ()), *candidate_reviews])
                         for path, row in disputed.items():
                             product._attribution_reviews.append(row)
                             issues[path] = " ".join(f"「{c['term']}」{c['issue']} 可见：{c['observation']}" for c in row["claims"])
