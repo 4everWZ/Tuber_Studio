@@ -19,32 +19,40 @@
     <p class="hint" id="artwork-reference-result" role="status"></p>
   </fieldset>
 
-  <fieldset class="win-group-box" id="providers-panel" data-workspace-anchor>
-    <legend>共用 Omni API</legend>
-    <button type="button" id="check-providers-settings" class="win-btn">检查服务能力</button>
+  <section class="panel" id="providers-panel" data-workspace-anchor aria-labelledby="omni-heading">
+    <div class="panel-heading">
+      <h2 id="omni-heading" class="win-group-title">Omni 服务</h2>
+      <button type="button" id="check-providers-settings" class="win-btn">检查已保存的连接</button>
+    </div>
+    <p id="omni-connection-summary" class="hint"></p>
     <p id="providers-check-result" class="hint" role="status"></p>
     <form id="providers-form">
-      <fieldset id="provider-fields" class="provider-fields" disabled>
-        <legend>服务连接与生成</legend>
-        <label>Omni API 地址<input id="omni-base-url" type="url" required></label>
-        <div class="form-grid">
-          <label>图文与语音模型别名<input id="omni-model" list="omni-model-options" required></label>
-          <label>后台 Responses 模型别名<input id="omni-responses-model" required></label>
-        </div>
-        <datalist id="omni-model-options"></datalist>
-        <button type="button" class="win-btn" id="omni-discover-models">读取已保存服务的模型别名</button>
-        <span id="omni-discovery-state" class="hint" role="status"></span>
-        <label>共用应用凭据<input id="omni-key" type="password" autocomplete="new-password" placeholder="留空保留当前凭据"></label>
-        <span id="omni-key-state" class="hint"></span>
-        <label><input id="omni-clear-key" type="checkbox"> 清除已保存的应用凭据</label>
-        <label class="check-field"><input id="llm-enable-thinking" type="checkbox"> 启用思考</label>
-        <label>单次运营输出额度（含思考，tokens）
-          <input id="llm-operations-tokens" type="number" min="1" max="65536" required>
-        </label>
-        <div class="form-grid">
-          <label>后台任务并行取材数<input id="background-parallel" type="number" min="1" required></label>
-          <label>后台任务输出额度（含思考，tokens）<input id="background-budget" type="number" min="1" required></label>
-        </div>
+      <fieldset id="provider-fields" aria-label="Omni 设置" disabled>
+        <details>
+          <summary>编辑连接与凭据</summary>
+          <label>Omni API 地址<input id="omni-base-url" type="url" required></label>
+          <div class="form-grid">
+            <label>图文与语音模型别名<input id="omni-model" list="omni-model-options" required></label>
+            <label>后台 Responses 模型别名<input id="omni-responses-model" required></label>
+          </div>
+          <datalist id="omni-model-options"></datalist>
+          <button type="button" class="win-btn" id="omni-discover-models">读取已保存服务的模型别名</button>
+          <span id="omni-discovery-state" class="hint" role="status"></span>
+          <label>共用应用凭据<input id="omni-key" type="password" autocomplete="new-password" placeholder="留空保留当前凭据"></label>
+          <span id="omni-key-state" class="hint"></span>
+          <label><input id="omni-clear-key" type="checkbox"> 清除已保存的应用凭据</label>
+        </details>
+        <details>
+          <summary>思考与任务额度</summary>
+          <label class="check-field"><input id="llm-enable-thinking" type="checkbox"> 启用思考</label>
+          <label>单次运营输出额度（含思考，tokens）
+            <input id="llm-operations-tokens" type="number" min="1" max="65536" required>
+          </label>
+          <div class="form-grid">
+            <label>后台任务并行取材数<input id="background-parallel" type="number" min="1" required></label>
+            <label>后台任务输出额度（含思考，tokens）<input id="background-budget" type="number" min="1" required></label>
+          </div>
+        </details>
       </fieldset>
       <div class="actions">
         <button class="primary win-btn" id="save-providers" type="submit" disabled>保存 Omni 设置</button>
@@ -52,5 +60,5 @@
       </div>
       <p id="providers-save-state" class="hint" role="status"></p>
     </form>
-  </fieldset>
+  </section>
 </section>

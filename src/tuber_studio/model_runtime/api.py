@@ -1,6 +1,5 @@
 """Business-side inference and voice clients; the service owns model management."""
 
-import asyncio
 import base64
 import binascii
 
@@ -65,16 +64,5 @@ def register_model_api(app, settings, runtime, require_admin):
             "model": settings.data["omni"]["model"],
             "context_installed": False,
         }
-
-    @app.post("/api/providers/check", dependencies=[Depends(require_admin)])
-    async def check():
-        async def one(provider):
-            try:
-                return await provider.health()
-            except Exception as error:
-                return {"available": False, "error": public_error(error)}
-
-        llm, tts, vision = await asyncio.gather(one(runtime.llm), one(runtime.voices), one(runtime.vision))
-        return {"llm": llm, "tts": tts, "vision": vision}
 
     register_provider_diagnostics(app, settings, require_admin)

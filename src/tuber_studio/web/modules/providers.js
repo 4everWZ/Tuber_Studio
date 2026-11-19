@@ -31,6 +31,7 @@ export function initInferenceProvidersUI(model, { api, busy, apply }) {
   const sync = () => {
     if (!dirty && model.settings?.omni) {
       const { omni, provider_credentials } = model.settings;
+      $("omni-connection-summary").textContent = `对话与通话 · ${omni.model}　后台任务 · ${omni.responses_model}`;
       $("omni-base-url").value = omni.base_url;
       $("omni-model").value = omni.model;
       $("omni-responses-model").value = omni.responses_model;
@@ -60,6 +61,7 @@ export function initInferenceProvidersUI(model, { api, busy, apply }) {
         dirty = false;
         apply(result);
         state.textContent = "Omni 设置已保存。";
+        $("providers-check-result").textContent = "";
       } catch (error) {
         state.textContent = "保存失败：" + safeMessage(error.message);
       }
@@ -109,11 +111,15 @@ export function publicSettings(value, key = "") {
 async function checkProviderConnections(api) {
   const el = $("providers-check-result");
   el.hidden = false;
-  el.textContent = "正在检查服务能力…";
+  el.textContent = "正在读取服务模型卡…";
   try {
     const result = await api("/api/providers/check", { method: "POST" });
-    el.textContent = [["文本", result.llm], ["语音", result.tts], ["视觉", result.vision]]
-      .map(([label, status]) => `${label}：${status?.available ? "可用" : "未就绪"}`)
+    el.textContent = [["前台模型卡", result.foreground], ["后台模型卡", result.background]]
+      .map(([label, status]) => {
+        if (!status?.available) return `${label}：${safeMessage(status?.error || "读取失败")}`;
+        const capacity = Number.isSafeInteger(status.context_tokens) ? `（${status.context_tokens} tokens）` : "";
+        return `${label}：已读取${capacity}`;
+      })
       .join(" · ");
   } catch (error) {
     el.textContent = safeMessage(error.message);

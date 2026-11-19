@@ -57,9 +57,12 @@ async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):
                 await page.locator("#token").fill(token)
                 await page.locator("#login-form button").click()
                 await page.locator('[data-page="settings"]').click()
+                await expect(page.get_by_label("Omni API 地址")).to_be_hidden()
+                await page.get_by_text("编辑连接与凭据", exact=True).click()
                 await expect(page.get_by_label("Omni API 地址")).to_have_value(settings.data["omni"]["base_url"])
                 await expect(page.locator('#providers-form input[type=password]')).to_have_count(1)
                 await expect(page.locator("#llm-kind,#tts-kind,#background-base,#tts-form,#llm-model-select")).to_have_count(0)
+                await page.get_by_text("思考与任务额度", exact=True).click()
                 await page.locator("#llm-operations-tokens").fill("2300")
                 async with page.expect_request("**/api/settings/providers") as saved:
                     await page.get_by_role("button", name="保存 Omni 设置").click()
@@ -68,14 +71,16 @@ async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):
                 await expect(page.locator("#providers-save-state")).to_have_text("Omni 设置已保存。")
                 await page.reload()
                 await expect(page.locator("#llm-operations-tokens")).to_have_value("2300")
+                await page.get_by_text("编辑连接与凭据", exact=True).click()
                 await page.route("**/api/providers/models", lambda route: route.fulfill(json={"models": ["fixture-alias"]}))
                 await page.get_by_role("button", name="读取已保存服务的模型别名").click()
                 await expect(page.locator("#omni-model-options option")).to_have_attribute("value", "fixture-alias")
                 await page.route("**/api/providers/check", lambda route: route.fulfill(json={
-                    "llm": {"available": True}, "tts": {"available": False}, "vision": {"available": True},
+                    "foreground": {"available": True, "context_tokens": 8192},
+                    "background": {"available": False, "error": "读取失败"},
                 }))
-                await page.get_by_role("button", name="检查服务能力").click()
-                await expect(page.locator("#providers-check-result")).to_have_text("文本：可用 · 语音：未就绪 · 视觉：可用")
+                await page.get_by_role("button", name="检查已保存的连接").click()
+                await expect(page.locator("#providers-check-result")).to_have_text("前台模型卡：已读取（8192 tokens） · 后台模型卡：读取失败")
 
                 await page.locator('[data-page="characters"]').click()
                 await page.get_by_role("tab", name="音色与形象绑定").click()
