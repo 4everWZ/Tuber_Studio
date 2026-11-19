@@ -534,6 +534,7 @@ class OperatorChat:
             (char["id"], char["version"], account),
         )
         if (last and (prior := json.loads(last["result"])).get("clarification_request")
+                and prior.get("reply_text") != workbench_tools.OWNER_CONTROL_REPLY
                 and prior.get("execution_scope") == self.runtime.tasks.scope()):
             context["clarification"] = {"id": last["request_id"], "request": prior["clarification_request"],
                                         "question": prior["reply_text"]}
@@ -1485,6 +1486,8 @@ class OperatorChat:
         if selection:
             clarification["clarification_video_selection"] = selection.model_dump(mode="json")
         if kind == "clarify":
+            if topic == workbench_tools.OWNER_CONTROL_REPLY:
+                return {"reply_text": topic, "card": None}
             return {"reply_text": topic or "你指的是哪一件事？", "card": None, **clarification}
         if kind == "workbench_capabilities":
             return workbench_tools.capabilities(self.runtime)

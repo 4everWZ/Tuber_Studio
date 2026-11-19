@@ -182,3 +182,25 @@ async def test_original_owner_request_blocks_partial_model_write(studio, monkeyp
     assert before == (runtime.live.media.config(), runtime.pets.state(runtime.character["id"]))
     assert runtime.daily_memory.preference(runtime.memory_organizer.scope()) == memory
     assert not runtime.store.one("SELECT 1 FROM agent_tasks")
+
+
+async def test_declined_mixed_request_cannot_bind_the_next_independent_task(studio, monkeypatch):
+    runtime, client = studio
+    choose_tools(runtime, monkeypatch, {"action": "restricted"})
+    mixed = turn("把点歌冷却改成47秒，同时关闭历史引用，两项必须一起生效。")
+    refused = (await client.post("/api/chat/intelligent", json=mixed)).raise_for_status().json()
+    assert "号主设置页" in refused["reply_text"]
+    stored = runtime.store.one("SELECT result FROM operator_chat_turns WHERE request_id=?", (mixed["request_id"],))
+    assert "clarification_request" not in json.loads(stored["result"])
+
+    async def delegate(messages, schema, **kwargs):
+        assert schema["title"] == "WorkLifecycle"
+        assert messages[-1] == {"role": "user", "content": goal}
+        return {"action": "agent_task"}
+
+    goal = "交给后台准备一份私有交接便笺，先查工坊当前的直播状态。"
+    body = turn(goal)
+    choose_tools(runtime, monkeypatch, {"action": "agent_task"})
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", delegate)
+    accepted = (await client.post("/api/chat/intelligent", json=body)).raise_for_status().json()
+    assert accepted["card"]["type"] == "agent_task" and runtime.tasks.current(body["request_id"])["goal"] == goal

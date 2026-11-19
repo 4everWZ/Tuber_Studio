@@ -126,7 +126,7 @@ async def test_pet_choices_share_installed_service_and_refuse_extra_targets(work
             assert "character_id" not in schema["properties"]
             return payload
 
-        return await pet_settings(runtime, role, choose, lambda: None)
+        return await pet_settings(runtime, role, choose, lambda: None, source="切换宠物形象")
 
     await set_values(workshop, "pets", {"pets_enabled": False})
     selected = (await action({"action": "select", "choice": index}))["tool_receipt"]
