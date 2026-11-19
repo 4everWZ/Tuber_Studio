@@ -100,3 +100,32 @@ test("owner lookup binds the verified profile and clearing removes its links and
   assert.equal(input.getAttribute("aria-invalid"), null);
   assert.equal(element("oc-owner-status").textContent, "");
 });
+
+test("editing and clearing a resident field preserves the complete legacy card", async t => {
+  const { element } = dom(t);
+  const studio = await import("../src/tuber_studio/web/modules/character-studio.js");
+  const card = {
+    id: "old", name: "自定义", core: {identity: "旧身份".repeat(120), background: "完整的旧世界观"},
+    style: {instructions: ["说话轻柔", "遇到难题时先听对方说完"]}, lore: [{text: "旧设定"}],
+  };
+  const model = {character: card};
+  studio.setCharacterEditor(card, model);
+  studio.initCharacterStudioUI(model, {});
+  const self = element("oc-self-description"), style = element("oc-speaking-style");
+  assert.equal(self.value, "");
+  assert.equal(style.value, "");
+  assert.equal(element("oc-identity").value, card.core.identity);
+  assert.equal(element("oc-instructions").value, card.style.instructions.join("\n"));
+  self.value = "我是图书管理员。";
+  self.listeners.input();
+  style.value = "说话简洁。";
+  style.listeners.input();
+  const updated = {...card, self_description: self.value, speaking_style: style.value};
+  assert.deepEqual(JSON.parse(element("character-editor").value), updated);
+  element("character-editor").value = JSON.stringify({...updated, speaking_style: "温和"});
+  element("character-editor").listeners.input();
+  assert.equal(style.value, "温和");
+  self.value = "";
+  self.listeners.input();
+  assert.deepEqual(JSON.parse(element("character-editor").value), {...card, speaking_style: "温和"});
+});

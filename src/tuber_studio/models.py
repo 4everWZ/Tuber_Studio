@@ -80,10 +80,51 @@ class BilibiliOwner(StrictModel):
     avatar_url: str | None = None
 
 
+_PROFILE_LIMIT = 120
+_IDENTITY_START = re.compile(r"^(?:[我你她他]是(?!否)|(?:I am|I'm|You are|You're)\s+)", re.I)
+_STYLE_START = re.compile(r"^(?:说话|语气|口吻|对白|措辞|用词|表达方式|自称|I speak\b|You speak\b|Speak\b)", re.I)
+
+
+def _legacy_profile_clause(value, opening):
+    """Take a complete leading declaration, never a length-cut prefix of prose."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    prefix = opening.match(value)
+    if not prefix:
+        return None
+    match = re.match(r"([^，,。.!！?？；;：:\n\r]{1,80})(?:[，,。.!！；;\n\r]|$)", value)
+    if match and match[1][prefix.end():].strip():
+        return match[1].strip()
+    return None
+
+
+def resident_character_profile(character):
+    """Read the conversational identity without materializing defaults into a saved card."""
+    profile = {"name": character["name"]}
+    for key, section, legacy_key, opening in (
+        ("self_description", "core", "identity", _IDENTITY_START),
+        ("speaking_style", "style", "instructions", _STYLE_START),
+    ):
+        text = character.get(key)
+        if not text:
+            legacy = character.get(section, {}).get(legacy_key)
+            if key == "speaking_style" and isinstance(legacy, list):
+                legacy = next(iter(legacy), None)
+            text = _legacy_profile_clause(legacy, opening)
+        if isinstance(text, str):
+            text = text.strip()
+            if 0 < len(text) <= _PROFILE_LIMIT and len(text.splitlines()) == 1:
+                profile[key] = text
+    return profile
+
+
 class Character(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(pattern=r"^[a-z0-9_-]{1,50}$")
     name: str = Field(min_length=1, max_length=60)
+    self_description: str | None = Field(default=None, max_length=_PROFILE_LIMIT, exclude_if=lambda value: value is None)
+    speaking_style: str | None = Field(default=None, max_length=_PROFILE_LIMIT, exclude_if=lambda value: value is None)
     version: int = Field(default=1, ge=1)
     core: dict
     style: dict
@@ -94,6 +135,16 @@ class Character(BaseModel):
     sources: list[str] = Field(default_factory=list)
     license_status: str = "unknown"
     bilibili_owner: BilibiliOwner | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @field_validator("self_description", "speaking_style", mode="before")
+    @classmethod
+    def single_line_profile(cls, value):
+        if isinstance(value, str):
+            value = value.strip()
+            if len(value.splitlines()) > 1:
+                raise ValueError("请用一行填写常驻资料")
+            return value or None
+        return value
 
     @model_validator(mode="before")
     @classmethod

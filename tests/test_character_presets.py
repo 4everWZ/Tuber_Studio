@@ -59,6 +59,29 @@ def test_startup_does_not_reintroduce_an_archived_preset(tmp_path):
     store.close()
 
 
+@pytest.mark.parametrize("custom", [False, True])
+def test_resident_fields_upgrade_only_the_unmodified_previous_seed(tmp_path, custom):
+    previous = presets()[0]
+    del previous["self_description"], previous["speaking_style"]
+    if custom:
+        previous["core"]["identity"] = "你是蓝发鲸鱼娘，住在海底小屋，机灵傲娇又爱摸鱼。"
+        previous["style"]["instructions"] = "说话口语化，平常用「我」和「你」。"
+    path = tmp_path / "profiles.sqlite3"
+    old = Store(path, [previous])
+    original = old.character()
+    old.close()
+    reopened = Store(path, presets())
+    try:
+        assert reopened.character("whale", 1) == original
+        current = reopened.character()
+        if custom:
+            assert current == original
+        else:
+            assert current["version"] == 2 and current["self_description"] == presets()[0]["self_description"]
+    finally:
+        reopened.close()
+
+
 def test_enriched_preset_keeps_character_assets_without_retired_radio():
     before, after = clean_legacy(), presets()
     assert _fingerprint(before[0]) == "c502c1ff0d81547625a819dd59aec9f2073a3610a51c86a4b75ddebd070df598"
@@ -136,6 +159,8 @@ def test_upgrade_appends_preserves_history_voice_relations_and_drafts(tmp_path, 
         assert store.character(target["id"], 1) == before
         assert current == before | {
             "version": version,
+            "self_description": target["self_description"],
+            "speaking_style": target["speaking_style"],
             "core": target["core"],
             "style": target["style"],
             "rules": target["rules"],
