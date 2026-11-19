@@ -51,6 +51,25 @@ class CounterfactualReading(StrictModel):
         return ""
 
 
+class NameComparison(StrictModel):
+    original_meaning: str = Field(description="原文对这个对象具体断言了什么？")
+    alternative_meaning: str = Field(description="对照用词对同一对象具体断言了什么？")
+    conflict: bool = Field(description="两种说法是否将同一处指认为不同具体类别、不同材质或互不相容的身份？")
+
+
+async def _names_conflict(assertion, hypothesis, generate, budget):
+    # The alternative reader can paraphrase a whole sentence. Compare what the
+    # two names assert without asking the visual reader to select an object again.
+    reply = await generate(
+        [{"role": "system", "content": "做中文词义辨析。只按所给原句实际使用的词义判断。"
+          "两种说法都可用时没有冲突：包括外形比喻与实物、具体名称与它的泛称、形象与载体，以及修饰不同对象。"
+          "同一处改称为另一种具体器物、材质或身份，才构成命名冲突。"},
+         {"role": "user", "content": dump({"原句": assertion, "原文用词": hypothesis.term, "对照用词": hypothesis.other})}],
+        NameComparison.model_json_schema(), max_tokens=budget,
+    )
+    return NameComparison.model_validate(reply)
+
+
 async def _read_under_alternative(assertion, hypothesis, proof, image, generate, budget):
     packet = {"整句原文": assertion, "原称呼": hypothesis.term, "假定另一解释为真": hypothesis.other,
               "共有形象": proof.common_label, "原图所见": proof.observation}
@@ -221,6 +240,7 @@ async def review_visual_specificity(fields, image, primary, raw_observation, gen
                 ):
                     affected.add(path)
         readings = {}
+        comparisons = {}
         for path in sorted(affected):
             field_claim = claim
             targets = [h.term]
@@ -233,28 +253,39 @@ async def review_visual_specificity(fields, image, primary, raw_observation, gen
                 if replaced:
                     substitutions.setdefault((assertion, h.other), set()).add(replaced)
                 targets = [t for t in reading.unsupported_modifiers if t.strip() and t in assertion]
-                if (reading.original_name == "原称呼指定了另一解释不能保证的种类或属性"
-                        or not any(h.term in text for text in (proof.common_label, proof.observation, reading.counterfactual_clause))):
+                field_claim = claim | {"counterfactual": reading.model_dump(), "issue": reading.basis}
+                if reading.original_name == "原称呼指定了另一解释不能保证的种类或属性":
                     targets.append(h.term)
+                elif (
+                    not any(h.term in text for text in (proof.common_label, proof.observation, reading.counterfactual_clause))
+                    or (assertion != h.term and not replaced and assertion not in reading.counterfactual_clause)
+                ):
+                    if assertion not in comparisons:
+                        comparisons[assertion] = await _names_conflict(assertion, h, generate, budget)
+                    comparison = comparisons[assertion]
+                    if comparison.conflict:
+                        targets.append(h.term)
+                        field_claim = field_claim | {"name_comparison": comparison.model_dump()}
                 if not targets and reading.unsupported_modifiers:
-                    # The reading raised an objection but its wording was not located.
-                    targets.append(assertion)
-                if not targets and assertion != h.term and not replaced and assertion not in reading.counterfactual_clause:
-                    # Other words changed too; the proposed reading did not verify the complete clause.
-                    targets.append(assertion)
+                    raise DelegationError("反事实复核未将有异议的修饰语定位到原句。")
                 if not targets:
                     continue
-                field_claim = claim | {"counterfactual": reading.model_dump(), "issue": reading.basis}
             objections.append((path, h, field_claim, targets))
     for path, h, claim, targets in objections:
         slots = substitutions.get((assertions[path], h.other), set())
         if len(slots) == 1:
             slot = next(iter(slots))
             if h.term not in slot and slot not in h.term:
-                # A faithful substitution binds this same alternative to another part of the same clause.
-                continue
+                # The alternative belongs to a different name. Independently located
+                # modifiers in this field still need correction.
+                targets = [target for target in targets if target != h.term]
+                if not targets:
+                    continue
         row = receipts.setdefault(path, {"field": path, "text": fields[path], "primary_frame": primary,
                                          "claims": [], "pages": []})
         for target in dict.fromkeys(targets):
-            row["claims"].append(claim | {"term": target, "target": target, "phrase": target})
+            objection = claim | {"term": target, "target": target, "phrase": target}
+            if target == h.term and (comparison := claim.get("name_comparison")):
+                objection["issue"] = f"原词指{comparison['original_meaning']}；同一外观下也可能是{comparison['alternative_meaning']}。"
+            row["claims"].append(objection)
     return receipts
