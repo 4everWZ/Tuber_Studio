@@ -931,7 +931,7 @@ class BrowsingEvidence:
                     )
                 return parts, retained
         except TimeoutError as error:
-            raise EvidenceUnavailable("deadline", str(error) or "视觉证据任务达到期限") from None
+            raise EvidenceUnavailable(getattr(error, "kind", "deadline"), str(error) or "视觉证据任务达到期限") from None
         finally:
             task["cancel_signal"].set()
             try:

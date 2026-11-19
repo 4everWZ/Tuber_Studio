@@ -107,6 +107,10 @@ class VideoVisionAdmissionRequired(ValueError):
     kind = "visual_unavailable"
 
 
+class VideoVisionTimeout(TimeoutError):
+    kind = "visual_timeout"
+
+
 class VideoVisionConfig(StrictModel):
     base_url: str = "http://127.0.0.1:8000/v1"
     model: str = Field(min_length=1)
@@ -143,6 +147,7 @@ class ApiVideoEvidenceProvider:
                 "structured_output": "json_schema",
                 "context_source": "model_card",
                 "prompt_token_endpoint": background,
+                "thinking_token_limit": 128,
             },
             api_key,
             background=background,
@@ -352,8 +357,8 @@ class ApiVideoEvidenceProvider:
             try:
                 async with asyncio.timeout(self.config.timeout_seconds):
                     value = await operation()
-            except TimeoutError:
-                raise TimeoutError("视觉模型请求超时") from None
+            except (TimeoutError, httpx.TimeoutException):
+                raise VideoVisionTimeout("视觉模型请求超时") from None
             self._check_task(task, deadline)
             usage = {"generation": dict(self.api.last_usage), "including_token_probes": None}
             if repository:

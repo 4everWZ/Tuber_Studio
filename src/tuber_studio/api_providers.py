@@ -132,11 +132,14 @@ class APIProvider:
         upper = count if self.background else self.capacity_window - output
         return reserve_generation(upper, output, conservative_input=True)
 
+    def _thinking_budget(self, output):
+        return min(thinking_budget(output), self.config.get("thinking_token_limit", output))
+
     async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None,
                         on_content=None):
         payload = self.chat_payload(messages) | {"max_tokens": budget, "stream": False}
         if self.background and self.config.get("enable_thinking"):
-            payload["thinking_token_budget"] = thinking_budget(budget)
+            payload["thinking_token_budget"] = self._thinking_budget(budget)
         # Suppressing reasoning at the background engine also suppresses the
         # structured answer on its Qwen parser. Only message.content is consumed.
         if self.uses_model_card and not self.background:
@@ -324,7 +327,8 @@ class APIProvider:
         parts = [part for message in messages if isinstance(message["content"], list) for part in message["content"]]
         if self.background and any(part.get("type") != "text" for part in parts):
             value, self.last_usage = await generate_image_json(
-                self.client, self.config["model"], messages, schema, max_tokens
+                self.client, self.config["model"], messages, schema, max_tokens,
+                thinking_tokens=self._thinking_budget(max_tokens),
             )
             self.last_finish_reason = "stop"
             self.last_content = json.dumps(value, ensure_ascii=False)

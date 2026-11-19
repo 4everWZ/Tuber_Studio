@@ -99,7 +99,7 @@ def thinking_budget(max_tokens):
     return min(1024, max_tokens // 4)
 
 
-async def generate_image_json(client, model, messages, schema, max_tokens):
+async def generate_image_json(client, model, messages, schema, max_tokens, *, thinking_tokens):
     """Read already bounded inline images through the background renderer."""
     items = []
     for message in messages:
@@ -119,7 +119,7 @@ async def generate_image_json(client, model, messages, schema, max_tokens):
     payload = {
         "model": model, "input": items, "store": False, "max_output_tokens": max_tokens,
         "chat_template_kwargs": {"enable_thinking": True},
-        "thinking_token_budget": thinking_budget(max_tokens),
+        "thinking_token_budget": thinking_tokens,
         "text": {"format": {"type": "json_schema", "name": "frame_observation", "schema": schema, "strict": True}},
     }
     await prepare_model_request()

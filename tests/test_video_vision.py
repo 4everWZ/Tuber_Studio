@@ -13,6 +13,7 @@ from tuber_studio.video_vision import (
     ApiVideoEvidenceProvider,
     VideoVisionAdmissionRequired,
     VideoVisionConfig,
+    VideoVisionTimeout,
 )
 
 PNG = base64.b64decode(
@@ -172,6 +173,46 @@ async def test_omni_visual_failure_is_reported_as_missing_evidence(omni_provider
     with pytest.raises(VideoVisionAdmissionRequired, match="上游HTTP 503"):
         await value.analyze_video_evidence({"id": "video-1"}, META, FRAMES[:1], "画面", deadline=time.time() + 10)
     assert not requests
+
+
+async def test_background_vision_limits_thinking_and_distinguishes_request_timeout(runtime):
+    config = CONFIG | {"model_revision": "", "runtime_revision": "", "enable_thinking": True}
+    value = ApiVideoEvidenceProvider(runtime, config, background=True)
+    await value.api.client.aclose()
+    routes = []
+    stalled = False
+
+    def handle(request):
+        name = request.url.path.rsplit("/", 1)[-1]
+        if name == "models":
+            return httpx.Response(200, json={"data": [{"id": CONFIG["model"], "max_model_len": 262144}]})
+        body = json.loads(request.content)
+        if name == "prompt_tokens":
+            return httpx.Response(200, json={"count": 100})
+        routes.append(name)
+        assert body["chat_template_kwargs"]["enable_thinking"] is True
+        assert body["thinking_token_budget"] == 128
+        assert body.get("max_output_tokens", body.get("max_tokens")) == 2048
+        if stalled:
+            raise httpx.ReadTimeout("upstream wait", request=request)
+        if name == "responses":
+            return httpx.Response(200, json={"id": "frame", "status": "completed",
+                "output": [{"type": "message", "content": [{"type": "output_text", "text": '{"caption":"红色轮廓"}'}]}],
+                "usage": {"input_tokens": 100, "output_tokens": 20}})
+        assessment = {"sufficient": True, "used_frames": [1], "summary": "红色轮廓", "limitations": []}
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(assessment)}}],
+                                         "usage": {"prompt_tokens": 100, "completion_tokens": 20}})
+
+    value.api.client = httpx.AsyncClient(base_url="https://vision.example/llm/v1", transport=httpx.MockTransport(handle))
+    try:
+        result = await value.analyze_video_evidence({}, META, FRAMES[:1], "观察画面", deadline=None)
+        assert routes == ["responses", "completions"]
+        assert result["frame_observations"] == {"first": "红色轮廓"}
+        stalled = True
+        with pytest.raises(VideoVisionTimeout, match="视觉模型请求超时"):
+            await value.analyze_video_evidence({}, META, FRAMES[:1], "再次观察", deadline=None)
+    finally:
+        await value.close()
 
 
 async def test_omni_comment_attachments_use_same_schema_and_identity(omni_provider):
