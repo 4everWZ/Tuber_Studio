@@ -41,7 +41,7 @@ from .live.api import register_live_api
 from .live.media import MAX_UPLOAD
 from .meme_api import MAX_REQUEST as MAX_MEME_REQUEST
 from .meme_api import register_meme_api
-from .memes import MemeCatalog
+from .pet_appearance import register_pet_api
 from .message_api import register_message_api
 from .model_runtime.api import register_model_api
 from .operation_recovery_api import register_operation_recovery_api
@@ -81,7 +81,7 @@ def create_app(
     comments = Comments(settings, store, runtime, adapter)
     account = BilibiliAccount(comments)
     runtime.account = account
-    memes = MemeCatalog(settings, store)
+    memes = runtime.pets.catalog
     runtime.operation_images.catalog = memes
     comments.memes = memes
     dynamics = Dynamics(settings, store, runtime, comments, memes=memes)
@@ -250,6 +250,7 @@ def create_app(
     register_operations_api(app, store, account, comments, browsing, dynamics, require_admin)
     register_message_api(app, messages, require_admin)
     register_meme_api(app, memes, runtime, require_admin)
+    register_pet_api(app, runtime.pets, require_admin)
     register_artwork_references(app, settings, store, require_admin)
     register_browsing_api(app, browsing, require_admin)
     register_operation_recovery_api(

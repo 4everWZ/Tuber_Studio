@@ -27,6 +27,7 @@ from .operation_text import operation_output_diagnostics
 from .operation_turns import OperationTurns, operation_lane, operation_ready_at, operation_ticket
 from .operations.browsing.repository import BrowsingRepository
 from .operations_control import OperationsControl
+from .pet_appearance import PetAppearances
 from .providers import VoiceService, public_error
 from .relationships import Relationships
 from .retention import INTERVAL_SECONDS, RetentionManager
@@ -38,6 +39,7 @@ class Runtime:
     def __init__(self, settings, store, *, singing_provider=None, live_scene=None):
         self.settings, self.store = settings, store
         self.operation_images = OperationImages(settings, store)
+        self.pets = PetAppearances(settings, store)
         self.operations = OperationsControl(store)
         self.browsing_quotas = self.operations.browsing_quotas
         self.browsing_repository = BrowsingRepository(store)

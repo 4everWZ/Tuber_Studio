@@ -20,4 +20,10 @@
 
 验收覆盖原图与动图字节保留、跨角色和渠道共享、禁用与删除占用、无效 ID 与篡改、模型选择失败、单条最终发布、上传失败后人工重试，以及结果不确定时核对原提交。新增静态图的上游图集及裁切帧见[素材清单](../../../assets/whale/memes/manifest.json)。
 
-对话首页随本地角色记录显示待机宠物，打开选图才读取图库。号主可在每张候选图下展开「来源与许可」。内置「花花」「被窝」「鲸鱼思考」保留蓝色大肥鱼档案馆的原始 WebP，只对这三张登记投稿人 1cyberlangke1 的 CC0 声明；每项的固定版本原文件和作品页在素材清单中。[原投稿与授权](https://github.com/lmy414/ai-girl-stickers/issues/32)
+## 对话宠物
+
+手动选图和前台 Omni 共用角色级服务。清单取当前角色绑定的形象素材，以及该清单配套的已启用表情。自有图片沿用角色清单的来源与 `license_status: owned` 声明；第三方图片须有作者、许可名称和 HTTPS 来源及许可链接。候选携带已有资源 ID、名称、已登记的风格、情绪和实际动静状态。只有共享图库身份的图片不能据此认定为当前角色。大肥鱼内置「花花」「被窝」「鲸鱼思考」保留档案馆的原始 WebP 和投稿人 1cyberlangke1 的 CC0 声明。[原投稿与授权](https://github.com/lmy414/ai-girl-stickers/issues/32)
+
+选中的资源按角色 ID 持久保存。打开对话、重新进入或其他设备刷新时，随角色读取当前选择。清单中的图片失效时显示角色默认形象。Pets 显示开关独立，隐藏时换图会保存选择，打开后可见。手动入口可查看来源、选图或恢复默认形象；前台按清单中的现有风格、表情或名称选资源。
+
+Python 调用方从本轮已绑定身份取 `character_id`。用 `await runtime.pets.options(character_id)` 读取 `items`，把选中项的 `asset_id` 交给 `await runtime.pets.select(character_id, asset_id)`，传 `None` 恢复默认。`runtime.pets.state(character_id)` 回读当前选择，`runtime.pets.set_visible(character_id, enabled)` 接受严格布尔值。手动入口使用认证的 `GET /api/pets/{character_id}` 和同路径的 `PUT {"asset_id": …}`。角色切换后旧请求失效。
