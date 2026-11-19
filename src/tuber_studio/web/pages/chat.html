@@ -1,24 +1,17 @@
 <section data-section="chat" class="operator-chat" hidden>
   <header class="operator-chat-heading">
-    <div class="chat-agent-identity">
-      <button type="button" id="chat-pet" aria-label="为角色宠物选表情" title="换个表情" hidden>
-        <img id="chat-agent-avatar" alt="">
-      </button>
-      <h1 id="operator-chat-title">与大肥鱼对话</h1>
-    </div>
+    <h1 id="operator-chat-title">与大肥鱼对话</h1>
     <div class="operator-chat-heading-actions">
-      <a href="#operations-permission-matrix" class="button chat-activity-toggle" aria-label="角色权限">权限</a>
-      <button id="chat-activity-toggle" class="chat-activity-toggle" type="button" aria-expanded="false" aria-controls="chat-activity">活动</button>
       <div id="operator-chat-more" class="operator-chat-popup">
         <button id="operator-chat-more-toggle" class="operator-chat-icon" type="button" aria-label="更多对话操作" aria-expanded="false" aria-controls="operator-chat-more-panel"><span aria-hidden="true">···</span></button>
         <div id="operator-chat-more-panel" class="operator-chat-menu operator-chat-menu-end" hidden>
           <button id="chat-pet-toggle" type="button">隐藏角色宠物</button>
           <button id="temporary-chat-open" type="button">临时对话</button>
-          <button id="private-call-open" type="button" hidden disabled>私有语音通话</button>
           <button id="operator-chat-clear" type="button">清空私聊</button>
         </div>
       </div>
-      <a href="#accounts" id="chat-account-badge" class="account-badge" aria-label="B站账号"></a>
+      <button id="private-call-open" class="chat-activity-toggle" type="button" aria-label="私有语音通话" hidden disabled>电话</button>
+      <button id="chat-activity-toggle" class="chat-activity-toggle" type="button" aria-expanded="false" aria-controls="chat-activity">面板</button>
     </div>
     <span id="operator-chat-model-state" class="operator-chat-model-state" role="status">推理状态待确认</span>
     <details id="operator-chat-model-details" class="operator-chat-model-state operator-chat-model-details" hidden>
@@ -30,6 +23,11 @@
     </details>
   </header>
   <div id="operator-chat-timeline" class="operator-chat-timeline">
+    <div class="chat-pet-float">
+      <button type="button" id="chat-pet" aria-label="为角色宠物选表情" title="换个表情" hidden>
+        <img id="chat-agent-avatar" alt="" draggable="false">
+      </button>
+    </div>
     <div class="operator-chat-older">
       <button id="operator-chat-older" type="button" hidden>加载更早消息</button>
       <p id="operator-chat-history-note" class="hint" role="status" hidden></p>
@@ -38,9 +36,19 @@
   </div>
   <aside id="chat-activity" class="chat-activity" aria-labelledby="chat-activity-title" hidden>
     <header class="chat-activity-header">
-      <h2 id="chat-activity-title">活动</h2>
-      <button id="chat-activity-close" class="operator-chat-icon" type="button" aria-label="关闭活动">×</button>
+      <h2 id="chat-activity-title">工坊面板</h2>
+      <a href="#accounts" id="chat-account-badge" class="account-badge" aria-label="B站账号"></a>
+      <button id="chat-activity-close" class="operator-chat-icon" type="button" aria-label="关闭面板">×</button>
     </header>
+    <nav class="chat-panel-sections" aria-label="工坊面板">
+      <button type="button" id="chat-panel-permissions" aria-pressed="false">权限</button>
+      <button type="button" id="chat-panel-activity" aria-pressed="true">活动</button>
+      <button type="button" id="chat-panel-results" aria-pressed="false">成果</button>
+    </nav>
+    <section id="chat-panel-permission-summary" hidden>
+      <div class="capability-strip" role="list" aria-label="各功能运行状态"></div>
+      <a href="#operations-permission-matrix" class="button" aria-label="角色权限">管理角色权限</a>
+    </section>
     <p id="chat-activity-status" class="hint" role="status" hidden></p>
     <div id="chat-activity-content"></div>
   </aside>

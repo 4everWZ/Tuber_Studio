@@ -45,8 +45,8 @@ async page => {
   if (await pet.isVisible()) throw Error("hidden preference not restored");
   await menu.click(); await page.getByRole("button",{name:"显示角色宠物"}).click();
   await pet.waitFor();
-  await page.getByRole("button",{name:"活动",exact:true}).click();
-  await page.getByRole("button",{name:"关闭活动"}).click();
+  await page.getByRole("button",{name:"面板",exact:true}).click();
+  await page.getByRole("button",{name:"关闭面板"}).click();
   await page.waitForTimeout(3100);
   if (blocked.length) throw Error("unexpected homepage dependencies: " + blocked.join(", "));
   await page.getByRole("link",{name:"设置",exact:true}).click();

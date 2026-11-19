@@ -43,7 +43,8 @@ import { initWorkspaceNavigation, workspaceSection } from "./modules/workspace-n
 import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261114.1";
 
 const api = async (path, options = {}) => {
-  const listingMemes = path.split("?")[0] === "/api/memes" && (options.method || "GET") === "GET";
+  const listingMemes = (path.split("?")[0] === "/api/memes" || path.startsWith("/api/pets/")) &&
+    (options.method || "GET") === "GET";
   const source = listingMemes ? "#assets" : location.hash || "#chat";
   try {
     return await baseApi(path, options, showLogin);
@@ -98,6 +99,7 @@ const loadArtworkReferences = initArtworkReferences();
 const chatPet = initChatPet(api, characterDisplay, message => notice(message, true));
 const operatorChat = initOperatorChat((path, options) => baseApi(path, options, showLogin), {
   setPet: chatPet.setCharacter,
+  refreshDisplay: () => characterDisplay.refresh(),
   refreshAutomation: () => updatePermissionCapsule({ background: true }),
   getAutomationStatus, applyAutomationStatus: status => applyAutomationStatus(status, accountPanel),
 });

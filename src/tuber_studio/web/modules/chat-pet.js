@@ -1,4 +1,4 @@
-import { MemePicker, memePreviewUrl } from "../memes.js?v=20261118.1";
+import { MemePicker } from "../memes.js?v=20261119.1";
 
 export function hasPetSource(asset) {
   return Boolean(asset.source?.author?.trim() && asset.license?.name?.trim() &&
@@ -16,16 +16,26 @@ export function initChatPet(api, display, report) {
   const slot = document.getElementById("private-call-pet-slot");
   const home = pet.parentElement;
   let character = null, expression = null;
-  const picker = new MemePicker(api, (id, asset) => {
-    expression = asset;
+  let revision = 0;
+  const path = () => `/api/pets/${encodeURIComponent(character.character_id)}`;
+  const picker = new MemePicker(api, async id => {
+    applySelection(await api(path(), {method: "PUT", body: {asset_id: id}}));
     render();
   }, {
     title: "宠物表情",
     showSources: true,
-    description: "只改变你眼前的宠物，不会发送消息。更多来源可从共享图库导入。",
-    accept: asset => hasPetSource(asset) && !(motion.matches && asset.animated),
-    emptyText: "没有合适的表情。可到图库导入带作者、来源链接和许可链接的图片。",
+    resetLabel: "恢复默认形象",
+    description: "选择会保存到当前角色，在其他设备打开对话也会使用。",
+    loadItems: () => api(path()),
+    previewUrl: asset => asset.preview_url,
+    accept: asset => (asset.manifest_owned || hasPetSource(asset)) && !(motion.matches && asset.animated),
+    emptyText: "当前角色没有符合条件的宠物图片。",
   });
+  function applySelection(state) {
+    if (state?.character_id !== character?.character_id || state.revision < revision) return;
+    revision = state.revision;
+    expression = state.selected;
+  }
   function render() {
     const hidden = !display.value?.pets_enabled;
     toggle.disabled = !character || !display.value || display.saving;
@@ -35,7 +45,7 @@ export function initChatPet(api, display, report) {
     pet.hidden = !character || hidden;
     let url = character?.avatar;
     if (motion.matches) url = url === "/assets/whale/idle.gif" ? "/assets/whale/memes/nap.png" : null;
-    if (expression && !(motion.matches && expression.animated)) url = memePreviewUrl(expression);
+    if (expression && !(motion.matches && expression.animated)) url = expression.preview_url;
     image.hidden = pet.hidden || !url;
     pet.classList.toggle("pet-placeholder", !url);
     pet.title = expression ? `${expression.title} · 换个表情` : "换个表情";
@@ -58,8 +68,10 @@ export function initChatPet(api, display, report) {
     if (!next || character?.character_id !== next.character_id || character?.character_version !== next.character_version) {
       picker.close(true);
       expression = null;
+      revision = 0;
     }
     character = next && { character_id: next.character_id, character_version: next.character_version, avatar: next.avatar };
+    if (next?.pet) applySelection(next.pet);
     render();
   } };
 }

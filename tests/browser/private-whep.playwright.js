@@ -64,7 +64,6 @@ async page => {
   }, target);
   for (const [index, profile] of ["original", "q"].entries()) {
     if (index === 1) await page.evaluate(() => { delete RTCRtpReceiver.prototype.jitterBufferTarget; });
-    await page.getByRole("button", {name: "更多对话操作"}).click();
     await page.getByRole("button", {name: "私有语音通话"}).click();
     await page.getByRole("combobox", {name: "通话形象", exact: true}).selectOption(profile);
     await page.getByRole("button", {name: "开始通话"}).click();
@@ -119,7 +118,6 @@ async page => {
   if (ends.length !== 2 || ends.some(row => row.cause !== "hangup_button" || row.peer !== "connected"))
     throw Error("missing pre-close hangup state");
   await page.route("**/api/chat/private-call/avatars/*/whep", route => route.fulfill({status: 503}));
-  await page.getByRole("button", {name: "更多对话操作"}).click();
   await page.getByRole("button", {name: "私有语音通话"}).click();
   await page.getByRole("combobox", {name: "通话形象", exact: true}).selectOption("original");
   await page.getByRole("button", {name: "开始通话"}).click();
@@ -152,7 +150,6 @@ async page => {
       if (["response.cancel","output_audio_buffer.clear","session.close"].includes(e.type)) controls.push(e.type);
     });
   });
-  await page.getByRole("button", {name: "更多对话操作"}).click();
   await page.getByRole("button", {name: "私有语音通话"}).click();
   await page.getByRole("combobox", {name: "通话形象", exact: true}).selectOption("q");
   await page.locator("#private-call-topic").fill(hit.source_key);

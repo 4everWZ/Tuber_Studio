@@ -7,7 +7,7 @@ import { selectUtterance } from "./private-call-transcription.js";
 const byId = id => document.getElementById(id);
 const open = byId("private-call-open"), dialog = byId("private-call-dialog");
 const start = byId("private-call-start"), end = byId("private-call-end"), status = byId("private-call-state");
-const menu = byId("operator-chat-more-panel"), workspace = byId("workspace");
+const workspace = byId("workspace"), chat = open.closest("[data-section='chat']");
 let current;
 const temporary = byId("private-call-temporary");
 const options = byId("private-call-options"), topic = byId("private-call-topic");
@@ -28,11 +28,11 @@ mute.onclick = () => {
 };
 
 async function check() {
-  if (menu.hidden || workspace.hidden || !window.isSecureContext || !navigator.mediaDevices?.getUserMedia ||
+  if (chat.hidden || workspace.hidden || !window.isSecureContext || !navigator.mediaDevices?.getUserMedia ||
       !window.AudioWorkletNode || !window.AudioContext) return;
   try {
     const state = await api("/api/chat/private-call");
-    open.disabled = open.hidden = !state.configured || workspace.hidden;
+    open.disabled = open.hidden = !state.configured || workspace.hidden || chat.hidden;
     const recordings = byId("private-call-recordings");
     recordings.replaceChildren();
     for (const [profile, label] of [["mature", "常规版通话实录"], ["q", "Q 版通话实录"]]) {
@@ -49,7 +49,9 @@ async function check() {
   }
   catch { open.disabled = open.hidden = true; }
 }
-new MutationObserver(check).observe(menu, {attributes: true, attributeFilter: ["hidden"]});
+const visibility = new MutationObserver(check);
+for (const target of [workspace, chat]) visibility.observe(target, {attributes: true, attributeFilter: ["hidden"]});
+check();
 
 function finish(call, cause, message, code = null) {
   if (call !== current || !call) return;
@@ -234,7 +236,6 @@ async function begin(previous = null) {
 }
 
 open.onclick = () => {
-  byId("operator-chat-more-toggle").click();
   options.open = false;
   topic.value = "";
   status.textContent = "尚未开始通话";

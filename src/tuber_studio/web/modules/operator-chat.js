@@ -29,7 +29,7 @@ function requestId() {
   return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
 }
 
-export function initOperatorChat(api, { applyAutomationStatus, getAutomationStatus, setPet, refreshAutomation } = {}) {
+export function initOperatorChat(api, { applyAutomationStatus, getAutomationStatus, setPet, refreshDisplay, refreshAutomation } = {}) {
   const feed = $("operator-chat-feed"), timeline = $("operator-chat-timeline");
   const older = $("operator-chat-older"), historyNote = $("operator-chat-history-note");
   const form = $("operator-chat-form"), input = $("operator-chat-input"), send = $("operator-chat-send");
@@ -421,13 +421,12 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     const follow = nearEnd();
     feed.append(transient);
     if (follow) scrollEnd();
-    let partial = "", renderFrame = 0;
+    let partial = "", renderFrame = 0, result;
     const stages = {
       queued: "等待推理", preparing: "正在整理上下文", preflight: "正在检查模型", checking_model: "正在检查模型",
       counting: "正在准备模型输入", generating: "正在回复", working: "正在查询或安排任务",
     };
     try {
-      let result;
       try {
         result = await api(`${path}/stream`, { method: "POST", body: request, signal: controller.signal, onEvent(event, value) {
           if (currentEpoch !== epoch) return;
@@ -495,7 +494,9 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
         inFlight = null;
         setPending(false);
         if (active && (form.contains(document.activeElement) || document.activeElement === document.body)) focusComposer();
-        if (active && scope === null) await refresh();
+        if (active && result?.tool_receipt?.group === "pets") {
+          await Promise.allSettled([refresh(), refreshDisplay?.()]);
+        } else if (active && scope === null) await refresh();
       }
     }
   }

@@ -35,8 +35,7 @@ export function operationCapabilities(status) {
   });
 }
 
-export function renderOperationCapabilities(status) {
-  const strip = $("op-permissions-summary");
+export function renderCapabilityStrip(strip, status) {
   const capabilities = operationCapabilities(status);
   const signature = JSON.stringify(capabilities);
   if (strip.dataset.signature !== signature) {
@@ -51,6 +50,10 @@ export function renderOperationCapabilities(status) {
       return item;
     }));
   }
+}
+
+export function renderOperationCapabilities(status) {
+  renderCapabilityStrip($("op-permissions-summary"), status);
   const blocker = $("op-capability-blocker");
   if (blocker) {
     const reasons = (status.blockers || []).map(safeMessage);

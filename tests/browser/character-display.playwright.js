@@ -51,8 +51,7 @@ async page => {
         await pets.setChecked(petsOn);
         assert.ok((await saved).ok());
       }
-      await expectPet(chat, ".chat-agent-identity #chat-pet", petsOn);
-      await chat.getByRole("button", {name:"更多对话操作"}).click();
+      await expectPet(chat, ".chat-pet-float #chat-pet", petsOn);
       await chat.getByRole("button", {name:"私有语音通话"}).click();
       await expectPet(chat, "#private-call-dialog #chat-pet", petsOn);
       assert.equal(await chat.locator("#private-call-dialog video,#private-call-dialog canvas").count(), 0);

@@ -140,7 +140,6 @@ async function test(browser, origin, mode) {
   await turn.locator(".operator-chat-reply").waitFor();
   assert.equal(await turn.getByText(/原话操作|记住这句话|为何提到它/).count(), 0);
 
-  await page.locator("#operator-chat-more-toggle").click();
   await page.locator("#private-call-open").click();
   const other = await browser.newContext();
   const original = await other.request.post(origin + "/api/agent/memory.search", {data: {query: statement}});

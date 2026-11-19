@@ -10,11 +10,12 @@
   container-type: inline-size;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  width: min(88%, 1440px);
+  width: calc(100% - 2rem);
   min-width: 0;
   min-height: 0;
   margin-inline: auto;
 }
+.operator-chat-timeline, .operator-chat-compose { width: min(100%, 66rem); justify-self: center; }
 .chat-activity-toggle { padding: .32rem .62rem; border-radius: .6rem; white-space: nowrap; }
 .chat-activity {
   position: absolute;
@@ -33,6 +34,9 @@
 .chat-activity[hidden] { display: none; }
 .chat-activity-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
 .chat-activity-header h2 { margin: 0; font-size: 1.05rem; }
+.chat-activity-header .account-badge { margin-inline-start: auto; }
+.chat-panel-sections { display: flex; gap: .4rem; margin-block: .35rem .7rem; }
+.chat-panel-sections [aria-pressed="true"] { background: var(--soft); font-weight: 650; }
 .chat-activity-group { margin: .8rem 0 .2rem; font-size: .9rem; }
 .chat-activity-list { list-style: none; padding: 0; margin: .65rem 0; }
 .chat-task-row { display: grid; justify-items: start; gap: .2rem; width: 100%; padding: .6rem; text-align: left; }
@@ -46,22 +50,36 @@
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: .45rem;
-  min-height: 3.25rem;
-  padding-block: .4rem;
+  padding-block: .125rem;
 }
-.chat-agent-identity {
-  grid-area: 1 / 2;
-  display: grid;
-  justify-items: center;
-  gap: .15rem;
-  min-width: 0;
-  max-width: 16rem;
+.operator-chat-timeline { --pet-size: clamp(108px, 16dvh, 136px); }
+.chat-pet-float {
+  position: sticky;
+  top: 0;
+  height: 0;
+  flex: none;
+  pointer-events: none;
+  z-index: 1;
+}
+.chat-pet-float:has(> button:not([hidden]))::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--pet-size);
+  background: linear-gradient(var(--panel), transparent 1.6rem),
+              radial-gradient(ellipse 10rem 100% at 50% 0, var(--panel) 35%, transparent);
+}
+.chat-pet-float > button {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  user-select: none;
 }
 #chat-pet {
-  --pet-size: clamp(108px, 16dvh, 136px);
   width: var(--pet-size);
   height: var(--pet-size);
   overflow: hidden;
@@ -86,6 +104,8 @@
   color: var(--ink);
 }
 .operator-chat-heading h1 {
+  grid-area: 1 / 1;
+  min-width: 0;
   max-width: 100%;
   margin: 0;
   overflow: hidden;
@@ -104,7 +124,7 @@
 }
 #chat-account-badge .account-badge-name { max-width: min(8rem, 11vw); }
 .operator-chat-model-state {
-  grid-area: 1 / 1;
+  grid-area: 1 / 2;
   justify-self: start;
   margin: 0;
   color: var(--muted);
@@ -116,16 +136,18 @@
 .operator-chat-model-details .operator-chat-menu { white-space: normal; }
 .operator-chat-model-details p { margin: 0; overflow-wrap: anywhere; }
 .operator-chat-model-details a { display: block; margin-top: .55rem; }
-.operator-chat-timeline { min-height: 0; overflow-y: auto; overflow-anchor: none; overscroll-behavior-y: contain; }
-.operator-chat-older { display: grid; justify-items: center; }
+.operator-chat-timeline { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; overflow-anchor: none; overscroll-behavior-y: contain; }
+.operator-chat-older { flex: none; display: grid; justify-items: start; margin-block-start: auto; }
+/* The oldest turn can scroll fully clear of the Pet at the start of history. */
+.chat-pet-float:has(> button:not([hidden])) + .operator-chat-older:has(button[hidden]) { padding-top: var(--pet-size); }
 .operator-chat-older button { margin-bottom: .75rem; }
-.operator-chat-feed { display: grid; gap: 1.2rem; padding-block: .5rem .85rem; overflow-wrap: anywhere; }
-.operator-chat-turn { display: grid; gap: .5rem; }
+.operator-chat-feed { flex: none; display: grid; gap: .65rem; padding-block: .25rem .5rem; overflow-wrap: anywhere; }
+.operator-chat-turn { display: grid; gap: .2rem; }
 .operator-chat-turn p { margin: 0; white-space: pre-wrap; }
 .operator-chat-user {
   width: fit-content;
   max-width: min(86%, 56rem);
-  padding: .65rem .9rem;
+  padding: .4rem .7rem;
   border-radius: 1.05rem;
   color: var(--ink);
 }
@@ -133,13 +155,13 @@
 .operator-chat-reply {
   min-width: 0;
   width: min(100%, 65rem);
-  padding: .45rem 0 .8rem;
-  line-height: 1.7;
+  padding: .15rem 0 .25rem;
+  line-height: 1.55;
   color: var(--ink);
 }
 .operator-chat-reply > :first-child { margin-top: 0; }
 .operator-chat-reply > :last-child { margin-bottom: 0; }
-.operator-chat-reply p { margin: .65rem 0; }
+.operator-chat-reply p { margin: .4rem 0; }
 .operator-chat-reply h1, .operator-chat-reply h2, .operator-chat-reply h3 {
   margin: 1.25rem 0 .35rem;
   line-height: 1.35;
@@ -208,8 +230,8 @@
 .operator-chat-compose {
   z-index: 1;
   display: grid;
-  gap: .45rem;
-  padding-block: .45rem max(.9rem, env(safe-area-inset-bottom));
+  gap: .3rem;
+  padding-block: .25rem max(.5rem, env(safe-area-inset-bottom));
   background: var(--panel);
 }
 .operator-chat-pill {
@@ -356,7 +378,8 @@
 @media (max-width: 760px) {
   .win-main-shell:has(.operator-chat:not([hidden])) > .win-command-bar { display: flex; border-bottom: 0; padding-block: 2px; }
   .win-main-shell:has(.operator-chat:not([hidden])) > .win-command-bar [data-chat-hide] { display: none; }
-  .operator-chat { width: calc(100% - 1.5rem); }
+  .operator-chat { width: calc(100% - 1rem); }
+  .operator-chat-heading-actions .chat-activity-toggle { min-width: 44px; min-height: 44px; }
   .operator-chat-icon { width: max(44px, 2.75rem); height: max(44px, 2.75rem); }
   .operator-chat-menu button { min-height: max(44px, 2.75rem); }
 }
@@ -368,8 +391,6 @@
   .operator-chat-range button { justify-self: start; }
 }
 @container (max-width: 52rem) {
-  .operator-chat-heading { grid-template-columns: minmax(0, 1fr) auto; }
-  .operator-chat-heading-actions { grid-area: 1 / 2; }
-  .chat-agent-identity { grid-area: 2 / 1 / auto / -1; justify-self: center; max-width: 100%; }
-  #chat-pet { --pet-size: clamp(76px, 12dvh, 104px); }
+  .operator-chat-heading { grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto; }
+  .operator-chat-timeline { --pet-size: clamp(76px, 12dvh, 104px); }
 }

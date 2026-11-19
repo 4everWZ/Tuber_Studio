@@ -4,6 +4,7 @@ import { renderArtifact, renderAssistantAnswer } from "./operator-chat-answer.js
 import { mountFollowup } from "./goal-followup.js";
 import { mountGoalEvents } from "./goal-events.js";
 import { browserTaskForm, mountTaskBrowser } from "./task-browser.js";
+import { renderCapabilityStrip } from "./operation-capabilities.js";
 
 const base = "/api/agent/tasks";
 const states = {
@@ -74,6 +75,9 @@ function appendSource(target, value, name = value) {
 export function initTaskActivity(api, requestId, onArtifact = () => {}) {
   const panel = $("chat-activity"), toggle = $("chat-activity-toggle"), closeButton = $("chat-activity-close");
   const content = $("chat-activity-content"), notice = $("chat-activity-status");
+  const tabs = {activity: $("chat-panel-activity"), results: $("chat-panel-results"), permissions: $("chat-panel-permissions")};
+  const permissions = $("chat-panel-permission-summary"), strip = permissions.querySelector("[role=list]");
+  let section = "activity";
   let selection = null, version = 0, timer, reading = false, viewKey, editing = false;
   let returnFocus;
 
@@ -89,26 +93,34 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
     toggle.setAttribute("aria-expanded", "false");
     content.replaceChildren();
     editing = false;
-    if (!restore) toggle.textContent = "活动";
+    if (!restore) {
+      toggle.textContent = "面板";
+      toggle.removeAttribute("aria-label");
+    }
     if (restore) (returnFocus?.isConnected ? returnFocus : toggle).focus({ preventScroll: true });
     returnFocus = null;
   }
 
-  function open(id = null) {
+  function open(id = null, nextSection = "activity") {
     if (panel.hidden) returnFocus = document.activeElement?.closest("button") || toggle;
     clearInterval(timer);
     version++;
     selection = id;
+    section = nextSection;
+    for (const [key, tab] of Object.entries(tabs)) tab.setAttribute("aria-pressed", String(section === key));
+    permissions.hidden = section !== "permissions";
+    strip.replaceChildren();
+    delete strip.dataset.signature;
     if (id) onArtifact(null);
     viewKey = null;
     editing = false;
     content.replaceChildren();
-    status("正在读取活动…");
+    status(`正在读取${tabs[section].textContent}…`);
     panel.hidden = false;
     toggle.setAttribute("aria-expanded", "true");
     closeButton.focus();
     refresh();
-    timer = setInterval(refresh, 2000);
+    if (section !== "permissions") timer = setInterval(refresh, 2000);
   }
 
   async function refresh() {
@@ -116,13 +128,18 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
     const current = version;
     reading = true;
     try {
-      const value = await api(selection ? `${base}/${selection}` : base);
+      const path = section === "permissions" ? "/api/automation" : selection ? `${base}/${selection}` : base;
+      const value = await api(path);
       if (current !== version || editing) return;
       status("");
       const key = JSON.stringify(value);
       if (key === viewKey) return;
       viewKey = key;
-      if (selection) {
+      if (section === "permissions") {
+        renderCapabilityStrip(strip, value);
+      } else if (section === "results") {
+        renderResults(value);
+      } else if (selection) {
         renderTask(value);
         if (value.attention != null) {
           await api(`${base}/${selection}/attention?updated=${encodeURIComponent(value.attention)}`, { method: "DELETE" });
@@ -140,6 +157,34 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
       reading = false;
       if (current !== version && !panel.hidden) refresh();
     }
+  }
+
+  function renderResults(value) {
+    content.replaceChildren();
+    if (!selection) {
+      if (!value.tasks.length) {
+        content.append(node("p", "暂无任务成果。", "hint"));
+        return;
+      }
+      const field = node("label", "按任务查看成果"), select = node("select");
+      select.append(new Option("选择任务", ""));
+      for (const task of value.tasks) select.append(new Option(task.goal, task.id));
+      select.onchange = () => { if (select.value) open(select.value, "results"); };
+      field.append(select);
+      content.append(field);
+      return;
+    }
+    const back = button("选择其他任务"), detail = button("查看任务");
+    back.onclick = () => open(null, "results");
+    detail.onclick = () => open(value.id);
+    content.append(back, node("h3", value.goal));
+    if (value.artifact) {
+      const body = node("div");
+      renderArtifact(body, value.artifact.body);
+      content.append(body);
+      onArtifact({task_id: value.id, task_revision: value.artifact.task_revision, edition: value.artifact.edition});
+    } else content.append(node("p", "这项任务暂无成果。", "hint"));
+    content.append(detail);
   }
 
   function renderList(tasks, goals, notices) {
@@ -561,6 +606,7 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
   }
 
   toggle.onclick = () => panel.hidden ? open() : close();
+  for (const [key, tab] of Object.entries(tabs)) tab.onclick = () => open(null, key);
   closeButton.onclick = () => close();
   panel.onkeydown = event => { if (event.key === "Escape") close(); };
   let counting = false;
@@ -570,7 +616,11 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
     counting = true;
     try {
       const { count } = await api("/api/agent/attention");
-      if (current === version) toggle.textContent = count ? `活动 · ${count} 项更新` : "活动";
+      if (current === version) {
+        toggle.textContent = "面板";
+        if (count) toggle.textContent += ` · ${count}`;
+        toggle.setAttribute("aria-label", count ? `面板，${count} 项更新` : "面板");
+      }
     } finally {
       counting = false;
     }

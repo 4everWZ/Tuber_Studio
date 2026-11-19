@@ -4,11 +4,11 @@ const memeEmotions = {idle: "平常", cheerful: "开心", angry: "生气", shy: 
 let memePickerCount = 0;
 function memeElement(tag, text, className) { const item = document.createElement(tag); if (text != null) item.textContent = text; if (className) item.className = className; return item; }
 export function memePreviewUrl(asset) { return `/api/memes/${encodeURIComponent(asset.asset_id)}/preview`; }
-export function memePreview(asset) {
+export function memePreview(asset, url = memePreviewUrl(asset)) {
   const frame = memeElement("div", null, "meme-preview");
   const fallback = memeElement("span", asset.missing ? "图片文件缺失" : "图片预览不可用", "hint");
   if (asset.missing) { frame.append(fallback); return frame; }
-  const image = document.createElement("img"); image.loading = "lazy"; image.alt = asset.title || "表情包"; image.src = memePreviewUrl(asset);
+  const image = document.createElement("img"); image.loading = "lazy"; image.alt = asset.title || "表情包"; image.src = url;
   image.onerror = () => { image.hidden = true; if (!fallback.isConnected) frame.append(fallback); };
   frame.append(image); return frame;
 }
@@ -89,7 +89,9 @@ export class MemeGallery {
 }
 
 export class MemePicker {
-  constructor(api, onSelect, {title = "选择私信表情包", description = "显示图库中已启用的图片。选图后仍需审核，最终仅发送这一张图片。", accept = () => true, showSources = false, emptyText = "图库没有可用表情包，请先在图库启用或导入图片。"} = {}) {
+  constructor(api, onSelect, {title = "选择私信表情包", description = "显示图库中已启用的图片。选图后仍需审核，最终仅发送这一张图片。", accept = () => true, showSources = false, emptyText = "图库没有可用表情包，请先在图库启用或导入图片。", loadItems = () => api("/api/memes"), previewUrl = memePreviewUrl, resetLabel} = {}) {
+    this.loadItems = loadItems;
+    this.previewUrl = previewUrl;
     this.accept = accept;
     this.showSources = showSources;
     this.emptyText = emptyText;
@@ -102,6 +104,12 @@ export class MemePicker {
     this.$("[data-picker-close]").onclick = () => this.close();
     this.$("[data-picker-manage]").onclick = event => { if (this.pending) { event.preventDefault(); return; } this.close(); };
     this.$("[data-picker-refresh]").onclick = () => this.load();
+    if (resetLabel) {
+      const button = memeElement("button", resetLabel);
+      button.type = "button";
+      button.onclick = () => this.choose(null);
+      this.$(".actions").append(button);
+    }
     this.dialog.addEventListener("cancel", event => { if (this.pending) event.preventDefault(); else this.sequence += 1; });
   }
   open(selected) { if (this.pending) return; this.selected = selected; this.dialog.showModal(); this.load(); }
@@ -110,19 +118,14 @@ export class MemePicker {
     const request = ++this.sequence; this.$("[data-picker-state]").textContent = "正在读取可用图片…";
     this.$("[data-picker-grid]").replaceChildren(); this.$("[data-picker-refresh]").disabled = true;
     try {
-      const value = await this.api("/api/memes");
+      const value = await this.loadItems();
       if (request !== this.sequence || !this.dialog.open) return;
       const items = (value.items || []).filter(item => item.enabled && !item.missing && this.accept(item));
       this.$("[data-picker-state]").textContent = items.length ? `${items.length} 张可用图片` : this.emptyText;
       for (const asset of items) {
         const button = memeElement("button", null, "meme-choice"); button.type = "button"; button.setAttribute("aria-pressed", String(asset.asset_id === this.selected)); button.setAttribute("aria-label", `选用${asset.title}`);
-        button.append(memePreview(asset), memeElement("strong", asset.title), memeElement("small", asset.license?.name || "许可未提供"));
-        button.onclick = async () => {
-          if (this.pending) return; this.pending = true; this.controls();
-          try { await this.onSelect(asset.asset_id, asset); this.pending = false; this.close(); }
-          catch (error) { this.$("[data-picker-state]").textContent = `选图未保存：${error.message}`; }
-          finally { this.pending = false; this.controls(); }
-        };
+        button.append(memePreview(asset, this.previewUrl(asset)), memeElement("strong", asset.title), memeElement("small", asset.license?.name || "许可未提供"));
+        button.onclick = () => this.choose(asset);
         if (this.showSources) {
           const card = memeElement("article", null, "meme-card");
           card.append(button, memeMetadata(asset));
@@ -131,6 +134,14 @@ export class MemePicker {
       }
     } catch (error) { if (request === this.sequence) this.$("[data-picker-state]").textContent = `图库读取失败：${error.message}`; }
     finally { if (request === this.sequence) this.$("[data-picker-refresh]").disabled = false; }
+  }
+  async choose(asset) {
+    if (this.pending) return;
+    this.pending = true;
+    this.controls();
+    try { await this.onSelect(asset?.asset_id ?? null, asset); this.close(true); }
+    catch (error) { this.$("[data-picker-state]").textContent = `选图未保存：${error.message}`; }
+    finally { this.pending = false; this.controls(); }
   }
   controls() { for (const button of this.dialog.querySelectorAll("button")) button.disabled = this.pending; this.$("[data-picker-manage]").setAttribute("aria-disabled", String(this.pending)); }
 }

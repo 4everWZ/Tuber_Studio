@@ -44,7 +44,6 @@ async page => {
       if (event.type === "session.update") prompts.push(event.session.instructions);
     });
   });
-  await page.getByRole("button", {name:"更多对话操作"}).click();
   await page.getByRole("button", {name:"私有语音通话"}).click();
   if (await page.evaluate(() => window.testTracks.length) || mutations.length) throw Error("premature call");
   await page.getByRole("button", {name:"开始通话"}).click();
@@ -112,7 +111,7 @@ async page => {
   if (!task.id || task.goal !== "整理一份私有提纲") throw Error("incorrect handoff");
   await page.getByRole("button", {name:"挂断"}).click();
   await changeDisplay({pets_enabled:true});
-  await page.locator(".chat-agent-identity #chat-pet").waitFor();
+  await page.locator(".chat-pet-float #chat-pet").waitFor();
   await page.waitForFunction(() => window.testTracks.length === 1 && window.testTracks[0].readyState === "ended" &&
     window.callContexts.length === 1 && window.callContexts[0].state === "closed");
   const after = await (await page.request.get("http://127.0.0.1:18767/observations")).json();
@@ -124,7 +123,6 @@ async page => {
   const retained = await (await page.request.get(base + "/api/agent/tasks/" + task.id)).json();
   if (retained.id !== task.id || retained.status === "cancelled") throw Error("hangup lost the task");
   await page.evaluate(() => { window.holdPermission = true; });
-  await page.getByRole("button", {name:"更多对话操作"}).click();
   await page.getByRole("button", {name:"私有语音通话"}).click();
   await page.getByRole("button", {name:"开始通话"}).click();
   await page.waitForFunction(() => typeof window.releasePermission === "function");
