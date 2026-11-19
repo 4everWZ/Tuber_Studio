@@ -5,8 +5,11 @@ from dataclasses import dataclass
 
 from pydantic import Field, field_validator
 
-from .http_api import InferenceBudgetExceeded, api_client, endpoint, response_json
+from .generation_meter import current_meter, reserve_generation, settle_generation
+from .http_api import InferenceBudgetExceeded, InferenceQueueBusy, api_client, endpoint, response_json
 from .models import StrictModel
+from .operation_turns import defer_background_request, mark_model_request, prepare_model_request
+from .providers import parse_json_object
 
 
 class ResponsesConfig(StrictModel):
@@ -89,6 +92,53 @@ def _turn(data, allowed, output_budget):
     if not calls and not any(part.strip() for part in text):
         raise EmptyResponseTurn(identity)
     return ResponseTurn(identity, tuple(calls), "".join(text), data)
+
+
+
+async def generate_image_json(client, model, messages, schema, max_tokens):
+    """Read already bounded inline images through the background renderer."""
+    items = []
+    for message in messages:
+        content = message["content"]
+        if isinstance(content, list):
+            converted = []
+            for item in content:
+                kind = item["type"]
+                if kind == "text":
+                    converted.append({"type": "input_text", "text": item["text"]})
+                elif kind == "image_url" and item["image_url"]["url"].startswith("data:image/"):
+                    converted.append({"type": "input_image", "image_url": item["image_url"]["url"], "detail": "auto"})
+                else:
+                    raise ValueError("后台视觉只接受内嵌图片和文本")
+            content = converted
+        items.append({"role": message["role"], "content": content})
+    payload = {
+        "model": model, "input": items, "store": False, "max_output_tokens": max_tokens,
+        "chat_template_kwargs": {"enable_thinking": False},
+        "text": {"format": {"type": "json_schema", "name": "frame_observation", "schema": schema, "strict": True}},
+    }
+    await prepare_model_request()
+    reservation = None
+    if current_meter.get() is not None:
+        measured = await response_json(client, "POST", "responses/prompt_tokens", payload=payload)
+        count = measured.get("count")
+        if type(count) is not int or count < 1:
+            raise ValueError("后台 Responses 未返回有效的图文输入计量")
+        reservation = reserve_generation(count, max_tokens)
+    mark_model_request()
+    try:
+        data = await response_json(client, "POST", "responses", payload=payload)
+    except InferenceQueueBusy as error:
+        if not await defer_background_request(error.retry_after):
+            raise
+        mark_model_request()
+        data = await response_json(client, "POST", "responses", payload=payload)
+    usage = data.get("usage") or {}
+    tokens = {"prompt_tokens": usage.get("input_tokens"), "completion_tokens": usage.get("output_tokens")}
+    if any(type(count) is not int or count < 0 for count in tokens.values()):
+        raise ValueError("后台 Responses 未返回有效图文用量")
+    settle_generation(reservation, tokens)
+    return parse_json_object(_turn(data, set(), max_tokens).text), tokens
 
 
 class ResponsesClient:

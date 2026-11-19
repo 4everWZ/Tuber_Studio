@@ -63,7 +63,7 @@ def proposal(settings, body):
             raise ValueError("视觉设置仅支持视频抽帧上限")
         updated["video_options"] = previous.get("video_options", {}) | video
     if (previous["base_url"], previous["model"]) != (updated["base_url"], updated["model"]):
-        updated.get("video_options", {}).pop("model_revision", None)
+        updated.get("video_options", {}).pop("background_model_revision", None)
     keys = dict(settings.provider_keys)
     if previous["base_url"] != updated["base_url"] and keys and not (key or clear):
         raise ValueError("更换 Omni 地址时须重新填写或清除旧凭证")
@@ -94,10 +94,10 @@ async def apply_settings(runtime, body):
     settings = runtime.settings
     if (
         runtime.live.state != "stopped"
-        or runtime.generation_lock.locked()
+        or runtime.generation_active()
     ):
         raise ProviderConfigurationError("请先停止直播并等待当前生成完成，再修改Provider")
-    async with runtime.generation_lock:
+    async with runtime.generation_lock, runtime.operation_generation_lock:
         try:
             require_model_idle(runtime)
         except ValueError as error:
@@ -120,7 +120,9 @@ async def apply_settings(runtime, body):
             if getattr(runtime, "browsing", None) and (
                 staged.video_config != settings.video_config or staged.provider_key("omni") != settings.provider_key("omni")
             ):
-                video = ApiVideoEvidenceProvider(runtime, staged.video_config, api_key=staged.provider_key("omni"))
+                video = ApiVideoEvidenceProvider(
+                    runtime, staged.video_config, api_key=staged.provider_key("omni"), background=True
+                )
                 created.append(video)
             settings.save_connection(data, staged.provider_keys)
         except BaseException:

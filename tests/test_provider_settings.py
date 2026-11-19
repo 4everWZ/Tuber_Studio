@@ -45,9 +45,13 @@ def test_authenticated_single_connection_save_restart_and_clear(settings, monkey
         saved = client.put(url, headers=headers, json=body)
         assert saved.status_code == 200, saved.text
         runtime = app.state.runtime
-        for service in (runtime.llm, runtime.vision, runtime.voices, runtime.browsing.visual_provider.api):
+        for service in (runtime.llm, runtime.vision, runtime.voices):
             assert service.client.headers["Authorization"] == "Bearer unit-key"
             assert str(service.client.base_url).rstrip("/") == body["omni"]["base_url"]
+        for service in (runtime.operation_llm, runtime.browsing.visual_provider.api):
+            assert service.client.headers["Authorization"] == "Bearer unit-key"
+            assert str(service.client.base_url).rstrip("/") == "https://studio.test/proxy/llm/v1"
+            assert service.config["model"] == "worker-a"
         assert runtime.operation_llm.client.headers["Authorization"] == "Bearer unit-key"
         assert str(runtime.operation_llm.client.base_url).rstrip("/") == "https://studio.test/proxy/llm/v1"
         assert runtime.operation_llm.config["model"] == "worker-a"
@@ -59,7 +63,7 @@ def test_authenticated_single_connection_save_restart_and_clear(settings, monkey
         loaded = Settings(runtime=settings.runtime)
         assert loaded.provider_key("omni") == "unit-key"
         assert loaded.responses_config["base_url"] == "https://studio.test/proxy/llm/v1"
-        assert loaded.video_config["model"] == "omni-a"
+        assert loaded.video_config["model"] == "worker-a"
         assert loaded.video_config["max_frames"] == 7
         assert json.loads(loaded.credentials_path.read_text()) == {
             "omni": {"base_url": "https://studio.test/proxy/v1", "key": "unit-key"}}

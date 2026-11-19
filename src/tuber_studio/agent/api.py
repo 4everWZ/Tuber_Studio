@@ -436,9 +436,9 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
             raise ValueError("请指定comments、video_id和thread_id，仅重建单楼")
         video_id, thread_id = data.get("video_id"), data.get("thread_id")
         scope = comments.account_context_scope(video_id, thread_id)
-        if runtime.live.busy or runtime.generation_lock.locked():
-            raise HTTPException(409, "正在生成或播放，请等待当前任务结束后重建")
-        async with runtime.generation_lock:
+        if runtime.operation_generation_lock.locked():
+            raise HTTPException(409, "后台正在生成，请等待当前任务结束后重建")
+        async with runtime.operation_generation_lock:
             window = store.one(
                 "SELECT history FROM context_windows WHERE key=?",
                 (runtime.operation_context.key(scope, runtime.character),),
@@ -454,9 +454,9 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
 
     @app.post("/api/context/compact", dependencies=[Depends(require_admin)])
     async def compact(data: dict = Body(...)):
-        if runtime.live.busy:
-            raise ValueError("直播正在生成或播放，请暂停并等待当前任务结束后压缩")
         if data.get("scope") == "live":
+            if runtime.live.busy:
+                raise ValueError("直播正在生成或播放，请暂停并等待当前任务结束后压缩")
             scope, mode = "live:" + str(runtime.live.session_id), "live"
         elif data.get("scope") == "comments":
             video_id = data.get("video_id", "")
@@ -468,6 +468,8 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
             scope, mode = comments.account_context_scope(video_id, thread_id), "comment_draft"
         else:
             raise ValueError("scope应为live或comments")
-        context = runtime.context if mode == "live" else runtime.operation_context
-        async with runtime.generation_lock:
-            return await context.compact(scope, runtime.character, mode)
+        if mode == "live":
+            async with runtime.operator_generation():
+                return await runtime.context.compact(scope, runtime.character, mode)
+        async with runtime.offline_generation():
+            return await runtime.operation_context.compact(scope, runtime.character, mode)

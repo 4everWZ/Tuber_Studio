@@ -7,7 +7,7 @@ from .models import canonical_voice_id
 
 RETIRED_SECTIONS = {"llm", "vision", "video_vision", "tts", "responses", "inference_broker", "work_mode_profiles"}
 RESPONSE_OPTIONS = {"max_output_tokens", "parallel_reads", "timeout_seconds"}
-VIDEO_OPTIONS = {"model_revision", "max_frames", "max_pixels", "max_bytes", "max_output_tokens",
+VIDEO_OPTIONS = {"background_model_revision", "max_frames", "max_pixels", "max_bytes", "max_output_tokens",
                  "timeout_seconds", "frame_strategy", "image_order"}
 GENERATION_OPTIONS = {"auto_compact_token_limit", "context_tokens", "native_context_tokens",
                       "min_p", "presence_penalty", "repeat_penalty", "seed"}
@@ -37,8 +37,11 @@ def operation_profile(omni):
 
 
 def video_profile(omni):
-    return {**omni.get("video_options", {}), "base_url": omni["base_url"], "model": omni["model"],
-            "enable_thinking": omni["enable_thinking"]}
+    background = operation_profile(omni)
+    options = {key: value for key, value in omni.get("video_options", {}).items() if key in VIDEO_OPTIONS}
+    pin = options.pop("background_model_revision", "")
+    return {**options, "base_url": background["base_url"], "model": background["model"],
+            "model_revision": pin, "enable_thinking": background["enable_thinking"]}
 
 
 def load_profile(saved, defaults):

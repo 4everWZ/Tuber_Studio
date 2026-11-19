@@ -35,7 +35,7 @@ class InferenceTransport(httpx.AsyncHTTPTransport):
 
     async def handle_async_request(self, request):
         replayable = request.method in {"GET", "HEAD"} or (
-            request.method == "POST" and request.url.path.endswith("/chat/prompt_tokens")
+            request.method == "POST" and request.url.path.endswith(("/chat/prompt_tokens", "/responses/prompt_tokens"))
         )
         for delay in (*self.retry_delays, None):
             try:

@@ -183,7 +183,7 @@ async def test_omni_comment_attachments_use_same_schema_and_identity(omni_provid
     assert "data:image/png;base64," in json.dumps(requests[-1])
 
 
-def test_compose_omni_vision_default_uses_only_its_scoped_service_key(tmp_path, monkeypatch):
+def test_compose_background_vision_uses_only_its_scoped_service_key(tmp_path, monkeypatch):
     from deploy.omni.core_entrypoint import ComposeSettings
 
     token_file = tmp_path / "gateway.token"
@@ -196,14 +196,14 @@ def test_compose_omni_vision_default_uses_only_its_scoped_service_key(tmp_path, 
     monkeypatch.setenv("TUBER_CORE_MODE", "omni")
     settings = ComposeSettings()
     vision = VideoVisionConfig.model_validate(settings.video_config)
-    assert vision.base_url == "https://inference.example/service/v1"
+    assert vision.base_url == "https://inference.example/service/llm/v1"
     assert not vision.model_revision
     assert settings.responses_config["model"] == "workers"
     assert settings.responses_config["base_url"] == "https://inference.example/service/llm/v1"
     assert settings.provider_key("omni") == "scoped-compose-key"
     settings.data["omni"]["base_url"] = "https://other.example/v1"
     assert settings.provider_key("omni") is None
-    assert settings.video_config["base_url"] == "https://other.example/v1"
+    assert settings.video_config["base_url"] == "https://other.example/llm/v1"
     assert settings.responses_config["base_url"] == "https://other.example/llm/v1"
 
 

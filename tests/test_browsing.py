@@ -1292,7 +1292,7 @@ async def test_automatic_queue_wait_rechecks_old_source_draft(browsing):
             "timestamp": time.time(),
         }
     ]
-    await browsing.runtime.generation_lock.acquire()
+    await browsing.runtime.operation_generation_lock.acquire()
     response = await browsing.run(preview=True, notifications_only=True)
     try:
         for _ in range(100):
@@ -1306,7 +1306,7 @@ async def test_automatic_queue_wait_rechecks_old_source_draft(browsing):
             (comment, "人工候选", browsing.runtime.character["id"], browsing.runtime.character["version"]),
         )
     finally:
-        browsing.runtime.generation_lock.release()
+        browsing.runtime.operation_generation_lock.release()
     await browsing.active[response["id"]]
     assert not browsing.intents() and not browsing.runtime.operation_llm.calls
 

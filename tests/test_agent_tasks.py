@@ -113,7 +113,7 @@ async def test_agent_model_deadline_starts_after_background_admission(settings, 
     monkeypatch.setattr(loop, "time", lambda: monotonic() + offset)
     identity = str(uuid4())
     async with app.router.lifespan_context(app):
-        async with runtime.generation_lock:
+        async with runtime.operation_generation_lock:
             tasks.create(identity, "请核对准备材料")
             await asyncio.wait_for(queued.wait(), 2)
             active = tasks.active[1]
@@ -139,7 +139,7 @@ async def test_agent_model_deadline_starts_after_background_admission(settings, 
         await asyncio.wait_for(active, 2)
         expected = "failed" if finish == "timeout" else "needs_input"
         assert tasks.current(identity)["status"] == expected
-        assert not runtime.generation_lock.locked()
+        assert not runtime.operation_generation_lock.locked()
 
 
 async def test_chat_delegates_across_existing_services_and_cancels_video(settings, monkeypatch):

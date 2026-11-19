@@ -21,11 +21,12 @@ def deployed_base():
 def configure_gateway(settings):
     profile = settings.data["omni"]
     model = os.getenv("OMNI_MODEL_ALIAS", "omni-default")
-    if (profile["base_url"], profile["model"]) != (deployed_base(), model):
-        profile.get("video_options", {}).pop("model_revision", None)
-    profile.update(base_url=deployed_base(), model=model, responses_model=os.getenv("OMNI_LLM_MODEL_ALIAS", "llm-default"))
-    if pin := os.getenv("OMNI_VISION_CHECKPOINT"):
-        profile.setdefault("video_options", {})["model_revision"] = pin
+    background = os.getenv("OMNI_LLM_MODEL_ALIAS", "llm-default")
+    if (profile["base_url"], profile["responses_model"]) != (deployed_base(), background):
+        profile.get("video_options", {}).pop("background_model_revision", None)
+    profile.update(base_url=deployed_base(), model=model, responses_model=background)
+    if pin := os.getenv("LLM_VISION_CHECKPOINT"):
+        profile.setdefault("video_options", {})["background_model_revision"] = pin
 
 
 class ComposeSettings(Settings):

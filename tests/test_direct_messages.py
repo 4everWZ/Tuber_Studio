@@ -437,19 +437,17 @@ async def test_stop_is_checked_again_immediately_before_write(messages):
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "approved"
 
 
-async def test_generation_waits_for_pending_live_work(messages):
+async def test_generation_can_run_during_pending_live_work(messages):
     runtime = messages.runtime
-    await runtime.generation_lock.acquire()
-    identity = messages.enqueue("message", incoming(messages))
-    await asyncio.sleep(0.02)
-    runtime.live.state = "paused"
-    runtime.live.queue.append("synthetic-pending-live")
-    runtime.generation_lock.release()
-    await asyncio.sleep(0.04)
-    assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "queued"
-    runtime.live.queue.clear()
-    runtime.live.state = "stopped"
-    assert (await finished(messages, identity))["status"] == "pending_review"
+    async with runtime.generation_lock:
+        runtime.live.state = "paused"
+        runtime.live.queue.append("synthetic-pending-live")
+        try:
+            identity = messages.enqueue("message", incoming(messages))
+            assert (await finished(messages, identity))["status"] == "pending_review"
+        finally:
+            runtime.live.queue.clear()
+            runtime.live.state = "stopped"
 
 
 def test_message_routes_are_admin_only_and_do_not_offer_arbitrary_send(settings):

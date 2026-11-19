@@ -7,7 +7,7 @@ from .video_vision import ApiVideoEvidenceProvider
 
 def configured_video_provider(runtime):
     return ApiVideoEvidenceProvider(runtime, runtime.settings.video_config,
-                                    api_key=runtime.settings.provider_key("omni"))
+                                    api_key=runtime.settings.provider_key("omni"), background=True)
 
 
 async def restore_admission(runtime):

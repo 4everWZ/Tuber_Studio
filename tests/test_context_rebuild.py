@@ -117,7 +117,7 @@ async def test_manual_rebuild_prefills_only_original_floor_data_and_indexes_view
         (rows[0]["id"], "未发旧草稿不能变已说事实"),
     )
     requests, _, _ = await real_protocol(settings, runtime)
-    async with runtime.generation_lock:
+    async with runtime.operation_generation_lock:
         result = await service.rebuild_context("import-rebuild", "floor")
     assert result["source_count"] == 2 and result["prefilled"] and result["input_tokens"] == 3
     model_calls = [body for path, body in requests if path == "/v1/chat/completions"]

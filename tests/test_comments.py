@@ -447,7 +447,7 @@ async def test_four_thread_workflows_preserve_order_but_model_generation_is_seri
 
     async def generate(scope, character, event, **kwargs):
         nonlocal gpu_active, gpu_peak
-        assert runtime.generation_lock.locked()
+        assert runtime.operation_generation_lock.locked()
         gpu_active += 1
         gpu_peak = max(gpu_peak, gpu_active)
         try:
@@ -497,7 +497,7 @@ async def test_shutdown_collects_thread_children_and_cancels_queued_batches(
     await comments.close()
     await asyncio.wait_for(comments.queue.join(), 1)
     assert all(child.done() for child in children)
-    assert not comments.thread_tasks and not runtime.generation_lock.locked()
+    assert not comments.thread_tasks and not runtime.operation_generation_lock.locked()
     assert {row["status"] for row in store.all("SELECT status FROM comment_tasks")} == {"cancelled"}
     assert not store.all("SELECT * FROM drafts") and not comments.adapter.sent
 
@@ -676,7 +676,7 @@ def test_thread_http_filter_and_compaction_address_exact_scope_without_creating_
             captured.append((scope, mode))
             return app.state.runtime.context.status()
 
-        app.state.runtime.context.compact = compact
+        app.state.runtime.operation_context.compact = compact
         assert (
             client.post(
                 "/api/context/compact", json={"scope": "comments", "video_id": payload["video_id"]}

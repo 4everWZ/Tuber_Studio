@@ -384,7 +384,7 @@ def create_app(
     @app.post("/api/retention/cleanup", dependencies=[Depends(require_admin)])
     async def retention_cleanup(data: dict = Body(...)):
         before = retention_arguments(data, cleanup=True)
-        if runtime.live.busy or runtime.generation_lock.locked():
+        if runtime.live.busy or runtime.generation_active():
             raise HTTPException(409, "正在生成或播放，请暂停并等待当前任务结束后清理")
         return await runtime.cleanup_retention(before)
 

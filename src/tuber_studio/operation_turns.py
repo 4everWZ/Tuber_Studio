@@ -1,4 +1,4 @@
-"""Arbitrate the single model opportunity shared by chat and operations."""
+"""Prioritize calls sharing an operations inference slot."""
 
 import asyncio
 from collections import deque

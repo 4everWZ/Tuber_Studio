@@ -614,7 +614,7 @@ class Comments:
         return materials
 
     async def rebuild_context(self, video_id, thread_id, character=None, *, platform="bilibili"):
-        """Caller owns generation_lock; rebuild only retained originals, never old drafts."""
+        """Caller holds the operations inference lock. Rebuild from retained originals."""
         character = character or self.runtime.character
         scope = self.account_context_scope(video_id, thread_id, platform)
         context = self.runtime.operation_context

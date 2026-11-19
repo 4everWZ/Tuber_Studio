@@ -75,7 +75,7 @@ async def test_private_writing_budget_on_the_counted_structured_request(owner, m
     provider.identity_resolver = lambda: {"identity_version":"fixture","character_name":"审稿身份隔离测试角色"}
     async def editor(task, evidence):
         return PrivateDelivery(items=[], gaps=["待补资料"])
-    monkeypatch.setattr(rt, "llm", provider)
+    monkeypatch.setattr(rt, "operation_llm", provider)
     monkeypatch.setitem(rt.settings.data["omni"], "max_tokens", owner_limit)
     monkeypatch.setattr(rt.tasks, "edit_delivery", editor)
     connect_private_editor(rt)
@@ -383,7 +383,7 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
         assert "owner_writing_preferences" not in packet
         return {"supported": True, "issues": []}
 
-    monkeypatch.setattr(state.runtime.llm,"generate_json",editor)
+    monkeypatch.setattr(state.runtime.operation_llm,"generate_json",editor)
     audits = []
     edit_delivery = tasks.edit_delivery
     async def observe_editor(task, evidence):

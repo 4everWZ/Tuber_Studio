@@ -231,8 +231,7 @@ class MemoryOrganizer:
                 )
                 if turn and not is_chat_turn(json.loads(turn["result"])):
                     memory.resolve_legacy_private(scope, row, None)
-        if (not getattr(runtime.llm, "supports_memory_organization", True) or runtime.operations_waiting()
-                or runtime.generation_lock.locked() or any(runtime.operation_turns.queues.values())):
+        if not getattr(runtime.operation_llm, "supports_memory_organization", True):
             self.status = "waiting"
             return 0
         sources = list(self._source_rows(scope))
@@ -376,8 +375,8 @@ class MemoryOrganizer:
         return replaces
 
     async def _generate(self, messages, result_type):
-        async with asyncio.timeout(60), self.runtime.generation_lock:
-            provider = self.runtime.llm
+        async with self.runtime.offline_generation("background"), asyncio.timeout(60):
+            provider = self.runtime.operation_llm
             generate = getattr(provider, "generate_operator_json", provider.generate_json)
             schema = result_type.model_json_schema()
             value = await budgeted_call(provider, lambda: generate(messages, schema, max_tokens=1000),

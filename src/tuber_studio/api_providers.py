@@ -32,6 +32,7 @@ from .providers import (
     single_system_messages,
     validate_reply,
 )
+from .responses_provider import generate_image_json
 
 
 def create_llm(settings):
@@ -39,7 +40,7 @@ def create_llm(settings):
 
 
 def create_operation_llm(settings):
-    return APIProvider(operation_profile(settings.data["omni"]), settings.provider_key("omni"), text_only=True)
+    return APIProvider(operation_profile(settings.data["omni"]), settings.provider_key("omni"), background=True)
 
 
 class APIProvider:
@@ -50,9 +51,9 @@ class APIProvider:
     token_accounting = "api_usage_probe"
     is_sleeping = None
 
-    def __init__(self, config, api_key=None, *, text_only=False):
+    def __init__(self, config, api_key=None, *, background=False):
         self.config = config
-        self.text_only = text_only
+        self.background = background
         self.client = api_client(config, api_key)
         self.last_tokens = self.server_tokens = None
         self.profile_error = None
@@ -130,7 +131,7 @@ class APIProvider:
 
     def _reserve_counted(self, count, output):
         # The text engine counts the exact Chat template at the same backend.
-        upper = count if self.text_only else self.capacity_window - output
+        upper = count if self.background else self.capacity_window - output
         return reserve_generation(upper, output, conservative_input=True)
 
     async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None,
@@ -217,8 +218,8 @@ class APIProvider:
     async def count_tokens(self, messages):
         await self.ensure_capacity()
         normalized = single_system_messages(provider_identity_messages(self, messages))
-        if self.text_only and any(not isinstance(message.get("content"), str) for message in normalized):
-            raise ValueError("后台文本生成只接受已记录的文本观察，图像和音频须经对应取材工具")
+        if self.background and any(not isinstance(message.get("content"), str) for message in normalized):
+            raise ValueError("后台 Chat 仅计量文本，图像须使用后台 Responses")
         digest = hashlib.sha256(
             json.dumps(normalized, ensure_ascii=False, sort_keys=True).encode()
         ).hexdigest()
@@ -241,7 +242,7 @@ class APIProvider:
             return count
 
     async def prefill(self, messages):
-        if self.text_only:
+        if self.background:
             if await self.count_tokens(messages) + 1 > self.capacity_window:
                 raise ContextWindowExceeded("重建原文超出API窗口预算")
             return True
@@ -318,6 +319,21 @@ class APIProvider:
         self.last_usage = {}
         self.last_content_characters = None
         messages = self.prepare_json_messages(messages, schema, max_tokens=max_tokens)
+        parts = [part for message in messages if isinstance(message["content"], list) for part in message["content"]]
+        if self.background and any(part.get("type") != "text" for part in parts):
+            value, self.last_usage = await generate_image_json(
+                self.client, self.config["model"], messages, schema, max_tokens
+            )
+            self.last_finish_reason = "stop"
+            self.last_content = json.dumps(value, ensure_ascii=False)
+            self.last_content_characters = len(self.last_content)
+            return value
+        if self.background:
+            messages = [
+                message | {"content": "\n".join(part["text"] for part in message["content"])}
+                if isinstance(message["content"], list) else message
+                for message in messages
+            ]
         count = await self.count_tokens(messages)
         requested_output = max_tokens
         if use_remaining_window:

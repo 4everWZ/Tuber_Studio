@@ -374,7 +374,7 @@ async def test_selector_inherits_parent_budget_and_counts_actual_native_usage(
     model = APIProvider(settings.data["omni"] | {"enable_thinking": True})
     await model.client.aclose()
     model.client = httpx.AsyncClient(base_url="http://model/v1/", transport=httpx.MockTransport(respond))
-    runtime = SimpleNamespace(llm=model)
+    runtime = SimpleNamespace(operation_llm=model)
     try:
         with GenerationMeter(repository, parent["id"]):
             selected = await select_meme(runtime, catalog, store.character(), {"text": "谢谢"}, "不客气呀")

@@ -396,14 +396,17 @@ class OperatorChat:
             tasks.setdefault(row["id"], {"status": row["status"], "bvid": row["bvid"]})
         return events, tasks, focus
 
-    async def _model(self, instruction, content, model, *, max_tokens=512, schema=None):
+    async def _model(self, instruction, content, model, *, max_tokens=512, schema=None, background=False):
         messages = [{"role": "system", "content": instruction}, {"role": "user", "content": dump(content)}]
         try:
-            async with asyncio.timeout(90), self._generation_slot():
-                provider = self.runtime.llm
-                generate = getattr(provider, "generate_operator_json", provider.generate_json)
-                value = await budgeted_call(provider, lambda: generate(messages, schema or model.model_json_schema(), max_tokens=max_tokens),
-                                            messages, max_tokens=max_tokens)
+            slot = self.runtime.offline_generation("background") if background else self.runtime.operator_generation()
+            async with slot, asyncio.timeout(90):
+                with without_model_identity():
+                    provider = self.runtime.operation_llm if background else self.runtime.llm
+                    generate = getattr(provider, "generate_operator_json", provider.generate_json)
+                    value = await budgeted_call(
+                        provider, lambda: generate(messages, schema or model.model_json_schema(), max_tokens=max_tokens),
+                        messages, max_tokens=max_tokens)
             return model.model_validate(value)
         except (ValueError, TimeoutError, httpx.HTTPError) as error:
             raise HTTPException(503, "模型暂时无法理解这条消息，可重试或使用快捷操作。") from error
@@ -1828,7 +1831,7 @@ class OperatorChat:
             "去掉姓名、昵称、个人身份、账号、私信原话、联系方式、链接和路径。"
             "列出输入里的敏感原词到 private_fragments，text 是净化后的一句话。"
             "材料无法支撑时 text 留空。",
-            {"用途": purpose, "要求": request, "资料": sources}, PublicText, max_tokens=384,
+            {"用途": purpose, "要求": request, "资料": sources}, PublicText, max_tokens=384, background=True,
         )
         return handoff_text(result, private_fragments=supplied_private_fragments(dump([request, sources])))
 

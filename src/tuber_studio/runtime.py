@@ -79,7 +79,8 @@ class Runtime:
         self.connection_probe = None
         self.retention_error = None
         self.generation_lock = asyncio.Lock()
-        self.operation_turns = OperationTurns(self.generation_lock, self.operations_waiting)
+        self.operation_generation_lock = asyncio.Lock()
+        self.operation_turns = OperationTurns(self.operation_generation_lock, lambda: False)
         self._conversation_turns = {}
         self.error = None
         self.cache = MediaCache(self)
@@ -173,33 +174,22 @@ class Runtime:
 
     @asynccontextmanager
     async def offline_generation(self, lane=None):
-        lane = lane or operation_lane.get()
-        if lane:
-            ticket = await self.operation_turns.acquire(lane, operation_ready_at.get())
-            token = operation_ticket.set((self.operation_turns, ticket))
-            try:
-                yield
-            finally:
-                operation_ticket.reset(token)
-                self.operation_turns.release(ticket)
-            return
-        while True:
-            while self.operations_waiting():
-                await asyncio.sleep(0.2)
-            await self.generation_lock.acquire()
-            if self.operations_waiting():
-                self.generation_lock.release()
-                continue
-            try:
-                yield
-            finally:
-                self.generation_lock.release()
-            return
+        lane = lane or operation_lane.get() or "background"
+        if lane == "chat":
+            raise ValueError("前台聊天须使用前台推理入口")
+        ticket = await self.operation_turns.acquire(lane, operation_ready_at.get())
+        token = operation_ticket.set((self.operation_turns, ticket))
+        try:
+            yield
+        finally:
+            operation_ticket.reset(token)
+            self.operation_turns.release(ticket)
 
-    def operator_generation(self, lane="chat"):
-        if self.live.state in {"live", "paused"}:
-            return self.generation_lock
-        return self.offline_generation(lane)
+    def operator_generation(self):
+        return self.generation_lock
+
+    def generation_active(self):
+        return self.generation_lock.locked() or self.operation_generation_lock.locked()
 
     def operations_waiting(self):
         return self.live.state in {"live", "paused"} and self.live.busy
@@ -248,11 +238,11 @@ class Runtime:
     async def cleanup_retention(self, before=None, *, automatic=False):
         if automatic and self.retention.days is None:
             return None
-        if self.live.busy or self.generation_lock.locked():
+        if self.live.busy or self.generation_active():
             if automatic:
                 return None
             raise ValueError("正在生成或播放，请暂停并等待当前任务结束后清理")
-        async with self.generation_lock:
+        async with self.generation_lock, self.operation_generation_lock:
             result = self.retention.cleanup(before, manual=not automatic)
             self.retention_error = None
             if self.live.last_played and not self.store.job(self.live.last_played["id"]):

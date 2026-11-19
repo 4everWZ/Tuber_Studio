@@ -179,11 +179,10 @@ async def test_switch_blocks_inflight_recall_and_discards_inflight_organization(
     scope = organizer.scope()
     used = "以后运营汇报先说结论"
     try:
-        runtime.llm = organizer_model
+        runtime.operation_llm = organizer_model
         add_turn(runtime, used)
         assert await organizer.run_once() == 1
         row, = memory.organized(scope)
-        runtime.llm = base
 
         async def generate(messages, _character, _event_id, _source_text):
             assert any(used in item["content"] for item in messages)
@@ -209,7 +208,7 @@ async def test_switch_blocks_inflight_recall_and_discards_inflight_organization(
                 await resume.wait()
                 return await super().generate_json(messages, schema, max_tokens=max_tokens)
 
-        runtime.llm = BlockingOrganizer()
+        runtime.operation_llm = BlockingOrganizer()
         turnover = add_turn(runtime, "以后运营汇报先说风险")
         memory.set_preference(scope, True)
         task = asyncio.create_task(organizer.run_once())
@@ -219,7 +218,7 @@ async def test_switch_blocks_inflight_recall_and_discards_inflight_organization(
         assert await task == 0
         assert memory.organized(scope) == [row]
         assert not runtime.store.one("SELECT 1 FROM memory_organization WHERE source=?", (f"turn:{turnover}",))
-        runtime.llm = organizer_model
+        runtime.operation_llm = organizer_model
         memory.set_preference(scope, True)
         assert await organizer.run_once() == 1
         assert memory.organized(scope)[0]["anecdote"].endswith("先说风险")
@@ -262,6 +261,7 @@ async def test_queued_private_chat_correction_preserves_both_turns_and_versions(
     runtime = app.state.runtime
     original = runtime.llm
     runtime.llm = ChatProvider()
+    runtime.operation_llm = OrganizerModel()
     organizer = runtime.memory_organizer
     turns = [(str(uuid4()), text) for text in ("以后运营汇报先说结论", "我改主意了，以后运营汇报先说风险")]
     try:
@@ -314,7 +314,7 @@ async def test_correction_finds_older_topic_and_preserves_qualifying_clause(sett
                 reply["topic_quote"] = "" if packet["original"] == first else "不在号主原话中的主题"
             return reply
 
-    runtime.llm = ExcerptModel()
+    runtime.operation_llm = ExcerptModel()
     try:
         add_turn(runtime, first)
         assert await runtime.memory_organizer.run_once() == 1
@@ -353,7 +353,7 @@ async def test_organization_cannot_create_memory_from_assistant_output(settings)
                 result["topic_quote"] = false_inference
             return result
 
-    runtime.llm = UnreliableOrganizer()
+    runtime.operation_llm = UnreliableOrganizer()
     try:
         origin = add_turn(runtime, owner_statement, reply_text=false_claim)
         add_turn(runtime, "核对已观看数量", memory_intent="chat", reply_text=false_claim,
@@ -412,6 +412,7 @@ async def test_shared_memory_keeps_owner_correction_after_two_client_restart(set
         app = create_app(settings)
         runtime = app.state.runtime
         runtime.llm = CheckedProvider(runtime.llm)
+        runtime.operation_llm = CheckedProvider(runtime.operation_llm)
         return app, runtime
 
     def connected(app, device, cookies=None):
@@ -480,7 +481,7 @@ async def test_bound_collaboration_preference_can_be_corrected_across_bindings(s
     app = create_app(settings)
     runtime = app.state.runtime
     memory, organizer = runtime.daily_memory, runtime.memory_organizer
-    runtime.llm = OrganizerModel()
+    runtime.operation_llm = OrganizerModel()
     original = runtime.character
     discovery = app.state.browsing.discovery
     discovery.remember_account("100")
@@ -523,7 +524,7 @@ async def test_private_memory_updates_after_worker_restart_and_stays_private(set
     app = create_app(settings)
     runtime = app.state.runtime
     provider = runtime.llm
-    runtime.llm = OrganizerModel()
+    runtime.operation_llm = OrganizerModel()
     app.state.browsing.discovery.remember_account("100")
     scope = runtime.memory_organizer.scope()
     try:
@@ -648,7 +649,7 @@ async def test_public_organizer_saves_one_experience_from_legacy_receipt(setting
     app = create_app(settings)
     runtime = app.state.runtime
     original = runtime.llm
-    runtime.llm = OrganizerModel()
+    runtime.operation_llm = OrganizerModel()
     browsing = app.state.browsing
     browsing.discovery.remember_account("100")
     scope = runtime.memory_organizer.scope()

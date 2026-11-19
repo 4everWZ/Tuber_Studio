@@ -1046,7 +1046,7 @@ def test_operator_discussion_to_dynamic_uses_only_sanitized_material(settings, m
                 "source_ids": [source["id"]], "next_evaluation_seconds": 1800}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", assistant, raising=False)
-    monkeypatch.setattr(runtime.llm, "generate_operator_json", sanitize, raising=False)
+    monkeypatch.setattr(runtime.operation_llm, "generate_operator_json", sanitize, raising=False)
     monkeypatch.setattr(runtime.operation_llm, "generate_json", draft)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         client.cookies.set("tuber_overlay", settings.overlay_token)
@@ -1124,6 +1124,7 @@ def test_operator_video_to_live_uses_only_handoff_text_and_player_receipt(settin
         return Audio(settings.audio / "handoff-test.wav", 1, text)
 
     monkeypatch.setattr(runtime.llm, "generate_operator_json", interpret, raising=False)
+    monkeypatch.setattr(runtime.operation_llm, "generate_operator_json", interpret, raising=False)
     monkeypatch.setattr(runtime.llm, "generate", generate)
     monkeypatch.setattr(runtime.voices, "synthesize_live", synthesize)
     path = "/api/chat/intelligent"

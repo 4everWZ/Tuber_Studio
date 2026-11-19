@@ -75,7 +75,7 @@ async def test_private_chat_admission_requires_independent_original_evidence(set
                                              "intent": {"action": "chat"}})
                 response.raise_for_status()
                 originals[quote] = "turn:" + identity
-            runtime.llm = OvereagerOrganizer()
+            runtime.operation_llm = OvereagerOrganizer()
             assert await runtime.memory_organizer.run_once() == len(EXAMPLES)
             assert await runtime.memory_organizer.run_once() == 0
             rows = runtime.daily_memory.organized(runtime.memory_organizer.scope())

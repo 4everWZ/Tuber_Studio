@@ -92,7 +92,7 @@ def connect_private_editor(runtime):
                      "局部条件或其他语义要求交由成品复核，不推测阈值。无字面约束时 checks 为空。")
         schema = WritingSelection.model_json_schema()
         async def generate(messages, schema, use):
-            async with runtime.operator_generation("background"):
+            async with runtime.offline_generation("background"):
                 check_use(runtime, use)
                 provider = runtime.operation_llm
                 limit = runtime.settings.data["omni"]["max_tokens"]
