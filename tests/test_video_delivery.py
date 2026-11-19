@@ -389,7 +389,8 @@ async def test_real_image_inventory_and_caption_do_not_inherit_worker_plot(runti
             return {"decision": "采用", "primary_frame": "read:1", "rationale": "可以看构图"}
         content = messages[-1]["content"]
         if "alternatives" in props:
-            return {"alternatives":{path:[] for path in json.loads(content)}}
+            assert set(json.loads(content)) == set(props["alternatives"]["required"])
+            return {"alternatives": {path: [] for path in json.loads(content)}}
         if "work_claims" in props:
             fields = json.loads(content)
             assert all(k.startswith("items.0.") for k in fields)
@@ -436,6 +437,12 @@ async def test_real_image_inventory_and_caption_do_not_inherit_worker_plot(runti
         revised = await tasks.edit_delivery(task, evidence)
         assert revised.items[0].title == "一人站在椅子旁。"
         assert revised._frame_reviews["read:1"]["title_anchor"] == ["一人站在椅子旁"]
+        trace = task["plan"]["visual_reviews"][-1]
+        assert trace["purpose"] == "repair" and trace["fields"] == {
+            "items.0.title": revised.items[0].title, "items.0.rationale": revised.items[0].rationale}
+        assert trace["primary_frame"] == "read:1" and trace["frame"]["seconds"] == evidence.points["read:1"].seconds
+        assert trace["upstream_observations"]["sampling"] == evidence.observations["read:1"]
+        assert "一人站在椅子旁" in trace["upstream_observations"]["inventory"]
     else:
         result = await tasks.edit_delivery(task, evidence)
         assert result._frame_reviews["read:1"]["title_anchor"] == ["一人站在椅子旁"]
@@ -496,7 +503,8 @@ async def test_revision_reopens_research_and_recomputes_gaps(runtime, store, mon
         if "title_action" in props:
             return {"title_action":"沿用观察原句","fact":props["fact"]["enum"][0]}
         if "alternatives" in props:
-            return {"alternatives":dict.fromkeys(json.loads(content),[])}
+            assert set(json.loads(content)) == set(props["alternatives"]["required"])
+            return {"alternatives": {path: [] for path in json.loads(content)}}
         if "work_claims" in props:
             return {"work_claims":dict.fromkeys(json.loads(content),[])}
         if props and all("含具体影视作品名称或将画面归属特定影片剧集" in v.get("enum", ()) for v in props.values()):

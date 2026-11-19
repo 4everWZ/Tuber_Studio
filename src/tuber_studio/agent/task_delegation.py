@@ -199,6 +199,10 @@ async def advance(runtime, task):
     context = visible_steps(runtime, task)
     if "candidate" in task["plan"]:
         evidence = evidence_index(context)
+        # Editors can work on shallow plan copies during an internal repair.
+        # All visual passes belong to the same private task checkpoint.
+        visual_reviews = task["plan"].setdefault("visual_reviews", []) if evidence.points else []
+        previous_reviews = len(visual_reviews)
         try:
             product = await runtime.edit_delivery(task, evidence)
         except AdditionalVideoRead as request:
@@ -267,9 +271,16 @@ async def advance(runtime, task):
                                                    "frame_reviews": correction.frame_reviews, "window_reviews": correction.window_reviews})
             return
         except DelegationError as error:
-            if error.attribution_reviews and runtime.scope() == task["scope"]:
-                runtime._save(task, plan=task["plan"] | {"attribution_rejections": [
-                    *task["plan"].get("attribution_rejections", []), *error.attribution_reviews]})
+            if runtime.scope() == task["scope"]:
+                if error.attribution_reviews:
+                    runtime._save(task, plan=task["plan"] | {"attribution_rejections": [
+                        *task["plan"].get("attribution_rejections", []), *error.attribution_reviews]})
+                elif len(visual_reviews) > previous_reviews:
+                    runtime._save(task, plan=task["plan"])
+            raise
+        except Exception:
+            if len(visual_reviews) > previous_reviews and runtime.scope() == task["scope"]:
+                runtime._save(task, plan=task["plan"])
             raise
         if runtime.scope() != task["scope"]:
             return

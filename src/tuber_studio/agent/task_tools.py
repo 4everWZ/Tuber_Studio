@@ -9,6 +9,7 @@ import os
 import re
 import time
 from contextlib import nullcontext
+from dataclasses import asdict
 from typing import Literal
 
 import httpx
@@ -534,7 +535,11 @@ async def clip_review_image(runtime_dir, task, evidence, primary):
     if not media:
         return None
     path, clip = media
-    delta = evidence.points[primary].seconds - clip["start"]
+    return await decode_review_frame(path, clip, evidence.points[primary].seconds)
+
+
+async def decode_review_frame(path, clip, seconds):
+    delta = seconds - clip["start"]
     if not 0 <= delta < clip["end"] - clip["start"]:
         raise DelegationError("主帧时点不在已保存短片内。")
     decoder = FfmpegTiles()
@@ -1135,7 +1140,7 @@ def create_task_runtime(runtime, store, browsing):
         inventories = dict(task["plan"].get("frame_reviews", {}))
         images = {}
         uses = {}
-        specificity_checked = {}
+        visual_reviews = task["plan"].setdefault("visual_reviews", []) if evidence.points else []
         retry_incomplete_previews(task["plan"])
         window_reviews = dict(task["plan"].get("window_reviews", {}))
         screening_goal = "\n".join(dict.fromkeys([*prior, task["goal"]]))
@@ -1520,7 +1525,8 @@ def create_task_runtime(runtime, store, browsing):
                         shared_details[key] = await shared_visual_facts(
                             image, key, evidence.observations[key], inventories[key]["details"],
                             list(dict.fromkeys(c["term"] for c in disputed_names)),
-                            request_json, budget, field=path, candidate_reviews=candidate_reviews)
+                            request_json, budget, field=path, candidate_reviews=candidate_reviews,
+                            reviews=visual_reviews, frame=asdict(evidence.points[key]))
                         inventories[key] = inventories[key] | {"details": list(dict.fromkeys(
                             [*inventories[key]["details"], *shared_details[key]]))}
                     if parts[2] == "title":
@@ -1592,14 +1598,6 @@ def create_task_runtime(runtime, store, browsing):
                 fixed[path] = selected_title(fixed[path], facts)
             for path, choices in repair_choices.items():
                 fixed[path] = pixel_rationale(choices, fixed[path])
-                key = draft["items"][int(path.split(".")[1])].get("primary_frame")
-                if key in shared_details and choices["detail"] and all(d in shared_details[key] for d in choices["detail"]):
-                    if draft_fields[path].partition("。剪辑安排：")[2] == fixed[path].partition("。剪辑安排：")[2]:
-                        specificity_checked[path] = (key, fixed[path])
-            for path in title_facts:
-                key = draft["items"][int(path.split(".")[1])].get("primary_frame")
-                if fixed[path] in shared_details.get(key, ()):
-                    specificity_checked[path] = (key, fixed[path])
             product = correct_editorial_fields(draft, correction, fixed)
             product._attribution_reviews.extend(candidate_reviews)
         else:
@@ -1855,12 +1853,12 @@ def create_task_runtime(runtime, store, browsing):
                     review_bound = False
                 if clip_basis and image:
                     attribution_fields = {path: fields[path] for path in clip_basis}
-                    visual_fields = {p: t for p, t in attribution_fields.items()
-                                     if p not in locked_fields and (not correction or p in correction)
-                                     and specificity_checked.get(p) != (primary, t)}
+                    visual_fields = {p: t for p, t in attribution_fields.items() if p not in locked_fields}
                     if visual_fields:
                         disputed = await review_visual_specificity(visual_fields, image, primary,
-                            evidence.observations[primary], request_json, budget)
+                            evidence.observations[primary], request_json, budget, reviews=visual_reviews,
+                            inventory=[*inventory["details"], *inventory["labels"]],
+                            frame=asdict(evidence.points[primary]), purpose="repair" if correction else "submission")
                         for path, row in disputed.items():
                             product._attribution_reviews.append(row)
                             issues[path] = " ".join(f"「{c['term']}」{c['issue']} 可见：{c['observation']}" for c in row["claims"])
