@@ -25,3 +25,9 @@
 - `tests/browser/owner_activity_fixture.py` 验证号主活动中的限定动态审批。可通过 CHROMIUM_EXECUTABLE 指向已有 Chromium 浏览器。
 
 副本演练可检查新增的 operation_image_uploads、dm_delivery_steps、dm_attempts.image_submission，以及 drafts、dm_drafts 和 dynamic_posts 的 image_ref。浏览评论沿用 browsing_intents.target 绑定图片。既有纯文字记录的新增字段为空，不会因启动服务而补排配图。模型配图作业和生成工件由本地提交 97a992d 提供。
+
+## 正式工作站部署
+
+工作站断网容器从唯一业务卷只读创建 SQLite 一致性副本，用 `0202765` 的应用初始化六项图片相关表和字段。对照 16 个已有业务表的全部原字段，1,487 条记录保持一致，SQLite 自检通过。正式切换前后发布尝试均为 3，新的图片上传及私信分步回执均为 0。
+
+正式 HTTPS 工坊加载了三渠道实现。笔电 Edge 通过普通登录，从自主运营依次进入评论、私信、动态，三个工作区及共用配图模块均正常加载。在本次工作站连接上，首次未压缩的页面导航超过 30 秒。版本 `743f0b0` 为静态页面和脚本启用 gzip，本次从打开首页到读完三个工作区共 11.9 秒。业务写入的行为验收使用上文的隔离传输。
