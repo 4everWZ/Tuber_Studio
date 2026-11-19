@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from ..daily_memory import MemoryChanged
 from ..models import Event, Reply
+from ..performance import performance
 from ..providers import public_error
 from ..store import character_card, dump
 from .activity_filter import ActivitySummary, LiveActivityFilter
@@ -76,6 +77,13 @@ class LiveSession:
 
     def start_worker(self):
         self.worker = asyncio.create_task(self._loop())
+
+    def overlay_character(self, character):
+        show = performance(self.store)
+        return {
+            "character": character_card(character), "performance": show,
+            "assets": self.settings.assets(character) if show["pets_enabled"] else [],
+        }
 
     async def stop_worker(self):
         self.reset_poll()
@@ -225,7 +233,7 @@ class LiveSession:
         if self.state != "stopped":
             self.new_session()
         await self.send_overlay(
-            {"type": "character", "character": character_card(result), "assets": self.settings.assets(result)}
+            {"type": "character", **self.overlay_character(result)}
         )
         self.wake.set()
         return result
@@ -959,8 +967,7 @@ class LiveSession:
                 "animation_id": animation,
                 "audio_ref": self.store.job(job_id)["audio_ref"],
                 "duration": audio.duration,
-                "character": character_card(character),
-                "assets": self.settings.assets(character),
+                **self.overlay_character(character),
                 "media": media,
                 "activity": activity,
                 "volume": self.media.config()["volume"] if media else 1,
@@ -996,8 +1003,7 @@ class LiveSession:
         await websocket.send_json(
             {
                 "type": "hello",
-                "character": character_card(self.runtime.character),
-                "assets": self.settings.assets(self.runtime.character),
+                **self.overlay_character(self.runtime.character),
             }
         )
         return owner

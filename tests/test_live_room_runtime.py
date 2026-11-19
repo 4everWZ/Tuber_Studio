@@ -136,7 +136,7 @@ def install_avatar(runtime: Path, *, model_refs):
     return model
 
 
-def test_live2d_optional_scoped_and_no_second_audio(settings):
+def test_live2d_files_remain_scoped_without_automatic_scene_selection(settings):
     model = install_avatar(settings.runtime, model_refs={"Moc": "whale.moc3", "Textures": ["texture.png"]})
     (model / "private.txt").write_text("unreferenced fixture", encoding="utf-8")
     app = create_app(settings)
@@ -145,7 +145,9 @@ def test_live2d_optional_scoped_and_no_second_audio(settings):
         assert client.get(path).status_code == 401
         client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
         view = client.get("/api/live/view").raise_for_status().json()
-        assert view["live2d"]["model"] == path and view["live2d"]["status"] == "available"
+        assert view["live2d"] is None
+        client.put("/api/settings/performance", json={"avatar_enabled": True}).raise_for_status()
+        assert client.get("/api/live/view").json()["live2d"] is None
         assert client.get(path).status_code == 200
         assert client.get("/media/live2d/model/whale/private.txt").status_code == 404
         assert client.get("/media/live2d/model/other/whale.model3.json").status_code == 404
@@ -153,7 +155,7 @@ def test_live2d_optional_scoped_and_no_second_audio(settings):
             "Idle": [{"File": "motion.json", "Sound": "second-audio.wav"}],
         }}}
         (model / "whale.model3.json").write_text(json.dumps(broken), encoding="utf-8")
-        assert client.get("/api/live/view").json()["live2d"]["status"] == "unavailable"
+        assert client.get("/api/live/view").json()["live2d"] is None
         assert client.get(path).status_code == 404
 
 

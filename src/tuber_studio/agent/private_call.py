@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from ..config import validate_api_key
 from ..http_api import endpoint
 from ..operation_continuations import content_hash
+from ..performance import performance
 from ..store import dump
 from .owner_memory import citation, correctable_preference, private_rows, read_stamp
 from .voice_origin import ticket_context
@@ -70,7 +71,7 @@ async def mint_ticket(origin, token):
 
 
 def call_avatar(settings, character):
-    images = {}
+    idle = None
     if character.get("avatar_manifest"):
         try:
             entries = settings.assets(character)
@@ -78,18 +79,17 @@ def call_avatar(settings, character):
             entries = []
         for entry in entries:
             path = entry.get("path", "")
+            if entry.get("tag") != "idle":
+                continue
             if not path.startswith("assets/") or Path(path).suffix.lower() not in {".png", ".gif", ".webp", ".jpg", ".jpeg"}:
                 continue
             try:
                 file = settings.asset_path(path)
             except (OSError, ValueError):
                 continue
-            images[entry.get("tag")] = "/" + file.relative_to(settings.root).as_posix()
-    pair = character["id"] == "whale" and (
-        images.get("sing_closed"), images.get("sing_open")
-    ) == ("/assets/whale/sing_closed.png", "/assets/whale/sing_open.png")
-    return {"still": images.get("sing_closed") if pair else images.get("idle") or next(iter(images.values()), None),
-            "speaking": images["sing_open"] if pair else None, "fallback": images.get("idle")}
+            idle = "/" + file.relative_to(settings.root).as_posix()
+            break
+    return {"still": idle, "speaking": None, "fallback": idle}
 
 
 def register_private_call(app, runtime, require_admin):
@@ -144,13 +144,17 @@ def register_private_call(app, runtime, require_admin):
         rows = private_rows(runtime, options.topic) if options.topic and not options.temporary else []
         # A retained headline or source quote may contain the superseded preference.
         notes = [row["anecdote"] for row in rows]
+        show = performance(runtime.store)
         return {
             "socket": browser_socket_origin(origin) + "/v1/realtime",
             "ticket": ticket,
             "voice_context": ticket_context(token, ticket, grant) if not options.temporary else None,
             "call_scope": content_hash(grant),
             "character": character["name"],
-            "avatar": call_avatar(runtime.settings, character),
+            "performance": show,
+            "avatar": call_avatar(runtime.settings, character) if show["pets_enabled"] else {
+                "still": None, "speaking": None, "fallback": None,
+            },
             "memory_citations": [citation(row) for row in rows],
             "correction_targets": [row["id"] for row in rows if correctable_preference(row, runtime.daily_memory.private_owner)],
             "memory_use": {"ids": [row["id"] for row in rows], "stamp": read_stamp(runtime, rows)} if rows else None,

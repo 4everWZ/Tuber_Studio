@@ -16,7 +16,6 @@ class CallGuard:
         self.use = use
         self.scope = runtime.tasks.scope()
         self.wake = asyncio.Event()
-        self.close_media = None
         self.active = True
 
     def state(self):
@@ -67,8 +66,6 @@ def register_call_guards(app, runtime, require_admin):
             finally:
                 guard.active = False
                 guards.pop(identity, None)
-                if guard.close_media:
-                    await asyncio.shield(guard.close_media())
 
         return StreamingResponse(records(), media_type="application/x-ndjson",
                                  headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})

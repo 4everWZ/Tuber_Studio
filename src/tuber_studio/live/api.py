@@ -14,6 +14,7 @@ from pydantic import Field
 
 from ..media_cache import CachePolicy
 from ..models import Event, StrictModel
+from ..performance import performance, register_performance
 from .activity_filter import LivePoll
 from .avatar import LiveAvatar
 from .media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
@@ -29,6 +30,7 @@ class ConfirmSong(StrictModel):
 
 
 def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok, same_origin):
+    register_performance(app, runtime, require_admin)
     register_stardew_device(app, require_admin, runtime.tasks)
     media, store = runtime.live.media, runtime.store
     avatar = LiveAvatar(settings)
@@ -72,13 +74,17 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
             (runtime.live.session_id,),
         )
         character = runtime.character
+        show = performance(store)
         return {
             "scene": media.scene(),
             "queue": queued,
             "events": list(reversed(events)),
             "character": {key: character[key] for key in ("id", "name", "version")},
-            "assets": settings.assets(character),
-            "live2d": avatar.projection(character["id"]),
+            "performance": show,
+            "lip_sync": {"provider": "ditto", "status": "tbd" if show["avatar_enabled"] else "off",
+                         "renderer": "pet" if show["pets_enabled"] else "none"},
+            "assets": settings.assets(character) if show["pets_enabled"] else [],
+            "live2d": None,
             "playback": runtime.live.playback,
             "state": runtime.live.state,
             "muted": runtime.live.muted,

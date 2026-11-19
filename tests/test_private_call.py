@@ -37,7 +37,8 @@ def test_ticket_is_admin_only_fixed_upstream_and_contains_no_service_credential(
         browser_host = "192.0.2.10" if behind_edge else "voice.example.org"
         assert reply.json()["socket"] == f"wss://{browser_host}/v1/realtime"
         assert reply.json()["character"] == app.state.runtime.character["name"]
-        assert reply.json()["avatar"]["speaking"] == "/assets/whale/sing_open.png"
+        assert reply.json()["avatar"] == {"still": "/assets/whale/idle.gif",
+                                         "speaking": None, "fallback": "/assets/whale/idle.gif"}
         assert len(issued) == 1
         request = issued[0]
         assert request.method == "POST" and str(request.url) == "https://voice.example.org/v1/browser-tickets"
