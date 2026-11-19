@@ -13,6 +13,7 @@ def test_only_both_accepted_ready_profiles_and_bound_sessions(settings, monkeypa
     app = create_app(settings)
     headers = {"Authorization": "Bearer " + settings.admin_token}
     origin, ordinary = "https://avatar.example", "fixture-private-application"
+    monkeypatch.setenv("TUBER_PRIVATE_REALTIME_PUBLIC_ORIGIN", "https://studio.example")
     monkeypatch.setattr(avatar, "private_service", lambda: (origin, ordinary))
     original, q = ("portrait_" + n * 32 for n in "ab")
     if driver == "inochi2d":
@@ -80,6 +81,7 @@ def test_only_both_accepted_ready_profiles_and_bound_sessions(settings, monkeypa
         q_state = "ready"
         joined = browser.post(base, headers=headers, json=body)
         assert joined.status_code == 200 and ordinary not in joined.text
+        assert joined.json()["events"].startswith("wss://studio.example/v1/avatar/sessions/")
         local = base + "/" + joined.json()["handle"]
         sdp = browser.post(local + "/whep", headers=headers | {"Content-Type": "application/sdp"}, content="offer")
         assert sdp.status_code == 201 and sdp.text == "answer"

@@ -22,6 +22,16 @@ curl --fail http://127.0.0.1:9020/healthz
 
 ## 从电脑访问业务工作台
 
+### 工作站 IP 入口
+
+将 Core、TLS 代理、业务卷和独立推理服务部署到同一台工作站。笔电只需要浏览器。将 `TUBER_WORKSTATION_IP` 设为浏览器可达的工作站 IPv4，另以 `TUBER_WORKSTATION_CERT` 和 `TUBER_WORKSTATION_KEY` 指定含该 IP SAN 的服务器证书和私钥路径。浏览器须信任证书。工作站保管私钥和普通应用凭据。
+
+```sh
+docker compose -f deploy/omni/app-compose.yml -f deploy/omni/workstation.compose.yml up -d --build --wait tuber-core studio-edge
+```
+
+已有业务卷的部署再叠加 `app-business-data.compose.yml`。在浏览器地址栏输入工作站 IP，HTTP 自动转向 HTTPS。TLS 代理服务工作台、静态文件、SSE 和私有通话 WebSocket。Core 使用回环入口签发短时票据，浏览器在当前 HTTPS IP 订阅。WHEP 音视频遵循协商得到的 ICE 路径。验证实际收帧、冻结和音画同步时使用号主浏览器所在网络。
+
 Core 提供工作台、静态素材、管理 API、SSE 和 WebSocket。浏览器连接实际业务主机，任务和 SQLite 由该 Core 实例持有。使用独立候选卷时，管理令牌、聊天和平台登录按该卷读取。
 
 访问回环绑定的远程 Core 时，在终端将下方的 `core-host` 换成实际业务主机的 SSH 目标，然后打开工作台。 [转发后的工作台](http://127.0.0.1:8021/)

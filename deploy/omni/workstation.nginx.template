@@ -1,0 +1,51 @@
+map $http_upgrade $studio_connection {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen 8081;
+    return 308 ${STUDIO_PUBLIC_ORIGIN}$request_uri;
+}
+
+# Control requests stay in the shared network namespace. Only ticketed
+# browser websockets go from the public edge to the model gateway.
+server {
+    listen 127.0.0.1:9180;
+    access_log off;
+    resolver 127.0.0.11 valid=30s ipv6=off;
+    set $gateway "${STUDIO_GATEWAY}";
+    location / {
+        proxy_pass $gateway;
+    }
+}
+
+server {
+    listen 8443 ssl;
+    ssl_certificate /etc/studio/ip.crt;
+    ssl_certificate_key /etc/studio/ip.key;
+    access_log off;
+    error_log /dev/stderr crit;
+    client_max_body_size 0;
+    proxy_http_version 1.1;
+    proxy_read_timeout 1h;
+    proxy_buffering off;
+    resolver 127.0.0.11 valid=30s ipv6=off;
+    set $gateway "${STUDIO_GATEWAY}";
+
+    location ~ ^/v1/(realtime|avatar/sessions/[A-Za-z0-9_-]+/events)$ {
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $studio_connection;
+        proxy_set_header Cookie "";
+        proxy_set_header Authorization "";
+        proxy_pass $gateway;
+    }
+    location / {
+        proxy_set_header Host $http_host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $studio_connection;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_pass http://127.0.0.1:9020;
+    }
+}

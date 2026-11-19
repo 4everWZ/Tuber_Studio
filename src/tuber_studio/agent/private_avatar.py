@@ -11,7 +11,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from .private_call import private_service
+from .private_call import browser_socket_origin, private_service
 from .private_call_guard import register_call_guards
 
 PREFIX = "/api/chat/private-call/avatars"
@@ -88,7 +88,7 @@ def register_private_avatar(app, runtime, require_admin):
         pair = accepted_pair(runtime, service[0]) if service else {}
         if not pair:
             raise HTTPException(409, "两套通话形象尚未就绪")
-        scope = json.dumps([service[0], pair, runtime.tasks.scope()], sort_keys=True).encode()
+        scope = json.dumps([service[0], browser_socket_origin(service[0]), pair, runtime.tasks.scope()], sort_keys=True).encode()
         key = hmac.digest(service[1].encode(), b"Studio private avatar\0" + scope, hashlib.sha256)
         return service, pair, key
 
@@ -149,7 +149,7 @@ def register_private_avatar(app, runtime, require_admin):
             if guard:
                 guard.close_media = release_media
             return {"handle": identity + "." + sign(key, identity), "generation": data["generation"],
-                    "events": service[0].replace("http", "ws", 1) + path + "/events?ticket=" + ticket}
+                    "events": browser_socket_origin(service[0]) + path + "/events?ticket=" + ticket}
         except BaseException:
             await upstream(service, "DELETE", path)
             raise

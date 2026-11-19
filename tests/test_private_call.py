@@ -6,10 +6,13 @@ from tuber_studio.agent import private_call
 from tuber_studio.app import create_app
 
 
-def test_ticket_is_admin_only_fixed_upstream_and_contains_no_service_credential(settings, tmp_path, monkeypatch):
+@pytest.mark.parametrize("behind_edge", [True, False])
+def test_ticket_is_admin_only_fixed_upstream_and_contains_no_service_credential(settings, tmp_path, monkeypatch, behind_edge):
     key = tmp_path / "voice.key"
     key.write_text("private-application-fixture")
     monkeypatch.setenv("TUBER_PRIVATE_REALTIME_ORIGIN", "https://voice.example.org")
+    if behind_edge:
+        monkeypatch.setenv("TUBER_PRIVATE_REALTIME_PUBLIC_ORIGIN", "https://192.0.2.10")
     monkeypatch.setenv("TUBER_PRIVATE_REALTIME_TOKEN_FILE", str(key))
     issued = []
 
@@ -31,7 +34,8 @@ def test_ticket_is_admin_only_fixed_upstream_and_contains_no_service_credential(
         assert reply.status_code == 200
         assert reply.headers["cache-control"] == "no-store"
         assert key.read_text() not in reply.text and settings.admin_token not in reply.text
-        assert reply.json()["socket"] == "wss://voice.example.org/v1/realtime"
+        browser_host = "192.0.2.10" if behind_edge else "voice.example.org"
+        assert reply.json()["socket"] == f"wss://{browser_host}/v1/realtime"
         assert reply.json()["character"] == app.state.runtime.character["name"]
         assert reply.json()["avatar"]["speaking"] == "/assets/whale/sing_open.png"
         assert len(issued) == 1

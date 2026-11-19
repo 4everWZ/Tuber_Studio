@@ -1,7 +1,8 @@
 """Mint a path-scoped browser ticket, never a program or Avatar session.
 
-TUBER_PRIVATE_REALTIME_ORIGIN is the browser-reachable gateway origin (HTTPS,
-or HTTP loopback for local development). TUBER_PRIVATE_REALTIME_TOKEN_FILE
+TUBER_PRIVATE_REALTIME_ORIGIN is the server-side gateway origin (HTTPS or
+loopback). A TLS edge can advertise TUBER_PRIVATE_REALTIME_PUBLIC_ORIGIN
+for the browser's ticketed sockets. TUBER_PRIVATE_REALTIME_TOKEN_FILE
 must hold a dedicated ordinary application token, not a media/admin token.
 There is deliberately no fallback to the Studio login or gateway admin secret.
 """
@@ -28,12 +29,22 @@ class CallOptions(BaseModel):
     topic: str = Field(default="", max_length=500)
 
 
+def browser_socket_origin(service_origin):
+    public = os.environ.get("TUBER_PRIVATE_REALTIME_PUBLIC_ORIGIN")
+    if public:
+        public = endpoint(public)
+        if urlsplit(public).scheme != "https" or urlsplit(public).path:
+            raise ValueError("私聊浏览器入口须为 HTTPS 源")
+    return (public or service_origin).replace("http", "ws", 1)
+
+
 def private_service():
     try:
         origin = endpoint(os.environ["TUBER_PRIVATE_REALTIME_ORIGIN"])
         url = urlsplit(origin)
         if url.path or (url.scheme != "https" and url.hostname not in {"localhost", "127.0.0.1", "::1"}):
             return None
+        browser_socket_origin(origin)
         token = Path(os.environ["TUBER_PRIVATE_REALTIME_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
         validate_api_key(token)
         if token:
@@ -107,7 +118,7 @@ def register_private_call(app, runtime, require_admin):
         # A retained headline or source quote may contain the superseded preference.
         notes = [row["anecdote"] for row in rows]
         return {
-            "socket": origin.replace("http", "ws", 1) + "/v1/realtime",
+            "socket": browser_socket_origin(origin) + "/v1/realtime",
             "ticket": ticket,
             "voice_context": ticket_context(token, ticket, grant) if not options.temporary else None,
             "call_scope": content_hash(grant),

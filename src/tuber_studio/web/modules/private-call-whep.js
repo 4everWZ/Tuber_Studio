@@ -28,8 +28,8 @@ new MutationObserver(async () => {
     const data = await api(base);
     if (revision !== version || !data.profiles.includes("original") || !data.profiles.includes("q")) return;
     selection = data.selection;
-    select.add(new Option("常规原稿", "original"));
-    select.add(new Option("Q 版原稿", "q"));
+    select.add(new Option("常规版", "original"));
+    select.add(new Option("Q 版", "q"));
     label.hidden = false;
   } catch { /* Voice calls remain available independently. */ }
 }).observe(dialog, {attributes: true, attributeFilter: ["open"]});

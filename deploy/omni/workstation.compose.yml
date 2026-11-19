@@ -1,0 +1,28 @@
+# Same workstation as the Omni gateway. Publish only the HTTPS edge and its
+# HTTP redirect on the selected workstation IP. Core serves its bundled UI.
+services:
+  tuber-core:
+    environment:
+      TUBER_PRIVATE_REALTIME_ORIGIN: http://127.0.0.1:9180
+      TUBER_PRIVATE_REALTIME_PUBLIC_ORIGIN: https://${TUBER_WORKSTATION_IP:?set the browser-reachable workstation IP}
+      TUBER_PRIVATE_REALTIME_TOKEN_FILE: /run/secrets/omni_gateway_core
+    ports: !override
+      - "${TUBER_WORKSTATION_IP}:80:8081"
+      - "${TUBER_WORKSTATION_IP}:443:8443"
+
+  studio-edge:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    network_mode: service:tuber-core
+    depends_on:
+      tuber-core:
+        condition: service_healthy
+        restart: true
+    environment:
+      NGINX_ENVSUBST_FILTER: ^STUDIO_
+      STUDIO_PUBLIC_ORIGIN: https://${TUBER_WORKSTATION_IP}
+      STUDIO_GATEWAY: ${OMNI_GATEWAY_URL:-http://omni-gateway:8000}
+    volumes:
+      - ./workstation.nginx.template:/etc/nginx/templates/default.conf.template:ro
+      - ${TUBER_WORKSTATION_CERT:?specify the IP certificate}:/etc/studio/ip.crt:ro
+      - ${TUBER_WORKSTATION_KEY:?specify its private key}:/etc/studio/ip.key:ro
