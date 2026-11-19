@@ -23,7 +23,10 @@ from .http_api import api_client, check_response_status, inference_transport, mo
 from .llama_sampling import live_thinking_budget, llama_cpp_sampling, supports_live_thinking_budget
 from .models import OperationReply, Reply
 from .operation_identity import (
-    BILIBILI_OWNER_INSTRUCTION, bilibili_owner_context, private_participant_instructions, provider_identity_messages,
+    BILIBILI_OWNER_INSTRUCTION,
+    bilibili_owner_context,
+    private_participant_instructions,
+    provider_identity_messages,
 )
 from .operation_text import operation_character
 from .operation_turns import mark_model_request, prepare_model_request

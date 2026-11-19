@@ -10,9 +10,9 @@ from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from .store import dump as dump_memory
 from . import memory_sources
 from .cooperation import applicable_chat_memory, bound_statement
+from .store import dump as dump_memory
 
 ANECDOTE_CATEGORIES = ("comment_anecdote", "live_highlight", "community_meme")
 HIGHLIGHT_CATEGORIES = (*ANECDOTE_CATEGORIES, "public_incident")

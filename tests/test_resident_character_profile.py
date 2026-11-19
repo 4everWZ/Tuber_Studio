@@ -56,6 +56,7 @@ def test_editor_api_persists_validated_short_fields_and_keeps_the_long_card(sett
 @pytest.mark.skipif(not os.getenv("TUBER_TEST_CHROMIUM"), reason="requires local Chromium")
 async def test_legacy_card_in_character_studio(settings):
     from playwright.async_api import async_playwright, expect
+
     from evaluations.creative_browser import server
 
     app = create_app(settings)
