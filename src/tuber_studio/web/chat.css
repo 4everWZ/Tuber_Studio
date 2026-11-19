@@ -7,6 +7,7 @@
 .win-content:has(> .operator-chat:not([hidden])) { display: flex; min-height: 0; padding: 0; }
 .operator-chat {
   position: relative;
+  container-type: inline-size;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(88%, 1440px);
@@ -18,7 +19,8 @@
 .chat-activity {
   position: absolute;
   z-index: 3;
-  inset: 3.35rem 0 4.75rem auto;
+  grid-area: 2 / 1;
+  inset: 0 0 0 auto;
   width: min(100%, 29rem);
   overflow: auto;
   border: 1px solid var(--line);
@@ -44,7 +46,7 @@
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: 1fr minmax(0, auto) 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
   align-items: center;
   gap: .45rem;
   min-height: 3.25rem;
@@ -52,17 +54,39 @@
 }
 .chat-agent-identity {
   grid-area: 1 / 2;
-  display: flex;
-  align-items: center;
-  gap: .45rem;
+  display: grid;
+  justify-items: center;
+  gap: .15rem;
   min-width: 0;
+  max-width: 16rem;
 }
-#chat-pet { border: 0; padding: 0; background: transparent; border-radius: .5rem; }
+#chat-pet {
+  --pet-size: clamp(108px, 16dvh, 136px);
+  width: var(--pet-size);
+  height: var(--pet-size);
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: .5rem;
+}
 #chat-pet.pet-placeholder::after { content: "选表情"; font-size: .8rem; }
-.chat-agent-identity img { display: block; width: 2.75rem; height: 2.75rem; object-fit: contain; }
-.chat-agent-identity img[hidden] { display: none; }
-#private-call-pet-slot img { width: min(12rem, 55vw); height: 10rem; object-fit: contain; }
+#chat-pet img { display: block; width: 100%; height: 100%; object-fit: contain; }
+/* All seven idle frames fit within x=71..322, y=53..353 of the 384px canvas. */
+#chat-pet img[src="/assets/whale/idle.gif"] { transform: translateY(-3%) scale(1.2); }
+#private-call-pet-slot { display: grid; justify-items: center; }
+#private-call-pet-slot #chat-pet { --pet-size: min(224px, 28dvh, 64vw); }
+#private-call-dialog {
+  width: min(35rem, calc(100% - 1.5rem));
+  max-height: calc(100dvh - 1.5rem);
+  padding: clamp(.85rem, 2vw, 1.5rem);
+  border: 1px solid var(--line);
+  border-radius: .85rem;
+  background: var(--panel);
+  color: var(--ink);
+}
 .operator-chat-heading h1 {
+  max-width: 100%;
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -342,4 +366,10 @@
   .operator-chat-pill { gap: .3rem; }
   .operator-chat-range { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .operator-chat-range button { justify-self: start; }
+}
+@container (max-width: 52rem) {
+  .operator-chat-heading { grid-template-columns: minmax(0, 1fr) auto; }
+  .operator-chat-heading-actions { grid-area: 1 / 2; }
+  .chat-agent-identity { grid-area: 2 / 1 / auto / -1; justify-self: center; max-width: 100%; }
+  #chat-pet { --pet-size: clamp(76px, 12dvh, 104px); }
 }
