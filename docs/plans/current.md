@@ -11,7 +11,7 @@
 
 ## 常驻 Agent 与跨端记忆
 
-Chats 已能交办、在活动页接续、改口、取消和查看工具回执。工作站正式版已从 Edge 验证普通聊天和个性化设置；同一偏好由自然更正从 v1 更新至 v2 并读回两次原话，证据来自普通工作站网关与隔离空库。另一次独立同帧试验保存了三份成品及偏好引用，场次与结果可分别追溯。[任务实测](../../evaluations/results/agent-activity-20261116.md) · [记忆与成品实测](../../evaluations/results/owner-memory-20261119.md)
+Chats 已能交办、在活动页接续、改口、取消和查看工具回执。工作站 Edge 已验证普通聊天和个性化设置。用工作站网关和隔离空库复测对稿习惯时，号主直接改口，后台更新了同一条偏好。日常使用读取当前说法，来源与更正见单独的[记忆规范](../specs/foundation/memory.md)。另一次独立同帧试验保存了三份成品及各自的取材依据。[任务实测](../../evaluations/results/agent-activity-20261116.md) · [记忆与成品实测](../../evaluations/results/owner-memory-20261119.md)
 
 ## 运营主线
 
