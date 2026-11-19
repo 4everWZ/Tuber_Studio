@@ -103,6 +103,29 @@ def gateway(settings, monkeypatch, reply):
     return requests
 
 
+@pytest.mark.parametrize("recover", [False, True])
+async def test_empty_completed_turn_resumes_once_from_saved_progress(runtime, store, monkeypatch, recover):
+    def model(payload):
+        if recover and "未收到函数调用" in payload["input"][0]["content"]:
+            return [call("ask_owner", {"question": "要核对哪个页面？"}, "clarify")]
+        return [{"type": "reasoning", "summary": []}]
+
+    requests = gateway(runtime.settings, monkeypatch, model)
+    tasks = task_tools.create_task_runtime(runtime, store, None)
+    identity = str(uuid4())
+    tasks.create(identity, "帮我核对并保存页面摘要")
+    tasks.start()
+    try:
+        await until(lambda: tasks.current(identity)["status"] in {"failed", "needs_input"})
+        task = tasks.current(identity)
+        assert task["status"] == ("needs_input" if recover else "failed")
+        assert len(requests) == 2 and not task["steps"]
+        assert task["plan"]["empty_tool_turn"]["response_ids"] == (["resp-1"] if recover else ["resp-1", "resp-2"])
+        assert task["plan"]["empty_tool_turn"]["checkpoint"][0] == task["revision"]
+    finally:
+        await tasks.close()
+
+
 @pytest.mark.parametrize("repeat", [True, False])
 async def test_bad_tool_arguments_return_a_diagnostic_without_execution(runtime, store, monkeypatch, repeat):
     turns = []

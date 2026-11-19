@@ -8,6 +8,7 @@ from uuid import UUID, uuid5
 from pydantic import Field, ValidationError
 
 from ..models import StrictModel
+from ..responses_provider import EmptyResponseTurn
 from ..store import dump
 from ..web_fetch import programme_credit_text
 from .clip_refinement import positive_subwindows, subwindow_brief
@@ -380,7 +381,26 @@ async def advance(runtime, task):
                 tool["parameters"]["properties"]["sources"]["items"]["enum"] = list(evidence)
     tools.extend([submission, function("ask_owner", "向号主询问完成委派所缺的资料。", Clarification)])
     history = nomination_input(task, evidence, context) if nominate else model_input(task, context)
-    reply = await client(input=history, tools=[submission] if nominate else tools, tool_choice="required")
+    checkpoint = [task["revision"], current[-1]["id"] if current else None, bool(nominate)]
+    empty = task["plan"].get("empty_tool_turn", {})
+    retrying = empty.get("checkpoint") == checkpoint
+    options = [submission] if nominate else tools
+    choice = "required"
+    if retrying:
+        history[0] = history[0] | {"content": history[0]["content"] + "\n上轮响应已结束，未收到函数调用。请从本轮可用函数中提交下一步。"}
+        if len(options) == 1:
+            choice = {"type": "function", "name": options[0]["name"]}
+    try:
+        reply = await client(input=history, tools=options, tool_choice=choice)
+    except EmptyResponseTurn as error:
+        if runtime.scope() == task["scope"]:
+            response_ids = [*empty["response_ids"], error.response_id] if retrying else [error.response_id]
+            runtime._save(task, status="failed" if retrying else "queued", due=time.time(),
+                          message=("后台连续两次返回空响应，已保留取材回执。" if retrying else
+                                   "后台返回了空响应，正在按已有回执重新请求下一步。"),
+                          plan=task["plan"] | {"empty_tool_turn": {"checkpoint": checkpoint,
+                                                                  "response_ids": response_ids}})
+        return
     if runtime.scope() != task["scope"]:
         return
     calls = reply.calls

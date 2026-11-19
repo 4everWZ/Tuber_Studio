@@ -44,6 +44,14 @@ class ResponseTurn:
     raw: dict
 
 
+class EmptyResponseTurn(ValueError):
+    """A completed generation with no action or visible answer to consume."""
+
+    def __init__(self, response_id):
+        super().__init__("Responses 没有工具请求或可交付正文")
+        self.response_id = response_id
+
+
 def _turn(data, allowed, output_budget):
     identity, output = data.get("id"), data.get("output")
     if not isinstance(identity, str) or not identity.strip() or not isinstance(output, list):
@@ -79,7 +87,7 @@ def _turn(data, allowed, output_budget):
         else:
             raise ValueError("Responses 返回了不支持的输出类型")
     if not calls and not any(part.strip() for part in text):
-        raise ValueError("Responses 没有工具请求或可交付正文")
+        raise EmptyResponseTurn(identity)
     return ResponseTurn(identity, tuple(calls), "".join(text), data)
 
 
