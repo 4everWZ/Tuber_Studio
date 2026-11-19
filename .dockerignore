@@ -5,7 +5,6 @@ tmp
 docs
 tests
 data
-tools/training
 evaluations/*
 !evaluations/semantic-cases.json
 !evaluations/speech-cases.json

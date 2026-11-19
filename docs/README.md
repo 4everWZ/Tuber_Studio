@@ -7,7 +7,7 @@
 - [长期目标、来信与评论跟踪](guides/goal-event-tracking.md) · [交办并接管公开网页阅读](guides/private-browser.md)
 - [私有语音电话与直播演出](guides/private-avatar-call.md) · [在工作台交办选定回复](guides/selected-replies.md)
 - [角色卡、音色与形象](guides/characters.md)
-- 角色素材 · [历史语料与来源](../tools/training/README.md)
+- [角色历史原始语料](../data/whale-persona/README.md) · [大肥鱼形象署名](../third_party/whale-avatar/UPSTREAM.md) · [录音来源与许可](../config/voices.json)
 - 直播 · [工作台与点歌](guides/live/workbench.md) · [可选 Live2D](guides/live/avatar.md)
 
 ## 产品与技术规范
@@ -30,7 +30,13 @@
 - [获选 Q 与 mature 成图绑定](../evaluations/results/approved-oc-rigs-20261119.md) · [原稿工作站实测](../evaluations/results/inochi-whep-master-rigs-20261119.md) · [真实 Omni 私有通话回归](../evaluations/results/private-rig-omni-voice-20261119.md)
 - [三渠道配图与正式入口](../evaluations/results/operations-images-three-channels.md) · [后台生成与参考图](../evaluations/results/operations-artwork-20261119.md)
 - [跨端记忆](../evaluations/results/owner-memory-20261119.md) · [按当时的选材理由回看原稿](../evaluations/results/private-task-history-20261119.md) · [P2 归档场 r6 结案](../evaluations/results/creative-memory-p2-20261119.md)
-- [AGX 运营档部署](../evaluations/results/agx-clean-9b-deployment-20261111.md) · [30 个真实视频审核回放](../evaluations/results/review-agx-mainline-20261111.md)
-- [11 月 11–12 日运营实跑核查](../evaluations/results/operations-feedback-20261112.md)
-- [9B 微调配对评估](../evaluations/results/dafeiyu-clean-9b-20261111.md)
+- [工作站参考朗读与播放器回执](../evaluations/results/omni-reference-reading-20261119.md)
 - [OBS 口型与 GIF 回退](../evaluations/results/live2d-community-obs-20261111.json)
+
+## 历史归档
+
+按原项目阶段查实现、复现步骤和当时的评估。
+
+- 设备与语音 · [Jetson 本地语音](https://github.com/4everWZ/Tuber_Studio/tree/archive/jetson-local-speech) · [分布式 Gemma](https://github.com/4everWZ/Tuber_Studio/tree/archive/distributed-gemma)
+- 角色与训练 · [MiniCPM 角色实验](https://github.com/4everWZ/Tuber_Studio/tree/archive/minicpm-grounded-oc) · [大肥鱼动漫角色训练](https://github.com/4everWZ/Tuber_Studio/tree/archive/dafeiyu-anime-training)
+- 主线演进 · [Omni 接入前的 9B 版本](https://github.com/4everWZ/Tuber_Studio/tree/archive/pre-omni-9b) · [创作 Agent 改版前](https://github.com/4everWZ/Tuber_Studio/tree/archive/pre-creative-agent)
