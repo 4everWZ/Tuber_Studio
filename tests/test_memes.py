@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from tuber_studio.app import create_app
 from tuber_studio.generation_meter import GenerationMeter
@@ -70,6 +71,18 @@ async def test_original_gif_bytes_frames_and_license_are_preserved(catalog, sett
     assert asset["mime_type"] == "image/gif" and asset["animated"] and asset["frames"] == 5
     assert catalog.read(asset["asset_id"], "whale")["content"] == original
     assert catalog.resolve(asset["asset_id"], "whale")["path"].suffix == ".gif"
+
+
+async def test_damaged_lzw_frame_in_complete_gif_is_not_registered(catalog, settings):
+    path = settings.root / "assets/whale/memes/motion-dance.gif"
+    damaged = bytearray(path.read_bytes())
+    with Image.open(path) as first:
+        offset = first.tile[0][2]
+    length = damaged[offset]
+    damaged[offset + 1:offset + 1 + length] = b"\xff" * length
+    with pytest.raises(ValueError, match="GIF 图片不能完整解码"):
+        await register(catalog, bytes(damaged))
+    assert not catalog.list("whale", include_disabled=True) and not list(catalog.library.iterdir())
 
 
 async def test_disabled_assets_are_manageable_but_not_selectable(catalog, image):
@@ -272,7 +285,7 @@ async def test_no_decoder_is_an_explicit_error_not_header_only_success(catalog, 
     assert not list(catalog.library.iterdir())
 
 
-async def test_cancelled_native_validation_reaps_owned_process(monkeypatch):
+async def test_cancelled_native_validation_reaps_owned_process(monkeypatch, settings):
     inspector = ImageInspector()
     if not inspector.binary:
         pytest.skip("真实ffprobe未安装")
@@ -301,7 +314,7 @@ async def test_cancelled_native_validation_reaps_owned_process(monkeypatch):
     if not shutil.which("ffmpeg"):
         pytest.skip("真实ffmpeg未安装")
     monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
-    task = asyncio.create_task(inspector.inspect(b"GIF89aheader"))
+    task = asyncio.create_task(inspector.inspect((settings.root / "assets/whale/memes/motion-dance.gif").read_bytes()))
     for _ in range(200):
         if processes:
             break

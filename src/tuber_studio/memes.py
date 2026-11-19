@@ -11,7 +11,9 @@ import hashlib
 import json
 import re
 import shutil
+import sys
 import time
+from pathlib import Path
 from typing import Literal, Protocol, get_args
 from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -130,28 +132,18 @@ class ImageInspector:
 
     async def inspect(self, content, *, mime=None):
         actual, extension, demuxer, codec = _format(content, mime)
-        if not self.binary:
+        if extension == "gif":
+            command = [sys.executable, "-I", "-B", str(Path(__file__).with_name("meme_gif.py")),
+                       str(MAX_BYTES), str(MAX_FRAMES), str(MAX_PIXELS)]
+        elif self.binary:
+            command = [self.binary, "-v", "error", "-max_alloc", "67108864", "-protocol_whitelist", "pipe",
+                       "-f", demuxer, "-read_intervals", f"%+#{MAX_FRAMES + 1}", "-count_frames",
+                       "-show_entries", "stream=codec_name,width,height,nb_read_frames", "-of", "json", "-i", "pipe:0"]
+        else:
             raise ValueError("缺少ffprobe，无法验证上传图片；未安装额外依赖")
         async with self.gate:
             process = await asyncio.create_subprocess_exec(
-                self.binary,
-                "-v",
-                "error",
-                "-max_alloc",
-                "67108864",
-                "-protocol_whitelist",
-                "pipe",
-                "-f",
-                demuxer,
-                "-read_intervals",
-                f"%+#{MAX_FRAMES + 1}",
-                "-count_frames",
-                "-show_entries",
-                "stream=codec_name,width,height,nb_read_frames",
-                "-of",
-                "json",
-                "-i",
-                "pipe:0",
+                *command,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -185,11 +177,17 @@ class ImageInspector:
                     await process.wait()
                 if process.returncode or errors.strip():
                     raise ValueError("图片不能完整解码，未登记")
-                streams = json.loads(output)["streams"]
-                if len(streams) != 1 or streams[0].get("codec_name") != codec:
-                    raise ValueError("图片解码格式与声明不一致")
-                row = streams[0]
-                width, height, frames = row["width"], row["height"], int(row["nb_read_frames"])
+                metadata = json.loads(output)
+                if extension == "gif":
+                    if "error" in metadata:
+                        raise ValueError(metadata["error"])
+                    width, height, frames = metadata["width"], metadata["height"], metadata["frames"]
+                else:
+                    streams = metadata["streams"]
+                    if len(streams) != 1 or streams[0].get("codec_name") != codec:
+                        raise ValueError("图片解码格式与声明不一致")
+                    row = streams[0]
+                    width, height, frames = row["width"], row["height"], int(row["nb_read_frames"])
                 if (
                     type(width) is not int
                     or type(height) is not int
@@ -350,7 +348,10 @@ class MemeCatalog:
         title, source, license = self._metadata(title, emotions, source, license)
         if type(enabled) is not bool:
             raise ValueError("启用状态须为布尔值")
-        info = await self.inspector.inspect(content, mime=mime_type)
+        try:
+            info = await self.inspector.inspect(content, mime=mime_type)
+        except ValueError as error:
+            raise ValueError(f"表情「{title}」：{error}") from error
         digest = hashlib.sha256(content).hexdigest()
         name = digest + "." + info.pop("extension")
         asset_id = "meme_" + uuid4().hex
@@ -447,8 +448,12 @@ class MemeCatalog:
             }
             async with self.lock:
                 if not self.store.one("SELECT asset_id FROM meme_assets WHERE asset_id=?", (asset_id,)):
-                    content = _file_bytes(preset["file"])
-                    info = await self.inspector.inspect(content)
+                    try:
+                        content = _file_bytes(preset["file"])
+                        info = await self.inspector.inspect(content)
+                    except (FileNotFoundError, ValueError) as error:
+                        reason = "缺少图片文件，未登记" if isinstance(error, FileNotFoundError) else str(error)
+                        raise ValueError(f"内置表情「{preset['title']}」（{preset['file'].name}）：{reason}") from error
                     info.pop("extension")
                     self._insert(
                         asset_id,

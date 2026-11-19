@@ -43,7 +43,8 @@ import { initWorkspaceNavigation, workspaceSection } from "./modules/workspace-n
 import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261114.1";
 
 const api = async (path, options = {}) => {
-  const source = location.hash || "#chat";
+  const listingMemes = path.split("?")[0] === "/api/memes" && (options.method || "GET") === "GET";
+  const source = listingMemes ? "#assets" : location.hash || "#chat";
   try {
     return await baseApi(path, options, showLogin);
   } catch (error) {
