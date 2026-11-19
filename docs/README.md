@@ -13,7 +13,7 @@
 ## 产品与技术规范
 
 - [产品与系统契约](specs/tuber-studio.md)
-- 运营 · [自主浏览与调度](specs/operations/autonomous-browsing.md) · [评论](specs/operations/comment-operations.md) · [私信](specs/operations/private-messages.md) · [动态](specs/operations/dynamic-operations.md) · [任务续跑与回执](specs/operations/operation-continuations.md) · [共享表情包](specs/operations/memes.md)
+- 运营 · [自主浏览与调度](specs/operations/autonomous-browsing.md) · [评论](specs/operations/comment-operations.md) · [私信](specs/operations/private-messages.md) · [动态](specs/operations/dynamic-operations.md) · [任务续跑与回执](specs/operations/operation-continuations.md) · [共享表情包](specs/operations/memes.md) · [后台生成配图](specs/operations/generated-images.md)
 - 运行底座 · [常驻 Agent](specs/foundation/agent-runtime.md) · [角色、关系与跨端记忆](specs/foundation/runtime-and-characters.md) · [上下文与压缩](specs/foundation/context-and-compaction.md) · [模型、声音与资源](specs/foundation/models-and-audio.md) · [Omni 与 Avatar API 接入](specs/foundation/omni-deployment.md) · [跨主机运行与数据](specs/foundation/distributed-runtime.md)
 - 直播与游戏 · [事件、场景、音乐与播放](specs/live/live-and-media.md) · [模拟与实机接入](specs/live/game-livestream.md)
 

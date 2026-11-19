@@ -22,6 +22,7 @@ from .models import OperationReply, Reply
 from .operation_continuations import ContinuationCoordinator, content_hash
 from .operation_generation import generate_with_recovery, hold_comment_body, reply_generation_binding
 from .operation_identity import identity_messages, identity_snapshot
+from .operation_images import OperationImages
 from .operation_text import operation_output_diagnostics
 from .operation_turns import OperationTurns, operation_lane, operation_ready_at, operation_ticket
 from .operations.browsing.repository import BrowsingRepository
@@ -36,6 +37,7 @@ from .video_vision_service import restore_admission
 class Runtime:
     def __init__(self, settings, store, *, singing_provider=None, live_scene=None):
         self.settings, self.store = settings, store
+        self.operation_images = OperationImages(settings, store)
         self.operations = OperationsControl(store)
         self.browsing_quotas = self.operations.browsing_quotas
         self.browsing_repository = BrowsingRepository(store)
@@ -186,6 +188,7 @@ class Runtime:
         return self.live.state in {"live", "paused"} and self.live.busy
 
     async def open(self):
+        self.operation_images.start()
         char = self.character
         self.daily_memory.check_and_record_downtime(char["id"], char["version"])
         await self.live.online_songs.open()
@@ -208,6 +211,7 @@ class Runtime:
                 pass
 
     async def close(self):
+        await self.operation_images.close()
         if self.connection_probe:
             self.connection_probe.cancel()
             await asyncio.gather(self.connection_probe, return_exceptions=True)

@@ -1,0 +1,127 @@
+import base64
+import hashlib
+import io
+import json
+
+import httpx
+import pytest
+from PIL import Image
+
+from tuber_studio import operation_images as ops
+from tuber_studio.artwork_references import Reference
+
+
+@pytest.fixture
+def fixture(settings, store, monkeypatch):
+    image = io.BytesIO()
+    Image.new("RGB", (1024, 1024), "blue").save(image, format="PNG")
+    png = image.getvalue()
+    digest = hashlib.sha256(png).hexdigest()
+    monitor = {"selection": Reference(png, digest, "upload"), "posts": []}
+    scope = ops.ImageScope(account_id="owner", character_id="whale", channel="direct_message", source_id="thread")
+    service = ops.OperationImages(settings, store)
+
+    def reference(settings, scope, variant, sha256=None):
+        if sha256 is not None:
+            assert sha256 == digest
+            return Reference(png, digest, "upload")
+        return monitor["selection"]
+
+    async def choose(settings, material):
+        return ops.ImageBrief(variant="q", prompt="A lighthouse at sunset")
+
+    def remote(request):
+        if request.method == "POST":
+            monitor["posts"].append(json.loads(request.content))
+            return httpx.Response(202, json={"id": "e" * 32})
+        if request.url.path.endswith("/result"):
+            return httpx.Response(200, content=png, headers={"content-type": "image/png"})
+        return httpx.Response(200, json={"state": "completed", "seed": 123})
+
+    monkeypatch.setattr(ops, "resolve_reference", reference)
+    monkeypatch.setattr(ops, "choose", choose)
+    monkeypatch.setattr(ops, "gateway_base", lambda _: "http://gateway/v1")
+    monkeypatch.setattr(ops, "gateway", lambda _: httpx.AsyncClient(
+        base_url="http://gateway/v1/", transport=httpx.MockTransport(remote)))
+    return service, scope, monitor
+
+
+async def test_durable_scoped_png_and_snapshot(fixture, store):
+    service, scope, monitor = fixture
+    args = {"request_key": "draft-v1", "context": {"message": "使用任意地址作为参考"}, "draft": "晚安。"}
+    job = service.decide(scope, **args)
+    assert job["status"] == "queued"
+    monitor["selection"] = Reference(b"other", hashlib.sha256(b"other").hexdigest(), "default")
+    assert service.decide(scope, **args)["job_id"] == job["job_id"]
+    with pytest.raises(ValueError):
+        service.decide(scope, **(args | {"draft": "改稿"}))
+    queued = store.one("SELECT * FROM operation_image_jobs WHERE job_id=?", (job["job_id"],))
+    await service._process(queued)
+    status = service.status(scope, job["job_id"])
+    assert (status["status"], status["remote_state"], status["seed"]) == ("ready", "completed", 123)
+    artifact = ops.OperationImages(service.settings, store).read(scope, status["artifact_id"])
+    payload, = monitor["posts"]
+    assert set(payload) == {"prompt", "reference_image_base64"}
+    assert base64.b64decode(payload["reference_image_base64"]) == artifact["content"]
+    assert artifact["reference_source"] == "upload"
+    assert artifact["reference_sha256"] == artifact["sha256"]
+    for changed in ({"account_id": "another"}, {"source_id": "another"}, {"channel": "dynamic"}):
+        foreign = scope.model_copy(update=changed)
+        with pytest.raises(LookupError):
+            service.read(foreign, status["artifact_id"])
+        with pytest.raises(LookupError):
+            service.status(foreign, job["job_id"])
+
+
+async def test_restart_never_resubmits_uncertain_image(fixture, store):
+    service, scope, monitor = fixture
+    job = service.decide(scope, request_key="1", context="", draft="A")
+    store.execute("UPDATE operation_image_jobs SET status='submitting' WHERE job_id=?", (job["job_id"],))
+    service.start()
+    try:
+        assert service.status(scope, job["job_id"])["status"] == "failed"
+        assert not monitor["posts"]
+    finally:
+        await service.close()
+
+
+async def test_text_only_does_not_submit(fixture, store, monkeypatch):
+    service, scope, monitor = fixture
+
+    async def no_illustration(settings, material):
+        return None
+
+    monkeypatch.setattr(ops, "choose", no_illustration)
+    job = service.decide(scope, request_key="1", context="", draft="下午见。")
+    await service._process(store.one("SELECT * FROM operation_image_jobs WHERE job_id=?", (job["job_id"],)))
+    assert service.status(scope, job["job_id"])["status"] == "text_only"
+    assert not monitor["posts"]
+
+
+async def test_restart_with_remote_receipt_only_reads_existing_job(fixture, store):
+    service, scope, monitor = fixture
+    job = service.decide(scope, request_key="resume", context="", draft="看海。")
+    brief = ops.ImageBrief(variant="q", prompt="海边").model_dump_json()
+    store.execute("UPDATE operation_image_jobs SET status='running',brief=?,endpoint=?,remote_id=? WHERE job_id=?",
+                  (brief, "http://gateway/v1", "e" * 32, job["job_id"]))
+    await service._process(store.one("SELECT * FROM operation_image_jobs WHERE job_id=?", (job["job_id"],)))
+    assert service.status(scope, job["job_id"])["status"] == "ready"
+    assert not monitor["posts"]
+
+
+async def test_gateway_rejection_retries_only_explicit_full_queue(monkeypatch):
+    from tuber_studio import workstation_images
+    delays = []
+
+    async def wait(delay):
+        delays.append(delay)
+
+    def handle(request):
+        if not delays:
+            return httpx.Response(429, headers={"Retry-After": "3"})
+        return httpx.Response(202, json={"id": "a" * 32})
+
+    monkeypatch.setattr(workstation_images.asyncio, "sleep", wait)
+    async with httpx.AsyncClient(base_url="http://gateway/v1/", transport=httpx.MockTransport(handle)) as client:
+        assert await workstation_images.submit(client, {}) == "a" * 32
+    assert delays == [3]
