@@ -9,7 +9,7 @@ from ..models import StrictModel
 from ..store import dump
 from .editor_contract import FormatCheck, literal_evidence, review_preferences
 from .owner_memory import MemoryUse, check_use, citation, correctable_preference, private_rows, read_stamp
-from .task_delivery import DelegationError
+from .task_delivery import AdditionalVideoRead, DelegationError, EditorialCorrection, render_private_delivery
 from .title_form import (
     RequestedTitleForm,
     explicit_title_form,
@@ -145,9 +145,13 @@ def connect_private_editor(runtime):
             async def verify(draft):
                 locked = getattr(draft, "_locked_fields", set())
                 readings = {}
-                attempt = {"titles":readings, "submitted_titles":[item.title for item in draft.items]}
+                attempt = {"titles":readings, "submitted_titles":[item.title for item in draft.items],
+                           "submitted":draft.model_dump(), "locked_fields":sorted(locked), "judgments":[]}
                 audit["attempts"].append(attempt)
-                issues = await review_preferences(task["goal"], notes, checks, draft, call, locked)
+                _, markdown = render_private_delivery(draft, evidence)
+                attempt["rendered_markdown"] = markdown
+                issues = await review_preferences(task["goal"], notes, checks, draft, call, locked,
+                                                  markdown=markdown, audit=attempt["judgments"])
                 attempt["failed_fields"] = issues
                 if forms:
                     for index, item in enumerate(draft.items):
@@ -175,6 +179,9 @@ def connect_private_editor(runtime):
                                     notes[k] + (form_instruction(forms[k]) if k in forms and path.endswith(".title") else "")
                                     for k in ids)
                                 for path,ids in issues.items()}
+                for judgment in audit["attempts"][-1]["judgments"]:
+                    for defect in judgment["violations"]:
+                        instructions[defect["path"]] += "。本字段审稿依据：" + dump(defect)
                 for path, reading in readings.items():
                     if path in instructions:
                         instructions[path] += "。本稿去标点后判为" + reading["form"] + "。本字段可用的原始观察：" + dump(reading["observations"])
@@ -191,6 +198,7 @@ def connect_private_editor(runtime):
                 repair = private_plan | {"editor_draft":product.model_dump(), "editor_issues":instructions,
                                          "frame_reviews":product._frame_reviews,
                                          "window_reviews":getattr(product, "_window_reviews", {})}
+                audit["attempts"][-1]["repair_instructions"] = instructions
                 check_use(runtime, use)
                 product = await editor(request | {"plan":repair, "verified_title_edits":verified_titles,
                                                   "editor_locked_fields":sorted(locked)}, evidence)
@@ -202,6 +210,14 @@ def connect_private_editor(runtime):
                     raise DelegationError("成品仍未满足本轮写作约定：" + diagnostics + "。尚未交付。")
             audit.update(repaired_fields=sorted(issues), title_readings=readings)
             return product
+        except (AdditionalVideoRead, EditorialCorrection):
+            raise
+        except Exception as error:
+            # The delegation handler already checkpoints this plan for attribution failures.
+            if audit["attempts"] and not getattr(error, "attribution_reviews", ()) and tasks.scope() == task["scope"]:
+                check_use(runtime, use)
+                tasks._save(task, plan=plan)
+            raise
         finally:
             check_use(runtime, use)
 

@@ -9,6 +9,7 @@ from tuber_studio.agent.editor_contract import (
     literal_checks,
     literal_evidence,
     review_preferences,
+    scoped_fields,
 )
 from tuber_studio.agent.task_delivery import DelegationError, PrivateDelivery
 
@@ -22,12 +23,70 @@ async def test_private_contract_merges_literal_and_semantic_issues_and_preserves
     async def review(messages, schema):
         packet = json.loads(messages[-1]["content"])
         assert packet["writing_preference"] in notes.values()
-        assert set(packet["delivery_fields"]) == {"items.1.title", "items.1.rationale"}
-        return {"violations":["items.1.rationale"] if packet["writing_preference"] == notes[2] else []}
-    issues = await review_preferences("原样保留第一项", notes, checks, product, review, {"items.0.title","items.0.rationale"})
+        assert schema["title"] == "WritingJudgment"
+        mixed = packet["writing_preference"] == notes[2]
+        assert set(packet["delivery_fields"]) == ({"items.1.title","items.1.rationale"} if mixed else {"items.1.rationale"})
+        defects = [{"path":"items.1.rationale","owner_excerpt":"理由先给结论","field_excerpt":"先介绍来龙去脉",
+                    "reason":"结论落在背景之后"}] if mixed else []
+        return {"basis":"检查了第二项", "violations":defects, "document_blocker":None}
+    options = {"markdown":"第一项和第二项", "audit":[]}
+    issues = await review_preferences("原样保留第一项", notes, checks, product, review, {"items.0.title","items.0.rationale"}, **options)
     assert issues == {"items.1.title":[2], "items.1.rationale":[2,5]}
     with pytest.raises(DelegationError, match="未选"):
-        await review_preferences("", notes, [(100, checks[0][1])], product, review, set())
+        await review_preferences("", notes, [(100, checks[0][1])], product, review, set(), **options)
+
+
+@pytest.mark.parametrize("note", ["标题都用问句并将全文分组", "标题都用问句，理由给出依据。",
+                                  "Group related points. Use headings when helpful.", "見出しを工夫する。"])
+def test_unbound_writing_directions_keep_document_context(note):
+    assert scoped_fields(note) is None
+
+
+@pytest.mark.parametrize("outcome", ["field", "pass", "document", "foreign_path", "foreign_quote", "foreign_blocker"])
+async def test_two_item_scopes_on_rendered_delivery(outcome):
+    from tuber_studio.agent.task_delivery import evidence_index, render_private_delivery
+
+    # Synthetic submissions exercise the two original directions. The rejected drafts were not retained.
+    notes = {1:"Group related points and separate distinct concerns. Use headings and lists when they improve readability.",
+             2:"以后写直播素材提纲，每个标题都用问句，以问号结尾。"}
+    reads = [short_read("first", 1), short_read("second", 2)]
+    evidence = evidence_index(reads)
+    second_title = "窗边是什么灯？" if outcome == "pass" else "窗边的小灯"
+    product = PrivateDelivery(items=[
+        {"title":title, "rationale":reason, "sources":[frame], "primary_frame":frame}
+        for title, reason, frame in [("桌上有什么？", "记录桌上的物件。", "first:1"),
+                                     (second_title, "记录光线，又跳回桌面。", "second:1")]], gaps=[])
+    _, markdown = render_private_delivery(product, evidence)
+    audit = []
+
+    async def review(messages, schema):
+        packet = json.loads(messages[-1]["content"])
+        assert schema["title"] == "WritingJudgment"
+        assert set(schema["$defs"]["FieldDefect"]["properties"]["path"]["enum"]) == packet["delivery_fields"].keys()
+        if packet["writing_preference"] == notes[1]:
+            assert packet["rendered_markdown"] == markdown and len(packet["delivery_fields"]) == 4
+            return {"basis":"两项已分段", "violations":[{"path":"items.1.rationale",
+                    "owner_excerpt":"separate distinct concerns", "field_excerpt":"又跳回桌面",
+                    "reason":"第二项的理由混入第一项的桌面观察"}] if outcome == "field" else [],
+                    "document_blocker":"段落组织问题只能在排版层修正" if outcome == "document" else None}
+        assert "rendered_markdown" not in packet and set(packet["delivery_fields"]) == {"items.0.title","items.1.title"}
+        assert schema["properties"]["document_blocker"] == {"type":"null"}
+        if outcome == "pass":
+            return {"basis":"两个标题均提问并以问号结尾", "violations":[], "document_blocker":None}
+        return {"basis":"第二个标题是名词短语", "violations":[
+                {"path":"items.1.rationale" if outcome == "foreign_path" else "items.1.title",
+                 "owner_excerpt":"用问句","field_excerpt":"虚构摘录" if outcome == "foreign_quote" else "窗边的小灯",
+                 "reason":"标题没有提问"}], "document_blocker":"全文冲突" if outcome == "foreign_blocker" else None}
+
+    options = {"audit":audit, "markdown":markdown}
+    checks = [(2, check) for check in literal_checks(notes[2])]
+    if outcome in {"pass", "field"}:
+        issues = await review_preferences("", notes, checks, product, review, set(), **options)
+        assert issues == ({} if outcome == "pass" else {"items.1.title":[2], "items.1.rationale":[1]})
+        assert [entry["scope"] for entry in audit] == ["document", ["title"]]
+    else:
+        with pytest.raises(DelegationError, match={"document":"无法以字段修订","foreign_blocker":"适用范围"}.get(outcome,"原文依据")):
+            await review_preferences("", notes, checks, product, review, set(), **options)
 
 
 def test_private_punctuation_and_codepoint_length_checks():

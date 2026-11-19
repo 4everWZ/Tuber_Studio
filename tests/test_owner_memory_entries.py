@@ -282,11 +282,15 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
                          }.get(words, ("名词短语","椅子"))
             return {"form":form, "core":core, "supported":True, "observation":packet["observations"][0],
                     "answer":"左侧" if form == "问句" else ""}
-        if "delivery_fields" in packet:
+        if schema.get("title") == "WritingJudgment":
             assert packet["writing_preference"] == note
+            assert list(packet["delivery_fields"]) == ["items.0.title"]
+            assert schema["properties"]["document_blocker"] == {"type":"null"}
             title = packet["delivery_fields"]["items.0.title"]
             # Some real reviews accepted a noun label and omitted the explicit punctuation check.
-            return {"violations":[] if statement or scenario == "still_invalid" or title == good_title else ["items.0.title"]}
+            defects = [] if statement or scenario == "still_invalid" or title == good_title else [
+                {"path":"items.0.title", "owner_excerpt":"用问句", "field_excerpt":title, "reason":"标题没有提问"}]
+            return {"basis":"核对了标题句式", "violations":defects, "document_blocker":None}
         if "writing_preference" in packet:
             assert packet["writing_preference"] == note
             return {"applies":True, "checks":[{"field":"title","operation":"contains","value":"独家"},
@@ -349,6 +353,17 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
         assert first["status"] == "failed" and first["artifact"] is None
         if scenario != "withdrawn":
             assert repairs == [first_title] and "写作约定" in first["message"]
+            stored = tasks.current(task_id)["plan"]["editor_memory"]
+            original, revised = stored["review"]["attempts"]
+            assert list(original["repair_instructions"]) == ["items.0.title"]
+            for attempt in (original, revised):
+                submitted, = attempt["submitted"]["items"]
+                assert submitted["primary_frame"] == frames[-1]
+                assert submitted["title"] in attempt["rendered_markdown"]
+                assert submitted["rationale"] in attempt["rendered_markdown"]
+                assert attempt["failed_fields"] == {"items.0.title":[item]}
+                judgment, = attempt["judgments"]
+                assert judgment["scope"] == ["title"] and judgment["id"] == item
         if scenario == "label_with_period":
             first_attempt, repaired_attempt = audits[-1]["attempts"]
             for attempt in (first_attempt, repaired_attempt):
