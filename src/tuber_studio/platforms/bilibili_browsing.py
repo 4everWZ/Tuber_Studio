@@ -853,11 +853,13 @@ class BrowsingAdapter(BilibiliAdapter):
 
     async def publish_top_level(self, target, text, before_send=None, **images):
         target = self._target(target, top_level=True)
+        if images.get("image") is not None and target["type"] != 1:
+            raise ValueError("仅视频一级评论提供配图能力")
         return await self._publish_target(target, text, before_send, **images)
 
-    async def publish_resource_reply(self, target, text, before_send=None, **images):
+    async def publish_resource_reply(self, target, text, before_send=None):
         target = self._target(target)
-        return await self._publish_target(target, text, before_send, **images)
+        return await self._publish_target(target, text, before_send)
 
     async def like_comment(self, target, *, before_send=None):
         target = self._target(target)

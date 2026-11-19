@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 
+from .comment_capabilities import video_top_level_images
 from .operation_continuations import content_hash
 from .operation_images import image_permissions
 from .operations.browsing.thread_context import COMMENT_ID, VIDEO_ID
@@ -73,8 +74,21 @@ def workstation_image_decisions(runtime):
     return True
 
 
+def can_attach_comment_image(channel, row):
+    if channel != "browsing" or row.get("kind") != "top_level":
+        return False
+    target = row["target"]
+    return bool(
+        row.get("account_id") and VIDEO_ID.fullmatch(str(target.get("bvid")))
+        and video_top_level_images(target.get("resource_type") or target.get("type"),
+                                   target.get("root"), target.get("parent"))
+    )
+
+
 def queue_image(runtime, channel, row, context, text):
     if not row.get("account_id") or not workstation_image_decisions(runtime):
+        return None
+    if channel in {"comments", "browsing"} and not can_attach_comment_image(channel, row):
         return None
     scope = image_scope(channel, row)
     options = image_permissions(runtime.store, scope["channel"])
@@ -120,6 +134,11 @@ async def wait_decision(runtime, channel, row, authorized):
             return
         await asyncio.sleep(0.5)
     raise ValueError("等待配图期间原发送授权已停止")
+
+
+def require_comment_attachment(channel, row, ref):
+    if ref and not can_attach_comment_image(channel, row):
+        raise ValueError("仅视频一级评论可配图。已有附件可从草稿移除。")
 
 
 def checked_image(catalog, ref, character, *, runtime=None, scope=None):

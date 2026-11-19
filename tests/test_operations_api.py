@@ -42,7 +42,7 @@ async def test_dynamic_frequency_and_channel_image_permissions_in_browser(settin
         await page.get_by_role("link", name="私信收取与回复").click()
         await expect(page.get_by_label("允许私信调用生图模型")).to_be_checked()
         await expect(page.get_by_label("允许私信选用图库图片")).not_to_be_checked()
-        await expect(page.get_by_label("允许评论调用生图模型")).to_be_checked()
+        await expect(page.get_by_label("允许视频主评调用生图模型")).to_be_checked()
         await expect(page.get_by_label("允许评论选用图库图片")).not_to_be_checked()
         assert not app.state.store.one("SELECT 1 FROM dynamic_posts")
         await browser.close()

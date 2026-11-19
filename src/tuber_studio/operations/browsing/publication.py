@@ -14,6 +14,7 @@ from ...operation_attachments import (
     decision,
     image_scope,
     queue_image,
+    require_comment_attachment,
     record_upload,
     row_ref,
     wait_decision,
@@ -118,7 +119,7 @@ class BrowsingPublication:
             or self.source_intent(row, source_key)
         ):
             return None
-        if kind in _COMMENT_KINDS and target.get("bvid"):
+        if kind == "top_level":
             def public_material():
                 segments = []
                 for key in material_keys:
@@ -128,7 +129,7 @@ class BrowsingPublication:
                                         for s in self.browsing._segments(evidence) if s["id"] in evidence_ids)
                 return {"bvid": target["bvid"], "public_comment": target.get("source_text", ""), "evidence": segments}
 
-            image_ref = queue_image(self.browsing.runtime, "browsing", row | {"target": target}, public_material, response.text)
+            image_ref = queue_image(self.browsing.runtime, "browsing", row | {"kind": kind, "target": target}, public_material, response.text)
             if image_ref:
                 target = target | {"image_ref": image_ref}
         identity, now = str(uuid4()), time.time()
@@ -242,6 +243,7 @@ class BrowsingPublication:
         if action == "approve" and target.get("image_ref"):
             ref = decision(self.browsing.runtime, "browsing", row | {"target": target}, target["image_ref"])
             if ref:
+                require_comment_attachment("browsing", row | {"target": target}, ref)
                 checked_image(self.browsing.comments.memes, ref, row["character_id"], runtime=self.browsing.runtime,
                               scope=image_scope("browsing", row | {"target": target}))
                 target["image_ref"] = ref
@@ -253,8 +255,7 @@ class BrowsingPublication:
             if options["image_ref"] is None:
                 target.pop("image_ref", None)
             else:
-                if not target.get("bvid") or not row["account_id"]:
-                    raise ValueError("配图评论需要已绑定的账号和视频")
+                require_comment_attachment("browsing", row | {"target": target}, options["image_ref"])
                 checked_image(self.browsing.comments.memes, options["image_ref"], row["character_id"],
                               runtime=self.browsing.runtime, scope=image_scope("browsing", row | {"target": target}))
                 target["image_ref"] = options["image_ref"]
@@ -661,6 +662,8 @@ class BrowsingPublication:
     async def publish(self, identity, *, automatic=False):
         row = self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
         row = self.browsing.repo.decode(row)
+        if row and row["status"] in {"pending_review", "approved"}:
+            require_comment_attachment("browsing", row, row_ref(row))
         if automatic and row:
             await wait_decision(self.browsing.runtime, "browsing", row, lambda:
                                 self.browsing.operations.policy()["enabled"] and self.browsing.operations.policy()["epoch"] == row["epoch"])
@@ -782,6 +785,7 @@ class BrowsingPublication:
             actual_binding = self._publication_binding(
                 row, character, [item["metadata"] for item in materials]
             )
+            require_comment_attachment("browsing", row, row_ref(row))
             payload = comment_payload(row, self.browsing.runtime, "browsing")
             image = (comment_image(self.browsing.comments.memes, payload, character, runtime=self.browsing.runtime,
                                    scope=image_scope("browsing", row)) if payload.get("asset_sha256") else None)
@@ -892,7 +896,7 @@ class BrowsingPublication:
                     )
                 else:
                     receipt = await self.browsing.adapter.publish_resource_reply(
-                        row["target"], row["text"], before_send=before_send, **options
+                        row["target"], row["text"], before_send=before_send
                     )
                 if image and isinstance(receipt, dict):
                     receipt.update(image_ref=ref)

@@ -61,9 +61,7 @@ def browse(origin, token):
             panel = page.locator("#queue-detail")
             expect(panel).to_contain_text(AUTHOR)
             expect(panel.locator("textarea")).to_have_value(BODY)
-            panel.get_by_role("button", name="选择配图").click()
-            page.locator("dialog[open] [data-picker-grid] button").first.click()
-            expect(panel.locator("img")).to_be_visible()
+            expect(panel.get_by_role("button", name="选择配图")).to_have_count(0)
             panel.get_by_role("button", name="保存", exact=True).click()
             panel.get_by_role("button", name="发布", exact=True).click()
             page.wait_for_function(
@@ -141,7 +139,7 @@ async def test_operations_images_browser(settings, monkeypatch):
             data = {"messages": []}
         elif path.endswith("/upload_bfs"):
             assert b'name="file_up"' in request.content
-            if posts.count(path) == 3:
+            if posts.count(path) == 2:
                 assert png in request.content
             data = {
                 "image_url": "https://i0.hdslb.com/bfs/fixture.png",
@@ -152,7 +150,7 @@ async def test_operations_images_browser(settings, monkeypatch):
         elif path.endswith("/reply/add"):
             fields = parse_qs(request.content.decode())
             assert fields["oid"] == ["12"] and fields["root"] == ["11"] and fields["parent"] == ["13"]
-            assert fields["message"] == [BODY] and json.loads(fields["pictures"][0])[0]["img_width"] == 64
+            assert fields["message"] == [BODY] and "pictures" not in fields
             data = {"rpid": 1001}
         elif path.endswith("/send_msg"):
             fields = parse_qs(request.content.decode())
@@ -282,7 +280,6 @@ async def test_operations_images_browser(settings, monkeypatch):
             await asyncio.to_thread(browse, f"http://127.0.0.1:{listener.getsockname()[1]}", token)
             assert outbound == ["POST", "GET", "GET"]
             assert [p.rsplit("/", 1)[-1] for p in posts] == [
-                "upload_bfs",
                 "add",
                 "upload_bfs",
                 "send_msg",
@@ -290,7 +287,7 @@ async def test_operations_images_browser(settings, monkeypatch):
                 "upload_bfs",
                 "dyn",
             ]
-            assert store.one("SELECT COUNT(*) AS n FROM operation_image_uploads")["n"] == 3
+            assert store.one("SELECT COUNT(*) AS n FROM operation_image_uploads")["n"] == 2
             assert store.one("SELECT COUNT(*) AS n FROM dm_delivery_steps")["n"] == 2
         finally:
             server.should_exit = True

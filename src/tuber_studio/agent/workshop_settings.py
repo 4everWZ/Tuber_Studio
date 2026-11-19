@@ -14,13 +14,13 @@ _GROUPS = {
     "pets": ("宠物展示", Performance, {
         "pets_enabled": "显示宠物",
     }),
-    "browsing": ("运营取材与评论配图", BrowsingPolicy, {
+    "browsing": ("运营取材与视频主评配图", BrowsingPolicy, {
         "interval_seconds": "轮间等待秒数", "notification_interval_seconds": "通知检查间隔秒数",
         "daily_watch_limit": "每日观看额度，0 表示不限", "business_timezone": "业务日时区",
         "candidate_limit": "每批候选上限", "max_reads": "每轮读取额度",
         "min_duration_seconds": "最短视频秒数", "max_duration_seconds": "最长视频秒数",
         "recent_sample_limit": "近期样本数", "frame_sampling": "取帧方式",
-        "use_memes": "使用表情包", "generate_images": "生成配图",
+        "use_memes": "视频主评选用图库图片", "generate_images": "视频主评生成配图",
     }),
     "messages": ("私信草稿配图", MessagePolicy, {
         "use_memes": "使用表情包", "generate_images": "生成配图",

@@ -5,7 +5,7 @@ import math
 import re
 from datetime import datetime
 
-from .operation_attachments import decision, row_ref, uploads
+from .operation_attachments import can_attach_comment_image, decision, row_ref, uploads
 from .operation_feedback import continuation_view
 from .operations.browsing.thread_context import COMMENT_ID, VIDEO_ID, public_discussion_url
 from .providers import public_error
@@ -287,6 +287,9 @@ def queue_detail(store, comments, browsing, channel, identity):
         target = row["target"]
         row["source_url"] = public_discussion_url(target.get("bvid"), target.get("parent"), target.get("dynamic_id"))
     if row and channel in {"comments", "browsing"}:
+        row["can_attach_image"] = can_attach_comment_image(channel, row)
         row["illustration"] = decision(comments.runtime, channel, row, row_ref(row))
+        if row["illustration"] and not row["can_attach_image"] and row["status"] in REVIEW_STATES:
+            row["can_publish"] = False
         row["image_uploads"] = uploads(store, channel, identity)
     return row

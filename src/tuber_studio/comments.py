@@ -19,16 +19,10 @@ from .comment_materials import (
 from .config import atomic_json
 from .media_cache import linked
 from .operation_attachments import (
-    bound_comment,
-    checked_image,
-    comment_image,
     comment_payload,
     decision,
-    image_scope,
-    queue_image,
-    record_upload,
+    require_comment_attachment,
     row_ref,
-    wait_decision,
 )
 from .operation_continuations import content_hash
 from .operation_feedback import (
@@ -748,12 +742,6 @@ class Comments:
                             self._comment_event(row) | {"account_id": account_id},
                             "comment_draft",
                         )
-                    image_row = row | {"character_id": character["id"], "character_version": character["version"],
-                                       "account_id": account_id}
-                    image_ref = None
-                    if bound_comment(row):
-                        image_ref = queue_image(self.runtime, "comments", image_row,
-                                                {"comment": row["content"], "video": row["video_id"]}, reply.spoken_text)
                     # The staged history, new draft and its new source index are
                     # installed together, with no await inside the SQL transaction.
                     with self.store.db:
@@ -777,8 +765,8 @@ class Comments:
                             return
                         draft_id = cursor.lastrowid
                         self.store.db.execute(
-                            "UPDATE drafts SET account_id=?,generation_task_id=?,image_ref=? WHERE id=?",
-                            (account_id, self.active_task_id, dump(image_ref) if image_ref else None, draft_id),
+                            "UPDATE drafts SET account_id=?,generation_task_id=? WHERE id=?",
+                            (account_id, self.active_task_id, draft_id),
                         )
                         if candidate:
                             context.install_candidate(scope, character, candidate)
@@ -836,9 +824,7 @@ class Comments:
         if "image_ref" not in options and action == "approve":
             ref = decision(self.runtime, "comments", row, ref)
         if ref is not None and (action == "approve" or "image_ref" in options):
-            if not row["account_id"] or not row["platform_user_id"]:
-                raise ValueError("配图回复需要已绑定的账号和目标 UID")
-            checked_image(self.memes, ref, row["character_id"], runtime=self.runtime, scope=image_scope("comments", row))
+            require_comment_attachment("comments", row, ref)
         status = {"approve": "approved", "reject": "rejected", "edit": "pending_review"}[action]
         self.store.execute(
             "UPDATE drafts SET text=?,status=?,image_ref=?,error=NULL,updated_at=? WHERE id=?",
@@ -1134,14 +1120,14 @@ class Comments:
         )
 
     async def publish(self, draft_id, automatic=False, *, authorization_epoch=None, submission=None):
-        if automatic:
-            await wait_decision(self.runtime, "comments", self._draft_source(draft_id) or {}, lambda:
-                                self.policy()["auto_reply"] and self.operations.policy()["epoch"] == authorization_epoch)
+        row = self._draft_source(draft_id)
+        if row and row["status"] in {"pending_review", "approved"}:
+            require_comment_attachment("comments", row, row_ref(row))
         if submission is not None:
             submission.check()
             return await self._publish_once(draft_id, submission=submission)
         feedback = FeedbackPublication(self.runtime, self.store, self.operations)
-        confirmed = None if automatic else self._draft_source(draft_id)
+        confirmed = None if automatic else row
         confirmed_hash = content_hash(comment_payload(confirmed, self.runtime)) if confirmed else None
         return await feedback.submit(
             "comments",
@@ -1255,10 +1241,8 @@ class Comments:
                 )
             ):
                 raise ValueError("发送准备期间草稿或来源已变化")
+            require_comment_attachment("comments", row, row_ref(row))
             payload = comment_payload(row, self.runtime)
-            image = None
-            if payload.get("asset_sha256"):
-                image = comment_image(self.memes, payload, character, runtime=self.runtime, scope=image_scope("comments", row))
             actual_binding = self._publication_binding(row, account_id, character)
             if (
                 binding is not None
@@ -1311,8 +1295,6 @@ class Comments:
                 )
                 if submission:
                     submission.check(publishing=True)
-                if image:
-                    comment_image(self.memes, payload, character, runtime=self.runtime, scope=image_scope("comments", row))
                 return True
 
             def before_send():
@@ -1348,12 +1330,6 @@ class Comments:
                 options = (
                     {"thread_id": row["thread_id"]} if row["thread_id"] != row["platform_comment_id"] else {}
                 )
-                if image:
-                    if not isinstance(adapter, BilibiliAdapter) or not hasattr(adapter, "read_video_thread"):
-                        raise ValueError("适配器无法核验评论配图提交")
-                    ref = decision(self.runtime, "comments", row, row_ref(row))
-                    options.update(image=image, prepare_authorized=authorize,
-                                   on_uploaded=lambda pic: record_upload(self.store, "comments", draft_id, ref, pic))
                 if isinstance(adapter, BilibiliAdapter):
                     options["before_send"] = before_send
                 else:
@@ -1361,8 +1337,6 @@ class Comments:
                 receipt = await self.adapter.publish(
                     row["video_id"], row["platform_comment_id"], row["text"], **options
                 )
-                if image and isinstance(receipt, dict):
-                    receipt.update(image_ref=ref)
                 if not isinstance(receipt, dict) or not re.fullmatch(
                     r"[1-9][0-9]{0,19}", str(receipt.get("rpid", ""))
                 ):

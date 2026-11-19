@@ -10,6 +10,7 @@ import httpx
 from pydantic import Field
 
 from .artwork_references import resolve_reference
+from .comment_capabilities import video_top_level_images
 from .http_api import InferenceBudgetExceeded
 from .models import StrictModel
 from .responses_provider import ResponsesClient
@@ -29,6 +30,18 @@ class ImageScope(StrictModel):
     character_id: str = Field(min_length=1, max_length=100)
     channel: Literal["comment", "direct_message", "dynamic"]
     source_id: str = Field(min_length=1, max_length=512)
+
+    def permits_decision(self):
+        if self.channel != "comment":
+            return True
+        try:
+            source = json.loads(self.source_id)
+        except ValueError:
+            return False
+        return (
+            isinstance(source, list) and len(source) == 7 and source[1] == "video"
+            and video_top_level_images(source[1], source[4], source[5])
+        )
 
 
 def scope_key(scope):
@@ -109,6 +122,8 @@ class OperationImages:
 
     def decide(self, scope, *, request_key, context, draft, character_version=None):
         scope = ImageScope.model_validate(scope)
+        if not scope.permits_decision():
+            raise ValueError("仅视频一级评论提供配图能力")
         if not isinstance(request_key, str) or not 0 < len(request_key) <= 512 or not isinstance(draft, str):
             raise ValueError("业务来源键或草稿无效")
         if not isinstance(context, (str, dict, list)):
@@ -225,6 +240,8 @@ class OperationImages:
         identity = job["job_id"]
         scope = ImageScope.model_validate_json(job["scope"])
         if job["status"] == "queued":
+            if not scope.permits_decision():
+                raise ValueError("此评论目标使用文字回复")
             self.store.execute("UPDATE operation_image_jobs SET status='deciding' WHERE job_id=?", (identity,))
             material = json.loads(job["material"])
             use_gallery, generate = image_permissions(self.store, scope.channel)

@@ -129,6 +129,11 @@ async def test_text_only_does_not_submit(fixture, store, monkeypatch):
 async def test_gallery_and_generated_scene_share_scoped_choice(fixture, store, monkeypatch, channel, key):
     images, scope, monitor = fixture
     scope = scope.model_copy(update={"channel": channel})
+    if channel == "comment":
+        nested = scope.model_copy(update={"source_id": json.dumps([1, "video", "BV1d8pU6xEZX", "42", "11", "13", "124"])})
+        with pytest.raises(ValueError, match="仅视频一级评论"):
+            images.decide(nested, request_key="nested", context="", draft="楼内文字")
+        scope = scope.model_copy(update={"source_id": json.dumps([1, "video", "BV1d8pU6xEZX", "42", "0", "0", ""])})
     images.catalog = MemeCatalog(images.settings, store)
     asset = await images.catalog.register("whale", monitor["selection"].data, title="海边", emotions=["idle"],
                                           source={"kind": "user_upload", "author": "test"},

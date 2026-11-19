@@ -701,21 +701,26 @@ async def test_image_comment_upload_then_one_bound_pictures_form(adapter_factory
             assert events == ["prepare"] and content in request.content
             return result({"image_url":"https://i0.hdslb.com/bfs/unit.gif","image_height":16,
                            "image_width":24,"img_size":len(content)/1024})
-        assert request.url.path == "/x/v2/reply/add" and events == ["prepare","uploaded","submit"]
+        assert request.url.path == "/x/v2/reply/add" and events == (["submit"] if nested else ["prepare","uploaded","submit"])
         fields = parse_qs(request.content.decode())
         assert fields["oid"] == ["42"] and fields["type"] == ["1"]
         assert fields["root"] == ["100" if nested else "0"] and fields["parent"] == ["101" if nested else "0"]
         assert fields["message"] == ["看看这张图。"]
-        assert json.loads(fields["pictures"][0]) == [{"img_src":"https://i0.hdslb.com/bfs/unit.gif",
-                                                      "img_width":24,"img_height":16,"img_size":len(content)/1024}]
+        if nested:
+            assert "pictures" not in fields
+        else:
+            assert json.loads(fields["pictures"][0]) == [{"img_src":"https://i0.hdslb.com/bfs/unit.gif",
+                                                          "img_width":24,"img_height":16,"img_size":len(content)/1024}]
         events.append("accepted")
         return result({"rpid":555})
     adapter = await adapter_factory(handle)
     target = {"resource_type":"video","oid":"42","bvid":BV}
     if nested:
         target.update(root="100",parent="101")
-    send = adapter.publish_resource_reply if nested else adapter.publish_top_level
-    receipt = await send(target,"看看这张图。",image={"mime_type":"image/gif","content":content},
-                         prepare_authorized=lambda: events.append("prepare") or True,
-                         before_send=lambda: events.append("submit"), on_uploaded=lambda picture: events.append("uploaded"))
+    if nested:
+        receipt = await adapter.publish_resource_reply(target, "看看这张图。", before_send=lambda: events.append("submit"))
+    else:
+        receipt = await adapter.publish_top_level(target,"看看这张图。",image={"mime_type":"image/gif","content":content},
+                             prepare_authorized=lambda: events.append("prepare") or True,
+                             before_send=lambda: events.append("submit"), on_uploaded=lambda picture: events.append("uploaded"))
     assert receipt["rpid"] == "555" and events[-1] == "accepted"

@@ -40,7 +40,7 @@ async def settled(runtime, channel, row):
     return material
 
 
-async def test_comment_generation_worker_binds_public_source(comments, store, text_only):
+async def test_comment_generation_worker_exposes_only_text_for_replies(comments, store, text_only):
     comments.credentials = {"sessdata": "fixture", "csrf": "fixture"}
     comments.import_items(
         BV, [{"comment_id": "13", "thread_id": "11", "platform_user_id": "124", "content": "楼层原话"}]
@@ -48,9 +48,10 @@ async def test_comment_generation_worker_binds_public_source(comments, store, te
     comments.enqueue([store.one("SELECT id FROM comments")["id"]])
     await asyncio.wait_for(comments.queue.join(), 4)
     row = comments._draft_source(store.one("SELECT id FROM drafts")["id"])
-    material = await settled(comments.runtime, "comments", row)
-    assert material["context"] == {"comment": "楼层原话", "video": BV}
-    assert material["draft"] == row["text"]
+    assert operation_attachments.row_ref(row) is None
+    assert store.one("SELECT COUNT(*) as n FROM operation_image_jobs")["n"] == 0
+    with pytest.raises(ValueError, match="仅视频一级评论"):
+        comments.review(row["id"], "edit", image_ref={"asset_id": "unavailable", "sha256": "x"})
     assert operation_attachments.comment_payload(row, comments.runtime) == {"text": row["text"]}
     assert not comments.adapter.sent
 

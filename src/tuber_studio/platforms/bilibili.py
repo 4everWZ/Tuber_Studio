@@ -409,7 +409,6 @@ class BilibiliAdapter:
 
     async def publish(
         self, video_id: str, comment_id: str, text: str, *, thread_id: str | None = None, before_send=None,
-        image=None, prepare_authorized=None, on_uploaded=None,
     ) -> dict:
         if not self._sessdata or not self._csrf:
             raise ValueError("发布需要配置 SESSDATA 和 CSRF；当前仅可生成或复制草稿")
@@ -417,11 +416,6 @@ class BilibiliAdapter:
         parent = _positive_id(comment_id)
         root = _positive_id(thread_id) if thread_id is not None else parent
         info = await self._video(video_id)
-        from .bilibili_images import comment_pictures
-
-        if image and video_id.startswith("BV") and info["bvid"] != video_id:
-            raise ValueError("上传前核对视频失败")
-        pictures = await comment_pictures(self, image, prepare_authorized, on_uploaded)
         if before_send is not None:
             before_send()
         try:
@@ -433,7 +427,6 @@ class BilibiliAdapter:
                     "root": root,
                     "parent": parent,
                     "message": text,
-                    **pictures,
                     "plat": 1,
                     "csrf": self._csrf,
                     "csrf_token": self._csrf,

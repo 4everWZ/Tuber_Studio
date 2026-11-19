@@ -322,23 +322,25 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
       detail.append(node("small", illustrationStatus(imageRef)));
     }
     if (row.image_uploads?.length) detail.append(details("图片上传回执", node("pre", receiptText(row.image_uploads))));
-    if (editable && video && row.account_id && (channel === "comments" || ["reply_public", "top_level"].includes(row.kind))) {
+    if (editable && (row.can_attach_image || row.image_ref || target.image_ref)) {
       const save = async ref => {
         if (selected !== key) throw Error("当前草稿已变化");
         await post("review", {action: "edit", text: editor.value, image_ref: ref, updated_at: row.updated_at});
         draftEdits.delete(key);
         await refresh(true);
       };
-      const choose = node("button", "选择配图");
-      choose.type = "button";
-      choose.onclick = () => {
-        picker ||= new MemePicker(api, (_id, asset) => savePickedImage({asset_id: asset.asset_id, sha256: asset.sha256}),
-          {title: "选择评论配图", description: "选图后与正文一同送审。", showSources: true});
-        savePickedImage = save;
-        picker.open(imageRef?.asset_id);
-      };
-      actions.append(choose);
-      if (imageRef) action("移除配图", () => save(null));
+      if (row.can_attach_image) {
+        const choose = node("button", "选择配图");
+        choose.type = "button";
+        choose.onclick = () => {
+          picker ||= new MemePicker(api, (_id, asset) => savePickedImage({asset_id: asset.asset_id, sha256: asset.sha256}),
+            {title: "选择评论配图", description: "选图后与正文一同送审。", showSources: true});
+          savePickedImage = save;
+          picker.open(imageRef?.asset_id);
+        };
+        actions.append(choose);
+      }
+      if (row.image_ref || target.image_ref) action("移除配图", () => save(null));
     }
     if (editable) {
       action("保存", () => post("review", { action: "approve", text: editor.value, updated_at: row.updated_at, expected_image: imageRef ?? null }), "primary", "已保存，草稿审核通过。");
@@ -356,7 +358,8 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
           message.textContent = "已复制回复";
         }, null, "已复制回复。", false);
       if (!row.can_publish) {
-        message.textContent ||= row.unavailable_materials ? "先重新取材并核对来源，再提交。" : "配置 B 站写入凭证后可发布。";
+        if (imageRef && !row.can_attach_image) message.textContent ||= "此楼使用文字回复，可移除原配图。";
+        else message.textContent ||= row.unavailable_materials ? "先重新取材并核对来源，再提交。" : "配置 B 站写入凭证后可发布。";
       }
     }
     if (!editable && row.text) {
