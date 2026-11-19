@@ -176,7 +176,7 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                             speech = voice_wav or await asyncio.to_thread(spoken_rule, Path(directory), VOICE_RULE)
                             async with checkout_binding(config, gateway_checkout) as voice_service, live_voice_binding(voice_service):
                                 result = await voice_probe(playwright, os.getenv("CHROMIUM_EXECUTABLE"), local,
-                                                           token, speech, target, VOICE_RULE, correct_qa_preview=voice_wav is None)
+                                                           token, speech, target, VOICE_RULE)
                             result["gateway"] = "local service checkout, deployed ordinary Omni upstream" if gateway_checkout else "deployed service"
                             result["speaker"] = "supplied WAV" if voice_wav else "synthetic Mandarin QA speech"
                         except (OSError, subprocess.SubprocessError, ValueError, httpx.HTTPError) as error:
@@ -187,9 +187,6 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                                                          {"id":target["id"]}))["value"]
                             assert updated["revision"] == result["correction"]["revision"]
                             assert updated["quote"] == result["owner_confirmed_text"]
-                            if result["protocol"] == "explicit_user_audio":
-                                assert updated["voice_origin"]["machine_text"] == result["bound_final_transcript"]
-                                assert updated["voice_origin"]["owner_edited"] == result["preview_edited_by_authorized_qa"]
                             record("voice_cross_device_revision", updated)
                             return updated
                     if voice_only:

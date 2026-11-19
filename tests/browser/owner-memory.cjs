@@ -1,6 +1,5 @@
 const assert = require("node:assert/strict");
 const path = require("node:path");
-const {createHash, createHmac} = require("node:crypto");
 const { chromium } = require(require.resolve("playwright", {
   paths: [__dirname, path.join(path.dirname(process.execPath), "node_modules/@playwright/cli")],
 }));
@@ -54,6 +53,7 @@ async function test(browser, origin, mode) {
   let send, sentTranscript = false, acknowledged = 0, markClosed;
   const originalClosed = new Promise(resolve => { markClosed = resolve; });
   await page.routeWebSocket(url => url.pathname === "/v1/realtime", socket => {
+    assert.equal(new URL(socket.url()).searchParams.has("input_transcription"), false);
     if (!send) socket.onClose(markClosed);
     send = event => socket.send(JSON.stringify(event));
     socket.onMessage(raw => {
@@ -65,21 +65,8 @@ async function test(browser, origin, mode) {
           if (correction) assert.ok(event.session.instructions.includes(voiceNote));
           renewed();
         }
-        send({type: "session.created", session: {capabilities: {implementation_level: "model_native_duplex",
-          ...(selected ? {gateway_input_transcription: {mode:"explicit_once", sample_rate_hz:16000, max_seconds:15, receipt:"hmac-sha256-v1"}} : {})}}});
-      } else if (selected && event.type === "gateway.input_transcription.start") {
-        send({type:"gateway.input_transcription.started", capture_id:"selected-slice"});
-      } else if (selected && event.type === "gateway.input_transcription.finish") {
-        assert.equal(event.capture_id, "selected-slice");
-        const machine = "好的，" + voiceNote;
-        const ticketHash = createHash("sha256").update("session-fixture").digest("hex");
-        const receipt = createHmac("sha256", "fixture").update(JSON.stringify(["omni.mic.v1", ticketHash, event.capture_id, 16000, machine])).digest("hex");
-        const reply = {type:"gateway.input_transcription.completed", capture_id:event.capture_id,
-          samples:16000, transcript:machine, source:"explicit_user_audio", receipt};
-        send({...reply, capture_id:"other-slice", transcript:"错误录音"});
-        send({...reply, source:"assistant", transcript:"助手的回复"});
-        send(reply); send(reply);
-      } else if (!selected && !sentTranscript && event.type === "input_audio_buffer.append") {
+        send({type: "session.created", session: {capabilities: {implementation_level: "model_native_duplex"}}});
+      } else if (!sentTranscript && event.type === "input_audio_buffer.append") {
         sentTranscript = true;
         send({type: "conversation.item.created", item: {id: "mic", role: "user", type: "message",
           content: [{type: "input_audio"}]}});
@@ -87,6 +74,7 @@ async function test(browser, origin, mode) {
         send({type: "conversation.item.input_audio_transcription.completed", item_id: "mic", content_index: 0,
           transcript: voiceNote});
       } else if (event.type === "playback.ack") acknowledged++;
+      assert.notEqual(event.type, "input_audio_buffer.commit");
     });
   });
   await page.goto(origin + "/#personalization");
@@ -141,6 +129,7 @@ async function test(browser, origin, mode) {
   assert.equal(await turn.getByText(/原话操作|记住这句话|为何提到它/).count(), 0);
 
   await page.locator("#private-call-open").click();
+  assert.equal(await page.locator("#private-call-finish-utterance,#private-call-transcribe").count(), 0);
   const other = await browser.newContext();
   const original = await other.request.post(origin + "/api/agent/memory.search", {data: {query: statement}});
   const originalRow = (await original.json()).items[0];
@@ -163,28 +152,14 @@ async function test(browser, origin, mode) {
   await page.locator("#private-call-start").click();
   const body = (await ticket).postDataJSON();
   if (selected) assert.deepEqual(body, {temporary:false, topic_turn:await turn.getAttribute("data-request-id")});
-  if (selected) {
-    const start = page.getByRole("button", {name:"转认下一句"});
-    await start.waitFor();
-    assert.equal(await page.getByRole("button",{name:"将这句话交办"}).count(), 0);
-    await start.click();
-    await page.getByRole("button",{name:"结束并转认这句"}).click();
-  }
   await page.getByText("查看通话转写", {exact:true}).waitFor();
   assert.equal(await page.locator("#private-call-review").evaluate(panel => panel.open), false);
   assert.equal(await page.getByRole("button",{name:"确认并记住原话"}).count(), 0);
   await page.getByText("查看通话转写", {exact:true}).click();
   const picker = page.getByLabel("选择要处理的转写");
-  assert.deepEqual(await picker.locator("option").allTextContents(), ["请选择一句", selected ? "所选录音 · 好的，"+voiceNote : voiceNote]);
+  assert.deepEqual(await picker.locator("option").allTextContents(), ["请选择一句", voiceNote]);
   await picker.selectOption("1");
   assert.deepEqual(memoryWrites, []);
-  if (selected) {
-    await page.locator("#private-call-utterances blockquote").filter({hasText:voiceNote}).waitFor();
-    assert.deepEqual(await page.locator("#private-call-utterances blockquote").allTextContents(), ["好的，"+voiceNote]);
-    await page.getByLabel("号主确认的文字（可改正误听）").fill(voiceNote);
-    assert.equal((await (await other.request.post(origin+"/api/agent/memory.get", {data:{id:originalRow.id}})).json()).revision,
-      originalRow.revision);
-  }
   if (correction) {
     const selector = page.getByLabel("更正本次引用的偏好");
     const option = selector.locator(`option[value="${originalRow.id}"]`);
@@ -201,8 +176,6 @@ async function test(browser, origin, mode) {
     const current = await other.request.post(origin+"/api/agent/memory.get", {data:{id:originalRow.id}});
     const stored = await current.json();
     assert.equal(stored.quote, voiceNote);
-    if (selected) assert.deepEqual(stored.voice_origin, {machine_text:"好的，"+voiceNote, samples:16000,
-      capture_id:"selected-slice", owner_edited:true});
     const list = await other.request.get(origin+"/api/daily-memory");
     assert.equal((await list.json()).organized.filter(row => row.status === "active").length, 1);
     await other.close();

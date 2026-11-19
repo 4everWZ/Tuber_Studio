@@ -2,7 +2,6 @@ import { api } from "./api.js";
 import { PrivatePlayback } from "./private-call-playback.js";
 import { guardCall } from "./private-call-guard.js";
 import { FinalUtterances, transcriptReview } from "./private-call-handoff.js";
-import { selectUtterance } from "./private-call-transcription.js";
 
 const byId = id => document.getElementById(id);
 const open = byId("private-call-open"), dialog = byId("private-call-dialog");
@@ -12,12 +11,6 @@ let current;
 const temporary = byId("private-call-temporary");
 const options = byId("private-call-options"), topic = byId("private-call-topic");
 temporary.onchange = () => { options.hidden = temporary.checked; };
-const finishUtterance = byId("private-call-finish-utterance");
-finishUtterance.onclick = () => {
-  if (!current?.stream || finishUtterance.disabled) return;
-  current.commitNextChunk = true;
-  finishUtterance.disabled = true;
-};
 const mute = byId("private-call-mute");
 mute.onclick = () => {
   const playback = current?.playback;
@@ -57,12 +50,10 @@ function finish(call, cause, message, code = null) {
   if (call !== current || !call) return;
   current = null;
   call.playback?.diagnose?.("call_end", cause, code);
-  call.selection?.close();
   mute.hidden = true;
   mute.textContent = "播放静音";
   mute.setAttribute("aria-pressed", "false");
   call.review?.close();
-  finishUtterance.hidden = finishUtterance.disabled = true;
   temporary.disabled = false;
   topic.disabled = false;
   call.abort.abort();
@@ -103,14 +94,6 @@ async function capture(call, identity) {
     if (call.socket.bufferedAmount > 128000) { finish(call, "realtime_send_backlog", "网络积压，通话已结束"); return; }
     const audio = btoa(String.fromCharCode(...new Uint8Array(data)));
     call.send({type: "input_audio_buffer.append", format: "pcm16", sample_rate_hz: 16000, audio});
-    call.selection?.afterChunk();
-    // Seal after the next whole capture unit so the last syllables reach the gateway.
-    if (call.commitNextChunk) {
-      call.commitNextChunk = false;
-      call.send({type: "input_audio_buffer.commit", final: true, create_response: false});
-    } else if (!call.ephemeral) {
-      finishUtterance.hidden = finishUtterance.disabled = false;
-    }
   };
   status.textContent = `正在与${identity}私聊 · 麦克风已开启`;
 }
@@ -172,7 +155,6 @@ async function begin(previous = null) {
       byId("private-call-utterances"), config);
     const url = new URL(config.socket);
     url.search = new URLSearchParams({ticket: config.ticket, duplex: "1", autostart: "0"});
-    if (!ephemeral) url.searchParams.set("input_transcription", "explicit");
     call.playback = new PrivatePlayback(call.context, event => call.send(event));
     if (previous?.muted) {
       call.playback.setMuted(true);
@@ -209,14 +191,7 @@ async function begin(previous = null) {
           call.receipts = setInterval(() => call.playback.acknowledge(), 200);
           call.heartbeat = setInterval(() => call.send({type: "session.heartbeat"}), 20000);
           await capture(call, config.character);
-          const selection = caps.gateway_input_transcription;
-          if (!ephemeral && current === call && config.voice_context && selection?.receipt === "hmac-sha256-v1" && selection.mode === "explicit_once" &&
-              selection.sample_rate_hz === 16000 && selection.max_seconds === 15) {
-            call.selection = selectUtterance(byId("private-call-transcribe"), byId("private-call-transcribe-state"),
-              e => call.send(e), (text, origin) => call.review.add(text, {...origin, ...config.voice_context}));
-          }
         } else if (call.stream) {
-          call.selection?.event(event);
           const text = !ephemeral && call.utterances.accept(event);
           if (text) call.review.add(text);
           if (config.memory_use && ["response.audio.delta", "response.output_audio.delta"].includes(event.type)) {

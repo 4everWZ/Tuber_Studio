@@ -302,29 +302,21 @@ class MemoryScenario:
                 audio,
                 original,
                 VOICE_RULE,
-                signed_only=True,
-                correct_qa_preview=not self.args.voice_wav,
                 progress=progress,
             )
             self.record("voice", self.report["voice"] | result)
             require(
-                result.get("signed_final_received")
+                result.get("protocol") == "native_user_final"
                 and result.get("confirmation_dialog_accepted")
                 and result.get("correction") == {"id": original["id"], "revision": original["revision"] + 1},
-                "私有通话未完成已签最终转写与号主确认",
+                "私有通话未完成原生最终转写与号主确认",
             )
             corrected = await self.api(page, "POST", "/api/agent/memory.get", {"id": original["id"]})
             self.record("corrected", corrected)
             require(
                 corrected["quote"] == result["owner_confirmed_text"]
                 and corrected["source_key"].startswith("confirmed_voice:")
-                and corrected.get("voice_origin")
-                == {
-                    "machine_text": result["bound_final_transcript"],
-                    "capture_id": result["capture_id"],
-                    "samples": result["explicit_samples"],
-                    "owner_edited": corrected["quote"] != result["bound_final_transcript"],
-                },
+                and corrected["quote"] == result["bound_final_transcript"],
                 "语音来源与最终转写或确认稿不一致",
             )
             await self.checkpoint(page)
