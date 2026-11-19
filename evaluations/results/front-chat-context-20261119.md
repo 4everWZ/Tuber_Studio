@@ -17,4 +17,4 @@
 
 入口测试覆盖普通和临时、结构化和旧聊天接口、同一请求 ID 的失败重试、临时前文顺序，以及离开聊天生成后 provider 仍提供领域账号身份。平台写入为零，未部署。
 
-文字入口、背景选材、角色卡、既有聊天与领域身份回归合计 131 项通过。命令为 `uv run --locked pytest -q tests/test_front_chat_context.py tests/test_front_background.py tests/test_intelligent_ui_chat.py tests/test_operation_identity.py tests/test_character_oc_types.py tests/test_character_presets.py`。
+在组合版本 `edc6eb6` 上重新构造四轮的常驻文字、参与者和话题资料，逐轮与已存工作站实发请求一致。文字入口、背景选材、角色卡、既有聊天与领域身份回归合计 132 项通过。命令为 `uv run --locked pytest -q tests/test_front_chat_context.py tests/test_front_background.py tests/test_intelligent_ui_chat.py tests/test_operation_identity.py tests/test_character_oc_types.py tests/test_character_presets.py`。
