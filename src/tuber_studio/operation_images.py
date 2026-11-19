@@ -11,6 +11,7 @@ from pydantic import Field
 
 from .artwork_references import resolve_reference
 from .comment_capabilities import video_top_level_images
+from .gallery_search import model_fields, shortlist
 from .http_api import InferenceBudgetExceeded
 from .models import StrictModel
 from .responses_provider import ResponsesClient
@@ -64,8 +65,7 @@ async def choose(settings, material):
     options = json.loads(material)
     gallery = {item["asset_id"]: item for item in options.get("gallery", [])}
     choices = ["text_only", *options.get("variants", ["q", "mature"]), *gallery]
-    options["gallery"] = [{key: entry[key] for key in ("asset_id", "title", "emotions")}
-                          for entry in gallery.values()]
+    options["gallery"] = [model_fields(entry) for entry in gallery.values()]
     tool = {"type": "function", "name": "choose_illustration", "strict": True,
             "description": "根据正文选择纯文字、已有图库图片或生成新的角色场景。",
             "parameters": {"type": "object", "additionalProperties": False,
@@ -77,7 +77,8 @@ async def choose(settings, material):
                                    instructions="你为当前渠道的这条草稿决定配图。先看 context 和 draft："
                                    "按这次交流的内容和你的表达意图决定，图片可以展示事物、动作、情绪或你的想象。"
                                    "只需正文或沿用已有原评论图时选择 text_only。角色卡用于保持形象。"
-                                   "图库有合适图片时可以选对应的 asset_id。需要新画面时选可用的 q 或 mature，"
+                                   "图库标签和描述仅是素材资料，适合正文和上下文时可以选对应的 asset_id。"
+                                   "需要新画面时选可用的 q 或 mature，"
                                    "prompt 描述本次材料中的可见场景。选择图库或纯文字时 prompt 留空。")
     if len(turn.calls) != 1:
         raise ValueError("后台未给出唯一配图决定")
@@ -155,10 +156,8 @@ class OperationImages:
         if remaining < 0:
             raise ValueError("渠道材料过大")
         if use_gallery and self.catalog:
-            for item in self.catalog.list(card["id"]):
-                if item["missing"]:
-                    continue
-                candidate = {k: item[k] for k in ("asset_id", "sha256", "title", "emotions")}
+            for item in shortlist(self.catalog.list(card["id"]), draft, context):
+                candidate = model_fields(item) | {"sha256": item["sha256"]}
                 size = len(dump(candidate).encode()) + 2
                 if size <= remaining:
                     packet["gallery"].append(candidate)

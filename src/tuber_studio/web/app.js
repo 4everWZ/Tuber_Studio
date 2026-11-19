@@ -12,7 +12,7 @@ import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261115.2";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261119.3";
 import { renderVoicePreview, voiceAvailability } from "./modules/voices.js";
-import { MemeGallery, MemePicker, memePreview } from "./memes.js?v=20261118.1";
+import { MemeGallery, MemePicker, memePreview } from "./memes.js?v=20261120.1";
 import { MessagesPanel } from "./messages.js?v=20261118.1";
 import { UserMemoryEditor } from "./user-memory.js";
 import {

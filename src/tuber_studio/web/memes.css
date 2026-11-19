@@ -4,5 +4,13 @@
 .dynamic-comment-card{display:block;max-width:100%;height:auto;margin-top:10px;border-radius:8px}
 .dynamic-comment-conversation { list-style: none; padding-inline-start: 0; overflow-wrap: anywhere; }
 .meme-card > .meme-choice { width: 100%; }
+.meme-library > .meme-upload { border-top: 0; margin: 4px 0 14px; padding-top: 0; }
+.meme-library [data-meme-filter] { max-width: 400px; }
+.meme-library [data-meme-failures] { padding-inline-start: 22px; overflow-wrap: anywhere; }
+.meme-card .meme-tags { color: var(--accent, #376f91); font-weight: 600; }
+.meme-card .meme-metadata form { margin-top: 8px; }
+.meme-card .meme-metadata form label { display: block; margin-bottom: 8px; }
+.meme-card .meme-metadata form input,
+.meme-card .meme-metadata form textarea { box-sizing: border-box; width: 100%; min-width: 0; }
 .dynamic-comment-conversation li + li { border-top: 1px solid var(--line); padding-top: .5rem; }
 .dynamic-comment-conversation p { margin-block: .25rem .5rem; white-space: pre-wrap; }

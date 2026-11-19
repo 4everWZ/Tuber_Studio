@@ -13,8 +13,9 @@ import re
 import shutil
 import sys
 import time
+import unicodedata
 from pathlib import Path
-from typing import Literal, Protocol, get_args
+from typing import Annotated, Literal, Protocol, get_args
 from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -29,6 +30,7 @@ MAX_FRAMES = 300
 ASSET_ID = re.compile(r"meme_[a-f0-9]{32}")
 BLOB_NAME = re.compile(r"[a-f0-9]{64}\.(gif|png|jpg|webp)")
 BUNDLED_MEME_NAME = re.compile(r"[a-z0-9-]+\.(gif|png|webp)")
+ASSET_SELECT = "SELECT a.*,l.tags,l.description FROM meme_assets a LEFT JOIN meme_labels l USING(asset_id) "
 PRESETS = {
     "idle": ["idle"],
     "talking": ["cheerful"],
@@ -76,6 +78,29 @@ class MemeSelection(StrictModel):
     asset_id: str | None = Field(pattern=r"^meme_[a-f0-9]{32}$")
 
 
+class MemeLabels(StrictModel):
+    tags: list[Annotated[str, Field(min_length=1, max_length=40)]] = Field(default_factory=list, max_length=12)
+    description: str = Field(default="", max_length=400)
+
+    @field_validator("tags")
+    @classmethod
+    def normalize_tags(cls, values):
+        tags = {}
+        for value in values:
+            value = value.strip()
+            if not value or re.search(r"[\x00-\x1f\x7f]", value):
+                raise ValueError("题材标签须含文字且不含控制字符")
+            tags.setdefault(unicodedata.normalize("NFKC", value).casefold(), value)
+        return list(tags.values())
+
+    @field_validator("description")
+    @classmethod
+    def normalize_description(cls, value):
+        if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", value):
+            raise ValueError("画面描述含不支持的控制字符")
+        return value.strip()
+
+
 class MemeProvider(Protocol):
     """Replaceable catalog contract. Future generators must register bytes first."""
 
@@ -83,15 +108,16 @@ class MemeProvider(Protocol):
     def read(self, asset_id, character, *, allow_disabled=False) -> dict: ...
     def resolve(self, asset_id, character, *, allow_disabled=False) -> dict: ...
     async def register(
-        self, character, content, *, title, emotions, source, license, mime_type=None, enabled=True
+        self, character, content, *, title, emotions, source, license, mime_type=None,
+        enabled=True, tags=(), description="", import_id=None
     ) -> dict: ...
     async def seed_existing(self, *, enabled=False) -> list[dict]: ...
     def enable(self, asset_id, enabled=True) -> dict: ...
     def delete(self, asset_id) -> dict: ...
     def pin(self, asset_id, character, owner, *, seconds=None) -> None: ...
     def release(self, owner, *, keep_asset_id=None) -> None: ...
-    def selection_schema(self, character) -> dict: ...
-    def selection_prompt(self, character) -> str: ...
+    def selection_schema(self, character, *, candidates=None) -> dict: ...
+    def selection_prompt(self, character, *, candidates=None) -> str: ...
     def select(self, selection, character, *, offered_ids=None) -> dict | None: ...
 
 
@@ -235,6 +261,9 @@ class MemeCatalog:
             CREATE TABLE IF NOT EXISTS meme_pins(
                 asset_id TEXT NOT NULL, owner TEXT NOT NULL, expires_at REAL,
                 PRIMARY KEY(asset_id,owner));
+            CREATE TABLE IF NOT EXISTS meme_labels(
+                asset_id TEXT PRIMARY KEY REFERENCES meme_assets(asset_id),
+                tags TEXT NOT NULL,description TEXT NOT NULL);
         """)
 
     def _safe_directory(self):
@@ -255,7 +284,7 @@ class MemeCatalog:
     def _row(self, asset_id):
         if not isinstance(asset_id, str) or not ASSET_ID.fullmatch(asset_id):
             raise ValueError("只能选择已登记assetId，不接受URL或路径")
-        row = self.store.one("SELECT * FROM meme_assets WHERE asset_id=? AND deleted=0", (asset_id,))
+        row = self.store.one(ASSET_SELECT + "WHERE a.asset_id=? AND a.deleted=0", (asset_id,))
         if not row:
             raise ValueError("表情不存在或已删除")
         return row
@@ -280,6 +309,8 @@ class MemeCatalog:
             "asset_id": row["asset_id"],
             "title": row["title"],
             "emotions": json.loads(row["emotions"]),
+            "tags": json.loads(row["tags"] or "[]"),
+            "description": row["description"] or "",
             "sha256": row["sha256"],
             "bytes": row["bytes"],
             "storage_kind": row["storage_kind"],
@@ -293,7 +324,7 @@ class MemeCatalog:
     def list(self, character, *, include_disabled=False):
         self._character(character)
         rows = self.store.all(
-            "SELECT * FROM meme_assets WHERE deleted=0 AND (? OR enabled=1) ORDER BY created_at,asset_id",
+            ASSET_SELECT + "WHERE a.deleted=0 AND (? OR a.enabled=1) ORDER BY a.created_at,a.asset_id",
             (int(include_disabled),),
         )
         return [self._public(row) for row in rows]
@@ -320,7 +351,7 @@ class MemeCatalog:
         )
 
     def _insert(
-        self, asset_id, title, emotions, digest, kind, name, info, size, source, license, enabled
+        self, asset_id, title, emotions, digest, kind, name, info, size, source, license, enabled, labels
     ):
         with self.store.db:
             self.store.db.execute(
@@ -340,12 +371,15 @@ class MemeCatalog:
                     time.time(),
                 ),
             )
+            self._save_labels(asset_id, labels)
 
     async def register(
-        self, character, content, *, title, emotions, source, license, mime_type=None, enabled=True
+        self, character, content, *, title, emotions, source, license, mime_type=None,
+        enabled=True, tags=(), description="", import_id=None
     ):
         self._character(character)
         title, source, license = self._metadata(title, emotions, source, license)
+        labels = MemeLabels(tags=list(tags), description=description)
         if type(enabled) is not bool:
             raise ValueError("启用状态须为布尔值")
         try:
@@ -354,9 +388,14 @@ class MemeCatalog:
             raise ValueError(f"表情「{title}」：{error}") from error
         digest = hashlib.sha256(content).hexdigest()
         name = digest + "." + info.pop("extension")
-        asset_id = "meme_" + uuid4().hex
+        identity = uuid5(NAMESPACE_URL, "tuber-studio:gallery-import:" + import_id) if import_id else uuid4()
+        asset_id = "meme_" + identity.hex
         async with self.lock:
             self._safe_directory()
+            if import_id and (existing := self.store.one("SELECT sha256 FROM meme_assets WHERE asset_id=?", (asset_id,))):
+                if existing["sha256"] != digest:
+                    raise ValueError("同一次导入的原文件发生变化，请重新选择文件")
+                return self._public(self._row(asset_id))
             if self.store.one("SELECT COUNT(*) AS n FROM meme_assets WHERE deleted=0")["n"] >= 1024:
                 raise ValueError("图库最多1024个条目，请先删除不需要的表情")
             path, temporary = self.library / name, self.library / (".upload-" + uuid4().hex)
@@ -384,6 +423,7 @@ class MemeCatalog:
                     source,
                     license,
                     enabled,
+                    labels,
                 )
             except BaseException:
                 if created and not self.store.one(
@@ -446,8 +486,10 @@ class MemeCatalog:
                 "revision": credit["revision"],
                 "note": entry.get("note") or "项目现有素材，保留登记时的图像字节。",
             }
+            labels = MemeLabels(tags=entry.get("tags", []), description=entry.get("description", ""))
             async with self.lock:
-                if not self.store.one("SELECT asset_id FROM meme_assets WHERE asset_id=?", (asset_id,)):
+                existing = self.store.one(ASSET_SELECT + "WHERE a.asset_id=?", (asset_id,))
+                if existing is None:
                     try:
                         content = _file_bytes(preset["file"])
                         info = await self.inspector.inspect(content)
@@ -467,7 +509,10 @@ class MemeCatalog:
                         source,
                         license,
                         preset["enabled"],
+                        labels,
                     )
+                elif existing["tags"] is None and not existing["deleted"]:
+                    self.label(asset_id, labels)
         return self.list("whale", include_disabled=True)
 
     def enable(self, asset_id, enabled=True):
@@ -476,6 +521,19 @@ class MemeCatalog:
             raise ValueError("启用状态须为布尔值")
         self.store.execute("UPDATE meme_assets SET enabled=? WHERE asset_id=?", (int(enabled), asset_id))
         return self._public(self._row(asset_id))
+
+    def label(self, asset_id, labels):
+        self._row(asset_id)
+        with self.store.db:
+            self._save_labels(asset_id, labels)
+        return self._public(self._row(asset_id))
+
+    def _save_labels(self, asset_id, labels):
+        self.store.db.execute(
+            "INSERT INTO meme_labels VALUES(?,?,?) ON CONFLICT(asset_id) "
+            "DO UPDATE SET tags=excluded.tags,description=excluded.description",
+            (asset_id, json.dumps(labels.tags, ensure_ascii=False), labels.description),
+        )
 
     def resolve(self, asset_id, character, *, allow_disabled=False):
         asset = self._resolve(asset_id, character, allow_disabled=allow_disabled)
@@ -508,8 +566,9 @@ class MemeCatalog:
         asset.pop("path")
         return {"asset": asset, "content": content, "mime_type": asset["mime_type"]}
 
-    def selection_schema(self, character):
-        ids = [item["asset_id"] for item in self.list(character) if not item["missing"]]
+    def selection_schema(self, character, *, candidates=None):
+        items = self.list(character) if candidates is None else candidates
+        ids = [item["asset_id"] for item in items if not item["missing"]]
         choice = [{"type": "null"}] + ([{"type": "string", "enum": ids}] if ids else [])
         return {
             "type": "object",
@@ -518,10 +577,11 @@ class MemeCatalog:
             "properties": {"asset_id": {"anyOf": choice}},
         }
 
-    def selection_prompt(self, character):
+    def selection_prompt(self, character, *, candidates=None):
+        items = self.list(character) if candidates is None else candidates
         candidates = [
-            {key: row[key] for key in ("asset_id", "title", "emotions")}
-            for row in self.list(character)
+            {key: row[key] for key in ("asset_id", "title", "emotions", "tags", "description") if key in row}
+            for row in items
             if not row["missing"]
         ]
         return (

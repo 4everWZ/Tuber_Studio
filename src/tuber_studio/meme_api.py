@@ -6,19 +6,20 @@ import binascii
 from fastapi import Depends, Response
 from pydantic import Field
 
-from .memes import MAX_BYTES, MemeLicense, MemeSource
+from .memes import MAX_BYTES, MemeLabels, MemeLicense, MemeSource
 from .models import StrictModel
 
 MAX_REQUEST = ((MAX_BYTES + 2) // 3) * 4 + 65536
 
 
-class MemeUpload(StrictModel):
+class MemeUpload(MemeLabels):
     character: str | None = Field(default=None, min_length=1, max_length=50)
     title: str = Field(min_length=1, max_length=120)
     emotions: list[str] = Field(min_length=1, max_length=20)
     source: MemeSource
     license: MemeLicense
     content_base64: str = Field(min_length=4, max_length=((MAX_BYTES + 2) // 3) * 4)
+    import_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
 
 
 class MemeAvailability(StrictModel):
@@ -53,6 +54,9 @@ def register_meme_api(app, catalog, runtime, require_admin):
             emotions=body.emotions,
             source=body.source.model_dump(),
             license=body.license.model_dump(),
+            tags=body.tags,
+            description=body.description,
+            import_id=body.import_id,
         )
 
     @app.get("/api/memes/{asset_id}/preview", dependencies=auth)
@@ -63,6 +67,10 @@ def register_meme_api(app, catalog, runtime, require_admin):
     @app.put("/api/memes/{asset_id}", dependencies=auth)
     async def availability(asset_id: str, body: MemeAvailability):
         return catalog.enable(asset_id, body.enabled)
+
+    @app.put("/api/memes/{asset_id}/labels", dependencies=auth)
+    async def labels(asset_id: str, body: MemeLabels):
+        return catalog.label(asset_id, body)
 
     @app.delete("/api/memes/{asset_id}", dependencies=auth)
     async def delete(asset_id: str):

@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import io
@@ -47,6 +48,47 @@ async def test_chooser_offers_only_available_images_and_binds_gallery_digest(mon
     selection.update(choice="mature", prompt="海边")
     with pytest.raises(ValueError, match="本轮可用"):
         await ops.choose(settings, material)
+
+
+async def test_gallery_filters_on_context_and_works_with_generation_off(runtime, settings, store, monkeypatch):
+    catalog = MemeCatalog(settings, store)
+    picture = (settings.root / "assets/whale/memes/twirl.png").read_bytes()
+    common = {
+        "emotions": ["idle"], "source": {"kind": "user_upload", "author": "test"},
+        "license": {"name": "fixture only"},
+    }
+    await catalog.register("whale", picture, title="生日派对", tags=["蛋糕"], **common)
+    umbrella = await catalog.register(
+        "whale", picture, title="街角", tags=["雨天", "撑伞"], description="她撑着一把蓝伞。", **common,
+    )
+    await catalog.register("whale", picture, title="雨天原稿", tags=["雨天"], enabled=False, **common)
+    store.set("message_policy", {"use_memes": True, "generate_images": False})
+    monkeypatch.setattr(ops, "resolve_reference", lambda *_: pytest.fail("关闭生图后不应读取生图参考"))
+    monkeypatch.setattr(ops, "gateway", lambda *_: pytest.fail("选图库不应调用图片网关"))
+
+    async def model(*args, tools, **kwargs):
+        assert tools[0]["parameters"]["properties"]["choice"]["enum"] == ["text_only", umbrella["asset_id"]]
+        offered, = json.loads(args[0][0]["content"])["gallery"]
+        assert offered["tags"] == ["雨天", "撑伞"] and offered["description"] == umbrella["description"]
+        return SimpleNamespace(calls=[SimpleNamespace(
+            name="choose_illustration", arguments={"choice": umbrella["asset_id"], "prompt": ""},
+        )])
+
+    @asynccontextmanager
+    async def client(_):
+        yield SimpleNamespace(create=model)
+
+    monkeypatch.setattr(ops.ResponsesClient, "from_settings", client)
+    images = runtime.operation_images
+    images.catalog = catalog
+    scope = ops.ImageScope(account_id="owner", character_id="whale", channel="direct_message", source_id="thread")
+    job = images.decide(scope, request_key="rain", context={"incoming": "雨天出门记得撑伞"}, draft="这就来。")
+    async with asyncio.timeout(3):
+        while (status := images.status(scope, job["job_id"]))["status"] != "gallery":
+            assert status["status"] != "failed", status
+            await asyncio.sleep(0.01)
+    assert status["asset_id"] == umbrella["asset_id"] and status["asset_sha256"] == umbrella["sha256"]
+    assert not store.all("SELECT * FROM operation_image_gateway_receipts")
 
 
 @pytest.fixture

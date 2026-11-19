@@ -2,14 +2,16 @@
 
 import json
 
+from .gallery_search import shortlist
+
 
 async def select_meme(runtime, catalog, character, event, text, *, mode="direct_message"):
     if mode not in {"direct_message", "dynamic"}:
         raise ValueError("未知表情使用场景")
-    candidates = [item for item in catalog.list(character) if not item["missing"]]
+    candidates = shortlist(catalog.list(character), text, event["text"])
     if not candidates:
         return None
-    schema = catalog.selection_schema(character)
+    schema = catalog.selection_schema(character, candidates=candidates)
     purpose = (
         "按公开动态正文的情绪选择一张配图，正文、来源和署名随动态保留。"
         if mode == "dynamic"
@@ -19,7 +21,7 @@ async def select_meme(runtime, catalog, character, event, text, *, mode="direct_
         [
             {
                 "role": "system",
-                "content": purpose + catalog.selection_prompt(character),
+                "content": purpose + catalog.selection_prompt(character, candidates=candidates),
             },
             {
                 "role": "user",

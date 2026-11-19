@@ -3,6 +3,26 @@
 const memeEmotions = {idle: "平常", cheerful: "开心", angry: "生气", shy: "害羞", confused: "困惑", excited: "兴奋"};
 let memePickerCount = 0;
 function memeElement(tag, text, className) { const item = document.createElement(tag); if (text != null) item.textContent = text; if (className) item.className = className; return item; }
+const labelFields = `<label>题材标签<input name="tags" placeholder="例如 雨天、撑伞、Q版"></label>
+  <label>画面描述<textarea name="description" maxlength="400" rows="2"></textarea></label>`;
+function artworkLabels(form) {
+  return {
+    tags: form.elements.tags.value.split(/[,，、\n]/u).map(tag => tag.trim()).filter(Boolean),
+    description: form.elements.description.value.trim(),
+  };
+}
+function readImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("图片文件读取失败，请重新选择。"));
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result.split(",", 2)[1] : null;
+      if (result) resolve(result);
+      else reject(new Error("图片文件未能读取为有效内容。"));
+    };
+    reader.readAsDataURL(file);
+  });
+}
 export function memePreviewUrl(asset) { return `/api/memes/${encodeURIComponent(asset.asset_id)}/preview`; }
 export function memePreview(asset, url = memePreviewUrl(asset)) {
   const frame = memeElement("div", null, "meme-preview");
@@ -32,11 +52,36 @@ function memeMetadata(asset) {
 export class MemeGallery {
   constructor(root, api, notify, onChange = () => {}) {
     this.root = root; this.api = api; this.notify = notify; this.onChange = onChange; this.items = []; this.pending = false; this.loading = false; this.sequence = 0;
-    root.innerHTML = `<article class="panel meme-library"><div class="panel-heading"><h2>表情包图库</h2><button data-meme-refresh type="button">刷新图库</button></div><p class="hint">私信、动态和角色共用这个图库。</p><p data-meme-state class="hint" role="status"></p><div data-meme-grid class="meme-grid"></div>
-      <details class="meme-upload"><summary>导入表情包</summary><form data-meme-upload><fieldset data-meme-upload-fields class="meme-fields"><div class="form-grid"><label>名称<input name="title" maxlength="120" required></label><label>图片文件<input name="file" type="file" accept="image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp" required></label></div><p class="hint">PNG、JPEG、GIF 或 WebP；最多8 MiB，宽高不超过4096，最多300帧。GIF按原文件保存。</p><fieldset class="meme-emotions"><legend>情绪（至少一项）</legend>${Object.entries(memeEmotions).map(([key, name]) => `<label><input type="checkbox" name="emotion" value="${key}"${key === "idle" ? " checked" : ""}>${name}</label>`).join("")}</fieldset><div class="form-grid"><label>来源作者<input name="author" maxlength="300" required placeholder="实际作者或权利人"></label><label>许可名称<input name="license_name" maxlength="300" required placeholder="实际许可或授权名称"></label></div><div class="form-grid"><label>来源链接（可选）<input name="source_url" type="url"></label><label>许可链接（可选）<input name="license_url" type="url"></label></div><label>来源版本（可选）<input name="source_revision" maxlength="160" placeholder="提交 SHA 或素材包版本"></label><label>来源备注（可选）<textarea name="source_note" rows="2" maxlength="2000"></textarea></label><label>许可备注（可选）<textarea name="license_note" rows="2" maxlength="2000"></textarea></label><div class="actions"><button type="submit" class="primary">上传到图库</button></div></fieldset></form></details><p data-meme-feedback class="hint" role="status"></p></article>`;
+    root.innerHTML = `<article class="panel meme-library">
+      <div class="panel-heading"><h2>角色图库</h2><button data-meme-refresh type="button">刷新图库</button></div>
+      <details class="meme-upload"><summary>导入图片</summary><form data-meme-upload>
+        <fieldset data-meme-upload-fields class="meme-fields">
+          <div class="form-grid"><label>图片文件<input name="file" type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp" required></label>
+          <label>名称（单张选填）<input name="title" maxlength="120"></label></div>
+          <p class="hint">可多选 PNG、JPEG、GIF 或 WebP，每张最多 8 MiB、4096 像素宽高和 300 帧。批量导入采用文件名，以下标签、作者与许可应用于这批图片。</p>
+          <div class="form-grid">${labelFields}</div>
+          <fieldset class="meme-emotions"><legend>情绪（至少一项）</legend>${Object.entries(memeEmotions).map(([key, name]) => `<label><input type="checkbox" name="emotion" value="${key}"${key === "idle" ? " checked" : ""}>${name}</label>`).join("")}</fieldset>
+          <div class="form-grid"><label>来源作者<input name="author" maxlength="300" required placeholder="实际作者或权利人"></label><label>许可名称<input name="license_name" maxlength="300" required placeholder="实际许可或授权名称"></label></div>
+          <div class="form-grid"><label>来源链接（可选）<input name="source_url" type="url"></label><label>许可链接（可选）<input name="license_url" type="url"></label></div>
+          <label>来源版本（可选）<input name="source_revision" maxlength="160" placeholder="提交 SHA 或素材包版本"></label>
+          <label>来源备注（可选）<textarea name="source_note" rows="2" maxlength="2000"></textarea></label>
+          <label>许可备注（可选）<textarea name="license_note" rows="2" maxlength="2000"></textarea></label>
+          <div class="actions"><button type="submit" class="primary">上传到图库</button></div>
+        </fieldset>
+      </form></details>
+      <p data-meme-feedback class="hint" role="status"></p><ul data-meme-failures hidden></ul>
+      <label>搜索图库<input type="search" data-meme-filter placeholder="名称、标签或画面描述"></label>
+      <p data-meme-state class="hint" role="status"></p><div data-meme-grid class="meme-grid"></div></article>`;
     this.$ = selector => root.querySelector(selector);
     this.$("[data-meme-refresh]").onclick = () => this.refresh();
     this.$("[data-meme-upload]").onsubmit = event => { event.preventDefault(); this.upload(); };
+    this.$("[data-meme-filter]").oninput = () => this.render();
+    this.$("[name=file]").onchange = event => {
+      this.batch = Array.from(event.target.files, file => ({file, importId: crypto.randomUUID(), done: false}));
+      this.$("[name=title]").disabled = this.batch.length !== 1;
+      this.$("[data-meme-failures]").hidden = true;
+      this.feedback("");
+    };
   }
   feedback(text, error = false) { this.$("[data-meme-feedback]").textContent = text; this.$("[data-meme-feedback]").classList.toggle("error-text", error); }
   controls() {
@@ -57,11 +102,35 @@ export class MemeGallery {
   }
   render() {
     const grid = this.$("[data-meme-grid]"); grid.replaceChildren();
-    if (!this.items.length) { grid.append(memeElement("p", "图库暂无表情包，可从下方导入图片。", "hint")); return; }
-    for (const asset of this.items) {
+    const query = this.$("[data-meme-filter]").value.trim().normalize("NFKC").toLocaleLowerCase();
+    const visible = this.items.filter(asset => !query ||
+      [asset.title, asset.description, ...(asset.tags || [])].some(value => value?.normalize("NFKC").toLocaleLowerCase().includes(query)));
+    if (!visible.length) {
+      grid.append(memeElement("p", query ? "没有匹配的图片。" : "图库还没有图片。", "hint"));
+      return;
+    }
+    for (const asset of visible) {
       const card = memeElement("article", null, "meme-card"); card.append(memePreview(asset), memeElement("h3", asset.title));
       card.append(memeElement("p", `${asset.missing ? "文件缺失" : asset.enabled ? "已启用" : "已禁用"} · ${(asset.emotions || []).map(item => memeEmotions[item] || item).join(" / ")}`, "hint"));
       card.append(memeElement("p", `${asset.width} × ${asset.height} · ${asset.animated ? `${asset.frames} 帧动图` : "静态图"} · ${typeof asset.bytes === "number" ? (asset.bytes / 1024).toFixed(1) + " KiB" : "大小未知"}`, "hint"), memeMetadata(asset));
+      if (asset.tags?.length) card.append(memeElement("p", asset.tags.join(" · "), "meme-tags"));
+      if (asset.description) card.append(memeElement("p", asset.description));
+      const metadata = memeElement("details", null, "meme-metadata");
+      metadata.append(memeElement("summary", "编辑标签与描述"));
+      const editor = document.createElement("form");
+      editor.innerHTML = labelFields + '<button type="submit">保存标签</button>';
+      editor.elements.tags.value = (asset.tags || []).join("、");
+      editor.elements.description.value = asset.description || "";
+      editor.onsubmit = event => {
+        event.preventDefault();
+        this.action(async () => {
+          await this.api(`/api/memes/${encodeURIComponent(asset.asset_id)}/labels`, {method: "PUT", body: artworkLabels(editor)});
+          await this.refresh();
+          this.feedback(`已保存「${asset.title}」的标签与描述。`);
+        });
+      };
+      metadata.append(editor);
+      card.append(metadata);
       const actions = memeElement("div", null, "actions");
       const toggle = memeElement("button", asset.enabled ? "禁用" : "启用"); toggle.type = "button"; toggle.setAttribute("aria-pressed", String(!!asset.enabled)); toggle.dataset.unavailable = String(!!asset.missing);
       toggle.onclick = () => this.action(async () => { await this.api(`/api/memes/${encodeURIComponent(asset.asset_id)}`, {method: "PUT", body: {enabled: !asset.enabled}}); await this.refresh(); this.feedback(asset.enabled ? "已禁用此表情包。" : "已启用此表情包。"); });
@@ -73,17 +142,47 @@ export class MemeGallery {
   }
   async action(work) { if (this.pending) return; this.pending = true; this.controls(); try { await work(); this.onChange(); } catch (error) { this.feedback(error.message, true); } finally { this.pending = false; this.controls(); } }
   async upload() {
-    const form = this.$("[data-meme-upload]"), file = form.elements.file.files[0];
-    if (!file) return;
-    if (file.size > 8 * 1024 * 1024) { this.feedback("图片超过8 MiB，请选择更小的原文件。", true); return; }
+    const form = this.$("[data-meme-upload]"), batch = this.batch || [];
+    if (!batch.some(item => !item.done)) return;
     const emotions = Array.from(form.querySelectorAll('[name="emotion"]:checked'), item => item.value);
     if (!emotions.length) { this.feedback("请至少选择一种情绪。", true); return; }
-    const body = {title: form.elements.title.value.trim(), emotions,
+    const body = {...artworkLabels(form), emotions,
       source: {kind: "user_upload", author: form.elements.author.value.trim(), url: form.elements.source_url.value.trim(), revision: form.elements.source_revision.value.trim(), note: form.elements.source_note.value.trim()},
       license: {name: form.elements.license_name.value.trim(), url: form.elements.license_url.value.trim(), note: form.elements.license_note.value.trim()}};
     await this.action(async () => {
-      body.content_base64 = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("图片文件读取失败，请重新选择。")); reader.onload = () => { const result = typeof reader.result === "string" ? reader.result.split(",", 2)[1] : null; if (!result) reject(new Error("图片文件未能读取为有效内容。")); else resolve(result); }; reader.readAsDataURL(file); });
-      await this.api("/api/memes", {method: "POST", body}); form.reset(); await this.refresh(); this.feedback("图片已保存，可在图库预览并管理启用状态。");
+      const problems = this.$("[data-meme-failures]");
+      const failures = [];
+      problems.replaceChildren();
+      problems.hidden = true;
+      for (const [index, item] of batch.entries()) {
+        if (item.done) continue;
+        const file = item.file;
+        this.feedback(`正在导入第 ${index + 1}／${batch.length} 张`);
+        try {
+          if (file.size > 8 * 1024 * 1024) throw new Error("图片超过 8 MiB。");
+          const title = (batch.length === 1 && form.elements.title.value.trim()) ||
+            file.name.replace(/\.[^.]+$/u, "").trim().slice(0, 120) || "未命名图片";
+          await this.api("/api/memes", {method: "POST", body: {
+            ...body, title, import_id: item.importId, content_base64: await readImage(file),
+          }});
+          item.done = true;
+        } catch (error) {
+          failures.push({name: file.name, message: error.message});
+        }
+      }
+      if (batch.some(item => item.done)) await this.refresh();
+      if (!failures.length) {
+        this.batch = [];
+        form.reset();
+        form.elements.title.disabled = false;
+        this.feedback(`已导入 ${batch.length} 张图片。`);
+      } else if (batch.length === 1) {
+        this.feedback(failures[0].message, true);
+      } else {
+        this.feedback(`已导入 ${batch.length - failures.length} 张，${failures.length} 张失败。再次上传时只重试失败项。`, true);
+        problems.replaceChildren(...failures.map(({name, message}) => memeElement("li", `${name} · ${message}`)));
+        problems.hidden = false;
+      }
     });
   }
 }
