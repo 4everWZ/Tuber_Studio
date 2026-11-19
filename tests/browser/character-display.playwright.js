@@ -19,7 +19,7 @@ async page => {
   }
   try {
     await page.goto(origin + "/#settings");
-    const pets = page.getByLabel("显示角色宠物"), avatar = page.getByLabel(/直播优先使用/);
+    const pets = page.getByLabel("显示角色宠物"), avatar = page.getByLabel("直播 Avatar（TBD／暂不可用）");
     await page.waitForFunction(() => !document.querySelector("[data-display-setting]").disabled);
     assert.equal(await pets.isChecked(), true);
     assert.equal(await avatar.isChecked(), false);
@@ -43,11 +43,12 @@ async page => {
       await p.locator(selector).first().waitFor({state: visible ? "visible" : "hidden"});
       assert.equal(await p.locator(selector + ":visible").count(), visible ? 1 : 0);
     };
-    for (const [petsOn, avatarOn] of [[true,false], [true,true], [false,true], [false,false]]) {
-      for (const [input, on] of [[pets, petsOn], [avatar, avatarOn]]) {
-        if (await input.isChecked() === on) continue;
+    for (const [petsOn, savedAvatar] of [[true,false], [false,false], [true,true], [false,true]]) {
+      // Older devices may already have persisted the preference before the pause.
+      assert.ok((await page.request.put(origin + "/api/settings/performance", {data:{avatar_enabled:savedAvatar}})).ok());
+      if (await pets.isChecked() !== petsOn) {
         const saved = page.waitForResponse(r => r.url().endsWith("/settings/performance") && r.request().method() === "PUT");
-        await input.setChecked(on);
+        await pets.setChecked(petsOn);
         assert.ok((await saved).ok());
       }
       await expectPet(chat, ".chat-agent-identity #chat-pet", petsOn);
@@ -60,7 +61,10 @@ async page => {
       await page.reload();
       await page.waitForFunction(() => !document.querySelector("[data-display-setting]").disabled);
       assert.equal(await pets.isChecked(), petsOn);
-      assert.equal(await avatar.isChecked(), avatarOn);
+      assert.equal(await avatar.isDisabled(), true);
+      assert.equal(await avatar.isChecked(), false);
+      const stored = await (await page.request.get(origin + "/api/settings/performance")).json();
+      assert.equal(stored.avatar_enabled, savedAvatar);
     }
     await desk.locator("[data-desk-action=start]").click();
     await desk.getByText("离线事件调试", {exact:true}).click();

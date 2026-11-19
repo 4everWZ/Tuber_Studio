@@ -2,7 +2,7 @@
 
 电话始终使用原生双工语音。点击开始才签发限定到 `/v1/realtime` 的普通应用票据。电话的 Avatar 发现接口兼容旧客户端，固定返回空列表；服务端已移除电话媒体绑定与 WHEP 订阅路由。当前角色的历史验收录像仍由已登录的号主通过原录像入口播放。
 
-号主通过 `GET /api/settings/performance` 获取 `{"pets_enabled":true,"avatar_enabled":false}` 初始值。向同一路径 PUT 一个或两个布尔字段，返回完整的持久设置。电话和聊天可显示当前角色的同一只 pet，口型只用于直播。
+设置页的「直播 Avatar（TBD／暂不可用）」已禁用。Pets 可独立开关，电话和聊天共用一只宠物。工作站通过 `GET /api/settings/performance` 提供持久偏好，默认值为 `{"pets_enabled":true,"avatar_enabled":false}`。设置页只更新 `pets_enabled`。历史保存的 Avatar 偏好不会启动媒体会话。
 
 `/api/live/view` 与 `/api/live/studio` 同时返回 `performance` 和 `lip_sync`。本次工作站 Ditto 验收未通过，`lip_sync.provider` 为 `ditto`，`status` 随 Avatar 开关返回 `off` 或 `tbd`，`renderer` 随 Pets 开关返回 `pet` 或 `none`。播放器复用既有 play 消息的音频包络 `activity.envelope`、采样间隔 `activity.step` 和实际音频时钟；工作台可读 `playback.started/paused/mouth`。静音、暂停和结束时收口。演出开关不改变播放回执。[工作站 Ditto 复核](../../evaluations/results/live-ditto-oc-20261119.md)
 

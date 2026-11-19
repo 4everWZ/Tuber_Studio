@@ -140,8 +140,8 @@ export class LiveDesk {
       playback ? "等待播放器确认" : jobLabels[current?.status] || "空闲";
     this.say("[data-desk-session]", sessionLabels[this.view.state] || this.view.state);
     this.say("[data-desk-player]", this.view.overlay_connected ? "播放器已连接" : "播放器未连接");
-    this.say("[data-desk-portrait]", this.view.lip_sync?.status === "tbd"
-      ? "直播形象待验 · " + (this.view.performance?.pets_enabled ? "显示宠物" : "已隐藏角色") : "");
+    this.say("[data-desk-portrait]", "直播 Avatar（TBD／暂不可用） · " +
+      (this.view.performance?.pets_enabled ? "显示宠物" : "已隐藏角色"));
     this.find("[data-desk-open-output]").hidden = this.view.overlay_connected;
     this.say("[data-desk-mute-state]", this.view.muted ? "已静音" : "");
     this.say("[data-desk-current-state]", phase);
