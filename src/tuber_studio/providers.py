@@ -101,7 +101,17 @@ def build_messages(character, event, relationship, mode="live"):
     # inject a second, empty history snapshot after the actual conversation.
     optional = {"active_lore": lore, "confirmed_relationship": relationship}
     owner = bilibili_owner_context(character, event.get("platform"), event.get("platform_user_id"))
-    if owner:
+    if operator_chat:
+        participants = {"当前交谈者": "工坊号主", "角色": character["name"],
+                        "bilibili_owner": owner.get("bilibili_owner")}
+        if owner and event.get("platform") == "bilibili" and event.get("platform_user_id"):
+            participants["speaker_is_bilibili_owner"] = owner["speaker_is_bilibili_owner"]
+        messages[1]["content"] += (
+            "\n角色卡中的 bilibili_owner 是这名角色的主人，空值表示尚未绑定。"
+            "运营账号的昵称和简介描述的是角色使用的平台账号。\n私聊参与者："
+            + json.dumps(participants, ensure_ascii=False)
+        )
+    elif owner:
         optional.update(owner)
         messages[1]["content"] += "\n" + BILIBILI_OWNER_INSTRUCTION
     if actors:

@@ -229,7 +229,7 @@ def test_character_owner_uses_verified_profile_and_persists_per_card(settings, m
         assert client.get(path).raise_for_status().json() == cleared
 
 
-@pytest.mark.parametrize("mode", ["live", "comment_draft", "direct_message", "operator_chat"])
+@pytest.mark.parametrize("mode", ["live", "comment_draft", "direct_message"])
 def test_role_reply_recognizes_bilibili_owner_by_platform_uid(store, mode):
     profile = {"uid": "123", "name": "号主昵称", "avatar_url": "https://i0.hdslb.com/bfs/face/example.jpg"}
     card = store.character() | {"bilibili_owner": profile}
@@ -241,3 +241,22 @@ def test_role_reply_recognizes_bilibili_owner_by_platform_uid(store, mode):
         assert context["speaker_is_bilibili_owner"] is expected
         assert context["bilibili_owner"] == {"uid": "123", "name": "号主昵称"}
     assert "bilibili_owner" not in build_messages(store.character(), event, {}, mode)[2]["content"]
+
+
+@pytest.mark.parametrize(("platform", "uid", "matches"), [
+    ("bilibili", "123", True), ("bilibili", "321", False), ("mock", "123", None), (None, None, None),
+])
+def test_private_chat_participants_come_from_selected_card(store, platform, uid, matches):
+    card = store.character()
+    event = {"text": "再说说她吧", "platform": platform, "platform_user_id": uid}
+    for owner in ({"uid": "123", "name": "第一位"}, {"uid": "123", "name": "改名后"}, None):
+        messages = build_messages(card | {"bilibili_owner": owner}, event, {}, "operator_chat")
+        scene = messages[1]
+        assert scene["role"] == "system"
+        participants = json.loads(scene["content"].split("私聊参与者：", 1)[1])
+        assert participants["bilibili_owner"] == owner
+        if owner and matches is not None:
+            assert participants["speaker_is_bilibili_owner"] is matches
+        else:
+            assert "speaker_is_bilibili_owner" not in participants
+        assert "bilibili_owner" not in messages[2]["content"]
