@@ -237,7 +237,7 @@ async def voice_on_page(page, origin, audio, target, expected, *, correct_qa_pre
         stage("owner_confirmation", target_id=target["id"], old_revision=target["revision"], final=transcript)
         async def confirm(dialog):
             if not all(text in dialog.message for text in (
-                target["note"], transcript, confirmed, f"#{target['id']}（v{target['revision']}）",
+                target["note"], transcript, confirmed, "更正这条偏好",
             )):
                 await dialog.dismiss()
                 return

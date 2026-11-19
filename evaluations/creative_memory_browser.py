@@ -160,24 +160,19 @@ async def settings_entries(page):
 
 
 async def open_source(page, entries, citation):
-    quote = page.locator("blockquote").and_(page.get_by_text(citation["quote"], exact=True))
-    entry = entries.filter(has=quote)
+    entry = entries.and_(page.locator(f'[data-memory-id="{citation["id"]}"]'))
     await entry.get_by_text("来源与编辑", exact=True).click()
-    await entry.locator("blockquote:visible").wait_for()
-    path = f"/api/daily-memory/organized/{citation['id']}/revisions"
-    async with page.expect_response(lambda r: urlsplit(r.url).path == path and r.request.method == "GET") as event:
-        await entry.get_by_text("更正历史", exact=True).click()
-    response = await event.value
-    require(response.ok, "设置未读回该条目的更正历史")
-    history = (await response.json())["revisions"]
-    require(history and history[0]["source_key"] == citation["source_key"]
-            and history[0]["revision"] == citation["revision"], "设置中的当前来源或修订与本次引用不符")
-    latest = history[0]
-    revision = entry.get_by_text(f"v{latest['revision']} · {latest['note']}", exact=True)
-    await revision.wait_for()
-    return entry, {"quote": await entry.locator("blockquote:visible").inner_text(),
-                   "history_path": urlsplit(response.url).path, "source_key": latest["source_key"],
-                   "revision": latest["revision"], "visible_revision": await revision.inner_text()}
+    quote = entry.locator("blockquote:visible")
+    await quote.wait_for()
+    note = await entry.get_by_label("记忆内容").input_value()
+    report = await page.request.get(f"{urlsplit(page.url).scheme}://{urlsplit(page.url).netloc}/api/daily-memory")
+    require(report.ok, "设置未读回当前记忆")
+    current = next((r for r in (await report.json())["organized"] if r["id"] == citation["id"]), None)
+    require(current and current["source"]["key"] == citation["source_key"] and current["revision"] == citation["revision"],
+            "设置当前来源与任务引用不符")
+    require(await quote.inner_text() == citation["quote"] and note == citation["note"], "设置未显示当前偏好与来源")
+    require(not await entry.get_by_text("更正历史", exact=True).count(), "设置仍显示历史偏好列表")
+    return entry, {"id": current["id"], "source_key": current["source"]["key"], "quote": await quote.inner_text(), "note": note}
 
 
 class MemoryScenario:
@@ -245,7 +240,7 @@ class MemoryScenario:
             "当前网页已有号主业务数据",
         )
         self.record("run", self.args.run)
-        self.record("citation_surface", "settings")
+        self.record("citation_surface", "settings_current")
         actual = await self.preference(page, CONFIRMED, "layout")
         title = await self.preference(page, AUTO, "original")
         require(actual["id"] != title["id"], "两项独立偏好发生覆盖")

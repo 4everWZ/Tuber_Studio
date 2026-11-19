@@ -484,6 +484,7 @@ export function initPersonalization(model, api) {
     list.replaceChildren();
     for (const item of visible) {
       const entry = node("article");
+      entry.dataset.memoryId = String(item.id);
       const archived = item.status === "archived";
       const actions = node("div", null, "actions");
       const edit = node("details");
@@ -494,20 +495,6 @@ export function initPersonalization(model, api) {
         node("p", [memoryVisibility[item.visibility], archived ? statuses[item.status] : "", date].filter(Boolean).join(" · "), "hint"));
       edit.append(node("summary", "来源与编辑"));
       appendSources(edit, item);
-      const versions = node("details"), versionList = node("div");
-      versions.append(node("summary", "更正历史"), versionList);
-      const displayedScope = report.scope;
-      versions.ontoggle = async () => {
-        if (!versions.open) return;
-        try {
-          const result = await api(`${endpoint}${path}/revisions?scope=${encodeURIComponent(displayedScope)}`);
-          if (versions.isConnected && report?.scope === displayedScope) {
-            versionList.replaceChildren(...result.revisions.map(row => node("p", `v${row.revision} · ${row.note}`)));
-          }
-        } catch (error) { versionList.textContent = error.message; }
-      };
-      edit.append(versions);
-
       const form = node("form");
       const title = node("input");
       const note = node(item.choices ? "select" : "textarea");

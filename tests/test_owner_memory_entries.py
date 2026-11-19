@@ -173,17 +173,21 @@ async def test_cross_client_withdrawal_while_streaming(owner, monkeypatch):
 
 async def test_private_child_memory_functions_and_mid_delivery_withdrawal(owner):
     client, state = owner
-    identity = await save(client)
+    old_wording = "开场必须提到紫色抽屉。"
+    identity = await save(client, text=old_wording)
+    old_key = (await client.post(MEM + ".get", json={"id": identity})).json()["source_key"]
+    (await client.patch(f"/api/daily-memory/organized/{identity}", json={"note": NOTE})).raise_for_status()
     hit = (await client.post(MEM + ".get", json={"id": identity})).json()
     task_id = str(uuid4())
     tasks = state.runtime.tasks
     url = "/api/agent/tasks"
-    body = {"request_id": task_id, "goal": hit["source_key"], "attachments": [{"name": "开场.txt", "text": "下一场准备三段。"}]}
+    body = {"request_id": task_id, "goal": old_key, "attachments": [{"name": "开场.txt", "text": "下一场准备三段。"}]}
     stored = (await client.post(url, json=body)).raise_for_status().json()
     source = stored["steps"][0]["id"] + ":0"
     replies = []
 
     async def respond(**options):
+        assert old_wording not in json.dumps(options["input"], ensure_ascii=False)
         names = {tool["name"] for tool in options["tools"]}
         replies.append(names)
         index = len(replies)
@@ -196,9 +200,13 @@ async def test_private_child_memory_functions_and_mid_delivery_withdrawal(owner)
                      FunctionCall("get", "memory_get", {"id": identity}),
                      FunctionCall("proposal", "memory_propose", {"source_id": source, "quote": "准备三段"})]
         elif index == 3:
-            assert NOTE in options["input"][-3]["output"]
+            current = {"id": identity, "note": NOTE, "source_key": hit["source_key"]}
+            assert json.loads(options["input"][-5]["output"]) == [current]
+            assert json.loads(options["input"][-3]["output"]) == current
             return ResponseTurn("child-done", (), "私有草稿", {})
         else:
+            receipt = json.loads(options["input"][-1]["output"])["receipt"]
+            assert set(receipt) == {"draft", "sources"}
             (await client.delete(f"/api/daily-memory/organized/{identity}")).raise_for_status()
             calls = [FunctionCall("ask", "ask_owner", {"question": "不能送出的旧记忆"})]
         return ResponseTurn(str(index), tuple(calls), "", {})
@@ -462,7 +470,7 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
     assert not tasks.edition_recallable(task_id, 1) and tasks.edition_recallable(task_id, 2)
 
 
-async def test_exact_original_ranked_before_eight_fuzzy_matches(owner, monkeypatch):
+async def test_old_source_locates_current_note_before_eight_fuzzy_matches(owner, monkeypatch):
     client, state = owner
     turn = str(uuid4())
     (await client.post(CHAT, json={"request_id": turn, "message": NOTE, "intent": {"action": "chat"}})).raise_for_status()
@@ -486,7 +494,34 @@ async def test_exact_original_ranked_before_eight_fuzzy_matches(owner, monkeypat
     key = "turn:" + turn
     hits = (await client.post(MEM + ".search", json={"query": key})).raise_for_status().json()["items"]
     assert len(hits) == 8
-    assert (hits[0]["id"],hits[0]["source_key"],hits[0]["quote"],hits[0]["note"]) == (target,key,NOTE,"新的开场偏好。")
+    assert (hits[0]["id"],hits[0]["source_key"],hits[0]["quote"],hits[0]["note"]) == (target, "turn:" + replacement, note, note)
+
+
+async def test_correction_excludes_old_turn_pair_from_chat_input_but_preserves_transcript(owner, monkeypatch):
+    client, state = owner
+    packets = []
+
+    async def assistant(messages, schema, **options):
+        packets.append(messages)
+        return {"action": "chat", "reply_markdown": "听到了。"}
+
+    monkeypatch.setattr(state.runtime.llm, "generate_assistant_json", assistant, raising=False)
+    async def tell(text):
+        rid = str(uuid4())
+        (await client.post(CHAT, json={"request_id": rid, "message": text})).raise_for_status()
+        return rid
+
+    fact = "昨晚咱们看到一只白猫。"
+    await tell(fact)
+    turn = await tell(NOTE)
+    identity = await save(client, "turn", turn_id=turn)
+    current = "写开场时先报天气。"
+    (await client.patch(f"/api/daily-memory/organized/{identity}", json={"note": current})).raise_for_status()
+    await tell("开场要怎么写？")
+    wire = json.dumps(packets[-1], ensure_ascii=False)
+    assert current in wire and fact in wire and NOTE not in wire and '"revision"' not in wire
+    history = (await client.get(CHAT)).raise_for_status().json()["turns"]
+    assert any(row["request_id"] == turn and row["message"] == NOTE for row in history)
 
 async def test_voice_preview_binds_original_and_forgets_both_texts(owner, monkeypatch):
     from tuber_studio.agent.voice_origin import sign, ticket_context
@@ -539,9 +574,14 @@ async def test_confirmed_voice_correction_rechecks_target_and_revision(owner, mo
     now = (await client.post(MEM+".get", json={"id":identity})).raise_for_status().json()
     assert now["quote"] == now["note"] == new and now["source_key"].startswith("confirmed_voice:")
     scope = (await client.get("/api/daily-memory/preferences")).json()["scope"]
-    revisions = (await client.get(f"/api/daily-memory/organized/{identity}/revisions", params={"scope":scope})).json()["revisions"]
-    assert [r["source_key"] for r in revisions[:2]] == [now["source_key"],old["source_key"]]
-    assert [r["note"] for r in revisions[:2]] == [new, NOTE]
+    assert (await client.get(f"/api/daily-memory/organized/{identity}/revisions", params={"scope": scope})).status_code == 404
+    assert (await client.post(MEM+".get", json={"id": identity, "source_key": old["source_key"]})).status_code == 404
+    alias, = (await client.post(MEM+".search", json={"query": old["source_key"]})).json()["items"]
+    assert alias["source_key"] == now["source_key"] and alias["quote"] == new
+    next_call = (await client.post("/api/chat/private-call/ticket", json={"topic": old["source_key"]})).raise_for_status().json()
+    assert new in next_call["instructions"] and NOTE not in next_call["instructions"]
+    assert "revision" not in next_call["instructions"]
+
 
 async def test_real_replay_forgets_a_merged_preference_once_using_its_observed_revision(owner, monkeypatch):
     from evaluations import owner_memory_video as rehearsal

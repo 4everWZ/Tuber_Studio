@@ -357,14 +357,6 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
         await runtime.browsing.discovery.restore_history_scope()
         return recent_events(runtime.browsing) | {"scope": memory_scope()[1]}
 
-    @app.get("/api/daily-memory/organized/{item_id}/revisions", dependencies=[Depends(require_admin)])
-    async def memory_revisions(item_id: int, scope: str):
-        current, _ = memory_scope(scope)
-        revisions = runtime.daily_memory.revisions(current, item_id)
-        if not revisions:
-            raise HTTPException(404, "找不到这条记忆")
-        return {"revisions": revisions}
-
     @app.patch("/api/daily-memory/organized/{item_id}", dependencies=[Depends(require_admin)])
     async def change_organized_memory(
         item_id: int, data: OrganizedMemoryChange, scope: str | None = None, revision: float | None = None,

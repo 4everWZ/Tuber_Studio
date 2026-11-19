@@ -61,8 +61,12 @@ def inherited_topic(runtime, turn_id):
         return ""
     key = f"turn:{turn_id}"
     source = original_turn(runtime.store.db, character, key)
-    if not source or memory.source_deleted((source["account"], character, source["character_version"]), key, owner):
+    if not source:
         return ""
+    if not memory.history_turn_available((source["account"], character, source["character_version"]), key, owner):
+        # A corrected turn can still identify the current preference without
+        # supplying the superseded utterance as the call's topic.
+        return key if memory.lookup_source(scope, "operator", key) else ""
     words = source["message"].strip()
     return words if not contains_memory_credential(words) else ""
 

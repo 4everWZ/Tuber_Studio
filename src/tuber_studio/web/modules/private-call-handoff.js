@@ -109,8 +109,8 @@ function handoff(text, call, origin) {
   if ((origin || [...text].length <= 150) && call.memory_use && targets.length) {
     const label = document.createElement("label"), select = document.createElement("select");
     label.append("更正本次引用的偏好 ", select);
-    select.append(new Option("选择原偏好", ""));
-    for (const item of targets) select.append(new Option(`#${item.id} · v${item.revision} · ${item.note}`, String(item.id)));
+    if (targets.length > 1) select.append(new Option("选择要更正的偏好", ""));
+    for (const item of targets) select.append(new Option(item.note, String(item.id)));
     row.append(label, rememberButton(() => {
       const item = targets.find(target => String(target.id) === select.value);
       if (!item) throw Error("请选择要更正的原偏好");

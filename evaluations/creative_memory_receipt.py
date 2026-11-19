@@ -36,7 +36,11 @@ def check_citations(memory, phase, wire, editor):
         records(wire) == records(memory[phase + "_api"]) == records(editor),
         f"{phase} 编辑、任务接口与浏览器引用快照不符",
     )
-    if memory.get("citation_surface") == "settings":
+    if memory.get("citation_surface") == "settings_current":
+        expected = [{k: row[k] for k in ("id", "source_key", "quote", "note")} for row in wire]
+        require(Counter(tuple(sorted(row.items())) for row in visible) ==
+                Counter(tuple(sorted(row.items())) for row in expected), f"{phase} 设置中的当前内容或来源不符")
+    elif memory.get("citation_surface") == "settings":
         expected_settings = [
             {"quote": r["quote"], "history_path": f"/api/daily-memory/organized/{r['id']}/revisions",
              "source_key": r["source_key"], "revision": r["revision"],

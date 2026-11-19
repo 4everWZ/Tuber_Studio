@@ -24,7 +24,7 @@ export function rememberButton(proposal, label) {
       const body = proposal();
       const preview = await api("/api/agent/memory.propose", {method: "POST", body});
       const question = preview.replaces
-        ? `更正私有偏好 #${preview.replaces.id}（v${preview.replaces.revision}）？\n\n原内容：${preview.replaces.note}\n新原话：${preview.text}`
+        ? `更正这条偏好？\n\n原内容：${preview.replaces.note}\n新原话：${preview.text}`
         : `保存为号主私有记忆？\n\n${preview.text}`;
       const evidence = preview.machine_text ? `\n\n机器转写：${preview.machine_text}\n号主确认：${preview.text}` : "";
       if (!button.isConnected || !window.confirm(question + evidence)) return;

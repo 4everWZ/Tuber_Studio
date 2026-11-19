@@ -7,6 +7,7 @@ import json
 import re
 import time
 from typing import Any
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from .store import dump as dump_memory
@@ -285,6 +286,14 @@ class DailyMemoryService:
                 if any(contains_memory_credential(row[key]) for key in ("quote", "headline", "anecdote")):
                     continue
                 source = proof["memory_source"]
+                if proof["memory_kind"] == "private" and proof.get("owner_edit_at", 0) > source["at"]:
+                    # Older settings edits replaced only the note. Attribute its current
+                    # wording to the owner edit, never to the old chat or audio transcript.
+                    at = proof["owner_edit_at"]
+                    source = {"key": memory_sources.edited_source_key(row["id"], at), "at": at, "references": []}
+                    if row["headline"] in row["quote"] and row["headline"] not in row["anecdote"]:
+                        row = row | {"headline": row["anecdote"][:40]}
+                    row = row | {"quote": row["anecdote"]}
                 public = self._public_memory_projection(proof, source)
                 channels = []
                 if row["status"] == "active":
@@ -472,17 +481,18 @@ class DailyMemoryService:
                 return False
         if kind == "private":
             previous = self.store.one(
-                "SELECT s.quote FROM memory_source_aliases a JOIN memory_sources s USING(item_id,source_key) "
+                "SELECT s.item_id,s.quote FROM memory_source_aliases a JOIN memory_sources s USING(item_id,source_key) "
                 "JOIN daily_highlights h ON h.id=s.item_id WHERE a.alias=? AND s.source_key=? AND s.character=? "
                 "AND h.owner_principal IS ? AND json_extract(h.source_evidence,'$.scene') IS ? "
                 "AND (? IS NOT NULL OR (s.account=? AND s.version=?))",
                 (key, key, scope[1], owner, target, owner, scope[0], scope[2]),
             )
             if previous:
-                return previous["quote"] == quote
-        if existing and existing["proof"].get("private_owner") != owner:
-            existing = None
-        for row in self.organized(scope, limit=-1, candidate_for=(key, kind, signature, quote)):
+                return previous["quote"] == quote and (not existing or previous["item_id"] == existing["id"])
+        if existing and (existing["proof"].get("private_owner") != owner or existing["proof"].get("scene") != target):
+            return False
+        matches = [] if existing else self.organized(scope, limit=-1, candidate_for=(key, kind, signature, quote))
+        for row in matches:
             if row["memory_kind"] != kind:
                 continue
             if source.get("cooperation_rule") and row["quote"] != quote:
@@ -563,6 +573,8 @@ class DailyMemoryService:
                 "UPDATE daily_highlights SET headline=?,quote=?,anecdote=?,tags=?,source_evidence=?,updated_at=? WHERE id=?",
                 (*fields, existing["id"]),
             )
+            if kind == "private":
+                self._invalidate_previous_turn(existing)
         else:
             cursor = self.store.db.execute(
                 "INSERT INTO daily_highlights(character_id,character_version,highlight_date,category,source_ref,source_user,"
@@ -583,6 +595,17 @@ class DailyMemoryService:
             "UNION ALL SELECT 1 FROM memory_organization WHERE account=? AND character=? AND version=? "
             "AND source=? AND status='deleted' LIMIT 1", (owner, scope[1], key, *scope, key),
         ))
+
+    def history_turn_available(self, scope, key, owner):
+        return not (self.source_deleted(scope, key, owner) or self.store.one(
+            "SELECT 1 FROM superseded_private_turns WHERE character=? AND account=? AND version=? AND source_key=?",
+            (scope[1], scope[0], scope[2], key)))
+
+    def _invalidate_previous_turn(self, row):
+        source = row["proof"]["memory_source"]
+        origin = source.get("scope") or (row["proof"]["operation_account_id"], row["character_id"], row["character_version"])
+        memory_sources.invalidate_turn(self.store.db, origin, source["key"])
+        memory_sources.invalidate_outdated_reads(self.store.db, row["id"])
 
     def lookup_source(self, scope, channel, source_key):
         """Return exact, currently authorized original quotes. An absent source yields []."""
@@ -612,15 +635,6 @@ class DailyMemoryService:
                            "source_key": match["source_key"], "quote": match["quote"]})
         return result
 
-    def revisions(self, scope, item_id):
-        """Management view. Older databases start their history at the observed revision."""
-        if not self.organized(scope, item_id=item_id):
-            return []
-        return self.store.all(
-            "SELECT revision,updated_at,headline,note,source_key,status,owner_only FROM memory_revisions "
-            "WHERE item_id=? ORDER BY revision DESC", (item_id,),
-        )
-
     def change_organized(self, scope, item_id, *, owner_only=None, headline=None, note=None, delete=False,
                          expected_revision=None):
         db = self.store.db
@@ -649,14 +663,24 @@ class DailyMemoryService:
             if not row["public_memory"] or row["status"] != "active":
                 raise ValueError("只有已保存且有公开来源的经历可以切换共享")
             proof["owner_only"] = owner_only
-        if note is not None:
+        if note is not None and row["memory_kind"] == "private" and note != row["anecdote"]:
+            self._invalidate_previous_turn(row)
+            at = time.time()
+            key = "settings:edit:" + uuid4().hex
+            if (not headline or headline == row["headline"]) and row["headline"] in row["quote"] and row["headline"] not in note:
+                headline = note[:40]
+            proof.update(quote=note, owner_confirmed=True, owner_edit_at=at,
+                         memory_source={"key": key, "at": at, "scope": list(scope), "references": []})
+            proof.pop("cooperation_rule", None)
+            memory_sources.record_source(self.store.db, item_id, scope, key, note)
+        elif note is not None and row["memory_kind"] != "private":
             proof["owner_edit_at"] = time.time()
         if headline is not None:
             proof["owner_headline_confirmed"] = True
         proof.pop("channels", None)
         self.store.db.execute(
-            "UPDATE daily_highlights SET headline=?,anecdote=?,source_evidence=?,updated_at=? WHERE id=?",
-            (headline or row["headline"], note or row["anecdote"], dump_memory(proof), time.time(), item_id),
+            "UPDATE daily_highlights SET headline=?,quote=?,anecdote=?,source_evidence=?,updated_at=? WHERE id=?",
+            (headline or row["headline"], proof["quote"], note or row["anecdote"], dump_memory(proof), time.time(), item_id),
         )
         return self.organized(scope, item_id=item_id)[0]
 
@@ -679,16 +703,8 @@ class DailyMemoryService:
                        (*origin, key, "", time.time()))
             if row["memory_kind"] == "private":
                 memory_sources.invalidate_turn(db, origin, key)
-        if row["memory_kind"] == "private" and memory_sources.has_table(db, "operator_chat_turns"):
-            # A later chat on another account can have consumed this note.
-            for turn in self.store.all(
-                "SELECT t.request_id,t.character_version,json_extract(t.result,'$.account_id') AS account "
-                "FROM operator_chat_turns t WHERE t.character_id=? AND EXISTS (SELECT 1 FROM "
-                "json_each(t.result,'$.organized_memory.organized_memory') r WHERE json_extract(r.value,'$.id')=?)",
-                (scope[1], row["id"]),
-            ):
-                memory_sources.invalidate_turn(db, (turn["account"], scope[1], turn["character_version"]),
-                                               "turn:" + turn["request_id"])
+        if row["memory_kind"] == "private":
+            memory_sources.invalidate_outdated_reads(db, row["id"])
 
     def live_preferences(self, scope):
         if not self.preference(scope)["enabled"]:

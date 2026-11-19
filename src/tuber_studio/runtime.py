@@ -333,8 +333,8 @@ class Runtime:
 
         if memory_refs:
             remember_dependency()
-        extra = [{"role": "user", "kind": "context", "content": "与当前话题相关的现行记忆（偏好以此处最新版本为准）：" + dump([
-            {"topic": row["headline"], "note": row["anecdote"]} for row in organized
+        extra = [{"role": "user", "kind": "context", "content": "与当前话题相关的记忆：" + dump([
+            {"note": row["anecdote"]} for row in organized
         ])}] if organized else []
         messages = await context.prepare(
             scope, character, event, relationship, mode, evidence=evidence, extra=extra,

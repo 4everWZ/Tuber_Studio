@@ -1,6 +1,6 @@
 # 角色卡、音色与形象
 
-角色、音色和素材是独立引用；评论与直播共用接口，更换OC不改调度器或Provider。角色／记忆语义由[角色规范](../specs/foundation/runtime-and-characters.md)维护。
+角色、音色和素材是独立引用；评论与直播共用接口，更换OC不改调度器或Provider。角色由[角色规范](../specs/foundation/runtime-and-characters.md)维护，关系及记忆见[记忆规范](../specs/foundation/memory.md)。
 
 工作室默认提供大肥鱼角色卡。新建角色由系统分配稳定 ID，人设、说话风格和台词示例从空白开始，音色和形象使用项目默认绑定。
 

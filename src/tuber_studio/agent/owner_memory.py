@@ -41,14 +41,15 @@ def private_rows(runtime, query, *, inspection=False):
     for hit in memory.lookup_source(scope, "operator", query):
         rows = memory.organized(scope, item_id=hit["id"])
         if rows and (row := memory.owner_projection(rows[0])):
-            indexed[row["id"]] = row | {"exact_source": hit}
+            indexed[row["id"]] = row if row["memory_kind"] == "private" else row | {"exact_source": hit}
     for item in matched:
         indexed.setdefault(item["id"], item)
     return [row for row in indexed.values() if inspection or applicable_chat_memory(row)][:8]
 
 
 def citation(row):
-    source = row.get("exact_source") or {"quote": row["quote"], "source_key": row["source"]["key"]}
+    source = (row.get("exact_source") if row["memory_kind"] != "private" else None) or {
+        "quote": row["quote"], "source_key": row["source"]["key"]}
     return {"id": row["id"], "revision": row["revision"], "headline": row["headline"],
             "note": row["anecdote"], "quote": source["quote"], "source_key": source["source_key"]}
 

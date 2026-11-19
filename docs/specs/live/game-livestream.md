@@ -6,7 +6,7 @@
 
 目标是大肥鱼围绕真实游戏局面制定目标、执行、复盘，并与观众自然互动。首轮覆盖星露谷基础农活和植物大战僵尸选定关卡，两款分别验收。游戏与OBS位于电脑；业务与推理节点职责由[跨主机运行与数据归属](../foundation/distributed-runtime.md)维护。
 
-既有[直播与媒体](live-and-media.md)继续拥有TTS播放、字幕、嘴型、场景及点歌语义；[角色与运行时数据](../foundation/runtime-and-characters.md)拥有角色版本、用户身份、关系与记忆；[模型与资源](../foundation/models-and-audio.md)拥有Provider、声音身份和资源准入。游戏只增加相应事件与适配能力，不另建一套角色、平台账号或音乐系统。
+既有[直播与媒体](live-and-media.md)继续拥有TTS播放、字幕、嘴型、场景及点歌语义；[角色与运行时数据](../foundation/runtime-and-characters.md)拥有角色版本，[记忆规范](../foundation/memory.md)维护用户身份、关系与记忆；[模型与资源](../foundation/models-and-audio.md)拥有Provider、声音身份和资源准入。游戏只增加相应事件与适配能力，不另建一套角色、平台账号或音乐系统。
 
 [常驻 Agent](../foundation/agent-runtime.md)负责目标、观察与动作工具的调用及任务恢复。各游戏适配器维护会话状态、动作回执、实时执行、存档和控制权。两款模拟与实机共用这组能力接口，标明适配器类型和实际可用能力。
 

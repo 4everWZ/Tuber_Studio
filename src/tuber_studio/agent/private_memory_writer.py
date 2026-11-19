@@ -40,6 +40,7 @@ def connect_private_writer(runtime):
             return {"error": "子任务引用的材料不在本次委派内"}
         materials = {key: evidence[key] for key in args.sources}
         granted = {row["id"]: citation(row) for row in rows}
+        model_notes = {identity: {k: item[k] for k in ("id", "note", "source_key")} for identity, item in granted.items()}
         tools = [{"type": "function", "name": name, "description": description,
                   "parameters": model.model_json_schema()} for name, description, model in (
             ("memory_search", "在当前私有任务获准的记忆中查找原话。", Search),
@@ -66,11 +67,10 @@ def connect_private_writer(runtime):
                 remaining -= len(turn.calls)
                 for call in turn.calls:
                     if call.name == "memory_get":
-                        output = granted.get(Get.model_validate(call.arguments).id, {"error": "该条目不在本次授权内"})
+                        output = model_notes.get(Get.model_validate(call.arguments).id, {"error": "该条目不在本次授权内"})
                     elif call.name == "memory_search":
                         query = Search.model_validate(call.arguments).query
-                        output = [item for item in granted.values() if any(
-                            query in item[key] for key in ("headline", "note", "quote", "source_key"))]
+                        output = [item for item in model_notes.values() if query in item["note"] or query in item["source_key"]]
                     elif call.name == "memory_propose":
                         suggestion = SourceQuote.model_validate(call.arguments)
                         quote = suggestion.quote
@@ -93,8 +93,7 @@ def connect_private_writer(runtime):
             return {"error": str(error)}
         if not turn.text.strip():
             return {"error": "私有写作没有返回正文"}
-        message = ("本次私有写作参考：" + "；".join(
-            f"{item['note']}（{item['source_key']}，v{item['revision']}）" for item in granted.values())) if granted else ""
+        message = "本次私有写作已参考当前偏好。" if granted else ""
         if proposals:
             message += "\n待确认的记忆建议：" + "；".join(item["quote"] for item in proposals)
         return {"draft": turn.text, "sources": args.sources, "response_id": turn.id, "message": message,

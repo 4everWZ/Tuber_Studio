@@ -78,7 +78,7 @@ def test_memory_summary_ask_and_correct_existing_note(settings):
         assert updated["status"] == "updated"
         assert updated["item"]["id"] == item["id"]
         assert updated["item"]["anecdote"] == "以后运营汇报先讲风险"
-        assert updated["item"]["quote"] == source_text
+        assert updated["item"]["quote"] == "以后运营汇报先讲风险"
         edit = f"{path}/organized/{item['id']}?scope={token}"
         assert client.patch(edit + f"&revision={item['updated_at']}", json={"note": "过期更正"}).status_code == 412
         discovery.remember_account("200")
@@ -276,13 +276,15 @@ async def test_queued_private_chat_correction_preserves_both_turns_and_versions(
             assert await organizer.run_once() == 0
             scope = organizer.scope()
             latest, = runtime.daily_memory.organized(scope)
-            versions = runtime.daily_memory.revisions(scope, latest["id"])
-            assert {(v["revision"], v["source_key"], v["note"]) for v in versions} == {
-                (n, "turn:" + rid, text) for n, (rid, text) in enumerate(turns, 1)
-            }
+            assert latest["revision"] == 2
+            assert runtime.store.all("SELECT source_key,quote FROM memory_sources WHERE item_id=? ORDER BY rowid",
+                                     (latest["id"],)) == [{"source_key": "turn:" + rid, "quote": text} for rid, text in turns]
             for rid, quote in turns:
                 source = "turn:" + rid
                 response = await client.post("/api/agent/memory.get", json={"id": latest["id"], "source_key": source})
+                if rid != turns[-1][0]:
+                    assert response.status_code == 404
+                    continue
                 item = response.raise_for_status().json()
                 assert (item["revision"], item["source_key"], item["quote"], item["note"]) == (
                     2, source, quote, turns[-1][1])
@@ -364,7 +366,8 @@ async def test_organization_cannot_create_memory_from_assistant_output(settings)
         assert false_inference not in json.dumps(saved, ensure_ascii=False)
         corrected = runtime.daily_memory.change_organized(scope, saved["id"], note="以后优先汇报风险。")
         assert corrected["anecdote"] == "以后优先汇报风险。"
-        assert corrected["quote"] == owner_statement
+        assert corrected["quote"] == corrected["anecdote"]
+        assert corrected["source"]["key"].startswith("settings:edit:")
         previous = {"key": "turn:earlier", "kind": "private", "text": "以后先汇报视频。", "at": saved["source"]["at"]}
         proposed = MemorySuggestion(action="update", existing_id=saved["id"], headline=saved["headline"],
                                     note=previous["text"], tags=["汇报"])
@@ -419,7 +422,7 @@ async def test_shared_memory_keeps_owner_correction_after_two_client_restart(set
         assert "event: done" in response.raise_for_status().text
         return request_id
 
-    async def assert_transcript_is_not_recall(client, runtime, turn, scope_token):
+    async def assert_transcript_is_not_recall(client, runtime, turn, scope_token, *, corrected=False):
         history = (await client.get(chat_path)).raise_for_status().json()["turns"]
         assert any(item["request_id"] == turn and item["reply_text"] == false_reply for item in history)
         asked = await client.post(memory_path + "/summary", json={"scope": scope_token, "action": "ask", "text": false_query})
@@ -428,7 +431,7 @@ async def test_shared_memory_keeps_owner_correction_after_two_client_restart(set
         memory_scope = "operator:" + json.dumps(["100", character["id"]], separators=(",", ":"))
         entry = runtime.store.one("SELECT facts,kind FROM grounded_memory WHERE event_id=? AND role='assistant'",
                                   (f"operator:{turn}",))
-        assert entry == {"facts": "[]", "kind": "operator_private"}
+        assert entry == (None if corrected else {"facts": "[]", "kind": "operator_private"})
         assert false_reply not in str(runtime.context.memory.retrieve(memory_scope, character, false_query)["evidence"])
 
     app, runtime = new_app()
@@ -451,7 +454,7 @@ async def test_shared_memory_keeps_owner_correction_after_two_client_restart(set
         await send(second, pending)
         change = {"scope": token, "action": "update", "text": "把「运营汇报」改成" + correction}
         updated = (await first.post(memory_path + "/summary", json=change)).raise_for_status().json()["item"]
-        assert (updated["id"], updated["anecdote"], updated["quote"]) == (note["id"], correction, initial)
+        assert (updated["id"], updated["anecdote"], updated["quote"]) == (note["id"], correction, correction)
         stale_path = f"{memory_path}/organized/{note['id']}"
         stale = await second.patch(stale_path, params={"scope": token, "revision": note["updated_at"]},
                                    json={"note": pending})
@@ -468,7 +471,7 @@ async def test_shared_memory_keeps_owner_correction_after_two_client_restart(set
             report = (await client.get(memory_path)).raise_for_status().json()
             assert report["organized"] == [updated]
             assert report["summary"][0]["notes"] == [{"id": note["id"], "text": correction, "visibility": "owner"}]
-        await assert_transcript_is_not_recall(second, runtime, initial_turn, token)
+        await assert_transcript_is_not_recall(second, runtime, initial_turn, token, corrected=True)
 
 
 async def test_bound_collaboration_preference_can_be_corrected_across_bindings(settings, monkeypatch):

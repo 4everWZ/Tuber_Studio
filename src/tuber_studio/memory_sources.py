@@ -41,6 +41,10 @@ def original_turn(db, character, key):
     ).fetchone()
 
 
+def edited_source_key(item_id, timestamp):
+    return f"settings:edit:{item_id}:{timestamp}"
+
+
 @contextmanager
 def memory_transaction(db):
     """Commit standalone calls and preserve the caller's transaction when nested."""
@@ -59,25 +63,31 @@ def migrate(service):
     with memory_transaction(db):
         if not has_table(db, "memory_sources"):
             _install(service)
-        if not has_table(db, "memory_revisions"):
-            _install_revisions(db)
-
-
-def _install_revisions(db):
-    db.execute("""CREATE TABLE memory_revisions(
-        item_id INTEGER NOT NULL REFERENCES daily_highlights(id) ON DELETE CASCADE,
-        revision INTEGER NOT NULL,updated_at REAL NOT NULL,headline TEXT NOT NULL,note TEXT NOT NULL,
-        source_key TEXT NOT NULL,status TEXT NOT NULL,owner_only INTEGER NOT NULL,
-        PRIMARY KEY(item_id,revision))""")
-    snapshot = """SELECT id,revision,updated_at,headline,anecdote,
-        json_extract(source_evidence,'$.memory_source.key'),status,
-        coalesce(json_extract(source_evidence,'$.owner_only'),0)
-        FROM daily_highlights WHERE CASE WHEN json_valid(source_evidence)
-        THEN json_extract(source_evidence,'$.memory_source.key') IS NOT NULL END"""
-    db.execute("INSERT INTO memory_revisions " + snapshot)
-    for action, name in [("INSERT", "insert"), ("UPDATE OF revision", "update")]:
-        db.execute(f"CREATE TRIGGER memory_revision_{name} AFTER {action} ON daily_highlights "
-                   "BEGIN INSERT INTO memory_revisions " + snapshot + " AND id=NEW.id; END")
+        # Leave pre-existing snapshots offline. Only the current row advances its stamp.
+        db.execute("DROP TRIGGER IF EXISTS memory_revision_insert")
+        db.execute("DROP TRIGGER IF EXISTS memory_revision_update")
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name='superseded_private_turns'").fetchone():
+            # Older management edits retained the original source pointer. Index
+            # the recorded edit as its own source without rewriting either record.
+            edits = db.execute("""SELECT id,anecdote,character_id,character_version,
+                json_extract(source_evidence,'$.operation_account_id'),json_extract(source_evidence,'$.owner_edit_at')
+                FROM daily_highlights WHERE CASE WHEN json_valid(source_evidence) THEN
+                    json_extract(source_evidence,'$.memory_kind')='private' AND
+                    json_type(source_evidence,'$.operation_account_id')='text' AND
+                    json_type(source_evidence,'$.owner_edit_at') IN ('integer','real') AND
+                    json_extract(source_evidence,'$.owner_edit_at')>json_extract(source_evidence,'$.memory_source.at') END""")
+            for item, note, character, version, account, at in edits:
+                record_source(db, item, (account, character, version), edited_source_key(item, at), note)
+            db.execute("""CREATE VIEW superseded_private_turns AS
+                SELECT s.item_id,s.account,s.character,s.version,s.source_key FROM memory_sources s
+                JOIN daily_highlights h ON h.id=s.item_id WHERE s.source_key LIKE 'turn:%'
+                AND json_extract(h.source_evidence,'$.memory_kind')='private'
+                AND (s.source_key != json_extract(h.source_evidence,'$.memory_source.key')
+                     OR json_extract(h.source_evidence,'$.owner_edit_at') >
+                        json_extract(h.source_evidence,'$.memory_source.at'))""")
+            for row in db.execute("SELECT account,character,version,source_key FROM superseded_private_turns"):
+                invalidate_turn(db, tuple(row[:3]), row[3])
+            invalidate_outdated_reads(db)
 
 
 def _install(service):
@@ -139,19 +149,36 @@ def _install(service):
             invalidate_turn(db, (turn["account"], row["character"], turn["character_version"]), row["source"])
 
 
+def invalidate_outdated_reads(db, item_id=None):
+    if not has_table(db, "operator_chat_turns"):
+        return
+    # A reply may depend on a note without being the note's original turn. The
+    # transcript is historical; invalidate only context derived from that turn.
+    rows = db.execute("""
+        SELECT DISTINCT json_extract(t.result,'$.account_id'),t.character_id,t.character_version,t.request_id
+        FROM operator_chat_turns t JOIN json_each(t.result,'$.organized_memory.organized_memory') r
+        JOIN daily_highlights h ON h.id=json_extract(r.value,'$.id') AND h.character_id=t.character_id
+        WHERE json_extract(h.source_evidence,'$.memory_kind')='private' AND
+          ((? IS NOT NULL AND h.id=?) OR (? IS NULL AND
+            (h.updated_at!=json_extract(r.value,'$.updated_at') OR h.revision!=json_extract(r.value,'$.revision'))))
+    """, (item_id, item_id, item_id))
+    for account, character, version, request in rows:
+        invalidate_turn(db, (account, character, version), "turn:" + request)
+
+
 def invalidate_turn(db, scope, key):
     if not key.startswith("turn:"):
         return
     account, character, version = scope
     mode = "operator:" + dump([account, character])
     if has_table(db, "grounded_memory"):
-        db.execute("DELETE FROM grounded_memory WHERE scope=? AND character_id=? AND character_version=? AND event_id=?",
-                   (mode, character, version, "operator:" + key[5:]))
+        db.execute("DELETE FROM grounded_memory WHERE scope IN (?,?) AND character_id=? AND character_version=? AND event_id=?",
+                   (mode, "operator:" + character, character, version, "operator:" + key[5:]))
     if has_table(db, "context_windows"):
         # A compacted window can depend on a turn without retaining its literal text.
         # The window's delete trigger also removes its archived histories.
-        db.execute("DELETE FROM context_windows WHERE mode=? AND character_id=? AND character_version=?",
-                   (mode, character, version))
+        db.execute("DELETE FROM context_windows WHERE mode IN (?,?) AND character_id=? AND character_version=?",
+                   (mode, "operator:" + character, character, version))
 
 
 def install_chat_cleanup(db):

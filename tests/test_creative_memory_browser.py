@@ -384,11 +384,13 @@ async def test_chat_memory_migration_in_chromium(settings, monkeypatch):
             "memory_citations": [cited], "steps": [{"revision": 1, "result": {"memory_citations": [cited],
                 "memory_proposals": [{"source_id": "fixture:0", "quote": old_quote}]}}]}
     character = runtime.character
+    created_at = time.time() - 2
     for message, extra in (("聊聊上次的提纲", {"memory_citations": [cited]}),
                            ("整理上次的提纲", {"card": {"type": "agent_task", "data": task}})):
         saved = {"account_id": "", "private": True, "reply_text": "看过上次的开场了。", **extra}
         runtime.store.execute("INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)",
-                              (str(uuid4()), character["id"], character["version"], message, json.dumps(saved), time.time()))
+                              (str(uuid4()), character["id"], character["version"], message, json.dumps(saved), created_at))
+        created_at += 1
 
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -471,7 +473,7 @@ async def test_chat_memory_migration_in_chromium(settings, monkeypatch):
                     confirmed = await scenario.api(page, "POST", "/api/agent/memory/confirm",
                                                    body | {"stamp": preview["stamp"]})
                     voice = await scenario.api(page, "POST", "/api/agent/memory.get", {"id": confirmed["id"]})
-                    scenario.report.update(citation_surface="settings", corrected=voice, r2_api=[layout, voice],
+                    scenario.report.update(citation_surface="settings_current", corrected=voice, r2_api=[layout, voice],
                                            voice={"bound_final_transcript": machine, "owner_confirmed_text": quote})
                     await scenario.inspect_settings(page, [layout, voice], "r2")
                     assert scenario.report["r2_voice_source_visible"] == f"机器转写：{machine}\n号主确认：{quote}"

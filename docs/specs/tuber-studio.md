@@ -22,7 +22,8 @@ Web 工作台与常驻 Agent 独立运行，按配置消费 [Omni 与 Avatar API
 | --- | --- |
 | [跨主机运行与数据归属](foundation/distributed-runtime.md) | 业务与推理职责、唯一业务写入权、迁移与恢复。 |
 | [常驻 Agent](foundation/agent-runtime.md) | 跨端入口、通用工具、后台计划、任务与检查点、审批／接管、活动与交付。 |
-| [角色、记忆与运行时数据](foundation/runtime-and-characters.md) | CHAR、MEM 的身份／关系语义、OC、共享数据及记忆权限。 |
+| [角色与运行时数据](foundation/runtime-and-characters.md) | CHAR、OC、共享数据及留存。 |
+| [记忆、关系与来源](foundation/memory.md) | MEM 的身份、关系、跨端记忆及更正权限。 |
 | [上下文与压缩](foundation/context-and-compaction.md) | 会话窗口、实际容量核验、压缩与恢复。 |
 | [模型、声音与资源](foundation/models-and-audio.md) | AUDIO、Provider、说话与演唱能力、声音身份与缓存、服务能力与调用配额。 |
 | [Omni 与 Avatar API 接入](foundation/omni-deployment.md) | 服务发现、实时与通用推理、Avatar 会话和音画、业务接入验收。 |
@@ -101,7 +102,7 @@ Chats 以 Dots 的布局和交互为直接参考，可重做页面实现。打�
 
 客户端通过 SSE 和状态快照区分准备、模型等待、回复、工具执行和任务状态。支持原生文本流，依赖可撤销记忆的内容在复核后交付，兼容 JSON 入口沿同一业务语义。回复用可解析的 Markdown，原评、时码和回执可展开。引用按实际展示顺序保存，刷新后仍可回查。B 站字幕勘误按视频、分 P 和原片段绑定，来源保留平台原文。
 
-号主可直接记录或更正有来源的经历。公开分享、直播交接、暂停及删除由对应控件反映实际状态。 [记忆摘要与控制](foundation/runtime-and-characters.md#号主可查看的记忆)
+号主可直接记录或更正有来源的经历。公开分享、直播交接、暂停及删除由对应控件反映实际状态。 [记忆摘要与控制](foundation/memory.md#号主可查看的记忆)
 
 对话卡引用实际动态草稿、视频任务、运营和直播状态，按后端状态刷新。运营卡查看与修改共用授权并启动或收尾。自然语言请求开启直播时，确认后调用现有直播工作台的会话入口。启动与授权确认绑定账号、角色和策略，状态变化后需重新确认。明确的只读视频任务直接入队，取消后可续跑，同一请求重试复用原任务。动态须经卡片或现有工作台提交并显示实际回执。
 

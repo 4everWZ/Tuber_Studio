@@ -93,6 +93,7 @@ async function test(browser, origin, mode) {
   const statement = "开场素材请选海底厨房。";
   page.on("dialog", async dialog => {
     assert.ok([statement, voiceNote].some(text => dialog.message().includes(text)));
+    assert.doesNotMatch(dialog.message(), /（v\d+）/);
     await dialog.accept();
   });
   await waitForWorkspace(page.locator("#owner-memory-statement"));
@@ -187,7 +188,13 @@ async function test(browser, origin, mode) {
   }
   if (correction) {
     const selector = page.getByLabel("更正本次引用的偏好");
-    await selector.selectOption(String(originalRow.id));
+    const option = selector.locator(`option[value="${originalRow.id}"]`);
+    assert.equal(await option.textContent(), originalRow.note);
+    if (await selector.locator("option").count() === 1) {
+      assert.equal(await selector.inputValue(), String(originalRow.id));
+    } else {
+      await selector.selectOption({label: originalRow.note});
+    }
     const updated = page.waitForResponse(r => r.url().endsWith("/api/agent/memory/confirm") && r.ok());
     await page.getByRole("button", {name: "确认用这句话更正"}).click();
     assert.deepEqual(await (await updated).json(), {id:originalRow.id, revision:originalRow.revision+1});

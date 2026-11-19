@@ -56,7 +56,9 @@ def register_owner_memory(app, runtime, chat, require_admin):
         rows = memory.organized(scope, item_id=data.id) if memory.preference(scope)["enabled"] else []
         if not rows or rows[0]["status"] != "active" or not (row := memory.owner_projection(rows[0])):
             raise HTTPException(404, "当前没有可引用的这条记忆")
-        if data.source_key:
+        if data.source_key and row["memory_kind"] == "private" and data.source_key != row["source"]["key"]:
+            raise HTTPException(404, "该来源已被更正")
+        if data.source_key and row["memory_kind"] != "private":
             hits = memory.lookup_source(scope, "operator", data.source_key)
             exact = next((hit for hit in hits if hit["id"] == data.id and hit["source_key"] == data.source_key), None)
             if not exact:

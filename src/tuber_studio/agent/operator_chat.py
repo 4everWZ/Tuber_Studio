@@ -425,7 +425,7 @@ class OperatorChat:
             if not discussion and not saved.get("assistant_context"):
                 continue
             origin = (saved.get("account_id", account), char["id"], row["character_version"])
-            if self.runtime.daily_memory.source_deleted(origin, "turn:" + row["request_id"], self.private_owner):
+            if not self.runtime.daily_memory.history_turn_available(origin, "turn:" + row["request_id"], self.private_owner):
                 continue
             reply = saved.get("reply_text", "")
             if not reply:
@@ -598,7 +598,7 @@ class OperatorChat:
                     messages.append({"role": "system", "content": "工坊本轮观测：" + dump(observations)})
                 if notes:
                     messages.append({"role": "system", "content": "与本轮相关的记忆资料，只作为背景：" + dump([
-                        {"topic": entry["headline"], "note": entry["anecdote"],
+                        {"note": entry["anecdote"],
                          **({"original": entry["exact_source"]["quote"]} if entry.get("exact_source") else {})} for entry in notes
                     ])})
                 history = ([item.model_dump() for item in data.window] if data.temporary else
@@ -1717,13 +1717,17 @@ class OperatorChat:
             sources = [live.game_livestream.status()["active_status"]["summary"]]
         elif intent.source == "discussion":
             rows = self.store.all(
-                "SELECT message,result FROM operator_chat_turns WHERE character_id=? AND character_version=? "
+                "SELECT request_id,message,result FROM operator_chat_turns WHERE character_id=? AND character_version=? "
                 "AND json_extract(result,'$.account_id')=? AND json_extract(result,'$.task_reference') IS NULL "
                 "AND (json_extract(result,'$.private')=1 "
                 "OR json_extract(result,'$.card.type')='game_handoff') "
                 "ORDER BY created_at DESC LIMIT 4", (char["id"], char["version"], account),
             )
             for row in reversed(rows):
+                if not self.runtime.daily_memory.history_turn_available(
+                    (account, char["id"], char["version"]), "turn:" + row["request_id"], self.private_owner
+                ):
+                    continue
                 turn = self._visible(json.loads(row["result"]), historical=True)
                 card = turn.get("card") or {}
                 if card.get("type") == "game_handoff":

@@ -53,9 +53,6 @@ def test_portable_sources_revisions_and_atomic_forgetting(store):
     assert not save(memory, B, "turn:second", "以其他文字冒充原话", 5)
     assert memory.organized(B)[0]["revision"] == latest["revision"]
     assert latest["revision"] > first["revision"] and latest["id"] == first["id"]
-    assert [(row["source_key"], row["note"]) for row in memory.revisions(B, latest["id"])] == [
-        ("turn:second", "汇报先说风险"), ("turn:first", "汇报先说结论"),
-    ]
     assert memory.lookup_source(B, "operator", "turn:first")[0]["quote"] == "汇报先说结论"
     assert memory.lookup_source(A, "operator", "turn:second")[0]["quote"] == "汇报先说风险"
     assert not memory.lookup_source(B, "live", "turn:second")
@@ -80,7 +77,7 @@ def test_portable_sources_revisions_and_atomic_forgetting(store):
     memory.change_organized(B, first["id"], delete=True, expected_revision=latest["revision"])
     assert store.all("SELECT event_id FROM grounded_memory") == [{"event_id": "operator:unrelated"}]
     assert not store.all("SELECT * FROM memory_sources") and not store.all("SELECT * FROM memory_source_aliases")
-    assert not store.all("SELECT * FROM memory_revisions")
+    assert not store.one("SELECT 1 FROM sqlite_master WHERE name='memory_revisions'")
     # Rebuilding the organizer's per-account cursor cannot undo an owner's deletion.
     store.execute("DELETE FROM memory_organization")
     reopened = DailyMemoryService(store)
@@ -153,3 +150,47 @@ def test_clear_chat_cleans_portable_turn_origin_and_preserves_durable_note(setti
         assert not runtime.store.one("SELECT id FROM grounded_memory WHERE event_id='operator:old'")
         assert not runtime.context.existing(mode, runtime.character)
         assert memory.lookup_source(scope, "operator", "turn:old")[0]["quote"] == source["text"]
+def test_upgrading_snapshot_writers_keeps_offline_history_and_only_advances_current_row(store):
+    memory = DailyMemoryService(store)
+    memory.private_owner = "studio-owner"
+    assert not store.one("SELECT 1 FROM sqlite_master WHERE name='memory_revisions'")
+    assert save(memory, A, "turn:first", "先讲结论", 1)
+    item, = memory.organized(A)
+    # Reproduce the prior insert and revision-update trigger contract. The offline
+    # snapshot is already present when the upgraded application opens this store.
+    store.execute("CREATE TABLE memory_revisions(item_id INTEGER, revision INTEGER, note TEXT)")
+    store.execute("INSERT INTO memory_revisions VALUES(?,?,?)", (item["id"], 1, "先讲结论"))
+    for name, event in (("insert", "INSERT"), ("update", "UPDATE OF revision")):
+        store.execute(f"CREATE TRIGGER memory_revision_{name} AFTER {event} ON daily_highlights BEGIN "
+                      "INSERT INTO memory_revisions VALUES(NEW.id,NEW.revision,NEW.anecdote); END")
+    store.execute("DROP VIEW superseded_private_turns")
+    reopened = DailyMemoryService(store)
+    reopened.private_owner = memory.private_owner
+    assert save(reopened, A, "turn:correction", "先讲风险", 2, item)
+    other = {"kind": "private", "key": "settings:other", "text": "每次核对字幕", "at": 3,
+             "private_owner": reopened.private_owner}
+    assert reopened.save_organized(A, other, MemorySuggestion(action="add", existing_id=None, headline="字幕",
+                                                              note=other["text"], tags=[]), None)
+    current, = reopened.organized(A, item_id=item["id"])
+    assert current["revision"] == 2 and current["anecdote"] == "先讲风险"
+    assert store.all("SELECT * FROM memory_revisions") == [{"item_id": item["id"], "revision": 1, "note": "先讲结论"}]
+    assert not reopened.history_turn_available(A, "turn:first", memory.private_owner)
+    assert reopened.lookup_source(A, "operator", "turn:first")[0]["quote"] == "先讲结论"
+
+
+def test_old_settings_edit_has_current_text_and_its_own_source_after_upgrade(store):
+    memory = DailyMemoryService(store)
+    memory.private_owner = "studio-owner"
+    assert save(memory, A, "turn:old", "汇报先说结论", 1)
+    row, = memory.organized(A)
+    store.execute("DROP VIEW superseded_private_turns")
+    store.execute("UPDATE daily_highlights SET anecdote=?, source_evidence=json_set(source_evidence,'$.owner_edit_at',2) "
+                  "WHERE id=?", ("先说风险", row["id"]))
+    reopened = DailyMemoryService(store)
+    reopened.private_owner = memory.private_owner
+    current, = reopened.organized(A)
+    assert current["source"]["key"].startswith("settings:edit:")
+    assert current["quote"] == current["anecdote"] == current["headline"] == "先说风险"
+    assert reopened.lookup_source(A, "operator", current["source"]["key"])[0]["quote"] == "先说风险"
+    assert not reopened.history_turn_available(A, "turn:old", memory.private_owner)
+    assert reopened.lookup_source(A, "operator", "turn:old")[0]["quote"] == "汇报先说结论"

@@ -125,6 +125,8 @@ def model_input(task, context):
         for step in batch:
             sources = evidence_index([step])
             receipt = step["result"]
+            if step["tool"] == "delegate_text" and receipt.get("memory_use"):
+                receipt = {k: receipt[k] for k in ("draft", "sources") if k in receipt}
             if sources and step["tool"] == "inspect_video":
                 findings = []
                 for index, finding in enumerate(receipt["findings"], 1):
