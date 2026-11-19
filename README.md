@@ -6,6 +6,10 @@ Tuber Studio is a self-hosted creative partner for a channel owner. Ask Da-Fei-Y
 
 ![Da-Fei-Yu chat pet](assets/whale/talking.gif)
 
+> “Help me prep for my next stream. Watch part two of this video and pick two clips I could open with. Include timestamps and sources, and keep the brief private.”
+
+This is a typical Studio assignment. Da-Fei-Yu can research in the background while you keep chatting. Come back on another device, open the private brief and play the excerpts to decide what fits your audience. Comments, direct messages and feed posts each have their own publishing permissions.
+
 ## What you can do
 
 - **Prepare a private brief.** Research a particular video part and its public sources. Open the result from chat, play saved excerpts, review older editions or continue from another device. [Operator guide](docs/guides/operations.md)
