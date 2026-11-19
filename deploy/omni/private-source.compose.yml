@@ -1,0 +1,12 @@
+services:
+  tuber-core:
+    environment:
+      TUBER_PRIVATE_SOURCE_MANIFEST: /run/studio-source/manifest.json
+      TUBER_PRIVATE_SOURCE_URL: ${TUBER_PRIVATE_SOURCE_URL:?set the original video part URL}
+    volumes:
+      - type: bind
+        source: ${TUBER_PRIVATE_SOURCE_DIR:?set the workstation source package directory}
+        target: /run/studio-source
+        read_only: true
+        bind:
+          create_host_path: false
