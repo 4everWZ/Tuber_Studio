@@ -8,12 +8,9 @@ import json
 import math
 import re
 import time
-import wave
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
-
-import httpx
 
 from ...api_providers import validate_image
 from ...generation_meter import BrowsingBudgetDeferred
@@ -21,7 +18,6 @@ from ...media_cache import linked
 from ...platforms.bilibili_browsing import CREDIT
 from ...providers import public_error
 from ...video_vision import VideoPartText
-from .clip_transcription import PublicClipTranscription
 from .models import DisabledVideoEvidence, browsing_filter_reason
 from .round_context import read_round
 
@@ -93,7 +89,6 @@ class BrowsingEvidence:
         if linked(self.directory):
             raise ValueError("浏览缓存目录不能使用链接")
         self.directory.mkdir(exist_ok=True)
-        self.asr = PublicClipTranscription(runtime.settings)
         self.store.execute("CREATE TABLE IF NOT EXISTS browsing_stream_frames (material_id TEXT PRIMARY KEY,bvid TEXT NOT NULL,"
                            "cid TEXT NOT NULL,version TEXT NOT NULL,provider TEXT NOT NULL,start REAL NOT NULL,end REAL NOT NULL) "
                            "WITHOUT ROWID")
@@ -220,9 +215,6 @@ class BrowsingEvidence:
     def has_visual_provider(self):
         return bool(self.visual.capabilities().get("images"))
 
-    def requires_asr_read(self, material):
-        return any(part.get("asr") for part in material["parts"]) or (self.asr.enabled and bool(material.get("missing_parts")))
-
     def visual_batch_size(self):
         capabilities = self.visual.capabilities()
         maximum = capabilities.get("max_frames")
@@ -282,10 +274,6 @@ class BrowsingEvidence:
                 try:
                     material = self.load(row["id"])
                     if material["languages"] == config["languages"]:
-                        if self.requires_asr_read(material):
-                            if newest_text is None:
-                                break  # Re-read local clips by their current content.
-                            continue
                         text_version = (self.source_version(material | {"parts": [
                             p for p in material["parts"] if not p.get("visual")
                         ]}), VideoPartText.video_fields(material["metadata"]))
@@ -383,18 +371,6 @@ class BrowsingEvidence:
                 kind = getattr(error, "kind", "invalid")
                 missing.append({"cid": part["cid"], "reason": kind})
                 subtitle_error = subtitle_error or public_error(error)
-        have_cc = bool(parts)
-        if missing and self.asr.enabled:
-            missing_cid = str(missing[0]["cid"])
-            part = next(item for item in metadata["parts"] if str(item["cid"]) == missing_cid)
-            try:
-                transcription = await self.asr.transcribe(metadata, part, deadline=deadline)
-                if transcription:
-                    parts.append(transcription)
-                    missing[0]["asr"] = "sampled_audio"
-            except (ValueError, OSError, TimeoutError, wave.Error, EOFError, httpx.HTTPError) as error:
-                missing[0]["asr"] = "unavailable"
-                missing[0]["asr_error"] = public_error(error)
         sampling = config.get("frame_sampling", "baseline")
         material = {
             "metadata": metadata,
@@ -402,7 +378,7 @@ class BrowsingEvidence:
             "missing_parts": missing,
             "languages": config["languages"],
             "fetched_at": time.time(),
-            "coverage": "sampled_audio" if parts and not have_cc else "partial" if missing else "all_available_cc",
+            "coverage": "partial" if missing else "all_available_cc",
         }
         visual_failure = None
         if self.has_visual_provider() and (missing or visual_requests):

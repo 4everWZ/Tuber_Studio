@@ -99,30 +99,6 @@ async def test_precise_cache_is_scoped_to_part_text_and_reuses_another_parts_edi
     assert "新UP" in last and "更正识别" in last and "本地识别" not in last
 
 
-async def test_browsing_uses_available_timed_asr_when_cc_is_missing(provider, evidence_factory, config):
-    vision, state = provider
-    state["result"]["used_frames"] = [1]
-    adapter = PublicAdapter()
-    adapter.failures["456"] = "no_subtitles"
-    adapter.frames = [FRAMES[0] | {"cid": "456"}]
-    service = evidence_factory(adapter, vision)
-    calls = []
-
-    async def transcribe(metadata, part, *, deadline):
-        calls.append(part["cid"])
-        return {"bvid": metadata["bvid"], "cid": part["cid"], "asr": True,
-                "segments": [{"id": "456:asr:1", "start": 9, "end": 11, "text": "可用音轨"}]}
-
-    service.asr = SimpleNamespace(enabled=True, transcribe=transcribe)
-    _, watched = await service.prepare(BV, config, visual_source_ids=["456:asr:1"])
-    assert calls == ["456"] and watched["parts"][-1]["visual"]
-    assert len(messages(state)) == 2
-    for item in messages(state):
-        value = json.dumps(item, ensure_ascii=False)
-        assert value.count("音频转写") == value.count("可用音轨") == 1
-        assert "章鱼有三个心脏" not in value
-
-
 async def test_fresh_metadata_prevents_reuse_of_older_visual_followup(provider, evidence_factory, config):
     vision, state = provider
     state["result"]["used_frames"] = [1]

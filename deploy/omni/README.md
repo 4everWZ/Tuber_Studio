@@ -1,6 +1,6 @@
 # Tuber Studio Omni 业务部署
 
-Tuber Studio 消费已部署的 Omni 推理和 Avatar 服务。业务启动需要服务地址、模型别名及对应凭据。可选节目另需 Avatar 会话和观看入口。引擎、渲染器和媒体服务由各自部署方维护。 [独立推理部署仓库](https://github.com/4everWZ/omni-avatar-api)
+Tuber Studio 连接独立推理网关。Omni 处理前台对话、电话和实时播报。后台 Qwen 处理运营、长上下文交办、抽帧与记忆整理。Core 管业务数据、授权和工具结果。 [独立推理部署仓库](https://github.com/4everWZ/omni-avatar-api)
 
 本仓库的示例 Compose 加入名为 `tuber-omni` 的外部 Docker 网络，可用 `TUBER_OMNI_NETWORK` 指定已创建的网络。示例使用 `omni-gateway:8000` 和默认别名 `omni-default`。Core 的 9020 默认发布到宿主机回环地址，同网络代理可访问 `http://tuber-core:9020`。Core 共用一组 Omni 网关地址与凭据。示例注入的 Core 网关令牌仅用于预设网关地址。 [配置入口](../../docs/guides/deployment.md#连接验证)
 
@@ -18,7 +18,7 @@ docker compose -f deploy/omni/app-compose.yml up -d --build --wait tuber-core
 curl --fail http://127.0.0.1:9020/healthz
 ```
 
-通过 `OMNI_GATEWAY_URL` 指定服务根地址（不带 `/v1`）。Omni 前台使用 `OMNI_MODEL_ALIAS`，后台使用 `OMNI_LLM_MODEL_ALIAS`。工作站与 Core 在不同机器时使用 Core 可达的工作站地址；不需要在 Core 安装引擎。用应用凭据验证 Chat、模型卡实报窗口、真实图文输入和后台 `/llm/v1/responses` 函数结果回传。只得到健康响应不代表 Agent 已接通。参考音色朗读使用同一 Omni 连接。 [能力与验收](../../docs/specs/foundation/omni-deployment.md#接入验收与切换)
+通过 `OMNI_GATEWAY_URL` 指定服务根地址（不带 `/v1`）。Omni 前台使用 `OMNI_MODEL_ALIAS`，后台使用 `OMNI_LLM_MODEL_ALIAS`。工作站与 Core 在不同机器时使用 Core 可达的工作站地址；不需要在 Core 安装引擎。用应用凭据验证 Chat、模型卡实报窗口、后台 `/llm/v1/responses` 真实图文输入与函数结果回传。只得到健康响应不代表 Agent 已接通。参考音色朗读使用同一 Omni 连接。 [能力与验收](../../docs/specs/foundation/omni-deployment.md#接入验收与切换)
 
 `core-data` 是 Core 独占的持久卷，保存、备份和迁移步骤沿用 [部署指南](../../docs/guides/deployment.md)。复用已有业务数据时须保有 `studio.json` 及权威写入者记录，`TUBER_CORE_HOSTNAME` 需和迁移时登记的目标一致。初次建卷读取部署的 Omni 连接。`TUBER_CORE_MODE=existing` 要求卷内已有配置。切换已存在的配置通过工作台及部署准入完成。
 

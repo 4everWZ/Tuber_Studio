@@ -340,10 +340,6 @@ class BrowsingDecisions:
                 guard()
                 tokens = None
                 with GenerationMeter(self.browsing.repo, row["id"]):
-                    if video_response and getattr(self.browsing.runtime.operation_llm, "generation_metered", False):
-                        generate_video = getattr(self.browsing.runtime.operation_llm, "generate_video_response", None)
-                        if generate_video is not None:
-                            return await generate_video(packet, wire_schema, max_tokens=output)
                     if not getattr(self.browsing.runtime.operation_llm, "generation_metered", False):
                         counted = (
                             self.browsing.runtime.operation_llm.prepare_json_messages(

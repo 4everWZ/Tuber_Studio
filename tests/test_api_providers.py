@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from tuber_studio.agent.operator_chat import OperatorChat
-from tuber_studio.api_providers import APIProvider, VisionService, create_llm
+from tuber_studio.api_providers import APIProvider, create_llm
 from tuber_studio.compaction import ContextWindowExceeded, IncompleteCompaction
 from tuber_studio.generation_meter import GenerationMeter
 from tuber_studio.operation_turns import OperationTurns, operation_ticket
@@ -341,23 +341,3 @@ async def test_incomplete_external_summary_and_missing_usage_are_rejected(settin
             await provider.count_tokens([{"role": "user", "content": "新输入"}])
     finally:
         await provider.close()
-
-
-@pytest.mark.asyncio
-async def test_omni_vision_accepts_only_inline_images(transport):
-    service = VisionService(
-        {
-            "base_url": "https://api.test/v1",
-            "model": "remote-model",
-        }
-    )
-    try:
-        with pytest.raises(ValueError, match="MIME"):
-            await service.describe("看图", b"file:///etc/passwd", "image/png")
-        await service.describe("看图", b"\x89PNG\r\n\x1a\nimage", "image/png")
-        request = transport[0][-1]
-        content = json.loads(request.content)["messages"][0]["content"]
-        assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
-        assert "x-tuber-inference-key" not in request.headers
-    finally:
-        await service.close()

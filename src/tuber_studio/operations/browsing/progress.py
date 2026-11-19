@@ -158,7 +158,6 @@ async def prepare_attempt(browsing, identity, row, semaphore, metrics, owner):
                 not browsing.evidence.has_visual_provider() or (
                     prior_material.get("languages") == row["config"]["languages"]
                     and prior_material.get("frame_sampling", "baseline") == row["config"].get("frame_sampling", "baseline")
-                    and not browsing.evidence.requires_asr_read(prior_material)
                     and browsing.evidence._current_visual(prior_material)
                 )
                 and not browsing.evidence.pending_visual_scan(prior_material)

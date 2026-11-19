@@ -76,7 +76,7 @@ async def test_private_writing_budget_on_the_counted_structured_request(owner, m
     async def editor(task, evidence):
         return PrivateDelivery(items=[], gaps=["待补资料"])
     monkeypatch.setattr(rt, "operation_llm", provider)
-    monkeypatch.setitem(rt.settings.data["omni"], "max_tokens", owner_limit)
+    monkeypatch.setitem(rt.settings.data["omni"]["responses_options"], "max_output_tokens", owner_limit)
     monkeypatch.setattr(rt.tasks, "edit_delivery", editor)
     connect_private_editor(rt)
     task = {"goal":NOTE, "steps":[{"tool":"owner_attachment"}], "plan":{}}

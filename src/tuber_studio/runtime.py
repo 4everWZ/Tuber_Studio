@@ -9,7 +9,7 @@ import psutil
 
 from .agent.memory_organizer import MemoryOrganizer
 from .agent_tools import build_default_tool_registry
-from .api_providers import VisionService, create_llm, create_operation_llm
+from .api_providers import create_llm, create_operation_llm
 from .context import ContextManager
 from .context_delivery import comment_scope
 from .daily_memory import DailyMemoryService, MemoryChanged
@@ -50,7 +50,6 @@ class Runtime:
         self.llm = create_llm(settings)
         self.operation_llm = create_operation_llm(settings)
         self.voices = VoiceService(settings)
-        self.vision = VisionService(settings.data["omni"], settings.provider_key("omni"))
         self.daily_memory = DailyMemoryService(store)
         self.memory_organizer = MemoryOrganizer(self)
         self.live = LiveSession(self, singing_provider=singing_provider, live_scene=live_scene)
@@ -232,7 +231,6 @@ class Runtime:
         await self.operation_llm.close()
         await self.live.media.singing.close()
         await self.voices.close()
-        await self.vision.close()
         self.daily_memory.update_active_timestamp()
 
     async def cleanup_retention(self, before=None, *, automatic=False):

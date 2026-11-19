@@ -45,7 +45,7 @@ def test_authenticated_single_connection_save_restart_and_clear(settings, monkey
         saved = client.put(url, headers=headers, json=body)
         assert saved.status_code == 200, saved.text
         runtime = app.state.runtime
-        for service in (runtime.llm, runtime.vision, runtime.voices):
+        for service in (runtime.llm, runtime.voices):
             assert service.client.headers["Authorization"] == "Bearer unit-key"
             assert str(service.client.base_url).rstrip("/") == body["omni"]["base_url"]
         for service in (runtime.operation_llm, runtime.browsing.visual_provider.api):
@@ -79,7 +79,7 @@ def test_authenticated_single_connection_save_restart_and_clear(settings, monkey
 async def test_failed_config_save_restores_files_and_runtime(runtime, monkeypatch):
     settings = runtime.settings
     await apply_settings(runtime, {"credentials": {"omni": "original-key"}})
-    before = settings.path.read_bytes(), settings.credentials_path.read_bytes(), runtime.llm, runtime.operation_llm, runtime.voices, runtime.vision
+    before = settings.path.read_bytes(), settings.credentials_path.read_bytes(), runtime.llm, runtime.operation_llm, runtime.voices
 
     from tuber_studio import config
     write = config.atomic_json
@@ -92,7 +92,7 @@ async def test_failed_config_save_restores_files_and_runtime(runtime, monkeypatc
     monkeypatch.setattr(config, "atomic_json", fail_public)
     with pytest.raises(OSError):
         await apply_settings(runtime, {"credentials": {"omni": "replacement-key"}})
-    assert before == (settings.path.read_bytes(), settings.credentials_path.read_bytes(), runtime.llm, runtime.operation_llm, runtime.voices, runtime.vision)
+    assert before == (settings.path.read_bytes(), settings.credentials_path.read_bytes(), runtime.llm, runtime.operation_llm, runtime.voices)
     assert settings.provider_key("omni") == "original-key"
 
 

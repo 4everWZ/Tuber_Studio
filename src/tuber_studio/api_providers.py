@@ -1,12 +1,10 @@
 """OpenAI-compatible text and reserved image transports, independent of local workers."""
 
 import asyncio
-import base64
 import hashlib
 import json
 import time
 from collections import OrderedDict
-from typing import Protocol
 
 from .compaction import ContextWindowExceeded, IncompleteCompaction
 from .deployment_profiles import operation_profile
@@ -362,11 +360,6 @@ class APIProvider:
     async def choose_front_effect(self, messages, schema, *, on_stage=None):
         return await self.generate_assistant_json(messages, schema, max_tokens=256, on_stage=on_stage)
 
-class VisionProvider(Protocol):
-    async def describe(self, prompt: str, image: bytes, mime_type: str) -> str: ...
-    async def close(self) -> None: ...
-
-
 def validate_image(image, mime_type):
     if not isinstance(image, bytes) or not 0 < len(image) <= 8_000_000:
         raise ValueError("图片须为非空字节，最大8MB")
@@ -381,66 +374,3 @@ def validate_image(image, mime_type):
     )
     if not valid:
         raise ValueError("仅接受与MIME匹配的PNG、JPEG或WebP字节；不接受URL或系统文件路径")
-
-
-class VisionService:
-    """Send bounded inline images to the configured Omni gateway."""
-
-    def __init__(self, config, api_key=None):
-        self.config = config
-        self.client = api_client(config, api_key)
-
-    async def close(self):
-        await self.client.aclose()
-
-    async def health(self):
-        return await models_health(self.client, self.config["model"])
-
-    async def describe(self, prompt, image, mime_type):
-        if not isinstance(prompt, str) or not 0 < len(prompt.strip()) <= 8000:
-            raise ValueError("图片问题须为1到8000字")
-        validate_image(image, mime_type)
-        data_url = f"data:{mime_type};base64," + base64.b64encode(image).decode("ascii")
-        content = [
-            {"type": "text", "text": prompt},
-            {"type": "image_url", "image_url": {"url": data_url}},
-        ]
-        if self.config.get("image_order") == "image_first":
-            content.reverse()
-        result = await response_json(
-            self.client,
-            "POST",
-            "chat/completions",
-            payload={
-                "model": self.config["model"],
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": content,
-                    }
-                ],
-                "max_tokens": self.config.get("max_tokens", 1024),
-                "stream": False,
-                **(
-                    {"chat_template_kwargs": {"enable_thinking": self.config["enable_thinking"]}}
-                    if "enable_thinking" in self.config
-                    else {}
-                ),
-                **{key: self.config[key] for key in ("temperature", "top_p", "top_k") if key in self.config},
-            },
-        )
-        choices = result.get("choices", [])
-        if (
-            not isinstance(choices, list)
-            or len(choices) != 1
-            or not isinstance(choices[0], dict)
-            or choices[0].get("finish_reason") != "stop"
-        ):
-            raise ValueError("视觉API未返回完整回答")
-        message = choices[0].get("message", {})
-        if not isinstance(message, dict):
-            raise ValueError("视觉API未返回有效文本")
-        content = message.get("content")
-        if not isinstance(content, str) or not content.strip() or message.get("tool_calls"):
-            raise ValueError("视觉API未返回有效文本")
-        return content

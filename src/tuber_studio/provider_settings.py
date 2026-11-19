@@ -3,7 +3,7 @@
 import asyncio
 import copy
 
-from .api_providers import VisionService, create_llm, create_operation_llm
+from .api_providers import create_llm, create_operation_llm
 from .config import validate_api_key
 from .deployment_profiles import omni_base
 from .providers import VoiceService
@@ -115,8 +115,6 @@ async def apply_settings(runtime, body):
             voices = VoiceService(staged)
             created.append(voices)
             voices.cache = runtime.cache
-            vision = VisionService(staged.data["omni"], staged.provider_key("omni"))
-            created.append(vision)
             if getattr(runtime, "browsing", None) and (
                 staged.video_config != settings.video_config or staged.provider_key("omni") != settings.provider_key("omni")
             ):
@@ -128,9 +126,9 @@ async def apply_settings(runtime, body):
         except BaseException:
             await _settle_cleanup(_close_clients(created))
             raise
-        old_clients = [runtime.llm, runtime.operation_llm, runtime.voices, runtime.vision]
+        old_clients = [runtime.llm, runtime.operation_llm, runtime.voices]
         settings.data, settings.provider_keys = data, staged.provider_keys
-        runtime.llm, runtime.voices, runtime.vision = llm, voices, vision
+        runtime.llm, runtime.voices = llm, voices
         runtime.context.provider = llm
         runtime.operation_llm = operation_llm
         runtime.error = None

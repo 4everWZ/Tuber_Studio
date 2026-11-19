@@ -164,7 +164,7 @@ class ResponsesClient:
         return (await self.create(**options)).raw
 
     async def create(self, input, *, tools=(), previous_response_id=None, instructions=None, max_output_tokens=None,
-                     tool_choice=None):
+                     tool_choice=None, store=True):
         budget = self.config.max_output_tokens if max_output_tokens is None else max_output_tokens
         if type(budget) is not int or budget <= 0:
             raise ValueError("Responses 输出额度须为正整数")
@@ -177,7 +177,7 @@ class ResponsesClient:
                 raise ValueError("Responses 工具名不能为空或重复")
             names.add(tool["name"])
         payload = {"model": self.config.model, "input": input, "tools": definitions,
-                   "max_output_tokens": budget, "store": True}
+                   "max_output_tokens": budget, "store": store}
         if previous_response_id is not None:
             payload["previous_response_id"] = previous_response_id
         if instructions is not None:

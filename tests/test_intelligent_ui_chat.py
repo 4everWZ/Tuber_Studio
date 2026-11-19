@@ -960,7 +960,6 @@ def test_specified_video_reuses_range_checkpoints_and_reconnects_under_same_id(s
             ]
 
     platform, vision = MultipartPlatform(), TestVisual()
-    monkeypatch.delenv("TUBER_TRANSCRIBE_PUBLIC_CLIPS", raising=False)
     app = create_app(settings, adapter=platform, video_evidence_factory=lambda runtime: vision)
     browsing = app.state.browsing
     browsing.read_interval = 0
@@ -1076,7 +1075,6 @@ def test_operator_video_to_live_uses_only_handoff_text_and_player_receipt(settin
     runtime, browsing = app.state.runtime, app.state.browsing
     browsing.read_interval = 0
     browsing.discovery.remember_account("100")
-    monkeypatch.delenv("TUBER_TRANSCRIBE_PUBLIC_CLIPS", raising=False)
     seen = []
     safe_text = "加盐会提高水的密度，让鸡蛋浮起来。"
     spoken = "结论是，加盐后鸡蛋就浮起来了。"
@@ -1241,7 +1239,6 @@ def test_specified_video_can_resume_when_previously_unavailable_subtitles_appear
         return await original(*args)
 
     monkeypatch.setattr(browsing.evidence, "subtitle_part", subtitles)
-    monkeypatch.delenv("TUBER_TRANSCRIBE_PUBLIC_CLIPS", raising=False)
     path, identity = "/api/chat/intelligent", str(uuid4())
     turn = f"{path}/turns/{identity}"
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
