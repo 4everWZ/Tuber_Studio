@@ -69,11 +69,22 @@ def test_json_upload_preserves_original_and_delete_never_removes_project_source(
         "source": {"kind": "user_upload", "author": "测试素材所有者"},
         "license": {"name": "本地测试"},
         "content_base64": base64.b64encode(content).decode(),
+        "import_id": "8453bc82-62b1-43f2-967a-0b014b16956b",
+        "tags": ["跳舞", " Q版 ", "ｑ版"],
+        "description": "大肥鱼的开心动作。",
     }
     response = client.post("/api/memes", json=body)
     assert response.status_code == 200, response.text
     asset = response.json()
     identity = asset["asset_id"]
+    assert asset["tags"] == ["跳舞", "Q版"]
+    assert client.post("/api/memes", json=body).json()["asset_id"] == identity
+    labels_url = f"/api/memes/{identity}/labels"
+    assert client.put(labels_url, json={"tags": ["  "]}).status_code == 422
+    edited = client.put(labels_url, json={"tags": ["庆祝"], "description": "庆祝时的全身动作。"}).json()
+    assert edited["sha256"] == asset["sha256"]
+    assert edited["source"] == asset["source"] and edited["license"] == asset["license"]
+    assert client.post("/api/memes", json=body).json()["tags"] == ["庆祝"]
     assert asset["animated"] and asset["storage_kind"] == "library"
     assert client.get(f"/api/memes/{identity}/preview?character=whale").content == content
     for category in ("music", "speech", "temporary", "browsing"):
