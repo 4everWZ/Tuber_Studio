@@ -154,9 +154,9 @@ def connect_private_editor(runtime):
                 audit["attempts"].append(attempt)
                 _, markdown = render_private_delivery(draft, evidence)
                 attempt["rendered_markdown"] = markdown
-                issues = await review_preferences(task["goal"], notes, checks, draft, call, locked,
+                issues = await review_preferences(notes, checks, draft, call, locked,
                                                   markdown=markdown, audit=attempt["judgments"],
-                                                  title_forms=forms, allow_defer=before_repair)
+                                                  title_forms=forms, allow_defer=before_repair, evidence=evidence)
                 attempt["failed_fields"] = issues
                 if forms:
                     for index, item in enumerate(draft.items):

@@ -60,15 +60,20 @@ async def test_private_writing_budget_on_the_counted_structured_request(owner, m
             return httpx.Response(200, json={"count":input_tokens})
         assert request.url.path == "/v1/chat/completions"
         name = body["response_format"]["json_schema"]["schema"]["title"]
+        if name in {"WritingJudgment","JudgmentCheck"}:
+            assert "审稿身份隔离测试角色" not in str(body["messages"])
         budgets[name] = body["max_tokens"]
         result = {"WritingSelection":{"applies":True, "checks":[], "title_form":None},
-                  "WritingJudgment":{"basis":"已核对组织要求", "violations":[], "document_blocker":None}}[name]
+                  "WritingJudgment":{"decisions":[{"clause":"C1","verdict":"meets","fields":["gaps.0"],
+                                                  "reason":"缺口已单列"}]},
+                  "JudgmentCheck":{"supported":True, "reason":"段落归属符合原话"}}[name]
         return httpx.Response(200, json={"choices":[{"finish_reason":"stop", "message":{"content":json.dumps(result)}}],
                                          "usage":{"prompt_tokens":input_tokens, "completion_tokens":24}})
 
     monkeypatch.setattr(http_api, "inference_transport", lambda *_: httpx.MockTransport(service))
     provider = APIProvider({"base_url":"https://example.org/v1", "model":"fixture", "context_source":"model_card",
                             "prompt_token_endpoint":True, "structured_output":"json_schema"})
+    provider.identity_resolver = lambda: {"identity_version":"fixture","character_name":"审稿身份隔离测试角色"}
     async def editor(task, evidence):
         return PrivateDelivery(items=[], gaps=["待补资料"])
     monkeypatch.setattr(rt, "llm", provider)
@@ -83,7 +88,7 @@ async def test_private_writing_budget_on_the_counted_structured_request(owner, m
             assert not budgets
         else:
             await rt.tasks.edit_delivery(task, evidence_index([]))
-            assert budgets == {"WritingSelection":expected, "WritingJudgment":expected}
+            assert budgets == {"WritingSelection":expected, "WritingJudgment":expected, "JudgmentCheck":expected}
     finally:
         await provider.close()
 
