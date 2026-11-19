@@ -30,8 +30,9 @@ def video_url(bvid, part):
     return f"https://www.bilibili.com/video/{bvid}/?p={part}"
 
 
-def initial(bvid, part):
-    return f"帮我准备下场直播。看我给的视频 P{part} {video_url(bvid, part)}，只取两个不剧透的片段，再查一下原出处，先别发。"
+def initial(bvid, part, *, archived=False):
+    source = "使用我授权的归档视频原件和归档来源目录。" if archived else ""
+    return f"帮我准备下场直播。{source}看我给的视频 P{part} {video_url(bvid, part)}，只取两个不剧透的片段，再查一下原出处，先别发。"
 
 
 def load(path):
@@ -200,13 +201,14 @@ def verify(directory: Path, bvid: str, part: int, *, receipts=None, final_revisi
     receipts = receipts or directory
     browser = load(receipts / "browser.json")
     require(
-        browser.get("scenario") == "unhinted"
+        browser.get("scenario") in {"unhinted", "archived_unhinted"}
         and not browser.get("recovery")
         and not any((root / "original-browser.json").exists() for root in (directory, receipts)),
         "仅接受全新无提示交办",
     )
     require(
-        browser.get("initial") == initial(bvid, part) and browser.get("change") == CHANGE, "浏览器交办不符"
+        browser.get("initial") == initial(bvid, part, archived=browser["scenario"] == "archived_unhinted")
+        and browser.get("change") == CHANGE, "浏览器交办不符"
     )
     require(
         browser.get("assistantVisibleBeforeClose") is True and browser.get("secondBrowserProcess") is True,
@@ -280,6 +282,11 @@ def verify(directory: Path, bvid: str, part: int, *, receipts=None, final_revisi
                 "items": durable,
             }
     before, after = (v["items"] for v in editions.values())
+    if browser["scenario"] == "archived_unhinted":
+        play = browser.get("archivePlayback") or {}
+        require(play.get("http") in {200, 206} and play.get("seconds", 0) > 0
+                and play.get("original_step", play.get("step")) == Path(before[0]["media"]).stem,
+                "缺少与历史版首项绑定的归档原片播放回执")
     require(before[0] == after[0], "首项标题、理由、来源或原片改变")
     require(
         after[1]["cid"] == before[1]["cid"] and not any(overlap(old, after[1]) for old in before),

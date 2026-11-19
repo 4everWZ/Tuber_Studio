@@ -82,6 +82,13 @@ def isolated_app(directory, endpoint, key, *, traffic=None, realtime_ticket_url=
     denied = []
 
     async def read_or_infer(self, request):
+        host = request.url.host or ""
+        if os.getenv("TUBER_PRIVATE_SOURCE_MANIFEST") and any(
+            host == domain or host.endswith("." + domain) for domain in ("bilibili.com", "bilivideo.com")
+        ):
+            if traffic is not None:
+                traffic["online_source_reads_prevented"] = traffic.get("online_source_reads_prevented", 0) + 1
+            raise Mismatch("本场仅授权使用归档，已在发出在线请求前停止")
         ticket = False
         if realtime_ticket_url and request.url == httpx.URL(realtime_ticket_url) and request.method == "POST":
             try:
@@ -140,6 +147,12 @@ async def device(chromium, origin, args, login=None):
         async def readonly(route):
             request = route.request
             url = urlsplit(request.url)
+            if getattr(args, "archived", False) and any(
+                url.hostname == domain or (url.hostname or "").endswith("." + domain)
+                for domain in ("bilibili.com", "bilivideo.com")
+            ):
+                await route.abort()
+                return
             if request.url.startswith(origin + "/") or (
                 request.method in {"GET", "HEAD"} and url.scheme == "https"
             ):
@@ -242,14 +255,38 @@ async def drill(page, origin, first, second, report):
     await link.wait_for()
     before = await anchor(page)
     require(before, "聊天阅读锚点不可见")
-    async with page.expect_popup() as popup:
-        await link.click()
-    source = await popup.value
-    try:
-        await source.wait_for_url(frame[1], wait_until="commit")
-        report["video"] = source.url
-    finally:
-        await source.close()
+    archived = [step for step in first["steps"] if (step.get("result") or {}).get("source_kind") == "archived_video"]
+    if archived:
+        coordinate = re.search(r"^主帧：[^\n]+ · ([\d.]+) 秒 · <", old["body"], re.M)
+        require(coordinate, "历史版缺少实际主帧秒数")
+        seconds = float(coordinate[1])
+        item = next(s for s in archived if (clip := s["result"].get("clip"))
+                    and clip["start"] <= seconds < clip["end"] and
+                    any(f.get("seconds") == seconds and f.get("url") == frame[1] for f in s["result"].get("findings", [])))
+        path = f"/api/agent/tasks/{task}/clips/{item['id']}"
+        require(await link.get_attribute("href") == frame[1], "归档成果的原始出处链接不符")
+        report["video"] = frame[1]
+        source = await page.context.new_page()
+        try:
+            response = await source.goto(origin + path)
+            require(response and response.ok, "归档原片未能从工作站读回")
+            video = source.locator("video")
+            await video.evaluate("async v => {v.muted=true; await v.play()}")
+            await source.wait_for_function("document.querySelector('video')?.currentTime > 0")
+            report["archivePlayback"] = {"step": item["id"], "original_step": item["result"].get("request_id", item["id"]),
+                                        "http": response.status,
+                                        "seconds": await video.evaluate("v => v.currentTime")}
+        finally:
+            await source.close()
+    else:
+        async with page.expect_popup() as popup:
+            await link.click()
+        source = await popup.value
+        try:
+            await source.wait_for_url(frame[1], wait_until="commit")
+            report["video"] = source.url
+        finally:
+            await source.close()
     await link.wait_for()
     after = await anchor(page)
     require(same_position(before, after), "原片回跳后聊天阅读位置改变")
@@ -267,7 +304,9 @@ async def drill(page, origin, first, second, report):
 
 
 async def exercise(origin, directory, args, *, memory=None, login=None):
-    report = {"schema": 1, "scenario": "unhinted", "initial": initial(args.bvid, args.part), "change": CHANGE}
+    archived = getattr(args, "archived", False)
+    report = {"schema": 1, "scenario": "archived_unhinted" if archived else "unhinted",
+              "initial": initial(args.bvid, args.part, archived=archived), "change": CHANGE}
 
     def phase(name):
         report["phase"] = name
@@ -316,7 +355,7 @@ async def exercise(origin, directory, args, *, memory=None, login=None):
                 first = await edition(page, origin, task, 1, directory, args.edition_timeout)
             except Mismatch:
                 terminal = directory / "r1.json"
-                if memory and terminal.is_file():
+                if memory and terminal.is_file() and not archived:
                     snapshot = json.loads(terminal.read_text(encoding="utf-8"))
                     if snapshot["id"] == task and snapshot["status"] in {"failed", "needs_input"}:
                         phase("r1 unavailable; independent voice check in B")

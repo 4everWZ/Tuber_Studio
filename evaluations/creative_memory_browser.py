@@ -16,6 +16,7 @@ from uuid import UUID
 import uvicorn
 from fastapi import HTTPException, Request
 
+from evaluations.browser_login import fill_private_login
 from evaluations.creative_browser import edition, exercise, isolated_app, positive, send, write
 from evaluations.creative_browser_receipt import DEFAULT_BV, Mismatch, load, require
 from evaluations.creative_memory_receipt import REPLACE, WRITE_TABLES, counts, verify_memory
@@ -63,8 +64,16 @@ def serve(args):
     gateway = connection(env)
     require(gateway, "工作站缺普通应用网关绑定")
     directory = args.runtime.resolve()
-    directory.mkdir(mode=0o700, parents=True, exist_ok=False)
-    traffic = {}
+    resume = getattr(args, "resume", False)
+    if resume:
+        previous = load(directory / "p2-host.json")
+        require(previous.get("run") == directory.name and not any(previous["baseline"].values())
+                and not previous["denied"] and not any(previous["platform"].values())
+                and (directory/"studio.sqlite3").is_file(), "缺少原隔离运行库及其空库基线")
+    else:
+        previous = {}
+        directory.mkdir(mode=0o700, parents=True, exist_ok=False)
+    traffic = dict(previous.get("inference", {}))
     service = private_service()
     ticket_url = service[0] + "/v1/browser-tickets" if service else None
     with isolated_app(directory, *gateway, traffic=traffic, realtime_ticket_url=ticket_url) as (app, denied):
@@ -80,8 +89,12 @@ def serve(args):
                 *WRITE_TABLES,
             ),
         )
-        require(not any(baseline.values()), "新建运行库已有业务记录")
-        receipt = {"baseline": baseline, "run": directory.name}
+        if resume:
+            require(not any(counts(db, WRITE_TABLES).values()), "原验收库存在平台写入")
+            receipt = previous
+        else:
+            require(not any(baseline.values()), "新建运行库已有业务记录")
+            receipt = {"baseline": baseline, "run": directory.name}
 
         def checkpoint():
             receipt.update(platform=counts(db, WRITE_TABLES), denied=len(denied), inference=dict(traffic))
@@ -155,7 +168,7 @@ class MemoryScenario:
             identity["run"] == self.args.run and page.url.startswith(self.origin + "/"),
             "当前 IP 入口未绑定本次隔离验收",
         )
-        await page.locator("#token").fill(token)
+        await fill_private_login(page, token)
         await page.locator("#login-form button[type=submit]").click()
 
     async def preference(self, page, message, label, *, confirm=False):
@@ -375,6 +388,7 @@ def main():
     host.add_argument("runtime", type=Path)
     host.add_argument("--bind", required=True)
     host.add_argument("--port", required=True, type=positive)
+    host.add_argument("--resume", action="store_true", help="在同一隔离卷恢复原场次，沿用已持久化的空库基线")
     browser = commands.add_parser("browser", help="两次独立登录工作站 IP")
     browser.add_argument("--origin", required=True)
     browser.add_argument("--run", required=True, help="工作站新建运行目录名")
@@ -384,6 +398,7 @@ def main():
     browser.add_argument("--turn-timeout", type=positive, default=240)
     browser.add_argument("--edition-timeout", type=positive, default=1500)
     browser.add_argument("--chromium")
+    browser.add_argument("--archived", action="store_true", help="使用工作站归档原件，阻止浏览器在线重拉视频")
     browser.add_argument(
         "--voice-wav", type=Path, help="获准朗读陈述句约定的 WAV，默认使用已有中文合成音频夹具"
     )
