@@ -8,7 +8,7 @@ from test_video_delivery import frame, page, reading, selection
 
 from evaluations.creative_memory_receipt import WRITE_TABLES, counts
 from tuber_studio.agent import public_sources, public_video
-from tuber_studio.agent.task_delivery import DelegationError, evidence_index
+from tuber_studio.agent.task_delivery import AdditionalVideoRead, DelegationError, evidence_index
 from tuber_studio.agent.task_tools import Video, create_task_runtime
 from tuber_studio.app import create_app
 from tuber_studio.platforms.bilibili import PlatformReadError
@@ -174,3 +174,27 @@ async def test_gap_repair_receives_read_scope_and_is_reviewed_again(
         with pytest.raises(DelegationError, match="gaps.0"):
             await tasks.edit_delivery(task, evidence)
     assert observed == ["repair", "review"]
+
+
+async def test_continue_before_first_edition_can_request_missing_clips(runtime, store, monkeypatch):
+    read = reading(frame(5))
+    read["result"]["part_duration"] = 300
+    candidate = selection("v:1", primary="v:1").model_dump()
+    task = {
+        "id": str(uuid4()),
+        "goal": "请继续",
+        "steps": [read],
+        "revision": 2,
+        "plan": {"prior_goals": ["准备一支可播放的开场短片"], "candidate": candidate},
+    }
+
+    async def brief(messages, schema, **kwargs):
+        assert "requested_count" in schema["properties"]
+        assert "可播放的开场短片" in messages[-1]["content"]
+        return {"requested_count": 1, "usage": "开场", "playable": True, "trace_origin": False}
+
+    monkeypatch.setattr(runtime.llm, "generate_json", brief)
+    tasks = create_task_runtime(runtime, store, None)
+    with pytest.raises(AdditionalVideoRead) as pending:
+        await tasks.edit_delivery(task, evidence_index([read]))
+    assert pending.value.windows and pending.value.windows[0]["start"] <= 5 < pending.value.windows[0]["end"]

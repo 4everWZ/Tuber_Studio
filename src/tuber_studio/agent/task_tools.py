@@ -2,6 +2,8 @@
 
 import asyncio
 import base64
+import json
+import logging
 import math
 import os
 import re
@@ -845,7 +847,26 @@ def create_task_runtime(runtime, store, browsing):
                 return await budgeted_call(provider, lambda: provider.generate_json(messages, schema, max_tokens=max_tokens, **options),
                                            messages, max_tokens=max_tokens)
             except ContextWindowExceeded as error:
-                raise DelegationError("结构化输入和所需输出超出推理窗口预算，已保留完整输入。") from error
+                parts = [p for m in messages for p in (m["content"] if isinstance(m["content"], list)
+                         else [{"type": "text", "text": m["content"]}])]
+                sizes = {}
+                for part in parts:
+                    if part.get("type") == "text":
+                        value = part.get("text", "")
+                        try:
+                            packet = json.loads(value)
+                        except ValueError:
+                            packet = None
+                        if isinstance(packet, dict):
+                            for key, field in packet.items():
+                                label = key if re.fullmatch(r"[a-z_]{1,50}", key) else "other_fields"
+                                sizes[label] = sizes.get(label, 0) + len(dump(field))
+                        else:
+                            sizes["text"] = sizes.get("text", 0) + len(value)
+                logging.getLogger(__name__).warning("Structured input limit: schema=%s keys=%s chars=%s images=%d requested=%s server=%s",
+                    schema.get("title"), [k for k in schema.get("properties", {}) if re.fullmatch(r"[a-z_]{1,50}", k)],
+                    sizes, sum(p.get("type") == "image_url" for p in parts), max_tokens, getattr(provider,"server_tokens",None))
+                raise DelegationError(f"结构化输入和所需输出超出推理窗口预算，已保留完整输入。{error}") from error
 
     async def make_plan(goal, tools):
         tools = task_catalog(goal, {name: spec for name, spec in tools.items() if not tasks.tools[name].responses_only})
@@ -1105,6 +1126,10 @@ def create_task_runtime(runtime, store, browsing):
         retained = previous_frame_items(task, evidence)
         locked_fields = set()
         prior = task["plan"]["prior_goals"]
+        first_delivery = not prior
+        if prior and task.get("id") and not retained and not task["plan"].get("previous_delivery"):
+            # A failed collection or review can have several revisions before the first edition.
+            first_delivery = tasks.workspace.latest(task["id"]) is None
         budget = runtime.settings.data["llm"]["max_tokens"]
         correction = task["plan"].get("editor_issues")
         inventories = dict(task["plan"].get("frame_reviews", {}))
@@ -1316,10 +1341,10 @@ def create_task_runtime(runtime, store, browsing):
         missing_origin = bool(task["plan"].get("requested_source_read")) and not origin_ids
         public_reads = [s for s in task.get("steps", []) if s["tool"] == "inspect_video"
                         and s["id"] in pool.video_coverage and (s.get("result") or {}).get("part_duration")]
-        if not prior and not correction and public_reads and pool.points:
+        if first_delivery and not correction and public_reads and pool.points:
             brief = ClipBrief.model_validate(await request_json([
                 {"role": "system", "content": "只按号主交办确定交付形式、数量与出处查证要求。"},
-                {"role": "user", "content": task["goal"]}], ClipBrief.model_json_schema(), max_tokens=budget))
+                {"role": "user", "content": screening_goal}], ClipBrief.model_json_schema(), max_tokens=budget))
             missing_origin = brief.trace_origin and not origin_ids
             short = [key for key, p in pool.points.items() if p.medium == "单帧采样"
                      and pool.video_coverage[key.rsplit(":", 1)[0]].get("clip")]
@@ -1579,7 +1604,7 @@ def create_task_runtime(runtime, store, browsing):
             product._attribution_reviews.extend(candidate_reviews)
         else:
             clip_candidates = candidate["items"]
-            if physical_revision or (not prior and clip_candidates and all(i.get("primary_observation") for i in clip_candidates)):
+            if physical_revision or (first_delivery and clip_candidates and all(i.get("primary_observation") for i in clip_candidates)):
                 brief = (ClipBrief(requested_count=len(replacements), usage=task["goal"].rsplit("\n号主改口：", 1)[-1],
                                    playable=True, trace_origin=False) if physical_revision else brief)
                 brief = brief or ClipBrief.model_validate(await request_json([

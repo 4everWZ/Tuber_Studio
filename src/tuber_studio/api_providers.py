@@ -328,17 +328,20 @@ class APIProvider:
         self.last_content_characters = None
         messages = self.prepare_json_messages(messages, schema, max_tokens=max_tokens)
         count = await self.count_tokens(messages)
+        requested_output = max_tokens
         if use_remaining_window:
             max_tokens = min(max_tokens, self.capacity_window - count)
         if max_tokens < 1 or count + max_tokens > self.capacity_window:
-            raise ContextWindowExceeded("结构化输入超出API窗口预算；禁止静默丢弃数据")
+            raise ContextWindowExceeded(f"结构化输入 {count} tokens，请求输出 {requested_output} tokens，"
+                                        f"有效窗口 {self.capacity_window} tokens。")
         reservation = reserve_generation(
             self.capacity_window - max_tokens, max_tokens, conservative_input=True
         )
         content, actual = await self._complete(messages, budget=max_tokens, structured=True, schema=schema,
                                                on_content=on_content)
         if actual + max_tokens > self.capacity_window:
-            raise ContextWindowExceeded("API结构化实际计量超窗；未采用结果")
+            raise ContextWindowExceeded(f"结构化实际输入 {actual} tokens，分配输出 {max_tokens} tokens，"
+                                        f"有效窗口 {self.capacity_window} tokens。")
         value = parse_json_object(content)
         settle_generation(reservation, self.last_usage)
         return value
