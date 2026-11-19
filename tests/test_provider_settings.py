@@ -31,10 +31,11 @@ def test_settings_reject_independent_routes_and_keys(tmp_path):
 
 
 def test_authenticated_single_connection_save_restart_and_clear(settings, monkeypatch):
-    def unexpected(*args, **kwargs):
-        pytest.fail("Saving the connection should not contact a gateway")
+    async def models(client, request, **kwargs):
+        assert request.method == "GET" and request.url.path.endswith("/models")
+        return httpx.Response(200, json={"data": [{"id": "omni-a", "max_model_len": 8192}]})
 
-    monkeypatch.setattr(httpx.AsyncClient, "send", unexpected)
+    monkeypatch.setattr(httpx.AsyncClient, "send", models)
     app = create_app(settings)
     with TestClient(app, raise_server_exceptions=True) as client:
         headers = {"Authorization": "Bearer " + settings.admin_token}

@@ -10,7 +10,7 @@ from .http_api import api_client, inference_model_card
 from .providers import public_error
 
 
-def register_provider_diagnostics(app, settings, require_admin):
+def register_provider_diagnostics(app, settings, runtime, require_admin):
     @app.post("/api/providers/check", dependencies=[Depends(require_admin)])
     async def check():
         omni = settings.data["omni"]
@@ -24,7 +24,9 @@ def register_provider_diagnostics(app, settings, require_admin):
                 return {"available": False, "error": public_error(error)}
             return {"available": True, "context_tokens": card.get("max_model_len")}
 
-        foreground, background = await asyncio.gather(read_card(omni), read_card(responses_profile(omni)))
+        foreground, background = await asyncio.gather(
+            runtime.check_foreground_connection(), read_card(responses_profile(omni))
+        )
         return {"foreground": foreground, "background": background}
 
     @app.get("/api/providers/models", dependencies=[Depends(require_admin)])

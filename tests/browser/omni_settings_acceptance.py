@@ -6,7 +6,7 @@ import socket
 import uvicorn
 from playwright.async_api import async_playwright, expect
 
-from tuber_studio import omni_speech
+from tuber_studio import api_providers, omni_speech, provider_diagnostics
 from tuber_studio.app import create_app
 
 
@@ -35,6 +35,17 @@ async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):
         return fixed_audio
 
     monkeypatch.setattr(omni_speech, "read_sentence", sentence)
+    foreground_available = True
+
+    async def model_card(client, model):
+        if client.base_url.path.startswith("/llm/"):
+            raise ValueError("读取失败")
+        if not foreground_available:
+            raise ValueError("前台暂不可用")
+        return {"id": model, "max_model_len": 8192}
+
+    monkeypatch.setattr(api_providers, "inference_model_card", model_card)
+    monkeypatch.setattr(provider_diagnostics, "inference_model_card", model_card)
     app = create_app(settings)
     store = app.state.store
     store.save_character(store.character() | {"voice_profile": "external_api"})
@@ -83,6 +94,8 @@ async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):
                 await page.locator("#llm-operations-tokens").fill("2300")
                 await page.get_by_role("button", name="保存推理设置").click()
                 await expect(page.locator("#providers-save-state")).to_have_text("推理设置已保存。")
+                capsule = page.locator("#service-status-capsule .status-text")
+                await expect(capsule).to_have_text("已连接")
                 await page.reload()
                 await expect(page.locator("#llm-operations-tokens")).to_have_value("2300")
                 await expect(background.locator("#background-budget")).to_have_value(original_agent_budget)
@@ -102,12 +115,13 @@ async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):
                 await page.route("**/api/providers/models", lambda route: route.fulfill(json={"models": ["fixture-alias"]}))
                 await page.get_by_role("button", name="读取已保存的前台模型别名").click()
                 await expect(page.locator("#omni-model-options option")).to_have_attribute("value", "fixture-alias")
-                await page.route("**/api/providers/check", lambda route: route.fulfill(json={
-                    "foreground": {"available": True, "context_tokens": 8192},
-                    "background": {"available": False, "error": "读取失败"},
-                }))
+                foreground_available = False
+                await page.get_by_role("button", name="检查已保存的连接").click()
+                await expect(capsule).to_have_text("连接异常")
+                foreground_available = True
                 await page.get_by_role("button", name="检查已保存的连接").click()
                 await expect(page.locator("#providers-check-result")).to_have_text("前台模型卡：已读取（8192 tokens） · 后台模型卡：读取失败")
+                await expect(capsule).to_have_text("已连接")
 
                 await page.set_viewport_size({"width": 390, "height": 844})
                 await expect(background.locator("#llm-operations-tokens")).to_be_visible()

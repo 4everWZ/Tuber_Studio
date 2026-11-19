@@ -76,6 +76,7 @@ class Runtime:
         self.retention = RetentionManager(settings, store)
         self.retention_worker = None
         self.connection_probe = None
+        self.admission_restore = None
         self.retention_error = None
         self.generation_lock = asyncio.Lock()
         self.operation_generation_lock = asyncio.Lock()
@@ -198,29 +199,52 @@ class Runtime:
         char = self.character
         self.daily_memory.check_and_record_downtime(char["id"], char["version"])
         await self.live.online_songs.open()
-        self.connection_probe = asyncio.create_task(self._probe_connections())
+        self.schedule_connection_probe()
+        if getattr(self, "browsing", None):
+            self.admission_restore = asyncio.create_task(self._restore_visual_admission())
         await self.cleanup_retention(automatic=True)
         self.retention_worker = asyncio.create_task(self._retention_loop())
         self.live.start_worker()
 
-    async def _probe_connections(self):
-        provider = self.llm
+    @staticmethod
+    async def _probe_foreground(provider):
         try:
-            await provider.health()
+            result = await provider.health()
         except Exception as error:
-            if provider is self.llm:
-                self.error = public_error(error)
-        if getattr(self, "browsing", None):
+            return {"available": False, "error": public_error(error)}
+        return {"available": result["available"], "context_tokens": result.get("server_context_tokens")}
+
+    def schedule_connection_probe(self):
+        if self.connection_probe and not self.connection_probe.done():
+            self.connection_probe.cancel()
+        self.connection_probe = asyncio.create_task(self._probe_foreground(self.llm))
+
+    async def check_foreground_connection(self):
+        if self.connection_probe is None or self.connection_probe.done():
+            self.schedule_connection_probe()
+        while True:
+            probe = self.connection_probe
             try:
-                await restore_admission(self)
-            except Exception:
-                pass
+                result = await asyncio.shield(probe)
+            except asyncio.CancelledError:
+                if asyncio.current_task().cancelling() or probe is self.connection_probe:
+                    raise
+                continue
+            if probe is self.connection_probe:
+                return result
+
+    async def _restore_visual_admission(self):
+        try:
+            await restore_admission(self)
+        except Exception:
+            pass
 
     async def close(self):
         await self.operation_images.close()
-        if self.connection_probe:
-            self.connection_probe.cancel()
-            await asyncio.gather(self.connection_probe, return_exceptions=True)
+        tasks = [task for task in (self.connection_probe, self.admission_restore) if task is not None]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         if self.retention_worker:
             self.retention_worker.cancel()
             await asyncio.gather(self.retention_worker, return_exceptions=True)

@@ -130,6 +130,7 @@ async def apply_settings(runtime, body):
         settings.data, settings.provider_keys = data, staged.provider_keys
         runtime.llm, runtime.voices = llm, voices
         runtime.context.provider = llm
+        runtime.schedule_connection_probe()
         runtime.operation_llm = operation_llm
         runtime.error = None
         if video is not None:

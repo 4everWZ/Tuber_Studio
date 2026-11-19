@@ -76,4 +76,4 @@ def register_model_api(app, settings, runtime, require_admin):
             "context_installed": False,
         }
 
-    register_provider_diagnostics(app, settings, require_admin)
+    register_provider_diagnostics(app, settings, runtime, require_admin)
