@@ -44,6 +44,7 @@ _WORK = re.compile(r"(这|那|当前|刚才|原来|原先|手头|正在做|刚�
 _FIRST = re.compile(r"(?:开头|头|前|首)(?:一[个段项份]?|半[份段部]?|面(?:那[个段项])?|个|段|项|份)")
 _LAST = re.compile(r"(?:最后|后|末|尾)(?:一[个段项份]?|半[份段部]?|面(?:那[个段项])?|个|段|项|份)")
 _OTHER = re.compile(r"(?:另(?:外)?一?[段个项份]|其余的?|剩下的?)")
+_GOAL_CHANGE = re.compile(r"^\s*(?:改[成为]|调整[成为]|换[成为])\s*")
 
 
 def _number(value):
@@ -135,7 +136,12 @@ def patch_vocabulary(cards, message):
                                 k.startswith("item:") and k != field for k, _ in mentions[j])), len(sentence))
                 fragment = sentence[clause.start():end]
                 before, _, after = fragment.partition(word)
-                values = {v.strip(" ，,、：:") for v in (before, after)} - {""}
+                following = clauses[i + 1] if i + 1 < len(clauses) else None
+                if field == "goal" and following and _GOAL_CHANGE.match(following.group()):
+                    # The description before the comma names the existing work.
+                    values = {sentence[following.start():end].strip()}
+                else:
+                    values = {v.strip(" ，,、：:") for v in (before, after)} - {""}
                 if values:
                     choices.setdefault((field, word), set()).update(values)
                     owners = bindings.setdefault(field, [])

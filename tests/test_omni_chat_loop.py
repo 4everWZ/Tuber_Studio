@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from front_effects import effect
+from front_effects import direct_request
 
 from evaluations import omni_chat_loop as replay
 from tuber_studio import http_api
@@ -22,7 +22,6 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
     root = str(httpx.URL(scheme="https", host=uuid4().hex + ".invalid"))
     calls = []
     chat_stages = []
-    chosen_effects = []
     evidence = {}
 
     def gateway(request):
@@ -41,16 +40,16 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
             if content == replay.REQUEST:
                 schema = json.loads(body["structured_outputs"]["structural_tag"])["format"]["json_schema"]
                 chat_stages.append(schema["title"])
-                if schema["title"] == "FrontToolDiscovery":
-                    decision = {"effect": effect("agent_task" if behavior != "public_action" else "direct_tool")}
-                    assert decision["effect"] in schema["properties"]["effect"]["enum"]
-                    chosen_effects.append(decision["effect"])
-                elif schema["title"] == "WorkLifecycle":
-                    decision = {"action": "agent_task" if behavior != "public_action" else "direct_tool"}
+                if schema["title"] == "WorkLifecycle":
+                    decision = {"action": "agent_task"} if behavior != "public_action" else direct_request(
+                        content, mode="change", target="演播间")
                     assert decision["action"] in schema["properties"]["action"]["enum"]
                 else:
                     assert behavior == "public_action" and "start_live" in schema["properties"]["action"]["enum"]
                     decision = {"action": "start_live"}
+            elif content == replay.CHANGE and json.loads(body["structured_outputs"]["structural_tag"])["format"]["json_schema"]["title"] == "WorkLifecycle":
+                chat_stages.append("WorkLifecycle")
+                decision = {"action": "task_turn"}
             else:
                 packet = (json.loads(body["messages"][1]["content"]) | {"message": content}
                           if content == replay.CHANGE else json.loads(content))
@@ -120,19 +119,16 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
                 await replay.run(config)
         if behavior == "public_action":
             assert not any(path.endswith("responses") for path in calls)
-            assert chosen_effects == [effect("direct_tool")]
-            assert chat_stages == ["FrontToolDiscovery", "WorkLifecycle", "AssistantDecision"]
+            assert chat_stages == ["WorkLifecycle", "AssistantDecision"]
         else:
             assert calls.count("/llm/v1/responses") == (3 if behavior == "invented_source" else 2)
-            assert chosen_effects == [effect("agent_task")]
-            expected = ["FrontToolDiscovery", "WorkLifecycle", "card_steering"]
+            expected = ["WorkLifecycle", "WorkLifecycle", "card_steering"]
             assert chat_stages == (expected + ["evidence_editor"] if behavior == "invented_editor_source" else expected)
         return
     async with asyncio.timeout(5):
         result = await replay.run(config)
     assert result == {"status": "passed", "task_revision": 2, "local_reads": ["operation_status"], "platform_writes": 0}
-    assert chosen_effects == [effect("agent_task")]
-    assert chat_stages == ["FrontToolDiscovery", "WorkLifecycle", "card_steering", "evidence_editor"]
+    assert chat_stages == ["WorkLifecycle", "WorkLifecycle", "card_steering", "evidence_editor"]
     assert [path for path in calls if path.endswith(("chat/completions", "responses"))] == [
         "/v1/chat/completions", "/v1/chat/completions", "/v1/chat/completions", "/llm/v1/responses", "/llm/v1/responses",
         "/llm/v1/chat/completions"]

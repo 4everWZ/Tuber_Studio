@@ -1,7 +1,6 @@
-"""Select a registered frontend effect in model doubles."""
+"""Bind a direct action to a fixture's current owner message."""
 
-from tuber_studio.agent.workbench_tools import front_routes
-
-
-def effect(action, group=None):
-    return next(label for label, tool in front_routes().items() if tool == (action, group))
+def direct_request(text, *, mode="read", target=None, followup=False):
+    return {"action": "direct_tool", "operation": {
+        "request": text, "target": target or text, "mode": mode, "followup": followup,
+    }}

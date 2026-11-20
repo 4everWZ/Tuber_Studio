@@ -6,11 +6,13 @@ from uuid import uuid4
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from front_effects import direct_request
 from test_browsing import BV, ControlledPlatform
 from test_browsing_evidence import PNG, TestVisual
 
 from tuber_studio.agent import operator_facts, task_delegation
 from tuber_studio.agent.assistant_output import AssistantTextStream, assistant_markdown
+from tuber_studio.agent.operator_task_patch import TaskPatch, grounded_patch, patch_vocabulary
 from tuber_studio.app import create_app
 from tuber_studio.live.game_livestream import GameLivestreamService
 from tuber_studio.models import Reply
@@ -105,7 +107,7 @@ def test_assistant_rejects_invalid_tool_payload_before_dispatch(settings, monkey
 
     async def generate(messages, schema, *, max_tokens, on_content, on_stage):
         if schema["title"] == "WorkLifecycle":
-            return {"action": "direct_tool"}
+            return direct_request(messages[-1]["content"])
         return {"action": "inspect_video_frame", "part": 0, "seconds": 1}
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
@@ -130,8 +132,8 @@ async def test_chat_lifecycle_separates_live_status_from_persistent_work(setting
         calls.append(schema["title"])
         menu = schema["properties"]["action"]["enum"]
         if schema["title"] == "WorkLifecycle":
-            assert set(menu) == {"chat", "direct_tool", "agent_task", "steer_task", "clarify"}
-            return {"action": lifecycle}
+            assert set(menu) == {"chat", "direct_tool", "agent_task", "clarify"}
+            return direct_request(messages[-1]["content"]) if lifecycle == "direct_tool" else {"action": lifecycle}
         assert "live_status" in menu and not {"direct_tool", "agent_task", "steer_task", "chat"}.intersection(menu)
         assert options["on_content"] is None
         return {"action": tool}
@@ -168,7 +170,9 @@ async def test_nonchat_acknowledgement_is_neither_streamed_nor_saved(settings, m
         if schema["title"] != "WorkLifecycle":
             assert on_content is None
             return {"action": "live_status", "reply_markdown": hidden}
-        decision = {"action": route, "reply_markdown": hidden}
+        decision = {"action": "task_turn" if route == "steer_task" else route, "reply_markdown": hidden}
+        if route == "direct_tool":
+            decision.update(direct_request(messages[-1]["content"]))
         if route == "clarify":
             decision["topic"] = "你指的是哪段素材？"
         wire = json.dumps(decision if route != "clarify" else dict(reversed(decision.items())), ensure_ascii=False)
@@ -206,6 +210,8 @@ async def test_chat_projects_only_active_goal_and_evidence_after_steer(settings,
     message = f"继续刚才的那份便笺，{latest}。"
 
     async def decide(messages, schema, **options):
+        if schema["title"] == "WorkLifecycle":
+            return {"action": "task_turn"}
         choices = schema["$defs"]["TaskPatch"]["anyOf"]
         choice = next(p["properties"] for p in choices if p["properties"]["field"]["enum"] == ["goal"]
                       and latest in p["properties"]["requirement"]["enum"])
@@ -263,6 +269,8 @@ async def test_semantic_task_cards_bind_clarified_steering_without_approval(sett
             assert reference == {"type": "null"}
             return {"action": "agent_task"}
         else:
+            if schema["title"] == "WorkLifecycle":
+                return {"action": "task_turn"}
             assert schema["title"] == "CardTurnIntent" and options["on_content"] is None
             expected = [ids[0]] if index == 1 else [ids[1], ids[0]]
             assert reference == {"anyOf": [{"type": "string", "enum": expected}, {"type": "null"}]}
@@ -306,6 +314,8 @@ async def test_unverified_card_revision_finishes_without_a_chat_success_claim(se
 
     async def frozen(messages, schema, **options):
         stages.append(schema["title"])
+        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
+            return {"action": "task_turn"}
         if schema["title"] == "CardTurnIntent":
             effect = "实际修改同一任务或成果的部分或全部"
             assert effect in schema["properties"]["intent"]["enum"]
@@ -318,10 +328,10 @@ async def test_unverified_card_revision_finishes_without_a_chat_success_claim(se
                                        "intent": {"action": "agent_task"}})).raise_for_status()
         tasks._save(tasks.current(identity), status="running")
         reply = (await client.post(path, json=request)).raise_for_status().json()
-        assert stages == ["CardTurnIntent"]
+        assert stages == ["WorkLifecycle", "CardTurnIntent"]
         assert reply["card"] is None and "没有修改" in reply["reply_text"] and "请" in reply["reply_text"]
         assert (await client.post(path, json=request)).raise_for_status().json() == reply
-        assert stages == ["CardTurnIntent"]
+        assert stages == ["WorkLifecycle", "CardTurnIntent"]
     task = tasks.current(identity)
     assert (task["goal"], task["status"], task["revision"], task["steps"]) == (original, "running", 1, [])
     assert tasks.workspace.latest(identity) is None
@@ -335,15 +345,16 @@ async def test_discussing_a_card_or_chatting_without_material_does_not_steer(set
 
     async def generate(messages, schema, *, on_content, **options):
         stages.append(schema["title"])
+        if ask_about_card and schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
+            return {"action": "task_turn"}
         if schema["title"] == "CardTurnIntent":
             assert on_content is None and "reply_markdown" not in schema["properties"]
             return {"intent": "只回答当前问题或假设", "reference": identity if ask_about_card else None}
-        assert schema["properties"]["action"]["enum"] == ["chat"]
         current = messages[-1]["content"]
         if ask_about_card:
             assert json.loads(current)["task"]["goal"] == "准备一份提纲"
         else:
-            assert current == "陪我聊会儿" and identity not in str(messages)
+            assert current == "陪我聊会儿"
         reply = {"action": "chat", "reply_markdown": "我在呢。"}
         on_content(json.dumps(reply))
         return reply
@@ -355,7 +366,7 @@ async def test_discussing_a_card_or_chatting_without_material_does_not_steer(set
         result = await client.post(path + "/stream", json={"request_id": str(uuid4()),
                                    "message": "那份提纲现在怎样了？" if ask_about_card else "陪我聊会儿"})
         assert "event: delta" in result.text and "event: done" in result.text
-        assert stages == ["CardTurnIntent", "WorkLifecycle"]
+        assert stages == (["WorkLifecycle", "CardTurnIntent", "WorkLifecycle"] if ask_about_card else ["WorkLifecycle"])
         assert app.state.runtime.tasks.current(identity)["revision"] == 1
 
 
@@ -401,6 +412,8 @@ async def test_chat_steer_rejects_concurrent_revision_and_non_card_tasks(setting
 
     async def decide(messages, schema, **options):
         assert hidden not in str(messages)
+        if schema["title"] == "WorkLifecycle":
+            return {"action": "task_turn"}
         await tasks.control(identity, 1, "steer", goal="另一端的新要求")
         return {"intent": "实际修改同一任务或成果的部分或全部", "patch": None, "reference": identity}
 
@@ -787,7 +800,7 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
             if action == "chat":
                 return {"action": "chat", "reply_markdown": "这就来。"}
             assert action not in schema["properties"]["action"]["enum"]
-            return {"action": "direct_tool"}
+            return direct_request(message, mode="change" if action == "remember_event" else "read")
         assert schema["title"] == "AssistantDecision"
         assert action in schema["properties"]["action"]["enum"]
         return {"action": action, "position": 2 if message.startswith("第二件") else None,
@@ -1282,7 +1295,7 @@ async def test_opened_edition_routes_once_with_current_instruction(settings, mon
 
         async def route(messages, schema, **options):
             if schema["title"] == "WorkLifecycle":
-                return {"action": "chat", "reply_markdown": "我在。"}
+                return {"action": "task_turn"}
             packet = json.loads(messages[1]["content"])
             assert messages[-1]["content"] == message
             assert packet["opened_artifact"] == {"id": identity, **coord}
@@ -1315,6 +1328,8 @@ async def test_unopened_running_task_cannot_absorb_unrelated_conversation(settin
     conversation = "辛苦啦，跟我聊两句吧。"
 
     async def generate(messages, schema, **options):
+        if bad_route and schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
+            return {"action": "task_turn"}
         if schema["title"] == "CardTurnIntent":
             assert schema["properties"]["patch"] == {"type": "null"}
             assert "实际修改同一任务或成果的部分或全部" not in schema["properties"]["intent"]["enum"]
@@ -1357,3 +1372,12 @@ async def test_disputed_new_task_needs_an_independent_deliverable():
     assessment.update(operation="edit_existing", changes=["unknown"])
     with pytest.raises(ValueError, match="未知选项"):
         await review_change(check, message, card, "new_work", choices, bindings)
+
+
+def test_revision_binds_new_requirement_after_existing_deliverable():
+    card = {"editable": {"goal": "私下准备一份直播状态交接便笺。"}}
+    source = "继续刚才的那份便笺，改为只检查自主运营是否启动，写进同一份便笺。"
+    choices, _ = patch_vocabulary([card], source)
+    requirement = "改为只检查自主运营是否启动，写进同一份便笺"
+    assert choices["goal", "便笺"] == {requirement, "写进同一份"}
+    assert grounded_patch(TaskPatch(field="goal", subject="便笺", requirement=requirement), card, source)

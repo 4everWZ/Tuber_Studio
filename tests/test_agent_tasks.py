@@ -5,6 +5,7 @@ from uuid import uuid4
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from front_effects import direct_request
 from test_browsing import BV, ControlledPlatform
 
 from tuber_studio.agent import task_tools
@@ -431,7 +432,7 @@ async def test_owner_lookup_routes_to_bound_uid(settings, monkeypatch):
     async def decide(messages, schema, *, max_tokens, on_content, on_stage):
         if schema["title"] == "WorkLifecycle":
             assert "owner_profile" not in schema["properties"]["action"]["enum"]
-            return {"action": "direct_tool"}
+            return direct_request(messages[-1]["content"])
         assert "owner_profile" in schema["properties"]["action"]["enum"]
         return {"action": "owner_profile"}
 

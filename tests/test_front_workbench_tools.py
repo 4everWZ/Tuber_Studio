@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from front_effects import effect as route_effect
+from front_effects import direct_request
 from test_agent_creative_delegation import call, gateway, until
 
 from tuber_studio.agent.task_tools import create_task_runtime
@@ -20,34 +20,105 @@ async def studio(settings):
         yield app.state.runtime, client
 
 
-def choose_tools(runtime, monkeypatch, direct, domain=None, *, discover=True):
+def choose_tools(runtime, monkeypatch, direct, domain=None):
     calls = []
-
-    async def select(messages, schema, **options):
-        calls.append(schema["title"])
-        effect = route_effect(direct["action"], direct.get("settings_group"))
-        assert effect in schema["properties"]["effect"]["enum"]
-        return {"effect": effect}
 
     async def generate(messages, schema, **options):
         calls.append(schema["title"])
         if schema["title"] == "WorkLifecycle":
             assert "agent_task" in schema["properties"]["action"]["enum"]
-            return {"action": "direct_tool"}
+            return direct_request(messages[-1]["content"], mode="read" if domain is None else "change")
         if schema["title"] == "AssistantDecision":
             menu = schema["properties"]["action"]["enum"]
             assert not {"operation_control", "start_operations", "agent_task"}.intersection(menu)
             return direct
         return domain(messages, schema) if callable(domain) else domain
 
-    if discover:
-        monkeypatch.setattr(runtime.llm, "choose_front_effect", select, raising=False)
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
     return calls
 
 
 def turn(text):
     return {"request_id": str(uuid4()), "message": text}
+
+
+@pytest.mark.parametrize(("question", "tool", "group"), [
+    ("小鱼，今天怎么样了", "pet_settings", None),
+    ("你在干什么呀", "daily_settings", "scene"),
+    ("你觉得你能做什么梦？", "pet_settings", None),
+])
+async def test_unbound_settings_proposal_returns_to_chat(studio, monkeypatch, question, tool, group):
+    runtime, client = studio
+    calls = []
+
+    async def generate(messages, schema, **options):
+        calls.append(schema["title"])
+        if schema["title"] == "AssistantDecision":
+            return {"action": tool, "settings_group": group}
+        assert "可选设置分组" not in str(messages)
+        if len(calls) == 1:
+            return direct_request(question)
+        return {"action": "chat", "reply_markdown": "我在这儿陪你呢。"}
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
+    result = (await client.post("/api/chat/intelligent", json=turn(question))).raise_for_status().json()
+    assert result["reply_text"] == "我在这儿陪你呢。" and not result.get("tool_receipt")
+    assert calls == ["WorkLifecycle", "AssistantDecision", "WorkLifecycle"]
+    assert not runtime.store.one("SELECT 1 FROM agent_tasks")
+
+
+async def test_owner_identity_uses_current_binding_with_stale_chat_history(studio, monkeypatch):
+    runtime, client = studio
+    char = runtime.character
+    runtime.store.replace_character(char | {"bilibili_owner": {"uid": "123", "name": "新号主"}})
+
+    async def generate(messages, schema, **options):
+        assert schema["title"] == "WorkLifecycle"
+        if messages[-1]["content"] == "你住在哪里？":
+            return {"action": "chat", "reply_markdown": "我住在 Jetson 里。"}
+        assert any("Jetson" in part["content"] for part in messages[:-1])
+        return {"action": "owner_identity"}
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
+    old = turn("你住在哪里？")
+    (await client.post("/api/chat/intelligent", json=old)).raise_for_status()
+    for text in ("小鱼，你的主人是谁呀", "我说你的主人呀"):
+        result = (await client.post("/api/chat/intelligent", json=turn(text))).raise_for_status().json()
+        assert result["reply_text"] == "我的主人是新号主呀。" and result["reply_format"] == "plain"
+    history = (await client.get("/api/chat/intelligent/turns/" + old["request_id"])).raise_for_status().json()
+    assert history["reply_text"] == "我住在 Jetson 里。"
+    runtime.store.replace_character(char | {"bilibili_owner": None})
+    result = (await client.post("/api/chat/intelligent", json=turn("你的主人是谁？"))).raise_for_status().json()
+    assert result["reply_text"] == "我还没有绑定 B 站号主呀。"
+
+
+async def test_settings_followup_is_read_only_and_ends_when_topic_changes(studio, monkeypatch):
+    runtime, client = studio
+    first, followup, unrelated = "查一下直播画布的设置。", "那高度呢？", "今天过得怎样？"
+
+    async def generate(messages, schema, **options):
+        text = messages[-1]["content"]
+        if schema["title"] == "AssistantDecision":
+            assert "stop" not in schema["properties"]["action"]["enum"]
+            return {"action": "daily_settings", "settings_group": "scene",
+                    "setting_fields": ["height"] if text == followup else []}
+        if text == unrelated:
+            return {"action": "chat", "reply_markdown": "还不错呀。"}
+        if text == followup and "operation" not in schema["properties"]:
+            return {"action": "chat", "reply_markdown": "你想问哪样东西的高度呀？"}
+        return direct_request(text, target="高度" if text == followup else "直播画布", followup=text == followup)
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
+    before = runtime.live.media.scene()
+    for index, text in enumerate((first, followup, unrelated, followup)):
+        result = (await client.post("/api/chat/intelligent", json=turn(text))).raise_for_status().json()
+        if text == first:
+            assert result["tool_receipt"]["action"] == "read"
+        elif index == 1:
+            assert result["tool_receipt"]["values"] == {"height": before["height"]}
+        else:
+            assert "tool_receipt" not in result
+    assert "tool_receipt" not in result and runtime.live.media.scene() == before
 
 
 async def test_capability_discovery_reads_catalog_without_settings_writes(studio, monkeypatch):
@@ -59,7 +130,7 @@ async def test_capability_discovery_reads_catalog_without_settings_writes(studio
     text = response.raise_for_status().json()["reply_text"]
     assert all(label in text for label in ("宠物", "每日观看", "点歌", "运营配图", "直播画布", "后台"))
     assert before == (runtime.pets.state(char), runtime.browsing.policy())
-    assert calls == ["FrontToolDiscovery"]
+    assert calls == []
 
 
 async def test_pet_choice_from_real_catalog_is_bound_and_replayable(studio, monkeypatch):
@@ -82,7 +153,7 @@ async def test_pet_choice_from_real_catalog_is_bound_and_replayable(studio, monk
     assert saved["selected_asset_id"] == first["tool_receipt"]["selected_asset_id"] == picked["asset_id"]
     assert picked["title"] in first["reply_text"]
     assert (await client.post("/api/chat/intelligent", json=body)).raise_for_status().json() == first
-    assert calls == ["FrontToolDiscovery", "PetChoice"] and runtime.pets.state(char) == saved
+    assert calls == ["PetChoice"] and runtime.pets.state(char) == saved
 
 
 @pytest.mark.parametrize("choice", [
@@ -104,8 +175,8 @@ async def test_pet_rejects_a_settings_group_before_domain_selection(studio, monk
     char = runtime.character["id"]
     before = runtime.pets.state(char)
     calls = choose_tools(runtime, monkeypatch, {"action": "pet_settings", "settings_group": "memory"},
-                         {"action": "hide"}, discover=False)
-    response = await client.post("/api/chat/intelligent", json=turn("收起宠物"))
+                         {"action": "hide"})
+    response = await client.post("/api/chat/intelligent", json=turn("让宠物歇会儿吧"))
     assert response.status_code == 400 and runtime.pets.state(char) == before
     assert "PetChoice" not in calls
 
@@ -177,7 +248,7 @@ async def test_original_owner_request_blocks_partial_model_write(studio, monkeyp
     memory = runtime.daily_memory.preference(runtime.memory_organizer.scope())
     calls = choose_tools(runtime, monkeypatch, direct, subset)
     result = (await client.post("/api/chat/intelligent", json=turn(message))).raise_for_status().json()
-    assert calls[-1] in {"PetChoice", "SettingChoice"}
+    assert calls == []
     assert "号主设置页" in result["reply_text"] and "tool_receipt" not in result
     assert before == (runtime.live.media.config(), runtime.pets.state(runtime.character["id"]))
     assert runtime.daily_memory.preference(runtime.memory_organizer.scope()) == memory

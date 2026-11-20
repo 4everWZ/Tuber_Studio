@@ -30,7 +30,7 @@ from ..providers import build_messages
 from ..sse import encode_event
 from ..store import dump
 from . import operator_facts, workbench_tools
-from .assistant_output import AssistantTextStream, assistant_markdown, plain_assistant_markdown
+from .assistant_output import AssistantTextStream, assistant_markdown
 from .handoff import (
     LIVE_STYLE,
     LIVE_STYLE_GROUP,
@@ -86,6 +86,15 @@ _LIVE_TOOL_CONTEXT = (
     "回答依赖当前外部事实时先取该事实；历史对话中的回答不能证明现在的状态。"
 )
 
+_DIRECT_READS = {
+    "clock", "activity", "event_details", "event_author", "event_reply", "video_activity", "video_details",
+    "public_experiences", "recall_experience", "inspect_video_frame", "live_status", "live_history",
+    "memory_summary", "game_status", "owner_profile", "workbench_capabilities",
+}
+_SETTING_ACTIONS = {"daily_settings", "pet_settings"}
+_OWNER_RELATION = re.compile(r"主人|号主|谁家|谁养|谁的小(?:鱼|鲸)|属于谁")
+_OWNER_PLATFORM = re.compile(r"[Bb]\s*站|哔哩哔哩|[Bb]ilibili|主页|空间|账号|投稿")
+
 _WORKBENCH_TOOL_CONTEXT = (
     "即时工具可列出工坊能力和当前可调项目、读设置、在已有宠物形象与表情中选择、"
     "按号主要求调整日常业务设置。询问能力或选项先读目录；明确要求改变才执行。"
@@ -125,6 +134,7 @@ class VideoSelection(StrictModel):
 class ChatIntent(StrictModel):
     _task_patch: TaskPatch | None = PrivateAttr(default=None)
     _settings_read_only: bool = PrivateAttr(default=False)
+    _setting_fields: tuple[str, ...] = PrivateAttr(default=())
     action: Literal[
         "chat", "clarify", "clock", "activity", "event_details", "event_author", "event_reply",
         "video_activity", "dynamic", "edit_dynamic", "browse", "full_video", "public_experiences", "remember_event",
@@ -193,6 +203,13 @@ class CardEffect(Enum):
     clarify = "需要澄清"
 
 
+class DirectRequest(StrictModel):
+    mode: Literal["read", "change"]
+    request: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    target: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)] | None = None
+    followup: bool = Field(default=False, strict=True)
+
+
 class CardTurnIntent(StrictModel):
     patch: TaskPatch | None = None
     reference: str | None
@@ -200,6 +217,7 @@ class CardTurnIntent(StrictModel):
     read_original: bool = Field(default=False, strict=True)
     topic: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     clarification_id: UUID | None = None
+    operation: DirectRequest | None = None
 
     @classmethod
     def for_cards(cls, cards, *, allowed=CardEffect):
@@ -218,11 +236,13 @@ class CardTurnIntent(StrictModel):
 
 
 class WorkLifecycle(StrictModel):
-    action: Literal["chat", "direct_tool", "agent_task", "steer_task", "clarify"]
+    action: Literal["chat", "owner_identity", "direct_tool", "agent_task", "task_turn", "clarify"]
     reply_markdown: str = Field(default="", max_length=16000, validate_default=True)
     reference: Annotated[str, StringConstraints(max_length=90)] | None = None
     topic: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     clarification_id: UUID | None = None
+    operation: DirectRequest | None = None
+    _identity_reply: bool = PrivateAttr(default=False)
 
     @field_validator("reply_markdown")
     @classmethod
@@ -237,19 +257,43 @@ class WorkLifecycle(StrictModel):
         return text
 
     @classmethod
-    def schema_for_turn(cls, *, chat_only):
+    def schema_for_turn(cls, *, chat_only, has_cards=False, owner_relation=False):
         schema = cls.model_json_schema()
         if chat_only:
             props = schema["properties"]
-            schema["properties"] = {"action": props["action"] | {"enum": ["chat"]},
+            available = ["chat"] + (["owner_identity"] if owner_relation else []) + (["task_turn"] if has_cards else [])
+            schema["properties"] = {"action": props["action"] | {"enum": available},
                                     "reply_markdown": props["reply_markdown"]}
-            schema["required"] = ["action", "reply_markdown"]
         else:
-            schema["properties"]["reference"] = {"type": "null"}
+            properties = schema["properties"]
+            properties["reference"] = {"type": "null"}
+            direct = schema["$defs"]["DirectRequest"]
+            direct["properties"]["target"] = {"type": "string", "minLength": 1, "maxLength": 120}
+            direct["required"].append("target")
+            if not has_cards:
+                properties["action"]["enum"].remove("task_turn")
+            if not owner_relation:
+                properties["action"]["enum"].remove("owner_identity")
+        required_by_action = {"chat": "reply_markdown", "direct_tool": "operation", "clarify": "topic"}
+        properties = schema["properties"]
+        branches = []
+        for action in properties["action"]["enum"]:
+            branch = {"action": {"type": "string", "const": action}}
+            if field := required_by_action.get(action):
+                branch[field] = {"$ref": "#/$defs/DirectRequest"} if field == "operation" else properties[field] | {
+                    "minLength": 1,
+                }
+            required = list(branch)
+            if action in {"agent_task", "clarify"} and not chat_only:
+                branch["clarification_id"] = properties["clarification_id"]
+            branches.append({"type": "object", "properties": branch, "required": required, "additionalProperties": False})
+        schema["oneOf"] = branches
         return schema
 
 
 class AssistantDecision(ChatIntent):
+    setting_fields: list[str] = Field(default_factory=list, max_length=12, exclude=True)
+
     @model_validator(mode="before")
     @classmethod
     def only_tool_fields(cls, value):
@@ -541,6 +585,10 @@ class OperatorChat:
                 and prior.get("execution_scope") == self.runtime.tasks.scope()):
             context["clarification"] = {"id": last["request_id"], "request": prior["clarification_request"],
                                         "question": prior["reply_text"]}
+        if last:
+            prior = json.loads(last["result"])
+            if prior.get("direct_context"):
+                context["latest_tool"] = prior["direct_context"]
         return context
 
     def _source_followup(self, message, char, account):
@@ -599,41 +647,39 @@ class OperatorChat:
                     cards[hit["id"]] = cards.get(hit["id"], {}) | hit
                 cards = list(cards.values())
                 card_policy = history_preference(self.runtime) if cards else None
-                schema = WorkLifecycle.schema_for_turn(chat_only=bool(data.intent or cards))
+                owner_relation = bool(_OWNER_RELATION.search(data.message) and not _OWNER_PLATFORM.search(data.message))
+                schema = WorkLifecycle.schema_for_turn(chat_only=bool(data.intent), has_cards=bool(cards),
+                                                       owner_relation=owner_relation)
                 actions = schema["properties"]["action"]["enum"]
-                plain = getattr(prepared_provider, "generate_assistant_text", None) if actions == ["chat"] else None
                 instruction = (
                     f"用{char['name']}的第一人称接住号主最后一句。日常闲聊简短自然，角色的感受、想象和玩笑可以直接说。"
                     "有具体问题先回答，再接梗。闲聊不用追问目的，按需要展开细节。"
                     "只承接仍有关的对话。"
                 )
-                instruction += "直接写号主看见的正文。" if plain else "正文填 reply_markdown，先写 action。"
+                instruction += "先写 action。chat 在 reply_markdown 写本轮说的话。"
+                if owner_relation:
+                    instruction += "号主要确认你和主人的关系时，选 owner_identity。"
                 if not data.temporary and not history_preference(self.runtime)["history_enabled"]:
                     instruction += ("号主关闭了历史引用，本轮没有读取过去的对话或成果。若答案依赖这些记录，"
                                     "说明目前缺少依据，可以请号主提供材料。")
-                if actions != ["chat"]:
+                if "direct_tool" in actions:
                     instruction += (
-                        "按号主整项要求的完成条件选择工作方式，不按话题或某个中间步骤选择。"
-                        "direct_tool 表示一次当场领域查询或操作的结果就是全部交付。"
-                        "需要持续处理、留存成果或稍后交付的工作属于 agent_task，即使取材只需一步。"
-                        "除 chat 外不写回复正文。" + _WORKBENCH_TOOL_CONTEXT + _LIVE_TOOL_CONTEXT + _TASK_ROUTING
+                        "按最后一句的交付目标选择。问候、近况、随口问在干嘛或讨论假设时选 chat。"
+                        "只有本轮要取得具体可核验的工坊事实或执行某项操作才选 direct_tool，填写 operation。"
+                        "mode 用 read 读取或 change 执行；request 摘录本句体现请求的原话，target 摘录具体对象。"
+                        "只有仍在追问上一次已核对的同一对象时才填 followup=true。"
+                        "需持续处理、留存成果或稍后交付选 agent_task。明确要求办事但缺必要信息才选 clarify。"
                     )
+                if cards:
+                    instruction += "要查询、讨论、取消或修订某一项已有任务或成果时选 task_turn。"
                 messages = [*role, {"role": "system", "content": instruction}]
-                observations = {}
-                if hasattr(self.browsing, "policy"):
-                    observations["业务时钟"] = operator_facts.now(self.browsing).isoformat(timespec="minutes")
-                if live := getattr(self.runtime, "live", None):
-                    observations["本地直播场次"] = {"状态": live.state}
-                    if live.state == "live":
-                        observations["本地直播场次"]["节目静音"] = "开启" if live.muted else "关闭"
-                if observations:
-                    messages.append({"role": "system", "content": "工坊本轮观测：" + dump(observations)})
                 if notes:
                     messages.append({"role": "system", "content": "与本轮相关的记忆资料，只作为背景：" + dump([
                         {"note": entry["anecdote"],
                          **({"original": entry["exact_source"]["quote"]} if entry.get("exact_source") else {})} for entry in notes
                     ])})
                 history_use = history_preference(self.runtime) if history and not data.temporary else None
+                streamable = emit is not None and not audit and not history_use
                 def validate_history():
                     if card_policy and card_policy != history_preference(self.runtime):
                         raise HTTPException(409, "历史引用设置已变化，请重新发送")
@@ -645,8 +691,10 @@ class OperatorChat:
                     recent = {c["id"] for c in packet["recent_task_cards"]}
                     packet["recent_task_cards"] = [c for c in cards if c["id"] in recent]
                     packet["history_task_cards"] = [c for c in cards if c["id"] not in recent]
-                current = {"role": "user", "content": dump({**packet, "message": data.message})
-                           if task_context else data.message}
+                current = {"role": "user", "content": dump({
+                    "message": data.message, "video_selection": data.video_selection.model_dump(),
+                }) if data.video_selection else data.message}
+                card_turn = {"role": "user", "content": dump({**packet, "message": data.message})}
                 discussed = None
 
                 def check_delivery_scope():
@@ -663,7 +711,7 @@ class OperatorChat:
 
                 # Revocable content is buffered. Still consume the upstream stream
                 # to measure the first model chunk and cancel it promptly.
-                decoder = AssistantTextStream(deliver, plain=bool(plain)) if emit and not audit and not history_use else None
+                decoder = None
 
                 def read_chunk(text):
                     nonlocal model_characters
@@ -671,6 +719,30 @@ class OperatorChat:
                     model_characters += len(text)
                     if decoder:
                         decoder.feed(text)
+
+                async def generate_turn(schema, current, *, route_context=False):
+                    nonlocal decoder
+                    decoder = (AssistantTextStream(deliver)
+                               if streamable and (not discussed or not discussed["artifact"]) else None)
+                    prefix = list(messages)
+                    if route_context:
+                        routing = {key: packet[key] for key in ("clarification", "video_selection", "latest_tool") if key in packet}
+                        if cards:
+                            routing["task_candidates"] = [{key: card.get(key) for key in ("id", "goal", "status")}
+                                                          for card in cards]
+                        if routing:
+                            prefix.append({"role": "system", "content": "本轮可引用的已绑定对象：" + dump(routing)})
+                    wire = (await self._fit_assistant_history(provider, prefix, history, current, schema, maximum)
+                            if uses_model_card else [*prefix, *history, current])
+                    value = await provider.generate_assistant_json(
+                        wire, schema, max_tokens=maximum, on_content=read_chunk if emit else None, on_stage=report,
+                    )
+                    route = WorkLifecycle.model_validate(value)
+                    if route.action not in schema["properties"]["action"]["enum"]:
+                        raise ValueError("本轮工作方式不可用")
+                    if first_text is not None and route.action != "chat":
+                        raise ValueError("模型决策与已开始的私聊流不一致")
+                    return route
 
                 report("preflight")
                 if prepare := getattr(prepared_provider, "prepare_assistant_capacity", None):
@@ -684,9 +756,25 @@ class OperatorChat:
                     if provider is not prepared_provider:
                         raise HTTPException(409, "推理模型已切换，可重新发送")
                     maximum = max(1024, min(4096, getattr(provider, "config", {}).get("max_tokens", 1024)))
-                    if cards:
+                    if not data.intent and workbench_tools.requests_owner_control(data.message):
+                        stage = "validated"
+                        return ChatIntent(action="clarify", topic=workbench_tools.OWNER_CONTROL_REPLY), None
+                    if not data.intent and not data.video_selection:
+                        if (_OWNER_RELATION.search(data.message) and _OWNER_PLATFORM.search(data.message)
+                                and workbench_tools.requests_platform_profile(data.message)):
+                            stage = "validated"
+                            return ChatIntent(action="owner_profile"), None
+                        if setting := workbench_tools.requested_setting(data.message, char, packet.get("latest_tool")):
+                            action, group, read_only, fields = setting
+                            decision = ChatIntent(action=action, settings_group=group)
+                            decision._settings_read_only = read_only
+                            decision._setting_fields = fields
+                            stage = "validated"
+                            return decision, None
+                    lifecycle = await generate_turn(schema, current, route_context=True)
+                    if lifecycle.action == "task_turn" or (cards and lifecycle.action == "agent_task"):
                         validate_history()
-                        routed = await self._classify_card_turn(provider, current, cards, history, maximum, report,
+                        routed = await self._classify_card_turn(provider, card_turn, cards, history, maximum, report,
                                                                 read_only=bool(data.intent))
                         validate_history()
                         self._check_scope(char, account)
@@ -695,17 +783,22 @@ class OperatorChat:
                         self.runtime.validate_memory_delivery(audit)
                         if routed.intent not in {"discuss", "recall_reason"}:
                             if routed.intent == "use_tool":
-                                decision = await self._select_direct_tool(provider, data, role, history,
-                                                                          maximum, report)
+                                decision = await self._select_direct_tool(
+                                    provider, data, role, history, maximum, report, char, routed.operation,
+                                    packet.get("latest_tool"),
+                                )
                                 self._check_scope(char, account)
                                 self.runtime.validate_memory_delivery(audit)
                             else:
                                 action = {"revise": "steer_task", "cancel": "cancel_task", "new_work": "agent_task", "clarify": "clarify"}[routed.intent]
-                                decision = ChatIntent(action=action, **routed.model_dump(exclude={"intent", "read_original", "patch"}))
+                                decision = ChatIntent(action=action, **routed.model_dump(
+                                    exclude={"intent", "read_original", "patch", "operation"},
+                                ))
                                 decision._task_patch = routed.patch
                             validate_history()
                             stage = "validated"
-                            return decision, audit
+                            if decision:
+                                return decision, audit
                         current = {"role": "user", "content": data.message}
                         if routed.reference:
                             if (self.task_history.has_anchor(data.message) and not any(
@@ -750,54 +843,29 @@ class OperatorChat:
                         messages.append({"role": "system", "content": "这是只读交谈。本轮没有新交办或修改，"
                                          "按附带版本回答。选材理由只引用记录中的理由，区分号主原话和编辑说明；"
                                          "记录没说为什么时直接说明。"})
-                    if uses_model_card:
-                        messages = await self._fit_assistant_history(
-                            provider, messages, history, current, None if plain else schema, maximum,
-                        )
-                    else:
-                        messages.extend([*history, current])
-                    options = {"max_tokens": maximum, "on_content": read_chunk if emit else None, "on_stage": report}
-                    routed_setting = None
-                    discover = getattr(provider, "choose_front_effect", None)
-                    if discover and actions != ["chat"] and not data.video_selection:
-                        routed_setting = await self._discover_front_tool(discover, data, task_context, history, report)
-                    if isinstance(routed_setting, WorkLifecycle):
-                        work_schema = WorkLifecycle.schema_for_turn(chat_only=False)
-                        action_field = work_schema["properties"]["action"]
-                        action_field["enum"] = (["agent_task"] if routed_setting.action == "agent_task"
-                                                else ["direct_tool", "agent_task", "clarify"])
-                        action_field["description"] = "按最终交付方式选择。即时查询只返回状态；资料需记录、保存或交付时建立任务。"
-                        value = await provider.generate_assistant_json(messages, work_schema, **(options | {"on_content": None}))
-                        if value.get("action") not in action_field["enum"]:
-                            raise ValueError("未返回与已选工作相符的交付方式")
-                        routed_setting = None
-                    elif routed_setting and routed_setting.action == "clarify":
-                        value = {"action": routed_setting.action, "topic": routed_setting.topic}
-                    elif routed_setting and routed_setting.action == "chat":
-                        value = await provider.generate_assistant_json(messages, WorkLifecycle.schema_for_turn(chat_only=True), **options)
-                        if value.get("action") != "chat":
-                            raise ValueError("只读讨论不可执行操作")
-                    elif routed_setting is not None:
-                        value = {"action": "direct_tool"}
-                    elif plain:
-                        value = {"action": "chat", "reply_markdown": plain_assistant_markdown(await plain(messages, **options))}
-                    else:
-                        value = await provider.generate_assistant_json(messages, schema, **options)
-                    lifecycle = WorkLifecycle.model_validate(value)
-                    if lifecycle.action not in actions:
-                        raise ValueError("本轮工作方式不可用")
-                    if first_text is not None and lifecycle.action != "chat":
-                        raise ValueError("模型最终决策与已开始的私聊流不一致")
+                        lifecycle = await generate_turn(WorkLifecycle.schema_for_turn(chat_only=True, owner_relation=owner_relation), current)
+                    decision = None
                     if lifecycle.action == "direct_tool":
                         self._check_scope(char, account)
                         self.runtime.validate_memory_delivery(audit)
                         if provider is not self.runtime.llm:
                             raise HTTPException(409, "推理模型已切换，可重新发送")
-                        decision = routed_setting or await self._select_direct_tool(provider, data, role, history, maximum, report)
+                        decision = await self._select_direct_tool(
+                            provider, data, role, history, maximum, report, char, lifecycle.operation,
+                            packet.get("latest_tool"),
+                        )
+                        if decision is None:
+                            lifecycle = await generate_turn(WorkLifecycle.schema_for_turn(chat_only=True, owner_relation=owner_relation), current)
+                    if lifecycle.action == "owner_identity":
+                        owner = char.get("bilibili_owner")
+                        reply = f"我的主人是{owner['name']}呀。" if owner else "我还没有绑定 B 站号主呀。"
+                        decision = WorkLifecycle(action="chat", reply_markdown=reply)
+                        decision._identity_reply = True
+                        audit = None
                     elif lifecycle.action == "chat":
                         decision = lifecycle.model_copy(update={"reference": discussed["task_id"] if discussed else None})
-                    else:
-                        decision = ChatIntent.model_validate(lifecycle.model_dump(exclude={"reply_markdown"}))
+                    elif decision is None:
+                        decision = ChatIntent.model_validate(lifecycle.model_dump(exclude={"reply_markdown", "operation"}))
                     check_delivery_scope()
                     self.runtime.validate_memory_delivery(audit)
                 validate_history()
@@ -865,13 +933,27 @@ class OperatorChat:
                 {"type": "object", "additionalProperties": False,
                  "properties": {"requirement": {"enum": sorted(requirements)}, "subject": {"enum": [subject]},
                                 "field": {"enum": [field]}, **({"replacement_goal": {
-                                    "type": "string", "description": TaskPatch.model_fields["replacement_goal"].description}}
+                                    "type": "string", "enum": ["", *sorted(requirements)],
+                                    "description": TaskPatch.model_fields["replacement_goal"].description}}
                                     if field == "goal" else {})},
                  "required": ["requirement", "subject", "field"] + (["replacement_goal"] if field == "goal" else [])}
                 for (field, subject), requirements in sorted(choices.items())
             ]}
         else:
             schema["properties"]["patch"] = {"type": "null"}
+        if choices and not read_only:
+            properties = schema["properties"]
+            branches = []
+            for effect in allowed:
+                branch = properties | {"intent": {"type": "string", "const": effect.value}}
+                if effect in {CardEffect.revise, CardEffect.cancel}:
+                    branch = branch | {
+                        "patch": {"$ref": "#/$defs/TaskPatch"},
+                        "reference": {"type": "string", "enum": [card["id"] for card in recent]},
+                    }
+                branches.append({"type": "object", "properties": branch, "required": schema["required"],
+                                 "additionalProperties": False})
+            schema["oneOf"] = branches
         prefix = [{"role": "system", "content": (
             "判断本轮要实际发生的变化。有改动才填 patch：field 绑定可编辑项，subject 摘本句所指部分，"
             "requirement 另摘实际新要求。参考各项原话，选发生变化的项；取消执行绑定 execution，整项条件绑定 goal。"
@@ -879,7 +961,8 @@ class OperatorChat:
             "只聊、只问、假设、维持现状均填 null，查过去的理由选查依据。"
             "实际修改原交付（包括礼貌请求）选修改，只有独立任务才另立。reference 选对应卡。"
             "opened_artifact 是号主打开的版本；历史卡只读。承接澄清填 clarification_id。"
-            + ("" if read_only else _WORKBENCH_TOOL_CONTEXT)
+            + ("" if read_only else
+               "若明确要求一次即时查询或操作，用当场调用工具，并在 operation 摘出本轮请求和具体对象，标明 read 或 change。")
         )}, {"role": "assistant", "content": dump(packet)}]
         current = {"role": "user", "content": message}
         if getattr(provider, "uses_model_card", False):
@@ -966,50 +1049,32 @@ class OperatorChat:
             return CardTurnIntent(intent="clarify", reference=None, topic="能确认一下你指的是哪一版原稿吗？")
         return routed
 
-    async def _discover_front_tool(self, discover, data, task_context, history, report):
-        routes = workbench_tools.front_routes()
-        schema = {"title": "FrontToolDiscovery", "type": "object", "additionalProperties": False,
-                  "properties": {"effect": {"type": "string", "enum": list(routes)}}, "required": ["effect"]}
-        instruction = ("按号主本轮原话所要求的实际结果，从清单中选择最具体的一项。"
-                       "工坊支持即时查询与设置、运营与直播操作、研究取材和后台交付；已有任务可讨论、修改或停止。"
-                       "要求核对后保存或交付的按整项工作交办。长期记忆或历史引用开关、身份绑定、模型凭据、"
-                       "平台授权和自动发布属于号主专属控制；混合修改整体归入专属控制。单条记忆更正与忘记沿用既有操作。"
-                       "号主给出某项日常设置的新目标值时，将请求交给对应设置工具。分组和可调项目：" +
-                       dump(workbench_tools.setting_topics()))
-        # A pending clarification belongs to its own task. Only the lifecycle router
-        # can bind it; exposing it as the new request can turn unrelated work into a settings change.
-        current = {"role": "user", "content": data.message}
-        messages = [{"role": "system", "content": instruction}, *history[-2:], current]
-        value = await discover(messages, schema, on_stage=report)
-        if (not isinstance(value, dict) or set(value) != {"effect"}
-                or not isinstance(value["effect"], str) or value["effect"] not in routes):
-            raise ValueError("本轮工具选择无效")
-        action, group = routes[value["effect"]]
-        if action in {"cancel_task", "agent_task", "steer_task", "clarify"} and workbench_tools.requests_owner_control(data.message):
-            return ChatIntent(action="clarify", topic=workbench_tools.OWNER_CONTROL_REPLY)
-        if action in {"chat", "discuss"}:
-            return ChatIntent(action="chat")
-        if action == "restricted":
-            return ChatIntent(action="clarify", topic=workbench_tools.OWNER_CONTROL_REPLY)
-        if action in {"direct_tool", "agent_task"}:
-            return WorkLifecycle(action=action)
-        if action == "cancel_task":
-            return ChatIntent(action="clarify", topic="要停止哪项交办？可以指明任务或打开对应任务卡。")
-        if action in {"read_pet", "read_daily"}:
-            decision = ChatIntent(action="pet_settings" if action == "read_pet" else "daily_settings", settings_group=group)
-            decision._settings_read_only = True
-            return decision
-        if action in {"workbench_capabilities", "pet_settings", "daily_settings"}:
-            return ChatIntent(action=action, settings_group=group)
-        return None
-
-    async def _select_direct_tool(self, provider, data, role, history, maximum, report):
+    async def _select_direct_tool(self, provider, data, role, history, maximum, report, char, operation, previous):
         schema = AssistantDecision.direct_schema()
         groups = workbench_tools.settings_menu()
-        schema["properties"]["settings_group"] = {"anyOf": [{"enum": list(groups)}, {"type": "null"}],
-                                                 "description": "daily_settings 对应分组，其余留空"}
+        actions = schema["properties"]["action"]
+        read_only = False
         if data.video_selection:
-            schema["properties"]["action"]["enum"] = ["full_video", "clarify"]
+            actions["enum"] = ["full_video", "clarify"]
+        else:
+            if (not operation or operation.request not in data.message
+                    or not operation.target or operation.target not in data.message
+                    or operation.followup and not previous):
+                return None
+            read_only = operation.mode == "read"
+            neutral = _SETTING_ACTIONS | {"clarify"}
+            actions["enum"] = [action for action in actions["enum"]
+                               if action in neutral or (action in _DIRECT_READS) == read_only]
+            if operation.followup:
+                if not workbench_tools.setting_target(previous["group"], operation.target, character=char,
+                                                      read_only=read_only):
+                    return None
+                actions["enum"] = [previous["action"], "clarify"]
+                groups = {key: value for key, value in groups.items() if key == previous["group"]}
+        schema["properties"]["settings_group"] = {"anyOf": [{"enum": list(groups)}, {"type": "null"}],
+                                                 "description": "daily_settings 对应分组，其余留空"} if groups else {"type": "null"}
+        fields = workbench_tools.settings_catalog()
+        setting_fields = {group: {key: field["title"] for key, field in fields[group]["fields"].items()} for group in groups}
         prefix = [*role, {"role": "system", "content": (
             "为已选择的当场操作填写 action 和参数，留空正文。无法确定就 clarify，在 topic 写问题。"
             "activity 查运营趣事；event_details／event_author／event_reply 查原话／作者／送达。"
@@ -1018,9 +1083,12 @@ class OperatorChat:
             "动态引用私聊注明 discussion。live_preference 处理长期直播习惯。"
             "owner_profile 查询绑定号主。不要猜旧事件、任务 ID 或结果。"
             "workbench_capabilities 只读列出能做的事和可调类别；pet_settings 处理宠物显示、表情和已有形象；"
-            "daily_settings 读取或调整日常业务设置。"
-            "可选设置分组：" + dump(groups)
+            "daily_settings 读取或调整日常业务设置。只问个别字段时在 setting_fields 填字段键，查看整组则留空。"
+            "按已绑定的请求方式和对象选工具。可选设置分组：" + dump(groups)
+            + "\n可选查询字段：" + dump(setting_fields)
         )}]
+        if operation:
+            prefix.append({"role": "system", "content": "本轮已绑定的请求：" + dump(operation.model_dump())})
         current = {"role": "user", "content": dump({"message": data.message, "video_selection": data.video_selection.model_dump()})
                    if data.video_selection else data.message}
         if getattr(provider, "uses_model_card", False):
@@ -1029,8 +1097,23 @@ class OperatorChat:
             messages = [*prefix, *history, current]
         value = await provider.generate_assistant_json(messages, schema, max_tokens=maximum, on_content=None, on_stage=report)
         decision = AssistantDecision.model_validate(value)
-        if decision.action not in schema["properties"]["action"]["enum"]:
+        if decision.action not in actions["enum"]:
             raise ValueError("本轮没有请求此类当场操作")
+        if decision.action == "owner_profile" and not _OWNER_PLATFORM.search(operation.request + operation.target):
+            return None
+        if decision.action in _SETTING_ACTIONS:
+            group = "pets" if decision.action == "pet_settings" else decision.settings_group
+            if decision.action == "pet_settings" and decision.settings_group is not None:
+                raise HTTPException(400, "宠物操作不能附带其他设置分组")
+            target = operation.target
+            if operation.followup and group != previous["group"]:
+                return None
+            if not workbench_tools.setting_target(group, target, character=char, read_only=read_only):
+                return None
+            decision._settings_read_only = read_only
+            if read_only and decision.action == "daily_settings":
+                fields = workbench_tools.named_setting_fields(group, target)
+                decision._setting_fields = fields or tuple(dict.fromkeys(decision.setting_fields))
         return decision
 
     def _visible(self, result, *, historical=False):
@@ -1271,12 +1354,15 @@ class OperatorChat:
             if pending.scope != tuple(self._binding(char)):
                 raise HTTPException(409, "账号或角色已切换，请重新发送")
             if data.temporary:
+                reply_format = "markdown"
                 if hasattr(self.runtime.llm, "generate_assistant_json"):
                     chat = data.model_copy(update={"intent": ChatIntent(action="chat")})
                     decision, _ = await self._assistant(chat, request_id, char, account, emit, {})
                     if decision.action != "chat":
                         raise HTTPException(503, "临时对话未生成回复")
                     reply = decision.reply_markdown.strip()
+                    if getattr(decision, "_identity_reply", False):
+                        reply_format = "plain"
                 else:
                     event = {"event_id": request_id, "text": data.message, "is_operator": True, "sender_name": "号主"}
                     history = [item.model_dump() for item in data.window]
@@ -1286,7 +1372,7 @@ class OperatorChat:
                         generated = await self.runtime.llm.generate(messages, char, request_id, source_text=data.message)
                     reply = generated.spoken_text
                 self._check_scope(char, account)
-                return {"temporary": True, "reply_text": reply, "reply_format": "markdown", "card": None}
+                return {"temporary": True, "reply_text": reply, "reply_format": reply_format, "card": None}
             submission = data.model_dump(mode="json", exclude={"request_id", "message", "temporary", "window"})
             if row := self._turn(request_id):
                 result = json.loads(row["result"])
@@ -1327,9 +1413,10 @@ class OperatorChat:
                         raise HTTPException(409, "引用的成果已变化，请重新查看")
                     reply, formatting = reason_reply(facts.get("delivery"), ref["reason_excerpts"]), "plain"
                 else:
-                    reply, formatting = decision.reply_markdown.strip(), "markdown"
+                    reply = decision.reply_markdown.strip()
+                    formatting = "plain" if getattr(decision, "_identity_reply", False) else "markdown"
                 result = {"reply_text": reply, "reply_format": formatting, "card": None, "private": True,
-                          "assistant_context": True}
+                          "assistant_context": not getattr(decision, "_identity_reply", False)}
                 if decision.reference:
                     result["task_reference"] = decision.reference
                     if ref:
@@ -1393,6 +1480,9 @@ class OperatorChat:
                     "operator_chat", memory_kind="operator_private",
                 )
             result |= {"account_id": self._account(), "submission": submission, "memory_intent": intent.action}
+            if intent.action in _SETTING_ACTIONS and (receipt := result.get("tool_receipt")):
+                result["direct_context"] = {"action": intent.action, "group": receipt["group"],
+                                            "fields": list(receipt.get("values", {}))}
             if result.get("clarification_request") or (result.get("card") or {}).get("type") in {
                 "video_browsing", "live_confirmation", "operation_control",
             }:
@@ -1520,7 +1610,8 @@ class OperatorChat:
                 if not intent.settings_group:
                     return workbench_tools.capabilities(self.runtime)
                 return await workbench_tools.daily_settings(self.runtime, intent.settings_group, choose, check_scope,
-                                                            source=request, read_only=intent._settings_read_only)
+                                                            source=request, read_only=intent._settings_read_only,
+                                                            selected_fields=intent._setting_fields)
             if intent.settings_group is not None:
                 raise ValueError("宠物操作不能附带其他设置分组")
             return await workbench_tools.pet_settings(self.runtime, char["id"], choose, check_scope,

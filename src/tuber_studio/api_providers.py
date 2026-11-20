@@ -365,9 +365,6 @@ class APIProvider:
             on_content=on_content if self.config.get("structured_output") in {"json_schema", "structural_tag"} else None,
         )
 
-    async def choose_front_effect(self, messages, schema, *, on_stage=None):
-        return await self.generate_assistant_json(messages, schema, max_tokens=256, on_stage=on_stage)
-
 def validate_image(image, mime_type):
     if not isinstance(image, bytes) or not 0 < len(image) <= 8_000_000:
         raise ValueError("图片须为非空字节，最大8MB")

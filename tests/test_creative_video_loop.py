@@ -6,7 +6,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from front_effects import effect
 from PIL import Image
 
 from evaluations import creative_video_loop as replay
@@ -92,9 +91,9 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                     decision = {"requested_count": 2, "usage": "列出形状、理由和时码", "playable": False,
                                 "trace_origin": True, "clip_seconds": None}
                 else:
-                    schema = json.loads(body["structured_outputs"]["structural_tag"])["format"]["json_schema"]
-                    decision = ({"effect": effect("agent_task")} if schema["title"] == "FrontToolDiscovery"
-                                else {"action": "agent_task"})
+                    decision = {"action": "agent_task"}
+            elif content == replay.CHANGE and json.loads(body["structured_outputs"]["structural_tag"])["format"]["json_schema"]["title"] == "WorkLifecycle":
+                decision = {"action": "task_turn"}
             else:
                 packet = (json.loads(body["messages"][1]["content"]) | {"message": content}
                           if content == replay.CHANGE else json.loads(content))

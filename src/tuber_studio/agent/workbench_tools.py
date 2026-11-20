@@ -23,6 +23,14 @@ _CONTROL_OPERATION = re.compile(
     r"关[闭掉]?|打开|开启|启用|禁用|停用|切换|解绑|绑定|设置|调整|更换|更改|修改|改[为成到]?|"
     r"读取|查看|查询|显示|提供|设[为成]|开关|(?:enable|disable|set|read|grant)|[=:：]", re.I,
 )
+_QUERY = re.compile(r"查|核对|查看|看看|告诉我|列出|读一下|是什么|多少|几[秒首]|多[高宽大]")
+_CHANGE = re.compile(r"改[成为到]|调[成到整]|设置?为|换[成个]|收起|隐藏|显示|恢复默认|关闭|开启")
+_HYPOTHETICAL = re.compile(r"如果|假如|要是|先别|不用|不要|能不能举例|怎么(?:才能|把|换|改|调|设|关|开)")
+_CHOICES = re.compile(
+    r"(?:能|可以)(?:直接)?(?:调|做|用)什么(?=(?:设置|工具|选项)|[啊呀呢吗吧\s]*(?:[。！？!?，,；;]|$))"
+    r"|哪些(?:设置|工具|选项)(?:能|可|可以)"
+)
+_TASK_DELIVERY = re.compile(r"交给后台|稍后交付|持续(?:检查|跟进)|留(?:一)?份|写进|保存成|生成.{0,5}(?:报告|便笺|记录)")
 
 
 def requests_owner_control(source):
@@ -45,27 +53,67 @@ def settings_menu():
     return {group: item["label"] for group, item in settings_catalog().items() if group != "pets"}
 
 
-def setting_topics():
-    return {group["label"]: [field["title"] for field in group["fields"].values()]
-            for group in settings_catalog().values()}
+def _label_terms(label):
+    return {label[i:i + 2] for i in range(len(label) - 1) if label[i:i + 2].isalnum()}
 
 
-def front_routes():
-    return {
-        "要求改变号主专属控制，或同时要求修改可调项目和专属控制": ("restricted", None),
-        "查询工坊能做什么或有哪些可调项目": ("workbench_capabilities", None),
-        "查看当前宠物或列出现有形象": ("read_pet", None),
-        "改变聊天宠物的样子、表情或显示状态": ("pet_settings", None),
-        **{f"查看{label}当前的设置值": ("read_daily", group) for group, label in settings_menu().items()},
-        **{f"调整{label}设置": ("daily_settings", group) for group, label in settings_menu().items()},
-        "仅需当场业务查询或操作，读回状态即完成整项工作": ("direct_tool", None),
-        "委派后台完成研究、持续工作或形成一份可保存和交付的成果": ("agent_task", None),
-        "补充或变更先前交办": ("steer_task", None),
-        "停止或取消一项已有后台交办": ("cancel_task", None),
-        "只讨论或假设，不实际改变任何状态": ("discuss", None),
-        "交办对象或要求尚待号主说明": ("clarify", None),
-        "纯对话，回应就已满足要求": ("chat", None),
-    }
+def named_setting_fields(group, source):
+    entry = settings_catalog()[group]
+    terms = {key: _label_terms(field["title"]) for key, field in entry["fields"].items()}
+    common = _label_terms(entry["label"])
+    for key, values in terms.items():
+        common |= set().union(*(values & other for name, other in terms.items() if name != key))
+    return tuple(key for key, values in terms.items() if any(term in source for term in values - common))
+
+
+def setting_target(group, source, *, character, read_only):
+    """Require the quoted object to name a setting domain or one of its fields."""
+    if group == "pets":
+        labels = ("宠物", "形象", "表情", "皮肤")
+        if not read_only:
+            labels += (character["name"],)
+            if character["id"] == "whale":
+                labels += ("鱼鱼", "鲸鲸", "小鲸鱼")
+        return any(label in source for label in labels)
+    entry = settings_catalog().get(group)
+    if not entry:
+        return False
+    # Short field references such as 高度 are part of the actual setting label.
+    # Shared framing such as 当前设置 or 直播 is insufficient to bind a group.
+    shared = {"运营", "直播", "设置", "当前", "是否", "时间", "上限", "最多"}
+    labels = [entry["label"], *(field["title"] for field in entry["fields"].values())]
+    return any(term in source for label in labels for term in _label_terms(label) - shared)
+
+
+def requested_setting(source, character, previous=None):
+    """Recognize a concrete setting object and an affirmative operation in the source."""
+    if _HYPOTHETICAL.search(source) or _TASK_DELIVERY.search(source):
+        return None
+    if _CHOICES.search(source):
+        return "workbench_capabilities", None, True, ()
+    change = _CHANGE.search(source)
+    read = not change and bool(_QUERY.search(source))
+    def matching_groups(text):
+        return [group for group in ("pets", *settings_menu())
+                if setting_target(group, text, character=character, read_only=not change)]
+
+    # In 把 X 换成 Y, X is the setting object and Y is its requested value or source.
+    groups = (matching_groups(source[:change.start()]) if change else []) or matching_groups(source)
+    if not (change or read) and previous and previous["group"] in settings_menu() and re.search(r"[？?]|呢", source):
+        group = previous["group"]
+        if not (fields := named_setting_fields(group, source)):
+            return None
+        return "daily_settings", group, True, fields
+    if not (change or read) or len(groups) != 1:
+        return None
+    group, = groups
+    if group == "pets":
+        return "pet_settings", None, read, ()
+    return "daily_settings", group, read, named_setting_fields(group, source) if read else ()
+
+
+def requests_platform_profile(source):
+    return bool(_QUERY.search(source) and not (_HYPOTHETICAL.search(source) or _TASK_DELIVERY.search(source)))
 
 
 def capabilities(runtime):
@@ -85,13 +133,15 @@ def capabilities(runtime):
     return {"reply_text": "\n".join(lines), "reply_format": "markdown", "card": None}
 
 
-async def daily_settings(runtime, group, choose, check_scope, *, source, read_only=False):
+async def daily_settings(runtime, group, choose, check_scope, *, source, read_only=False, selected_fields=()):
     catalog = settings_catalog()
     if group not in settings_menu():
         raise ValueError("请选择能力目录中的设置分组")
     entry = catalog[group]
     before = read_settings(runtime, group)
     fields = entry["fields"]
+    if set(selected_fields) - fields.keys() or (selected_fields and not read_only):
+        raise ValueError("查询字段不属于当前设置分组")
     schema = SettingChoice.model_json_schema()
     schema["properties"]["changes"] = {"type": "object", "properties": fields, "additionalProperties": False}
     result = SettingChoice(action="read") if read_only else SettingChoice.model_validate(await choose(schema, {
@@ -110,7 +160,7 @@ async def daily_settings(runtime, group, choose, check_scope, *, source, read_on
         keys = result.changes.keys()
     else:
         receipt = read_settings(runtime, group)
-        keys = fields.keys()
+        keys = selected_fields or fields.keys()
     changes = {key: receipt["values"][key] for key in keys}
     def display(value):
         if isinstance(value, bool):
@@ -131,12 +181,20 @@ async def pet_settings(runtime, character_id, choose, check_scope, *, source, re
                for index, item in enumerate(items, start=1)]
     schema = PetChoice.model_json_schema()
     schema["properties"]["choice"] = {"anyOf": [{"enum": list(range(1, len(items) + 1))}, {"type": "null"}]} if items else {"type": "null"}
-    result = PetChoice(action="list") if read_only else PetChoice.model_validate(await choose(schema, {
-        "可选择的已有形象与表情": options, "显示中": before["pets_enabled"],
-        "当前形象": (before.get("selected") or {}).get("title", "默认形象"),
-        "操作": "列出或查看选 list；切换形象选 select，choice 填符合号主描述的清单序号；恢复默认选 default；"
-                "打开、关闭显示分别选 show、hide。选择形象与显示是独立操作；请求超出清单或不明确选 clarify。",
-    }))
+    quoted = {left or right for left, right in re.findall(r"「([^」]+)」|“([^”]+)”", source)}
+    named = [item["choice"] for item in options if item["title"] in quoted]
+    if read_only:
+        result = PetChoice(action="list")
+    elif (len(quoted) == 1 and len(named) == 1 and len(_CHANGE.findall(source)) == 1
+          and not _HYPOTHETICAL.search(source)):
+        result = PetChoice(action="select", choice=named[0])
+    else:
+        result = PetChoice.model_validate(await choose(schema, {
+            "可选择的已有形象与表情": options, "显示中": before["pets_enabled"],
+            "当前形象": (before.get("selected") or {}).get("title", "默认形象"),
+            "操作": "列出或查看选 list；切换形象选 select，choice 填符合号主描述的清单序号；恢复默认选 default；"
+                    "打开、关闭显示分别选 show、hide。选择形象与显示是独立操作；请求超出清单或不明确选 clarify。",
+        }))
     check_scope()
     if requests_owner_control(source):
         return {"reply_text": OWNER_CONTROL_REPLY, "card": None}

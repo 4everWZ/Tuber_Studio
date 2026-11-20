@@ -12,6 +12,7 @@ import os
 import tempfile
 from contextvars import ContextVar
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -24,6 +25,7 @@ CHAT = "/api/chat/intelligent"
 MUSIC = "/api/live/music"
 MEMORY = "/api/daily-memory/preferences"
 PET = "/api/pets/whale"
+OWNER = {"uid": "123", "name": "回放号主"}
 
 
 def task_facts(task):
@@ -75,6 +77,9 @@ def serve(args):
         ("GET", "/v1/models"),
         ("POST", "/v1/chat/prompt_tokens"),
         ("POST", "/v1/chat/completions"),
+        ("GET", "/llm/v1/models"),
+        ("POST", "/llm/v1/chat/prompt_tokens"),
+        ("POST", "/llm/v1/chat/completions"),
         ("POST", "/llm/v1/responses"),
     }
     counts = {}
@@ -104,7 +109,9 @@ def serve(args):
             entry["error"] = type(error).__name__
             raise
         entry["finish"] = getattr(provider, "last_finish_reason", None)
-        entry["selection"] = {key: value[key] for key in ("action", "intent", "effect") if key in value}
+        entry["selection"] = {key: value[key] for key in (
+            "action", "intent", "operation", "settings_group", "reference", "patch",
+        ) if key in value}
         return value
 
     async def observe_background(client, *args, **options):
@@ -174,6 +181,21 @@ def serve(args):
         )
         settings.provider_keys = {"omni": key}
         app = create_app(settings)
+        runtime = app.state.runtime
+        runtime.store.replace_character(runtime.character | {"bilibili_owner": OWNER})
+
+        async def idle_memory_organizer():
+            return 0
+
+        runtime.memory_organizer.run_once = idle_memory_organizer
+        owner_lookups = []
+
+        async def read_owner(uid):
+            assert uid == OWNER["uid"]
+            owner_lookups.append(uid)
+            return SimpleNamespace(**OWNER)
+
+        runtime.account.owner_profile = read_owner
 
         @app.get("/replay/front-tools")
         async def evidence():
@@ -198,6 +220,7 @@ def serve(args):
                 "gateway_calls": counts,
                 "blocked_requests": len(denied),
                 "platform_attempts": attempts,
+                "owner_profile_reads": len(owner_lookups),
                 "actions": {row["request_id"]: row["action"] for row in rows},
             }
 
@@ -211,18 +234,28 @@ async def check(args):
     base = f"http://127.0.0.1:{args.port}"
     results = {}
     async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(channel=args.browser)
+        browser = await playwright.chromium.launch(channel=args.browser, args=["--no-proxy-server"])
         context = await browser.new_context(base_url=base, service_workers="block")
         try:
 
-            async def local_only(route):
-                if urlsplit(route.request.url).netloc == urlsplit(base).netloc:
-                    await route.continue_()
-                else:
-                    await route.abort()
-
-            await context.route("**/*", local_only)
+            await context.route(
+                lambda url: urlsplit(url).netloc != urlsplit(base).netloc,
+                lambda route: route.abort(),
+            )
+            await context.add_init_script("""
+                const fetch = window.fetch.bind(window);
+                window.replayStreams = {};
+                window.fetch = async (input, init) => {
+                    const response = await fetch(input, init);
+                    if (new URL(input, location.href).pathname === '/api/chat/intelligent/stream') {
+                        const {request_id} = JSON.parse(init.body);
+                        response.clone().text().then(text => { window.replayStreams[request_id] = text; });
+                    }
+                    return response;
+                };
+            """)
             page = await context.new_page()
+            page.set_default_timeout(90000)
             request = context.request
 
             async def read(path):
@@ -240,16 +273,18 @@ async def check(args):
             assert (await request.get(base + CHAT + "/turns/" + guest_id)).status == 404
             assert (await read(PET))["pets_enabled"]
             results["unverified_owner"] = "denied"
-            await page.goto(base)
+            await page.goto(base, wait_until="commit")
 
             async def turn(label, words):
-                if label == "expression":
+                browser_turn = label == "expression" or label.startswith(("dialogue_", "canvas_", "owner_", "continue"))
+                if browser_turn:
                     await page.locator("#operator-chat-input").fill(words)
                     async with page.expect_request(
                         lambda req: req.method == "POST" and urlsplit(req.url).path == CHAT + "/stream"
                     ) as pending:
                         await page.locator("#operator-chat-send").click()
-                    body = (await pending.value).post_data_json
+                    stream_request = await pending.value
+                    body = stream_request.post_data_json
                     assert body["message"] == words and not body.get("intent") and not body.get("temporary")
                     async with asyncio.timeout(180):
                         while True:
@@ -262,7 +297,7 @@ async def check(args):
                             status = await page.locator("#operator-chat-status").inner_text()
                             if "重试" in status:
                                 results[label] = {"request_id": body["request_id"], "ui_status": status}
-                                raise AssertionError("expression request failed")
+                                raise AssertionError("browser chat request failed")
                             await asyncio.sleep(0.4)
                 else:
                     body = {"request_id": str(uuid4()), "message": words}
@@ -277,6 +312,15 @@ async def check(args):
                     reply = await request.get(base + CHAT + "/turns/" + body["request_id"], max_retries=2)
                 row = await reply.json()
                 assert row.get("reply_text"), label
+                if browser_turn:
+                    stream_response = await stream_request.response()
+                    assert stream_response and stream_response.ok
+                    assert (await stream_response.header_value("content-type")).startswith("text/event-stream")
+                    captured = await page.wait_for_function("id => window.replayStreams[id]", arg=body["request_id"])
+                    parts = (await captured.json_value()).split("\n\n")
+                    terminal, = [json.loads(part.split("\ndata:", 1)[1]) for part in parts if part.startswith("event: done\n")]
+                    assert terminal["reply_text"] == row["reply_text"]
+                    await page.locator(f'[data-request-id="{body["request_id"]}"] .operator-chat-reply').wait_for()
                 results[label] = {
                     "request_id": body["request_id"],
                     "action": (await read("/replay/front-tools"))["actions"].get(body["request_id"]),
@@ -296,7 +340,9 @@ async def check(args):
             async def expression():
                 state = await read(PET)
                 (target,) = [item for item in state["items"] if item["title"] == "开心蹦一下"]
-                assert state["selected_asset_id"] != target["asset_id"]
+                if state["selected_asset_id"] == target["asset_id"]:
+                    reset = await request.put(base + PET, data={"asset_id": None})
+                    assert reset.ok and (await reset.json())["selected_asset_id"] is None
                 row = await turn("expression", "把你聊天窗口里的宠物表情换成图库里的「开心蹦一下」。")
                 assert (
                     row.get("tool_receipt") and (await read(PET))["selected_asset_id"] == target["asset_id"]
@@ -324,6 +370,36 @@ async def check(args):
 
             async def task_ids():
                 return {task["id"] for task in (await read("/api/agent/tasks"))["tasks"]}
+
+            async def dialogue():
+                before = await read(PET), (await read("/api/live/studio"))["scene"], await task_ids()
+                for index, question in enumerate((
+                    "小鱼，你的主人是谁呀", "我说你的主人呀", "小鱼，今天怎么样了", "你在干什么呀",
+                    "今儿过得还好吗？", "鱼鱼在忙啥呀？",
+                )):
+                    label = f"dialogue_{index + 1}"
+                    row = await turn(label, question)
+                    assert results[label]["action"] == "chat" and not row.get("card") and not row.get("tool_receipt")
+                    if index < 2:
+                        assert OWNER["name"] in row["reply_text"]
+                    assert all(word not in row["reply_text"] for word in ("Jetson", "宠物当前", "画布当前", "可用形象"))
+                assert before == (await read(PET), (await read("/api/live/studio"))["scene"], await task_ids())
+
+            async def canvas():
+                before = (await read("/api/live/studio"))["scene"]
+                row = await turn("canvas_read", "查一下现在直播画布的设置。")
+                assert row["tool_receipt"]["group"] == "scene" and row["tool_receipt"]["action"] == "read"
+                row = await turn("canvas_followup", "那高度呢？")
+                assert row["tool_receipt"]["values"] == {"height": before["height"]}
+                row = await turn("canvas_change_topic", "你今天过得怎么样呀？")
+                assert not row.get("card") and not row.get("tool_receipt")
+                assert (await read("/api/live/studio"))["scene"] == before
+
+            async def owner():
+                before = (await read("/replay/front-tools"))["owner_profile_reads"]
+                row = await turn("owner_lookup", "去看看你主人绑定的 B 站主页，告诉我账号是谁。")
+                assert row["card"]["type"] == "owner_profile" and row["card"]["data"]["name"] == OWNER["name"]
+                assert (await read("/replay/front-tools"))["owner_profile_reads"] == before + 1
 
             async def mixed():
                 await baseline_cooldown()
@@ -387,7 +463,7 @@ async def check(args):
                 trace["failure_stage"] = "foreground_revision"
                 try:
                     changed = await turn(
-                        label, "继续刚才的那份便笺，改为只检查自主运营是否启动，写进同一份便笺。"
+                        label, "继续刚才的那份便笺，改为只检查自主运营是否启动。只调用一次 operation_status，把读回值写进同一份便笺。"
                     )
                     changed_card = changed.get("card") or {}
                     trace["returned_task_id"] = changed_card.get("data", {}).get("id")
@@ -397,6 +473,8 @@ async def check(args):
                         raise AssertionError("no matching task card in the natural-language revision")
                     if trace["after_turn"]["revision"] != before["revision"] + 1:
                         raise AssertionError("same task did not advance exactly one revision")
+                    assert await task_ids() == start_ids | {identity}, "unexpected additional task"
+                    assert "只检查自主运营是否启动" in trace["after_turn"]["goal"]
                     trace["failure_stage"] = "backend_wait"
                     async with asyncio.timeout(240):
                         while True:
@@ -470,13 +548,12 @@ async def check(args):
                 )
 
             failed = []
-            for case in (discover, expression, setting, mixed, matched_control, continuation, existing):
+            for case in (dialogue, canvas, owner, discover, expression, setting, mixed, matched_control, continuation, existing):
                 if args.cases and case.__name__ not in args.cases:
                     continue
                 # Independent cases use the ordinary clear-history action on this disposable Core.
                 assert (await request.delete(base + CHAT, max_retries=2)).ok
-                if case == expression:
-                    await page.reload()
+                await page.reload(wait_until="commit")
                 prior = set(results)
                 start_trace = len((await read("/replay/front-tools"))["model_calls"])
                 try:
@@ -524,7 +601,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cases",
         nargs="+",
-        choices=["discover", "expression", "setting", "mixed", "matched_control", "continuation", "existing"],
+        choices=["dialogue", "canvas", "owner", "discover", "expression", "setting", "mixed",
+                 "matched_control", "continuation", "existing"],
     )
     options = parser.parse_args()
     if options.mode == "serve":

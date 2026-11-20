@@ -8,8 +8,8 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from front_effects import direct_request
 
-from tuber_studio.agent.workbench_tools import front_routes
 from tuber_studio.app import create_app
 from tuber_studio.pet_appearance import PetAppearances
 
@@ -94,20 +94,15 @@ def test_pet_discovery_with_hidden_control_never_reaches_writer(settings, monkey
     attempts = []
 
     async def forged(messages, schema, **kwargs):
-        effect = next(label for label, route in front_routes().items() if route == ("pet_settings", None))
-        assert effect in schema["properties"]["effect"]["enum"]
-        attempts.append(effect)
-        return {"effect": effect, "changes": {"pets_enabled": False, "history_enabled": True}}
+        assert schema["title"] == "WorkLifecycle"
+        attempts.append(schema["title"])
+        return direct_request("让宠物歇会儿吧", mode="change") | {"changes": {"pets_enabled": False, "history_enabled": True}}
 
-    async def unexpected(*args, **kwargs):
-        pytest.fail("非法发现回包仍进入领域选择")
-
-    monkeypatch.setattr(runtime.llm, "choose_front_effect", forged, raising=False)
-    monkeypatch.setattr(runtime.llm, "generate_assistant_json", unexpected, raising=False)
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", forged, raising=False)
     with TestClient(app) as client:
         client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
         before = client.get("/api/daily-memory/preferences").raise_for_status().json()
-        response = client.post("/api/chat/intelligent", json={"request_id": str(uuid4()), "message": "收起宠物"})
+        response = client.post("/api/chat/intelligent", json={"request_id": str(uuid4()), "message": "让宠物歇会儿吧"})
         assert attempts and response.status_code == 503
         assert runtime.pets.state("whale")["pets_enabled"] is True
         assert client.get("/api/daily-memory/preferences").raise_for_status().json() == before
@@ -121,18 +116,16 @@ async def test_two_chat_browsers_share_manual_and_tool_selection(settings, monke
     runtime = app.state.runtime
     instruction = "把宠物换成鲸鱼思考"
 
-    async def discover(messages, schema, **kwargs):
-        effect = next(label for label, route in front_routes().items() if route == ("pet_settings", None))
-        assert effect in schema["properties"]["effect"]["enum"]
-        return {"effect": effect}
-
     async def choose(messages, schema, **kwargs):
+        if schema["title"] == "WorkLifecycle":
+            return direct_request(instruction, mode="change")
+        if schema["title"] == "AssistantDecision":
+            return {"action": "pet_settings"}
         assert schema["title"] == "PetChoice" and messages[-1]["content"] == instruction
         packet = json.loads(messages[0]["content"].split("\n", 1)[1])
         match = next(row for row in packet["可选择的已有形象与表情"] if row["title"] == "鲸鱼思考")
         return {"action": "select", "choice": match["choice"]}
 
-    monkeypatch.setattr(runtime.llm, "choose_front_effect", discover, raising=False)
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", choose, raising=False)
     async with chat_server(app) as origin, async_playwright() as pw:
         browser = await pw.chromium.launch(executable_path=os.getenv("CHROMIUM_EXECUTABLE"))

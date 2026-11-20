@@ -58,6 +58,8 @@ async def test_old_edition_from_private_chat_is_openable_and_read_only(studio, m
     routed = "查当初为何作出某个选择的原文"
 
     async def generate(messages, schema, **kwargs):
+        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
+            return {"action": "task_turn"}
         packet = json.loads(messages[1 if schema["title"] == "CardTurnIntent" else -1]["content"])
         if schema["title"] == "CardTurnIntent":
             candidate, = [c for c in packet["history_task_cards"] if c["id"] == task]
@@ -112,6 +114,8 @@ async def test_history_boundaries_on_model_input_and_stream_delivery(studio, mon
     revoke = False
 
     async def generate(messages, schema, **kw):
+        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
+            return {"action": "task_turn"}
         seen.append(messages)
         if schema["title"] == "CardTurnIntent":
             return {"intent": "查当初为何作出某个选择的原文", "reference": task}
@@ -153,6 +157,8 @@ async def test_chromium_chat_opens_original_edition_and_source(studio, monkeypat
     runtime.store.replace_character(runtime.character | {"name": "编辑之后"})
 
     async def generate(messages, schema, **kwargs):
+        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
+            return {"action": "task_turn"}
         if schema["title"] == "CardTurnIntent":
             assert task in schema["properties"]["reference"]["anyOf"][0]["enum"]
             return {"intent": "查当初为何作出某个选择的原文", "reference": task}
@@ -236,6 +242,8 @@ async def test_unfinished_card_remains_discussable_after_only_account_switch(stu
     runtime.browsing.discovery.remember_account("switched")
     assert runtime.tasks.current(task) and not runtime.tasks.executable(task)
     async def generate(messages, schema, **kwargs):
+        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
+            return {"action": "task_turn"}
         packet = json.loads(messages[1 if schema["title"] == "CardTurnIntent" else -1]["content"])
         if schema["title"] == "CardTurnIntent":
             assert "recent_task_cards" not in packet
@@ -254,6 +262,8 @@ async def test_reason_question_can_open_the_agent_original_after_an_owner_edit(s
     _, task = await seed(client, runtime)
 
     async def choose(messages, schema, **kwargs):
+        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
+            return {"action": "task_turn"}
         packet = json.loads(messages[1 if schema["title"] == "CardTurnIntent" else -1]["content"])
         if schema["title"] == "CardTurnIntent":
             card, = packet["history_task_cards"]
@@ -286,6 +296,8 @@ async def test_only_verified_reason_lines_from_the_selected_version(studio, monk
                         "body": "我选择尾声，因为台词在这里才说完。"})).raise_for_status()
 
     async def select(messages, schema, **options):
+        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
+            return {"action": "task_turn"}
         assert options["on_content"] is None
         if schema["title"] == "CardTurnIntent":
             return {"intent": "查当初为何作出某个选择的原文", "reference": task_id}
@@ -312,6 +324,8 @@ async def test_chat_opened_edition_read_and_stale_write(studio, monkeypatch):
     change = "把这份的尾声缩短。"
 
     async def generate(messages, schema, **kwargs):
+        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
+            return {"action": "task_turn"}
         if schema["title"] == "CardTurnIntent":
             editing = messages[-1]["content"] == change
             return {"intent": "实际修改同一任务或成果的部分或全部" if editing else "查当初为何作出某个选择的原文",

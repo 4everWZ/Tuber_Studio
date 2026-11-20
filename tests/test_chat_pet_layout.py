@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from front_effects import direct_request
 
 
 @pytest.fixture
@@ -35,7 +36,7 @@ async def pet_studio(settings, monkeypatch):
         if schema["title"] == "CardTurnIntent":
             return {"intent": "当场调用工具", "reference": None, "patch": None}
         if schema["title"] == "WorkLifecycle":
-            return {"action": "direct_tool"}
+            return direct_request(messages[-1]["content"], mode="change")
         if schema["title"] == "AssistantDecision":
             return {"action": "pet_settings"}
         assert schema["title"] == "PetChoice"
