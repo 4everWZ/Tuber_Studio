@@ -64,6 +64,8 @@ Run the tests for the affected flow. The [documentation index](docs/README.md) c
 
 ## Acknowledgements
 
+Tuber Studio's original code and documentation are licensed under the [MIT License](LICENSE). Bundled third-party code, character artwork, and voice recordings retain the terms listed with their sources.
+
 See [Codex notices](third_party/openai-codex/NOTICE) for bundled third-party materials.
 
 The included Da-Fei-Yu character uses artwork by YunYueSama. Sources and terms are recorded in the [artwork notes](third_party/whale-avatar/UPSTREAM.md), [asset manifest](assets/whale/manifest.json) and [voice profiles](config/voices.json).

@@ -64,4 +64,6 @@ uv run --locked pytest tests/test_comments.py
 
 随附第三方材料的条款见 [Codex 声明](third_party/openai-codex/NOTICE)。
 
+工坊自有代码和文档采用 [MIT 协议](LICENSE)。第三方代码、角色形象和声音各自沿用原许可。
+
 内置大肥鱼形象源于 YunYueSama 的作品。来源、许可与修改见[形象说明](third_party/whale-avatar/UPSTREAM.md)、[素材清单](assets/whale/manifest.json)和[音色配置](config/voices.json)。
