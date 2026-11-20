@@ -69,6 +69,7 @@ from .personal_agent import (
 )
 from .private_memory_writer import connect_private_writer
 from .task_history import TaskHistory, reason_reply, select_reason_lines
+from .voice_origin import CallOrigin, verify_call
 
 _BV = re.compile(r"(?:https://www\.bilibili\.com/video/)?(BV[0-9A-Za-z]{10})/?")
 _MENTIONED_BV = re.compile(r"(?<![0-9A-Za-z])BV[0-9A-Za-z]{10}(?![0-9A-Za-z])")
@@ -238,6 +239,7 @@ class ChatTurn(StrictModel):
     intent: ChatIntent | None = None
     temporary: bool = False
     call_scope: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$", exclude_if=lambda value: value is None)
+    call_context: CallOrigin | None = Field(default=None, exclude=True)
     window: list[TemporaryMessage] = Field(default_factory=list, max_length=8)
 
     @model_validator(mode="after")
@@ -246,6 +248,8 @@ class ChatTurn(StrictModel):
             raise ValueError("请通过号主本轮话语选择日常设置")
         if self.window and not self.temporary:
             raise ValueError("本轮窗口只用于临时对话")
+        if self.call_context and not self.call_scope:
+            raise ValueError("通话消息须提供当前授权")
         if self.temporary and (self.call_scope or self.opened_artifact or self.creative_goal_id or self.video_selection
                                or self.intent and self.intent.action != "chat"):
             raise ValueError("临时对话只接受聊天消息")
@@ -1517,7 +1521,7 @@ class OperatorChat:
                   if key not in {"submission", "binding", "account_id", "memory", "confirmations", "organized_memory",
                                  "memory_intent", "assistant_context", "clarification_request", "private_owner",
                                  "owner_source", "execution_scope", "conversation_objects", "object_scope", "direct_context",
-                                 "publication_scope"}}
+                                 "publication_scope", "call_origin"}}
         card = result.get("card")
         if card is None:
             return result
@@ -1686,13 +1690,19 @@ class OperatorChat:
             "next_cursor": rows[limit - 1]["request_id"] if len(rows) > limit else None,
         }
 
-    async def send(self, data, emit=None):
+    async def send(self, data, emit=None, *, call_origin=None, call_task=None):
         request_id = str(data.request_id)
+        if data.call_context:
+            key = self.runtime.settings.provider_key("omni")
+            if not key:
+                raise HTTPException(409, "通话授权已变化，请重新开始通话")
+            verify_call(data.call_context, key, self.runtime.tasks.scope())
+            call_origin = {"id": data.call_context.ticket_hash, "utterance": request_id}
         if request_id in self.pending:
             raise HTTPException(409, "这条消息正在处理，请稍后重试。")
         pending = self.pending[request_id] = PendingChat(tuple(self._binding(self.runtime.character)), asyncio.current_task())
         try:
-            return await self._send(data, request_id, pending, emit)
+            return await self._send(data, request_id, pending, emit, call_origin, call_task)
         except asyncio.CancelledError:
             if not pending.stopped:
                 raise
@@ -1712,7 +1722,7 @@ class OperatorChat:
         pending.task.cancel()
         return {"stopping": True}
 
-    async def _send(self, data, request_id, pending, emit):
+    async def _send(self, data, request_id, pending, emit, call_origin, call_task):
         async with self.lock:
             char = self.runtime.character
             display_name = self.store.display_name(char["id"])
@@ -1749,6 +1759,7 @@ class OperatorChat:
                     or row["message"] != data.message
                     or result.get("owner_source", self.private_owner) != self.private_owner
                     or result.get("account_id", account) != account
+                    or result.get("call_origin") != call_origin
                     or result.get("submission", {"intent": None, "video_selection":
                         ((result.get("card") or {}).get("data") or {}).get("selection")}) != submission
                 ):
@@ -1759,10 +1770,14 @@ class OperatorChat:
             if intent is None and not semantic_assistant and not data.video_selection:
                 intent = self._source_followup(data.message, char, account)
             decision, audit = None, None
-            task_context = self._task_context(char, account, data) if (
+            task_context = {}
+            if call_task:
+                task_context["recent_task_cards"] = [call_task]
+            elif (
                 intent is None or intent.action in {"steer_task", "cancel_task", "task_status", *_TASK_CONTROLS}
                 or intent.action == "chat" and semantic_assistant
-            ) else {}
+            ):
+                task_context = self._task_context(char, account, data)
             if data.video_selection and intent is None:
                 task_context["video_selection"] = data.video_selection.model_dump()
             if intent is None:
@@ -1844,8 +1859,10 @@ class OperatorChat:
                     events, tasks, focus = self._references(char)
                 else:
                     events, tasks, focus = {}, {}, None
+                source = {"call_origin": call_origin} if call_origin else {}
                 try:
-                    result = await self._action(intent, char, request_id, data, events, tasks, focus, task_context)
+                    result = await self._action(intent, char, request_id, data, events, tasks, focus, task_context,
+                                                **source)
                 except PermissionError:
                     raise HTTPException(409, "读取权限已变化，请重新查询") from None
             self._check_scope(char, account, account_may_resolve=True)
@@ -1858,6 +1875,9 @@ class OperatorChat:
                 )
             result |= {"account_id": self._account(), "submission": submission, "memory_intent": intent.action,
                        "character_name": display_name}
+            if call_origin:
+                result |= {"call_origin": call_origin, "owner_source": self.private_owner,
+                           "execution_scope": self.runtime.tasks.scope()}
             if intent.action in _SETTING_ACTIONS and (receipt := result.get("tool_receipt")):
                 result["direct_context"] = {"action": intent.action, "group": receipt["group"],
                                             "fields": list(receipt.get("values", {}))}
@@ -1924,7 +1944,7 @@ class OperatorChat:
         if self.runtime.character != char or (account != self._account() and (account or not account_may_resolve)):
             raise HTTPException(409, "账号或角色已切换，请重新发送")
 
-    async def _action(self, intent, char, request_id, data, events, tasks, focus, task_context):
+    async def _action(self, intent, char, request_id, data, events, tasks, focus, task_context, *, call_origin=None):
         kind, topic, reference = intent.action, intent.topic, intent.reference
         if intent.position is not None and kind in _EVENT_ACTIONS:
             reference = next((key for key, (index, _) in events.items() if index == intent.position), "")
@@ -2128,11 +2148,11 @@ class OperatorChat:
                     due = intent.arrangement.due(request, operator_facts.now(self.browsing))
                 except ValueError as error:
                     return {"reply_text": str(error), "card": None, **clarification}
-            task = self.runtime.tasks.create(request_id, request, due=due, source_key=request_id, video_selection=selection,
+            task = self.runtime.tasks.create(request_id, request, due=due, source_key=call_origin or request_id, video_selection=selection,
                                              creative_goal_id=str(data.creative_goal_id) if data.creative_goal_id else None)
-            text = f"已预约 {intent.arrangement.local_date} {intent.arrangement.local_time}。" if due else (
-                "我会继续处理，进度和结果可以在活动里查看。"
-            )
+            text = "已交办。" if call_origin else "我会继续处理，进度和结果可以在活动里查看。"
+            if due:
+                text = f"已预约 {intent.arrangement.local_date} {intent.arrangement.local_time}。"
             return {"reply_text": text, "card": {
                 "type": "agent_task", "data": {"id": task["id"]},
             }}
@@ -2140,6 +2160,11 @@ class OperatorChat:
             target = next((card for card in task_context.get("recent_task_cards", []) if card["id"] == reference), None)
             if target is None:
                 return {"reply_text": "你想调整哪项交办？请说一下原任务的目标。", "card": None, **clarification}
+            original = self._turn(reference)
+            anchored_in_call = original is not None and json.loads(original["result"]).get("call_origin")
+            link = {"card": None, "task_reference": reference} if anchored_in_call else {
+                "card": {"type": "agent_task", "data": {"id": reference}},
+            }
             try:
                 change = {}
                 bindings = {}
@@ -2150,7 +2175,7 @@ class OperatorChat:
                                             "owner_clauses": bindings, "item_states": patch._item_states}
                 if kind == "cancel_task":
                     task = await self.runtime.tasks.control(reference, target["revision"], "cancel")
-                    return {**change, "reply_text": task["message"], "card": {"type": "agent_task", "data": {"id": reference}}}
+                    return {**change, "reply_text": task["message"], **link}
                 basis = ""
                 opened = task_context.get("opened_artifact")
                 coord = None
@@ -2176,7 +2201,7 @@ class OperatorChat:
                 )
             except (ValueError, LookupError) as error:
                 raise HTTPException(409, "这项任务已变化，请查看最新任务卡后再改口。") from error
-            return {**change, "reply_text": "已更新这项交办的要求。", "card": {"type": "agent_task", "data": {"id": task["id"]}}}
+            return {**change, "reply_text": "已更新这项交办的要求。", **link}
         if kind == "live_handoff":
             return await self._live_handoff(intent, char, request_id, data.message, tasks)
         if kind == "live_preference":

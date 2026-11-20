@@ -169,7 +169,7 @@ class ResponsesClient:
         return (await self.create(**options)).raw
 
     async def create(self, input, *, tools=(), previous_response_id=None, instructions=None, max_output_tokens=None,
-                     tool_choice=None, store=True):
+                     tool_choice=None, store=True, thinking=True):
         budget = self.config.max_output_tokens if max_output_tokens is None else max_output_tokens
         if type(budget) is not int or budget <= 0:
             raise ValueError("Responses 输出额度须为正整数")
@@ -183,7 +183,9 @@ class ResponsesClient:
             names.add(tool["name"])
         payload = {"model": self.config.model, "input": input, "tools": definitions,
                    "max_output_tokens": budget, "store": store,
-                   "chat_template_kwargs": {"enable_thinking": True}, "thinking_token_budget": thinking_budget(budget)}
+                   "chat_template_kwargs": {"enable_thinking": thinking}}
+        if thinking:
+            payload["thinking_token_budget"] = thinking_budget(budget)
         if previous_response_id is not None:
             payload["previous_response_id"] = previous_response_id
         if instructions is not None:

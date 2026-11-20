@@ -3,6 +3,8 @@ import { PrivatePlayback } from "./private-call-playback.js";
 import { guardCall } from "./private-call-guard.js";
 import { FinalUtterances, transcriptReview } from "./private-call-handoff.js";
 import { renderAssistantAnswer } from "./operator-chat-answer.js";
+import { callTranscription } from "./private-call-transcription.js";
+import { callWork } from "./private-call-work.js";
 
 const byId = id => document.getElementById(id);
 const open = byId("private-call-open"), dialog = byId("private-call-dialog");
@@ -13,12 +15,18 @@ const workspace = byId("workspace"), chat = open.closest("[data-section='chat']"
 let current;
 const temporary = byId("private-call-temporary");
 const options = byId("private-call-options"), topic = byId("private-call-topic");
-temporary.onchange = () => { options.hidden = temporary.checked; };
+temporary.onchange = () => {
+  options.hidden = temporary.checked;
+  byId("private-call-summary").textContent = temporary.checked
+    ? "临时通话在挂断后清空。建议佩戴耳机。"
+    : "明确交办的原话和结果会回到对话。建议佩戴耳机。";
+};
 const mute = byId("private-call-mute");
 mute.onclick = () => {
   const playback = current?.playback;
   if (!playback) return;
   playback.setMuted(!playback.muted);
+  if (playback.muted) current.taskWork?.stopReading();
   mute.setAttribute("aria-pressed", String(playback.muted));
   mute.textContent = playback.muted ? "恢复播放" : "播放静音";
 };
@@ -107,7 +115,7 @@ function finish(call, cause, message, code = null) {
 
 async function capture(call, identity, voice) {
   status.textContent = "等待麦克风授权…";
-  await call.context.audioWorklet.addModule("/static/modules/private-call-capture.js");
+  await call.context.audioWorklet.addModule("/static/modules/private-call-capture.js?v=2");
   if (current !== call) return;
   const stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true,
     noiseSuppression: true}, video: false});
@@ -121,7 +129,14 @@ async function capture(call, identity, voice) {
   call.capture.connect(call.context.destination);
   call.capture.port.onmessage = ({data}) => {
     if (current !== call) return;
+    if (typeof data.speaking === "boolean") {
+      call.speaking = data.speaking;
+      call.lastVoice = performance.now();
+      if (data.speaking) call.taskWork?.interrupt();
+      return;
+    }
     if (call.socket.bufferedAmount > 128000) { finish(call, "realtime_send_backlog", "网络积压，通话已结束"); return; }
+    call.transcription?.pcm(data);
     const audio = btoa(String.fromCharCode(...new Uint8Array(data)));
     call.send({type: "input_audio_buffer.append", format: "pcm16", sample_rate_hz: 16000, audio});
   };
@@ -158,6 +173,7 @@ async function begin(previous = null) {
       finish(call, "voice_reference_changed", "音色已变化，请重新拨打。"); return;
     }
     call.scope = config.call_scope;
+    call.callContext = config.voice_context;
     const use = config.topic_source ? {...config.memory_use, topic_source: config.topic_source} : config.memory_use;
     async function validateMemory() {
       if (!config.memory_use) return true;
@@ -188,10 +204,15 @@ async function begin(previous = null) {
       call.guard = await guardCall(call, use, invalidate);
       if (current !== call) return;
     }
-    if (!ephemeral) call.review = transcriptReview(byId("private-call-review"), byId("private-call-transcript"),
-      byId("private-call-utterances"), config);
+    if (!ephemeral) {
+      if (config.voice_context) call.taskWork = callWork(call, config.voice_context,
+        byId("private-call-task-results"), byId("private-call-task-note"));
+      call.review = transcriptReview(byId("private-call-review"), byId("private-call-transcript"),
+        byId("private-call-utterances"), {...config, confirmHandoff: call.taskWork?.confirm});
+    }
     const url = new URL(config.socket);
     url.search = new URLSearchParams({ticket: config.ticket, duplex: "1", autostart: "0"});
+    if (call.taskWork) url.searchParams.set("input_transcription", "explicit");
     call.playback = new PrivatePlayback(call.context, event => call.send(event));
     if (previous?.muted) {
       call.playback.setMuted(true);
@@ -229,13 +250,26 @@ async function begin(previous = null) {
           call.deadline = setTimeout(() => finish(call, "microphone_timeout", "麦克风授权超时，通话已结束"), 60000);
           call.ready = true;
           work.hidden = ephemeral;
+          const asr = caps.gateway_input_transcription;
+          if (call.taskWork && asr?.mode === "explicit_once" && asr.receipt === "hmac-sha256-v1" &&
+              asr.sample_rate_hz === 16000 && Number.isInteger(asr.max_seconds) && asr.max_seconds > 0) {
+            call.transcription = callTranscription(event => call.send(event), config.voice_context,
+              asr.max_seconds, (text, origin) => {
+                call.review.add(text, origin);
+                if (asr.transcript_receipt === "hmac-sha256-v1" && origin.transcript_receipt)
+                  call.taskWork.accept(origin);
+              });
+          }
           call.receipts = setInterval(() => call.playback.acknowledge(), 200);
           call.heartbeat = setInterval(() => call.send({type: "session.heartbeat"}), 20000);
           await capture(call, config.character, config.voice?.name);
         } else if (call.stream) {
+          call.transcription?.event(event);
           const text = !ephemeral && call.utterances.accept(event);
           if (text) call.review.add(text);
-          if (config.memory_use && ["response.audio.delta", "response.output_audio.delta"].includes(event.type)) {
+          const audio = ["response.audio.delta", "response.output_audio.delta"].includes(event.type);
+          if (audio) call.taskWork?.interrupt();
+          if (config.memory_use && audio) {
             call.pendingAudio = (call.pendingAudio || 0) + 1;
             if (call.pendingAudio > 8) { finish(call, "memory_backlog", "记忆核对积压，通话已结束"); return; }
             call.audioQueue = (call.audioQueue || Promise.resolve()).then(async () => {
@@ -261,16 +295,18 @@ work.onsubmit = async event => {
   event.preventDefault();
   const call = current, message = workInput.value.trim();
   if (!message || !call?.ready || call.ephemeral || call.invalidated || call.sending) return;
+  call.taskWork?.stopReading();
   const submit = work.querySelector("button");
   call.sending = submit.disabled = true;
   const request = call.workRequest?.message === message ? call.workRequest :
-    {request_id: crypto.randomUUID(), message, call_scope: call.scope};
+    {request_id: crypto.randomUUID(), message, call_scope: call.scope, call_context: call.callContext};
   call.workRequest = request;
   workResult.textContent = "正在处理…";
   try {
     const reply = await api("/api/chat/intelligent", {method: "POST", body: request});
     document.dispatchEvent(new CustomEvent("operator-chat-changed"));
     if (call === current) {
+      if (reply.card?.type === "agent_task") call.taskWork?.refresh();
       renderAssistantAnswer(workResult, reply);
       if (workInput.value.trim() === message) workInput.value = "";
       call.workRequest = null;

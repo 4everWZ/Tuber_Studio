@@ -19,6 +19,7 @@ from .agent.api import register_agent_api
 from .agent.operator_chat import register_operator_chat
 from .agent.private_avatar import register_private_avatar
 from .agent.private_call import register_private_call
+from .agent.private_call_work import register_call_work
 from .agent.reply_operations import register_reply_operations
 from .agent.task_api import register_task_api
 from .agent.task_tools import create_task_runtime
@@ -243,6 +244,7 @@ def create_app(
     register_agent_api(app, settings, runtime, store, comments, require_admin)
     operator_chat = register_operator_chat(app, runtime, store, browsing, dynamics, require_admin)
     register_private_call(app, runtime, require_admin, operator_chat=operator_chat)
+    register_call_work(app, runtime, require_admin, operator_chat)
     register_private_avatar(app, runtime, require_admin, operator_chat=operator_chat)
     register_performance(app, runtime, require_admin)
     register_task_api(app, runtime.tasks, require_admin)

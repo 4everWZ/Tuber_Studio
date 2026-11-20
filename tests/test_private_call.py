@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import time
@@ -7,11 +8,88 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from tuber_studio.agent import private_call
+from tuber_studio.agent import private_call, private_call_work, voice_origin
 from tuber_studio.app import create_app
 from tuber_studio.front_persona import front_identity
 from tuber_studio.operation_identity import private_participant_instructions
 from tuber_studio.store import editable_character
+
+
+async def test_signed_voice_work_stays_in_the_original_chat(settings, monkeypatch):
+    key = "fixture-gateway"
+    app = create_app(settings)
+    runtime = app.state.runtime
+    configured_key = settings.provider_key
+    monkeypatch.setattr(settings, "provider_key", lambda name: key if name == "omni" else configured_key(name))
+    path = "/api/chat/private-call"
+    completed = "演播间当前待命。"
+    goal = "帮我核对演播间状态，留份私下的交接便笺。"
+    casual = "这一阵风吹得真舒服。"
+    change = "刚才那份便笺加上检查时间。"
+    cancel = "停掉方才那份交接便笺。"
+    pending_read = asyncio.Event()
+    resume_read = asyncio.Event()
+
+    async def route(chat, text, tasks):
+        picked = {goal: "delegate", change: "revise", cancel: "cancel"}.get(text, "conversation")
+        return private_call_work.VoicePlan(action=picked, quote=text,
+                                           task_id=tasks[0]["id"] if tasks and picked in {"revise", "cancel"} else None)
+
+    async def synthesize(words, voice):
+        assert words == completed and voice == runtime.character["voice_profile"]
+        pending_read.set()
+        await resume_read.wait()
+        from types import SimpleNamespace
+        return SimpleNamespace(path=settings.root / "assets/whale/ref.wav")
+
+    monkeypatch.setattr(private_call_work, "classify", route)
+    monkeypatch.setattr(runtime.voices, "synthesize_live", synthesize)
+    ticket = voice_origin.ticket_context(key, "fixture-ticket", runtime.tasks.scope())
+
+    def spoken(capture, text, **changes):
+        fields = ["omni.mic.v1", ticket["ticket_hash"], capture, 48000, text]
+        return {"origin": {**ticket, "machine_text": text, "capture_id": capture, "samples": 48000,
+                           "receipt": voice_origin.sign(key, fields),
+                           "transcript_receipt": voice_origin.sign(key, ["omni.asr.v1", *fields[1:]]), **changes}}
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1") as browser:
+        send = lambda body: browser.post(path + "/utterances", json=body)
+        forged = await send(spoken("voice-1", casual, machine_text=goal))
+        assert forged.status_code == 409
+        legacy = await send(spoken("voice-1", goal, transcript_receipt=None))
+        assert legacy.status_code == 409
+        receipt = (await send(spoken("voice-1", goal))).raise_for_status().json()
+        assert (await send(spoken("voice-1", goal))).json() == receipt
+        assert (await send(spoken("voice-2", casual))).json() == {"turn_id": None}
+        assert len(runtime.tasks.activity()) == 1
+        task_id = receipt["turn_id"]
+        row = runtime.store.one("SELECT * FROM operator_chat_turns WHERE request_id=?", (task_id,))
+        assert json.loads(row["result"])["call_origin"] == {"id": ticket["ticket_hash"], "utterance": "voice-1"}
+        active = runtime.tasks.executable(task_id)
+        assert active["goal"] == goal
+        # Responses completion uses the same persistence path as the worker.
+        assert runtime.tasks._save(active, status="completed", message=completed,
+                                   plan={"backend": "responses", "prior_goals": []})
+        history_path = "/api/chat/intelligent"
+        turns = (await browser.get(history_path)).json()["turns"]
+        assert len(turns) == 1 and turns[0]["card"]["data"]["message"] == completed
+        for _ in range(2):
+            visible = (await browser.post(path + "/work/status", json=ticket)).raise_for_status().json()["tasks"]
+            assert len(visible) == 1 and visible[0]["message"] == completed
+        other = voice_origin.ticket_context(key, "other-ticket", runtime.tasks.scope())
+        assert (await browser.post(path + "/work/status", json=other)).json() == {"tasks": []}
+        endpoint = f"{path}/work/{task_id}/read"
+        audio = asyncio.create_task(browser.post(endpoint, json={"call": ticket, "revision": 1}))
+        await asyncio.wait_for(pending_read.wait(), 2)
+        assert (await send(spoken("voice-3", change))).raise_for_status().json()["task_id"] == task_id
+        resume_read.set()
+        assert (await audio).status_code == 409
+        assert (await send(spoken("voice-4", cancel))).raise_for_status().json()["task_id"] == task_id
+        assert (await browser.post(endpoint, json={"call": ticket, "revision": 2})).status_code == 409
+        assert len([turn for turn in (await browser.get(history_path)).json()["turns"] if turn["card"]]) == 1
+        assert runtime.tasks.executable(task_id)["status"] == "cancelled"
+        runtime.store.replace_character(editable_character(runtime.character) | {"name": "新的角色名字"})
+        assert (await send(spoken("voice-5", goal))).status_code == 409
 
 
 @pytest.mark.parametrize("temporary", [False, True])

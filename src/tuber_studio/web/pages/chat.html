@@ -108,7 +108,7 @@
     <label>话题（可选）<input id="private-call-topic" maxlength="500"></label>
   </details>
   <div id="private-call-pet-slot"></div>
-  <p>声音只送往私聊推理服务，不接入直播、不写入聊天记录。建议佩戴耳机。</p>
+  <p id="private-call-summary">明确交办的原话和结果会回到对话。建议佩戴耳机。</p>
   <p id="private-call-state" role="status">尚未开始通话</p>
   <form id="private-call-work" hidden>
     <label>通话中的文字交办
@@ -117,6 +117,8 @@
     <button type="submit">发送到 Chats</button>
     <div id="private-call-work-result" role="status"></div>
   </form>
+  <p id="private-call-task-note" role="status"></p>
+  <div id="private-call-task-results" hidden></div>
   <details id="private-call-review" hidden>
     <summary>查看通话转写</summary>
     <label>选择要处理的转写
@@ -130,4 +132,4 @@
     <button id="private-call-end" type="button">关闭</button>
   </div>
 </dialog>
-<script type="module" src="/static/modules/private-call.js?v=20261120.1"></script>
+<script type="module" src="/static/modules/private-call.js?v=20261120.2"></script>

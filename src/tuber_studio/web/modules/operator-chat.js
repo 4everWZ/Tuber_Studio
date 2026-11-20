@@ -329,6 +329,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     }
     const visible = [...turns.values()].filter(entry => {
       if (!entry.turn.memory_dependent && !entry.card?.needsRefresh?.()) return false;
+      if (entry.cardType === "agent_task") return true;
       const rect = entry.section.getBoundingClientRect();
       return rect.top < bounds.bottom && rect.bottom > bounds.top;
     }).slice(-4);

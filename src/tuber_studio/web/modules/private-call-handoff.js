@@ -94,8 +94,13 @@ function handoff(text, call, origin) {
       try {
         const goal = wording();
         if (!goal) { feedback.textContent = "请填写要交办的原话。"; button.disabled = false; return; }
-        await api("/api/agent/tasks", {method: "POST", body: {request_id: requestId, goal}});
-        feedback.textContent = "已交办，可在活动中查看。";
+        if (origin && call.confirmHandoff) {
+          const receipt = await call.confirmHandoff(origin, goal);
+          feedback.textContent = receipt.message;
+        } else {
+          await api("/api/agent/tasks", {method: "POST", body: {request_id: requestId, goal}});
+          feedback.textContent = "已交办，可在活动中查看。";
+        }
       } catch {
         feedback.textContent = "交办未确认，可以重试。";
         button.disabled = false;

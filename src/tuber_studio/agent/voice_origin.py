@@ -11,13 +11,17 @@ from ..models import StrictModel
 from ..operation_continuations import content_hash
 
 
-class VoiceOrigin(StrictModel):
+class CallOrigin(StrictModel):
+    ticket_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    scope_signature: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class VoiceOrigin(CallOrigin):
     machine_text: str = Field(min_length=1, max_length=2000)
     capture_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")
     samples: int = Field(strict=True, gt=0, le=240000)
-    ticket_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     receipt: str = Field(pattern=r"^[a-f0-9]{64}$")
-    scope_signature: str = Field(pattern=r"^[a-f0-9]{64}$")
+    transcript_receipt: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
 def sign(key, fields):
@@ -30,11 +34,20 @@ def ticket_context(key, ticket, scope):
     return {"ticket_hash": digest, "scope_signature": sign(key, ["studio.mic.v1", digest, content_hash(scope)])}
 
 
-def verify_origin(origin, key, scope):
-    expected = sign(key, ["omni.mic.v1", origin.ticket_hash, origin.capture_id, origin.samples, origin.machine_text])
+def verify_call(origin, key, scope):
     bound = sign(key, ["studio.mic.v1", origin.ticket_hash, content_hash(scope)])
-    if not hmac.compare_digest(expected, origin.receipt) or not hmac.compare_digest(bound, origin.scope_signature):
+    if not hmac.compare_digest(bound, origin.scope_signature):
+        raise HTTPException(409, "通话授权已变化，请重新开始通话")
+
+
+def verify_origin(origin, key, scope, *, for_routing=False):
+    verify_call(origin, key, scope)
+    fields = [origin.ticket_hash, origin.capture_id, origin.samples, origin.machine_text]
+    expected = sign(key, ["omni.mic.v1", *fields])
+    if not hmac.compare_digest(expected, origin.receipt):
         raise HTTPException(409, "无法核实通话录音来源或当前号主、角色已变化")
+    if for_routing and not hmac.compare_digest(sign(key, ["omni.asr.v1", *fields]), origin.transcript_receipt or ""):
+        raise HTTPException(409, "这段转写可在通话里确认后交办。")
 
 
 def install(db):
