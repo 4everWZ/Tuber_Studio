@@ -6,6 +6,7 @@ import json
 import re
 import time
 import unicodedata
+from contextlib import AsyncExitStack
 from datetime import datetime
 
 import httpx
@@ -16,8 +17,8 @@ from .deployment_profiles import operation_profile
 from .dynamic_comment_card import comment_card, render_comment_card
 from .dynamic_grounding import review_caption
 from .generation_meter import budgeted_json
-from .meme_selection import select_meme
 from .illustration_policy import illustration_policy
+from .meme_selection import select_meme
 from .operation_attachments import (
     checked_image,
     decision,
@@ -59,7 +60,7 @@ from .platforms.bilibili_dynamics import (
     validate_text,
 )
 from .platforms.bilibili_images import bfs_image_path
-from .publication_errors import PlatformRejected, UnknownPublication
+from .publication_errors import PlatformRejected, SendLimitReached, UnknownPublication
 
 MAX_SAFE_INTEGER = (1 << 53) - 1  # Exact integer range shared with browser JSON.
 
@@ -686,10 +687,19 @@ class Dynamics:
             + (" AND id<>?" if exclude_post is not None else ""),
             (now - 86400, *((exclude_post,) if exclude_post is not None else ())),
         )
-        if row["last"] and now - row["last"] < policy["min_post_interval_seconds"]:
-            raise ValueError("尚未达到动态最小发布间隔")
-        if policy["max_posts_per_day"] and (row["daily"] or 0) >= policy["max_posts_per_day"]:
-            raise ValueError("已达到24小时动态发布上限")
+        blocks = []
+        if row["last"] and (due := row["last"] + policy["min_post_interval_seconds"]) > now:
+            blocks.append(SendLimitReached("尚未达到动态最小发布间隔", due))
+        if (maximum := policy["max_posts_per_day"]) and (row["daily"] or 0) >= maximum:
+            oldest = self.store.one(
+                "SELECT attempted_at FROM dynamic_posts WHERE attempted_at>?"
+                + (" AND id<>?" if exclude_post is not None else "")
+                + " ORDER BY attempted_at DESC LIMIT 1 OFFSET ?",
+                (now - 86400, *((exclude_post,) if exclude_post is not None else ()), maximum - 1),
+            )
+            blocks.append(SendLimitReached("已达到24小时动态发布上限", oldest["attempted_at"] + 86400))
+        if blocks:
+            raise max(blocks, key=lambda error: error.next_at)
 
     def _publication_binding(self, row, account, character):
         existing = getattr(self.runtime, "continuations", None)
@@ -1704,7 +1714,7 @@ class Dynamics:
             return self.dynamic_edit(request_id, account, character["id"])
 
     async def evaluate(self, manual=False):
-        async with self.evaluation_lock:
+        async with self.evaluation_lock, AsyncExitStack() as reservations:
             policy = self.policy()
             if not manual and (
                 not policy["enabled"]
@@ -1724,10 +1734,23 @@ class Dynamics:
                 base["reason"] = "直播队列繁忙，延后动态评估"
                 return self._save_decision(char, manual, base, [])
             if not manual:
+                blocked = None
                 try:
                     self._quota()
-                except ValueError:
-                    base["reason"] = "发布频率限制中，暂不生成动态"
+                except SendLimitReached as error:
+                    blocked = error
+                browsing = getattr(self.runtime, "browsing", None)
+                if policy["auto_publish"] and browsing:
+                    shared = reservations.enter_context(browsing.sends.preparation_slot(
+                        self.operations.policy()["account_id"], "dynamics",
+                        {"max_per_day": policy["max_posts_per_day"]},
+                        retry_seconds=policy["evaluate_interval_seconds"],
+                        min_interval=policy["min_post_interval_seconds"],
+                    ))
+                    if shared and (not blocked or shared.next_at > blocked.next_at):
+                        blocked = shared
+                if blocked:
+                    base.update(reason=str(blocked), next_evaluation_seconds=max(1, blocked.next_at - time.time()))
                     return self._save_decision(char, manual, base, [])
             current_time = datetime.now().astimezone().isoformat()
             memory_preference = self._memory_preference()

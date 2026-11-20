@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+from contextlib import nullcontext
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -491,8 +492,9 @@ async def test_memory_and_operations_do_not_disclose_chat(service, manual, with_
     runtime.memory_organizer = SimpleNamespace(scope=lambda: scope)
     BrowsingRepository(store)
     queued = []
-    runtime.browsing = SimpleNamespace(account=account, policy=lambda: {},
-                                       sends=SimpleNamespace(enqueue=lambda *args: queued.append(args)))
+    runtime.browsing = SimpleNamespace(account=account, policy=lambda: {}, sends=SimpleNamespace(
+        enqueue=lambda *args: queued.append(args), preparation_slot=lambda *args, **kwargs: nullcontext(),
+    ))
     store.execute("CREATE TABLE operator_chat_turns(request_id TEXT PRIMARY KEY, character_id TEXT, "
                   "character_version INTEGER, message TEXT, result TEXT, created_at REAL)")
     turn = str(uuid4())

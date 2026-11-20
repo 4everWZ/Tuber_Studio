@@ -426,6 +426,23 @@ def test_automation_settings_accepts_permission_matrix_with_extra_keys(admin):
     assert data["settings"]["max_per_day"] == 25
 
 
+@pytest.mark.parametrize(
+    ("per_video", "hourly", "daily", "message_hourly", "message_daily"),
+    [(50, 100, 500, 80, 400), (0, 0, 0, 0, 0)],
+)
+def test_configured_send_quotas_round_trip(admin, per_video, hourly, daily, message_hourly, message_daily):
+    account = {"max_per_hour": hourly, "max_per_day": daily}
+    browsing = account | {"max_replies_per_video": per_video}
+    messages = {"max_per_hour": message_hourly, "max_per_day": message_daily}
+    admin.put("/api/automation/settings", json=browsing).raise_for_status()
+    admin.put("/api/messages/policy", json=messages).raise_for_status()
+
+    status = admin.get("/api/automation").json()
+    assert {key: status["settings"][key] for key in browsing} == browsing
+    assert {key: status["policy"][key] for key in account} == account
+    assert {key: status["base"]["messages"][key] for key in messages} == messages
+
+
 def test_removed_comment_policy_routes_cannot_change_permissions_or_credentials(admin):
     before = admin.get("/api/automation").json()["settings"]
     for method in ("GET", "PUT"):

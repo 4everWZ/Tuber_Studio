@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import json
 import time
+from contextlib import ExitStack
 
 from ...comment_materials import prepare_comment_materials
 from ...comments import category
@@ -332,7 +333,7 @@ async def evaluate_comment_visit(browsing, result, row, metrics):
                            resource_author_uid=metadata.get("owner_uid"))
         chosen = {segment["id"] for segment in browsing._segments(material)} if material else set()
         for item in merge_continuous_comments(items):
-            if browsing.repo.video_reply_limit_reached(row, metadata["bvid"]):
+            if browsing.comment_admission.review_reply_limit_reached(row, metadata["bvid"]):
                 raise DailyReplyLimitReached(day_window(row["config"].get("business_timezone", "Asia/Taipei")))
             intent = await browsing.decisions._reply_to_video_comment(
                 row, material, key, chosen, item, items, metrics,
@@ -769,12 +770,11 @@ def settle_aliases(browsing, event_row, row, target, source):
 
 
 async def event_unlocked(browsing, event_row, row, metrics, event, thread):
-    target, source = thread["target"], thread["source"]
-    with browsing.comment_admission.slot(row, "reply_public", target.get("bvid"), source["author_uid"]) as admission:
-        return await decide_event(browsing, event_row, row, metrics, event, thread, admission)
+    with ExitStack() as slots:
+        return await decide_event(browsing, event_row, row, metrics, event, thread, slots)
 
 
-async def decide_event(browsing, event_row, row, metrics, event, thread, admission):
+async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
     config = row["config"]
     source, target = thread["source"], dict(thread["target"])
     target["parent"] = str(source["comment_id"])
@@ -839,17 +839,31 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, admissi
         if (like_intent["auto_authorized"] and like_intent["epoch"] == row["epoch"]
                 and like_intent["status"] == "pending_review"
                 and browsing.publication._action_allowed("comment_like", browsing.effective())):
-            browsing.queue_publication(like_intent["id"])
+            browsing.resume_publication(row, like_intent, like_intent["target"])
         browsing.store.execute(
             "UPDATE browsing_events SET status='drafted',source_key=?,error=NULL WHERE id=?",
             (canonical, event_row["id"]),
         )
         settle_aliases(browsing, event_row, row, target, source)
         return like_intent
+    admission = slots.enter_context(
+        browsing.comment_admission.slot(row, "reply_public", target.get("bvid"), source["author_uid"])
+    )
+    can_like = like_enabled and not source_row.get("liked_by_self")
+    like_admission = None
+    # This response can produce one action, so a reply slot also covers the
+    # account quota for a possible like.
+    if can_like and (admission or not browsing.comment_admission.requires_slot(row, "reply_public")):
+        like_admission = slots.enter_context(browsing.comment_admission.slot(row, "comment_like"))
     reply_limited = bool(target.get("bvid") and config["reply_enabled"] and
-                         browsing.repo.video_reply_limit_reached(row, target["bvid"]))
+                         browsing.comment_admission.review_reply_limit_reached(row, target["bvid"]))
     allow_public = config["reply_enabled"] and not admission and not (like_enabled and reply_limited)
-    allow_like = like_enabled and not source_row.get("liked_by_self")
+    allow_like = can_like and not like_admission
+    blocked = min(
+        (error for error in (admission, like_admission if can_like else None) if error),
+        key=lambda error: error.next_at,
+        default=None,
+    )
     group_ids = event.get("grouped_ids") or []
     if group_ids:
         grouped = [item for item in items_list if str(item["comment_id"]) in group_ids
@@ -868,8 +882,8 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, admissi
     if event_row["kind"] == "own_comment":
         thread["resource_author_uid"] = str(row["account_id"])
     reply = browsing.decisions.invited_private_response(row, thread)
-    if reply is None and admission and not allow_like:
-        raise admission
+    if reply is None and blocked and not (allow_public or allow_like):
+        raise blocked
     material, keys = None, []
     allowed = {"public:" + str(source["comment_id"])}
     if thread["resource_type"] == "video":
@@ -931,8 +945,8 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, admissi
             browsing.decisions.comment_progress.save(row, resource, source, reply)
     if reply.action == "reply_public" and not allow_public or reply.action == "like_comment" and not allow_like:
         raise ValueError("回应动作未获当前任务授权")
-    if admission and reply.action in {"skip", "wait"}:
-        raise admission
+    if blocked and reply.action in {"skip", "wait"}:
+        raise blocked
     if like_enabled and reply_limited and reply.action in {"skip", "wait"}:
         limit = DailyReplyLimitReached(day_window(config.get("business_timezone", "Asia/Taipei")))
         browsing.store.execute(

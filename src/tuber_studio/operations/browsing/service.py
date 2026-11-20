@@ -936,8 +936,8 @@ class BrowsingService:
                 return True
         if self.effective().get("review_session_id"):
             return True
-        limit = self.operations.policy()["max_per_day"] or 20
-        return self.review_counts(account, character)[channel] < limit
+        limit = self.operations.policy()["max_per_day"]
+        return not limit or self.review_counts(account, character)[channel] < limit
 
     def page_capacity(self):
         state = self.backlog_status()
@@ -1018,6 +1018,16 @@ class BrowsingService:
     def queue_publication(self, identity):
         context = operation_lane.get()
         self.sends.enqueue("browsing", identity, direct=context == "direct")
+
+    def resume_publication(self, row, intent, target):
+        if self.store.one(
+            "SELECT 1 FROM operation_send_queue WHERE channel='browsing' AND source_id=?", (intent["id"],),
+        ):
+            return
+        with self.comment_admission.slot(row, intent["kind"], target.get("bvid"), target.get("recipient")) as blocked:
+            if blocked:
+                raise blocked
+            self.queue_publication(intent["id"])
 
     def check_step(self, row):
         if self.operations.draining and not row["preview"]:

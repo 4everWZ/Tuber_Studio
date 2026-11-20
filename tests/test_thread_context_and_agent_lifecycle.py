@@ -180,22 +180,6 @@ def test_top_level_comment_not_duplicated():
     assert has_own_top_level_2 is False
 
 
-def test_permission_matrix_payload_and_frequency_alignment():
-    """Verify matrix payload aligns max_per_hour with max_per_day, avoiding arbitrary round cutoffs."""
-    max_per_day = 20
-    max_replies_per_video = 3
-    # Frontend payload construction logic
-    payload = {
-        "max_replies_per_video": max(0, min(20, max_replies_per_video)),
-        "max_per_hour": max(1, min(30, max_per_day)),
-        "max_per_day": max(1, min(200, max_per_day)),
-    }
-    assert payload["max_replies_per_video"] == 3
-    assert payload["max_per_hour"] == 20
-    assert payload["max_per_day"] == 20
-    assert "max_per_round" not in payload
-
-
 def test_passive_reply_accounted_in_daily_meltdown():
     """Both proactive and passive replies (@ mentions) count towards the daily write limit."""
     import time

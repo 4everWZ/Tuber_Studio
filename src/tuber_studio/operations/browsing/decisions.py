@@ -994,7 +994,15 @@ class BrowsingDecisions:
             like_enabled = row["config"].get("video_like_enabled", False)
             fav_enabled = row["config"].get("video_fav_enabled", False)
             if (like_enabled or fav_enabled) and actionable:
+                enabled_actions = [
+                    kind for kind, enabled in (("video_like", like_enabled), ("video_fav", fav_enabled)) if enabled
+                ]
+                if all(self.browsing.comment_admission.requires_slot(row, kind) for kind in enabled_actions):
+                    admission = slots.enter_context(self.browsing.comment_admission.slot(row, enabled_actions[0]))
+                    if admission:
+                        raise admission
                 engagement_decision = await self._engagement_decision(row, material, actionable, metrics)
+                slots.close()
                 bvid = material["metadata"]["bvid"]
                 aid = material["metadata"]["aid"]
                 title = material["metadata"].get("title", "")
@@ -1006,6 +1014,9 @@ class BrowsingDecisions:
                         (row["account_id"], row["character_id"], like_source_key),
                     )
                     if not existing_like:
+                        admission = slots.enter_context(self.browsing.comment_admission.slot(row, "video_like"))
+                        if admission:
+                            raise admission
                         like_target = {
                             "type": 1,
                             "oid": str(aid),
@@ -1026,6 +1037,7 @@ class BrowsingDecisions:
                         status = "selected"
                         if like_intent["auto_authorized"]:
                             self.browsing.queue_publication(like_intent["id"])
+                        slots.close()
 
                 if engagement_decision.should_favorite and fav_enabled:
                     fav_source_key = canonical_intent("bilibili", bvid, "favorite", row["character_id"])
@@ -1034,6 +1046,9 @@ class BrowsingDecisions:
                         (row["account_id"], row["character_id"], fav_source_key),
                     )
                     if not existing_fav:
+                        admission = slots.enter_context(self.browsing.comment_admission.slot(row, "video_fav"))
+                        if admission:
+                            raise admission
                         fav_target = {
                             "type": 1,
                             "oid": str(aid),
@@ -1054,6 +1069,7 @@ class BrowsingDecisions:
                         status = "selected"
                         if fav_intent["auto_authorized"]:
                             self.browsing.queue_publication(fav_intent["id"])
+                        slots.close()
 
             may_discuss = (
                 result.get("task_kind") == "comment_visit"
@@ -1075,7 +1091,7 @@ class BrowsingDecisions:
                     context = await self.browsing.video_comment_context(row, material["metadata"]["bvid"])
                 raw_items = context.get("items", []) if isinstance(context, dict) else []
                 for item in merge_continuous_comments(raw_items):
-                    if self.browsing.repo.video_reply_limit_reached(row, bvid):
+                    if self.browsing.comment_admission.review_reply_limit_reached(row, bvid):
                         comments_complete = False
                         status = "deferred_daily"
                         payload.update(
@@ -1196,8 +1212,8 @@ class BrowsingDecisions:
         try:
             async with self.browsing.runtime.conversation_turn(scope) as waited:
                 self.browsing._check_round(row)
-                if self.browsing.repo.video_reply_limit_reached(row, bvid):
-                    return None
+                if self.browsing.comment_admission.review_reply_limit_reached(row, bvid):
+                    raise DailyReplyLimitReached(day_window(row["config"].get("business_timezone", "Asia/Taipei")))
                 target = {
                     "type": 1,
                     "oid": str(metadata["aid"]),

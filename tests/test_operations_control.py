@@ -14,15 +14,16 @@ from tuber_studio.publication_errors import SendLimitReached
 from tuber_studio.store import Store
 
 
-def test_send_limit_exposes_wake_time_without_recording_another_attempt(store):
+@pytest.mark.parametrize(("daily", "window"), [(0, 3600), (1, 86400)])
+def test_send_limit_exposes_wake_time_without_recording_another_attempt(store, daily, window):
     control, character = OperationsControl(store), store.character()
-    control.configure({"max_per_hour": 1})
+    control.configure({"max_per_hour": 1, "max_per_day": daily})
     token = control.reserve("900", character, intent(character, "first"), "comments")
     started = control.get_attempt(token)["started_at"]
     control.finish(token, "published")
     with pytest.raises(SendLimitReached) as caught:
         control.reserve("900", character, intent(character, "second"), "comments")
-    assert caught.value.next_at == started + 3600
+    assert caught.value.next_at == started + window
     assert store.one("SELECT COUNT(*) AS n FROM operation_write_attempts")["n"] == 1
 
 

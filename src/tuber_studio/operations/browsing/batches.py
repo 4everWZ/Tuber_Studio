@@ -533,7 +533,7 @@ async def sample_resources(browsing, metrics):
 
 async def resume_batch_publications(browsing, row, bvid):
     for item in browsing.store.all(
-        "SELECT id,status,kind FROM browsing_intents WHERE account_id=? AND character_id=? "
+        "SELECT id,status,kind,target FROM browsing_intents WHERE account_id=? AND character_id=? "
         "AND json_extract(target,'$.bvid')=? AND (status='publish_uncertain' OR "
         "(round_id=? AND character_version=? AND epoch=? AND status='pending_review' AND auto_authorized=1)) "
         "ORDER BY created_at",
@@ -550,7 +550,7 @@ async def resume_batch_publications(browsing, row, bvid):
                     (public_error(error), item["id"]),
                 )
         elif browsing.publication._action_allowed(item["kind"], browsing.effective()):
-            browsing.queue_publication(item["id"])
+            browsing.resume_publication(row, item, json.loads(item["target"]))
 
 
 async def process_discovery_video(browsing, row, candidate, metrics, semaphore):

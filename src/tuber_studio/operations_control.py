@@ -17,8 +17,8 @@ from .publication_errors import SendLimitReached
 class OperationsPolicy(StrictModel):
     enabled: bool = False
     emergency: bool = False
-    max_per_hour: int = Field(default=5, ge=0, le=30)
-    max_per_day: int = Field(default=20, ge=0, le=200)
+    max_per_hour: int = Field(default=5, ge=0)
+    max_per_day: int = Field(default=20, ge=0)
     recipient_cooldown_seconds: int = Field(default=120, ge=0, le=86400)
     max_recoveries: int = Field(default=8, ge=0, le=64)
 
@@ -298,35 +298,27 @@ class OperationsControl:
                 (str(account_id), intent, character["id"], channel),
             ).fetchone():
                 raise ValueError("此回应意图已尝试提交，禁止重复发送")
-            for seconds, maximum in ((3600, policy["max_per_hour"]), (86400, policy["max_per_day"])):
-                if not maximum:
-                    continue
-                count = db.execute(
-                    "SELECT COUNT(*) FROM operation_write_attempts WHERE account_id=? AND started_at>?",
-                    (str(account_id), now - seconds),
-                ).fetchone()[0]
-                if count >= maximum:
-                    oldest = db.execute(
-                        "SELECT started_at FROM operation_write_attempts WHERE account_id=? AND started_at>? "
-                        "ORDER BY started_at DESC LIMIT 1 OFFSET ?",
-                        (str(account_id), now - seconds, maximum - 1),
+            blocks = []
+            for scope, quotas in ((None, policy), (channel, limits)):
+                where = "account_id=? AND started_at>?" + (" AND channel=?" if scope is not None else "")
+                for seconds, name in ((3600, "max_per_hour"), (86400, "max_per_day")):
+                    maximum = quotas.get(name, 0)
+                    if not maximum:
+                        continue
+                    params = (str(account_id), now - seconds, *((scope,) if scope is not None else ()))
+                    count = db.execute(
+                        f"SELECT COUNT(*) FROM operation_write_attempts WHERE {where}", params
                     ).fetchone()[0]
-                    raise SendLimitReached("达到账号全渠道发送上限，保留草稿", oldest + seconds)
-            for seconds, name in ((3600, "max_per_hour"), (86400, "max_per_day")):
-                if (
-                    limits.get(name, 0) > 0
-                    and db.execute(
-                        "SELECT COUNT(*) FROM operation_write_attempts WHERE account_id=? AND channel=? AND started_at>?",
-                        (str(account_id), channel, now - seconds),
-                    ).fetchone()[0]
-                    >= limits[name]
-                ):
-                    oldest = db.execute(
-                        "SELECT started_at FROM operation_write_attempts WHERE account_id=? AND channel=? AND started_at>? "
-                        "ORDER BY started_at DESC LIMIT 1 OFFSET ?",
-                        (str(account_id), channel, now - seconds, limits[name] - 1),
-                    ).fetchone()[0]
-                    raise SendLimitReached("达到渠道发送上限，等待可用名额", oldest + seconds)
+                    if count >= maximum:
+                        oldest = db.execute(
+                            f"SELECT started_at FROM operation_write_attempts WHERE {where} "
+                            "ORDER BY started_at DESC LIMIT 1 OFFSET ?",
+                            (*params, maximum - 1),
+                        ).fetchone()[0]
+                        detail = "账号全渠道" if scope is None else "渠道"
+                        blocks.append(SendLimitReached(f"达到{detail}发送上限，保留草稿", oldest + seconds))
+            if blocks:
+                raise max(blocks, key=lambda error: error.next_at)
             cooldown = max(policy["recipient_cooldown_seconds"], limits.get("recipient_cooldown_seconds", 0))
             if recipient and cooldown:
                 last = db.execute(

@@ -11,6 +11,7 @@ import httpx
 from pydantic import Field, StrictInt
 
 from .generation_meter import GenerationMeter, budgeted_json
+from .illustration_policy import illustration_policy
 from .meme_selection import select_meme
 from .message_outreach import (
     assess_outreach,
@@ -21,7 +22,6 @@ from .message_outreach import (
     verified_agreement,
 )
 from .models import OperationReply, StrictModel
-from .illustration_policy import illustration_policy
 from .operation_attachments import (
     checked_image,
     image_payload,
@@ -65,8 +65,8 @@ class MessagePolicy(StrictModel):
     allow_comment_handoff: bool = True
     channel_max_tokens: int = Field(default=2048, ge=256, le=65536)
     poll_interval_seconds: int = Field(default=60, ge=20, le=86400)
-    max_per_hour: int = Field(default=5, ge=0, le=30)
-    max_per_day: int = Field(default=20, ge=0, le=200)
+    max_per_hour: int = Field(default=5, ge=0)
+    max_per_day: int = Field(default=20, ge=0)
     recipient_cooldown_seconds: int = Field(default=120, ge=10, le=86400)
 
 
@@ -496,6 +496,12 @@ class DirectMessages:
         cutoff = self._inbox_cutoff(account_id)
         if not self._processing_authorized() or not self.operations.accepting_work:
             return
+        policy = self.policy()
+        browsing = getattr(self.runtime, "browsing", None)
+        if policy["auto_send"] and browsing and browsing.sends.preparation_block(
+            account_id, "messages", policy, retry_seconds=policy["poll_interval_seconds"],
+        ):
+            return
         slots = self.queue.maxsize - self.queue.qsize()
         if not slots:
             return
@@ -527,7 +533,7 @@ class DirectMessages:
         )
         for candidate in candidates:
             self.enqueue(
-                "message", candidate["id"], automatic=self.policy()["auto_send"], continuous=True,
+                "message", candidate["id"], automatic=policy["auto_send"], continuous=True,
                 waiting_since=candidate["waiting_since"],
             )
 
@@ -1166,7 +1172,22 @@ class DirectMessages:
                 waited = time.time() - trigger.get("waiting_since", draft["created_at"])
                 ready = operation_ready_at.set(time.monotonic() - max(0, waited))
                 try:
-                    return await self._generate_owned(identity, automatic)
+                    policy = self.policy()
+                    browsing = getattr(self.runtime, "browsing", None)
+                    slot = nullcontext()
+                    if automatic and policy["auto_send"] and browsing:
+                        slot = browsing.sends.preparation_slot(
+                            draft["account_id"] or self.operations.policy()["account_id"], "messages", policy,
+                            retry_seconds=policy["poll_interval_seconds"], recipient=draft["platform_user_id"],
+                        )
+                    with slot as blocked:
+                        if blocked:
+                            self.store.execute(
+                                "UPDATE dm_drafts SET resume_pending=1,next_attempt_at=?,error=? "
+                                "WHERE id=? AND status='queued'", (blocked.next_at, str(blocked), identity),
+                            )
+                            return
+                        return await self._generate_owned(identity, automatic)
                 finally:
                     operation_ready_at.reset(ready)
         except MessageInputChanged:

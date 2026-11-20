@@ -72,7 +72,7 @@ class BrowsingPolicy(StrictModel):
     video_like_auto_publish: bool = False
     video_fav_enabled: bool = False
     video_fav_auto_publish: bool = False
-    max_replies_per_video: int = Field(default=2, ge=0, le=20)
+    max_replies_per_video: int = Field(default=2, ge=0)
     daily_watch_limit: int = Field(default=0, ge=0)
     business_timezone: str = "Asia/Taipei"
     auto_downgrade_on_error: bool = True
@@ -95,8 +95,8 @@ class BrowsingPolicy(StrictModel):
     notification_interval_seconds: int = Field(default=60, ge=60, le=86400)
     read_retries: int = Field(default=1, ge=0, le=1)
     max_takeovers: int = Field(default=1, ge=0, le=1)
-    max_per_hour: int = Field(default=5, ge=0, le=30)
-    max_per_day: int = Field(default=20, ge=0, le=200)
+    max_per_hour: int = Field(default=5, ge=0)
+    max_per_day: int = Field(default=20, ge=0)
     recipient_cooldown_seconds: int = Field(default=120, ge=0, le=86400)
     top_level_limit: int = Field(default=1, ge=0, le=1)
     recent_sample_limit: int = Field(default=12, ge=0, le=30)

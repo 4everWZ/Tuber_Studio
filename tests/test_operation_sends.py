@@ -4,10 +4,10 @@ import time
 from types import SimpleNamespace
 
 import pytest
-
 from test_browsing import BV, finished, wait_for_sends
 from test_browsing import browsing as browsing
 from test_direct_messages import Delivery, incoming
+
 from tuber_studio import operation_attachments, operation_images
 from tuber_studio.operations.browsing.quotas import day_window
 from tuber_studio.publication_errors import PublishUncertain
@@ -54,7 +54,8 @@ async def test_ready_direct_reply_gets_last_shared_send_slot(browsing, monkeypat
 
 
 @pytest.mark.parametrize("limits", [
-    {"max_per_hour": 1, "max_per_day": 1},
+    {"max_per_hour": 1, "max_per_day": 0, "max_replies_per_video": 0},
+    {"max_per_hour": 0, "max_per_day": 1, "max_replies_per_video": 0},
     {"max_per_hour": 0, "max_per_day": 0, "max_replies_per_video": 1},
 ])
 async def test_last_comment_slot_covers_generation_queue_and_submission(browsing, monkeypatch, limits):
@@ -111,10 +112,81 @@ async def test_last_comment_slot_covers_generation_queue_and_submission(browsing
     await wait_for_sends(browsing)
 
 
-async def test_daily_capacity_resumes_original_source_after_local_midnight(browsing, monkeypatch):
+@pytest.mark.parametrize(("hourly", "daily", "window"), [(1, 0, 3600), (0, 1, 86400), (1, 1, 86400)])
+async def test_replies_wait_for_every_exhausted_window(browsing, monkeypatch, hourly, daily, window):
     clock = [time.time()]
     monkeypatch.setattr(time, "time", lambda: clock[0])
-    await browsing.configure({"max_per_hour": 0, "max_per_day": 0, "max_replies_per_video": 1,
+    await browsing.configure({
+        "max_per_hour": hourly, "max_per_day": daily,
+        "max_replies_per_video": 0, "recipient_cooldown_seconds": 0,
+        "top_level_auto_publish": True, "reply_enabled": True, "reply_auto_publish": True,
+    })
+    await browsing.set_enabled(True)
+    await finished(browsing, automatic=True, video_only=True)
+    await wait_for_sends(browsing)
+    started = browsing.store.one("SELECT started_at FROM operation_write_attempts")["started_at"]
+
+    arrival(browsing)
+    calls = len(browsing.runtime.operation_llm.calls)
+    await finished(browsing, automatic=True, interaction_only=True)
+    event = browsing.store.one("SELECT status,error FROM browsing_events WHERE id='new'")
+    assert event["status"] == "received" and json.loads(event["error"])["next_at"] == started + window
+    assert len(browsing.runtime.operation_llm.calls) == calls
+    assert not browsing.store.all("SELECT * FROM operation_send_queue")
+
+    if hourly and daily:
+        clock[0] = started + 3601
+        await finished(browsing, automatic=True, interaction_only=True)
+        assert len(browsing.runtime.operation_llm.calls) == calls
+        assert not browsing.store.all("SELECT * FROM operation_send_queue")
+
+    model = browsing.runtime.operation_llm
+    generate = model.generate_json
+
+    async def new_reply(*args, **kwargs):
+        return (await generate(*args, **kwargs)) | {"text": "谢谢你补充实验后的变化，鱼鱼记下啦。"}
+
+    monkeypatch.setattr(model, "generate_json", new_reply)
+    clock[0] = started + window + 1
+    await finished(browsing, automatic=True, interaction_only=True)
+    await wait_for_sends(browsing)
+    assert [target["parent"] for target, _ in browsing.adapter.sent] == ["0", "502"]
+
+
+async def test_last_account_slot_is_shared_with_messages_and_dynamics(browsing, monkeypatch):
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    await browsing.configure({"max_per_hour": 1, "max_per_day": 0, "recipient_cooldown_seconds": 0,
+                              "top_level_auto_publish": True})
+    await browsing.messages.configure({"enabled": True, "auto_send": True})
+    await browsing.dynamics.set_policy({"enabled": True})
+    await browsing.set_enabled(True)
+    await browsing.sends.close()
+    monkeypatch.setattr(browsing.sends, "start", lambda: None)
+    await finished(browsing, automatic=True, video_only=True)
+    assert browsing.store.one("SELECT channel FROM operation_send_queue") == {"channel": "browsing"}
+
+    calls = len(browsing.runtime.operation_llm.calls)
+    message_id = incoming(browsing.messages, account_id="100")
+    browsing.messages._queue_newest_messages("100")
+    assert not browsing.store.all("SELECT * FROM dm_drafts")
+    draft_id = browsing.messages.enqueue("message", message_id, automatic=True, schedule=False)
+    await browsing.messages._generate(draft_id, automatic=True)
+    draft = browsing.store.one("SELECT status,resume_pending,next_attempt_at,text FROM dm_drafts WHERE id=?", (draft_id,))
+    assert draft["status"] == "queued" and draft["resume_pending"] and draft["next_attempt_at"] > time.time()
+    assert not draft["text"]
+
+    result = await browsing.dynamics.evaluate()
+    assert result["action"] == "wait" and result["next_evaluation_at"] > time.time()
+    assert not browsing.store.all("SELECT * FROM dynamic_posts")
+    assert len(browsing.runtime.operation_llm.calls) == calls
+    assert browsing.store.all("SELECT channel FROM operation_send_queue") == [{"channel": "browsing"}]
+
+
+@pytest.mark.parametrize("account_daily", [0, 1])
+async def test_video_daily_capacity_waits_for_local_midnight_and_account_window(browsing, monkeypatch, account_daily):
+    clock = [time.time()]
+    monkeypatch.setattr(time, "time", lambda: clock[0])
+    await browsing.configure({"max_per_hour": 0, "max_per_day": account_daily, "max_replies_per_video": 1,
                               "recipient_cooldown_seconds": 0, "top_level_auto_publish": True,
                               "reply_enabled": True, "reply_auto_publish": True})
     await browsing.set_enabled(True)
@@ -127,7 +199,9 @@ async def test_daily_capacity_resumes_original_source_after_local_midnight(brows
     await finished(browsing, automatic=True, interaction_only=True)
     event = browsing.store.one("SELECT status,error FROM browsing_events WHERE id='new'")
     assert event["status"] == "received"
-    assert json.loads(event["error"])["next_at"] == day_window(now=clock[0])["next_at"]
+    midnight = day_window(now=clock[0])["next_at"]
+    expected = clock[0] + 86400 if account_daily else midnight
+    assert json.loads(event["error"])["next_at"] == expected
     assert len(browsing.runtime.operation_llm.calls) == calls
     assert not browsing.store.all("SELECT * FROM operation_send_queue")
 
@@ -139,7 +213,7 @@ async def test_daily_capacity_resumes_original_source_after_local_midnight(brows
         return draft | {"text": "多谢你补了这条，鱼鱼这次知道该留意实验的哪一步啦。"}
 
     monkeypatch.setattr(model, "generate_json", new_reply)
-    clock[0] = day_window(now=clock[0])["next_at"] + 1
+    clock[0] = expected + 1
     await finished(browsing, automatic=True, interaction_only=True)
     await wait_for_sends(browsing)
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["0", "502"]
