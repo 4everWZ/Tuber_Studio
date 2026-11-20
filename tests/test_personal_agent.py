@@ -1,6 +1,7 @@
 import asyncio
 import json
 from datetime import datetime
+from types import SimpleNamespace
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -9,8 +10,14 @@ import pytest
 from test_agent_task_recovery import wait_status
 
 from tuber_studio.agent import operator_facts, task_tools
+from tuber_studio.agent.operator_chat import WorkLifecycle
 from tuber_studio.agent.owner_memory import history_preference
-from tuber_studio.agent.personal_agent import PublicSearchTerms, object_scope, search_terms
+from tuber_studio.agent.personal_agent import (
+    PublicSearchTerms,
+    object_scope,
+    plan_with_responses,
+    search_terms,
+)
 from tuber_studio.agent.task_runtime import TaskDecision, TaskRuntime, Tool
 from tuber_studio.app import create_app
 from tuber_studio.models import StrictModel
@@ -37,6 +44,22 @@ async def turn(client, message, *, stream=False, **fields):
         return response.json()
     return next(json.loads(part.split("\ndata: ")[1]) for part in response.text.split("\n\n")
                 if part.startswith("event: done"))
+
+
+async def test_native_work_plan_returns_only_the_selected_capability():
+    schema = WorkLifecycle.schema_for_turn(chat_only=False, allow_owner_identity=False, planning=True)
+    message = {"role": "user", "content": "核对一下当前录音用什么音色"}
+    operation = {"mode": "read", "domain": "settings", "request": message["content"], "target": "音色"}
+
+    async def client(**payload):
+        assert payload["input"] == [message] and payload["tool_choice"] == "required" and not payload["store"]
+        tools = {tool["name"]: tool for tool in payload["tools"]}
+        assert set(tools) == {"chat", "direct_tool", "agent_task", "clarify"}
+        assert not tools["chat"]["parameters"]["properties"]
+        assert set(tools["direct_tool"]["parameters"]["properties"]) == {"operation"}
+        return SimpleNamespace(calls=[SimpleNamespace(name="direct_tool", arguments={"operation": operation})])
+
+    assert await plan_with_responses(client, [message], schema) == {"action": "direct_tool", "operation": operation}
 
 
 async def test_bound_person_resolves_a_new_projection_and_expires_on_rebind(studio, monkeypatch):
@@ -126,6 +149,86 @@ async def test_direct_read_binds_a_current_workshop_object_when_model_paraphrase
     result = await turn(client, "请帮我查 Ｂ 站登录账号", stream=True)
     assert result["tool_receipt"] == {"action": "read", "group": "account", "values": {"state": "not_configured"}}
     assert calls == ["WorkLifecycle", "AssistantDecision"]
+
+
+async def test_work_plan_uses_capabilities_and_current_request_instead_of_repeated_answers(studio, monkeypatch):
+    runtime, client = studio
+    char = runtime.character
+    principal = runtime.tasks.identity.principal
+    old_reply = "同一句旧答复，已经在不同话题中出现过。"
+    for index, old in enumerate(("上回查过的事", "另一个早先的话题")):
+        saved = {"account_id": "", "private": True, "assistant_context": True, "owner_source": principal,
+                 "private_owner": principal, "reply_text": old_reply}
+        runtime.store.execute("INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)", (
+            str(uuid4()), char["id"], char["version"], old, json.dumps(saved), 100 + index,
+        ))
+    calls = []
+
+    async def model(messages, schema, *, on_content, **kwargs):
+        actions = schema["properties"]["action"]["enum"]
+        text = messages[-1]["content"]
+        assert all(old_reply not in row["content"] for row in messages)
+        if schema["title"] == "AssistantDecision":
+            calls.append("read")
+            assert set(actions) == {"game_status", "clarify"}
+            return {"action": "game_status"}
+        if "reply_markdown" not in schema["properties"]:
+            calls.append("plan")
+            assert on_content is None
+            assert not any(row["role"] == "assistant" for row in messages)
+            assert all(word in messages[0]["content"] for word in ("局面", "待发草稿", "公开网页"))
+            if text == "田里还有什么活？":
+                return {"action": "direct_tool", "operation": {
+                    "mode": "read", "domain": "game", "request": text, "target": "田里",
+                }}
+            return {"action": "chat"}
+        calls.append("answer")
+        assert actions == ["chat"]
+        return {"action": "chat", "reply_markdown": "聊会儿呀。"}
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
+    monkeypatch.setattr(runtime.live.game_livestream, "status",
+                        lambda: {"active_status": {"summary": "还有 7 格没浇水。"}})
+    assert (await turn(client, "陪我说会儿话", stream=True))["reply_text"] == "聊会儿呀。"
+    assert (await turn(client, "田里还有什么活？"))["reply_text"] == "还有 7 格没浇水。"
+    assert calls == ["plan", "answer", "plan", "read"]
+    assert (await client.get(CHAT)).json()["turns"][0]["reply_text"] == old_reply
+
+
+async def test_existing_outgoing_work_is_bound_to_account_and_shows_review_actions(studio, monkeypatch):
+    runtime, client = studio
+    char = runtime.character
+    runtime.browsing.discovery.remember_account("123")
+    for index, account, role, status in (
+        (1, "123", char["id"], "approved"), (2, "123", char["id"], "pending_review"),
+        (3, "567", char["id"], "approved"), (4, "123", "another-role", "approved"),
+    ):
+        runtime.store.execute(
+            "INSERT INTO dynamic_posts(id,account_id,character_id,character_version,content,status,sources) "
+            "VALUES (?,?,?,?,?,?,'[]')",
+            (index, account, role, char["version"], f"草稿 {index}", status),
+        )
+
+    async def model(messages, schema, **kwargs):
+        source = messages[-1]["content"]
+        assert schema["title"] == "WorkLifecycle"
+        return {"action": "direct_tool", "operation": {
+            "mode": "change", "domain": "outgoing", "request": source, "target": None,
+        }}
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
+    result = await turn(client, "把没发的帖子叫出来，我挑一条现在发", stream=True)
+    assert result["card"]["type"] == "publication_queue"
+    assert result["tool_receipt"]["values"] == {"dynamics": {"approved": 1, "pending_review": 1}}
+    group, = result["card"]["data"]["groups"]
+    assert [(item["draft"]["id"], item["draft"]["content"]) for item in group["items"]] == [
+        (1, "草稿 1"), (2, "草稿 2"),
+    ]
+    assert not runtime.store.one("SELECT 1 FROM account_writes")
+    assert not runtime.tasks.activity()
+    runtime.browsing.discovery.remember_account("567")
+    history = (await client.get(CHAT)).json()
+    assert all(row["card"] is None for row in history["turns"])
 
 
 async def test_publication_metadata_excludes_edit_time_and_reports_conflicts():

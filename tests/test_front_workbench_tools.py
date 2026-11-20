@@ -76,7 +76,7 @@ async def test_owner_identity_uses_current_binding_with_stale_chat_history(studi
         assert schema["title"] == "WorkLifecycle"
         if messages[-1]["content"] == "你住在哪里？":
             return {"action": "chat", "reply_markdown": "我住在 Jetson 里。"}
-        assert any("Jetson" in part["content"] for part in messages[:-1])
+        assert all("Jetson" not in part["content"] for part in messages[:-1])
         return {"action": "owner_identity"}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)

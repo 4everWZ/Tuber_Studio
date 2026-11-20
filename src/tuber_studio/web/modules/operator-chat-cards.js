@@ -129,6 +129,38 @@ function dynamicCard(root, initial, api) {
   return { update, revision: () => revision, needsRefresh: () => !dirty && !busy && !["published", "rejected", "invalidated"].includes(data.status) };
 }
 
+function publicationQueue(root, initial, api) {
+  const pages = { dynamics: "#dynamics", messages: "#messages", comments: "#comments" };
+  let signature;
+  function update(data) {
+    const next = JSON.stringify(data);
+    if (next === signature) return;
+    signature = next;
+    const groups = data.groups.map(group => {
+      const section = node("section");
+      section.append(node("h2", group.label));
+      for (const item of group.items) {
+        const caption = `${label(item.status)} · ${item.preview}`;
+        if (item.draft) {
+          const details = node("details"), body = node("div");
+          details.append(node("summary", caption), body);
+          details.ontoggle = () => {
+            if (details.open && !body.hasChildNodes()) dynamicCard(body, item.draft, api);
+          };
+          section.append(details);
+        } else {
+          section.append(node("p", caption, "quoted-text"));
+        }
+      }
+      section.append(link(`打开${group.label}工作台`, pages[group.channel]));
+      return section;
+    });
+    root.replaceChildren(...groups);
+  }
+  update(initial);
+  return { update };
+}
+
 function materialSummary(value) {
   if (!value) return "未处理";
   const captions = { available: "已读取", sampled: "抽样", partial: "部分覆盖", gap: "无有效材料", unavailable: "不可用", retry: "待补读" };
@@ -406,6 +438,7 @@ export function createOperatorCard(root, turn, context) {
   }
   if (type === "owner_profile") root.append(link("打开绑定号主的 B 站主页", data.url));
   if (type === "dynamic_draft") return dynamicCard(root, data, context.api);
+  if (type === "publication_queue") return publicationQueue(root, data, context.api);
   if (type === "dynamic_edit") {
     const note = node("p", "", "hint");
     note.setAttribute("role", "status");

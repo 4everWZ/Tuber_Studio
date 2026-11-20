@@ -11,10 +11,12 @@ from pydantic import Field
 
 from ..models import StrictModel
 from ..operation_continuations import content_hash
+from ..providers import single_system_messages
 from . import operator_facts
 from .goal_comment_events import CommentWatch
 from .goal_events import EventGrant
 from .goal_followups import FollowupGrant, StatusSource
+from .task_delegation import function
 
 
 @dataclass(frozen=True)
@@ -22,23 +24,64 @@ class Capability:
     subject: str
     reads: str
     changes: str = ""
+    read_actions: tuple[str, ...] = ()
+    change_actions: tuple[str, ...] = ()
+    selection_action: str | None = None
 
 
 CAPABILITIES = {
-    "identity": Capability("当前角色、绑定号主、运营登录账号", "身份、UID、主页、已核验公开资料"),
-    "settings": Capability("工坊设置、画布、点歌、宠物", "当前字段、可用选项", "按权限保存指定字段"),
-    "operations": Capability("运营、公开活动和平台回执", "运行状态、经历、来源、作者、送达"),
-    "video": Capability("视频和分 P", "已读材料、时码、读取进度", "续看或精查指定范围"),
-    "live": Capability("直播和点歌播放", "场次、节目、播放和控制状态", "由场景授权控制"),
-    "game": Capability("当前游戏会话", "局面与控制权", "由场景授权控制"),
-    "memory": Capability("号主私有记忆", "可见偏好、来源、公开经历", "更正或忘记指定记忆"),
-    "task": Capability("交办、长期目标和成果", "进度、计划、等待原因、版本", "修改、暂停、停止或安排跟进"),
-    "web": Capability("公开网页与当下外部事实", "搜索并打开来源，核对发布日期"),
+    "identity": Capability("当前角色、绑定号主、运营登录账号", "身份、UID、主页、已核验公开资料",
+                           read_actions=("owner_binding", "owner_profile", "operating_account")),
+    "settings": Capability("工坊设置、画布、点歌、宠物", "当前字段、可用选项", "按权限保存指定字段",
+                           ("workbench_capabilities", "daily_settings", "pet_settings"), ("daily_settings", "pet_settings")),
+    "operations": Capability("运营、公开活动和平台回执", "运行状态、经历、来源、作者、送达", "停止运营",
+                             ("activity", "event_details", "event_author", "event_reply", "video_activity", "operation_status"),
+                             ("stop",)),
+    "outgoing": Capability("动态、评论回复、私信的待发草稿与提交记录", "查看队列、待审核数、已审核数及回执",
+                           "选已有草稿，查看正文并确认发布。创建动态草稿，或拟定已发布动态的修改",
+                           ("outgoing_queue",), ("prepare_publication", "dynamic", "edit_dynamic"),
+                           selection_action="prepare_publication"),
+    "video": Capability("视频和分 P", "已读材料、时码、读取进度", "刷视频、整段取材、续看或精查指定范围",
+                        ("video_activity", "video_details", "inspect_video_frame"), ("browse", "full_video", "resume_video", "stop")),
+    "live": Capability("直播和点歌播放", "场次、节目、播放和回执", "交接台词、调整直播习惯或停止直播",
+                       ("live_status", "live_history"), ("start_live", "live_handoff", "live_preference", "stop")),
+    "game": Capability("当前游戏会话", "局面与控制权", "由场景授权控制", ("game_status",), ("game_handoff",)),
+    "memory": Capability("号主私有记忆", "可见偏好、来源、公开经历", "保存或忘记指定记忆",
+                         ("public_experiences", "recall_experience", "memory_summary"), ("remember_event", "forget_memory")),
+    "task": Capability("交办、长期目标和成果", "进度、计划、等待原因、版本", "修改、暂停、停止或安排跟进",
+                       ("task_status",), ("pause_task", "resume_task", "watch_goal")),
+    "web": Capability("公开网页与当下外部事实", "搜索并打开来源，核对发布日期", read_actions=("web_lookup",)),
+    "clock": Capability("工坊时钟", "本地日期与时间", read_actions=("clock",)),
+}
+
+PLAN_ACTIONS = {
+    "chat": "日常闲聊，直接交给当前角色接话。",
+    "owner_identity": "根据当前角色绑定回答主人、号主或谁家的关系。",
+    "direct_tool": "查询事实、业务记录、待办稿件，或准备执行一项具体操作。",
+    "agent_task": "接受需要后台处理、以后交付或持续推进的新工作。",
+    "task_turn": "查询、修订、暂停或接续已经存在的交办或成果。",
+    "clarify": "请求已经明确要办事。询问还缺少的对象或要求。",
 }
 
 
+async def plan_with_responses(client, messages, schema):
+    tools = []
+    for branch in schema["oneOf"]:
+        fields = branch["properties"]
+        action = fields["action"]["const"]
+        properties = {key: value for key, value in fields.items() if key != "action"}
+        parameters = {"type": "object", "properties": properties,
+                      "$defs": schema.get("$defs", {}), "additionalProperties": False}
+        tools.append(function(action, PLAN_ACTIONS[action], parameters))
+    reply = await client(input=single_system_messages(messages), tools=tools, tool_choice="required", store=False)
+    if len(reply.calls) != 1:
+        raise ValueError("本轮须产生一项交付计划")
+    call, = reply.calls
+    return {"action": call.name, **call.arguments}
+
+
 class ConversationObject(StrictModel):
-    kind: Literal["owner", "account", "setting", "operations", "event", "video", "live", "game", "memory", "task", "artifact", "web"]
+    kind: Literal["owner", "account", "setting", "operations", "event", "video", "live", "game", "memory", "task", "artifact", "web", "outgoing"]
     identity: str = Field(min_length=1, max_length=2048)
     label: str = Field(max_length=200)
     revision: str | int | None = None

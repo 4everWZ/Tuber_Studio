@@ -67,11 +67,13 @@ def test_assistant_stream_persists_only_final_text_and_retries_under_same_id(set
 
     async def generate(messages, schema, *, max_tokens, on_content, on_stage):
         calls.append(messages)
-        assert "reply_markdown" in schema["properties"]
         assert "activity" not in schema["properties"]["action"]["enum"]
         assert messages[-1] == {"role": "user", "content": "鱼鱼今天吃了几碗饭"}
         assert all("旧报告的第三件" not in message["content"] and "旧模型刚才的错答" not in message["content"]
                    for message in messages)
+        if "reply_markdown" not in schema["properties"]:
+            assert on_content is None and "可用能力" in messages[0]["content"]
+            return {"action": "chat"}
         on_stage("generating")
         on_content('{"action":"chat","reply_markdown":"**白饭')
         on_content('**，分你半碗。"}')
@@ -98,7 +100,7 @@ def test_assistant_stream_persists_only_final_text_and_retries_under_same_id(set
         assert 'event: delta\ndata: "**，分你半碗。"' in response.text
         assert "event: done" in response.text
         assert client.post(path, json=payload).json()["reply_text"] == "**白饭**，分你半碗。"
-        assert len(calls) == 1
+        assert len(calls) == 2
         assert len(client.get(path).json()["turns"]) == 3
 
 
@@ -175,9 +177,7 @@ async def test_nonchat_acknowledgement_is_neither_streamed_nor_saved(settings, m
             decision.update(direct_request(messages[-1]["content"]))
         if route == "clarify":
             decision["topic"] = "你指的是哪段素材？"
-        wire = json.dumps(decision if route != "clarify" else dict(reversed(decision.items())), ensure_ascii=False)
-        for chunk in wire:
-            on_content(chunk)
+        assert on_content is None and "reply_markdown" not in schema["properties"]
         return decision
 
     monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS_URL", raising=False)
@@ -355,6 +355,9 @@ async def test_discussing_a_card_or_chatting_without_material_does_not_steer(set
             assert json.loads(current)["task"]["goal"] == "准备一份提纲"
         else:
             assert current == "陪我聊会儿"
+        if "reply_markdown" not in schema["properties"]:
+            assert on_content is None
+            return {"action": "chat"}
         reply = {"action": "chat", "reply_markdown": "我在呢。"}
         on_content(json.dumps(reply))
         return reply
@@ -366,7 +369,8 @@ async def test_discussing_a_card_or_chatting_without_material_does_not_steer(set
         result = await client.post(path + "/stream", json={"request_id": str(uuid4()),
                                    "message": "那份提纲现在怎样了？" if ask_about_card else "陪我聊会儿"})
         assert "event: delta" in result.text and "event: done" in result.text
-        assert stages == (["WorkLifecycle", "CardTurnIntent", "WorkLifecycle"] if ask_about_card else ["WorkLifecycle"])
+        assert stages == (["WorkLifecycle", "CardTurnIntent", "WorkLifecycle"] if ask_about_card
+                          else ["WorkLifecycle", "WorkLifecycle"])
         assert app.state.runtime.tasks.current(identity)["revision"] == 1
 
 

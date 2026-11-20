@@ -1,5 +1,5 @@
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
-import { createOperatorCard } from "./operator-chat-cards.js?v=20261116.3";
+import { createOperatorCard } from "./operator-chat-cards.js?v=20261120.1";
 import { inferenceDisplay } from "./inference-status.js?v=20261111.07";
 import { renderAssistantAnswer } from "./operator-chat-answer.js";
 import { initTaskActivity } from "./task-activity.js?v=20261116.3";

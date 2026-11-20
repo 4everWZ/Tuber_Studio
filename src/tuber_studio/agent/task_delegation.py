@@ -76,7 +76,7 @@ def visible_steps(runtime, task):
 
 
 def function(name, description, arguments):
-    schema = arguments.model_json_schema()
+    schema = arguments.copy() if isinstance(arguments, dict) else arguments.model_json_schema()
     definitions = schema.pop("$defs", {})
 
     def wire(node):
