@@ -13,6 +13,7 @@ from ...message_outreach import confirmed_invitation
 from ...operation_continuations import content_hash
 from ...operation_turns import operation_lane, operation_ready_at
 from ...operations_control import canonical_intent
+from ...platforms.bilibili import PlatformReadError
 from ...providers import public_error
 from ...publication_errors import SendLimitReached
 from ...store import dump
@@ -453,13 +454,13 @@ async def run_interactions(browsing, row, metrics):
     public_enabled = row["config"]["reply_enabled"] or row["config"].get("comment_like_enabled")
     if hasattr(browsing.adapter, "own_uploads") and public_enabled:
         try:
-            await browsing._collect_own_comments(row)
+            await browsing._collect_own_comments(row, metrics)
         except (ValueError, TimeoutError) as error:
             metrics["own_upload_error"] = public_error(error)
             metrics["failures"] += 1
     if hasattr(browsing.adapter, "own_dynamics") and public_enabled:
         try:
-            await collect_own_dynamics(browsing, row)
+            await collect_own_dynamics(browsing, row, metrics)
         except (ValueError, TimeoutError) as error:
             metrics["own_dynamic_error"] = public_error(error)
             metrics["failures"] += 1
@@ -470,21 +471,46 @@ async def run_interactions(browsing, row, metrics):
         metrics["failures"] += 1
 
 
-async def collect_own_comments(browsing, row):
+async def collect_own_comments(browsing, row, metrics):
     account = row["account_id"]
     cutoff = max(int(browsing.started_at), int(browsing.operations.policy()["enabled_at"] or 0))
     for video in await browsing._read(browsing.adapter.own_uploads, account):
-        result = await browsing._read(lambda bvid: browsing.adapter.fetch(bvid, newest=True), video["bvid"])
+        try:
+            result = await browsing._read(browsing.adapter.fetch, video["bvid"], newest=True)
+        except (ValueError, TimeoutError) as error:
+            metrics["own_upload_comment_error"] = public_error(error)
+            metrics["failures"] += 1
+            continue
         browsing._check_round(row)
         enqueue_own_comments(browsing, account, cutoff, {"resource_type": "video", "oid": video["aid"],
                                                       "bvid": video["bvid"]}, result["items"])
 
 
-async def collect_own_dynamics(browsing, row):
+async def collect_own_dynamics(browsing, row, metrics):
     account = row["account_id"]
     cutoff = max(int(browsing.started_at), int(browsing.operations.policy()["enabled_at"] or 0))
-    for target in await browsing._read(browsing.adapter.own_dynamics, account):
-        items = await browsing._read(browsing.adapter.fetch_dynamic_comments, target)
+    try:
+        targets = await browsing._read(browsing.adapter.own_dynamics, account)
+    except PlatformReadError as error:
+        if error.kind != "restricted" or not hasattr(browsing.adapter, "own_dynamic_target"):
+            raise
+        metrics["own_dynamic_error"] = public_error(error)
+        metrics["failures"] += 1
+        receipts = browsing.store.all(
+            "SELECT DISTINCT CAST(json_extract(receipt,'$.dynamic_id') AS TEXT) AS dynamic_id FROM dynamic_posts "
+            "WHERE account_id=? AND status='published' AND json_extract(receipt,'$.dynamic_id') IS NOT NULL "
+            "ORDER BY published_at DESC, id DESC LIMIT 3", (account,),
+        )
+        targets = [{"dynamic_id": receipt["dynamic_id"]} for receipt in receipts]
+    for target in targets:
+        try:
+            if "oid" not in target:
+                target = await browsing._read(browsing.adapter.own_dynamic_target, account, target["dynamic_id"])
+            items = await browsing._read(browsing.adapter.fetch_dynamic_comments, target)
+        except (ValueError, TimeoutError) as error:
+            metrics["own_dynamic_comment_error"] = public_error(error)
+            metrics["failures"] += 1
+            continue
         browsing._check_round(row)
         enqueue_own_comments(browsing, account, cutoff, target, items)
 

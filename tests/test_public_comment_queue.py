@@ -2,11 +2,11 @@ import json
 import time
 
 import pytest
-from test_browsing import BV, finished, model_packet
+from test_browsing import BV, finished, model_packet, wait_for_sends
 from test_browsing import browsing as browsing
 from test_browsing_comment_only import enable_comment_choices, finish_comment_round
 
-from tuber_studio.platforms.bilibili import PublishUncertain
+from tuber_studio.platforms.bilibili import PlatformReadError, PublishUncertain
 
 
 def item(rpid, uid="300", parent=None):
@@ -76,14 +76,26 @@ async def test_operator_reply_is_rechecked_when_publishing_a_prepared_visit_draf
     assert not browsing.adapter.sent and not browsing.store.all("SELECT * FROM account_writes")
 
 
-async def test_own_dynamic_uses_comment_oid_and_regular_inbox(browsing, monkeypatch):
-    await enable_comment_choices(browsing, monkeypatch)
-    own = {"resource_type": "dynamic", "dynamic_id": "900", "oid": "700"}
+@pytest.mark.parametrize("restricted", [False, True])
+async def test_own_dynamic_uses_comment_oid_and_regular_inbox(browsing, monkeypatch, restricted):
+    await enable_comment_choices(browsing, monkeypatch, automatic=True)
+    own = {"resource_type": "dynamic", "dynamic_id": "900", "oid": "700", "type": 11}
     source = item("601")
+    seen = []
 
     async def dynamics(account):
         assert account == "100"
+        if restricted:
+            raise PlatformReadError.restricted(412)
         return [own]
+
+    async def dynamic_target(account, identity):
+        assert restricted and account == "100"
+        seen.append(identity)
+        if identity == "901":
+            raise PlatformReadError("not_found", "动态已删除")
+        assert identity == "900"
+        return own
 
     async def fetch(target):
         assert target == own
@@ -92,16 +104,58 @@ async def test_own_dynamic_uses_comment_oid_and_regular_inbox(browsing, monkeypa
     async def thread(event):
         assert (event["dynamic_id"], event["oid"]) == ("900", "700")
         return {"account_id": "100", "resource_type": "dynamic", "public_text": "盐水实验的更新",
-                "target": own | {"type": 17, "root": "601", "parent": "601"}, "items": [source],
+                "target": own | {"root": "601", "parent": "601"}, "items": [source],
                 "source": {"comment_id": "601", "author_uid": "300", "text": source["content"]}}
 
     monkeypatch.setattr(browsing.adapter, "own_dynamics", dynamics, raising=False)
+    monkeypatch.setattr(browsing.adapter, "own_dynamic_target", dynamic_target, raising=False)
     monkeypatch.setattr(browsing.adapter, "fetch_dynamic_comments", fetch, raising=False)
     monkeypatch.setattr(browsing.adapter, "read_public_thread", thread)
+    if restricted:
+        for owner, identity, at in [("100", "901", 3), ("100", "900", 2), ("200", "999", 1)]:
+            browsing.store.execute(
+                "INSERT INTO dynamic_posts(account_id,status,receipt,published_at) VALUES(?,'published',?,?)",
+                (owner, json.dumps({"dynamic_id": identity}), at),
+            )
     await finished(browsing, automatic=True, interaction_only=True)
+    await wait_for_sends(browsing)
     intent, = browsing.intents()
     assert intent["target"]["dynamic_id"] == "900" and intent["target"]["oid"] == "700"
     assert intent["source_key"] == '["bilibili","dynamic:700","601","whale"]'
+    assert intent["status"] == "published"
+    assert browsing.adapter.sent[0][0]["type"] == 11
+    assert browsing.publication._publication_binding(intent, browsing.store.character(), [])["target"]["type"] == 11
+    assert seen == (["901", "900"] if restricted else [])
+    await finished(browsing, automatic=True, interaction_only=True)
+    await wait_for_sends(browsing)
+    assert len(browsing.adapter.sent) == 1
+
+
+async def test_an_unreadable_own_video_does_not_stop_scanning_other_posts(browsing, monkeypatch):
+    from tuber_studio.operations.browsing.comment_reader import collect_own_comments
+
+    await enable_comment_choices(browsing, monkeypatch)
+
+    async def own_uploads(account):
+        assert account == "100"
+        return [{"bvid": "BV1Yjxw68E9G", "aid": "41"}, {"bvid": BV, "aid": "42"}]
+
+    async def fetch(bvid, *, newest):
+        assert newest
+        if bvid != BV:
+            raise PlatformReadError("not_found", "视频不可读")
+        return {"items": [item("601")]}
+
+    monkeypatch.setattr(browsing.adapter, "own_uploads", own_uploads, raising=False)
+    monkeypatch.setattr(browsing.adapter, "fetch", fetch)
+    char = browsing.runtime.character
+    row = {"account_id": "100", "character_id": char["id"], "character_version": char["version"],
+           "config": browsing.effective(), "epoch": browsing.operations.policy()["epoch"], "preview": False}
+    metrics = {"failures": 0}
+    await collect_own_comments(browsing, row, metrics)
+    assert metrics["failures"] == 1
+    event, = browsing.store.all("SELECT payload FROM browsing_events WHERE kind='own_comment'")
+    assert json.loads(event["payload"])["bvid"] == BV
 
 
 @pytest.mark.parametrize("mode", ["auto", "uncertain", "review"])

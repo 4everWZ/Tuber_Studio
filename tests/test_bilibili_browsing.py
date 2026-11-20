@@ -440,7 +440,8 @@ async def test_signer_login_expiry_preserves_permission_category(adapter_factory
     assert caught.value.kind == "permission"
 
 
-async def test_notification_pages_account_scope_ids_and_same_second_events(adapter_factory):
+@pytest.mark.parametrize("kind", [1, 11, 17])
+async def test_notification_pages_account_scope_ids_and_same_second_events(adapter_factory, kind):
     paths = []
 
     def handle(request):
@@ -458,12 +459,13 @@ async def test_notification_pages_account_scope_ids_and_same_second_events(adapt
                         "user": {"mid": 7, "nickname": "用户"},
                         "at_time": 200,
                         "item": {
-                            "business_id": 1,
+                            "business_id": kind,
                             "subject_id": 123,
                             "root_id": 100,
                             "source_id": 101,
                             "target_id": 100,
                             "source_content": "你好鱼鱼",
+                            "uri": "https://www.bilibili.com/opus/900",
                         },
                     }
                 ],
@@ -473,6 +475,10 @@ async def test_notification_pages_account_scope_ids_and_same_second_events(adapt
     adapter = await adapter_factory(handle)
     page = await adapter.notifications("mention", {"id": "1000", "time": 200})
     assert page["account_id"] == "9" and page["items"][0]["comment_id"] == "101"
+    incoming = page["items"][0]
+    assert incoming["resource_type"] == ("video" if kind == 1 else "dynamic")
+    if kind != 1:
+        assert incoming["type"] == kind and incoming["dynamic_id"] == "900"
     assert page["cursor"] == {"id": "1001", "time": 200, "is_end": True}
     assert not page["has_more"] and not any("read" in path for path in paths)
     with pytest.raises(ValueError):
@@ -572,19 +578,21 @@ async def test_reply_to_unread_descendant_does_not_fall_back_to_own_root(adapter
     assert caught.value.kind == "permission"
 
 
-async def test_text_dynamic_uses_real_original_not_video_fallback(adapter_factory):
+@pytest.mark.parametrize("kind,dynamic_kind", [(17, "DYNAMIC_TYPE_WORD"), (11, "DYNAMIC_TYPE_DRAW")])
+async def test_text_dynamic_uses_real_original_not_video_fallback(adapter_factory, kind, dynamic_kind):
     def handle(request):
         if request.url.path == "/x/web-interface/nav":
             return nav()
         if request.url.path == "/x/v2/reply/reply":
-            assert request.url.params["type"] == "17"
+            assert request.url.params["type"] == str(kind)
             return result({"root": comment(), "replies": [comment(101, 7, 100, "你好鱼鱼")]})
         assert request.url.path == "/x/polymer/web-dynamic/v1/detail"
         return result(
             {
                 "item": {
                     "id_str": "123",
-                    "type": "DYNAMIC_TYPE_WORD",
+                    "type": dynamic_kind,
+                    "basic": {"comment_type": kind, "comment_id_str": "123"},
                     "modules": {"module_dynamic": {"desc": {"text": "公开原动态正文"}}},
                 }
             }
@@ -593,10 +601,11 @@ async def test_text_dynamic_uses_real_original_not_video_fallback(adapter_factor
     adapter = await adapter_factory(handle)
     output = await adapter.read_public_thread(event(resource="dynamic"))
     assert output["public_text"] == "公开原动态正文" and output["target"]["bvid"] is None
+    assert output["target"]["type"] == kind
 
 
-@pytest.mark.parametrize("top_level", [True, False])
-async def test_write_top_level_and_reply_have_different_roots_and_valid_receipt(adapter_factory, top_level):
+@pytest.mark.parametrize("top_level,kind", [(True, 1), (False, 1), (False, 11), (False, 17)])
+async def test_write_top_level_and_reply_have_different_roots_and_valid_receipt(adapter_factory, top_level, kind):
     sent = []
     checkpoints = []
 
@@ -608,13 +617,14 @@ async def test_write_top_level_and_reply_have_different_roots_and_valid_receipt(
         return result({"rpid": 555})
 
     adapter = await adapter_factory(handle)
-    target = {"resource_type": "video", "oid": "123"}
+    target = {"resource_type": "video" if kind == 1 else "dynamic", "oid": "123", "type": kind}
     if not top_level:
         target |= {"root": "100", "parent": "101"}
     method = adapter.publish_top_level if top_level else adapter.publish_resource_reply
     text = "具体内容留言" if top_level else "@同名用户 本鱼也想问！（哈哈）"
     output = await method(target, text, before_send=lambda: checkpoints.append("checked"))
     assert output["rpid"] == "555" and len(sent) == 1
+    assert output["type"] == kind and sent[0]["type"] == [str(kind)]
     assert sent[0]["root"] == ["0" if top_level else "100"]
     assert sent[0]["parent"] == ["0" if top_level else "101"]
     assert sent[0]["message"] == [text]

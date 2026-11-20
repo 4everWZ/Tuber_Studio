@@ -80,8 +80,8 @@ async def reconcile_comment(read, target, *, author_uid, text, started_at, recei
     coverage = {"scope": "first_page_only", "page": 1, "page_size": 20}
     try:
         oid = _id(target.get("oid"))
-        kind = target.get("type", 1)
-        if type(kind) is not int or kind not in (1, 17):
+        kind = target.get("type", 17 if target.get("resource_type") == "dynamic" else 1)
+        if type(kind) is not int or kind not in (1, 11, 17):
             raise ValueError("核对评论类型无效")
         root, parent = (_id(target.get(key), zero=True) for key in ("root", "parent"))
         if (root == "0") != (parent == "0"):

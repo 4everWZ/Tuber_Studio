@@ -66,7 +66,7 @@ class CommentAdmission:
         for channel, limits in ((None, policy), ("comments", channel_limits)):
             waiting = len(preparations) + sum(channel is None or item["channel"] == channel for item in queued)
             for seconds, name in ((3600, "max_per_hour"), (86400, "max_per_day")):
-                maximum = limits[name]
+                maximum = limits.get(name, 0)
                 if not maximum:
                     continue
                 running_or_recent = [item for item in attempts if (channel is None or item["channel"] == channel)

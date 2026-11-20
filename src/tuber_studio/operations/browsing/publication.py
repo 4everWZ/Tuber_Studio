@@ -289,6 +289,7 @@ class BrowsingPublication:
             {
                 "platform": "bilibili",
                 "resource_type": target.get("resource_type", "video"),
+                **({"type": target["type"]} if target.get("type") == 11 else {}),
                 "oid": str(target["oid"]),
                 "root": str(target.get("root") or "0"),
                 "parent": str(target.get("parent") or "0"),
@@ -710,6 +711,11 @@ class BrowsingPublication:
         if (verified["source"]["text"] != target["source_text"]
                 or str(verified["source"]["author_uid"]) != str(target["recipient"])):
             raise ValueError("原始互动已删除或变化")
+        observed_type = (verified.get("target") or {}).get("type")
+        if target.get("resource_type") == "dynamic" and observed_type is not None and (
+            observed_type != target.get("type", 17)
+        ):
+            raise ValueError("原始动态评论类型已变化")
         validate_comment_material_sources(target.get("comment_materials", []), verified.get("items", []), target["parent"])
         return verified
 

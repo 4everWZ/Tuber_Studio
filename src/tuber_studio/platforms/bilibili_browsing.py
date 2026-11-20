@@ -34,6 +34,7 @@ from .bilibili import (
 
 MAX_SUBTITLE_BYTES = 2 * 1024 * 1024
 MAX_API_BYTES = 4 * 1024 * 1024
+DYNAMIC_COMMENT_TYPES = {11, 17}
 SUBTITLE_HOSTS = {"aisubtitle.hdslb.com", "i0.hdslb.com", "i1.hdslb.com", "i2.hdslb.com"}
 CREDIT = re.compile(r"^(?:字幕(?:制作|提供|来源|组|by)|(?:翻译|听译|校对|时间轴|轴师|字幕员)[:：\s])", re.I)
 
@@ -264,20 +265,48 @@ class BrowsingAdapter(BilibiliAdapter):
             raise PlatformReadError("invalid", "个人动态列表结构无效")
         targets = []
         for item in items:
-            if item.get("type") not in {"DYNAMIC_TYPE_WORD", "DYNAMIC_TYPE_DRAW"}:
+            target = self._dynamic_comment_target(item)
+            if not target or str(target["author_uid"]) != str(account):
                 continue
-            author = ((item.get("modules") or {}).get("module_author") or {}).get("mid")
-            basic = item.get("basic") or {}
-            if str(author) != str(account) or str(basic.get("comment_type")) != "17":
-                continue
-            targets.append({"resource_type": "dynamic", "oid": _identifier(basic.get("comment_id_str")),
-                            "dynamic_id": _identifier(item.get("id_str"))})
+            targets.append(target)
             if len(targets) == limit:
                 break
         return targets
 
+    @staticmethod
+    def _dynamic_comment_target(item):
+        if not isinstance(item, dict) or item.get("type") not in {"DYNAMIC_TYPE_WORD", "DYNAMIC_TYPE_DRAW"}:
+            return None
+        basic = item.get("basic") or {}
+        kind = basic.get("comment_type")
+        if str(kind) not in {"11", "17"}:
+            return None
+        modules = item.get("modules") or {}
+        try:
+            oid = _identifier(basic.get("comment_id_str"))
+            dynamic_id = _identifier(item.get("id_str"))
+            author = _identifier((modules.get("module_author") or {}).get("mid"))
+        except ValueError:
+            return None
+        return {"resource_type": "dynamic", "type": int(kind), "oid": oid, "dynamic_id": dynamic_id,
+                "author_uid": author}
+
+    async def _dynamic_detail(self, dynamic_id):
+        signed = await self.wbi_params({"id": dynamic_id, "timezone_offset": -480})
+        item = (await self._get("/x/polymer/web-dynamic/v1/detail", signed)).get("item")
+        if not isinstance(item, dict) or str(item.get("id_str")) != dynamic_id:
+            raise PlatformReadError("not_found", "原始动态不可读或对象不一致")
+        return item
+
+    async def own_dynamic_target(self, account, dynamic_id):
+        target = self._dynamic_comment_target(await self._dynamic_detail(_identifier(dynamic_id)))
+        if not target or str(target["author_uid"]) != str(account):
+            raise PlatformReadError("permission", "无法核验当前账号的动态评论区")
+        return target
+
     async def fetch_dynamic_comments(self, target):
-        data = await self._get("/x/v2/reply", {"oid": _identifier(target["oid"]), "type": 17,
+        target = self._target(target, top_level=True)
+        data = await self._get("/x/v2/reply", {"oid": target["oid"], "type": target["type"],
                                               "pn": 1, "ps": 20, "sort": 0})
         items = []
         for reply in data.get("replies") or []:
@@ -579,7 +608,8 @@ class BrowsingAdapter(BilibiliAdapter):
             item, user = row.get("item"), row.get("user")
             if not isinstance(item, dict) or not isinstance(user, dict):
                 raise PlatformReadError("invalid", "账号通知缺少原始对象或用户")
-            resource = {1: "video", 17: "dynamic"}.get(item.get("business_id"))
+            business = item.get("business_id")
+            resource = {1: "video", 11: "dynamic", 17: "dynamic"}.get(business)
             root = item.get("root_id") or item.get("source_id") or item.get("target_id")
             comment = item.get("source_id") or item.get("target_id")
             # Unknown resource types remain observable and cannot be routed by guessing.
@@ -601,6 +631,7 @@ class BrowsingAdapter(BilibiliAdapter):
                 "bvid": None,
             }
             if resource == "dynamic":
+                event["type"] = business
                 uri = urlsplit(str(item.get("uri") or ""))
                 path = uri.path.strip("/").split("/")
                 if uri.hostname == "t.bilibili.com" and len(path) == 1 and path[0].isdigit():
@@ -628,9 +659,12 @@ class BrowsingAdapter(BilibiliAdapter):
         if not isinstance(target, dict):
             raise ValueError("评论目标必须来自已核验的公开来源")
         resource = target.get("resource_type") or target.get("type")
-        resource = {1: "video", 17: "dynamic"}.get(resource, resource)
+        resource = {1: "video", 11: "dynamic", 17: "dynamic"}.get(resource, resource)
         if resource not in {"video", "dynamic"}:
             raise PlatformReadError("unsupported", "暂不支持该通知资源的回复")
+        kind = target.get("type", 1 if resource == "video" else 17)
+        if type(kind) is not int or kind not in ({1} if resource == "video" else DYNAMIC_COMMENT_TYPES):
+            raise PlatformReadError("invalid", "评论类型与资源不一致")
         oid = _identifier(target.get("oid") or target.get("aid"))
         root, parent = "0", "0"
         if not top_level:
@@ -640,7 +674,7 @@ class BrowsingAdapter(BilibiliAdapter):
             raise ValueError("顶层留言不能携带回复楼或父评论")
         return {
             "resource_type": resource,
-            "type": 1 if resource == "video" else 17,
+            "type": kind,
             "oid": oid,
             "root": root,
             "parent": parent,
@@ -715,6 +749,24 @@ class BrowsingAdapter(BilibiliAdapter):
         if event.get("account_id") != account or event.get("kind") not in {"mention", "reply", "own_comment"}:
             raise PlatformReadError("permission", "通知不属于当前账号或来源类型不受支持")
         target = self._target(event)
+        dynamic = None
+        if target["resource_type"] == "dynamic":
+            dynamic_id = _identifier(event.get("dynamic_id") or target["oid"])
+            dynamic = await self._dynamic_detail(dynamic_id)
+            if dynamic.get("type") not in {"DYNAMIC_TYPE_WORD", "DYNAMIC_TYPE_DRAW"}:
+                raise PlatformReadError("unsupported", "仅支持文字和图文动态评论")
+            basic = dynamic.get("basic") or {}
+            kind = basic.get("comment_type")
+            oid = basic.get("comment_id_str")
+            if (target["type"] == 11 or str(kind) == "11") and (kind is None or not oid):
+                raise PlatformReadError("invalid", "动态详情缺少图文评论区和类型")
+            if str(oid or dynamic_id) != target["oid"]:
+                raise PlatformReadError("invalid", "动态评论区与来源不一致")
+            if kind is not None:
+                if str(kind) not in {"11", "17"} or ("type" in event and int(kind) != target["type"]):
+                    raise PlatformReadError("invalid", "动态评论类型与来源不一致")
+                target["type"] = int(kind)
+            target["dynamic_id"] = dynamic_id
         items, coverage = await self._thread_items(target, resume=resume, checkpoint=checkpoint)
         if not items:
             raise PlatformReadError("not_found", "原始楼不可读或已删除")
@@ -742,23 +794,11 @@ class BrowsingAdapter(BilibiliAdapter):
                 public_text = _text(info.get("title") or "", 1000)
             target["bvid"] = info["bvid"]
         else:
-            dynamic_id = _identifier(event.get("dynamic_id") or target["oid"])
-            signed = await self.wbi_params({"id": dynamic_id, "timezone_offset": -480})
-            dynamic = await self._get("/x/polymer/web-dynamic/v1/detail", signed)
-            item = dynamic.get("item")
-            if not isinstance(item, dict) or str(item.get("id_str")) != dynamic_id:
-                raise PlatformReadError("not_found", "原始文字动态不可读或对象不一致")
-            if item.get("type") not in {"DYNAMIC_TYPE_WORD", "DYNAMIC_TYPE_DRAW"}:
-                raise PlatformReadError("unsupported", "仅支持文字和图文动态评论")
-            basic = item.get("basic") or {}
-            if str(basic.get("comment_id_str") or dynamic_id) != target["oid"]:
-                raise PlatformReadError("invalid", "动态评论区与来源不一致")
-            modules = item.get("modules") or {}
+            modules = dynamic.get("modules") or {}
             resource_author_uid = (modules.get("module_author") or {}).get("mid")
             if own_comment and str(resource_author_uid) != account:
                 raise PlatformReadError("permission", "该动态不属于当前账号")
             public_text = _text(((modules.get("module_dynamic") or {}).get("desc") or {}).get("text"))
-            target["dynamic_id"] = dynamic_id
         return {
             "account_id": account,
             "resource_type": target["resource_type"],

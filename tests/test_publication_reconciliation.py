@@ -108,17 +108,18 @@ async def test_receipt_selects_exact_id_and_reports_hidden_without_resending():
     assert result["status"] == "not_visible" and result["receipt"]["rpid"] == "300"
 
 
-async def test_top_level_dynamic_comment_uses_actual_type17_and_zero_parent():
-    target = {"oid": "123", "type": 17, "root": "0", "parent": "0"}
+@pytest.mark.parametrize("kind", [11, 17])
+async def test_top_level_dynamic_comment_uses_actual_type_and_zero_parent(kind):
+    target = {"oid": "123", "type": kind, "root": "0", "parent": "0"}
 
     async def handle(request):
         assert request.method == "GET" and request.url.path == "/x/v2/reply"
-        assert request.url.params["type"] == "17" and request.url.params["sort"] == "0"
-        return httpx.Response(200, json={"code": 0, "data": {"replies": [reply(type=17, root=0, parent=0)]}})
+        assert request.url.params["type"] == str(kind) and request.url.params["sort"] == "0"
+        return httpx.Response(200, json={"code": 0, "data": {"replies": [reply(type=kind, root=0, parent=0)]}})
 
     async with adapter_for(handle, BrowsingAdapter) as adapter:
         result = await adapter.reconcile_publication(target, author_uid="900", text=TEXT, started_at=100)
-    assert result["status"] == "visible" and result["receipt"]["type"] == 17
+    assert result["status"] == "visible" and result["receipt"]["type"] == kind
 
 
 @pytest.mark.parametrize(

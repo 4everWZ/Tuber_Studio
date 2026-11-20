@@ -1277,8 +1277,8 @@ class BrowsingService:
         if discovery_paused and not self.backlog_status()["discovery_paused"]:
             self.changed.set()
 
-    async def _collect_own_comments(self, row):
-        return await comment_reader_tasks.collect_own_comments(self, row)
+    async def _collect_own_comments(self, row, metrics):
+        return await comment_reader_tasks.collect_own_comments(self, row, metrics)
 
     async def _process_events(self, row, metrics, *, own_only=False, batch_only=False):
         return await comment_reader_tasks.process_events(self, row, metrics, own_only=own_only, batch_only=batch_only)
