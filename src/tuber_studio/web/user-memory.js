@@ -4,7 +4,7 @@ export class UserMemoryEditor {
     this.dialog = document.createElement("dialog");
     this.dialog.className = "account-dialog";
     this.dialog.setAttribute("aria-labelledby", "user-memory-heading");
-    this.dialog.innerHTML = `<h2 id="user-memory-heading">用户档案</h2>
+    this.dialog.innerHTML = `<h2 id="user-memory-heading">联系档案</h2>
       <p data-identity class="hint"></p>
       <form><fieldset>
         <label><input name="personalization_enabled" type="checkbox"> 在评论和私信中使用个性化</label>
@@ -34,7 +34,7 @@ export class UserMemoryEditor {
       });
     };
     this.dialog.querySelector("[data-clear]").onclick = () => {
-      if (confirm("清空该用户在当前账号和角色下的称呼、偏好、重要互动与好感度？个性化开关会保留。")) {
+      if (confirm(`清空${this.selection.name}的称呼、偏好、重要互动与好感度？`)) {
         void this.request("DELETE");
       }
     };
@@ -42,15 +42,17 @@ export class UserMemoryEditor {
 
   close() { this.dialog.close(); }
 
-  open({ platform, userId, accountId, characterId, name, onChange }) {
+  open({ platform, userId, accountId, characterId, characterName, name, onChange }) {
     const query = new URLSearchParams({ account_id: accountId, character_id: characterId });
     this.selection = {
       path: `/api/user-memory/${encodeURIComponent(platform)}/${encodeURIComponent(userId)}?${query}`,
-      onChange,
+      onChange, name: name || `UID ${userId}`,
     };
     this.form.reset();
     this.dialog.querySelector("[data-summary]").textContent = "";
-    this.dialog.querySelector("[data-identity]").textContent = `${name || "观众"} · UID ${userId} · ${characterId}`;
+    this.dialog.querySelector("#user-memory-heading").textContent = `${this.selection.name}的档案`;
+    this.dialog.querySelector("[data-identity]").textContent = [name && `UID ${userId}`, characterName || characterId]
+      .filter(Boolean).join(" · ");
     if (!this.dialog.open) this.dialog.showModal();
     void this.request("GET");
   }
@@ -69,7 +71,7 @@ export class UserMemoryEditor {
         this.fields.important_events.value = profile.important_events.join("\n");
         const last = profile.last_interaction_at ? new Date(profile.last_interaction_at * 1000).toLocaleString() : "尚无记录";
         this.dialog.querySelector("[data-summary]").textContent = `好感度 ${profile.affinity} / 100 · ${profile.stage} · 最近互动 ${last}`;
-        this.feedback.textContent = { GET: "", PUT: "已保存用户档案。", DELETE: "已清空用户档案。" }[method];
+        this.feedback.textContent = { GET: "", PUT: "档案已保存。", DELETE: "档案已清空。" }[method];
         this.fieldset.disabled = false;
       }
       if (method !== "GET") void selection.onChange?.();

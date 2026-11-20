@@ -1,6 +1,6 @@
 "use strict";
 
-import { $ } from "./core.js";
+import { $, webCharacterName } from "./core.js";
 import { commentCanGenerate, commentFinished, reconcileCommentSelection } from "./comment-state.js?v=20261107.13";
 
 const sourcePageSize = 10;
@@ -72,11 +72,13 @@ function renderCommentSource(model, commentContinuation, setBadge, describe) {
   const draft = comment?.draft;
   const source = $("draft-source");
   const open = $("open-comment-draft");
-  source.textContent = comment ? `${comment.display_name || "匿名观众"}：${comment.content}` : "选择一条评论，查看原文和所在楼。";
+  const name = webCharacterName(model.status?.character);
+  source.textContent = comment ? `${comment.display_name || "匿名评论者"}：${comment.content}` : "选择一条评论，查看原文和所在楼。";
   setBadge($("draft-status"), draft?.status || comment?.continuation?.state || "选择评论");
   describe($("draft-meta"), comment ? [
     ["来源评论", `${comment.video_id} / ${comment.comment_id}`],
-    ["与当前 OC 的关系", typeof comment.relationship?.affinity === "number" ? `${comment.relationship.affinity} / 100 · ${comment.relationship.stage}` : comment.platform_user_id ? "个性化未启用" : "匿名用户"],
+    [name ? `与 ${name} 的关系` : "关系",
+      typeof comment.relationship?.affinity === "number" ? `${comment.relationship.affinity} / 100 · ${comment.relationship.stage}` : comment.platform_user_id ? "个性化未启用" : "匿名评论者"],
     ["楼 ID", comment.thread_id || comment.comment_id],
     ["父评论 ID", comment.parent_comment_id || "顶层"],
   ] : []);

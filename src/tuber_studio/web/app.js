@@ -1,6 +1,6 @@
 "use strict";
 
-import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
+import { $, node, notice, safeMessage, webCharacterName } from "./modules/core.js?v=20261120.1";
 import { api as baseApi } from "./modules/api.js";
 import { initOperatorChat } from "./modules/operator-chat.js?v=20261118.1";
 import { initChatPet } from "./modules/chat-pet.js";
@@ -90,7 +90,7 @@ setInterval(() => { if (model.authenticated && !document.hidden && model.page ==
 const userMemoryEditor = new UserMemoryEditor(api);
 const messagesPanel = new MessagesPanel($("messages-panel"), api, notice, scope => {
   const characterId = model.status?.character?.id;
-  if (characterId) userMemoryEditor.open({ ...scope, characterId });
+  if (characterId) userMemoryEditor.open({ ...scope, characterId, characterName: webCharacterName(model.status.character) });
 });
 messagesPanel.mountSettings($("message-policy-settings"));
 const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
@@ -151,7 +151,7 @@ $("open-comment-memory").onclick = () => {
   const characterId = model.status?.character?.id;
   if (!accountId || !characterId || !comment?.platform_user_id) return;
   userMemoryEditor.open({ platform: comment.platform, userId: comment.platform_user_id, accountId,
-    characterId, name: comment.display_name, onChange: refreshComments });
+    characterId, characterName: webCharacterName(model.status.character), name: comment.display_name, onChange: refreshComments });
 };
 
 const dynamicMemePicker = new MemePicker(api, (id, asset) => dynamicsModule?.selectDynamicMeme(id, asset, model.dynamicMemeContext), {
