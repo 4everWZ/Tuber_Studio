@@ -232,12 +232,13 @@ class PrivateChat(OperatorChat):
         return await super()._action(intent, *args)
 
 
-async def exercise(store, omni, operations, responses, archive, transport):
+async def exercise(store, omni, operations, responses, archive, transport, *, token):
     seeds = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
     character = next(seed for seed in seeds if seed["id"] == "whale") | {"version": 1}
     runtime = SimpleNamespace(store=store, character=character, llm=omni, operation_llm=operations, operator_generation=nullcontext,
                               offline_generation=nullcontext,
-                              settings=SimpleNamespace(data={"omni": omni.config}, responses_config=responses.config.model_dump()),
+                              settings=SimpleNamespace(data={"omni": omni.config}, responses_config=responses.config.model_dump(),
+                                                      provider_key=lambda name: token if name == "omni" else None),
                               daily_memory=SimpleNamespace(preference=lambda scope: {"enabled": False}),
                               context=SimpleNamespace(record=lambda *args, **kwargs: None),
                               validate_memory_delivery=lambda *args, **kwargs: None)
@@ -311,7 +312,7 @@ async def run(env):
         transport = Archive()
         archive = await stack.enter_async_context(httpx.AsyncClient(base_url=ORIGIN, transport=httpx.MockTransport(transport.serve)))
         async with asyncio.timeout(600):
-            return await exercise(store, omni, operations, responses, archive, transport)
+            return await exercise(store, omni, operations, responses, archive, transport, token=token)
 
 
 def main():
