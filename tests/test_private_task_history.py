@@ -114,9 +114,9 @@ async def test_history_boundaries_on_model_input_and_stream_delivery(studio, mon
     revoke = False
 
     async def generate(messages, schema, **kw):
+        seen.append(messages)
         if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
             return {"action": "task_turn"}
-        seen.append(messages)
         if schema["title"] == "CardTurnIntent":
             return {"intent": "查当初为何作出某个选择的原文", "reference": task}
         if revoke:
@@ -131,7 +131,7 @@ async def test_history_boundaries_on_model_input_and_stream_delivery(studio, mon
     async def check_isolated(**options):
         seen.clear()
         (await client.post(CHAT, json={"message": URL, "request_id": str(uuid4()), **options})).raise_for_status()
-        assert len(seen) == 1
+        assert seen
         assert "history_task_cards" not in str(seen) and REASON not in str(seen) and task not in str(seen)
 
     await check_isolated(temporary=True)

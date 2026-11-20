@@ -296,6 +296,8 @@ class Store:
                 data.pop("aliases", None)
             data["version"] = current["version"]
             original = Character.model_validate(editable_character(current)).model_dump()
+            # Display names are stored separately, including when the old card still has one.
+            original.pop("display_name", None)
             if data == original:
                 return data
             data["_edit_identity"] = uuid4().hex

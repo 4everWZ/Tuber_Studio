@@ -55,7 +55,7 @@ def connection(env):
     return root, token
 
 
-async def exercise(store, omni, operations, responses, *, explicit=False):
+async def exercise(store, omni, operations, responses, *, token, explicit=False):
     from tuber_studio.agent.operator_chat import ChatIntent, ChatTurn, OperatorChat
     from tuber_studio.agent.task_runtime import Tool
     from tuber_studio.agent.task_tools import create_task_runtime
@@ -71,7 +71,8 @@ async def exercise(store, omni, operations, responses, *, explicit=False):
     runtime = SimpleNamespace(
         store=store, character=character, llm=omni, operation_llm=operations, operator_generation=nullcontext,
         offline_generation=nullcontext,
-        settings=SimpleNamespace(data={"omni": omni.config}, responses_config=responses.config.model_dump()),
+        settings=SimpleNamespace(data={"omni": omni.config}, responses_config=responses.config.model_dump(),
+                                 provider_key=lambda name: token if name == "omni" else None),
         daily_memory=SimpleNamespace(preference=lambda scope: {"enabled": False}),
         context=SimpleNamespace(record=lambda *args, **kwargs: None),
         validate_memory_delivery=lambda *args, **kwargs: None,
@@ -150,7 +151,7 @@ async def run(env, *, explicit=False):
                                  token, background=True)
         stack.push_async_callback(operations.close)
         async with asyncio.timeout(300):
-            return await exercise(store, omni, operations, responses, explicit=explicit)
+            return await exercise(store, omni, operations, responses, explicit=explicit, token=token)
 
 
 def main():

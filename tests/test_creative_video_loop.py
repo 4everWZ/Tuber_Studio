@@ -62,13 +62,26 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                       "output": [{"type": "message", "content": [
                           {"type": "output_text", "text": json.dumps({"color": color, "shape": shape})},
                       ]}]}
+        elif path == "/llm/v1/responses" and "direct_tool" in {tool["name"] for tool in body["tools"]}:
+            assert body["tool_choice"] == "required" and body["store"] is False
+            current = body["input"][-1]["content"]
+            assert current in (replay.REQUEST, replay.CHANGE)
+            action = "agent_task" if current == replay.REQUEST else "task_turn"
+            assert action in {tool["name"] for tool in body["tools"]}
+            result = {"status": "completed", "id": str(uuid4()), "output": [function(action, {})]}
         elif path == "/llm/v1/responses":
-            assert {tool["name"] for tool in body["tools"]} == {"inspect_video", "web_page", "submit_materials", "ask_owner"}
             brief = json.loads(body["input"][1]["content"])
             evidence = brief["saved_evidence"].copy()
             for item in body["input"]:
                 if item.get("type") == "function_call_output":
                     evidence.update(json.loads(item["output"])["evidence"])
+            tools = {tool["name"]: tool for tool in body["tools"]}
+            allowed = {"inspect_video", "submit_materials", "ask_owner"}
+            if any(replay.SOURCE in value for value in evidence.values()):
+                assert set(tools) == allowed
+            else:
+                assert set(tools) == allowed | {"web_page"}
+                assert tools["web_page"]["parameters"]["properties"]["web_fetch"]["enum"] == [replay.SOURCE]
             if not evidence:
                 calls = [function("inspect_video", {"bvid": replay.BV, "part": 2, **interval}),
                          function("web_page", {"web_fetch": replay.SOURCE})]
@@ -87,13 +100,9 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
             if "person_subject" in body["messages"][0]["content"]:
                 decision = {"person_subject": "地点、构图或物件"}
             elif content == replay.REQUEST:
-                if "requested_count" in body["messages"][0]["content"]:
-                    decision = {"requested_count": 2, "usage": "列出形状、理由和时码", "playable": False,
-                                "trace_origin": True, "clip_seconds": None}
-                else:
-                    decision = {"action": "agent_task"}
-            elif content == replay.CHANGE and json.loads(body["structured_outputs"]["structural_tag"])["format"]["json_schema"]["title"] == "WorkLifecycle":
-                decision = {"action": "task_turn"}
+                assert "requested_count" in body["messages"][0]["content"]
+                decision = {"requested_count": 2, "usage": "列出形状、理由和时码", "playable": False,
+                            "trace_origin": True, "clip_seconds": None}
             else:
                 packet = (json.loads(body["messages"][1]["content"]) | {"message": content}
                           if content == replay.CHANGE else json.loads(content))
