@@ -1,13 +1,17 @@
 """Bounded public search discovery. Answers use opened pages, not snippets."""
 
 import asyncio
+import re
+from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from xml.etree import ElementTree
 
 import httpx
 
 SEARCH_URL = "https://www.bing.com/search"
+NEWS_URL = "https://www.bing.com/news/search"
 SEARCH_HOSTS = {"www.bing.com", "cn.bing.com", "global.bing.com"}
+NEWS_FEEDS = ("https://feeds.feedburner.com/rsscna/local", "https://feeds.feedburner.com/rsscna/intworld")
 SEARCH_TIMEOUT = 4.0
 MAX_SEARCH_BYTES = 128 * 1024
 
@@ -48,15 +52,15 @@ async def search_broadcast_programmes(query):
     return parser.links
 
 
-async def search_public_web(query):
-    url = httpx.URL(SEARCH_URL, params={"q": query, "format": "rss"})
+async def _rss(url, allowed_hosts):
+    url = httpx.URL(url)
     headers = {"Accept": "application/rss+xml", "User-Agent": "Mozilla/5.0"}
     async with asyncio.timeout(SEARCH_TIMEOUT), httpx.AsyncClient(trust_env=False) as client:
         for _ in range(3):
             async with client.stream("GET", url, headers=headers) as response:
                 if response.has_redirect_location:
                     url = url.join(response.headers["location"])
-                    if url.scheme != "https" or url.host not in SEARCH_HOSTS or url.port is not None or url.userinfo:
+                    if url.scheme != "https" or url.host not in allowed_hosts or url.port is not None or url.userinfo:
                         raise ValueError("搜索服务跳转到非预期地址")
                     continue
                 response.raise_for_status()
@@ -68,14 +72,44 @@ async def search_public_web(query):
                 break
         else:
             raise ValueError("搜索服务重定向过多")
-    if b"<!" in body:
+    if re.search(br"<!\s*(?:DOCTYPE|ENTITY)\b", body, re.I):
         raise ValueError("搜索服务未返回可读取的 RSS")
-    root = ElementTree.fromstring(body)
+    try:
+        return ElementTree.fromstring(body).findall("./channel/item")
+    except ElementTree.ParseError as error:
+        raise ValueError("搜索服务未返回可读取的 RSS") from error
+
+
+async def search_public_web(query, *, news=False):
+    if news and not query:
+        batches = await asyncio.gather(*(_rss(feed, {"feeds.feedburner.com"}) for feed in NEWS_FEEDS),
+                                       return_exceptions=True)
+        items = [item for batch in batches if isinstance(batch, list) for item in batch[:4]]
+        if not items and all(isinstance(batch, Exception) for batch in batches):
+            raise ValueError("新闻来源暂时不可读取")
+    else:
+        params = {"q": query, "format": "rss"}
+        if news and re.search(r"[\u3400-\u9fff]", query):
+            params |= {"mkt": "zh-TW", "setlang": "zh-TW"}
+        items = await _rss(httpx.URL(NEWS_URL if news else SEARCH_URL, params=params), SEARCH_HOSTS)
+
+    def feed_time(item):
+        try:
+            return parsedate_to_datetime(item.findtext("pubDate", "")).timestamp()
+        except (ValueError, OverflowError):
+            return 0
+
+    if news:
+        items.sort(key=feed_time, reverse=True)
     hits = []
-    for item in root.findall("./channel/item"):
+    for item in items:
         url = item.findtext("link", "").strip()
+        if news:
+            link = httpx.URL(url)
+            if link.host in SEARCH_HOSTS and link.path == "/news/apiclick.aspx":
+                url = link.params.get("url", "")
         if url.startswith("https://") and url not in hits:
             hits.append(url)
-        if len(hits) == 2:
+        if len(hits) == (5 if news else 2):
             break
     return hits

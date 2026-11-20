@@ -563,6 +563,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
       if (currentEpoch === epoch) setPending(false);
     }
   };
+  document.addEventListener("operator-chat-changed", () => { if (active) void refresh(); });
   return {
     refresh, refreshCards, renderModel,
     reset() { active = false; sizeChat(); reset(); },

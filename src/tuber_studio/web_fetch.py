@@ -2,9 +2,11 @@
 
 import asyncio
 import ipaddress
+import json
 import re
 import socket
 import time
+from datetime import datetime
 from html.parser import HTMLParser
 from typing import Annotated
 from xml.etree.ElementTree import ParseError
@@ -210,20 +212,59 @@ class PageText(HTMLParser):
         self.title = []
         self.body = []
         self.in_title = False
+        self.publication_dates = []
+        self.article_data = None
+
+    @property
+    def published_at(self):
+        # Use publication metadata, excluding modification timestamps and navigation dates.
+        dates = set()
+        for raw in self.publication_dates:
+            try:
+                dates.add(datetime.fromisoformat(raw.strip()).isoformat())
+            except (ValueError, AttributeError):
+                continue
+        return next(iter(dates)) if len(dates) == 1 else None
 
     def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == "meta" and any((attributes.get(key) or "").lower() in {
+            "article:published_time", "datepublished", "parsely-pub-date"
+        } for key in ("property", "itemprop", "name")):
+            self.publication_dates.append(attributes.get("content"))
+        if tag == "time" and (attributes.get("itemprop") or "").lower() == "datepublished":
+            self.publication_dates.append(attributes.get("datetime"))
+        if tag == "script" and attributes.get("type") == "application/ld+json":
+            self.article_data = []
         if tag in HIDDEN_TAGS:
             self.hidden.append(tag)
         if tag == "title":
             self.in_title = True
 
     def handle_endtag(self, tag):
+        if tag == "script" and self.article_data is not None:
+            try:
+                value = json.loads("".join(self.article_data))
+                entries = value.get("@graph", [value]) if isinstance(value, dict) else value
+                for entry in entries if isinstance(entries, list) else ():
+                    if isinstance(entry, dict) and any(
+                        name in {"Article", "NewsArticle", "ReportageNewsArticle", "BlogPosting"}
+                        for name in ([entry.get("@type")] if isinstance(entry.get("@type"), str) else
+                                     entry.get("@type") or [])
+                        if isinstance(name, str)
+                    ):
+                        self.publication_dates.append(entry.get("datePublished"))
+            except (ValueError, RecursionError, TypeError):
+                pass
+            self.article_data = None
         if self.hidden and tag == self.hidden[-1]:
             self.hidden.pop()
         if tag == "title":
             self.in_title = False
 
     def handle_data(self, data):
+        if self.article_data is not None:
+            self.article_data.append(data)
         if not self.hidden and data.strip():
             (self.title if self.in_title else self.body).append(data.strip())
 
@@ -426,6 +467,8 @@ async def read_excerpt(url, response):
         page.feed(content)
         page.close()
         title, content = " ".join(page.title), " ".join(page.body)
+        if page.published_at:
+            metadata["published_at"] = page.published_at
         if isinstance(page, CCTVProgramPage) and page.credits:
             metadata["programme_credits"] = "；".join(
                 f"{label}：{page.credits[key]}" for key, label in page.fields.items() if key in page.credits)

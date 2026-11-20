@@ -33,6 +33,23 @@ class CallOptions(BaseModel):
     topic_turn: UUID | None = None
 
 
+def shared_call_facts(runtime, operator_chat, turn_id):
+    if operator_chat is None:
+        return []
+    character = runtime.character
+    account = str(runtime.tasks.scope()[0] or "")
+    shared = []
+    for subject in operator_chat.conversation_objects(character, account, turn_id).values():
+        if subject.kind == "owner" and (owner := character.get("bilibili_owner")):
+            shared.append({"kind": subject.label, "name": owner["name"], "uid": owner["uid"],
+                           "url": f"https://space.bilibili.com/{owner['uid']}"})
+        if subject.kind in {"task", "artifact"} and not contains_memory_credential(subject.label):
+            if task := runtime.tasks.current(subject.identity):
+                shared.append({"kind": "交办", "goal": subject.label, "revision": task["revision"],
+                               "status": runtime.tasks.view(task)["status"]})
+    return shared
+
+
 def inherited_topic(runtime, turn_id):
     memory = runtime.daily_memory
     scope = runtime.memory_organizer.scope()
@@ -127,7 +144,7 @@ def call_avatar(settings, character):
     return {"still": idle, "speaking": None, "fallback": idle}
 
 
-def register_private_call(app, runtime, require_admin):
+def register_private_call(app, runtime, require_admin, *, operator_chat=None):
     recording_route = "/api/chat/private-call/recordings"
 
     def recordings(character):
@@ -180,6 +197,7 @@ def register_private_call(app, runtime, require_admin):
         inherited = not options.temporary and not topic and options.topic_turn is not None
         if inherited:
             topic = inherited_topic(runtime, options.topic_turn)
+        shared = shared_call_facts(runtime, operator_chat, options.topic_turn) if inherited else []
         rows = private_rows(runtime, topic) if topic else []
         # A corrected chat turn can resolve an existing memory by ID, but its ID is not spoken wording.
         source_lookup = inherited and topic == f"turn:{options.topic_turn}"
@@ -189,9 +207,10 @@ def register_private_call(app, runtime, require_admin):
 
             background = front_background(character, topic)
         topic_source = None
-        if inherited and (rows or background):
+        if inherited and (rows or background or shared):
             topic_source = {"turn_id": options.topic_turn, "history_revision": history_preference(runtime)["history_revision"],
-                            "topic_stamp": content_hash(topic)}
+                            "topic_stamp": content_hash(topic) if rows or background else None,
+                            **({"shared_stamp": content_hash(shared)} if shared else {})}
         # A retained headline or source quote may contain the superseded preference.
         notes = [row["anecdote"] for row in rows]
         instructions = [front_identity(character), private_participant_instructions(character)]
@@ -199,6 +218,8 @@ def register_private_call(app, runtime, require_admin):
             instructions.append("与本次话题有关的角色背景：" + dump(background))
         if notes:
             instructions.append("与本次私聊话题有关的记忆资料：" + dump(notes))
+        if shared:
+            instructions.append("工作台在接通时核对的对象和状态，只作为当前通话事实：" + dump(shared))
         show = performance(runtime.store)
         return {
             "socket": browser_socket_origin(origin) + "/v1/realtime",

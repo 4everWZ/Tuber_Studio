@@ -60,7 +60,14 @@ function preview(group) {
       .filter(Boolean).join(" · ")));
     if (entry.text) row.append(node("p", entry.text));
     if (entry.original_text) row.append(node("small", `B 站原字幕「${entry.original_text}」，已校正`));
+    if (entry.kind === "web" && entry.published_at) row.append(node("small", entry.published_at));
     if (/^https:\/\/(?:www\.|t\.)bilibili\.com\//.test(entry.href || "")) row.append(sourceLink(entry.href));
+    else if (entry.kind === "web") {
+      try {
+        const url = new URL(entry.href);
+        if (url.protocol === "https:" && !url.username && !url.password) row.append(sourceLink(url.href));
+      } catch { /* The citation can still show its excerpt. */ }
+    }
     content.append(row);
   }
   return content;

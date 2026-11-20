@@ -110,6 +110,13 @@
   <div id="private-call-pet-slot"></div>
   <p>声音只送往私聊推理服务，不接入直播、不写入聊天记录。建议佩戴耳机。</p>
   <p id="private-call-state" role="status">尚未开始通话</p>
+  <form id="private-call-work" hidden>
+    <label>发给大肥鱼的文字
+      <textarea id="private-call-work-input" rows="2" required></textarea>
+    </label>
+    <button type="submit">发送到 Chats</button>
+    <div id="private-call-work-result" role="status"></div>
+  </form>
   <details id="private-call-review" hidden>
     <summary>查看通话转写</summary>
     <label>选择要处理的转写

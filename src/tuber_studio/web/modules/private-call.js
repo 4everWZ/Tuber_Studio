@@ -2,10 +2,13 @@ import { api } from "./api.js";
 import { PrivatePlayback } from "./private-call-playback.js";
 import { guardCall } from "./private-call-guard.js";
 import { FinalUtterances, transcriptReview } from "./private-call-handoff.js";
+import { renderAssistantAnswer } from "./operator-chat-answer.js";
 
 const byId = id => document.getElementById(id);
 const open = byId("private-call-open"), dialog = byId("private-call-dialog");
 const start = byId("private-call-start"), end = byId("private-call-end"), status = byId("private-call-state");
+const work = byId("private-call-work"), workInput = byId("private-call-work-input");
+const workResult = byId("private-call-work-result");
 const workspace = byId("workspace"), chat = open.closest("[data-section='chat']");
 let current;
 const temporary = byId("private-call-temporary");
@@ -49,6 +52,9 @@ check();
 function finish(call, cause, message, code = null) {
   if (call !== current || !call) return;
   current = null;
+  work.hidden = true;
+  workInput.value = "";
+  workResult.replaceChildren();
   call.playback?.diagnose?.("call_end", cause, code);
   mute.hidden = true;
   mute.textContent = "播放静音";
@@ -121,6 +127,7 @@ async function begin(previous = null) {
     const config = await api("/api/chat/private-call/ticket", {method: "POST", signal: call.abort.signal,
       body: {temporary: ephemeral, ...(subject ? {topic: subject} : turn ? {topic_turn: turn} : {})}});
     if (current !== call) return;
+    call.scope = config.call_scope;
     const use = config.topic_source ? {...config.memory_use, topic_source: config.topic_source} : config.memory_use;
     async function validateMemory() {
       if (!config.memory_use) return true;
@@ -188,6 +195,7 @@ async function begin(previous = null) {
           clearTimeout(call.deadline);
           call.deadline = setTimeout(() => finish(call, "microphone_timeout", "麦克风授权超时，通话已结束"), 60000);
           call.ready = true;
+          work.hidden = ephemeral;
           call.receipts = setInterval(() => call.playback.acknowledge(), 200);
           call.heartbeat = setInterval(() => call.send({type: "session.heartbeat"}), 20000);
           await capture(call, config.character);
@@ -215,6 +223,30 @@ open.onclick = () => {
   topic.value = "";
   status.textContent = "尚未开始通话";
   dialog.showModal();
+};
+work.onsubmit = async event => {
+  event.preventDefault();
+  const call = current, message = workInput.value.trim();
+  if (!message || !call?.ready || call.ephemeral || call.invalidated || call.sending) return;
+  const submit = work.querySelector("button");
+  call.sending = submit.disabled = true;
+  const request = call.workRequest?.message === message ? call.workRequest :
+    {request_id: crypto.randomUUID(), message, call_scope: call.scope};
+  call.workRequest = request;
+  workResult.textContent = "正在处理…";
+  try {
+    const reply = await api("/api/chat/intelligent", {method: "POST", body: request});
+    document.dispatchEvent(new CustomEvent("operator-chat-changed"));
+    if (call === current) {
+      renderAssistantAnswer(workResult, reply);
+      if (workInput.value.trim() === message) workInput.value = "";
+      call.workRequest = null;
+    }
+  } catch (error) {
+    if (call === current) workResult.textContent = error.message;
+  } finally {
+    call.sending = submit.disabled = false;
+  }
 };
 start.onclick = () => begin();
 end.onclick = () => { finish(current, "hangup_button", "通话已结束"); dialog.close(); };

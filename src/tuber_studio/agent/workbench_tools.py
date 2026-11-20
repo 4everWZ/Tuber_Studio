@@ -112,8 +112,8 @@ def requested_setting(source, character, previous=None):
     return "daily_settings", group, read, named_setting_fields(group, source) if read else ()
 
 
-def requests_platform_profile(source):
-    return bool(_QUERY.search(source) and not (_HYPOTHETICAL.search(source) or _TASK_DELIVERY.search(source)))
+def is_non_read_request(source):
+    return bool(_CHANGE.search(source) or _HYPOTHETICAL.search(source) or _TASK_DELIVERY.search(source))
 
 
 def capabilities(runtime):

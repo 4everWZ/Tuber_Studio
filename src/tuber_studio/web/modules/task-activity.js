@@ -10,6 +10,7 @@ const base = "/api/agent/tasks";
 const states = {
   queued: "等待执行", scheduled: "已预约", running: "进行中", waiting: "等待工具结果",
   awaiting_approval: "等待确认", needs_input: "等待你的答复", completed: "已完成", cancelled: "已停止", failed: "未完成",
+  paused: "已暂停",
 };
 const tools = {
   web_search: "搜索网页", web_page: "打开来源", bilibili_owner: "查号主主页", operation_status: "查看运营",
@@ -19,7 +20,7 @@ const tools = {
   owner_attachment: "号主提供的私有附件",
   owner_code_grant: "已允许本次隔离计算", private_code: "处理私有文件",
 };
-const stoppable = new Set(["queued", "scheduled", "running", "waiting", "needs_input", "awaiting_approval"]);
+const stoppable = new Set(["queued", "scheduled", "running", "waiting", "needs_input", "awaiting_approval", "paused"]);
 const needsAttention = new Set(["needs_input", "awaiting_approval"]);
 const timeLabel = value => new Date(value * 1000).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
 
@@ -397,7 +398,11 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
     }
     const adjust = button(task.status === "needs_input" ? "补充要求" : "调整任务");
     const stop = button("停止任务");
+    const resumable = task.status === "paused" || task.pause_requested;
+    const pause = button(resumable ? (task.pause_requested ? "取消待暂停" : "恢复任务") : "暂停任务");
     stop.hidden = task.can_control === false || !stoppable.has(task.status);
+    pause.hidden = stop.hidden;
+    pause.onclick = () => apply(task, { action: resumable ? "resume" : "pause" }, pause);
     adjust.hidden = task.can_control === false;
     stop.onclick = () => apply(task, { action: "cancel" }, stop);
     adjust.onclick = () => {
@@ -424,9 +429,9 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
     if (steps.parentElement === content) {
       for (const child of Array.from(content.children)) if (child !== steps) child.remove();
       steps.before(back, title, state, result);
-      steps.after(adjust, stop);
+      steps.after(adjust, pause, stop);
     } else {
-      content.replaceChildren(back, title, state, result, steps, adjust, stop);
+      content.replaceChildren(back, title, state, result, steps, adjust, pause, stop);
     }
     if (task.can_control === false && !task.creative_goal?.closed) content.append(node("p", "原执行授权已失效。记录与成果仍可查看；如需继续，请重新交办。", "hint"));
     renderWorkspace(task);

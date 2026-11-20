@@ -114,6 +114,11 @@ class Tool:
     responses_only: bool = False
     accepts_goal: Callable[[str, BaseModel], bool] | None = None
     checkpoint_submission: bool = False
+    foreground_read: bool = False
+
+    async def invoke(self, request, arguments):
+        async with asyncio.timeout(None if self.own_deadline else 20):
+            return await self.run(request, arguments)
 
 
 class TaskRuntime:
@@ -158,6 +163,18 @@ class TaskRuntime:
             raise ValueError(f"duplicate agent tool: {name}")
         self.tools[name] = tool
 
+    async def read(self, name, identity, goal, scope, arguments=None, receipts=()):
+        tool = self.tools.get(name)
+        if not tool or not tool.foreground_read or tool.review or self.scope() != scope:
+            raise PermissionError("该读取的权限或对象已失效")
+        request = ToolRequest(identity, goal, scope, None, None, tuple(receipts))
+        result = await tool.invoke(request, tool.arguments.model_validate(arguments or {}))
+        if self.scope() != scope:
+            raise PermissionError("该读取的权限或对象已失效")
+        if isinstance(result, ToolWait):
+            raise TimeoutError("当前仍在等待读取")
+        return result
+
     @staticmethod
     def _decode(row):
         return row | {"scope": json.loads(row["scope"]), "steps": json.loads(row["steps"]),
@@ -182,6 +199,8 @@ class TaskRuntime:
 
     def view(self, task):
         result = {key: task[key] for key in ("id", "goal", "revision", "status", "steps", "message", "due", "updated")}
+        if self.store.get(f"agent_pause:{task['id']}") == task["revision"]:
+            result["pause_requested"] = True
         try:
             self._validate_reads(task["steps"], task["plan"])
         except ValueError:
@@ -276,7 +295,7 @@ class TaskRuntime:
     async def close_goal(self, identity, confirmed):
         def stops_for(row):
             task = self._decode(row)
-            if task["pending_control"]:
+            if task["pending_control"] and task["status"] != "paused":
                 return [task["steps"][-1]["id"]]
             return self._stop_ids(task)
 
@@ -288,10 +307,33 @@ class TaskRuntime:
         self.wake.set()
 
     def _stop_ids(self, task):
+        status = task["status"]
+        if status == "paused":
+            status = json.loads(task["pending_control"])["resume_status"]
         return [item["id"] for item in self._current_steps(task)
-                if "result" not in item and task["status"] != "awaiting_approval"
+                if "result" not in item and status != "awaiting_approval"
                 and (item["tool"] not in self.tools or self.tools[item["tool"]].stop
                      or (self.tools[item["tool"]].checkpoint_submission and item.get("checkpoint")))]
+
+    def _settle_pause(self, task):
+        key = f"agent_pause:{task['id']}"
+        if self.store.get(key) != task["revision"]:
+            return False
+        if task["pending_control"] or task["status"] in {"completed", "failed", "cancelled"}:
+            self.store.execute("DELETE FROM kv WHERE key=?", (key,))
+            return False
+        # Finish the original reconciliation before removing the task from
+        # worker admission. An uncertain external submission keeps its step ID.
+        if any(s.get("checkpoint") and "result" not in s and
+               (tool := self.tools.get(s["tool"])) and tool.checkpoint_submission
+               for s in self._current_steps(task)):
+            return False
+        previous = {"resume_status": task["status"], "resume_message": task["message"]}
+        applied = self._persist(task, {"status": "paused", "message": "任务已暂停。",
+                                       "pending_control": dump(previous)})
+        if applied:
+            self.store.execute("DELETE FROM kv WHERE key=?", (key,))
+        return applied
 
     async def control(self, identity, revision, action, goal=None, step_id=None, *, video_selection=None, replace_goal=False):
         async with self.controls:
@@ -308,12 +350,31 @@ class TaskRuntime:
         if task["revision"] != revision:
             raise ValueError("任务已更新，请刷新后重试")
         status = task["status"]
-        if task["pending_control"]:
+        paused = json.loads(task["pending_control"]) if status == "paused" and task["pending_control"] else None
+        if task["pending_control"] and not paused:
             raise ValueError("关联操作的停止结果待核对")
         if video_selection is not None and action != "steer":
             raise ValueError("只有改口可以更换视频范围")
         if replace_goal and (action != "steer" or not goal):
             raise ValueError("整体替换须提供本轮目标")
+        if action in {"pause", "resume"}:
+            key = f"agent_pause:{identity}"
+            if action == "pause" and status in {"queued", "scheduled", "running", "waiting", "needs_input", "awaiting_approval"}:
+                self.store.set(key, revision)
+                if not self.active or self.active[0] != identity:
+                    self._settle_pause(task)
+            elif action == "resume" and paused:
+                restored = paused["resume_status"]
+                if restored == "running":
+                    restored = "queued"
+                if not self._save(task, status=restored, message=paused["resume_message"], pending_control=None):
+                    raise ValueError("任务已更新，请刷新后重试")
+            elif action == "resume" and self.store.get(key) == revision:
+                self.store.execute("DELETE FROM kv WHERE key=?", (key,))
+            else:
+                raise ValueError("任务当前无法执行此操作")
+            self.wake.set()
+            return self.current(identity)
         if action == "approve":
             step = task["steps"][-1] if task["steps"] else None
             if (status != "awaiting_approval" or not step or step["id"] != step_id
@@ -325,9 +386,9 @@ class TaskRuntime:
             self.wake.set()
             return self.current(identity)
         allowed = {
-            "cancel": {"queued", "scheduled", "running", "waiting", "needs_input", "awaiting_approval"},
+            "cancel": {"queued", "scheduled", "running", "waiting", "needs_input", "awaiting_approval", "paused"},
             "steer": {"queued", "scheduled", "running", "waiting", "needs_input", "awaiting_approval",
-                      "failed", "completed", "cancelled"},
+                      "failed", "completed", "cancelled", "paused"},
         }
         if status not in allowed[action]:
             raise ValueError("任务当前无法执行此操作")
@@ -340,6 +401,8 @@ class TaskRuntime:
             final_status, due = "scheduled", task["due"]
         change = {"status": final_status, "message": final_message, "revision": revision + 1,
                   "goal": goal or task["goal"], "due": due, "plan": None, "plan_cursor": 0}
+        if paused:
+            change["pending_control"] = None
         if replace_goal:
             old = task["plan"] if task_delegation.uses_responses(task) else {}
             history = [*old.get("superseded_goals", []), {"revision": revision, "goal": task["goal"],
@@ -383,7 +446,8 @@ class TaskRuntime:
             running = self.active[1]
             running.cancel()
             await asyncio.gather(running, return_exceptions=True)
-        if "pending_control" in change and (fresh := self.current(identity)):
+        self.store.execute("DELETE FROM kv WHERE key=?", (f"agent_pause:{identity}",))
+        if change.get("pending_control") and (fresh := self.current(identity)):
             await self._finish_control(fresh)
         fresh = self.current(identity)
         if not fresh:
@@ -508,13 +572,18 @@ class TaskRuntime:
                     (dump(self.scope()), time.time()),
                 )
                 if row:
-                    task = asyncio.create_task(self._advance(self._decode(row)))
+                    ready = self._decode(row)
+                    if self._settle_pause(ready):
+                        continue
+                    task = asyncio.create_task(self._advance(ready))
                     self.active = row["id"], task
             if row:
                 try:
                     await asyncio.gather(task, return_exceptions=True)
                 finally:
                     self.active = None
+                    if fresh := self.executable(row["id"]):
+                        self._settle_pause(fresh)
                 continue
             try:
                 await asyncio.wait_for(self.wake.wait(), 1)
@@ -697,8 +766,7 @@ class TaskRuntime:
                 step = step | {"checkpoint": {"submission_started": True}}
                 if not self._save(task, steps=[step if item["id"] == step["id"] else item for item in task["steps"]]):
                     return step, "waiting", time.time()
-            async with asyncio.timeout(None if tool.own_deadline else 20):
-                result = await tool.run(request, arguments)
+            result = await tool.invoke(request, arguments)
         except InferenceQueueBusy as busy:
             return step, "waiting", time.time() + busy.retry_after
         except (ArchiveUnavailable, InferenceBudgetExceeded) as error:

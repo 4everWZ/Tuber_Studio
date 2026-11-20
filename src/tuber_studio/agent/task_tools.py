@@ -79,6 +79,10 @@ from .visual_specificity import review_visual_specificity, shared_visual_facts
 class Search(StrictModel):
     query: str = Field(min_length=2, max_length=160)
     catalog: Literal["综合网页", "央视节目库"] | None = Field(default=None, description="按查证对象选公开检索库，节目用节目名查询。")
+    news: bool = Field(default=False, strict=True, exclude_if=lambda value: not value,
+                       description="本轮目标明确要求查近期新闻时启用。")
+    bulletin: bool = Field(default=False, strict=True, exclude_if=lambda value: not value,
+                           description="泛查新闻要闻、没有指定主题时读公开新闻快讯。")
 
 
 class ResearchQuestion(StrictModel):
@@ -2017,7 +2021,10 @@ def create_task_runtime(runtime, store, browsing):
                 return found
         if args.catalog == "央视节目库":
             return {"links": await search_broadcast_programmes(args.query), "catalog": args.catalog}
-        links = await search_public_web(args.query)
+        if args.news:
+            links = await search_public_web("" if args.bulletin else args.query, news=True)
+        else:
+            links = await search_public_web(args.query)
         return {"links": links} if links else {"links": [], "note": "综合检索未找到链接。广播电视节目可用节目名检索节目库。"}
 
     async def web_page(request, args):
@@ -2201,20 +2208,21 @@ def create_task_runtime(runtime, store, browsing):
         return game.handoff(request.id, args.game, args.action)
 
     for name, tool in {
-        "web_search": Tool("检索公开网页，返回候选网址。", Search, web_search, parallel_read=True, reusable=True),
+        "web_search": Tool("检索公开网页，返回候选网址。", Search, web_search, parallel_read=True, reusable=True,
+                           foreground_read=True),
         "web_page": Tool("读公开 HTTPS 网页并返回带来源的摘录。", WebFetchRequest, web_page,
-                         parallel_read=True, reusable=True),
-        "bilibili_owner": Tool("读取当前角色绑定的 B 站号主公开主页。", StrictModel, owner),
-        "operation_status": Tool("读取真实自主运营状态。", StrictModel, operations, parallel_read=True),
-        "today_activity": Tool("读取当前业务日的公开运营事件和来源。", StrictModel, today),
+                         parallel_read=True, reusable=True, foreground_read=True),
+        "bilibili_owner": Tool("读取当前角色绑定的 B 站号主公开主页。", StrictModel, owner, foreground_read=True),
+        "operation_status": Tool("读取真实自主运营状态。", StrictModel, operations, parallel_read=True, foreground_read=True),
+        "today_activity": Tool("读取当前业务日的公开运营事件和来源。", StrictModel, today, foreground_read=True),
         "inspect_video": Tool("读取指定BV和分P，返回该部分时长及真实采样时码。可自行勘察候选位置。"
                               "需要可播放选段时，分别指定不超过10秒的[start,end)读取连续纯画面，按回执核对。",
                               Video, video, stop_video, parallel_read=True, reusable=True, own_deadline=True),
         "live_status": Tool("读取平台直播会话与播放控制状态，以及独立的 Omni 原生节目状态（若已配置）。", StrictModel, live,
-                            parallel_read=True),
+                            parallel_read=True, foreground_read=True),
         "live_handoff": Tool("提议向当前直播讲一段可公开的材料。需号主确认正文，实际播完才返回台词。",
                               LiveText, live_handoff, stop_handoff, review_live),
-        "game_status": Tool("读取当前模拟游戏局面。", StrictModel, game),
+        "game_status": Tool("读取当前模拟游戏局面。", StrictModel, game, foreground_read=True),
         "game_action": Tool("提议一个模拟游戏动作，必须先核对游戏局面，需号主确认。",
                             GameAction, game_action, review=review_game),
     }.items():

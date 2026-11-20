@@ -10,12 +10,15 @@ import asyncio
 import json
 import os
 import tempfile
+from contextlib import nullcontext
 from contextvars import ContextVar
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import urlsplit
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -26,6 +29,7 @@ MUSIC = "/api/live/music"
 MEMORY = "/api/daily-memory/preferences"
 PET = "/api/pets/whale"
 OWNER = {"uid": "123", "name": "回放号主"}
+RESTART_TASK = "0733ad92-1ab7-4d0b-9cbc-17e3db8a3e19"
 
 
 def task_facts(task):
@@ -63,10 +67,13 @@ def serve(args):
     import uvicorn
 
     from tuber_studio.agent import task_delegation
+    from tuber_studio.agent.personal_agent import object_scope
     from tuber_studio.api_providers import APIProvider
     from tuber_studio.app import create_app
     from tuber_studio.config import Settings
     from tuber_studio.responses_provider import ResponsesClient
+    from tuber_studio.web_fetch import public_ip
+    from tuber_studio.web_search import NEWS_FEEDS, SEARCH_HOSTS
 
     config = connection(os.environ)
     if not config:
@@ -83,6 +90,7 @@ def serve(args):
         ("POST", "/llm/v1/responses"),
     }
     counts = {}
+    public_reads = {"search": 0, "page": 0}
     denied = []
     model_calls = []
     front_json = APIProvider.generate_json
@@ -110,7 +118,7 @@ def serve(args):
             raise
         entry["finish"] = getattr(provider, "last_finish_reason", None)
         entry["selection"] = {key: value[key] for key in (
-            "action", "intent", "operation", "settings_group", "reference", "patch",
+            "action", "intent", "operation", "settings_group", "reference", "patch", "terms", "localized",
         ) if key in value}
         return value
 
@@ -148,6 +156,17 @@ def serve(args):
     async def guarded(transport, request):
         url = request.url
         path = url.path.removeprefix(gateway.path.rstrip("/"))
+        if os.getenv("REPLAY_PUBLIC_WEB") == "1" and request.method == "GET" and url.scheme == "https":
+            if str(url) in NEWS_FEEDS or url.host in SEARCH_HOSTS and url.path in {"/search", "/news/search"}:
+                public_reads["search"] += 1
+                return await send(transport, request)
+            try:
+                pinned_public_read = bool(request.extensions.get("sni_hostname")) and public_ip(url.host)
+            except ValueError:
+                pinned_public_read = False
+            if pinned_public_read:
+                public_reads["page"] += 1
+                return await send(transport, request)
         if (url.scheme, url.host, url.port) != (gateway.scheme, gateway.host, gateway.port) or (
             request.method,
             path,
@@ -158,8 +177,10 @@ def serve(args):
         return await send(transport, request)
 
     login = os.environ["REPLAY_LOGIN"]
+    persistent = os.getenv("REPLAY_RUNTIME_DIR")
+    directory_context = nullcontext(persistent) if persistent else tempfile.TemporaryDirectory(prefix="studio-front-tools-")
     with (
-        tempfile.TemporaryDirectory(prefix="studio-front-tools-") as directory,
+        directory_context as directory,
         patch.dict(
             os.environ,
             {
@@ -182,7 +203,10 @@ def serve(args):
         settings.provider_keys = {"omni": key}
         app = create_app(settings)
         runtime = app.state.runtime
-        runtime.store.replace_character(runtime.character | {"bilibili_owner": OWNER})
+        binding = runtime.character.get("bilibili_owner") or {}
+        if any(binding.get(key) != value for key, value in OWNER.items()):
+            card = {key: value for key, value in runtime.character.items() if not key.startswith("_")}
+            runtime.store.replace_character(card | {"bilibili_owner": OWNER})
 
         async def idle_memory_organizer():
             return 0
@@ -219,6 +243,8 @@ def serve(args):
                 "model_calls": model_calls,
                 "gateway_calls": counts,
                 "blocked_requests": len(denied),
+                "public_reads": public_reads,
+                "call_scope": object_scope(runtime),
                 "platform_attempts": attempts,
                 "owner_profile_reads": len(owner_lookups),
                 "actions": {row["request_id"]: row["action"] for row in rows},
@@ -234,7 +260,9 @@ async def check(args):
     base = f"http://127.0.0.1:{args.port}"
     results = {}
     async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(channel=args.browser, args=["--no-proxy-server"])
+        browser = await playwright.chromium.launch(channel=args.browser, args=[
+            "--no-proxy-server", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream",
+        ])
         context = await browser.new_context(base_url=base, service_workers="block")
         try:
 
@@ -276,7 +304,9 @@ async def check(args):
             await page.goto(base, wait_until="commit")
 
             async def turn(label, words):
-                browser_turn = label == "expression" or label.startswith(("dialogue_", "canvas_", "owner_", "continue"))
+                browser_turn = label == "expression" or label.startswith(
+                    ("dialogue_", "canvas_", "owner_", "continue", "personal_", "fresh_")
+                )
                 if browser_turn:
                     await page.locator("#operator-chat-input").fill(words)
                     async with page.expect_request(
@@ -400,6 +430,98 @@ async def check(args):
                 row = await turn("owner_lookup", "去看看你主人绑定的 B 站主页，告诉我账号是谁。")
                 assert row["card"]["type"] == "owner_profile" and row["card"]["data"]["name"] == OWNER["name"]
                 assert (await read("/replay/front-tools"))["owner_profile_reads"] == before + 1
+
+            async def personal():
+                before = (await read("/replay/front-tools"))["owner_profile_reads"]
+                reply = await turn("personal_relation", "你是哪个人养的呀？")
+                assert OWNER["name"] in reply["reply_text"]
+                reply = await turn("personal_link", "那我去哪能找到他的主页？数字编号也带上。")
+                assert reply["card"]["data"]["uid"] == OWNER["uid"]
+                assert reply["card"]["data"]["url"] == f"https://space.bilibili.com/{OWNER['uid']}"
+                reply = await turn("personal_link_mixed", "他的b站link有没有呀")
+                assert reply["card"]["data"]["url"] == f"https://space.bilibili.com/{OWNER['uid']}"
+                assert (await read("/replay/front-tools"))["owner_profile_reads"] == before
+                reply = await turn("personal_change_topic", "你平常喜欢在窗边坐着聊天吗？")
+                assert not reply.get("card") and not reply.get("tool_receipt")
+
+            async def fresh_news():
+                before = (await read("/replay/front-tools"))["public_reads"]
+                reply = await turn("fresh_news", "小鱼，去搜一下今天有没有什么新闻。")
+                after = (await read("/replay/front-tools"))["public_reads"]
+                assert after["search"] > before["search"] and after["page"] > before["page"]
+                assert reply["tool_receipt"]["group"] == "web"
+                rows = [source for group in reply.get("sources", []) for source in group["entries"]]
+                assert rows and all(source.get("published_at") and source["href"].startswith("https://") for source in rows)
+                await page.locator(".chat-source-chip summary, .chat-sources summary").last.click()
+                assert await page.locator(".chat-source-preview a").first.is_visible()
+                results["fresh_news"]["sources"] = rows
+
+            async def call_text():
+                start_ids = await task_ids()
+                scope = (await read("/replay/front-tools"))["call_scope"]
+                async def ticket(route):
+                    await route.fulfill(json={
+                        "socket": base.replace("http://", "ws://") + "/replay/voice",
+                        "ticket": "isolated-transport-fixture", "call_scope": scope, "character": "大肥鱼",
+                        "instructions": "", "performance": {"pets_enabled": False}, "avatar": {},
+                    })
+
+                async def socket(ws):
+                    ws.send(json.dumps({"type": "session.created", "session": {"capabilities": {
+                        "implementation_level": "model_native_duplex", "chunk_period_ms": 1000,
+                    }}}))
+
+                await page.route("**/api/chat/private-call", lambda route: route.fulfill(json={"configured": True}))
+                await page.route("**/api/chat/private-call/ticket", ticket)
+                await page.route_web_socket("**/replay/voice?*", socket)
+                await page.reload(wait_until="commit")
+                await page.locator("#private-call-open").click()
+                await page.locator("#private-call-start").click()
+                await page.locator("#private-call-work-input").fill("交给后台准备一份私有便笺，把当前直播状态记下来。")
+                async with page.expect_response(lambda resp: resp.url == base + CHAT and resp.request.method == "POST") as posted:
+                    await page.locator("#private-call-work button").click()
+                response = await posted.value
+                assert response.ok and response.request.post_data_json["call_scope"] == scope
+                reply = await response.json()
+                assert (reply.get("card") or {}).get("type") == "agent_task", reply.get("reply_text")
+                identity = reply["card"]["data"]["id"]
+                assert await task_ids() == start_ids | {identity}
+                await page.locator("#private-call-end").click()
+                handset = await context.new_page()
+                try:
+                    await handset.set_viewport_size({"width": 390, "height": 844})
+                    await handset.goto(base, wait_until="commit")
+                    turn_id = response.request.post_data_json["request_id"]
+                    await handset.locator(f'[data-request-id="{turn_id}"]').wait_for()
+                    assert (await read(f"/api/agent/tasks/{identity}"))["id"] == identity
+                finally:
+                    await handset.close()
+                results["call_text"] = {"task_found": True, "new_tasks": len((await task_ids()) - start_ids)}
+
+            async def restart_seed():
+                tomorrow = (datetime.now(ZoneInfo("Asia/Taipei")) + timedelta(days=1)).date().isoformat()
+                quote = f"{tomorrow} 09:00"
+                response = await request.post(base + CHAT, data={
+                    "request_id": RESTART_TASK, "message": f"在 {quote} 查当前游戏局面，留一句私有笔记。",
+                    "intent": {"action": "agent_task", "arrangement": {
+                        "kind": "once", "quote": quote, "local_date": tomorrow, "local_time": "09:00",
+                    }},
+                })
+                assert response.ok and (await response.json())["card"]["data"]["status"] == "scheduled"
+                paused = await request.patch(base + f"/api/agent/tasks/{RESTART_TASK}", data={"revision": 1, "action": "pause"})
+                assert paused.ok and (await paused.json())["status"] == "paused"
+                results["restart_seed"] = {"paused": True, "revision": 1}
+
+            async def restart_resume():
+                task = await read(f"/api/agent/tasks/{RESTART_TASK}")
+                assert task["status"] == "paused" and task["revision"] == 1
+                await page.set_viewport_size({"width": 390, "height": 844})
+                await page.locator(f'[data-request-id="{RESTART_TASK}"]').wait_for()
+                restored = await request.patch(base + f"/api/agent/tasks/{RESTART_TASK}", data={"revision": 1, "action": "resume"})
+                assert restored.ok
+                updated = await restored.json()
+                assert updated["status"] == "scheduled" and updated["due"] == task["due"]
+                results["restart_resume"] = {"restored": True, "same_due": True, "revision": updated["revision"]}
 
             async def mixed():
                 await baseline_cooldown()
@@ -548,11 +670,13 @@ async def check(args):
                 )
 
             failed = []
-            for case in (dialogue, canvas, owner, discover, expression, setting, mixed, matched_control, continuation, existing):
+            for case in (dialogue, canvas, owner, personal, fresh_news, call_text, discover, expression, setting, mixed, matched_control,
+                         continuation, existing, restart_seed, restart_resume):
                 if args.cases and case.__name__ not in args.cases:
                     continue
                 # Independent cases use the ordinary clear-history action on this disposable Core.
-                assert (await request.delete(base + CHAT, max_retries=2)).ok
+                if case is not restart_resume:
+                    assert (await request.delete(base + CHAT, max_retries=2)).ok
                 await page.reload(wait_until="commit")
                 prior = set(results)
                 start_trace = len((await read("/replay/front-tools"))["model_calls"])
@@ -583,7 +707,8 @@ async def check(args):
                     flush=True,
                 )
             stats = await read("/replay/front-tools")
-            assert stats["gateway_calls"].get("/v1/chat/completions") and stats["blocked_requests"] == 0
+            restart_only = args.cases and set(args.cases) <= {"restart_seed", "restart_resume"}
+            assert (restart_only or stats["gateway_calls"].get("/v1/chat/completions")) and stats["blocked_requests"] == 0
             assert not any(stats["platform_attempts"].values())
             print(json.dumps({"turns": results, "network": stats, "failed": failed}, ensure_ascii=False))
             return bool(failed)
@@ -601,8 +726,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cases",
         nargs="+",
-        choices=["dialogue", "canvas", "owner", "discover", "expression", "setting", "mixed",
-                 "matched_control", "continuation", "existing"],
+        choices=["dialogue", "canvas", "owner", "personal", "fresh_news", "call_text", "discover", "expression", "setting", "mixed",
+                 "matched_control", "continuation", "existing", "restart_seed", "restart_resume"],
     )
     options = parser.parse_args()
     if options.mode == "serve":

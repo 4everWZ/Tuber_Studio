@@ -51,7 +51,7 @@ class TaskCreate(StrictModel):
 
 class TaskControl(StrictModel):
     revision: int = Field(ge=1, strict=True)
-    action: Literal["steer", "cancel", "approve"]
+    action: Literal["steer", "cancel", "approve", "pause", "resume"]
     goal: str | None = Field(default=None, max_length=2000)
     step_id: UUID | None = None
     video_selection: VideoSelection | None = None

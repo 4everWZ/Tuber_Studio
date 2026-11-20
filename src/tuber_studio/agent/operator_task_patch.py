@@ -18,7 +18,7 @@ class TaskPatch(StrictModel):
 
 def editable_fields(runtime, task, history):
     fields = {"goal": task["goal"]}
-    if task["status"] in {"queued", "running", "waiting", "scheduled", "needs_input", "awaiting_approval"}:
+    if task["status"] in {"queued", "running", "waiting", "scheduled", "needs_input", "awaiting_approval", "paused"}:
         fields["execution"] = "当前任务的执行状态"
     # Only the exact current, readable delivery can supply item coordinates.
     edition = runtime.tasks.workspace.latest(task["id"])
@@ -45,6 +45,13 @@ _FIRST = re.compile(r"(?:开头|头|前|首)(?:一[个段项份]?|半[份段部]
 _LAST = re.compile(r"(?:最后|后|末|尾)(?:一[个段项份]?|半[份段部]?|面(?:那[个段项])?|个|段|项|份)")
 _OTHER = re.compile(r"(?:另(?:外)?一?[段个项份]|其余的?|剩下的?)")
 _GOAL_CHANGE = re.compile(r"^\s*(?:改[成为]|调整[成为]|换[成为])\s*")
+
+
+def explicit_goal_change(cards, message):
+    """A change clause must follow an utterance that names an editable work item."""
+    choices, _ = patch_vocabulary(cards, message)
+    return any(field == "goal" and any(_GOAL_CHANGE.match(requirement) for requirement in requirements)
+               for (field, _), requirements in choices.items())
 
 
 def _number(value):
@@ -92,7 +99,7 @@ def grounded_patch(patch, card, message):
     if not source or not subject or not requirement or subject not in message or requirement not in message:
         return False
     if patch.replacement_goal and (patch.field != "goal" or not patch.replacement_goal.strip()
-                                   or patch.replacement_goal not in message):
+                                   or patch.replacement_goal not in message or requirement not in patch.replacement_goal):
         return False
     # A copied utterance, or two nested copies of it, does not identify a change.
     if subject == requirement or requirement in subject:
