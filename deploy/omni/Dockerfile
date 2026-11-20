@@ -15,6 +15,7 @@ RUN apt-get update \
 WORKDIR /opt/tuber
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project --no-cache
+COPY LICENSE ./
 COPY src ./src
 COPY config ./config
 COPY assets ./assets

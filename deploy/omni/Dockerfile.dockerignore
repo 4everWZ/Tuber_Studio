@@ -1,6 +1,7 @@
 **
 !pyproject.toml
 !uv.lock
+!LICENSE
 !src
 !src/tuber_studio
 !src/tuber_studio/**
