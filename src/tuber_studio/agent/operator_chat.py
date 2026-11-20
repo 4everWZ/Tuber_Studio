@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import time
+import unicodedata
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
@@ -104,7 +105,7 @@ _TASK_ROUTING = (
 _LIVE_TOOL_CONTEXT = (
     "工坊可即时读取时钟、运营活动、视频进度、账号、记忆、直播与游戏状态、已送达和已播回执。"
     "号主说起或改口自己的日常协作习惯时用 chat 自然接话，偏好由后台整理。请求查看已保存的记忆摘要才需查询摘要。"
-    "回答依赖当前外部事实时先取该事实；历史对话中的回答不能证明现在的状态。"
+    "回答当前状态时读取相应对象，以最新结果为准。"
 )
 
 _DIRECT_READS = {
@@ -112,6 +113,11 @@ _DIRECT_READS = {
     "public_experiences", "recall_experience", "inspect_video_frame", "live_status", "live_history",
     "memory_summary", "game_status", "owner_profile", "owner_binding", "operation_status", "operating_account",
     "web_lookup", "task_status", "workbench_capabilities",
+}
+# These read exactly one current workshop object. The current turn and execution
+# scope identify it without an extracted name, UID or argument.
+_CURRENT_SCOPE_READS = {
+    "clock", "game_status", "live_status", "operating_account", "operation_status", "workbench_capabilities",
 }
 _SETTING_ACTIONS = {"daily_settings", "pet_settings"}
 _OWNER_RELATION = re.compile(r"主人|号主|饲主|谁家|谁.{0,6}(?:养|照顾)|哪.{0,6}(?:养|照顾)|谁的小(?:鱼|鲸)|属于谁")
@@ -310,11 +316,11 @@ class WorkLifecycle(StrictModel):
         return text
 
     @classmethod
-    def schema_for_turn(cls, *, chat_only, has_cards=False, owner_relation=False):
+    def schema_for_turn(cls, *, chat_only, has_cards=False, allow_owner_identity=True):
         schema = cls.model_json_schema()
         if chat_only:
             props = schema["properties"]
-            available = ["chat"] + (["owner_identity"] if owner_relation else []) + (["task_turn"] if has_cards else [])
+            available = ["chat"] + (["owner_identity"] if allow_owner_identity else []) + (["task_turn"] if has_cards else [])
             schema["properties"] = {"action": props["action"] | {"enum": available},
                                     "reply_markdown": props["reply_markdown"]}
         else:
@@ -324,7 +330,7 @@ class WorkLifecycle(StrictModel):
             direct["required"].append("target")
             if not has_cards:
                 properties["action"]["enum"].remove("task_turn")
-            if not owner_relation:
+            if not allow_owner_identity:
                 properties["action"]["enum"].remove("owner_identity")
         required_by_action = {"chat": "reply_markdown", "direct_tool": "operation", "clarify": "topic"}
         properties = schema["properties"]
@@ -347,6 +353,9 @@ class WorkLifecycle(StrictModel):
 
 class AssistantDecision(ChatIntent):
     setting_fields: list[str] = Field(default_factory=list, max_length=12, exclude=True)
+    read_target: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)] | None = Field(
+        default=None, exclude=True, description="逐字抄出当前消息里要查的对象或字段。需要澄清时留空。",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -373,6 +382,10 @@ def _memory_query(message, character):
         if name and message.startswith(name):
             return message[len(name):].lstrip(" ，,、")
     return message
+
+
+def _read_target_text(value):
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", value).casefold())
 
 
 class LivePreferenceSelection(StrictModel):
@@ -523,7 +536,7 @@ class OperatorChat:
         intent = await self._model(
             "识别当前消息的明确查询或任务。普通对话选 chat。"
             "查询事件原话、作者或回执时，用 position 填已显示序号，或在 topic 填明确标题和原话。"
-            "有明确分 P 或时码时填 part、seconds、end_seconds。不要猜引文或任务 ID。" + _WORKBENCH_TOOL_CONTEXT + _LIVE_TOOL_CONTEXT + _TASK_ROUTING,
+            "有明确分 P 或时码时填 part、seconds、end_seconds。引用用本轮原话和已找到的任务 ID。" + _WORKBENCH_TOOL_CONTEXT + _LIVE_TOOL_CONTEXT + _TASK_ROUTING,
             {"message": message, **{key: value for key, value in task_context.items() if key != "objects"}},
             ChatIntent, schema=schema,
         )
@@ -564,7 +577,7 @@ class OperatorChat:
             if not full_turns:
                 message, reply = message[:320], reply[:420]
             if row["character_version"] != char["version"] or saved.get("account_id") != account:
-                message = "此前私聊（不代表当前运营账号身份或授权）：" + message
+                message = "早先的私聊：" + message
             pairs.append(({"role": "user", "content": message}, {"role": "assistant", "content": reply}))
         return [message for pair in reversed(pairs) for message in pair]
 
@@ -828,9 +841,10 @@ class OperatorChat:
                     cards[hit["id"]] = cards.get(hit["id"], {}) | hit
                 cards = list(cards.values())
                 card_policy = history_preference(self.runtime) if cards else None
-                owner_relation = bool(_OWNER_RELATION.search(data.message) and not _OWNER_PLATFORM.search(data.message))
-                schema = WorkLifecycle.schema_for_turn(chat_only=bool(data.intent), has_cards=bool(cards),
-                                                       owner_relation=owner_relation)
+                schema = WorkLifecycle.schema_for_turn(
+                    chat_only=bool(data.intent), has_cards=bool(cards),
+                    allow_owner_identity=not _CURRENT_ACCOUNT.search(data.message),
+                )
                 actions = schema["properties"]["action"]["enum"]
                 instruction = (
                     f"用{char['name']}的第一人称接住号主最后一句。日常闲聊简短自然，角色的感受、想象和玩笑可以直接说。"
@@ -838,17 +852,16 @@ class OperatorChat:
                     "只承接仍有关的对话。"
                 )
                 instruction += "先写 action。chat 在 reply_markdown 写本轮说的话。"
-                if owner_relation:
-                    instruction += "号主要确认你和主人的关系时，选 owner_identity。"
+                if "owner_identity" in actions:
+                    instruction += "问谁养你、你是谁家的或这位号主怎么称呼时，选 owner_identity，从当前角色绑定回答。"
                 if not data.temporary and not history_preference(self.runtime)["history_enabled"]:
-                    instruction += ("号主关闭了历史引用，本轮没有读取过去的对话或成果。若答案依赖这些记录，"
-                                    "说明目前缺少依据，可以请号主提供材料。")
+                    instruction += ("本轮只提供当前对话。若问题需要早先的记录，问号主要用的那条消息或成果。")
                 if "direct_tool" in actions:
                     instruction += (
                         "按最后一句的交付目标选择。问候、近况、随口问在干嘛或讨论假设时选 chat。"
                         "只有本轮要取得具体可核验的工坊事实或执行某项操作才选 direct_tool，填写 operation。"
-                        "mode 用 read 读取或 change 执行；request 摘录本句体现请求的原话，target 摘录具体对象。"
-                        "查最新公开消息、打开网页、查工坊或已有任务的进度是读取。"
+                        "查工坊登录的平台账号、某人的主页或 UID、工作台设置或运行状态时用 read。要求实际改动时用 change。"
+                        "request 抄这句中的请求，target 抄具体对象或字段，沿用原词。"
                         "追问承接已绑定对象时填 object_ref 和 followup=true，省略的对象可留空 target。"
                         "多个对象都可能时只问指哪个；无关闲聊不承接引用。"
                         "需持续处理、留存成果或稍后交付选 agent_task。明确要求办事但缺必要信息才选 clarify。"
@@ -967,7 +980,7 @@ class OperatorChat:
                         if routed.intent not in {"discuss", "recall_reason"}:
                             if routed.intent == "use_tool":
                                 decision = await self._select_direct_tool(
-                                    provider, data, role, history, maximum, report, char, routed.operation,
+                                    provider, data, maximum, report, char, routed.operation,
                                     packet,
                                 )
                                 self._check_scope(char, account)
@@ -1028,7 +1041,7 @@ class OperatorChat:
                         messages.append({"role": "system", "content": "这是只读交谈。本轮没有新交办或修改，"
                                          "按附带版本回答。选材理由只引用记录中的理由，区分号主原话和编辑说明；"
                                          "记录没说为什么时直接说明。"})
-                        lifecycle = await generate_turn(WorkLifecycle.schema_for_turn(chat_only=True, owner_relation=owner_relation), current)
+                        lifecycle = await generate_turn(WorkLifecycle.schema_for_turn(chat_only=True), current)
                     decision = None
                     if lifecycle.action == "direct_tool":
                         self._check_scope(char, account)
@@ -1036,11 +1049,18 @@ class OperatorChat:
                         if provider is not self.runtime.llm:
                             raise HTTPException(409, "推理模型已切换，可重新发送")
                         decision = await self._select_direct_tool(
-                            provider, data, role, history, maximum, report, char, lifecycle.operation,
+                            provider, data, maximum, report, char, lifecycle.operation,
                             packet,
                         )
                         if decision is None:
-                            lifecycle = await generate_turn(WorkLifecycle.schema_for_turn(chat_only=True, owner_relation=owner_relation), current)
+                            messages[:] = [*role, {"role": "system", "content": (
+                                "这轮可直接接话。用 reply_markdown 写实际回复。"
+                                "若问题需要查工坊，问清具体要看的对象或字段；读取和操作结果来自已附的记录。"
+                                "\n本轮读取和操作回执：[]"
+                            )}]
+                            lifecycle = await generate_turn(
+                                WorkLifecycle.schema_for_turn(chat_only=True, allow_owner_identity=False), current
+                            )
                     if lifecycle.action == "owner_identity":
                         decision = self._identity_reply(char)
                         audit = None
@@ -1236,7 +1256,7 @@ class OperatorChat:
                                               "description": TaskPatch.model_fields["replacement_goal"].description}
         return {"type": "object", "additionalProperties": False, "properties": properties, "required": list(properties)}
 
-    async def _select_direct_tool(self, provider, data, role, history, maximum, report, char, operation, context):
+    async def _select_direct_tool(self, provider, data, maximum, report, char, operation, context):
         schema = AssistantDecision.direct_schema()
         groups = workbench_tools.settings_menu()
         actions = schema["properties"]["action"]
@@ -1244,12 +1264,20 @@ class OperatorChat:
         previous = context.get("latest_tool")
         subject = None
         read_only = False
+        target = None
+        bind_read_target = False
+        account_requested = bool(_CURRENT_ACCOUNT.search(data.message))
         if data.video_selection:
             actions["enum"] = ["full_video", "clarify"]
         else:
-            if not operation or operation.request not in data.message or (
-                operation.target and operation.target not in data.message
-            ):
+            if not operation:
+                return None
+            target = operation.target
+            read_only = operation.mode == "read"
+            if read_only:
+                if target and _read_target_text(target) not in _read_target_text(data.message):
+                    target = None
+            elif operation.request not in data.message or target and target not in data.message:
                 return None
             if operation.object_ref:
                 subject = objects.get(operation.object_ref)
@@ -1259,12 +1287,18 @@ class OperatorChat:
                 subject = next(iter(objects.values()))
             elif operation.followup and len(objects) > 1:
                 return ChatIntent(action="clarify", topic="你想查刚才哪一项？说一下名称或编号就行。")
-            if not subject and not operation.target:
-                return None
-            read_only = operation.mode == "read"
+            if read_only and account_requested and subject and subject.kind == "owner":
+                subject = None
+                operation = operation.model_copy(update={"followup": False, "object_ref": None})
+            if not subject and not target:
+                if not read_only:
+                    return None
+                bind_read_target = True
             neutral = _SETTING_ACTIONS | {"clarify"}
             actions["enum"] = [action for action in actions["enum"]
                                if action in neutral or (action in _DIRECT_READS) == read_only]
+            if read_only and account_requested:
+                actions["enum"] = [action for action in actions["enum"] if action not in _OBJECT_READS["owner"]]
             if subject and subject.kind != "setting":
                 if not read_only and subject.kind not in {"task", "artifact"}:
                     return ChatIntent(action="clarify", topic="你想对哪一项做什么操作？")
@@ -1288,18 +1322,25 @@ class OperatorChat:
                                                  "description": "daily_settings 对应分组，其余留空"} if groups else {"type": "null"}
         fields = workbench_tools.settings_catalog()
         setting_fields = {group: {key: field["title"] for key, field in fields[group]["fields"].items()} for group in groups}
-        prefix = [*role, {"role": "system", "content": (
-            "为已选择的当场操作填写 action 和参数，留空正文。无法确定就 clarify，在 topic 写问题。"
+        if not bind_read_target:
+            schema["properties"].pop("read_target")
+        else:
+            schema["required"].append("read_target")
+        account_tools = "operating_account 查工坊当前登录账号。"
+        if not account_requested:
+            account_tools += "owner_binding 读角色绑定号主的 UID 和链接；owner_profile 联网核验该主页。"
+        prefix = [{"role": "system", "content": (
+            "按当前号主原话和已绑定对象选择当场工具。填写 action 和参数。"
+            "需要补对象或字段时选 clarify，在 topic 写具体问题。"
             "activity 查运营趣事；event_details／event_author／event_reply 查原话／作者／送达。"
             "用 position 指定序号，topic 可填原话或标题；分 P 与时码用 part、seconds、end_seconds。"
             "叫停运营或直播时 reference 填 operations 或 live。直播交接注明 video、discussion 或 game，"
             "动态引用私聊注明 discussion。live_preference 处理长期直播习惯。"
-            "owner_binding 读已核验的绑定身份、UID 和链接；owner_profile 联网核验该主页。"
-            "operating_account 查工坊当前登录账号。operation_status 查自主运营状态。"
+            "operation_status 查自主运营状态和各渠道的启用方式。" + account_tools +
             "web_lookup 搜索公开资料或打开原话所给网页。task_status 查已交办任务和成果进度。"
             "pause_task 暂停指定任务，resume_task 恢复。watch_goal 给已有目标设跟进，"
             "arrangement 写明确原话 quote、daily／weekly 的时间和只读来源，或 inbox／comment 的来源编号。"
-            "不要猜旧事件、任务 ID 或结果。"
+            "从给出的候选里取事件 ID、任务 ID 和对应结果。"
             "workbench_capabilities 只读列出能做的事和可调类别；pet_settings 处理宠物显示、表情和已有形象；"
             "daily_settings 读取或调整日常业务设置。只问个别字段时在 setting_fields 填字段键，查看整组则留空。"
             "按已绑定的请求方式和对象选工具。可选设置分组：" + dump(groups)
@@ -1311,21 +1352,30 @@ class OperatorChat:
             )
         )}]
         if operation:
-            prefix.append({"role": "system", "content": "本轮已绑定的请求：" + dump(operation.model_dump())})
+            binding = operation.model_dump()
+            if read_only:
+                binding.update(request=data.message, target=target)
+            prefix.append({"role": "system", "content": "本轮已绑定的请求：" + dump(binding)})
         if subject:
             prefix.append({"role": "system", "content": "所选对象：" + dump({"kind": subject.kind, "label": subject.label})})
+        if bind_read_target:
+            prefix.append({"role": "system", "content": "在 read_target 抄出当前原话里要查的对象或字段。"})
         current = {"role": "user", "content": dump({"message": data.message, "video_selection": data.video_selection.model_dump()})
                    if data.video_selection else data.message}
         if getattr(provider, "uses_model_card", False):
-            messages = await self._fit_assistant_history(provider, prefix, history, current, schema, maximum)
+            messages = await self._fit_assistant_history(provider, prefix, [], current, schema, maximum)
         else:
-            messages = [*prefix, *history, current]
+            messages = [*prefix, current]
         value = await provider.generate_assistant_json(messages, schema, max_tokens=maximum, on_content=None, on_stage=report)
         decision = AssistantDecision.model_validate(value)
         if decision.action not in actions["enum"]:
             raise ValueError("本轮没有请求此类当场操作")
+        if bind_read_target and decision.action not in _CURRENT_SCOPE_READS | {"clarify"}:
+            target = decision.read_target
+            if not target or _read_target_text(target) not in _read_target_text(data.message):
+                return None
         if decision.action in {"owner_profile", "owner_binding"} and not (
-            subject or operation and _OWNER_FIELDS.search(operation.request + (operation.target or ""))
+            subject or operation and _OWNER_FIELDS.search(data.message)
         ):
             return None
         decision._subject = subject
@@ -1340,7 +1390,7 @@ class OperatorChat:
             group = "pets" if decision.action == "pet_settings" else decision.settings_group
             if decision.action == "pet_settings" and decision.settings_group is not None:
                 raise HTTPException(400, "宠物操作不能附带其他设置分组")
-            target = operation.target or data.message
+            target = target or data.message
             if previous and operation.followup and group != previous["group"]:
                 return None
             if not subject and not workbench_tools.setting_target(group, target, character=char, read_only=read_only):
@@ -1888,16 +1938,26 @@ class OperatorChat:
             status = self.runtime.account.status()
             if profile := status.get("profile"):
                 time_label = "上次核验的" if status["verification_stale"] else "当前已核验的"
-                return {"reply_text": f"工坊{time_label}运营登录账号是 {profile['name']}（UID {profile['uid']}）。",
-                        "card": None}
-            text = "工坊目前没有配置 B 站运营登录。" if status["state"] == "not_configured" else "当前登录身份暂未核验。"
-            return {"reply_text": text, "card": None}
+                text = f"工坊{time_label}运营登录账号是 {profile['name']}（UID {profile['uid']}）。"
+            else:
+                text = "工坊还没连接 B 站运营账号。" if status["state"] == "not_configured" else "暂时读不到 B 站运营账号。"
+            return {"reply_text": text, "card": None,
+                    "tool_receipt": {"action": "read", "group": "account", "values": {"state": status["state"]}}}
         if kind == "operation_status":
             state = await self.runtime.tasks.read(kind, request_id, request, self.runtime.tasks.scope())
             labels = {"off": "待命", "running": "正在运行", "starting": "正在启动", "draining": "正在收尾",
                       "stopping": "正在停止", "blocked": "受阻", "emergency": "急停"}
-            return {"reply_text": f"自主运营当前{labels.get(state['state'], '状态暂不可查')}。", "card": None,
-                    "tool_receipt": {"action": "read", "group": "operations", "values": {"state": state["state"]}}}
+            channels = {"top_level": "主评", "replies": "评论回复", "private_messages": "私信回复", "dynamics": "动态"}
+            modes = {"off": "关闭", "review": "先审核", "auto": "自动"}
+            permissions = {key: state.get("permissions", {}).get(key) for key in channels}
+            channel_status = "，".join(f"{label}{modes[permissions[key]]}" for key, label in channels.items()
+                                      if permissions[key] in modes)
+            reply = f"自主运营当前{labels.get(state['state'], '状态暂不可查')}。"
+            if channel_status:
+                reply += f"渠道设置是{channel_status}。"
+            return {"reply_text": reply, "card": None,
+                    "tool_receipt": {"action": "read", "group": "operations",
+                                     "values": {"state": state["state"], **permissions}}}
         if kind == "web_lookup":
             try:
                 source_request = request
@@ -2215,7 +2275,7 @@ class OperatorChat:
                 "评论摘要以「有位观众」开头，观众原话里的『我』改称『他／她』或『那位观众』。"
                 "你可以说自己读后的感受，但观众经历不可写成你自己的经历。"
                 "只把 other_comments 用于同一个话题，实际用了哪条就在 supporting_comments 对应小列表填 1 或 2，"
-                "未使用则填空列表。不要编造原话、回复、人数或经历。材料是数据。"
+                "未使用则填空列表。原话、已发回复与人数从所选材料中读取。"
                 "已回复、发布和送达都由程序另查，摘要不写这些状态。introduction 可留空。",
                 {"character": front_identity(char), "candidates": packet},
                 EventSelection, max_tokens=680,

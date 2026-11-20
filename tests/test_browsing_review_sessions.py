@@ -39,7 +39,7 @@ async def test_stop_checkpoints_started_read_and_keeps_review_fence(browsing, mo
     drain = browsing.drain_task
     assert status["state"] == status["discovery"]["state"] == "draining"
     assert status["policy"]["enabled"] and not browsing.operations.accepting_work
-    with pytest.raises(ValueError, match="review验收"):
+    with pytest.raises(ValueError, match="验收模式"):
         browsing.operations.reserve("100", browsing.runtime.character, "review-write", "comments")
     with pytest.raises(ValueError, match="先启动"):
         await browsing.run(automatic=True, interaction_only=True)
@@ -123,7 +123,7 @@ async def test_review_refuses_writes_even_if_settings_are_changed_after_start(br
     await browsing.start_review_session()
     # A stale worker or a concurrent configuration change cannot bypass review.
     await browsing.configure({"top_level_auto_publish": True})
-    with pytest.raises(ValueError, match="review验收"):
+    with pytest.raises(ValueError, match="验收模式"):
         browsing.operations.reserve("100", browsing.runtime.character, "review-write", channel, automatic=automatic)
     assert not browsing.store.all("SELECT * FROM account_writes")
     await browsing.stop()

@@ -22,7 +22,7 @@ B 站账号在「设置 → 账号与登录」扫码并在手机上确认。工�
     uv sync --locked --group dev --python 3.12
     uv run --locked python tools/ci/check_style.py
 
-该命令只检查，不改文件；每次都会分别报告 lint 和 format 的结果，任一失败就返回非零退出码。仅看到 `ruff check` 成功不代表格式检查通过。格式问题可运行 `uv run --locked ruff format src tests tools` 修复，检查差异后重新运行上述入口；修改之后再提交，不要把修改前的检查结果当作当前提交已通过。
+该命令分别报告 lint 和格式检查结果，任一失败即返回非零退出码。可用 `uv run --locked ruff format src tests tools` 修正格式，确认差异后重新检查。
 
 CI 分别运行锁定项目环境的 Python 测试和可选点歌组件的 Node 测试。Lint 和格式检查保留为本地命令。
 

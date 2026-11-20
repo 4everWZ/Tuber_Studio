@@ -15,7 +15,6 @@ from .context_delivery import memory_source_allowed
 from .daily_memory import DailyMemoryService
 from .deployment_profiles import operation_profile
 from .dynamic_comment_card import comment_card, render_comment_card
-from .dynamic_grounding import review_caption
 from .generation_meter import budgeted_json
 from .illustration_policy import illustration_policy
 from .meme_selection import select_meme
@@ -73,6 +72,13 @@ DEFAULT_POLICY = {
     "memory_summary_max_tokens": 2048,
 }
 
+# Older rows retain their diagnostics in storage. The workbench presents their
+# current draft or publication state.
+_RETIRED_CAPTION_DIAGNOSTICS = {
+    "动态事实核对未完成，保留待审",
+    "正文中的动作、次数或结果缺少来源支持，保留待审",
+}
+
 
 def _json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
@@ -97,12 +103,12 @@ def dynamic_decision_messages(character, recent_posts, public_sources, *, curren
         {
             "role": "system",
             "content": (
-                "你是作为自己在写动态。由你决定今天想分享什么，或者暂时不发。"
+                "用自己的口吻和关注你的人分享。今天想聊什么、想聊多长，由你决定。"
                 "public_incident是公开经历和原评论，published_reply是来评和你当时发出的回复，"
                 "public_memory是角色故事摘录，runtime_event是运行记录，operator_note是号主确认的经历。"
                 "随想、创作、兴趣、日常观察、角色小故事或公开互动都可以独立成稿，篇幅随话题。"
-                "只有实际使用材料才填一项 source_ids。纯感想、玩笑或明确的虚构可留空。"
-                "讲到真实发生的动作、次数和结果时，用可公开的材料支持。"
+                "写公开互动时，可以从对方说的话、你当时的回复或事情的来龙去脉聊起。"
+                "source_ids 写这次实际用到的素材；随想、玩笑和角色故事可留空。"
                 "分享时选post，content写动态正文。暂缓时选wait，content留空。"
                 "reason说明决定，next_evaluation_seconds是下次评估间隔。"
             ),
@@ -225,7 +231,7 @@ class Dynamics:
 
     def policy(self):
         base = DEFAULT_POLICY | self.store.get("dynamic_policy", {})
-        return self.operations.effective("dynamics", base) | {
+        policy = self.operations.effective("dynamics", base) | {
             "base": base,
             "credentials_configured": bool(self.comments.policy()["credentials_configured"]),
             **self.store.get(
@@ -237,6 +243,9 @@ class Dynamics:
                 },
             ),
         }
+        if policy.get("last_error") in _RETIRED_CAPTION_DIAGNOSTICS:
+            policy["last_error"] = None
+        return policy
 
     async def set_policy(self, patch):
         if not isinstance(patch, dict) or not set(patch) <= set(DEFAULT_POLICY):
@@ -512,6 +521,8 @@ class Dynamics:
                 row[name] = json.loads(row[name]) if row[name] else ([] if name != "receipt" else None)
         if "manual" in row:
             row["manual"] = bool(row["manual"])
+        if row.get("error") in _RETIRED_CAPTION_DIAGNOSTICS:
+            row["error"] = None
         return row
 
     def list_posts(self, status=None, limit=50):
@@ -1072,34 +1083,9 @@ class Dynamics:
         expected_text=None,
         submission=None,
     ):
-        # Model regeneration may wait for the inference lock. Finish it before
-        # acquiring the shared platform write lock used by other generators.
+        # Complete any identity refresh before taking the platform write lock.
         await self._refresh_post_identity(post_id, automatic, authorization_epoch)
-        checked = None
-        if automatic:
-            checked = self._post(post_id)
-            self._check_automatic_draft(checked, self.policy())
-            if not self._valid_sources(checked):
-                self._status(post_id, "invalidated", "人物版本或公开来源已变化")
-                raise ValueError("人物版本或公开来源已变化，需重新评估")
-            try:
-                async with self.runtime.offline_generation("background"):
-                    self._check_automatic_draft(checked, self.policy())
-                    if self._post(post_id) != checked or not self._valid_sources(checked):
-                        raise ValueError("草稿或公开来源已变化")
-                    supported = await review_caption(self.runtime.operation_llm, checked["content"], checked["sources"])
-            except (ValueError, TimeoutError, httpx.HTTPError):
-                error = "动态事实核对未完成，保留待审"
-            else:
-                error = None if supported else "正文中的动作、次数或结果缺少来源支持，保留待审"
-            if error:
-                if self._post(post_id) == checked:
-                    with self.store.db:
-                        self.store.db.execute("UPDATE dynamic_posts SET error=? WHERE id=?", (error, post_id))
-                        self.store.db.execute(
-                            "UPDATE dynamic_decisions SET error=? WHERE id=?", (error, checked["decision_id"]),
-                        )
-                raise ValueError(error)
+        checked = self._post(post_id) if automatic else None
         async with self.comments.publish_lock:
             row, policy = self._post(post_id), self.policy()
             if expected_text is not None and row["content"] != expected_text:
@@ -1132,7 +1118,7 @@ class Dynamics:
                 image = pages if len(pages) > 1 else pages[0]
             elif row.get("meme_id"):
                 if not self.memes:
-                    raise ValueError("图文草稿缺少表情组件，保留待审")
+                    raise ValueError("配图服务未连接，草稿已保存")
                 image = self.memes.read(row["meme_id"], row["character_id"])
             elif row.get("illustration"):
                 image = checked_image(self.memes, row["illustration"], row["character_id"],
@@ -1294,7 +1280,7 @@ class Dynamics:
                 self._status(post_id, row["status"], "配图准备已取消，尚未提交动态")
                 raise
             except PublishPreparationFailed:
-                self._status(post_id, row["status"], "配图准备失败，尚未提交动态；保留待审")
+                self._status(post_id, row["status"], "配图准备失败，草稿已保存")
                 raise ValueError("配图准备失败，尚未提交动态；请审核后重试") from None
             except PublishCancelled:
                 if token:
@@ -1319,8 +1305,8 @@ class Dynamics:
                     FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
                         "dynamics", post_id, token, actual_binding, attempted_payload(), "动态发送结果不确定"
                     )
-                self._status(post_id, "publish_uncertain", "写入结果不确定，请人工核对平台，禁止重试")
-                raise UnknownPublication("写入结果不确定，请人工核对平台，禁止重试", token) from None
+                self._status(post_id, "publish_uncertain", "动态发布结果待核对")
+                raise UnknownPublication("动态发布结果待核对", token) from None
             except ValueError as error:
                 if token:
                     self.operations.finish(token, "rejected")
@@ -1339,7 +1325,7 @@ class Dynamics:
                         "dynamics", post_id, token, actual_binding, attempted_payload(), "动态发送结果不确定"
                     )
                 self._status(post_id, "publish_uncertain", "写入或回执保存失败，请人工核对平台")
-                raise UnknownPublication("写入或回执保存失败，请人工核对平台，禁止重试", token) from None
+                raise UnknownPublication("动态发布结果待核对", token) from None
             try:
                 self._status(post_id, "published", receipt=receipt)
                 if token:
@@ -1353,7 +1339,7 @@ class Dynamics:
                 # A local persistence failure after receipt is never a definite
                 # remote rejection, even when the local exception is ValueError.
                 self._status(post_id, "publish_uncertain", "平台写入后保存回执失败，请人工核对平台")
-                raise UnknownPublication("平台写入后保存回执失败，请人工核对平台，禁止重试", token) from None
+                raise UnknownPublication("B 站已受理动态，本地回执待补录", token) from None
             if self.memes and row.get("meme_id"):
                 self.memes.release(f"dynamic-draft:{post_id}")
             return self._post(post_id)
@@ -1909,7 +1895,7 @@ class Dynamics:
                     except ValueError:
                         selection_failed = True
                 if selection_failed and decision["post_id"]:
-                    error = "配图选择失败，保留待审正文；未自动发布"
+                    error = "配图选择失败，正文已保存"
                     self.store.execute(
                         "UPDATE dynamic_posts SET error=? WHERE id=?", (error, decision["post_id"])
                     )

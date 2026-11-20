@@ -139,13 +139,13 @@ class BilibiliMessagesAdapter(BilibiliAdapter):
         except (httpx.HTTPError, ValueError, asyncio.CancelledError) as error:
             if isinstance(error, asyncio.CancelledError):
                 raise
-            raise PublishUncertain("私信发送结果不确定，请核对平台；禁止自动重发") from None
+            raise PublishUncertain("私信发送结果待核对") from None
         if not isinstance(payload, dict) or type(payload.get("code")) is not int:
-            raise PublishUncertain("私信响应没有有效回执，禁止自动重发")
+            raise PublishUncertain("B 站未返回有效的私信回执")
         if payload["code"] != 0:
             raise platform_rejection(payload, fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次私信"))
         try:
             key = _positive_id(payload["data"]["msg_key"])
         except (KeyError, TypeError, ValueError):
-            raise PublishUncertain("私信响应缺少消息ID，禁止自动重发") from None
+            raise PublishUncertain("B 站回执缺少私信消息 ID") from None
         return {"platform": "bilibili", "msg_key": key, "receiver_id": receiver, "sender_id": sender}

@@ -232,7 +232,7 @@ async def test_platform_success_followed_by_database_failure_never_allows_resend
     comments.credentials = {"sessdata": "test", "csrf": "test"}
     store.execute("""CREATE TRIGGER refuse_receipt BEFORE UPDATE OF status ON drafts
         WHEN NEW.status='published' BEGIN SELECT RAISE(ABORT,'simulated storage failure'); END""")
-    with pytest.raises(ValueError, match="禁止重发"):
+    with pytest.raises(ValueError, match="本地回执待补录"):
         await comments.publish(row["id"])
     assert store.one("SELECT status FROM drafts")["status"] == "publish_uncertain"
     with pytest.raises(ValueError):

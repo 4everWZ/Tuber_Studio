@@ -93,10 +93,10 @@ class BrowsingRepository:
                 (now,),
             )
             self.store.db.execute(
-                "UPDATE browsing_intents SET status='publish_uncertain',error='提交中重启，禁止重发' WHERE status='publishing'"
+                "UPDATE browsing_intents SET status='publish_uncertain',error='服务在提交时重启，结果待核对' WHERE status='publishing'"
             )
             self.store.db.execute(
-                "UPDATE browsing_intents SET status='pending_review',auto_authorized=0,error='旧运行已结束，保留待审草稿' "
+                "UPDATE browsing_intents SET status='pending_review',auto_authorized=0,error='上次运营已结束，草稿已保存' "
                 "WHERE status='automatic_pending'"
             )
             self.store.db.execute(

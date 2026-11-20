@@ -874,16 +874,16 @@ class BrowsingAdapter(BilibiliAdapter):
             response.raise_for_status()
             payload = response.json()
         except (httpx.HTTPError, ValueError):
-            raise PublishUncertain("评论提交结果不确定，禁止自动重试") from None
+            raise PublishUncertain("评论发布结果待核对") from None
         if not isinstance(payload, dict) or type(payload.get("code")) is not int:
-            raise PublishUncertain("评论回执无效，禁止自动重试")
+            raise PublishUncertain("B 站返回的评论回执格式无效")
         if payload["code"] != 0:
             raise platform_rejection(payload, fallback="平台明确拒绝了本次评论")
         try:
             data = payload["data"]
             rpid = _identifier(data.get("rpid_str") or data.get("rpid"))
         except (KeyError, TypeError, AttributeError, ValueError):
-            raise PublishUncertain("评论回执缺少有效ID，禁止自动重试") from None
+            raise PublishUncertain("B 站回执缺少评论 ID") from None
         return {
             "platform": "bilibili",
             "code": 0,
@@ -916,9 +916,9 @@ class BrowsingAdapter(BilibiliAdapter):
             response.raise_for_status()
             payload = response.json()
         except (httpx.HTTPError, ValueError):
-            raise PublishUncertain("评论点赞结果不确定，禁止自动重试") from None
+            raise PublishUncertain("评论点赞结果待核对") from None
         if not isinstance(payload, dict) or type(payload.get("code")) is not int:
-            raise PublishUncertain("评论点赞回执无效，禁止自动重试")
+            raise PublishUncertain("B 站返回的点赞回执格式无效")
         if payload["code"] != 0:
             raise platform_rejection(payload, fallback="平台明确拒绝了本次评论点赞")
         return {"platform": "bilibili", "code": 0, "action": "comment_like", "oid": target["oid"],

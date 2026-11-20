@@ -121,7 +121,7 @@ test("publishing saves the current draft and a failed attempt remains retryable"
   editor.listeners.input();
   assert.deepEqual(detail.querySelectorAll("button").map(button => button.textContent), ["保存", "拒绝", "发布", "复制"]);
   await detail.querySelectorAll("button").find(button => button.textContent === "发布").onclick();
-  assert.equal(byId("queue-feedback").textContent, "发布失败：临时网络错误");
+  assert.equal(byId("queue-feedback").textContent, "临时网络错误");
   assert.deepEqual(writes, [
     ["/api/comments/drafts/draft/review", { action: "approve", text: "编辑后的内容", updated_at: 75, expected_image: null }],
     ["/api/comments/drafts/draft/publish", undefined],
@@ -553,6 +553,28 @@ test("dynamic text edits survive refresh, save the submitted text and clear only
   assert.equal(byId("dynamic-post-text").value, "");
   assert.equal(byId("dynamic-post-receipt").textContent, "");
   assert.equal(byId("dynamic-posts").children.length, 0);
+});
+
+test("dynamic publish errors refresh the selected draft to its real state", async t => {
+  const byId = setupDOM(t);
+  const { initDynamicsModule } = await import("../src/tuber_studio/web/modules/dynamics.js");
+  const post = { id: 1, content: "待发布动态", status: "approved" };
+  const model = { dynamicPosts: [{ ...post }], dynamicPostId: 1, dynamicMemeCache: new Map(),
+    dynamicMemePending: new Set(), dynamicMemorySaving: new Set() };
+  initDynamicsModule(model, { ...sourceDependencies(async url => {
+    if (url.endsWith("/publish")) {
+      post.status = "publish_uncertain";
+      throw new Error("动态发布结果待核对");
+    }
+    if (url === "/api/dynamics/policy") return { credentials_configured: true };
+    if (url === "/api/dynamics/posts") return [{ ...post }];
+    if (url === "/api/dynamics/memory-summary") return { entries: [] };
+    return [];
+  }), publicSettings: value => value, safeMessage: String, display: String, tokenCount: String });
+  await assert.rejects(byId("publish-dynamic").listeners.click(), /动态发布结果待核对/);
+  assert.equal(model.dynamicPosts[0].status, "publish_uncertain");
+  assert.equal(byId("publish-dynamic").disabled, true);
+  assert.equal(byId("dynamic-post-note").textContent, "请核对 B 站动态与发布回执。");
 });
 
 test("dynamic background refresh reconciles external terminal states and preserves local edits", async t => {

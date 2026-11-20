@@ -219,7 +219,7 @@ def register_private_call(app, runtime, require_admin, *, operator_chat=None):
         if notes:
             instructions.append("与本次私聊话题有关的记忆资料：" + dump(notes))
         if shared:
-            instructions.append("工作台在接通时核对的对象和状态，只作为当前通话事实：" + dump(shared))
+            instructions.append("接通时的工作台状态：" + dump(shared))
         show = performance(runtime.store)
         return {
             "socket": browser_socket_origin(origin) + "/v1/realtime",

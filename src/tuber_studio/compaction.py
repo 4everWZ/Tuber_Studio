@@ -14,6 +14,13 @@ from pathlib import Path
 PROMPTS = Path(__file__).parent / "prompts"
 SUMMARIZATION_PROMPT = (PROMPTS / "compact.md").read_text(encoding="utf-8").strip()
 SUMMARY_PREFIX = (PROMPTS / "summary-prefix.md").read_text(encoding="utf-8").strip()
+LEGACY_SUMMARY_PREFIX = (
+    "Another language model started to solve this problem and produced a summary of its thinking process. "
+    "You also have access to the state of the tools that were used by that language model. "
+    "Use this to build on the work that has already been done and avoid duplicating work. "
+    "Here is the summary produced by the other language model, use the information in this summary "
+    "to assist with your own analysis:"
+)
 COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000
 
 
@@ -44,9 +51,16 @@ def truncate_text(text, max_tokens):
     return prefix + f"…{removed_tokens} tokens truncated…" + suffix
 
 
+def _legacy_summary_body(content):
+    heading, separator, body = content.partition("\n")
+    if separator and heading == LEGACY_SUMMARY_PREFIX:
+        return body
+
+
 def is_summary_message(message):
     return message["role"] == "user" and (
         message.get("kind") == "summary" or message["content"].startswith(SUMMARY_PREFIX + "\n")
+        or _legacy_summary_body(message["content"]) is not None
     )
 
 
@@ -119,7 +133,13 @@ def needs_compaction(total_tokens, config, carried_prefix_tokens=0):
 
 
 def wire_messages(items):
-    return [{"role": item["role"], "content": item["content"]} for item in items]
+    messages = []
+    for item in items:
+        content = item["content"]
+        if item["role"] == "user" and (body := _legacy_summary_body(content)) is not None:
+            content = SUMMARY_PREFIX + "\n" + body
+        messages.append({"role": item["role"], "content": content})
+    return messages
 
 
 async def compact_history(

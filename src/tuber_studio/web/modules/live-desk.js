@@ -126,7 +126,7 @@ export class LiveDesk {
       this.renderFeed(changedSession);
     } catch (error) {
       this.fresh = false;
-      this.say("[data-desk-load-error]", `运行状态读取失败：${error.message}。可刷新重试。`);
+      this.say("[data-desk-load-error]", "暂时读不到直播状态，可刷新重试。");
     } finally {
       this.renderControls();
     }
@@ -322,7 +322,7 @@ export class LiveDesk {
     } catch (error) {
       this.say("[data-desk-action-state]", "");
       const raced = queueEdit && [400, 404, 409, 422].includes(error.status);
-      this.say("[data-desk-action-error]", raced ? "状态已变化，正在读取最新队列。请检查后再操作。" : error.message);
+      this.say("[data-desk-action-error]", raced ? "队列已更新，请重新选择。" : error.message);
     } finally {
       await this.pollTask;
       await this.refresh();

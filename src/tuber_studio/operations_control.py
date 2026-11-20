@@ -165,7 +165,7 @@ class OperationsControl:
         """A running review can generate drafts, but cannot write to its account."""
         review = self.store.get("browsing_review_session", {})
         if review.get("state") in {"starting", "running"} and str(account_id) == review.get("account_id"):
-            raise ValueError("review验收进行中，禁止平台发送或上传；草稿保留待审核")
+            raise ValueError("当前为验收模式，草稿已保存，等待审核")
 
     def assert_allowed(self, *, automatic, channel, account_id, character, epoch=None):
         self.assert_review_writable(account_id)

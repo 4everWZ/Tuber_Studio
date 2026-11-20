@@ -6,7 +6,7 @@ const names = {
   ready_to_play: "等待播放器", playing: "播放中", completed: "已完成", failed: "失败", cancelled: "已取消",
   expired: "已过期", filtered: "已过滤", duplicate: "重复事件", dropped: "已丢弃", selected: "已选中",
   private_handoff: "已转私信", received: "已收到", skipped: "已跳过", pending: "等待中", running: "处理中", pending_review: "待审核",
-  approved: "已审核", rejected: "已拒绝", copied: "已复制", published: "已发布", publishing: "发布中",
+  approved: "已审核", rejected: "已退回", copied: "已复制", published: "已发布", publishing: "发布中",
   publish_uncertain: "发布结果待核对", publish_failed: "发布失败", question: "问题",
   suggestion: "建议 / 反馈", interaction: "适合互动", spam: "垃圾", general: "一般评论", chat: "弹幕",
   gift: "礼物", song: "点歌", sfx: "预录音效", disconnect: "断线", mock: "离线演示",

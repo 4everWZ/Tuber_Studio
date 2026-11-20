@@ -82,7 +82,7 @@ async def test_owner_identity_uses_current_binding_with_stale_chat_history(studi
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
     old = turn("你住在哪里？")
     (await client.post("/api/chat/intelligent", json=old)).raise_for_status()
-    for text in ("小鱼，你的主人是谁呀", "我说你的主人呀"):
+    for text in ("小鱼，你的主人是谁呀", "我说你的主人呀", "养你的那位叫什么名字呀？"):
         result = (await client.post("/api/chat/intelligent", json=turn(text))).raise_for_status().json()
         assert result["reply_text"] == "我的主人是新号主呀。" and result["reply_format"] == "plain"
     history = (await client.get("/api/chat/intelligent/turns/" + old["request_id"])).raise_for_status().json()

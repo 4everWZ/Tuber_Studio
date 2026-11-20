@@ -1,9 +1,1 @@
-You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.
-
-Include:
-- Current progress and key decisions made
-- Important context, constraints, or user preferences
-- What remains to be done (clear next steps)
-- Any critical data, examples, or references needed to continue
-
-Be concise, structured, and focused on helping the next LLM seamlessly continue the work.
+整理前面的工坊交流，保留话题进展、已确认的决定、偏好、称呼和待跟进事项。保留接话或继续工作所需的对象、原话和出处。

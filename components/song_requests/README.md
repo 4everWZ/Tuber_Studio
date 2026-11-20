@@ -4,7 +4,7 @@
 
 在本目录执行 `npm ci --ignore-scripts`，然后在 `/live` 的「在线点歌」中启用。依赖及其传递版本由 `package-lock.json` 锁定，使用指定仓库的固定提交：
 
-Core Compose 镜像已包含点歌依赖。工作台播放用途可显式选择“仅本机／OBS技术测试”，不代表确认直播用途，只接收工作台／Mock请求。
+Core Compose 镜像已包含点歌依赖。选择「仅本机／OBS 技术测试」时，可播放工作台与 Mock 请求。
 
 - [xgxdmx/NeteaseMusic-API](https://github.com/xgxdmx/NeteaseMusic-API/tree/0395d087d9e99ceef480c54e7932c2332e5c0c39)，MIT，仅使用 `cloudsearch`、`song_detail`、`lyric`／`lyric_new`，不调用其 `song_url_v1` 或 `unblockmusic-utils` 解析。
 - [UnblockNeteaseMusic/server](https://github.com/UnblockNeteaseMusic/server/tree/1d64281c0fae81a4e3cf21f176706b0baa3a606d)，LGPL-3.0-only，仅调用波点／咪咕 Provider；保留其包内许可。通过模块边界替换宽松的 `select`，拒绝首条结果兜底；禁用 `insure` 远程解析兜底。
@@ -28,7 +28,7 @@ Core Compose 镜像已包含点歌依赖。工作台播放用途可显式选择�
 }
 ```
 
-按音源优先级尝试：波点 FLAC → 波点高码率 → 咪咕 FLAC → 咪咕高码率。`ENABLE_FLAC`、`FOLLOW_SOURCE_ORDER` 为 true，完全删除 `SELECT_MAX_BR`，不能写字符串 false。实际流若是满足阈值的 MP3，也可作为 FLAC 请求的回退结果；低码率默认拒绝。FLAC 是检测到的流格式，不代表源录音未经历过有损编码。
+按音源优先级尝试：波点 FLAC → 波点高码率 → 咪咕 FLAC → 咪咕高码率。`ENABLE_FLAC`、`FOLLOW_SOURCE_ORDER` 为 true，完全删除 `SELECT_MAX_BR`，不能写字符串 false。实际流若是满足阈值的 MP3，也可作为 FLAC 请求的回退结果；低码率默认拒绝。FLAC 标签显示检测到的音频流格式。
 
 跨源严格核对标题、所有歌手及版本标记；有候选时长时要求差值不超过 3 秒。咪咕候选常缺时长，因此必须在完整下载后再检查实际流时长。实际格式、采样率、位深／码率由 Python Mutagen 读取，播放确认由浏览器解码及现有 started／ended ACK 完成。缓存保存原始 FLAC／MP3，不转码、不保存过期签名 URL。
 

@@ -617,7 +617,7 @@ class Comments:
             raise ValueError("当前楼已有非空上下文，请先清除后再重建")
         rows = self._thread_sources(video_id, thread_id, platform)
         if not rows:
-            raise ValueError("当前楼没有保留的原始评论，不能重建；不会自动联网取回")
+            raise ValueError("这条讨论缺少已保存的原评论")
         candidate = context.source_candidate(scope, character, [self._comment_event(row) for row in rows])
         try:
             messages = await candidate.prepare(scope, character, None, mode="comment_draft")
@@ -805,7 +805,7 @@ class Comments:
         if not row:
             raise ValueError("草稿不存在")
         if row["status"] in {"published", "publishing", "publish_uncertain", "private_handoff", "operator_replied"}:
-            raise ValueError("已发布或结果不确定的回复不能覆盖；请核对平台")
+            raise ValueError("这条回复已提交，可查看平台回执")
         expected = options.pop("updated_at", None)
         if "expected_image" in options and options.pop("expected_image") != decision(self.runtime, "comments", row, row_ref(row)):
             raise ValueError("配图已变化，请核对当前草稿")
@@ -1357,7 +1357,7 @@ class Comments:
                     FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
                         "comments", draft_id, token, actual_binding, payload, "发布结果不确定"
                     )
-                message = "发布结果不确定，请先核对平台，禁止自动重试"
+                message = "评论发布结果待核对"
                 self.store.execute(
                     "UPDATE drafts SET status='publish_uncertain',error=?,updated_at=? WHERE id=?",
                     (message, time.time(), draft_id),
@@ -1393,9 +1393,9 @@ class Comments:
                     )
                 self.store.execute(
                     "UPDATE drafts SET status='publish_uncertain',error=? WHERE id=?",
-                    ("发布异常，需核对平台；禁止自动重试", draft_id),
+                    ("评论发布结果待核对", draft_id),
                 )
-                raise UnknownPublication("发布异常，需核对平台；禁止自动重试", token) from None
+                raise UnknownPublication("评论发布结果待核对", token) from None
             # Platform success and local bookkeeping are separate boundaries. A database
             # failure must never restore an approved draft and allow another HTTP write.
             try:
@@ -1426,6 +1426,6 @@ class Comments:
                     "UPDATE drafts SET status='publish_uncertain',error=? WHERE id=?",
                     ("平台已返回成功，本地回执保存失败；请核对平台", draft_id),
                 )
-                raise UnknownPublication("平台已返回成功，本地回执保存失败；禁止重发", token) from None
+                raise UnknownPublication("B 站已受理评论，本地回执待补录", token) from None
             self._record_published_context(draft_id, account_id)
             return {"status": "published", "receipt": receipt}

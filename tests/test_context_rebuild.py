@@ -160,7 +160,7 @@ async def test_rebuild_refuses_nonempty_or_absent_originals_without_overwrite(se
     with pytest.raises(ValueError, match="非空"):
         await service.rebuild_context("import-rebuild", "floor")
     assert runtime.operation_context.existing(scope, runtime.character) == original
-    with pytest.raises(ValueError, match="没有保留"):
+    with pytest.raises(ValueError, match="缺少已保存的原评论"):
         await service.rebuild_context("import-rebuild", "absent")
     assert (
         runtime.operation_context.existing(service.context_scope("import-rebuild", "absent"), runtime.character) is None

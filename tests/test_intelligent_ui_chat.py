@@ -132,7 +132,7 @@ async def test_chat_lifecycle_separates_live_status_from_persistent_work(setting
         calls.append(schema["title"])
         menu = schema["properties"]["action"]["enum"]
         if schema["title"] == "WorkLifecycle":
-            assert set(menu) == {"chat", "direct_tool", "agent_task", "clarify"}
+            assert set(menu) == {"chat", "owner_identity", "direct_tool", "agent_task", "clarify"}
             return direct_request(messages[-1]["content"]) if lifecycle == "direct_tool" else {"action": lifecycle}
         assert "live_status" in menu and not {"direct_tool", "agent_task", "steer_task", "chat"}.intersection(menu)
         assert options["on_content"] is None

@@ -27,11 +27,6 @@ class Model:
     async def generate_json(self, messages, schema, *, max_tokens):
         self.requests.append((messages, schema, max_tokens))
         payload = json.loads(messages[1]["content"])
-        if payload.get("task") == "dynamic_grounding":
-            return {"checks": [
-                {"sentence": number, "verdict": "expression", "quotes": []}
-                for number, _ in enumerate(payload["sentences"], 1)
-            ]}
         if payload.get("task") == "operations_memory_summary":
             return {
                 "entries": [
@@ -47,7 +42,7 @@ class Model:
             "action": "post",
             "reason": "公开分享虚构故事",
             "content": CAPTION,
-            "source_ids": [payload["public_sources"][0]["id"]],
+            "source_ids": [source["id"] for source in payload["public_sources"][:1]],
             "next_evaluation_seconds": 1800,
         }
 
@@ -354,7 +349,7 @@ async def test_final_unknown_keeps_pin_pauses_and_blocks_republish_after_restart
     service, catalog, asset, state, _ = dynamic_memes
     identity = await draft(dynamic_memes)
     state["final"] = mode
-    with pytest.raises(ValueError, match="不确定"):
+    with pytest.raises(ValueError, match="发布结果待核对"):
         await service.publish(identity)
     assert service._post(identity)["status"] == "publish_uncertain"
     assert service.store.all("SELECT * FROM meme_pins") and len(posts(state)) == 1
@@ -430,8 +425,11 @@ async def test_dynamic_selector_attaches_to_the_unchanged_caption(dynamic_memes)
 
 
 @pytest.mark.parametrize("with_image", [False, True])
-async def test_valid_automatic_selection_posts_once_with_original_caption(dynamic_memes, with_image):
-    service, _, asset, state, _ = dynamic_memes
+@pytest.mark.parametrize("with_source", [False, True])
+async def test_valid_automatic_selection_posts_once_with_original_caption(dynamic_memes, with_image, with_source):
+    service, _, asset, state, memory = dynamic_memes
+    if not with_source:
+        service.mark_memory(memory, False)
     service.operations.configure({"enabled": True}, account_id="900", character=service.store.character())
     service.comments.display_account_id = lambda: "900"
     service.store.set("illustration_policy", {"use_memes": True, "generate_images": False})
@@ -441,6 +439,7 @@ async def test_valid_automatic_selection_posts_once_with_original_caption(dynami
     result = await service.evaluate()
     row = service._post(result["post_id"])
     assert row["status"] == "published" and row["content"] == CAPTION
+    assert bool(row["source_ids"]) is with_source
     assert len(posts(state)) == 1 and len(uploads(state)) == int(with_image)
     body = json.loads(posts(state)[0].content)["dyn_req"]
     assert body["scene"] == (2 if with_image else 1)

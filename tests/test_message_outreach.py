@@ -49,7 +49,7 @@ async def setup_delivery(messages, monkeypatch, *, auto_send=True):
     async def conversation(packet, schema, *, max_tokens):
         if schema["title"] == "ConversationReply":
             event = next(json.loads(message["content"].split("：", 1)[1]) for message in packet
-                         if message["content"].startswith("当前观众消息："))
+                         if message["content"].startswith("当前来信人消息："))
             generated.append(event)
             return {"text": "鱼鱼一起回答你刚才的两条消息。", "reason": "合并回答两条来信",
                     "reply_to": [item["message"] for item in event["conversation"] if item.get("open")], "handled": []}
@@ -661,10 +661,10 @@ async def test_review_fence_blocks_approved_text_and_real_catalog_image_before_p
         pytest.fail("review写入限制须在身份刷新、生成和图片上传之前执行")
 
     monkeypatch.setattr(messages.runtime, "refresh_identity", cannot_refresh)
-    with pytest.raises(ValueError, match="review验收"):
+    with pytest.raises(ValueError, match="验收模式"):
         await messages.send(identity)
     # Cover the lower delivery boundary used after publication revisions too.
-    with pytest.raises(ValueError, match="review验收"):
+    with pytest.raises(ValueError, match="验收模式"):
         await messages._send_once(identity)
     row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
     assert row["status"] == "approved" and row["receipt"] is None
@@ -705,7 +705,7 @@ async def test_review_unbound_legacy_draft_cannot_start_identity_regeneration_or
     messages.review(identity, "approve")
     messages.store.set("browsing_review_session", {"state": "running", "account_id": ACTOR})
     assert messages.store.one("SELECT account_id FROM dm_drafts WHERE id=?", (identity,))["account_id"] == ""
-    with pytest.raises(ValueError, match="review验收"):
+    with pytest.raises(ValueError, match="验收模式"):
         await messages.send(identity)
     assert len(generated) == 1 and not messages.adapter.sent
     assert not messages.store.one("SELECT id FROM dm_attempts WHERE draft_id=?", (identity,))

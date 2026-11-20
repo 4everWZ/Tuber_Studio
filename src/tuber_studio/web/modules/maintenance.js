@@ -55,7 +55,7 @@ export async function retentionAction(kind, action, model, notice) {
     await action();
   } catch (error) {
     if (kind !== "save") {
-      invalidateRetentionPreview(model, `操作未完成：${error.message} 请重新预览后再清理。`, true);
+      invalidateRetentionPreview(model, `${error.message} 请重新预览后再清理。`, true);
     } else {
       if ($("retention-policy-state")) {
         $("retention-policy-state").textContent = `策略保存失败：${error.message}`;

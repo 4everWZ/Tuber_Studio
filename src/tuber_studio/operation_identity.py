@@ -48,8 +48,7 @@ def private_participant_instructions(character, platform=None, speaker_uid=None)
     if owner and platform == "bilibili" and speaker_uid:
         participants["speaker_is_bilibili_owner"] = owner["speaker_is_bilibili_owner"]
     return (
-        "角色卡中的 bilibili_owner 是这名角色的主人，空值表示尚未绑定。"
-        "运营账号的昵称和简介描述的是角色使用的平台账号。\n私聊参与者："
+        "bilibili_owner 是角色绑定的 B 站号主。\n私聊参与者："
         + json.dumps(participants, ensure_ascii=False)
     )
 

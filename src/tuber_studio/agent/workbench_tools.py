@@ -9,7 +9,7 @@ from pydantic import Field, StrictBool, StrictFloat, StrictInt
 from ..models import StrictModel
 from .workshop_settings import read_settings, settings_catalog, update_settings
 
-OWNER_CONTROL_REPLY = "本次请求涉及号主专属设置，请在号主设置页操作。本轮未修改设置或创建任务。"
+OWNER_CONTROL_REPLY = "这项权限可在号主设置页管理。"
 
 # This checks authority against the original request, independently of the subset emitted by the model.
 _CONTROL_NAME = re.compile(

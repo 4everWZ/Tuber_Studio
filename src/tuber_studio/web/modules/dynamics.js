@@ -226,8 +226,7 @@ export function renderDynamicPost(model, {
       $("dynamic-meme-availability").textContent = unavailable ?
         "当前配图已禁用或缺失，请更换图片或移除配图。" :
         imageInfo?.error ?
-        "配图状态暂未取得，可到图库核对；发布前会再次检查。" :
-        "配图将在发布前重新检查可用性。";
+        "暂时读不到配图状态，可打开图库查看。" : "";
     }
     const key = `${post.id}:${post.character_id}:${post.meme_id}`;
     if (model.dynamicMemePreviewKey !== key && typeof memePreview === "function") {
@@ -256,17 +255,18 @@ export function renderDynamicPost(model, {
   }
 
   if ($("dynamic-post-receipt")) {
-    $("dynamic-post-receipt").textContent = post ? JSON.stringify(publicSettings({ image_uploads: post.image_uploads, receipt: post.receipt ?? null, error: post.error ?? null }), null, 2) : "";
+    $("dynamic-post-receipt").textContent = post && (post.receipt || post.image_uploads?.length || post.error) ?
+      JSON.stringify(publicSettings({ image_uploads: post.image_uploads, receipt: post.receipt ?? null, error: post.error ?? null }), null, 2) :
+      post ? "暂无平台回执。" : "";
   }
   if ($("dynamic-post-note")) {
-    $("dynamic-post-note").textContent = model.dynamicPostDirty && !editable ? "原记录已处理或不在当前列表；本地修改已保留，可复制文字。" :
-      !post ? "从列表选择动态，查看来源、决策与平台回执。" :
-      model.dynamicPostDirty ? "有未保存修改；审核通过后保存，再发布。" :
-      post.error ? `操作未完成：${post.error}` :
-      post.status === "publish_uncertain" ? "发布结果不确定，请核对平台回执；不会自动重发。" :
-      post.status === "published" ? "已发布，平台回执见下方。" :
-      !model.dynamicPolicy?.credentials_configured ? "未配置B站账号；可生成和审核草稿，发布前请到设置页的B站账号区配置凭证。" :
-      "手动评估生成的草稿始终保留人工审核，后台不会补发。";
+    $("dynamic-post-note").textContent = model.dynamicPostDirty && !editable ? "草稿已移出当前列表，本地修改可复制。" :
+      !post ? "" :
+      model.dynamicPostDirty ? "有未保存的修改，点「审核通过」保存。" :
+      post.status === "publish_uncertain" ? "请核对 B 站动态与发布回执。" :
+      post.error ? post.error :
+      post.status === "rejected" ? "草稿已保存。" :
+      editable && !model.dynamicPolicy?.credentials_configured ? "请在设置中连接 B 站账号。" : "";
     $("dynamic-post-note").classList.toggle("error-text", !!post?.error || post?.status === "publish_uncertain");
   }
 
@@ -670,9 +670,7 @@ export function initDynamicsModule(model, {
       model.dynamicDraftEdits.delete(post.id);
       if (action === "reject" && model.dynamicPostId === post.id) model.dynamicPostId = null;
       await doRefreshDynamics();
-      if ($("dynamic-post-note")) {
-        $("dynamic-post-note").textContent = action === "approve" ? "审核已保存，尚未手动发布。" : "动态已拒绝。";
-      }
+      if (action === "reject") notice("已退回，草稿已保存。");
     } finally {
       model.dynamicPostPending = false;
       doRenderPost();
@@ -741,8 +739,8 @@ export function initDynamicsModule(model, {
       if ($("dynamic-policy-state")) {
         $("dynamic-policy-state").classList.remove("error-text");
         $("dynamic-policy-state").textContent = result.action === "post" ?
-          `已评估并生成待审核动态（${result.post_id}）。` :
-          `评估完成：${result.reason || "无需发动态"}`;
+          "动态草稿已生成，等待审核。" :
+          result.reason || "这轮暂缓发布。";
         notice($("dynamic-policy-state").textContent);
       }
       await doRefreshDynamics();
@@ -775,7 +773,13 @@ export function initDynamicsModule(model, {
     model.dynamicPostPending = true;
     doRenderPost();
     try {
-      const result = await api(`/api/dynamics/posts/${encodeURIComponent(post.id)}/publish`, { method: "POST" });
+      let result;
+      try {
+        result = await api(`/api/dynamics/posts/${encodeURIComponent(post.id)}/publish`, { method: "POST" });
+      } catch (error) {
+        await doRefreshDynamics().catch(() => {});
+        throw error;
+      }
       if (result.status === "published") {
         model.dynamicDraftEdits.delete(post.id);
         if (model.dynamicPostId === post.id) {

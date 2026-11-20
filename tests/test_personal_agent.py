@@ -54,8 +54,6 @@ async def test_bound_person_resolves_a_new_projection_and_expires_on_rebind(stud
         if name == "AssistantDecision":
             assert set(actions) == {"owner_binding", "owner_profile", "clarify"}
             return {"action": "owner_binding"}
-        if "owner_identity" in actions:
-            return {"action": "owner_identity"}
         if read_from_binding:
             return {"action": "direct_tool", "operation": {
                 "mode": "read", "request": message, "target": None, "object_ref": "obj1", "followup": True,
@@ -105,6 +103,29 @@ async def test_public_news_cites_opened_sources_from_the_current_local_day(studi
     assert result["tool_receipt"]["local_date"] == "2026-11-20"
     assert [group["entries"][0]["href"] for group in result["sources"]] == ["https://news.example/fresh"]
     assert len(calls) == 4 and not runtime.tasks.activity()
+
+
+async def test_direct_read_binds_a_current_workshop_object_when_model_paraphrases(studio, monkeypatch):
+    runtime, client = studio
+    calls = []
+
+    async def model(messages, schema, **kwargs):
+        calls.append(schema["title"])
+        if schema["title"] == "WorkLifecycle":
+            assert "owner_identity" not in schema["properties"]["action"]["enum"]
+            return {"action": "direct_tool", "operation": {
+                "mode": "read", "request": "查看当前账号信息", "target": "账号信息",
+            }}
+        assert "operating_account" in schema["properties"]["action"]["enum"]
+        assert "owner_binding" not in schema["properties"]["action"]["enum"]
+        assert "stop" not in schema["properties"]["action"]["enum"]
+        assert any("请帮我查 Ｂ 站登录账号" in row["content"] for row in messages)
+        return {"action": "operating_account", "read_target": None}
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
+    result = await turn(client, "请帮我查 Ｂ 站登录账号", stream=True)
+    assert result["tool_receipt"] == {"action": "read", "group": "account", "values": {"state": "not_configured"}}
+    assert calls == ["WorkLifecycle", "AssistantDecision"]
 
 
 async def test_publication_metadata_excludes_edit_time_and_reports_conflicts():

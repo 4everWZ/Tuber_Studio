@@ -14,8 +14,8 @@ from ...operation_attachments import (
     decision,
     image_scope,
     queue_image,
-    require_comment_attachment,
     record_upload,
+    require_comment_attachment,
     row_ref,
     wait_decision,
 )
@@ -975,10 +975,10 @@ class BrowsingPublication:
                     "平台成功后本地保存失败",
                 )
                 self.browsing.store.execute(
-                    "UPDATE browsing_intents SET status='publish_uncertain',error='本地回执保存失败，禁止重发' WHERE id=?",
+                    "UPDATE browsing_intents SET status='publish_uncertain',error='本地回执待补录' WHERE id=?",
                     (identity,),
                 )
-                raise UnknownPublication("平台提交结果需人工核对，禁止重发", token) from None
+                raise UnknownPublication("平台提交结果待核对", token) from None
             if row["kind"] in _ENGAGEMENT_KINDS:
                 self.browsing.store.execute(
                     "UPDATE browsing_intents SET visibility='visible' WHERE id=?", (identity,)

@@ -75,7 +75,7 @@ class OperationContinuationView {
       this.signature = null;
       return;
     }
-    this.$("[data-continuation-summary]").textContent = generation ? `生成状态：${this.label(value.state)}` : `本轮恢复 ${value.recoveries ?? "—"} / ${value.max_recoveries ?? "—"} 次 · 累计 ${value.total_recoveries ?? value.recoveries ?? "—"} 次`;
+    this.$("[data-continuation-summary]").textContent = generation ? "" : `本轮恢复 ${value.recoveries ?? "—"} / ${value.max_recoveries ?? "—"} 次 · 累计 ${value.total_recoveries ?? value.recoveries ?? "—"} 次`;
     const feedback = this.feedback(value.feedback), trigger = this.feedback(value.trigger_feedback);
     const feedbackText = feedback === trigger || !trigger ? feedback : `${trigger}\n当前：${feedback || this.label(value.state)}`;
     this.$("[data-continuation-feedback]").textContent = value.state === "completed" && feedbackText ? `此前反馈：${feedbackText}` : feedbackText;
@@ -87,14 +87,14 @@ class OperationContinuationView {
     if (Number.isFinite(value.deadline)) budgetText.push(`本轮期限 ${new Date(value.deadline * 1000).toLocaleString("zh-CN")}`);
     this.$("[data-continuation-budget]").textContent = budgetText.join(" · ");
     const reconciling = value.state === "needs_reconciliation" || entityStatus === "publish_uncertain";
-    this.$("[data-continuation-note]").textContent = dirty ? reconciling ? "核对将读取平台结果，保留本地编辑。" : "有未保存修改，保存后再继续处理。" : reconciling ? "平台结果尚待确认。" : value.state === "pending" ? "等待 Agent 处理，后续反馈会保留在下方。" : value.state === "deciding" ? "Agent 正在处理，修订与平台反馈会保留在下方。" : value.state === "checkpoint" ? "进度已保存，可在后续授权轮继续。" : "";
-    if (awaitingRound && !dirty) this.$("[data-continuation-note]").textContent = "达到本轮资源上限，进度已保存，下一轮继续；可在运营设置调整。";
+    this.$("[data-continuation-note]").textContent = dirty && !reconciling ? "保存修改后再继续处理。" : "";
+    if (awaitingRound && !dirty) this.$("[data-continuation-note]").textContent = "已保存进度，等下一轮额度恢复后继续。";
     if (generation && !dirty) {
-      const notes = {invalid:"本次未形成有效完整候选，原始输出仅保留供检查。", awaiting_review:"完整候选及正文诊断已保留，等待人工审核。", deferred:"模型已决定暂缓本次行动。"};
+      const notes = {invalid:"可展开记录查看原稿。"};
       if (notes[value.state]) this.$("[data-continuation-note]").textContent = notes[value.state];
     }
     if (this.resumeError?.key === this.key && this.resumeError.state === value.state) this.$("[data-continuation-note]").textContent = this.resumeError.message;
-    if (generation && !validTarget) this.$("[data-continuation-note]").textContent = value.can_resume ? "生成恢复入口尚未返回，请刷新后继续。" : "此记录保留供查看。";
+    if (generation && !validTarget && value.can_resume) this.$("[data-continuation-note]").textContent = "刷新后可继续生成。";
     const resume = this.$("[data-continuation-resume]");
     resume.hidden = !value.can_resume || reconciling;
     resume.disabled = this.pending || dirty || !value.can_resume || reconciling || localId == null;

@@ -25,7 +25,7 @@ from .operation_text import operation_character
 from .sse import event_data
 
 SYSTEM_RULES = (
-    "你是运行于大肥鱼工坊的 AI 角色。以当前角色的第一人称接着聊，语气随关系和话题。角色设定："
+    "以当前角色的第一人称接话，语气随说话对象和话题变化。角色设定："
 )
 
 REPLY_SCENES = {
@@ -103,7 +103,7 @@ def build_messages(character, event, relationship, mode="live", *, history=()):
     if mode == "direct_message":
         internal.add("conversation_sha256")
     wire_event = {key: value for key, value in event.items() if key not in internal} if internal else event
-    speaker = "号主" if operator_chat else "观众"
+    speaker = {"operator_chat": "号主", "direct_message": "来信人"}.get(mode, "观众")
     messages.append({"role": "user", "content": f"当前{speaker}消息：" + json.dumps(wire_event, ensure_ascii=False)})
     length_instruction = "按当前交流自然决定篇幅。"
     if mode == "live":

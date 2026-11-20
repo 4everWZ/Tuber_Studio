@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from tuber_studio.compaction import (
+    LEGACY_SUMMARY_PREFIX,
     SUMMARY_PREFIX,
     ContextWindowExceeded,
     IncompleteCompaction,
@@ -18,6 +19,7 @@ from tuber_studio.compaction import (
     limits,
     needs_compaction,
     truncate_text,
+    wire_messages,
 )
 from tuber_studio.context import ContextManager, retained_user_budget
 
@@ -106,15 +108,17 @@ def test_utf8_truncation_matches_upstream_byte_budget_boundaries(text, budget):
         actual.encode("utf-8")
 
 
-def test_old_summary_is_not_mistaken_for_a_retained_viewer_message():
+@pytest.mark.parametrize("prefix", [SUMMARY_PREFIX, LEGACY_SUMMARY_PREFIX])
+def test_old_summary_is_not_mistaken_for_a_retained_viewer_message(prefix):
     history = [
         user("first"),
         {"role": "assistant", "content": "reply"},
-        {"role": "user", "content": SUMMARY_PREFIX + "\nold"},
+        {"role": "user", "content": prefix + "\nold"},
         {"role": "user", "content": "canonical", "kind": "context"},
         user("last"),
     ]
     assert [m["content"] for m in collect_user_messages(history)] == ["first", "last"]
+    assert wire_messages(history)[2]["content"] == SUMMARY_PREFIX + "\nold"
 
 
 def test_canonical_context_reinjection_precedes_last_real_user_or_summary():

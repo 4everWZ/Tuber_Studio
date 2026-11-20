@@ -143,7 +143,7 @@ class DirectMessages:
             "UPDATE dm_drafts SET status='queued',error='已保留生成进度，等待恢复' WHERE status IN ('queued','generating')"
         )
         store.execute(
-            "UPDATE dm_drafts SET status='publish_uncertain',error='发送中重启，请核对平台，禁止重发' WHERE status='publishing'"
+            "UPDATE dm_drafts SET status='publish_uncertain',error='服务在发送时重启，私信结果待核对' WHERE status='publishing'"
         )
         store.execute("UPDATE dm_attempts SET status='uncertain',error='发送中重启' WHERE status='sending'")
         if "image_submission" not in {r[1] for r in store.db.execute("PRAGMA table_info(dm_attempts)")}:
@@ -1468,7 +1468,7 @@ class DirectMessages:
             elif selection_failed:
                 self.store.execute(
                     "UPDATE dm_drafts SET error=? WHERE id=?",
-                    ("表情选择失败，已保留待审文字，未自动发送", identity),
+                    ("表情选择失败，正文已保存", identity),
                 )
             draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         if (
@@ -2219,7 +2219,7 @@ class DirectMessages:
                         state = "not_submitted" if not text_submitted else (
                             "rejected" if isinstance(error, PlatformRejected) else "uncertain")
                         step("text", {"status": state})
-                        raise PublishUncertain("图片已送达，正文须独立核对，禁止重发") from error
+                        raise PublishUncertain("图片已送达，正文发送结果待核对") from error
                     receipt = receipt | {"message_kind": "text_image", "image_ref": ref,
                                          "image_msg_key": image_receipt["msg_key"]}
                 elif image:
@@ -2264,7 +2264,7 @@ class DirectMessages:
                 self._uncertain(identity, attempt)
                 if isinstance(error, asyncio.CancelledError):
                     raise
-                raise UnknownPublication("私信发送结果待核对，禁止重发", token) from None
+                raise UnknownPublication("私信发送结果待核对", token) from None
             except ValueError as error:
                 if token:
                     self.operations.finish(token, "rejected")
@@ -2288,7 +2288,7 @@ class DirectMessages:
                         "messages", identity, token, actual_binding, payload, "私信发送结果不确定"
                     )
                 self._uncertain(identity, attempt)
-                raise UnknownPublication("私信发送异常，结果待核对，禁止重发", token) from None
+                raise UnknownPublication("私信发送结果待核对", token) from None
             try:
                 encoded = json.dumps(receipt, ensure_ascii=False)
                 with self.store.db:
@@ -2312,7 +2312,7 @@ class DirectMessages:
                         "messages", identity, token, actual_binding, payload, "平台成功后本地保存失败"
                     )
                 self._uncertain(identity, attempt)
-                raise UnknownPublication("平台已返回发送成功，本地记账失败，禁止重发", token) from None
+                raise UnknownPublication("B 站已受理私信，本地回执待补录", token) from None
             check = json.loads(row.get("answer_check") or "{}")
             if image and self.memes:
                 self.memes.release(f"dm-draft:{identity}")
@@ -2329,7 +2329,7 @@ class DirectMessages:
 
     def _uncertain(self, identity, attempt):
         self.store.execute(
-            "UPDATE dm_drafts SET status='publish_uncertain',error='发送结果待核对，禁止重发',updated_at=? WHERE id=?",
+            "UPDATE dm_drafts SET status='publish_uncertain',error='私信发送结果待核对',updated_at=? WHERE id=?",
             (time.time(), identity),
         )
         self.store.execute(

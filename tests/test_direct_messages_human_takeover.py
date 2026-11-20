@@ -48,7 +48,7 @@ async def test_platform_sequence_orders_takeover_and_settles_only_bound_answers(
         event = next(
             json.loads(message["content"].split("：", 1)[1])
             for message in packet
-            if message["content"].startswith("当前观众消息：")
+            if message["content"].startswith("当前来信人消息：")
         )
         assert [item["text"] for item in event["conversation"]] == [
             "几点开播？",

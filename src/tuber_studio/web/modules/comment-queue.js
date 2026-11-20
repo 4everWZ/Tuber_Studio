@@ -293,11 +293,13 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
           focusedKey = null;
           busy = false;
           await refresh(true);
-          feedback.textContent = success || `${text}完成。`;
+          feedback.textContent = success || {
+            published: "已发送", publish_uncertain: "发布结果待核对", rejected: "已退回，草稿已保存。",
+          }[result?.status] || "";
         } catch (error) {
           busy = false;
           await refresh(true);
-          feedback.textContent = `${text}失败：${error.message}`;
+          feedback.textContent = error.message;
         } finally {
           busy = false;
           syncBatchControls();
@@ -351,7 +353,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
           draftEdits.delete(key);
         }
         return post("publish");
-      }, null, "发布请求已完成，结果见记录状态与平台回执。");
+      });
       copy = action("复制", async () => {
           await navigator.clipboard.writeText(editor.value);
           if (channel === "comments" && status === "approved" && !draftEdits.has(key)) return post("copy");
@@ -366,7 +368,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
       copy = action("复制", () => navigator.clipboard.writeText(editor.value), null, "已复制回复。", false);
     }
     if (status === "publish_uncertain" && !row.continuation) {
-      message.textContent ||= "等待核对平台结果。此旧记录没有可恢复的核对任务。";
+      message.textContent ||= "请打开对应 B 站评论楼核对。";
     }
     detail.append(actions, message, continuation.root);
     syncActions();

@@ -28,11 +28,6 @@ class Model:
         self.calls.append(messages)
         self.schemas.append(schema)
         payload = json.loads(messages[1]["content"])
-        if payload.get("task") == "dynamic_grounding":
-            return {"checks": [
-                {"sentence": number, "verdict": "expression", "quotes": []}
-                for number, _ in enumerate(payload["sentences"], 1)
-            ]}
         if payload.get("task") == "operations_memory_summary":
             if self.summary_hook:
                 await self.summary_hook()
@@ -458,27 +453,20 @@ async def test_enabled_auto_publishes_only_new_background_decision(service):
         await service.publish(post["id"])
 
 
-@pytest.mark.parametrize("verdict", ["expression", "unsupported"])
-async def test_autonomous_dynamic_can_share_a_thought_without_comment_sources(service, monkeypatch, verdict):
-    caption = "海底小窝的灯一亮，我就想把今天的灵感画下来。"
+@pytest.mark.parametrize("caption", [
+    "海底小窝的灯一亮，我就想把今天的灵感画下来。",
+    "我给海底邮局寄了三封信，结果只有一条比目鱼回了明信片。今天这个故事就讲到这儿！",
+])
+async def test_autonomous_dynamic_publishes_a_thought_or_story_after_drafting(service, caption):
     service.runtime.operation_llm.output = json.dumps({"action": "post", "reason": "分享随想", "content": caption,
                                              "source_ids": [], "next_evaluation_seconds": 1800})
-    generate = service.runtime.operation_llm.generate_json
-
-    async def model(messages, schema, *, max_tokens):
-        payload = json.loads(messages[1]["content"])
-        if payload.get("task") == "dynamic_grounding":
-            assert payload["evidence"] == []
-            return {"checks": [{"sentence": 1, "verdict": verdict, "quotes": []}]}
-        return await generate(messages, schema, max_tokens=max_tokens)
-
-    monkeypatch.setattr(service.runtime.operation_llm, "generate_json", model)
     await service.set_policy({"enabled": True})
     decision = await service.evaluate()
     post = service._post(decision["post_id"])
     assert post["sources"] == [] and post["comment_card"] is None
-    assert post["status"] == ("published" if verdict == "expression" else "pending_review")
-    assert [text for _, text in service.sent] == ([caption] if verdict == "expression" else [])
+    assert post["status"] == "published"
+    assert [text for _, text in service.sent] == [caption]
+    assert len(service.runtime.operation_llm.calls) == 1
 
 
 @pytest.mark.parametrize(("manual", "with_public"), [(False, False), (True, False), (False, True)])
@@ -601,8 +589,7 @@ async def test_automatic_send_rechecks_private_context_before_reserving_write(se
     assert not service.store.all("SELECT token FROM account_writes")
 
 
-@pytest.mark.parametrize("case", ["invented", "supported", "missing_sentence", "invented_quote", "offline"])
-async def test_automatic_dynamic_checks_actual_caption_against_public_thread(service, monkeypatch, case):
+async def test_automatic_dynamic_publishes_caption_and_bound_thread_image(service, monkeypatch):
     draft = published_reply(service)
     service.store.execute(
         "UPDATE comments SET video_id=?,comment_id=?,content=? WHERE id=(SELECT comment_id FROM drafts WHERE id=?)",
@@ -615,37 +602,11 @@ async def test_automatic_dynamic_checks_actual_caption_against_public_thread(ser
          '{"rpid":"319915188977"}', draft),
     )
     source, = service._sources()
-    caption = (
-        "我在评论区连着认错对象。第三次才翻回原楼找人把话接对。尾巴乱拍，先看看眼睛指哪儿！"
-        if case == "invented" else "评论区有人说以后卖我赛博保险，还认真算起了养鱼成本。"
-    )
+    caption = "评论区有人说以后卖我赛博保险，还认真算起了养鱼成本。坏了，尾巴也得买一份。"
     service.runtime.operation_llm.output = json.dumps({
         "action": "post", "reason": "分享评论区互动", "content": caption,
         "source_ids": [source["id"]], "next_evaluation_seconds": 1800,
     })
-    generate = service.runtime.operation_llm.generate_json
-
-    async def model(messages, schema, *, max_tokens):
-        packet = json.loads(messages[1]["content"])
-        if packet.get("task") != "dynamic_grounding":
-            return await generate(messages, schema, max_tokens=max_tokens)
-        assert service.runtime.generation_lock.locked() and not service.comments.publish_lock.locked()
-        assert "".join(packet["sentences"]) == caption
-        assert [entry["text"] for entry in packet["evidence"]] == [source["original_comment"]["text"], source["text"]]
-        if case == "invented":
-            return {"checks": [
-                {"sentence": 1, "verdict": "unsupported", "quotes": []},
-                {"sentence": 2, "verdict": "unsupported", "quotes": []},
-                {"sentence": 3, "verdict": "expression", "quotes": []},
-            ]}
-        if case == "missing_sentence":
-            return {"checks": []}
-        if case == "offline":
-            raise TimeoutError
-        quote = "第三次才接对" if case == "invented_quote" else "以后我卖你赛博保险。还有养鱼其实很费钱的"
-        return {"checks": [{"sentence": 1, "verdict": "supported", "quotes": [quote]}]}
-
-    monkeypatch.setattr(service.runtime.operation_llm, "generate_json", model)
     sent = []
 
     async def publish_image(adapter, text, image, *, before_send, **kwargs):
@@ -659,13 +620,26 @@ async def test_automatic_dynamic_checks_actual_caption_against_public_thread(ser
     assert decision["post_id"], json.dumps(decision, ensure_ascii=False)
     post = service._post(decision["post_id"])
     assert post["content"] == caption
-    if case == "supported":
-        assert decision["status"] == "published"
-        assert len(sent) == 1 and sent[0].startswith(caption) and "#reply323449273328" in sent[0]
-    else:
-        assert decision["status"] == "pending_review"
-        assert "保留待审" in post["error"] == decision["error"]
-        assert post["attempted_at"] is None and sent == [] and service.sent == []
+    assert decision["status"] == "published"
+    assert len(sent) == 1 and sent[0].startswith(caption) and "#reply323449273328" in sent[0]
+    requests = [json.loads(call[1]["content"]) for call in service.runtime.operation_llm.calls]
+    assert len([request for request in requests if "character" in request]) == 1
+    assert all("sentences" not in request for request in requests)
+
+
+async def test_old_caption_diagnostic_does_not_obscure_draft_status(service):
+    public_memory(service)
+    result = await service.evaluate(manual=True)
+    diagnostic = "正文中的动作、次数或结果缺少来源支持，保留待审"
+    service.store.execute("UPDATE dynamic_posts SET error=? WHERE id=?", (diagnostic, result["post_id"]))
+    service.store.execute("UPDATE dynamic_decisions SET error=? WHERE id=?", (diagnostic, result["id"]))
+    service.store.set("dynamic_schedule", {"last_error": diagnostic})
+    post, = service.list_posts()
+    decision, = service.list_decisions()
+    assert post["status"] == decision["status"] == "pending_review"
+    assert post["error"] is decision["error"] is None
+    assert service.policy()["last_error"] is None
+    assert service.store.one("SELECT error FROM dynamic_posts")["error"] == diagnostic
 
 
 async def test_review_mode_and_current_client(service):
@@ -1054,7 +1028,7 @@ async def test_receipt_persistence_failure_is_uncertain_even_for_value_error(ser
         return original(post_id, status, error, receipt)
 
     monkeypatch.setattr(service, "_status", fail_success)
-    with pytest.raises(ValueError, match="回执失败"):
+    with pytest.raises(ValueError, match="本地回执待补录"):
         await service.publish(decision["post_id"])
     assert service.list_posts()[0]["status"] == "publish_uncertain"
     assert not service.policy()["enabled"] and len(service.sent) == 1

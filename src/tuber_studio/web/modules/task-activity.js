@@ -357,7 +357,7 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
       item.stepKey = keys.get(step.id);
       const label = tools[step.tool] || step.tool;
       const observation = observedStatus(step.tool, step.result);
-      const summary = observation || (step.result ? (step.result.error ? "有错误" : "已收到结果") : "等待结果");
+      const summary = observation || (step.result ? (step.result.error ? "工具返回错误" : "已取得结果") : "等待结果");
       const details = node("details");
       details.append(node("summary", `${label} · ${summary}`));
       const result = step.result;

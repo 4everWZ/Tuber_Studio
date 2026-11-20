@@ -74,7 +74,7 @@ async def publish_image(adapter, text, image, *, before_send=None, prepare_autho
     except asyncio.CancelledError:
         raise PublishPreparationCancelled from None
     except (ValueError, httpx.HTTPError):
-        raise PublishPreparationFailed("图片准备失败，尚未提交动态；保留待审正文和图片") from None
+        raise PublishPreparationFailed("配图准备失败，正文和图片已保存") from None
     body = {
         "dyn_req": {
             "content": {"contents": [{"raw_text": text, "biz_id": "", "type": 1}]},
@@ -183,7 +183,7 @@ async def _submit(adapter, action, params, body, *, before_send):
         response.raise_for_status()
         payload = response.json()
     except (httpx.HTTPError, ValueError):
-        raise PublishUncertain("动态写入结果不确定，请到平台核对，禁止重试") from None
+        raise PublishUncertain("动态发布结果待核对") from None
     # Only an explicit platform rejection is a definite failure. Malformed success
     # or missing receipt could follow an accepted write and must stay uncertain.
     if isinstance(payload, dict) and type(payload.get("code")) is int and payload["code"] != 0:
