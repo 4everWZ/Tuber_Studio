@@ -8,6 +8,20 @@ _STRING_PREFIX = re.compile(r'(?:[^"\\\x00-\x1f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4
 _ANALYSIS_MARKER = re.compile(r"<\s*/?\s*(?:t(?:h(?:i(?:n(?:k)?)?)?)?)?$|<\s*/?\s*think\b", re.I)
 _WRAPPER_SUFFIX = re.compile(r'[\s"”}]+$')
 _MARKDOWN_CODE = re.compile(r"```[\s\S]*?```|`[^`\n]+`")
+_WORKBENCH_FIELD = re.compile(r"\{\{(local_date|local_time|local_weekday)\}\}")
+
+
+def workbench_fields(text, clock, *, partial=False):
+    if partial:
+        unfinished = re.search(r"\{(?:\{[a-z_]*\}?)?$", text)
+        if unfinished:
+            text = text[:unfinished.start()]
+    values = {"local_date": f"{clock.year}年{clock.month}月{clock.day}日",
+              "local_time": clock.strftime("%H:%M"), "local_weekday": "星期" + "一二三四五六日"[clock.weekday()]}
+    # Quoted examples and Markdown code can still show the literal field names.
+    parts = re.split("(" + _MARKDOWN_CODE.pattern + ")", text)
+    return "".join(part if index % 2 else _WORKBENCH_FIELD.sub(lambda match: values[match[1]], part)
+                   for index, part in enumerate(parts))
 
 
 def assistant_markdown(text):

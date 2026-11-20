@@ -47,11 +47,15 @@ _OTHER = re.compile(r"(?:另(?:外)?一?[段个项份]|其余的?|剩下的?)")
 _GOAL_CHANGE = re.compile(r"^\s*(?:改[成为]|调整[成为]|换[成为])\s*")
 
 
-def explicit_goal_change(cards, message):
-    """A change clause must follow an utterance that names an editable work item."""
-    choices, _ = patch_vocabulary(cards, message)
-    return any(field == "goal" and any(_GOAL_CHANGE.match(requirement) for requirement in requirements)
-               for (field, _), requirements in choices.items())
+def complete_replacement(patch, message):
+    """Only a complete owner-quoted replacement can supersede the original goal."""
+    if not patch or patch.field != "goal":
+        return ""
+    candidate = patch.replacement_goal.strip()
+    if (_GOAL_CHANGE.match(candidate) and candidate == patch.requirement.strip()
+            and message.rstrip(" \n。！？!?").endswith(candidate)):
+        return candidate
+    return ""
 
 
 def _number(value):

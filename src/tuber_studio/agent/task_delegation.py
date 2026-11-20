@@ -48,6 +48,7 @@ def active_goal_steps(task):
 
 def visible_steps(runtime, task):
     bound = video_binding(task)
+    limited_reads = (task["plan"].get("delegation_brief") or {}).get("read_tools")
     context = []
     for step in active_goal_steps(task):
         if step.get("invalid_call"):
@@ -60,6 +61,8 @@ def visible_steps(runtime, task):
         if step["revision"] != task["revision"]:
             tool = runtime.tools.get(step["tool"])
             if not tool or not tool.reusable or not step.get("result") or step["result"].get("error"):
+                continue
+            if limited_reads is not None and step["tool"] not in limited_reads:
                 continue
         if step["tool"] == "inspect_video":
             step = scoped_video_step(step, bound)
@@ -98,17 +101,20 @@ def function(name, description, arguments):
 
 def model_input(task, context):
     evidence = evidence_index(context)
+    video_guidance = (
+        "按号主指定的分 P、时段和对象推进。每项视频选材用 primary_frame 指定一个画面；"
+        "sources 可另引独立出处或有同窗回执的采样点。单帧只支持该时点的画面，音轨和连续性要有各自的观察依据。"
+        "inspect_video 采用左闭右开区间，按交付时长分别取短片，end=start+所需秒数。"
+    ) if video_binding(task) else ""
     history = [{"role": "system", "content": (
-        "为号主在后台取材。按当前委托和授权选择工具，独立取材可同轮并发，有依赖时先等回执。"
-        "资料和工具结果用于引用。按号主指定的分 P、时段和对象推进。"
-        "以最新要求为准，复用仍适用的来源。打开搜索结果正文后再引用。"
+        "在后台完成号主交办的目标。按最新要求选择获准工具，独立读取可同轮并发。"
+        "复用仍适用的来源，打开搜索结果正文后再引用。"
         "取材结束调用 submit_materials，按真实 evidence ID 提交候选、建议和缺口，由前台角色决定交付。"
-        "每项视频选材用 primary_frame 指定一个画面；sources 可另引独立出处或有同窗回执的采样点。"
-        "单帧只支持该时点的画面，音轨和连续性要有各自的观察依据。"
-        "逐项检查函数回执，成功读取的资料直接复用；补读号主要求核对但尚未读到正文的来源。"
-        "inspect_video 的区间为左闭右开，按交付时长分别取短片，end=start+所需秒数。"
-        "gaps 写尚缺的具体材料。需要号主补充时调用 ask_owner。"
+        "已拿到足够回执时提交成果。只有当前目标缺少必须由号主提供的材料时才调用 ask_owner。"
+        + video_guidance
     )}, {"role": "user", "content": dump({"prior_goals": task["plan"]["prior_goals"], "goal": task["goal"],
+                                           **({"delegation_brief": task["plan"]["delegation_brief"]}
+                                              if task["plan"].get("delegation_brief") else {}),
                                            "video_selection": task["plan"].get("video_selection"),
                                            "requested_video_read": task["plan"].get("requested_video_read"),
                                            "subwindow_read_proposals": subwindow_brief(positive_subwindows(evidence, task["plan"].get("window_reviews", {}))),
@@ -361,6 +367,9 @@ async def advance(runtime, task):
         runtime._save(task, status="waiting", due=time.time() + 30, message="等待后台 Responses 服务连接。")
         return
     allowed = private_tools(runtime.tools, context)
+    read_tools = (task["plan"].get("delegation_brief") or {}).get("read_tools")
+    if read_tools is not None:
+        allowed = {name: allowed[name] for name in read_tools if name in allowed}
     if browser:
         allowed = browser.menu(task, allowed)
     tools = [function(name, tool.description, tool.arguments) for name, tool in allowed.items()]

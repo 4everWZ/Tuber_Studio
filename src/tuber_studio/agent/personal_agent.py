@@ -11,12 +11,10 @@ from pydantic import Field
 
 from ..models import StrictModel
 from ..operation_continuations import content_hash
-from ..providers import single_system_messages
 from . import operator_facts
 from .goal_comment_events import CommentWatch
 from .goal_events import EventGrant
 from .goal_followups import FollowupGrant, StatusSource
-from .task_delegation import function
 
 
 @dataclass(frozen=True)
@@ -53,32 +51,6 @@ CAPABILITIES = {
     "web": Capability("公开网页与当下外部事实", "搜索并打开来源，核对发布日期", read_actions=("web_lookup",)),
     "clock": Capability("工坊时钟", "本地日期与时间", read_actions=("clock",)),
 }
-
-PLAN_ACTIONS = {
-    "chat": "日常闲聊，直接交给当前角色接话。",
-    "owner_identity": "根据当前角色绑定回答主人、号主或谁家的关系。",
-    "direct_tool": "查询事实、业务记录、待办稿件，或准备执行一项具体操作。",
-    "agent_task": "接受需要后台处理、以后交付或持续推进的新工作。",
-    "task_turn": "查询、修订、暂停或接续已经存在的交办或成果。",
-    "clarify": "请求已经明确要办事。询问还缺少的对象或要求。",
-}
-
-
-async def plan_with_responses(client, messages, schema):
-    tools = []
-    for branch in schema["oneOf"]:
-        fields = branch["properties"]
-        action = fields["action"]["const"]
-        properties = {key: value for key, value in fields.items() if key != "action"}
-        parameters = {"type": "object", "properties": properties,
-                      "$defs": schema.get("$defs", {}), "additionalProperties": False}
-        tools.append(function(action, PLAN_ACTIONS[action], parameters))
-    reply = await client(input=single_system_messages(messages), tools=tools, tool_choice="required", store=False)
-    if len(reply.calls) != 1:
-        raise ValueError("本轮须产生一项交付计划")
-    call, = reply.calls
-    return {"action": call.name, **call.arguments}
-
 
 class ConversationObject(StrictModel):
     kind: Literal["owner", "account", "setting", "operations", "event", "video", "live", "game", "memory", "task", "artifact", "web", "outgoing"]
@@ -170,7 +142,8 @@ def owner_binding(character):
     uid = str(binding["uid"])
     profile = {"name": binding["name"], "uid": uid, "url": f"https://space.bilibili.com/{uid}"}
     return {"reply_text": f"我的 B 站号主是{binding['name']}，UID 是 {uid}。",
-            "card": {"type": "owner_profile", "data": profile}}
+            "card": {"type": "owner_profile", "data": profile},
+            "tool_receipt": {"action": "read", "group": "identity", "values": profile}}
 
 
 _TODAY = re.compile(r"今天|今日|今儿|本日|当天|\btoday\b", re.I)

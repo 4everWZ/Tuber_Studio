@@ -62,13 +62,6 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                       "output": [{"type": "message", "content": [
                           {"type": "output_text", "text": json.dumps({"color": color, "shape": shape})},
                       ]}]}
-        elif path == "/llm/v1/responses" and "direct_tool" in {tool["name"] for tool in body["tools"]}:
-            assert body["tool_choice"] == "required" and body["store"] is False
-            current = body["input"][-1]["content"]
-            assert current in (replay.REQUEST, replay.CHANGE)
-            action = "agent_task" if current == replay.REQUEST else "task_turn"
-            assert action in {tool["name"] for tool in body["tools"]}
-            result = {"status": "completed", "id": str(uuid4()), "output": [function(action, {})]}
         elif path == "/llm/v1/responses":
             brief = json.loads(body["input"][1]["content"])
             evidence = brief["saved_evidence"].copy()
@@ -97,15 +90,24 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
         elif path in {"/v1/chat/completions", "/llm/v1/chat/completions"}:
             content = body["messages"][-1]["content"]
             assert isinstance(content, str)
-            if "person_subject" in body["messages"][0]["content"]:
+            if path == "/v1/chat/completions" and content in (replay.REQUEST, replay.CHANGE):
+                schema = json.loads(body["structured_outputs"]["structural_tag"])["format"]["json_schema"]
+                if schema["title"] == "WorkLifecycle":
+                    assert "reply_markdown" in schema["properties"]
+                    decision = {"action": "agent_task" if content == replay.REQUEST else "task_turn"}
+                else:
+                    assert schema["title"] == "CardTurnIntent" and content == replay.CHANGE and edits == [2]
+                    card, = json.loads(body["messages"][1]["content"])["recent_task_cards"]
+                    decision = {"intent": "实际修改同一任务或成果的部分或全部", "patch": {"field": "goal", "subject": "提纲",
+                                "requirement": "改做三角形主题的开场"}, "reference": card["id"]}
+            elif "person_subject" in body["messages"][0]["content"]:
                 decision = {"person_subject": "地点、构图或物件"}
             elif content == replay.REQUEST:
                 assert "requested_count" in body["messages"][0]["content"]
                 decision = {"requested_count": 2, "usage": "列出形状、理由和时码", "playable": False,
                             "trace_origin": True, "clip_seconds": None}
             else:
-                packet = (json.loads(body["messages"][1]["content"]) | {"message": content}
-                          if content == replay.CHANGE else json.loads(content))
+                packet = json.loads(content)
                 if "candidate" in packet:
                     assert path == "/llm/v1/chat/completions"
                     decision = packet["candidate"]
@@ -122,8 +124,7 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                     assert all(len(item["evidence"]) == 2 for item in packet["items_to_verify"])
                     decision = {"supported": True}
                 else:
-                    assert packet["message"] == replay.CHANGE and edits == [2]
-                    decision = {"intent": "实际修改同一任务或成果的部分或全部", "patch": {"field": "goal", "subject": "提纲", "requirement": "改做三角形主题的开场"}, "reference": packet["recent_task_cards"][0]["id"]}
+                    pytest.fail("unexpected completion packet")
             result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(decision)}}],
                       "usage": {"prompt_tokens": 128}}
         else:

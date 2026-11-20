@@ -130,12 +130,13 @@ class TaskRuntime:
         self.responses_client = lambda: None
         self.requires_responses = lambda: False
         self.edit_delivery = None
+        self.record_chat_delivery = None
         self.validate_private_read = None
         self.read_parallelism = lambda: 2
         self.tools: dict[str, Tool] = {}
         self.wake = asyncio.Event()
         self.controls = asyncio.Lock()
-        self.active = None
+        self.active = {}
         self.worker = None
         self.store.db.executescript("""
             CREATE TABLE IF NOT EXISTS agent_tasks(
@@ -254,7 +255,7 @@ class TaskRuntime:
                 for task in (self.view(self._decode(row)) for row in rows)]
 
     def create(self, identity, goal, *, due=None, source_key=None, creative_goal_id=None, attachments=(),
-               video_selection=None, allow_code=False, browser_sources=None):
+               video_selection=None, allow_code=False, browser_sources=None, delegation=None, on_create=None):
         scope, now = dump(self.scope()), time.time()
         if creative_goal_id:
             project = self.workspace.goal(creative_goal_id)
@@ -275,20 +276,25 @@ class TaskRuntime:
             inputs.append({"id": str(uuid5(UUID(identity), "browser-grant")), "revision": 0,
                            "tool": "owner_browser_grant", "arguments": {},
                            "result": {"sources": source_list(browser_sources), "revision": 1}})
+        if delegation:
+            selection["delegation_brief"] = delegation
         plan = dump({"backend": "responses", "prior_goals": [], **selection}) if inputs or selection else None
         due = now if due is None else due
-        self.store.execute(
-            "INSERT OR IGNORE INTO agent_tasks"
-            "(id,scope,goal,revision,status,steps,message,source_key,due,created,updated,creative_goal_id,plan) "
-            "VALUES (?,?,?,1,?,?,'',?,?,?,?,?,?)",
-            (identity, scope, goal, "scheduled" if due > now else "queued", dump(inputs), key, due, now, now,
-             creative_goal_id, plan),
-        )
-        task = self.executable(identity)
-        if (not task or task["source_key"] != key or
-                [step for step in task["steps"] if step["tool"] in {"owner_attachment", "owner_code_grant"}
-                 or step["tool"] == "owner_browser_grant" and step["id"] == str(uuid5(UUID(identity), "browser-grant"))] != inputs):
-            raise ValueError("该请求编号已用于另一项任务")
+        with self.store.db as database:
+            database.execute(
+                "INSERT OR IGNORE INTO agent_tasks"
+                "(id,scope,goal,revision,status,steps,message,source_key,due,created,updated,creative_goal_id,plan) "
+                "VALUES (?,?,?,1,?,?,'',?,?,?,?,?,?)",
+                (identity, scope, goal, "scheduled" if due > now else "queued", dump(inputs), key, due, now, now,
+                 creative_goal_id, plan),
+            )
+            task = self.executable(identity)
+            if (not task or task["source_key"] != key or
+                    [step for step in task["steps"] if step["tool"] in {"owner_attachment", "owner_code_grant"}
+                     or step["tool"] == "owner_browser_grant" and step["id"] == str(uuid5(UUID(identity), "browser-grant"))] != inputs):
+                raise ValueError("该请求编号已用于另一项任务")
+            if on_create:
+                on_create(database)
         self.wake.set()
         return task
 
@@ -302,8 +308,9 @@ class TaskRuntime:
         if not self.current(identity):
             raise LookupError(identity)
         stopped = self.workspace.stop_goal(identity, dump(self.scope()), confirmed, stops_for)
-        if self.active and self.active[0] in stopped:
-            self.active[1].cancel()
+        for identity in stopped:
+            if running := self.active.get(identity):
+                running.cancel()
         self.wake.set()
 
     def _stop_ids(self, task):
@@ -335,11 +342,13 @@ class TaskRuntime:
             self.store.execute("DELETE FROM kv WHERE key=?", (key,))
         return applied
 
-    async def control(self, identity, revision, action, goal=None, step_id=None, *, video_selection=None, replace_goal=False):
+    async def control(self, identity, revision, action, goal=None, step_id=None, *, video_selection=None, replace_goal=False,
+                      delegation=None):
         async with self.controls:
-            return await self._control(identity, revision, action, goal, step_id, video_selection, replace_goal)
+            return await self._control(identity, revision, action, goal, step_id, video_selection, replace_goal, delegation)
 
-    async def _control(self, identity, revision, action, goal, step_id, video_selection=None, replace_goal=False):
+    async def _control(self, identity, revision, action, goal, step_id, video_selection=None, replace_goal=False,
+                       delegation=None):
         task = self.current(identity)
         if not task:
             raise LookupError(identity)
@@ -361,7 +370,7 @@ class TaskRuntime:
             key = f"agent_pause:{identity}"
             if action == "pause" and status in {"queued", "scheduled", "running", "waiting", "needs_input", "awaiting_approval"}:
                 self.store.set(key, revision)
-                if not self.active or self.active[0] != identity:
+                if identity not in self.active:
                     self._settle_pause(task)
             elif action == "resume" and paused:
                 restored = paused["resume_status"]
@@ -422,6 +431,10 @@ class TaskRuntime:
                 change["plan"] = {"backend": "responses", "prior_goals": [task["goal"]]}
             change["plan"].pop("video_parts", None)
             change["plan"].update(selection_plan(video_selection, change["goal"]))
+        if delegation:
+            if change["plan"] is None:
+                change["plan"] = {"backend": "responses", "prior_goals": [task["goal"]]}
+            change["plan"]["delegation_brief"] = delegation
         if change["plan"] and task_delegation.uses_responses(task) and video_binding(task) != video_binding(task | change):
             change["plan"].pop("previous_delivery", None)
         if not replace_goal and change["plan"] and task_delegation.uses_responses(task) and video_binding(task) == video_binding(task | change):
@@ -442,8 +455,7 @@ class TaskRuntime:
         if not updated:
             raise ValueError("任务已更新，请刷新后重试")
         self.wake.set()
-        if self.active and self.active[0] == identity:
-            running = self.active[1]
+        if running := self.active.get(identity):
             running.cancel()
             await asyncio.gather(running, return_exceptions=True)
         self.store.execute("DELETE FROM kv WHERE key=?", (f"agent_pause:{identity}",))
@@ -521,6 +533,7 @@ class TaskRuntime:
 
     def _persist(self, task, changes):
         uses = []
+        steps = changes.get("steps", task["steps"])
         if changes.get("status") == "completed":
             uses = self._memory_uses(changes.get("steps", task["steps"]), changes.get("plan", task["plan"]))
         changes["updated"] = max(time.time(), math.nextafter(task["updated"], math.inf))
@@ -541,6 +554,8 @@ class TaskRuntime:
                                      (f"private_edition_memory:{task['id']}:{task['revision']}", dump(uses)))
             if applied and changes.get("status") in {"completed", "failed", "awaiting_approval", "needs_input"}:
                 self.workspace.notify(database, task["id"], changes["updated"])
+                if self.record_chat_delivery:
+                    self.record_chat_delivery(database, task, changes["status"], steps, changes["updated"])
             elif applied and changes.get("status") and changes["status"] != task["status"]:
                 database.execute("DELETE FROM creative_attention WHERE task_id=?", (task["id"],))
             return applied
@@ -553,6 +568,10 @@ class TaskRuntime:
             self.worker.cancel()
             await asyncio.gather(self.worker, return_exceptions=True)
             self.worker = None
+        running = list(self.active.values())
+        for task in running:
+            task.cancel()
+        await asyncio.gather(*running, return_exceptions=True)
         if browser := getattr(self, "private_browser", None):
             await browser.close()
 
@@ -564,31 +583,35 @@ class TaskRuntime:
             if events := getattr(self, "goal_events", None):
                 events.tick()
             async with self.controls:
-                row = self.store.one(
+                occupied = tuple(self.active)
+                slots = 2 - len(occupied)
+                exclusion = " AND id NOT IN (" + ",".join("?" for _ in occupied) + ")" if occupied else ""
+                rows = self.store.all(
                     "SELECT * FROM agent_tasks WHERE scope=? AND status IN ('queued','running','waiting','scheduled') "
                     "AND due<=? AND (creative_goal_id IS NULL OR NOT EXISTS "
                     "(SELECT 1 FROM creative_goals WHERE id=agent_tasks.creative_goal_id AND closed=1) "
-                    "OR json_extract(pending_control,'$.goal_stop')=1) ORDER BY due,created LIMIT 1",
-                    (dump(self.scope()), time.time()),
-                )
-                if row:
+                    "OR json_extract(pending_control,'$.goal_stop')=1)" + exclusion + " ORDER BY due,created LIMIT ?",
+                    (dump(self.scope()), time.time(), *occupied, slots),
+                ) if slots else []
+                for row in rows:
                     ready = self._decode(row)
                     if self._settle_pause(ready):
                         continue
-                    task = asyncio.create_task(self._advance(ready))
-                    self.active = row["id"], task
-            if row:
-                try:
-                    await asyncio.gather(task, return_exceptions=True)
-                finally:
-                    self.active = None
-                    if fresh := self.executable(row["id"]):
-                        self._settle_pause(fresh)
-                continue
+                    running = asyncio.create_task(self._advance(ready))
+                    self.active[row["id"]] = running
+                    running.add_done_callback(lambda done, identity=row["id"]: self._step_finished(identity, done))
             try:
                 await asyncio.wait_for(self.wake.wait(), 1)
             except TimeoutError:
                 pass
+
+    def _step_finished(self, identity, running):
+        self.active.pop(identity, None)
+        self.wake.set()
+        if fresh := self.executable(identity):
+            self._settle_pause(fresh)
+        if not running.cancelled():
+            running.result()
 
     async def _advance(self, task):
         try:

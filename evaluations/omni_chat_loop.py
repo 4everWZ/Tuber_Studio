@@ -61,10 +61,10 @@ async def exercise(store, omni, operations, responses, *, token, explicit=False)
     from tuber_studio.agent.task_tools import create_task_runtime
 
     class IsolatedChat(OperatorChat):
-        async def _action(self, intent, *args):
+        async def _action(self, intent, *args, **options):
             if intent.action not in {"agent_task", "steer_task", "clarify"}:
                 raise ReplayMismatch(f"unexpected_chat_action/{intent.action}")
-            return await super()._action(intent, *args)
+            return await super()._action(intent, *args, **options)
 
     seeds = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
     character = next(seed for seed in seeds if seed["id"] == "whale") | {"version": 1}
@@ -77,7 +77,8 @@ async def exercise(store, omni, operations, responses, *, token, explicit=False)
         context=SimpleNamespace(record=lambda *args, **kwargs: None),
         validate_memory_delivery=lambda *args, **kwargs: None,
     )
-    browsing = SimpleNamespace(discovery=SimpleNamespace(history_scope=lambda: ("rehearsal", "whale", 1)))
+    browsing = SimpleNamespace(discovery=SimpleNamespace(history_scope=lambda: ("rehearsal", "whale", 1)),
+                               policy=lambda: {"business_timezone": "Asia/Taipei"})
     tasks = runtime.tasks = create_task_runtime(runtime, store, browsing)
     tasks.tools.clear()
     runtime.memory_organizer = SimpleNamespace(scope=tasks.scope, schedule=lambda: None)
@@ -124,6 +125,10 @@ async def exercise(store, omni, operations, responses, *, token, explicit=False)
                 or any(set(item["sources"]) != {evidence_id} for item in selected)
                 or not edition or edition["task_revision"] != 2 or edition["body"] != task["message"]):
             raise ReplayMismatch("omni_evidence_edit")
+        deliveries = [chat.visible_turn(row) for row in store.all(
+            "SELECT * FROM operator_chat_turns WHERE json_extract(result,'$.task_delivery.task_id')=?", (str(identity),))]
+        if len(deliveries) != 1 or deliveries[0].get("reply_text") != task["message"]:
+            raise ReplayMismatch("original_chat_delivery")
         return {"status": "passed", "task_revision": task["revision"], "local_reads": reads, "platform_writes": 0}
     finally:
         await tasks.close()

@@ -35,21 +35,21 @@ async def test_chat_model_packet_keeps_account_out_and_uses_current_question(
     provider.identity_resolver = lambda: {"account_bio": "运营账号探针", "identity_version": "test"}
     calls = []
 
-    def capture(messages, *, planning=False):
+    def capture(messages):
         wire = provider_identity_messages(provider, messages)
         calls.append(wire)
         assert "运营账号探针" not in json.dumps(wire, ensure_ascii=False)
-        assert (front_identity(runtime.character) in wire[0]["content"]) is not planning
+        assert front_identity(runtime.character) in wire[0]["content"]
         assert runtime.character["core"]["identity"] not in wire[0]["content"]
 
     question = "帮我数一下有几个字。"
     if semantic:
         async def generate(messages, schema, **kwargs):
-            planning = "reply_markdown" not in schema["properties"]
-            capture(messages, planning=planning)
+            assert "reply_markdown" in schema["properties"]
+            capture(messages)
             if len(calls) == 1:
                 raise ValueError("测试本轮重试")
-            return {"action": "chat"} if planning else {"action": "chat", "reply_markdown": "好。"}
+            return {"action": "chat", "reply_markdown": "好。"}
         monkeypatch.setattr(provider, "generate_assistant_json", generate, raising=False)
     else:
         async def generate(messages, character, event_id, source_text):

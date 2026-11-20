@@ -11,7 +11,7 @@
 
 ## 常驻 Agent 与跨端记忆
 
-Chats 已能交办、在活动页接续、改口、取消和查看工具回执。工作站 Edge 已验证普通聊天和个性化设置。用工作站网关和隔离空库复测对稿习惯时，号主直接改口，后台更新了同一条偏好。日常使用读取当前说法，来源与更正见单独的[记忆规范](../specs/foundation/memory.md)。另一次独立同帧试验保存了三份成品及各自的取材依据。[任务实测](../../evaluations/results/agent-activity-20261116.md) · [记忆与成品实测](../../evaluations/results/owner-memory-20261119.md)
+Chats 支持交办、改口、取消和查看工具回执。工作站隔离浏览器已验证后台运行时继续闲聊、改口后只执行新版读范围、结果回到原对话以及刷新和清空。活动页继续提供任务、回执与成果入口。对稿习惯的后台整理、引用与更正见[记忆规范](../specs/foundation/memory.md)。[连续对话实测](../../evaluations/results/operator-chat-continuity-20261120.md) · [记忆与成品实测](../../evaluations/results/owner-memory-20261119.md)
 
 ## 运营主线
 

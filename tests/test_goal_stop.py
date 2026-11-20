@@ -76,7 +76,7 @@ async def test_restart_finishes_goal_stop_by_original_submission_without_running
             "arguments": {}, "approval": {"target": "draft-1"}, "checkpoint": {"submission_started": True}}
     tasks._save(tasks.current(root), status="waiting", steps=[step])
     active = asyncio.create_task(asyncio.sleep(3600))
-    tasks.active = root, active
+    tasks.active[root] = active
     await tasks.close_goal(root, {root: 1})
     await asyncio.gather(active, return_exceptions=True)
     assert active.cancelled()

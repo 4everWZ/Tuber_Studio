@@ -10,12 +10,10 @@ import pytest
 from test_agent_task_recovery import wait_status
 
 from tuber_studio.agent import operator_facts, task_tools
-from tuber_studio.agent.operator_chat import WorkLifecycle
 from tuber_studio.agent.owner_memory import history_preference
 from tuber_studio.agent.personal_agent import (
     PublicSearchTerms,
     object_scope,
-    plan_with_responses,
     search_terms,
 )
 from tuber_studio.agent.task_runtime import TaskDecision, TaskRuntime, Tool
@@ -46,28 +44,12 @@ async def turn(client, message, *, stream=False, **fields):
                 if part.startswith("event: done"))
 
 
-async def test_native_work_plan_returns_only_the_selected_capability():
-    schema = WorkLifecycle.schema_for_turn(chat_only=False, allow_owner_identity=False, planning=True)
-    message = {"role": "user", "content": "核对一下当前录音用什么音色"}
-    operation = {"mode": "read", "domain": "settings", "request": message["content"], "target": "音色"}
-
-    async def client(**payload):
-        assert payload["input"] == [message] and payload["tool_choice"] == "required" and not payload["store"]
-        tools = {tool["name"]: tool for tool in payload["tools"]}
-        assert set(tools) == {"chat", "direct_tool", "agent_task", "clarify"}
-        assert not tools["chat"]["parameters"]["properties"]
-        assert set(tools["direct_tool"]["parameters"]["properties"]) == {"operation"}
-        return SimpleNamespace(calls=[SimpleNamespace(name="direct_tool", arguments={"operation": operation})])
-
-    assert await plan_with_responses(client, [message], schema) == {"action": "direct_tool", "operation": operation}
-
-
 async def test_bound_person_resolves_a_new_projection_and_expires_on_rebind(studio, monkeypatch):
     runtime, client = studio
     card = {key: value for key, value in runtime.character.items() if not key.startswith("_")}
     card["bilibili_owner"] = {"uid": "123", "name": "号主甲"}
     runtime.store.replace_character(card)
-    read_from_binding, chat = True, []
+    chat = []
 
     async def model(messages, schema, **kwargs):
         name = schema["title"]
@@ -75,13 +57,23 @@ async def test_bound_person_resolves_a_new_projection_and_expires_on_rebind(stud
         chat.append(name)
         actions = schema["properties"]["action"]["enum"]
         if name == "AssistantDecision":
-            assert set(actions) == {"owner_binding", "owner_profile", "clarify"}
+            assert set(actions) == {"owner_binding", "owner_profile", "operating_account", "clarify", "agent_task"}
             return {"action": "owner_binding"}
-        if read_from_binding:
+        if actions == ["chat"]:
+            assert any("https://space.bilibili.com/123" in row["content"] for row in messages)
+            return {"action": "chat", "reply_markdown": "号主甲的 UID 是 123。"}
+        if message == "给我能点过去的地址和数字编号":
             return {"action": "direct_tool", "operation": {
-                "mode": "read", "request": message, "target": None, "object_ref": "obj1", "followup": True,
+                "mode": "read", "domain": "identity", "request": message, "target": "地址和数字编号",
             }}
-        assert all("号主甲" not in row["content"] for row in messages)
+        if message == "是谁养你的呀？":
+            assert any("号主甲" in row["content"] for row in messages)
+            return {"action": "chat", "reply_markdown": "我的主人是号主甲。"}
+        assert all("obj1" not in row["content"] for row in messages)
+        if message == "现在你的主人是谁呀？":
+            assert any("号主乙" in row["content"] and "号主甲" not in row["content"]
+                       for row in messages if row["role"] == "system")
+            return {"action": "chat", "reply_markdown": "我的主人是号主乙。"}
         return {"action": "chat", "reply_markdown": "先确认你指的是哪位。"}
 
     async def network(*args):
@@ -92,10 +84,9 @@ async def test_bound_person_resolves_a_new_projection_and_expires_on_rebind(stud
     assert "号主甲" in (await turn(client, "是谁养你的呀？", stream=True))["reply_text"]
     result = await turn(client, "给我能点过去的地址和数字编号")
     assert result["card"]["data"] == {"name": "号主甲", "uid": "123", "url": "https://space.bilibili.com/123"}
-    assert chat == ["WorkLifecycle", "AssistantDecision"]
+    assert chat == ["WorkLifecycle", "WorkLifecycle", "AssistantDecision", "WorkLifecycle"]
     card["bilibili_owner"] = {"uid": "456", "name": "号主乙"}
     runtime.store.replace_character(card)
-    read_from_binding = False
     assert not (await turn(client, "他还有其他地址吗？")).get("card")
     assert "号主乙" in (await turn(client, "现在你的主人是谁呀？"))["reply_text"]
     history_preference(runtime, enabled=False)
@@ -136,6 +127,9 @@ async def test_direct_read_binds_a_current_workshop_object_when_model_paraphrase
         calls.append(schema["title"])
         if schema["title"] == "WorkLifecycle":
             assert "owner_identity" not in schema["properties"]["action"]["enum"]
+            if schema["properties"]["action"]["enum"] == ["chat"]:
+                assert any("not_configured" in row["content"] for row in messages)
+                return {"action": "chat", "reply_markdown": "工坊还没连接 B 站运营账号。"}
             return {"action": "direct_tool", "operation": {
                 "mode": "read", "request": "查看当前账号信息", "target": "账号信息",
             }}
@@ -148,7 +142,7 @@ async def test_direct_read_binds_a_current_workshop_object_when_model_paraphrase
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     result = await turn(client, "请帮我查 Ｂ 站登录账号", stream=True)
     assert result["tool_receipt"] == {"action": "read", "group": "account", "values": {"state": "not_configured"}}
-    assert calls == ["WorkLifecycle", "AssistantDecision"]
+    assert calls == ["WorkLifecycle", "AssistantDecision", "WorkLifecycle"]
 
 
 async def test_work_plan_uses_capabilities_and_current_request_instead_of_repeated_answers(studio, monkeypatch):
@@ -170,28 +164,30 @@ async def test_work_plan_uses_capabilities_and_current_request_instead_of_repeat
         assert all(old_reply not in row["content"] for row in messages)
         if schema["title"] == "AssistantDecision":
             calls.append("read")
-            assert set(actions) == {"game_status", "clarify"}
+            assert set(actions) == {"game_status", "clarify", "agent_task"}
             return {"action": "game_status"}
-        if "reply_markdown" not in schema["properties"]:
-            calls.append("plan")
-            assert on_content is None
-            assert not any(row["role"] == "assistant" for row in messages)
-            assert all(word in messages[0]["content"] for word in ("局面", "待发草稿", "公开网页"))
+        if "direct_tool" in actions:
+            calls.append("omni")
+            assert "reply_markdown" in schema["properties"]
+            packet = "\n".join(row["content"] for row in messages if row["role"] == "system")
+            assert all(word in packet for word in ("局面", "待发草稿", "公开网页", "角色"))
             if text == "田里还有什么活？":
+                assert {"role": "assistant", "content": "聊会儿呀。"} in messages
                 return {"action": "direct_tool", "operation": {
                     "mode": "read", "domain": "game", "request": text, "target": "田里",
                 }}
-            return {"action": "chat"}
-        calls.append("answer")
+            return {"action": "chat", "reply_markdown": "聊会儿呀。"}
+        calls.append("readback")
         assert actions == ["chat"]
-        return {"action": "chat", "reply_markdown": "聊会儿呀。"}
+        assert any("还有 7 格没浇水。" in row["content"] for row in messages)
+        return {"action": "chat", "reply_markdown": "还有 7 格没浇水。"}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     monkeypatch.setattr(runtime.live.game_livestream, "status",
                         lambda: {"active_status": {"summary": "还有 7 格没浇水。"}})
     assert (await turn(client, "陪我说会儿话", stream=True))["reply_text"] == "聊会儿呀。"
     assert (await turn(client, "田里还有什么活？"))["reply_text"] == "还有 7 格没浇水。"
-    assert calls == ["plan", "answer", "plan", "read"]
+    assert calls == ["omni", "omni", "read", "readback"]
     assert (await client.get(CHAT)).json()["turns"][0]["reply_text"] == old_reply
 
 

@@ -117,7 +117,7 @@ async def test_agent_model_deadline_starts_after_background_admission(settings, 
         async with runtime.operation_generation_lock:
             tasks.create(identity, "请核对准备材料")
             await asyncio.wait_for(queued.wait(), 2)
-            active = tasks.active[1]
+            active = tasks.active[identity]
             offset = 121
             await process_timers()
             assert not active.done()

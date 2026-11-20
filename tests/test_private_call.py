@@ -104,7 +104,9 @@ async def test_signed_voice_work_stays_in_the_original_chat(settings, monkeypatc
                                    plan={"backend": "responses", "prior_goals": []})
         history_path = "/api/chat/intelligent"
         turns = (await browser.get(history_path)).json()["turns"]
-        assert len(turns) == 1 and turns[0]["card"]["data"]["message"] == completed
+        assert len(turns) == 2
+        assert turns[0]["card"]["data"]["delivered_in_chat"]
+        assert turns[-1]["assistant_only"] and turns[-1]["reply_text"] == completed
         for _ in range(2):
             visible = (await browser.post(path + "/work/status", json=ticket)).raise_for_status().json()["tasks"]
             assert len(visible) == 1 and visible[0]["message"] == completed
@@ -118,7 +120,9 @@ async def test_signed_voice_work_stays_in_the_original_chat(settings, monkeypatc
         assert (await audio).status_code == 409
         assert (await send(spoken("voice-4", cancel))).raise_for_status().json()["task_id"] == task_id
         assert (await browser.post(endpoint, json={"call": ticket, "revision": 2})).status_code == 409
-        assert len([turn for turn in (await browser.get(history_path)).json()["turns"] if turn["card"]]) == 1
+        turns = (await browser.get(history_path)).json()["turns"]
+        assert len([turn for turn in turns if turn.get("card")]) == 1
+        assert not any(turn.get("assistant_only") and not turn.get("hidden") for turn in turns)
         assert runtime.tasks.executable(task_id)["status"] == "cancelled"
         runtime.store.replace_character(editable_character(runtime.character) | {"name": "新的角色名字"})
         assert (await send(spoken("voice-5", goal))).status_code == 409

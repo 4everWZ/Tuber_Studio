@@ -2,7 +2,7 @@
 
 import { $, node, notice, safeMessage, webCharacterName } from "./modules/core.js?v=20261120.1";
 import { api as baseApi, studioPath } from "./modules/api.js";
-import { initOperatorChat } from "./modules/operator-chat.js?v=20261120.2";
+import { initOperatorChat } from "./modules/operator-chat.js?v=20261120.3";
 import { initChatPet } from "./modules/chat-pet.js";
 import { characterDisplay, bindDisplaySettings } from "./modules/character-display.js";
 import { initArtworkReferences } from "./modules/artwork-references.js";

@@ -425,17 +425,34 @@ export function createOperatorCard(root, turn, context) {
       active = !["completed", "cancelled", "failed"].includes(value.status);
       status.textContent = ({ awaiting_approval: "等待确认", needs_input: "等待你的答复", waiting: "等待工具结果",
                               cancelled: "已停止", scheduled: "已预约" })[value.status] || label(value.status || "queued");
-      if (message !== (value.message || "")) {
-        message = value.message || "";
+      const nextMessage = value.delivered_in_chat ? "" : value.message || "";
+      if (message !== nextMessage) {
+        message = nextMessage;
         renderAssistantAnswer(detail, { reply_format: "markdown", reply_text: message });
       }
       detail.hidden = !message;
-      summary.hidden = !["completed", "failed"].includes(value.status) || !value.steps?.some(step => step.result);
+      summary.hidden = value.delivered_in_chat || !["completed", "failed"].includes(value.status) || !value.steps?.some(step => step.result);
     };
     open.onclick = () => context.openTask(data.id);
     root.append(status, summary, detail, open);
     update(data);
     return { update, needsRefresh: () => active };
+  }
+  if (type === "task_delivery") {
+    const open = button("查看任务");
+    const preview = node("div");
+    open.onclick = () => context.openTask(data.id);
+    root.append(preview, open);
+    const update = value => {
+      const approval = value.approval;
+      preview.replaceChildren();
+      if (approval) {
+        preview.append(node("p", approval.target || "等你确认"));
+        if (approval.text) preview.append(node("p", approval.text));
+      }
+    };
+    update(data);
+    return {update};
   }
   if (type === "owner_profile") root.append(link("打开绑定号主的 B 站主页", data.url));
   if (type === "dynamic_draft") return dynamicCard(root, data, context.api);

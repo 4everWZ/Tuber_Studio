@@ -226,10 +226,10 @@ def validate_delivery(task, edition, observations):
 
 
 class PrivateChat(OperatorChat):
-    async def _action(self, intent, *args):
+    async def _action(self, intent, *args, **options):
         if intent.action not in {"agent_task", "steer_task", "clarify"}:
             raise ReplayMismatch(f"unexpected_chat_action/{intent.action}")
-        return await super()._action(intent, *args)
+        return await super()._action(intent, *args, **options)
 
 
 async def exercise(store, omni, operations, responses, archive, transport, *, token):
@@ -243,6 +243,7 @@ async def exercise(store, omni, operations, responses, archive, transport, *, to
                               context=SimpleNamespace(record=lambda *args, **kwargs: None),
                               validate_memory_delivery=lambda *args, **kwargs: None)
     video = LocalVideo(archive, operations)
+    video.policy = lambda: {"business_timezone": "Asia/Taipei"}
     tasks = runtime.tasks = create_task_runtime(runtime, store, video)
     runtime.memory_organizer = SimpleNamespace(scope=tasks.scope, schedule=lambda: None)
     chat = PrivateChat(runtime, store, video, SimpleNamespace())

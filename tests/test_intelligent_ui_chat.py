@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from front_effects import direct_request
 from test_browsing import BV, ControlledPlatform
 from test_browsing_evidence import PNG, TestVisual
+from test_agent_task_recovery import wait_status
 
 from tuber_studio.agent import operator_facts, task_delegation
 from tuber_studio.agent.assistant_output import AssistantTextStream, assistant_markdown
@@ -20,6 +21,132 @@ from tuber_studio.operation_identity import provider_identity_messages
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
 from tuber_studio.providers import Audio
+
+
+async def test_chat_delegation_survives_interleaved_conversation_and_delivers_latest_revision(settings, monkeypatch):
+    app = create_app(settings, adapter=ControlledPlatform())
+    runtime = app.state.runtime
+    goal = "核对演播间状态并给我一份交接记录"
+    casual = "先别改角色身份。我只是好奇，住在钟楼里你会把窗开在哪边？"
+    change = "刚才那份交接只留状态和检查时间"
+    task_id, separate_id = str(uuid4()), str(uuid4())
+    began, settle = asyncio.Event(), asyncio.Event()
+    result_text = "演播间待命。检查时间 09:30。"
+
+    async def generate(messages, schema, **options):
+        message = messages[-1]["content"]
+        if schema["title"] == "CardTurnIntent":
+            return {"intent": "实际修改同一任务或成果的部分或全部", "reference": task_id,
+                    "patch": {"field": "goal", "subject": "交接", "requirement": "刚才那份", "replacement_goal": "刚才那份"},
+                    "brief": {"goal": "核对演播间状态", "deliverable": "附检查时间的交接记录", "read_tools": ["live_status"]}}
+        assert schema["title"] == "WorkLifecycle"
+        if message == goal:
+            return {"action": "agent_task", "brief": {"goal": "核对演播间状态",
+                                                      "deliverable": "一份私有交接记录"}}
+        if message == change:
+            assert task_id in "\n".join(row["content"] for row in messages)
+            return {"action": "task_turn"}
+        assert message == casual
+        return {"action": "chat", "reply_markdown": "窗朝东，早上可以晒到太阳。"}
+
+    async def step(task):
+        if task["id"] == separate_id:
+            assert runtime.tasks._save(task, status="completed", message="独立工作已完成。")
+        elif task["revision"] == 1:
+            assert task["plan"]["delegation_brief"]["deliverable"] == "一份私有交接记录"
+            began.set()
+            try:
+                await settle.wait()
+            finally:
+                assert not runtime.tasks._persist(task, {"status": "completed", "message": "过期结果"})
+        else:
+            assert task["revision"] == 2 and task["goal"] == goal + "\n号主改口：" + change
+            assert task["plan"]["delegation_brief"]["read_tools"] == ["live_status"]
+            assert runtime.tasks._save(task, status="completed", message=result_text)
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
+    monkeypatch.setattr(runtime.tasks, "_step", step)
+    path = "/api/chat/intelligent"
+    async with app.router.lifespan_context(app), httpx.AsyncClient(
+        transport=httpx.ASGITransport(app), base_url="http://127.0.0.1",
+    ) as client:
+        async def send(message, identity=None):
+            return (await client.post(path, json={"request_id": identity or str(uuid4()), "message": message})).raise_for_status().json()
+
+        assert (await send(goal, task_id))["card"]["data"]["revision"] == 1
+        await asyncio.wait_for(began.wait(), 5)
+        runtime.tasks.create(separate_id, "单独核对另一个对象")
+        await wait_status(runtime.tasks, separate_id, "completed")
+        assert (await send(casual))["reply_text"] == "窗朝东，早上可以晒到太阳。"
+        assert len(runtime.tasks.activity()) == 2
+        assert (await send(change))["card"]["data"]["revision"] == 2
+        await wait_status(runtime.tasks, task_id, "completed")
+        for _ in range(2):
+            turns = (await client.get(path)).raise_for_status().json()["turns"]
+            assert len(turns) == 4
+            deliveries = [turn for turn in turns if turn.get("assistant_only")]
+            assert len(deliveries) == 1 and deliveries[0]["reply_text"] == result_text
+            assert deliveries[0]["task_delivery"]["revision"] == 2
+            assert deliveries[0] == (await client.get(path + "/turns/" + deliveries[0]["request_id"])).json()
+            assert "过期结果" not in str(turns)
+
+
+async def test_clear_private_chat_removes_other_login_placeholders_and_rejects_old_requests(settings):
+    app = create_app(settings, adapter=ControlledPlatform())
+    runtime = app.state.runtime
+    owner, char = runtime.tasks.identity.principal, runtime.character
+    account = "123"
+    runtime.browsing.discovery.remember_account(account)
+    path = "/api/chat/intelligent"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        request_id = str(uuid4())
+        original = {"request_id": request_id, "message": "整理舞台交接记录", "intent": {"action": "agent_task"}}
+        (await client.post(path, json=original)).raise_for_status()
+        for character, principal, login in ((char["id"], owner, "456"), (char["id"], "another-owner", account),
+                                           ("another-character", owner, account)):
+            runtime.store.execute("INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)", (
+                str(uuid4()), character, char["version"], "别处历史",
+                json.dumps({"account_id": login, "owner_source": principal, "reply_text": "别处内容"}), time.time(),
+            ))
+        before = (await client.get(path)).raise_for_status().json()
+        assert [turn["request_id"] for turn in before["turns"]] == [request_id]
+        cleared = (await client.delete(path)).raise_for_status().json()
+        assert before["conversation_id"] != cleared["conversation_id"]
+        assert not (await client.get(path)).json()["turns"]
+        assert (await client.post(path, json=original)).status_code == 409
+        assert (await client.post(path, json=original | {"request_id": str(uuid4()),
+                                  "conversation_id": before["conversation_id"]})).status_code == 409
+        active = runtime.tasks.executable(request_id)
+        assert runtime.tasks._save(active, status="completed", message="原任务结果")
+        runtime.browsing.discovery.remember_account("456")
+        assert not (await client.get(path)).json()["turns"]
+        assert len(runtime.store.all("SELECT * FROM operator_chat_turns")) == 2
+
+
+async def test_omni_uses_workbench_fields_without_changing_conversational_routing(settings, monkeypatch):
+    app = create_app(settings, adapter=ControlledPlatform())
+    calls = []
+
+    async def model(messages, schema, **options):
+        current = messages[-1]["content"]
+        menu = schema["properties"]["action"]["enum"]
+        calls.append(menu)
+        if current == "今天过得好吗？":
+            return {"action": "chat", "reply_markdown": "蛮好，刚想去看海。"}
+        assert any("{{local_date}}" in row["content"] for row in messages)
+        return {"action": "chat", "reply_markdown": "今天是 {{local_date}}。"}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", model, raising=False)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
+        path = "/api/chat/intelligent"
+        for message in ("今天过得好吗？", "日历上的日期是什么？"):
+            result = (await client.post(path, json={"request_id": str(uuid4()), "message": message})).raise_for_status().json()
+            if message.startswith("今天"):
+                assert not result.get("tool_receipt")
+            else:
+                clock = operator_facts.now(app.state.browsing)
+                assert result["reply_text"] == f"今天是 {clock.year}年{clock.month}月{clock.day}日。"
+        assert len(calls) == 2 and calls[0] == calls[1]
 
 
 def test_incremental_assistant_output_handles_json_escapes_and_excludes_tool_fields():
@@ -71,9 +198,8 @@ def test_assistant_stream_persists_only_final_text_and_retries_under_same_id(set
         assert messages[-1] == {"role": "user", "content": "鱼鱼今天吃了几碗饭"}
         assert all("旧报告的第三件" not in message["content"] and "旧模型刚才的错答" not in message["content"]
                    for message in messages)
-        if "reply_markdown" not in schema["properties"]:
-            assert on_content is None and "可用能力" in messages[0]["content"]
-            return {"action": "chat"}
+        assert "reply_markdown" in schema["properties"]
+        assert any("可用能力" in row["content"] for row in messages)
         on_stage("generating")
         on_content('{"action":"chat","reply_markdown":"**白饭')
         on_content('**，分你半碗。"}')
@@ -100,7 +226,7 @@ def test_assistant_stream_persists_only_final_text_and_retries_under_same_id(set
         assert 'event: delta\ndata: "**，分你半碗。"' in response.text
         assert "event: done" in response.text
         assert client.post(path, json=payload).json()["reply_text"] == "**白饭**，分你半碗。"
-        assert len(calls) == 2
+        assert len(calls) == 1
         assert len(client.get(path).json()["turns"]) == 3
 
 
@@ -134,6 +260,9 @@ async def test_chat_lifecycle_separates_live_status_from_persistent_work(setting
         calls.append(schema["title"])
         menu = schema["properties"]["action"]["enum"]
         if schema["title"] == "WorkLifecycle":
+            if menu == ["chat"]:
+                assert any("读取回执" in row["content"] for row in messages)
+                return {"action": "chat", "reply_markdown": "我已经读到直播状态了。"}
             assert set(menu) == {"chat", "direct_tool", "agent_task", "clarify"}
             return direct_request(messages[-1]["content"]) if lifecycle == "direct_tool" else {"action": lifecycle}
         assert "live_status" in menu and not {"direct_tool", "agent_task", "steer_task", "chat"}.intersection(menu)
@@ -147,7 +276,12 @@ async def test_chat_lifecycle_separates_live_status_from_persistent_work(setting
         response = await client.post("/api/chat/intelligent", json={
             "request_id": identity, "message": "核对一下直播状态" + ("，给我留份交接记录" if lifecycle == "agent_task" else ""),
         })
-        assert calls == (["WorkLifecycle", "AssistantDecision"] if lifecycle == "direct_tool" else ["WorkLifecycle"])
+        expected = ["WorkLifecycle"]
+        if lifecycle == "direct_tool":
+            expected.append("AssistantDecision")
+            if expected_card:
+                expected.append("WorkLifecycle")
+        assert calls == expected
         if expected_card:
             assert response.raise_for_status().json()["card"]["type"] == expected_card
         else:
@@ -172,12 +306,16 @@ async def test_nonchat_acknowledgement_is_neither_streamed_nor_saved(settings, m
         if schema["title"] != "WorkLifecycle":
             assert on_content is None
             return {"action": "live_status", "reply_markdown": hidden}
+        if schema["properties"]["action"]["enum"] == ["chat"]:
+            assert any("读取回执" in row["content"] for row in messages)
+            return {"action": "chat", "reply_markdown": "这是当前直播状态。"}
         decision = {"action": "task_turn" if route == "steer_task" else route, "reply_markdown": hidden}
         if route == "direct_tool":
             decision.update(direct_request(messages[-1]["content"]))
         if route == "clarify":
             decision["topic"] = "你指的是哪段素材？"
-        assert on_content is None and "reply_markdown" not in schema["properties"]
+        assert on_content is not None and "reply_markdown" in schema["properties"]
+        on_content(json.dumps(decision))
         return decision
 
     monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS_URL", raising=False)
@@ -370,7 +508,7 @@ async def test_discussing_a_card_or_chatting_without_material_does_not_steer(set
                                    "message": "那份提纲现在怎样了？" if ask_about_card else "陪我聊会儿"})
         assert "event: delta" in result.text and "event: done" in result.text
         assert stages == (["WorkLifecycle", "CardTurnIntent", "WorkLifecycle"] if ask_about_card
-                          else ["WorkLifecycle", "WorkLifecycle"])
+                          else ["WorkLifecycle"])
         assert app.state.runtime.tasks.current(identity)["revision"] == 1
 
 

@@ -136,6 +136,8 @@ async def daily_settings(runtime, group, choose, check_scope, *, source, read_on
     catalog = settings_catalog()
     if group not in settings_menu():
         raise ValueError("请选择能力目录中的设置分组")
+    if not read_only and requests_owner_control(source):
+        return {"reply_text": OWNER_CONTROL_REPLY, "card": None}
     entry = catalog[group]
     before = read_settings(runtime, group)
     fields = entry["fields"]
@@ -148,8 +150,6 @@ async def daily_settings(runtime, group, choose, check_scope, *, source, read_on
         "操作": "仅查看选 read；明确要求修改选 update，只填写这次所需字段。信息不足或要求包含清单以外的修改，选 clarify。",
     }))
     check_scope()
-    if requests_owner_control(source):
-        return {"reply_text": OWNER_CONTROL_REPLY, "card": None}
     if result.action != "update" and result.changes:
         raise ValueError("查询或澄清不能附带设置修改")
     if result.action == "clarify":
@@ -173,6 +173,8 @@ async def daily_settings(runtime, group, choose, check_scope, *, source, read_on
 async def pet_settings(runtime, character_id, choose, check_scope, *, source, read_only=False):
     pets = runtime.pets
     check_scope()
+    if not read_only and requests_owner_control(source):
+        return {"reply_text": OWNER_CONTROL_REPLY, "card": None}
     before = await pets.options(character_id)
     check_scope()
     items = before["items"]
@@ -195,8 +197,6 @@ async def pet_settings(runtime, character_id, choose, check_scope, *, source, re
                     "打开、关闭显示分别选 show、hide。选择形象与显示是独立操作；请求超出清单或不明确选 clarify。",
         }))
     check_scope()
-    if requests_owner_control(source):
-        return {"reply_text": OWNER_CONTROL_REPLY, "card": None}
     if (result.choice is not None) != (result.action == "select"):
         raise ValueError("仅选择已有形象时需要清单序号")
     if result.action == "select" and not 1 <= result.choice <= len(items):

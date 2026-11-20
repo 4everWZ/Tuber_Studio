@@ -1,5 +1,5 @@
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
-import { createOperatorCard } from "./operator-chat-cards.js?v=20261120.1";
+import { createOperatorCard } from "./operator-chat-cards.js?v=20261120.2";
 import { inferenceDisplay } from "./inference-status.js?v=20261111.07";
 import { renderAssistantAnswer } from "./operator-chat-answer.js";
 import { initTaskActivity } from "./task-activity.js?v=20261116.3";
@@ -44,6 +44,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   }));
   const defaultInputLabel = input.placeholder;
   let active = false, pending = false, scope = null, nextCursor = null, selectedAction = null, retry = null;
+  let conversationId = null;
   let inFlight = null;
   let epoch = 0, recentRequest = 0, historyPending = false, cardRefreshPending = false;
   const viewport = window.visualViewport;
@@ -198,6 +199,11 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
 
   function mountTurn(turn) {
     const existing = turns.get(turn.request_id);
+    if (turn.hidden) {
+      existing?.section.remove();
+      turns.delete(turn.request_id);
+      return null;
+    }
     const cardTurn = turn.sources?.length && ["operation_events", "operation_event"].includes(turn.card?.type)
       ? { ...turn, card: null } : turn;
     if (existing) {
@@ -216,7 +222,8 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     const answer = node("div", null, "operator-chat-reply");
     if (turn.character_name) answer.title = turn.character_name;
     renderAssistantAnswer(answer, turn);
-    section.append(node("p", turn.message, "operator-chat-user"), answer);
+    if (!turn.assistant_only) section.append(node("p", turn.message, "operator-chat-user"));
+    section.append(answer);
     let card;
     if (cardTurn.card) {
       const cardRoot = node("div", null, "operator-chat-card");
@@ -245,6 +252,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     rangeList.replaceChildren();
     retry = null;
     scope = nextCursor = null;
+    conversationId = null;
     historyPending = false;
     older.hidden = true;
     older.disabled = false;
@@ -267,16 +275,19 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     try {
       const result = await api(`${path}?limit=${pageSize}`);
       if (!active || request !== recentRequest || currentEpoch !== epoch || pending) return;
-      const nextScope = `${result.character_id || result.character}/${result.character_version ?? ""}/${result.account_id || ""}`;
+      const nextScope = `${result.character_id || result.character}/${result.character_version ?? ""}/${result.account_id || ""}/${result.conversation_id || ""}`;
       if (scope !== null && scope !== nextScope) reset();
       const first = scope === null;
       const follow = first || nearEnd();
       scope = nextScope;
+      conversationId = result.conversation_id || null;
       $("operator-chat-title").textContent = result.character;
       setPet?.(result);
-      for (const turn of result.turns) {
+      let next = null;
+      for (const turn of [...result.turns].reverse()) {
         const section = mountTurn(turn);
-        if (section || first) feed.append(section || turns.get(turn.request_id).section);
+        if (section) feed.insertBefore(section, next);
+        next = turns.get(turn.request_id)?.section || next;
       }
       if (first) nextCursor = result.next_cursor;
       older.hidden = !nextCursor;
@@ -296,7 +307,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     try {
       const result = await api(`${path}?limit=${pageSize}&before=${encodeURIComponent(nextCursor)}`);
       if (currentEpoch !== epoch) return;
-      const resultScope = `${result.character_id || result.character}/${result.character_version ?? ""}/${result.account_id || ""}`;
+      const resultScope = `${result.character_id || result.character}/${result.character_version ?? ""}/${result.account_id || ""}/${result.conversation_id || ""}`;
       if (resultScope !== scope) { await refresh(); return; }
       setHistoryNote("");
       const oldHeight = timeline.scrollHeight;
@@ -327,8 +338,9 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
       await refreshAutomation?.();
       if (active && getAutomationStatus?.()) syncAutomationCards(getAutomationStatus());
     }
-    const visible = [...turns.values()].filter(entry => {
-      if (!entry.turn.memory_dependent && !entry.card?.needsRefresh?.()) return false;
+    const visible = [...feed.children].map(section => turns.get(section.dataset.requestId)).filter(entry => {
+      if (!entry) return false;
+      if (!entry.turn.memory_dependent && !entry.turn.assistant_only && !entry.card?.needsRefresh?.()) return false;
       if (entry.cardType === "agent_task") return true;
       const rect = entry.section.getBoundingClientRect();
       return rect.top < bounds.bottom && rect.bottom > bounds.top;
@@ -341,13 +353,17 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
         const revision = entry.card?.revision?.();
         const result = await api(`${path}/turns/${entry.turn.request_id}`);
         if (!active || currentEpoch !== epoch || revision !== entry.card?.revision?.()) return;
-        if (entry.turn.memory_dependent) {
+        if (entry.turn.memory_dependent || entry.turn.assistant_only) {
           mountTurn(result);
           return;
         }
         if (!entry.card?.needsRefresh?.() || !result.card) return;
         const follow = nearEnd();
         entry.card.update(result.card.data);
+        if (entry.turn.card?.data.status !== result.card.data.status && result.card.data.delivered_in_chat) {
+          void refresh();
+        }
+        entry.turn = result;
         if (follow) scrollEnd();
       }));
     } finally {
@@ -408,7 +424,8 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   async function submit(payload, fromComposer = true) {
     if (!payload.message || pending) return;
     const key = JSON.stringify(payload);
-    const request = retry?.key === key ? retry.request : { request_id: requestId(), ...payload };
+    const request = retry?.key === key ? retry.request :
+      { request_id: requestId(), ...payload, ...(conversationId ? {conversation_id: conversationId} : {}) };
     const currentEpoch = epoch, initialValue = input.value, initialAction = selectedAction;
     const controller = new AbortController();
     inFlight = { request, stopping: false, controller };
@@ -550,15 +567,19 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   $("operator-chat-add-range").onclick = () => { if (!pending) addRange(); };
   clear.onclick = async () => {
     closeMenus();
-    if (pending || !window.confirm("清空当前角色的私聊？已创建的任务和已确认公开经历会保留。")) {
+    if (pending || !window.confirm("清空当前角色的私聊和对话上下文？已保存的记忆和任务可在各自入口查看。")) {
       menus[1].toggle.focus({ preventScroll: true });
       return;
     }
     const currentEpoch = epoch;
     setPending(true);
     try {
-      await api(path, { method: "DELETE" });
-      if (currentEpoch === epoch) { reset(); if (active) input.focus({ preventScroll: true }); }
+      const cleared = await api(path, { method: "DELETE" });
+      if (currentEpoch === epoch) {
+        reset();
+        conversationId = cleared.conversation_id || null;
+        if (active) { input.focus({ preventScroll: true }); void refresh(); }
+      }
     } catch (error) {
       if (currentEpoch === epoch) setMessage(safeMessage(error.message), true);
     } finally {

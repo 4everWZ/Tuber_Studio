@@ -26,6 +26,10 @@ def choose_tools(runtime, monkeypatch, direct, domain=None):
     async def generate(messages, schema, **options):
         calls.append(schema["title"])
         if schema["title"] == "WorkLifecycle":
+            if schema["properties"]["action"]["enum"] == ["chat"]:
+                receipt = next(row["content"].split("以下是本轮已经取得的读取回执：", 1)[1] for row in messages
+                               if "以下是本轮已经取得的读取回执：" in row["content"])
+                return {"action": "chat", "reply_markdown": json.loads(receipt)["summary"]}
             assert "agent_task" in schema["properties"]["action"]["enum"]
             return direct_request(messages[-1]["content"], mode="read" if domain is None else "change")
         if schema["title"] == "AssistantDecision":
@@ -76,15 +80,17 @@ async def test_owner_identity_uses_current_binding_with_stale_chat_history(studi
         assert schema["title"] == "WorkLifecycle"
         if messages[-1]["content"] == "你住在哪里？":
             return {"action": "chat", "reply_markdown": "我住在 Jetson 里。"}
-        assert all("Jetson" not in part["content"] for part in messages[:-1])
-        return {"action": "owner_identity"}
+        facts = next(row["content"] for row in messages if row["content"].startswith("本轮工作台事实："))
+        assert "Jetson" not in facts
+        owner = json.loads(facts.split("：", 1)[1])["bilibili_owner"]
+        return {"action": "chat", "reply_markdown": "我的主人是新号主呀。" if owner else "我还没有绑定 B 站号主呀。"}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
     old = turn("你住在哪里？")
     (await client.post("/api/chat/intelligent", json=old)).raise_for_status()
     for text in ("小鱼，你的主人是谁呀", "我说你的主人呀", "养你的那位叫什么名字呀？"):
         result = (await client.post("/api/chat/intelligent", json=turn(text))).raise_for_status().json()
-        assert result["reply_text"] == "我的主人是新号主呀。" and result["reply_format"] == "plain"
+        assert result["reply_text"] == "我的主人是新号主呀。" and result["reply_format"] == "markdown"
     history = (await client.get("/api/chat/intelligent/turns/" + old["request_id"])).raise_for_status().json()
     assert history["reply_text"] == "我住在 Jetson 里。"
     runtime.store.replace_character(char | {"bilibili_owner": None})
@@ -102,6 +108,8 @@ async def test_settings_followup_is_read_only_and_ends_when_topic_changes(studio
             assert "stop" not in schema["properties"]["action"]["enum"]
             return {"action": "daily_settings", "settings_group": "scene",
                     "setting_fields": ["height"] if text == followup else []}
+        if schema["properties"]["action"]["enum"] == ["chat"] and any("读取回执" in row["content"] for row in messages):
+            return {"action": "chat", "reply_markdown": "当前直播画布设置已读到。"}
         if text == unrelated:
             return {"action": "chat", "reply_markdown": "还不错呀。"}
         if text == followup and "operation" not in schema["properties"]:
@@ -130,7 +138,7 @@ async def test_capability_discovery_reads_catalog_without_settings_writes(studio
     text = response.raise_for_status().json()["reply_text"]
     assert all(label in text for label in ("宠物", "每日观看", "点歌", "运营配图", "直播画布", "后台"))
     assert before == (runtime.pets.state(char), runtime.browsing.policy())
-    assert calls == []
+    assert calls == ["WorkLifecycle", "AssistantDecision", "WorkLifecycle"]
 
 
 async def test_pet_choice_from_real_catalog_is_bound_and_replayable(studio, monkeypatch):
@@ -153,7 +161,7 @@ async def test_pet_choice_from_real_catalog_is_bound_and_replayable(studio, monk
     assert saved["selected_asset_id"] == first["tool_receipt"]["selected_asset_id"] == picked["asset_id"]
     assert picked["title"] in first["reply_text"]
     assert (await client.post("/api/chat/intelligent", json=body)).raise_for_status().json() == first
-    assert calls == ["PetChoice"] and runtime.pets.state(char) == saved
+    assert calls == ["WorkLifecycle", "AssistantDecision", "PetChoice"] and runtime.pets.state(char) == saved
 
 
 @pytest.mark.parametrize("choice", [
@@ -248,7 +256,7 @@ async def test_original_owner_request_blocks_partial_model_write(studio, monkeyp
     memory = runtime.daily_memory.preference(runtime.memory_organizer.scope())
     calls = choose_tools(runtime, monkeypatch, direct, subset)
     result = (await client.post("/api/chat/intelligent", json=turn(message))).raise_for_status().json()
-    assert calls == []
+    assert calls == ["WorkLifecycle", "AssistantDecision"]
     assert "号主设置页" in result["reply_text"] and "tool_receipt" not in result
     assert before == (runtime.live.media.config(), runtime.pets.state(runtime.character["id"]))
     assert runtime.daily_memory.preference(runtime.memory_organizer.scope()) == memory
@@ -257,7 +265,8 @@ async def test_original_owner_request_blocks_partial_model_write(studio, monkeyp
 
 async def test_declined_mixed_request_cannot_bind_the_next_independent_task(studio, monkeypatch):
     runtime, client = studio
-    choose_tools(runtime, monkeypatch, {"action": "restricted"})
+    choose_tools(runtime, monkeypatch, {"action": "daily_settings", "settings_group": "music"},
+                 {"action": "update", "changes": {"cooldown_seconds": 47}})
     mixed = turn("把点歌冷却改成47秒，同时关闭历史引用，两项必须一起生效。")
     refused = (await client.post("/api/chat/intelligent", json=mixed)).raise_for_status().json()
     assert "号主设置页" in refused["reply_text"]
