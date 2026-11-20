@@ -68,7 +68,12 @@
               <p class="hint" id="agent-budget-hint">每轮生成计划、工具请求或成果文本的上限，含思考。一个任务可以有多轮。</p>
             </div>
             <label>单项任务并行取材数<input id="background-parallel" type="number" min="1" required></label>
-            <label>单批视频抽帧上限<input id="video-max-frames" type="number" min="1" max="16" step="1" required></label>
+            <div>
+              <label>后台视觉 · 每批处理帧数上限
+                <input id="video-max-frames" type="number" min="1" max="24" step="1" required aria-describedby="video-max-frames-hint">
+              </label>
+              <p class="hint" id="video-max-frames-hint">逐帧模式最多 24 帧，联合模式最多 8 帧。运营故事板另外设有取帧上限，实际批量取两者较小值。</p>
+            </div>
           </div>
         </section>
 

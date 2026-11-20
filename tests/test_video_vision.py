@@ -769,7 +769,9 @@ def test_vision_defaults_remain_compatible_and_explicit_bounds_are_validated():
     assert defaults.timeout_seconds == 60 and defaults.enable_thinking is None
     assert defaults.max_output_tokens == 2048
     assert VideoVisionConfig(model="visual", timeout_seconds=600).timeout_seconds == 600
-    for patch in ({"timeout_seconds": 601}, {"timeout_seconds": 0}, {"enable_thinking": "on"}):
+    assert VideoVisionConfig(model="visual", max_frames=24).max_frames == 24
+    for patch in ({"timeout_seconds": 601}, {"timeout_seconds": 0}, {"enable_thinking": "on"},
+                  {"max_frames": 25}, {"frame_strategy": "joint", "max_frames": 9}):
         with pytest.raises(ValueError):
             VideoVisionConfig(model="visual", **patch)
 

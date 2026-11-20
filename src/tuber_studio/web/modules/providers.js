@@ -43,7 +43,7 @@ export function initInferenceProvidersUI(model, { api, busy, apply }) {
       $("background-parallel").value = omni.responses_options?.parallel_reads ?? 2;
       $("background-budget").value = omni.responses_options?.max_output_tokens ?? 4096;
       $("video-max-frames").value = omni.video_options?.max_frames ?? 5;
-      $("video-max-frames").max = omni.video_options?.frame_strategy === "joint" ? 8 : 16;
+      $("video-max-frames").max = omni.video_options?.frame_strategy === "joint" ? 8 : 24;
     }
     render();
   };

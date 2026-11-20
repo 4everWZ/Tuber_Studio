@@ -90,7 +90,7 @@ async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):
                 )
                 await expect(page.locator("#video-max-frames")).to_have_value("5")
                 original_agent_budget = await background.locator("#background-budget").input_value()
-                await page.locator("#video-max-frames").fill("7")
+                await page.locator("#video-max-frames").fill("24")
                 await page.locator("#llm-operations-tokens").fill("2300")
                 await page.get_by_role("button", name="保存推理设置").click()
                 await expect(page.locator("#providers-save-state")).to_have_text("推理设置已保存。")
@@ -104,13 +104,13 @@ async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):
                     await page.get_by_role("button", name="保存推理设置").click()
                 body = (await saved.value).post_data_json
                 assert set(body) == {"omni"} and body["omni"]["operations_max_tokens"] == 2300
-                assert body["omni"]["video_options"] == {"max_frames": 7}
+                assert body["omni"]["video_options"] == {"max_frames": 24}
                 assert body["omni"]["responses_options"]["max_output_tokens"] == 3072
                 await expect(page.locator("#providers-save-state")).to_have_text("推理设置已保存。")
                 await page.reload()
                 await expect(page.locator("#llm-operations-tokens")).to_have_value("2300")
                 await expect(background.locator("#background-budget")).to_have_value("3072")
-                await expect(page.locator("#video-max-frames")).to_have_value("7")
+                await expect(page.locator("#video-max-frames")).to_have_value("24")
                 await page.get_by_text("共用连接与凭据", exact=True).click()
                 await page.route("**/api/providers/models", lambda route: route.fulfill(json={"models": ["fixture-alias"]}))
                 await page.get_by_role("button", name="读取已保存的前台模型别名").click()

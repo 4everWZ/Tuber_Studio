@@ -40,7 +40,7 @@ def test_authenticated_single_connection_save_restart_and_clear(settings, monkey
     with TestClient(app, raise_server_exceptions=True) as client:
         headers = {"Authorization": "Bearer " + settings.admin_token}
         url = "/api/settings/providers"
-        body = {"omni": {"base_url": "https://studio.test/proxy/v1", "model": "omni-a", "responses_model": "worker-a", "video_options": {"max_frames": 7}},
+        body = {"omni": {"base_url": "https://studio.test/proxy/v1", "model": "omni-a", "responses_model": "worker-a", "video_options": {"max_frames": 24}},
                 "credentials": {"omni": "unit-key"}}
         assert client.put(url, json=body).status_code == 401
         saved = client.put(url, headers=headers, json=body)
@@ -58,14 +58,14 @@ def test_authenticated_single_connection_save_restart_and_clear(settings, monkey
         assert runtime.operation_llm.config["model"] == "worker-a"
         assert runtime.operation_llm.config["structured_output"] == "json_schema"
         assert runtime.operation_context.provider is runtime.operation_llm
-        assert runtime.browsing.evidence.visual_batch_size() == 7
+        assert runtime.browsing.evidence.visual_batch_size() == 24
         assert saved.json()["provider_credentials"] == {"omni": True}
         assert "unit-key" not in saved.text and "unit-key" not in settings.path.read_text()
         loaded = Settings(runtime=settings.runtime)
         assert loaded.provider_key("omni") == "unit-key"
         assert loaded.responses_config["base_url"] == "https://studio.test/proxy/llm/v1"
         assert loaded.video_config["model"] == "worker-a"
-        assert loaded.video_config["max_frames"] == 7
+        assert loaded.video_config["max_frames"] == 24
         assert json.loads(loaded.credentials_path.read_text()) == {
             "omni": {"base_url": "https://studio.test/proxy/v1", "key": "unit-key"}}
         if os.name != "nt":
