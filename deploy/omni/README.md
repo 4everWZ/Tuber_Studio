@@ -38,7 +38,7 @@ docker compose -f deploy/omni/app-compose.yml -f deploy/omni/workstation.compose
 
 当号主允许使用已有视频原件取材时，可以在相应工坊追加 `-f deploy/omni/private-source.compose.yml`。`TUBER_PRIVATE_SOURCE_DIR` 填工作站上含 `manifest.json` 和原始片段的目录，`TUBER_PRIVATE_SOURCE_URL` 填清单对应的原投稿分 P 完整网址。Core 的 UID 65532 须能读取该目录。只有 Core 获得只读挂载。任务工具在对应分 P 的取材授权内使用原件，来源回执注明归档。
 
-在浏览器打开工作站 HTTPS 地址下的 `/dafeiyu`。可用 `TUBER_WEB_PREFIX` 设置另一段项目路径。HTTP 自动转向 HTTPS。工作台页面、素材、SSE、直播播放器和私有通话 WebSocket 都使用当前入口路径。原有根路径链接继续可用。工作站覆盖文件将电话签票代理到同一网关，复用 Core 的普通应用凭据。浏览器在当前 HTTPS 入口持短时票据连接。WHEP 音视频遵循协商得到的 ICE 路径。验证实际收帧、冻结和音画同步时使用号主浏览器所在网络。
+在浏览器打开工作站 HTTPS 地址下的 `/dafeiyu/`。可用 `TUBER_WEB_PREFIX` 设置另一段项目路径。该路径下的 HTTP 请求会转到 HTTPS，直接访问 IP 根路径返回 404。工作台页面、素材、SSE、直播播放器和私有通话 WebSocket 都使用项目路径。工作站覆盖文件将电话签票代理到同一网关，复用 Core 的普通应用凭据。浏览器在当前 HTTPS 入口持短时票据连接。WHEP 音视频遵循协商得到的 ICE 路径。验证实际收帧、冻结和音画同步时使用号主浏览器所在网络。
 
 Core 提供工作台、静态素材、管理 API、SSE 和 WebSocket。浏览器连接实际业务主机，任务和 SQLite 由该 Core 实例持有。使用独立候选卷时，管理令牌、聊天和平台登录按该卷读取。
 

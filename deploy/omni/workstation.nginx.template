@@ -5,7 +5,13 @@ map $http_upgrade $studio_connection {
 
 server {
     listen 8081;
-    return 308 ${STUDIO_PUBLIC_ORIGIN}$request_uri;
+
+    location ~ ^${STUDIO_WEB_PREFIX}(?:/|$) {
+        return 308 ${STUDIO_PUBLIC_ORIGIN}$request_uri;
+    }
+    location / {
+        return 404;
+    }
 }
 
 server {
@@ -21,14 +27,14 @@ server {
     resolver 127.0.0.11 valid=30s ipv6=off;
     set $gateway "${STUDIO_GATEWAY}";
 
-    location ~ ^(?:${STUDIO_WEB_PREFIX})?(?<studio_gateway_path>/v1/(?:realtime|avatar/sessions/[A-Za-z0-9_-]+/events))$ {
+    location ~ ^${STUDIO_WEB_PREFIX}(?<studio_gateway_path>/v1/(?:realtime|avatar/sessions/[A-Za-z0-9_-]+/events))$ {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $studio_connection;
         proxy_set_header Cookie "";
         proxy_set_header Authorization "";
         proxy_pass $gateway$studio_gateway_path$is_args$args;
     }
-    location / {
+    location ~ ^${STUDIO_WEB_PREFIX}(?:/|$) {
         proxy_set_header Host $http_host;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $studio_connection;
@@ -36,7 +42,7 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         proxy_pass http://127.0.0.1:9020;
         # Only the public application shell and bundled assets are compressed.
-        location ~ ^(?:${STUDIO_WEB_PREFIX})?/(?:$|static/|overlay(?:/draw-guess)?$) {
+        location ~ ^${STUDIO_WEB_PREFIX}/(?:$|static/|overlay(?:/draw-guess)?$) {
             gzip on;
             gzip_min_length 1024;
             gzip_comp_level 4;
@@ -44,5 +50,8 @@ server {
             gzip_vary on;
             proxy_pass http://127.0.0.1:9020;
         }
+    }
+    location / {
+        return 404;
     }
 }
