@@ -46,6 +46,25 @@ async function check() {
   }
   catch { open.disabled = open.hidden = true; }
 }
+
+async function voiceReference(signal) {
+  const response = await fetch("/api/chat/private-call/reference", {signal, cache: "no-store"});
+  if (!response.ok) {
+    const error = new Error((await response.json()).detail || "暂时读不到参考录音");
+    error.status = response.status;
+    throw error;
+  }
+  const blob = await response.blob();
+  const hash = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  const sha256 = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("");
+  const data = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+  return {data, sha256};
+}
 const visibility = new MutationObserver(check);
 for (const target of [workspace, chat]) visibility.observe(target, {attributes: true, attributeFilter: ["hidden"]});
 check();
@@ -118,8 +137,8 @@ async function begin(previous = null) {
   current = call;
   start.disabled = true;
   end.textContent = "挂断";
-  status.textContent = "正在连接私聊语音…";
-  call.deadline = setTimeout(() => finish(call, "realtime_handshake_timeout", "语音握手超时"), 30000);
+  status.textContent = "正在读取音色…";
+  call.deadline = setTimeout(() => finish(call, "voice_reference_timeout", "参考录音读取超时"), 60000);
   try {
     call.context = new AudioContext({sampleRate: 16000});
     await call.context.resume();
@@ -129,9 +148,15 @@ async function begin(previous = null) {
     const subject = ephemeral ? "" : topic.value.trim();
     const turn = !ephemeral && !subject && (previous ? previous.turn :
       byId("operator-chat-feed").lastElementChild?.dataset.requestId);
+    const reference = await voiceReference(call.abort.signal);
+    if (current !== call) return;
+    status.textContent = "正在连接私聊语音…";
     const config = await api("/api/chat/private-call/ticket", {method: "POST", signal: call.abort.signal,
       body: {temporary: ephemeral, ...(subject ? {topic: subject} : turn ? {topic_turn: turn} : {})}});
     if (current !== call) return;
+    if (reference.sha256 !== config.voice.reference_sha256) {
+      finish(call, "voice_reference_changed", "音色已变化，请重新拨打。"); return;
+    }
     call.scope = config.call_scope;
     const use = config.topic_source ? {...config.memory_use, topic_source: config.topic_source} : config.memory_use;
     async function validateMemory() {
@@ -173,11 +198,13 @@ async function begin(previous = null) {
       mute.textContent = "恢复播放"; mute.setAttribute("aria-pressed", "true");
     }
     call.socket = new WebSocket(url);
+    clearTimeout(call.deadline);
+    call.deadline = setTimeout(() => finish(call, "realtime_handshake_timeout", "语音握手超时"), 30000);
     mute.hidden = false;
     call.socket.onopen = () => call.send({type: "session.update", session: {
       instructions: config.instructions, modalities: ["audio", "text"], input_audio_format: "pcm16",
       output_audio_format: "pcm16", playback_commit_policy: "ack_only", extra_body: {auto_response: true},
-      ...(config.voice?.ref_audio ? {ref_audio: config.voice.ref_audio} : {}),
+      ref_audio: reference.data,
     }});
     call.socket.onerror = () => finish(call, "realtime_ws_error", "无法连接私聊语音服务");
     call.socket.onclose = event => finish(call, "realtime_ws_close", "私聊连接已断开", event.code);

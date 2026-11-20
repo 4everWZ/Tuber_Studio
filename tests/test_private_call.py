@@ -1,4 +1,4 @@
-import base64
+import hashlib
 import json
 import time
 from uuid import uuid4
@@ -34,7 +34,11 @@ def test_ticket_instructions_follow_current_character_owner(settings, monkeypatc
             instructions = ticket["instructions"]
             voice = settings.voice(runtime.character["voice_profile"])
             assert ticket["voice"]["id"] == voice["id"]
-            assert base64.b64decode(ticket["voice"]["ref_audio"].split(",", 1)[1]) == settings.voice_reference_path(voice).read_bytes()
+            reference = browser.get("/api/chat/private-call/reference", headers=auth).raise_for_status()
+            assert reference.content == settings.voice_reference_path(voice).read_bytes()
+            assert ticket["voice"]["reference_sha256"] == hashlib.sha256(reference.content).hexdigest()
+            assert reference.headers["cache-control"] == "no-store"
+            assert "ref_audio" not in ticket["voice"]
             participants = json.loads(instructions.split("私聊参与者：", 1)[1].splitlines()[0])
             assert participants == {"当前交谈者": "工坊号主", "角色": runtime.character["name"], "bilibili_owner": owner}
             if owner is None:
@@ -182,6 +186,7 @@ def test_ticket_is_admin_only_fixed_upstream_and_contains_no_service_credential(
         path = "/api/chat/private-call/ticket"
         auth = {"Authorization": "Bearer " + settings.admin_token}
         assert browser.post(path).status_code == 401
+        assert browser.get("/api/chat/private-call/reference").status_code == 401
         assert browser.post(path, headers=auth | {"Origin": "https://elsewhere.example"}).status_code == 403
         assert browser.get("/api/chat/private-call", headers=auth).json() == {"configured": True, "character": "大肥鱼"}
         assert not issued

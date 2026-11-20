@@ -1,7 +1,6 @@
 """Mint an ordinary Omni browser ticket for the active connection."""
 
 import asyncio
-import base64
 import hashlib
 import json
 import os
@@ -13,7 +12,7 @@ from uuid import UUID
 
 import httpx
 from fastapi import Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from ..daily_memory import contains_memory_credential
@@ -179,6 +178,19 @@ def register_private_call(app, runtime, require_admin, *, operator_chat=None):
             raise HTTPException(404, "当前角色没有这段通话实录")
         return FileResponse(path, media_type="video/mp4")
 
+    async def read_voice(character):
+        try:
+            voice = runtime.settings.voice(character["voice_profile"])
+            reference = await asyncio.to_thread(runtime.voices._read_reference, voice)
+        except (OSError, ValueError):
+            raise HTTPException(409, "当前音色缺少实时参考录音，请在角色卡中选择可用音色。") from None
+        return voice, reference
+
+    @app.get("/api/chat/private-call/reference", dependencies=[Depends(require_admin)])
+    async def call_reference():
+        _, reference = await read_voice(runtime.character)
+        return Response(reference, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
     @app.post("/api/chat/private-call/ticket", dependencies=[Depends(require_admin)])
     async def create_ticket(options: CallOptions = CallOptions()):
         service = private_service(runtime.settings)
@@ -187,11 +199,7 @@ def register_private_call(app, runtime, require_admin, *, operator_chat=None):
         origin, token = service
         grant = runtime.tasks.scope()
         character = runtime.character
-        try:
-            voice = runtime.settings.voice(character["voice_profile"])
-            reference = await asyncio.to_thread(runtime.voices._read_reference, voice)
-        except ValueError:
-            raise HTTPException(409, "当前音色缺少实时参考录音，请在角色卡中选择可用音色。") from None
+        voice, reference = await read_voice(character)
         try:
             ticket = await mint_ticket(origin, token)
         except httpx.HTTPStatusError as error:
@@ -230,10 +238,10 @@ def register_private_call(app, runtime, require_admin, *, operator_chat=None):
         if shared:
             instructions.append("接通时的工作台状态：" + dump(shared))
         instruction_text = "\n".join(instructions)
-        reference_uri = "data:audio/wav;base64," + base64.b64encode(reference).decode("ascii")
         # The deployed gateway supports an 8 MiB realtime message. Account for
         # the encoded reference, role instructions and session.update envelope.
-        if len(dump({"instructions": instruction_text, "ref_audio": reference_uri}).encode()) + 512 > 8 * 1024 * 1024:
+        encoded_bytes = 4 * ((len(reference) + 2) // 3)
+        if encoded_bytes + len(dump({"instructions": instruction_text}).encode()) + 512 > 8 * 1024 * 1024:
             raise HTTPException(409, "参考录音超过实时网关的单条消息大小，请在角色卡中更换音色。")
         show = performance(runtime.store)
         return {
@@ -245,7 +253,6 @@ def register_private_call(app, runtime, require_admin, *, operator_chat=None):
             "voice": {
                 "id": voice["id"], "name": voice["name"],
                 "reference_sha256": hashlib.sha256(reference).hexdigest(),
-                "ref_audio": reference_uri,
             },
             "performance": show,
             "avatar": call_avatar(runtime.settings, character) if show["pets_enabled"] else {
