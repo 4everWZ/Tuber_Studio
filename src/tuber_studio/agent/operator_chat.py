@@ -1326,9 +1326,15 @@ class OperatorChat:
             if read_only:
                 if target and _read_target_text(target) not in _read_target_text(data.message):
                     target = None
-            elif any(_read_target_text(quote) not in _read_target_text(data.message)
-                     for quote in (operation.request, target) if quote):
-                return ChatIntent(action="clarify", topic="你想处理哪一项？")
+            else:
+                bound_quote = all(_read_target_text(quote) in _read_target_text(data.message)
+                                  for quote in (operation.request, target) if quote)
+                if capability and capability.selection_action and (not bound_quote or not target):
+                    decision = ChatIntent(action=capability.selection_action)
+                    decision._subject = objects.get(operation.object_ref)
+                    return decision
+                if not bound_quote:
+                    return ChatIntent(action="clarify", topic="你想处理哪一项？")
             if operation.object_ref:
                 subject = objects.get(operation.object_ref)
                 if not subject:
@@ -1344,8 +1350,6 @@ class OperatorChat:
                 operation = operation.model_copy(update={"followup": False, "object_ref": None})
             if not subject and not target:
                 if not read_only:
-                    if capability and capability.selection_action:
-                        return ChatIntent(action=capability.selection_action)
                     return ChatIntent(action="clarify", topic="你想处理哪一项？")
                 bind_read_target = True
             available = _DIRECT_READS if read_only else _DIRECT_CHANGES
@@ -1971,6 +1975,8 @@ class OperatorChat:
             if not scope[0]:
                 return {"reply_text": "请先连接 B 站运营登录账号。", "card": None}
             channel = outgoing_queue.named_channel(request) or intent.publication_channel
+            if channel is None and intent._subject and intent._subject.kind == "outgoing":
+                channel = intent._subject.identity
             snapshot = outgoing_queue.queue_snapshot(self.store, scope, channel,
                                                      prepare=kind == "prepare_publication")
             return {"reply_text": outgoing_queue.queue_answer(snapshot), "publication_scope": scope,

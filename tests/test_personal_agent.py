@@ -210,10 +210,9 @@ async def test_existing_outgoing_work_is_bound_to_account_and_shows_review_actio
         )
 
     async def model(messages, schema, **kwargs):
-        source = messages[-1]["content"]
         assert schema["title"] == "WorkLifecycle"
         return {"action": "direct_tool", "operation": {
-            "mode": "change", "domain": "outgoing", "request": source, "target": None,
+            "mode": "change", "domain": "outgoing", "request": "检查待发内容然后确认发布", "target": "一组草稿",
         }}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
