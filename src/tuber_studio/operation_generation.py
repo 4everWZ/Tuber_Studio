@@ -175,7 +175,6 @@ async def generate_with_recovery(
         )
     can_fetch = (
         allow_web_fetch
-        and character["id"] == "whale"
         and getattr(provider, "supports_operation_web_fetch", False)
     )
 

@@ -38,7 +38,7 @@ class SceneItem(StrictModel):
 class Scene(StrictModel):
     width: int = Field(default=1920, ge=640, le=3840)
     height: int = Field(default=1080, ge=360, le=2160)
-    title: str = Field(default="大肥鱼的深海电台", max_length=80)
+    title: str = Field(default="直播节目", max_length=80)
     background: Literal["ocean", "transparent"] = "ocean"
     items: list[SceneItem] = Field(min_length=1, max_length=32)
 

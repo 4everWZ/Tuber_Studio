@@ -18,7 +18,7 @@ from ..daily_memory import (
     contains_memory_credential,
 )
 from ..generation_meter import budgeted_call
-from ..models import Character, StrictModel
+from ..models import DEFAULT_CHARACTER_MANIFEST, Character, StrictModel
 from ..operation_continuations import content_hash
 from ..relationships import UserProfile
 from ..store import character_card, dump, editable_character
@@ -83,7 +83,7 @@ def organized_view(row):
     return result
 
 
-def register_agent_api(app, settings, runtime, store, comments, require_admin, *, default_character):
+def register_agent_api(app, settings, runtime, store, comments, require_admin):
     character_writes = asyncio.Lock()
 
     def memory_scope(expected=None):
@@ -156,24 +156,28 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
 
     @app.get("/api/characters", dependencies=[Depends(require_admin)])
     async def characters():
-        return [character_card(character) for character in store.characters()]
+        return [
+            character_card(store.web_character(store.persona_defaults(card)))
+            | {"avatar_url": settings.idle_avatar(card).get("url")}
+            for card in store.characters()
+        ]
 
     @app.post("/api/characters", dependencies=[Depends(require_admin)])
     async def create_character(data: NewCharacter):
         card = store.save_character({
             "id": f"oc-{uuid4().hex}", "name": data.name, "core": {}, "style": {},
-            "voice_profile": default_character["voice_profile"],
-            "avatar_manifest": default_character["avatar_manifest"],
+            "voice_profile": settings.default_character_voice(),
+            "avatar_manifest": DEFAULT_CHARACTER_MANIFEST,
         })
         return character_card(card)
 
     @app.get("/api/characters/deleted", dependencies=[Depends(require_admin)])
     async def deleted_characters():
-        return [character_card(character) for character in store.deleted_characters()]
+        return [character_card(store.web_character(card)) for card in store.deleted_characters()]
 
     @app.get("/api/characters/{character_id}", dependencies=[Depends(require_admin)])
     async def character(character_id: str):
-        return character_card(store.managed_character(character_id))
+        return character_card(store.web_character(store.persona_defaults(store.managed_character(character_id))))
 
     @app.get("/api/characters/{character_id}/bilibili-owner", dependencies=[Depends(require_admin)])
     async def character_owner(character_id: str, account: Annotated[str | None, Query(max_length=2048)] = None):
@@ -190,6 +194,8 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
             card = editable_character(data)
             card.pop("version", None)
             card["id"] = character_id
+            if "display_name" in card and card["display_name"] is None:
+                card["display_name"] = ""
             if isinstance(card.get("name"), str):
                 card["name"] = card["name"].strip()
             previous_owner = current.get("bilibili_owner")
@@ -220,14 +226,15 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
                 raise HTTPException(422, [{"field": "avatar_manifest", "message": "素材清单无效或为空"}])
             active = runtime.character
             result = store.replace_character(data)
+            result = store.persona_defaults(result)
             if active["id"] == character_id and character_card(active) != character_card(result):
                 await runtime.activate(character_id)
-            return character_card(result)
+            return character_card(store.web_character(result))
 
     @app.post("/api/characters/{character_id}/activate", dependencies=[Depends(require_admin)])
     async def activate(character_id: str):
         async with character_writes:
-            return character_card(await runtime.activate(character_id))
+            return character_card(store.web_character(await runtime.activate(character_id)))
 
     @app.delete("/api/characters/{character_id}", dependencies=[Depends(require_admin)])
     async def delete_character(character_id: str, data: DeleteCharacter | None = None):
@@ -246,7 +253,7 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
     @app.post("/api/characters/{character_id}/restore", dependencies=[Depends(require_admin)])
     async def restore_character(character_id: str):
         async with character_writes:
-            return character_card(store.restore_character(character_id))
+            return character_card(store.web_character(store.restore_character(character_id)))
 
     @app.post("/api/characters/{character_id}/clone", dependencies=[Depends(require_admin)])
     async def clone(character_id: str, data: dict = Body(...)):

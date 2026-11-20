@@ -22,7 +22,7 @@ from pydantic import Field, PrivateAttr, StringConstraints, field_validator, mod
 
 from ..compaction import ContextWindowExceeded
 from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER
-from ..front_persona import front_identity
+from ..front_persona import character_names, front_identity, without_address
 from ..generation_meter import budgeted_call
 from ..models import StrictModel
 from ..operation_continuations import content_hash
@@ -120,7 +120,9 @@ _CURRENT_SCOPE_READS = {
     "clock", "game_status", "live_status", "operating_account", "operation_status", "workbench_capabilities",
 }
 _SETTING_ACTIONS = {"daily_settings", "pet_settings"}
-_OWNER_RELATION = re.compile(r"主人|号主|饲主|谁家|谁.{0,6}(?:养|照顾)|哪.{0,6}(?:养|照顾)|谁的小(?:鱼|鲸)|属于谁")
+_OWNER_RELATION = re.compile(
+    r"主人|号主|饲主|谁家|谁.{0,6}(?:养|照顾)|哪.{0,6}(?:养|照顾)|(?:养|照顾)(?:着)?你|属于谁"
+)
 _DIRECT_RELATION = re.compile(
     r"^(?:(?:请问|现在|告诉我|我想知道)\s*)*(?:你(?:的)?\s*)?(?:主人|饲主|号主)\s*"
     r"(?:是谁|是哪[位个]人?|叫(?:什么|啥)|是谁家的人)"
@@ -375,13 +377,7 @@ class AssistantDecision(ChatIntent):
 
 def _memory_query(message, character):
     """Drop an opening address before searching for subject matter."""
-    names = {character["name"]}
-    if character["id"] == "whale":
-        names.update(("鱼鱼", "鲸鲸", "小鲸鱼", "小鱼"))
-    for name in sorted(names, key=len, reverse=True):
-        if name and message.startswith(name):
-            return message[len(name):].lstrip(" ，,、")
-    return message
+    return without_address(message, character)
 
 
 def _read_target_text(value):
@@ -773,7 +769,10 @@ class OperatorChat:
         ):
             return ChatIntent(action="agent_task")
         objects = list(context.get("objects", {}).values())
-        owner_named = _OWNER_RELATION.search(message)
+        profiles = "|".join(re.escape(name) for name in character_names(char))
+        owner_named = _OWNER_RELATION.search(message) or re.search(
+            rf"(?:你的|(?:{profiles})的?)\s*(?:[Bb]\s*站|主页|空间)", message, re.I
+        )
         owner_referenced = (len(objects) == 1 and objects[0].kind == "owner"
                             and (_OWNER_PLATFORM.search(message) or re.search(r"他|她|其|那|这个", message)))
         if (not _CURRENT_ACCOUNT.search(message) and _OWNER_FIELDS.search(message)
@@ -843,7 +842,7 @@ class OperatorChat:
                 card_policy = history_preference(self.runtime) if cards else None
                 schema = WorkLifecycle.schema_for_turn(
                     chat_only=bool(data.intent), has_cards=bool(cards),
-                    allow_owner_identity=not _CURRENT_ACCOUNT.search(data.message),
+                    allow_owner_identity=bool(_OWNER_RELATION.search(data.message) and not _CURRENT_ACCOUNT.search(data.message)),
                 )
                 actions = schema["properties"]["action"]["enum"]
                 instruction = (
@@ -1526,7 +1525,8 @@ class OperatorChat:
     def _event_summary(self, event, text):
         text = text.strip()
         # Delivery language must come from the receipt, never from narrative generation.
-        if not text or re.search(r"https?://|<|已送达|(?:我|本鱼|本鲸|大肥鱼).{0,5}(?:回了|回复了|发了|点赞了)", text):
+        names = "|".join(re.escape(name) for name in character_names(self.runtime.character))
+        if not text or re.search(rf"https?://|<|已送达|(?:我|{names}).{{0,5}}(?:回了|回复了|发了|点赞了)", text):
             return self._event_excerpt(event)
         if event["source"]["kind"] == "comment" and not text.startswith(("有位观众", "有个观众", "有人", "评论区")):
             return self._event_excerpt(event)
@@ -1595,11 +1595,11 @@ class OperatorChat:
             "(character_version=? OR json_extract(result,'$.private_owner')=?) "
             + boundary + " ORDER BY created_at DESC,request_id DESC LIMIT ?", (*scope, *cursor, limit + 1),
         )
-        avatar = next((entry["url"] for entry in self.runtime.settings.assets(char)
-                       if entry.get("tag") == "idle" and entry["url"].startswith("/assets/")), None)
+        avatar = self.runtime.settings.idle_avatar(char)
         return {
-            "character": char["name"],
-            "avatar": avatar,
+            "character": self.store.display_name(char["id"]),
+            "avatar": avatar.get("url"),
+            "avatar_still": avatar.get("still_url"),
             "pet": self.runtime.pets.state(char["id"]),
             "character_id": char["id"], "character_version": char["version"], "account_id": self._account(),
             "turns": [self.visible_turn(row) for row in reversed(rows[:limit])],
@@ -1635,6 +1635,7 @@ class OperatorChat:
     async def _send(self, data, request_id, pending, emit):
         async with self.lock:
             char = self.runtime.character
+            display_name = self.store.display_name(char["id"])
             account = self._account()
             if pending.scope != tuple(self._binding(char)):
                 raise HTTPException(409, "账号或角色已切换，请重新发送")
@@ -1775,7 +1776,8 @@ class OperatorChat:
                     self._scope(char), char, event, None if audit else result["reply_text"],
                     "operator_chat", memory_kind="operator_private",
                 )
-            result |= {"account_id": self._account(), "submission": submission, "memory_intent": intent.action}
+            result |= {"account_id": self._account(), "submission": submission, "memory_intent": intent.action,
+                       "character_name": display_name}
             if intent.action in _SETTING_ACTIONS and (receipt := result.get("tool_receipt")):
                 result["direct_context"] = {"action": intent.action, "group": receipt["group"],
                                             "fields": list(receipt.get("values", {}))}

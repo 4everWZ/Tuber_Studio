@@ -213,7 +213,7 @@ export class MessagesPanel {
     const count=this.replyChecks.size;
     this.delegateButton.hidden=!count;
     this.delegateButton.disabled=this.busy || count>100;
-    this.delegateButton.textContent=`交给大肥鱼逐条送审（${count}）`;
+    this.delegateButton.textContent=`交办逐条送审（${count}）`;
   }
   renderPrivateContinuations(){
     const rows=this.value?.private_continuations||[],section=this.$('[data-private-generations]'),list=this.$('[data-private-generation-list]');

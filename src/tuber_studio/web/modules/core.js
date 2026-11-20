@@ -4,6 +4,10 @@
 
 export const $ = id => document.getElementById(id);
 
+export function webCharacterName(character) {
+  return character?.display_name || character?.id;
+}
+
 export function node(tag, text, className) {
   const element = document.createElement(tag);
   if (text != null) element.textContent = text;

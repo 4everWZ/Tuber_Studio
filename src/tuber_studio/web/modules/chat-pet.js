@@ -44,7 +44,7 @@ export function initChatPet(api, display, report) {
     if (pet.parentElement !== host) host.prepend(pet);
     pet.hidden = !character || hidden;
     let url = character?.avatar;
-    if (motion.matches) url = url === "/assets/whale/idle.gif" ? "/assets/whale/memes/nap.png" : null;
+    if (motion.matches) url = character?.avatar_still || (url && !url.toLowerCase().endsWith(".gif") ? url : null);
     if (expression && !(motion.matches && expression.animated)) url = expression.preview_url;
     image.hidden = pet.hidden || !url;
     pet.classList.toggle("pet-placeholder", !url);
@@ -70,7 +70,8 @@ export function initChatPet(api, display, report) {
       expression = null;
       revision = 0;
     }
-    character = next && { character_id: next.character_id, character_version: next.character_version, avatar: next.avatar };
+    character = next && { character_id: next.character_id, character_version: next.character_version,
+      avatar: next.avatar, avatar_still: next.avatar_still };
     if (next?.pet) applySelection(next.pet);
     render();
   } };

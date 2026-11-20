@@ -29,6 +29,7 @@
       "id": "idle",
       "tag": "idle",
       "path": "assets/whale/idle.gif",
+      "still_path": "assets/whale/memes/nap.png",
       "license_status": "upstream_attribution_with_third_party_references",
       "artwork_version": "q-fullbody-1",
       "source_frames": [

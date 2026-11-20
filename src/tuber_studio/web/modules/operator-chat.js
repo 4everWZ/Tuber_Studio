@@ -214,6 +214,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     const section = node("article", null, "operator-chat-turn");
     section.dataset.requestId = turn.request_id;
     const answer = node("div", null, "operator-chat-reply");
+    if (turn.character_name) answer.title = turn.character_name;
     renderAssistantAnswer(answer, turn);
     section.append(node("p", turn.message, "operator-chat-user"), answer);
     let card;

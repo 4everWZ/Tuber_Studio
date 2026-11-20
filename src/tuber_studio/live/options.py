@@ -26,6 +26,7 @@ class LiveOptions(StrictModel):
     web_fetch: StrictBool = False
     weather: WeatherLocation | None = None
     idle: StrictBool = False
+    idle_text: str = Field(default="", max_length=120)
 
     @field_validator("timezone")
     @classmethod

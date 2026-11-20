@@ -136,7 +136,7 @@
   function humanizeReason(reason) {
     if (!reason) return "暂无原因记录";
     const map = {
-      "light_interaction": "优质讨论引发共鸣，大肥鱼参与活跃氛围",
+      "light_interaction": "讨论值得参与",
       "specific_detail": "深入呼应视频中的核心观点与亮点细节",
       "private_details": "涉及更深话题，引导至私信交流",
       "no_subtitles": "视频无可用字幕，已跳过",
@@ -146,7 +146,7 @@
       "spam": "过滤掉广告营销或低俗刷屏发言",
       "short_comment": "评论内容过短，缺少展开互动的价值",
       "duplicate_intent": "同源互动已有草稿或已发表，绝不重复发言",
-      "already_commented": "大肥鱼已在此视频留过言，避免频繁刷屏",
+      "already_commented": "当前角色已在此视频留言",
       "round_budget": "达到本轮资源上限，进度已保存，下一轮继续",
       "daily_watch_limit": "今日观看次数已用完，继续处理评论",
       "daily_reply_limit": "该视频今日回复数已用完，草稿保留到次日",

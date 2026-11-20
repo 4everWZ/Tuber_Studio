@@ -1,3 +1,4 @@
+import base64
 import json
 import time
 from uuid import uuid4
@@ -24,12 +25,16 @@ def test_ticket_instructions_follow_current_character_owner(settings, monkeypatc
     runtime = app.state.runtime
     auth = {"Authorization": "Bearer " + settings.admin_token}
     with TestClient(app) as browser:
-        for owner in ({"uid": "123", "name": "示例号主"}, None):
-            runtime.store.replace_character(editable_character(runtime.character) | {"bilibili_owner": owner})
+        for owner, voice_id in (({"uid": "123", "name": "示例号主"}, "whale_reference"), (None, "neutral_reference")):
+            runtime.store.replace_character(editable_character(runtime.character) |
+                                            {"bilibili_owner": owner, "voice_profile": voice_id})
             ticket = browser.post("/api/chat/private-call/ticket", headers=auth, json={
                 "temporary": temporary, "topic": "来聊聊吧",
             }).raise_for_status().json()
             instructions = ticket["instructions"]
+            voice = settings.voice(runtime.character["voice_profile"])
+            assert ticket["voice"]["id"] == voice["id"]
+            assert base64.b64decode(ticket["voice"]["ref_audio"].split(",", 1)[1]) == settings.voice_reference_path(voice).read_bytes()
             participants = json.loads(instructions.split("私聊参与者：", 1)[1].splitlines()[0])
             assert participants == {"当前交谈者": "工坊号主", "角色": runtime.character["name"], "bilibili_owner": owner}
             if owner is None:
@@ -178,7 +183,7 @@ def test_ticket_is_admin_only_fixed_upstream_and_contains_no_service_credential(
         auth = {"Authorization": "Bearer " + settings.admin_token}
         assert browser.post(path).status_code == 401
         assert browser.post(path, headers=auth | {"Origin": "https://elsewhere.example"}).status_code == 403
-        assert browser.get("/api/chat/private-call", headers=auth).json() == {"configured": True}
+        assert browser.get("/api/chat/private-call", headers=auth).json() == {"configured": True, "character": "大肥鱼"}
         assert not issued
         reply = browser.post(path, headers=auth, json={"path": "/api/mode", "origin": "https://elsewhere.example"})
         assert reply.status_code == 200

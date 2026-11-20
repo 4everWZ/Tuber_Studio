@@ -20,8 +20,8 @@ from .avatar import LiveAvatar
 from .media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
 from .online_songs import SongRequestSettings
 from .options import LiveOptions
-from .studio import room_feed
 from .stardew_device import register_stardew_device
+from .studio import room_feed
 
 
 class ConfirmSong(StrictModel):
@@ -78,7 +78,8 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
             "scene": media.scene(),
             "queue": queued,
             "events": list(reversed(events)),
-            "character": {key: character[key] for key in ("id", "name", "version")},
+            "character": {"id": character["id"], "version": character["version"],
+                          "name": store.display_name(character["id"])},
             "performance": show,
             "lip_sync": {"provider": "ditto", "status": "tbd" if show["avatar_enabled"] else "off",
                          "renderer": "pet" if show["pets_enabled"] else "none"},
@@ -337,7 +338,7 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
 
     @app.get("/api/draw-and-guess/overlay")
     async def draw_and_guess_overlay_data():
-        return runtime.live.draw_and_guess.get_overlay_state()
+        return runtime.live.draw_and_guess.get_overlay_state() | {"character": store.display_name(runtime.character["id"])}
 
     @app.websocket("/ws/overlay")
     async def overlay_ws(websocket: WebSocket):

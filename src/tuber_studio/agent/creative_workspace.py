@@ -74,10 +74,14 @@ class CreativeWorkspace:
         self.store.execute("UPDATE creative_goals SET closed=1 WHERE id=?", (identity,))
 
     def record_delivery(self, database, task, body):
-        database.execute(
+        inserted = database.execute(
             "INSERT OR IGNORE INTO creative_editions VALUES (?,?,1,?,'agent',?)",
             (task["id"], task["revision"], body, time.time()),
         )
+        if inserted.rowcount and len(task["scope"]) > 1:
+            actor = self.store.display_name(task["scope"][1])
+            database.execute("INSERT OR REPLACE INTO kv VALUES(?,?)",
+                             (f"creative_author:{task['id']}:{task['revision']}", json.dumps(actor, ensure_ascii=False)))
 
     def notify(self, database, identity, updated):
         database.execute("INSERT OR REPLACE INTO creative_attention VALUES (?,?)", (identity, updated))
@@ -87,6 +91,16 @@ class CreativeWorkspace:
             "SELECT * FROM creative_editions WHERE task_id=? ORDER BY task_revision DESC,edition DESC LIMIT 1",
             (identity,),
         )
+
+    def edition_view(self, task, edition):
+        if edition is None:
+            return None
+        name = "工坊号主"
+        if edition["author"] == "agent":
+            name = self.store.get(f"creative_author:{task['id']}:{edition['task_revision']}")
+            if name is None:
+                name = self.store.display_name(task["scope"][1]) if len(task["scope"]) > 1 else "助理"
+        return edition | {"author_name": name}
 
     def edit(self, task, revision, edition, body):
         with self.store.db as db:

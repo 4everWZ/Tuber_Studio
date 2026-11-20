@@ -104,8 +104,14 @@ window.LiveScene = class {
         if (asset) {
           if (!image) { image = make("img"); image.alt = state.character?.name || "角色"; image.draggable = false; body.prepend(image); image.onerror = () => { this.failedAssets.add(image.getAttribute("src")); this.onWarning("角色素材加载失败，画面已降级为可用素材"); this.update(this.state); }; }
           const url = asset.url || "/" + asset.path;
-          const source = this.reducedMotion.matches && url === "/assets/whale/idle.gif" &&
-            !this.failedAssets.has("/assets/whale/memes/nap.png") ? "/assets/whale/memes/nap.png" : url;
+          const source = this.reducedMotion.matches && asset.still_url &&
+            !this.failedAssets.has(asset.still_url) ? asset.still_url : url;
+          if (this.reducedMotion.matches && !asset.still_url && url.toLowerCase().endsWith(".gif")) {
+            image.remove();
+            if (!body.querySelector(".avatar-empty")) body.prepend(make("span", state.character?.name, "avatar-empty"));
+            continue;
+          }
+          image.alt = state.character?.name || "";
           if (image.getAttribute("src") !== source) image.src = source;
           body.querySelector(".avatar-empty")?.remove();
         } else {
@@ -113,7 +119,9 @@ window.LiveScene = class {
           if (!body.querySelector(".avatar-empty")) body.prepend(make("span", "等待角色素材", "avatar-empty"));
         }
       } else if (item.kind === "title") {
-        body.replaceChildren(make("strong", this.scene.title), make("small", state.muted ? "已静音 · 深海休息中" : "水下小窝 · 聊聊天 · 唱首歌"));
+        body.replaceChildren(make("strong", this.scene.title), make("small", [
+          state.character?.name, state.muted ? "已静音" : null,
+        ].filter(Boolean).join(" · ")));
       } else if (item.kind === "now") {
         const record = make("div", null, "record"), name = make("p", song?.title || "等待下一首歌", "song-name");
         const info = make("p", song ? `${media.mode === "sing" ? "角色演唱" : "直接播放 · "+(song.artist || "曲库音源")} · ${media.requester}` : "从曲库点一首喜欢的歌", "song-detail");
@@ -134,7 +142,7 @@ window.LiveScene = class {
         body.replaceChildren(make("h3", "♫ 点歌队列"), songs.length ? list : make("p", "还没有排队的歌，下一首留给你。"));
       } else if (item.kind === "chat") {
         const chats = (state.events || []).filter(e => e.type === "chat").slice(-3);
-        body.replaceChildren(...(chats.length ? chats.map(e => { const p = make("p"); p.append(make("b", e.display_name), make("span", e.text)); return p; }) : [make("p", "☏ 鱼宝们在聊 · 等待弹幕") ]));
+        body.replaceChildren(...(chats.length ? chats.map(e => { const p = make("p"); p.append(make("b", e.display_name), make("span", e.text)); return p; }) : [make("p", "等待弹幕")]));
       } else if (item.kind === "gifts") {
         const gift = (state.events || []).filter(e => e.type === "gift").at(-1);
         body.textContent = gift ? `${gift.display_name} · ${gift.text}` : "本场心意 · 等待礼物";

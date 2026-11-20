@@ -253,8 +253,14 @@ function renderStatus(status) {
   const previousCharacter = model.status?.character;
   renderWorkspaceStatus(model, status);
   if (model.page === "settings") void loadArtworkReferences(status.character);
-  if (previousCharacter?.id !== status.character?.id || previousCharacter?.name !== status.character?.name) {
+  if (previousCharacter?.id !== status.character?.id || previousCharacter?.display_name !== status.character?.display_name) {
     characterStudio?.refreshActivation();
+  }
+  if (previousCharacter && (previousCharacter.id !== status.character?.id ||
+      previousCharacter.version !== status.character?.version ||
+      previousCharacter.voice_profile !== status.character?.voice_profile ||
+      previousCharacter.name !== status.character?.name)) {
+    document.dispatchEvent(new Event("studio-character-change"));
   }
   if (model.authenticated && previousCharacter?.id !== status.character?.id) {
     if (hadStatus) personalization.refreshScope();
@@ -262,7 +268,8 @@ function renderStatus(status) {
   }
   operatorChat.renderModel(status, model.settings);
   if (model.authenticated && model.page === "chat" && previousCharacter &&
-      (previousCharacter.id !== status.character?.id || previousCharacter.version !== status.character?.version)) void operatorChat.refresh();
+      (previousCharacter.id !== status.character?.id || previousCharacter.version !== status.character?.version ||
+        previousCharacter.display_name !== status.character?.display_name)) void operatorChat.refresh();
 }
 setInterval(refreshWorkspaceClock, 1000);
 

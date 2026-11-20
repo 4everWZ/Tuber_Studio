@@ -25,7 +25,6 @@ from .agent.task_tools import create_task_runtime
 from .artwork_references import MAX_BYTES as MAX_REFERENCE_BYTES
 from .artwork_references import PREFIX as REFERENCE_PREFIX
 from .artwork_references import register_artwork_references
-from .illustration_policy import register_illustration_policy
 from .auth_sessions import (
     COOKIE_MAX_AGE,
     COOKIE_NAME,
@@ -38,11 +37,11 @@ from .comments import Comments
 from .config import Settings
 from .direct_messages import DirectMessages
 from .dynamics import Dynamics
+from .illustration_policy import register_illustration_policy
 from .live.api import register_live_api
 from .live.media import MAX_UPLOAD
 from .meme_api import MAX_REQUEST as MAX_MEME_REQUEST
 from .meme_api import register_meme_api
-from .pet_appearance import register_pet_api
 from .message_api import register_message_api
 from .model_runtime.api import register_model_api
 from .operation_recovery_api import register_operation_recovery_api
@@ -50,6 +49,7 @@ from .operations.api import register_operations_api
 from .operations.browsing.api import register_browsing_api
 from .operations.browsing.service import BrowsingService
 from .performance import register_performance
+from .pet_appearance import register_pet_api
 from .providers import public_error
 from .runtime import Runtime
 from .runtime_authority import acquire_business_writer
@@ -240,7 +240,7 @@ def create_app(
     app.mount("/static", StaticFiles(directory=web), name="static")
     app.mount("/assets", StaticFiles(directory=settings.root / "assets"), name="assets")
     register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok, same_origin)
-    register_agent_api(app, settings, runtime, store, comments, require_admin, default_character=seeds[0])
+    register_agent_api(app, settings, runtime, store, comments, require_admin)
     operator_chat = register_operator_chat(app, runtime, store, browsing, dynamics, require_admin)
     register_private_call(app, runtime, require_admin, operator_chat=operator_chat)
     register_private_avatar(app, runtime, require_admin, operator_chat=operator_chat)

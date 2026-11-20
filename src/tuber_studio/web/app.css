@@ -566,6 +566,19 @@ tr:hover td {
   margin-top: 2px;
 }
 
+.character-list-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.character-list-heading img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: contain;
+}
+
 /* 素材卡片 */
 .asset-grid {
   display: grid;

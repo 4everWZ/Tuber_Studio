@@ -11,6 +11,7 @@ from difflib import SequenceMatcher
 from ...comment_materials import model_comment_materials, prepare_comment_materials
 from ...comments import category
 from ...compaction import ContextWindowExceeded
+from ...front_persona import expressive_persona
 from ...generation_meter import BrowsingBudgetDeferred, GenerationMeter, budgeted_json
 from ...message_outreach import confirmed_invitation
 from ...operation_continuations import content_hash
@@ -169,7 +170,9 @@ class BrowsingDecisions:
 
     def _model_input(self, row, schema, data, instruction, *, response_input=None):
         character = operation_character(
-            self.browsing.store.character(row["character_id"], row["character_version"])
+            self.browsing.store.persona_defaults(
+                self.browsing.store.character(row["character_id"], row["character_version"])
+            )
         )
         view = (
             classification_view(self.browsing.settings.root, character)
@@ -210,7 +213,7 @@ class BrowsingDecisions:
             if schema is ContentDecision
             else dump(data)
         )
-        role = SYSTEM_RULES + dump({k: character[k] for k in ("core", "style", "rules")})
+        role = SYSTEM_RULES + dump(expressive_persona(character))
         if view is not None:
             content = compact_content_input(data)
             role = "角色：" + view["brief"]

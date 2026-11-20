@@ -589,13 +589,12 @@ class GameLivestreamService:
         self._save()
         new_game = self.get_active_adapter().display_name
 
-        spoken_text = f"收到！大肥鱼这就切换游戏画面！暂别《{old_game}》，马上进入《{new_game}》！"
         return {
             "status": "switched",
             "previous_game": old_game,
             "current_game_id": target_game_id,
             "current_game_name": new_game,
-            "spoken_text": spoken_text,
+            "spoken_text": f"已切换到《{new_game}》。",
             "reason": reason,
         }
 
@@ -607,14 +606,12 @@ class GameLivestreamService:
             requested_by=user_name,
             gift_name=gift_name,
         )
-        spoken_text = f"感谢【{user_name}】送的【{gift_name}】！大肥鱼这就去安排【{label}】！看本鱼秀操作！"
         return {
             "status": "enqueued",
             "action": action,
             "label": label,
             "user_name": user_name,
             "gift_name": gift_name,
-            "spoken_text": spoken_text,
         }
 
     def get_context_prompt(self) -> str:

@@ -1,4 +1,4 @@
-import { $ } from "./core.js";
+import { $, webCharacterName } from "./core.js";
 import { renderControls, renderServiceStatusCapsule } from "./live.js?v=20261114.1";
 import { renderVoicePreview } from "./voices.js";
 import { describe, label, occupancyText, tokenCount } from "./workspace-display.js";
@@ -8,7 +8,7 @@ export function renderWorkspaceStatus(model, status) {
   model.status = status;
   renderServiceStatusCapsule(status, model.settings);
   renderControls(model);
-  const character = status.character?.name || status.character?.id;
+  const character = webCharacterName(status.character);
   $("persona-current").textContent = character || "正在读取当前角色";
   $("overview-live-state").textContent = label(status.state);
   $("overview-queue").textContent = status.queue_length ?? "—";

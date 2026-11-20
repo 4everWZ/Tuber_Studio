@@ -1,5 +1,8 @@
 """Mint an ordinary Omni browser ticket for the active connection."""
 
+import asyncio
+import base64
+import hashlib
 import json
 import os
 import re
@@ -163,7 +166,8 @@ def register_private_call(app, runtime, require_admin, *, operator_chat=None):
     @app.get("/api/chat/private-call", dependencies=[Depends(require_admin)])
     async def availability():
         character = runtime.character["id"]
-        result = {"configured": private_service(runtime.settings) is not None}
+        result = {"configured": private_service(runtime.settings) is not None,
+                  "character": runtime.store.display_name(character)}
         if profiles := recordings(character):
             result["recordings"] = {p: f"{recording_route}/{character}/{p}.mp4" for p in profiles}
         return result
@@ -182,6 +186,12 @@ def register_private_call(app, runtime, require_admin, *, operator_chat=None):
             raise HTTPException(503, "尚未配置可用的 Omni 私聊连接")
         origin, token = service
         grant = runtime.tasks.scope()
+        character = runtime.character
+        try:
+            voice = runtime.settings.voice(character["voice_profile"])
+            reference = await asyncio.to_thread(runtime.voices._read_reference, voice)
+        except ValueError:
+            raise HTTPException(409, "当前音色缺少实时参考录音，请在角色卡中选择可用音色。") from None
         try:
             ticket = await mint_ticket(origin, token)
         except httpx.HTTPStatusError as error:
@@ -192,7 +202,6 @@ def register_private_call(app, runtime, require_admin, *, operator_chat=None):
             raise HTTPException(502, "私聊语音服务不可用") from None
         if runtime.tasks.scope() != grant or private_service(runtime.settings) != service:
             raise HTTPException(409, "角色、授权或 Omni 连接已变化，请重新开始通话")
-        character = runtime.character
         topic = "" if options.temporary else options.topic.strip()
         inherited = not options.temporary and not topic and options.topic_turn is not None
         if inherited:
@@ -220,13 +229,24 @@ def register_private_call(app, runtime, require_admin, *, operator_chat=None):
             instructions.append("与本次私聊话题有关的记忆资料：" + dump(notes))
         if shared:
             instructions.append("接通时的工作台状态：" + dump(shared))
+        instruction_text = "\n".join(instructions)
+        reference_uri = "data:audio/wav;base64," + base64.b64encode(reference).decode("ascii")
+        # The deployed gateway supports an 8 MiB realtime message. Account for
+        # the encoded reference, role instructions and session.update envelope.
+        if len(dump({"instructions": instruction_text, "ref_audio": reference_uri}).encode()) + 512 > 8 * 1024 * 1024:
+            raise HTTPException(409, "参考录音超过实时网关的单条消息大小，请在角色卡中更换音色。")
         show = performance(runtime.store)
         return {
             "socket": browser_socket_origin(origin) + "/v1/realtime",
             "ticket": ticket,
             "voice_context": ticket_context(token, ticket, grant) if not options.temporary else None,
             "call_scope": content_hash(grant),
-            "character": character["name"],
+            "character": runtime.store.display_name(character["id"]),
+            "voice": {
+                "id": voice["id"], "name": voice["name"],
+                "reference_sha256": hashlib.sha256(reference).hexdigest(),
+                "ref_audio": reference_uri,
+            },
             "performance": show,
             "avatar": call_avatar(runtime.settings, character) if show["pets_enabled"] else {
                 "still": None, "speaking": None, "fallback": None,
@@ -236,5 +256,5 @@ def register_private_call(app, runtime, require_admin, *, operator_chat=None):
             "memory_use": {"ids": [row["id"] for row in rows], "stamp": read_stamp(runtime, rows)}
             if rows or topic_source else None,
             **({"topic_source": topic_source} if topic_source else {}),
-            "instructions": "\n".join(instructions),
+            "instructions": instruction_text,
         }

@@ -29,7 +29,7 @@ def _read_character(config):
 def editable_character(config):
     return {
         key: value for key, value in config.items()
-        if key not in {"_edit_identity", "persona_type", "fine_tuned_model", "compact_system_prompt"}
+        if key not in {"_edit_identity", "avatar_url", "persona_type", "fine_tuned_model", "compact_system_prompt"}
     }
 
 
@@ -41,6 +41,11 @@ def character_card(config):
 
 class Store:
     def __init__(self, path: Path, seeds: list[dict]):
+        self.display_names = {seed["id"]: seed["display_name"] for seed in seeds if seed.get("display_name")}
+        self.preset_personas = {
+            seed["id"]: (seed["name"], (seed.get("core") or {}).get("identity"), seed["aliases"])
+            for seed in seeds if seed.get("aliases")
+        }
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript("""
@@ -179,6 +184,20 @@ class Store:
             raise ValueError("角色版本不存在")
         return _read_character(row["config"])
 
+    def persona_defaults(self, card):
+        preset = self.preset_personas.get(card["id"])
+        if ("aliases" not in card and preset
+                and (card["name"], (card.get("core") or {}).get("identity")) == preset[:2]):
+            return card | {"aliases": list(preset[2])}
+        return card
+
+    def web_character(self, card):
+        name = self.get("character_display:" + card["id"], self.display_names.get(card["id"]))
+        return card | {"display_name": name} if name is not None else card
+
+    def display_name(self, character_id):
+        return self.web_character({"id": character_id}).get("display_name") or character_id
+
     def characters(self):
         return [
             self.character(row["id"])
@@ -250,6 +269,7 @@ class Store:
 
     def save_character(self, config):
         data = Character.model_validate(editable_character(config)).model_dump()
+        display_name = data.pop("display_name", None)
         row = self.one("SELECT MAX(version) AS v FROM character_versions WHERE character_id=?", (data["id"],))
         data["version"] = (row["v"] or 0) + 1
         with self.db:
@@ -258,13 +278,22 @@ class Store:
                 (data["id"], data["version"], dump(data), time.time()),
             )
             self.db.execute("INSERT OR REPLACE INTO characters VALUES(?,?)", (data["id"], data["version"]))
+            if display_name is not None:
+                self.db.execute("INSERT OR REPLACE INTO kv VALUES(?,?)",
+                                ("character_display:" + data["id"], dump(display_name)))
         return data
 
     def replace_character(self, config):
         data = Character.model_validate(config).model_dump()
+        display_name = data.pop("display_name", None)
         with self.db:
             self.db.execute("BEGIN IMMEDIATE")
             current = self.managed_character(data["id"])
+            if display_name is not None:
+                self.db.execute("INSERT OR REPLACE INTO kv VALUES(?,?)",
+                                ("character_display:" + data["id"], dump(display_name)))
+            if "aliases" not in current and data.get("aliases") == self.persona_defaults(current).get("aliases"):
+                data.pop("aliases", None)
             data["version"] = current["version"]
             original = Character.model_validate(editable_character(current)).model_dump()
             if data == original:

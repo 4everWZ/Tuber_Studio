@@ -66,9 +66,11 @@ class RecentAnecdotesTool(BaseAgentTool):
 
     def execute(self, event: dict[str, Any], context_info: dict[str, Any]) -> list[dict[str, Any]]:
         character = context_info.get("character", {})
+        if "id" not in character:
+            return []
         query = event.get("text", "") if event else ""
         anecdotes = self.daily_memory.get_active_anecdotes(
-            character.get("id", "whale"),
+            character["id"],
             character.get("version", 1),
             query_text=query,
             days=3,
@@ -124,10 +126,12 @@ class HistoricalRecallTool(BaseAgentTool):
 
     def execute(self, event: dict[str, Any], context_info: dict[str, Any]) -> dict[str, Any] | None:
         character = context_info.get("character", {})
+        if "id" not in character:
+            return None
         query = event.get("text", "") if event else ""
         exclude_ids = context_info.get("active_anecdote_ids", set())
         return self.daily_memory.recall_historical_highlight(
-            character.get("id", "whale"),
+            character["id"],
             character.get("version", 1),
             query,
             exclude_ids=exclude_ids,

@@ -147,6 +147,7 @@ import { LiveDesk } from "./modules/live-desk.js?v=20261111.1";
   function renderLiveOptions(options) {
     $("live-timezone").value = options.timezone || "";
     $("live-idle").checked = options.idle;
+    $("live-idle-text").value = options.idle_text || "";
     $("live-web-fetch").checked = options.web_fetch;
     $("live-weather").checked = Boolean(options.weather);
     $("live-weather-name").value = options.weather?.name || "";
@@ -220,7 +221,7 @@ import { LiveDesk } from "./modules/live-desk.js?v=20261111.1";
       } : null;
       const options = await api("/api/live/options",{method:"PUT",body:{
         timezone:$("live-timezone").value.trim() || null,
-        idle:$("live-idle").checked,web_fetch:$("live-web-fetch").checked,weather,
+        idle:$("live-idle").checked,idle_text:$("live-idle-text").value.trim(),web_fetch:$("live-web-fetch").checked,weather,
       }});
       renderLiveOptions(options);
       feedback("直播设置已保存。");

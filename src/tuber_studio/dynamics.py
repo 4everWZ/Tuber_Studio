@@ -15,6 +15,7 @@ from .context_delivery import memory_source_allowed
 from .daily_memory import DailyMemoryService
 from .deployment_profiles import operation_profile
 from .dynamic_comment_card import comment_card, render_comment_card
+from .front_persona import expressive_persona
 from .generation_meter import budgeted_json
 from .illustration_policy import illustration_policy
 from .meme_selection import select_meme
@@ -117,11 +118,7 @@ def dynamic_decision_messages(character, recent_posts, public_sources, *, curren
             "role": "user",
             "content": _json(
                 {
-                    "character": {
-                        key: value
-                        for key, value in operation_character(character).items()
-                        if key in ("name", "core", "style", "rules")
-                    },
+                    "character": expressive_persona(operation_character(character)),
                     "current_time": current_time,
                     "recent_public_posts": recent_posts,
                     "public_sources": public_sources,

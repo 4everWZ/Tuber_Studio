@@ -1,10 +1,11 @@
 import json
+from shutil import copyfile
 
 import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.models import Character
+from tuber_studio.models import DEFAULT_CHARACTER_MANIFEST, DEFAULT_CHARACTER_VOICE, Character
 from tuber_studio.operation_identity import identity_snapshot
 from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
 from tuber_studio.providers import build_messages
@@ -79,16 +80,49 @@ def test_create_blank_character_and_rename_before_and_after_activation(settings)
         card = client.post("/api/characters", json={"name": " 新卡片 "}, headers=headers).raise_for_status().json()
         assert card["id"].startswith("oc-") and card["name"] == "新卡片"
         assert card["core"] == card["style"] == {}
+        assert card["voice_profile"] == DEFAULT_CHARACTER_VOICE
+        assert card["avatar_manifest"] == DEFAULT_CHARACTER_MANIFEST
         assert card["rules"] == card["lore"] == card["sources"] == []
         assert app.state.runtime.character == original
         path = f"/api/characters/{card['id']}"
-        card = client.put(path, json=card | {"name": "新角色", "core": {"identity": "新设定"}},
+        card = client.put(path, json=card | {"name": "新角色", "aliases": ["小站长"], "core": {"identity": "新设定"}},
                           headers=headers).raise_for_status().json()
         client.post(f"{path}/activate", headers=headers).raise_for_status()
         client.put(path, json=card | {"name": "改名后"}, headers=headers).raise_for_status()
         active = app.state.runtime.character
         assert active["id"] == card["id"] and active["name"] == "改名后"
+        assert active["aliases"] == ["小站长"]
         assert active["core"] == {"identity": "新设定"}
+
+
+def test_web_display_name_does_not_edit_character_or_operator_grant(settings):
+    app = create_app(settings)
+    with TestClient(app) as client:
+        headers = {"Authorization": "Bearer " + settings.admin_token}
+        store, runtime = app.state.store, app.state.runtime
+        before = store.character()
+        runtime.operations.configure({"enabled": True}, account_id="100", character=before)
+        path = "/api/characters/whale"
+        card = client.get(path, headers=headers).raise_for_status().json()
+        assert card["display_name"] == "大肥鱼"
+        updated = client.put(path, json=card | {"display_name": " 戏台署名 "}, headers=headers).raise_for_status().json()
+        assert updated["display_name"] == "戏台署名" and updated["name"] == "大肥鱼"
+        assert store.character() == before and "display_name" not in runtime.character
+        assert runtime.operations.policy()["enabled"] is True
+        assert client.get("/api/chat/intelligent", headers=headers).json()["character"] == "戏台署名"
+        assert client.get("/api/chat/private-call", headers=headers).json()["character"] == "戏台署名"
+        cleared = client.put(path, json=updated | {"display_name": ""}, headers=headers).raise_for_status().json()
+        assert cleared["display_name"] == ""
+        assert client.get("/api/chat/intelligent", headers=headers).json()["character"] == "whale"
+
+
+def test_blank_card_prefers_configured_yaoyao_recording(settings):
+    path = settings.runtime / "tts/ref/yaoyao-reference32k.wav"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    copyfile(settings.root / "assets/default/voice.wav", path)
+    assert settings.default_character_voice() == "yaoyao_reference"
+    settings.data["commercial_mode"] = True
+    assert settings.default_character_voice() == DEFAULT_CHARACTER_VOICE
 
 
 def test_character_list_uses_first_creation_time_across_versions_and_restore(store):

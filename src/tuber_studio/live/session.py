@@ -27,11 +27,7 @@ HANDOFF_PLATFORM = "operator_handoff"
 IDLE_AFTER = 90
 IDLE_COOLDOWN = 180
 IDLE_WINDOW = 600
-IDLE_LINES = (
-    "小窝安静得能听见气泡冒上去。你们慢慢潜水，我也歇会儿。",
-    "给尾巴找个舒服的位置……好，这下谁都别挪我的坐垫。",
-    "刚刚桌上还有一碗白饭。至于现在去哪儿了，你们别问。",
-)
+LIVE_OUTCOMES = ("draw_guess_won", "draw_guess_start", "game_switch", "game_action")
 
 
 class LiveSession:
@@ -70,7 +66,6 @@ class LiveSession:
         self.lookup = LiveLookup()
         self.last_activity = time.monotonic()
         self.idle_attempts = deque(maxlen=2)
-        self.idle_index = 0
 
     @property
     def busy(self):
@@ -305,6 +300,8 @@ class LiveSession:
         metadata.pop("_live_account", None)
         metadata.pop("_live_input", None)
         metadata.pop("_handoff_account", None)
+        for key in LIVE_OUTCOMES:
+            metadata.pop(key, None)
         if event.platform == HANDOFF_PLATFORM and internal:
             metadata["_handoff_account"] = handoff_account
         original_type, original_text = event.type, event.text
@@ -343,15 +340,12 @@ class LiveSession:
                             user_id=event.platform_user_id,
                             display_name=event.display_name,
                             text=event.text,
-                            character_id=self.runtime.character["id"] if self.runtime.character else "whale",
-                            character_version=self.runtime.character["version"]
-                            if self.runtime.character
-                            else 1,
+                            character_id=self.runtime.character["id"],
+                            character_version=self.runtime.character["version"],
                         )
                         if matched_win:
                             event = event.model_copy(
                                 update={
-                                    "text": matched_win["spoken_text"],
                                     "metadata": {**event.metadata, "draw_guess_won": matched_win},
                                 }
                             )
@@ -363,7 +357,6 @@ class LiveSession:
                             start_info = self.draw_and_guess.start_round(trigger_user=event.display_name)
                             event = event.model_copy(
                                 update={
-                                    "text": start_info["spoken_text"],
                                     "metadata": {**event.metadata, "draw_guess_start": start_info},
                                 }
                             )
@@ -377,7 +370,6 @@ class LiveSession:
                             )
                             event = event.model_copy(
                                 update={
-                                    "text": sw_info["spoken_text"],
                                     "metadata": {**event.metadata, "game_switch": sw_info},
                                 }
                             )
@@ -405,7 +397,6 @@ class LiveSession:
                         )
                         event = event.model_copy(
                             update={
-                                "text": sw_info["spoken_text"],
                                 "metadata": {**event.metadata, "game_switch": sw_info},
                             }
                         )
@@ -421,7 +412,6 @@ class LiveSession:
                             )
                             event = event.model_copy(
                                 update={
-                                    "text": act_info["spoken_text"],
                                     "metadata": {**event.metadata, "game_action": act_info},
                                 }
                             )
@@ -435,7 +425,6 @@ class LiveSession:
                                 )
                                 event = event.model_copy(
                                     update={
-                                        "text": start_info["spoken_text"],
                                         "metadata": {**event.metadata, "draw_guess_start": start_info},
                                     }
                                 )
@@ -660,12 +649,8 @@ class LiveSession:
                     self.last_activity = time.monotonic()
                 else:
                     self.idle_attempts.append(time.monotonic())
-                    line = (
-                        IDLE_LINES[self.idle_index] if self.runtime.character["id"] == "whale"
-                        else "安静一会儿，你们想聊了就叫我。"
-                    )
+                    line = self.options().idle_text or "想聊的话，随时在弹幕里说。"
                     await self._submit(Event(type="idle", text=line), internal=True)
-                    self.idle_index = (self.idle_index + 1) % len(IDLE_LINES)
             while self.queue and self.state == "live" and not self.muted:
                 self.current_id = self.pick()
                 self.online_songs.sync()
@@ -700,7 +685,7 @@ class LiveSession:
                 self.store.update_job(job_id, status="expired", error="排队期间过期")
                 self.store.execute("UPDATE events SET status='expired' WHERE id=?", (row["id"],))
                 return
-            character = self.store.character(job["character_id"], job["character_version"])
+            character = self.store.persona_defaults(self.store.character(job["character_id"], job["character_version"]))
             parts = []
             async with self.runtime.generation_lock:
                 if event["type"] == "sfx":
@@ -728,43 +713,19 @@ class LiveSession:
                         reply = Reply(spoken_text=event["text"], emotion="cheerful", animation_id="talk")
                         answer_check = None
                         self.timings["llm_ms"] = 0
-                    elif meta.get("draw_guess_won"):
+                    elif announcement := meta.get("draw_guess_start") or meta.get("game_switch"):
                         reply = Reply(
-                            spoken_text=meta["draw_guess_won"]["spoken_text"],
-                            emotion="cheerful",
-                            animation_id="talk_happy",
-                            reply_to=[event["event_id"]],
-                        )
-                        answer_check = None
-                        self.timings["llm_ms"] = 0
-                    elif meta.get("draw_guess_start"):
-                        reply = Reply(
-                            spoken_text=meta["draw_guess_start"]["spoken_text"],
-                            emotion="cheerful",
-                            animation_id="talk_happy",
-                            reply_to=[event["event_id"]],
-                        )
-                        answer_check = None
-                        self.timings["llm_ms"] = 0
-                    elif meta.get("game_switch"):
-                        reply = Reply(
-                            spoken_text=meta["game_switch"]["spoken_text"],
+                            spoken_text=announcement["spoken_text"],
                             emotion="cheerful",
                             animation_id="talk",
                             reply_to=[event["event_id"]],
                         )
                         answer_check = None
                         self.timings["llm_ms"] = 0
-                    elif meta.get("game_action"):
-                        reply = Reply(
-                            spoken_text=meta["game_action"]["spoken_text"],
-                            emotion="excited",
-                            animation_id="talk_happy",
-                            reply_to=[event["event_id"]],
-                        )
-                        answer_check = None
-                        self.timings["llm_ms"] = 0
                     else:
+                        for kind in ("draw_guess_won", "game_action"):
+                            if kind in meta:
+                                event["live_outcome"] = {"kind": kind, **meta[kind]}
                         started = time.perf_counter()
                         reply, answer_check = await self.runtime.generate_reply(
                             "live:" + self.session_id,

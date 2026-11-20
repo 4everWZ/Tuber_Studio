@@ -114,7 +114,7 @@ def test_character_sources_stay_out_of_prompt_and_lore_is_bounded():
     assert all(source not in "\n".join(m["content"] for m in messages) for source in role["sources"])
     assert role["license_status"] not in "\n".join(m["content"] for m in messages)
     fixed = json.loads(messages[0]["content"].split("角色设定：", 1)[1])
-    assert fixed["identity"] == role["core"]
+    assert fixed["core"] == role["core"]
     assert "\n".join(msg["content"] for msg in messages).count(role["core"]["examples"][0]["reply"]) == 1
     event["text"] = " ".join(item["keywords"][0] for item in role["lore"])
     messages = build_messages(role, event, {})

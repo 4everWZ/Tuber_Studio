@@ -691,7 +691,7 @@
           <div class="op-empty-state">
             <div class="op-empty-icon">👈</div>
             <h3>请选择左侧浏览任务</h3>
-            <p class="hint">查看视频内容证据与大肥鱼的思考细节。</p>
+            <p class="hint">查看本轮取材与判断。</p>
           </div>
         `;
         return;

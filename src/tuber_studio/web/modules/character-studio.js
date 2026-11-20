@@ -1,9 +1,9 @@
 "use strict";
 
-import { $ } from "./core.js";
+import { $, webCharacterName } from "./core.js";
 
 function editableCard(character) {
-  const { version, persona_type, fine_tuned_model, compact_system_prompt, ...card } = character;
+  const { version, avatar_url, persona_type, fine_tuned_model, compact_system_prompt, ...card } = character;
   return card;
 }
 
@@ -48,6 +48,8 @@ function renderOwner(owner) {
 export function syncCharacterJsonToVisual(character) {
   if (!character) return;
   if ($("oc-name")) $("oc-name").value = character.name || "";
+  if ($("oc-display-name")) $("oc-display-name").value = character.display_name || "";
+  if ($("oc-aliases")) $("oc-aliases").value = (character.aliases || []).join("、");
   $("oc-self-description").value = character.self_description || "";
   $("oc-speaking-style").value = character.speaking_style || "";
   if ($("oc-bilibili-owner")) {
@@ -79,6 +81,10 @@ export function syncVisualToCharacterJson(model, changedId) {
   const charObj = editableCard(JSON.parse($("character-editor").value));
   const changed = id => !changedId || changedId === id;
   if (changed("oc-name")) charObj.name = $("oc-name").value.trim();
+  if (changed("oc-display-name") && $("oc-display-name")) charObj.display_name = $("oc-display-name").value.trim();
+  if (changed("oc-aliases") && $("oc-aliases")) {
+    charObj.aliases = $("oc-aliases").value.split(/[、，,]/).map(name => name.trim()).filter(Boolean);
+  }
   for (const [id, key] of [["oc-self-description", "self_description"], ["oc-speaking-style", "speaking_style"]]) {
     if (!changed(id)) continue;
     const text = $(id).value.trim();
@@ -127,7 +133,7 @@ export function setCharacterEditor(character, model) {
     "character-editor", "save-character", "reset-character", "activate-character", "delete-character"].forEach(id => {
     if ($(id) && $(id).getAttribute?.("aria-busy") !== "true") $(id).disabled = false;
   });
-  $("editor-title").textContent = `编辑角色卡 · ${character.name || character.id}`;
+  $("editor-title").textContent = `编辑角色卡 · ${webCharacterName(character)}`;
   markCharacterDirty(model);
   syncCharacterJsonToVisual(character);
 }
@@ -141,10 +147,19 @@ export function renderCharacterList(model, { busy, node, onSelect }) {
     return;
   }
   model.characters.forEach(character => {
-    const button = node("button", character.name || character.id, character.id === model.characterId ? "selected" : "");
-    if (character.id === model.status?.character?.id) button.append(node("small", " · 已激活"));
+    const button = node("button", null, character.id === model.characterId ? "selected" : "");
+    const heading = node("span", null, "character-list-heading");
+    if (character.avatar_url) {
+      const image = node("img");
+      image.src = character.avatar_url;
+      image.alt = "";
+      heading.append(image);
+    }
+    heading.append(node("span", webCharacterName(character)));
+    if (character.id === model.status?.character?.id) heading.append(node("small", "当前角色"));
+    button.append(heading);
     if (character.bilibili_owner?.name) {
-      button.append(node("small", `B 站号主 · ${character.bilibili_owner.name}`, "hint character-list-owner"));
+      button.append(node("small", `绑定的 B 站号主 · ${character.bilibili_owner.name}`, "hint character-list-owner"));
     }
     button.addEventListener("click", () => busy(button, async () => {
       if (model.characterDirty && !confirm("角色配置有未保存修改。放弃修改并切换所选角色？")) return;
@@ -211,7 +226,7 @@ export function initCharacterStudioUI(model, {
   });
 
   const visualIds = [
-    "oc-name", "oc-self-description", "oc-speaking-style", "oc-bilibili-owner", "oc-identity", "oc-background", "oc-traits",
+    "oc-name", "oc-display-name", "oc-aliases", "oc-self-description", "oc-speaking-style", "oc-bilibili-owner", "oc-identity", "oc-background", "oc-traits",
     "oc-min-chars", "oc-max-chars", "oc-catchphrases", "oc-instructions",
     "oc-voice-profile", "oc-avatar-manifest"
   ];
@@ -356,8 +371,8 @@ export function initCharacterStudioUI(model, {
         } catch (error) {
           const details = error.body?.detail;
           const first = Array.isArray(details) ? details[0] : null;
-          const fields = { name: "oc-name", bilibili_owner: "oc-bilibili-owner",
-            self_description: "oc-self-description", speaking_style: "oc-speaking-style",
+          const fields = { name: "oc-name", display_name: "oc-display-name", bilibili_owner: "oc-bilibili-owner",
+            aliases: "oc-aliases", self_description: "oc-self-description", speaking_style: "oc-speaking-style",
             voice_profile: "oc-voice-profile", avatar_manifest: "oc-avatar-manifest" };
           if (error.field || first) {
             const json = $("character-editor");
@@ -414,7 +429,8 @@ export function initCharacterStudioUI(model, {
     const id = model.characterId;
     const card = model.characterDirty ? readCard() : null;
     const alreadyActive = model.status?.character?.id === id;
-    if (!alreadyActive && !confirm(`${card ? "保存并激活" : "激活"} ${card?.name || model.character.name}？旧角色尚未播报的任务将被取消。`)) return;
+    if (!alreadyActive && (model.status?.current_job || model.status?.queue_length) &&
+        !confirm(`切换到「${webCharacterName(card || model.character)}」？当前直播待播内容将取消。`)) return;
     if (card && !await saveCard(id, card)) {
       await doLoadCharacters();
       notice("角色已保存。请在当前编辑完成后激活。");
@@ -447,14 +463,14 @@ export function initCharacterStudioUI(model, {
       const row = node("div", "", "panel-heading");
       const restore = node("button", "恢复", "win-btn");
       restore.type = "button";
-      restore.setAttribute("aria-label", `恢复 ${card.name}`);
+      restore.setAttribute("aria-label", `恢复 ${webCharacterName(card)}`);
       restore.onclick = () => busy(restore, async () => {
         await api(`/api/characters/${encodeURIComponent(card.id)}/restore`, { method: "POST" });
         await Promise.all([doLoadCharacters(), loadDeleted()]);
         deletedPanel.querySelector("summary").focus();
-        notice(`已恢复 ${card.name}。`);
+        notice(`已恢复 ${webCharacterName(card)}。`);
       });
-      row.append(node("span", card.name), restore);
+      row.append(node("span", webCharacterName(card)), restore);
       container.append(row);
     }
   }
@@ -475,14 +491,14 @@ export function initCharacterStudioUI(model, {
       const placeholder = new Option("选择替代角色", "", true, true);
       placeholder.disabled = true;
       replacement.add(placeholder);
-      for (const card of choices) replacement.add(new Option(card.name, card.id));
+      for (const card of choices) replacement.add(new Option(webCharacterName(card), card.id));
     }
     replacement.required = active && choices.length > 0;
     $("replacement-character-label").hidden = !replacement.required;
     $("confirm-delete-character").disabled = active && !choices.length;
     $("delete-character-description").textContent = active && !choices.length ?
       "这是唯一可用的角色卡。请先新建一张替代角色卡。" :
-      `删除「${model.character.name}」后可在「已删除」恢复。${model.characterDirty ? "未保存的修改会丢失。" : ""}`;
+      `删除「${webCharacterName(model.character)}」后可在「已删除」恢复。${model.characterDirty ? "未保存的修改会丢失。" : ""}`;
     $("delete-character-error").textContent = "";
     deletion.showModal();
   });

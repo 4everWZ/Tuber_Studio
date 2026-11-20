@@ -59,7 +59,7 @@ def category(text, attachments=()):
         return "suggestion"
     if re.search(r"[?？]|怎么|为什么|请问|能不能|如何|多少", text):
         return "question"
-    if re.search(r"谢谢|喜欢|可爱|支持|鱼鱼|鲸鱼|大肥鱼", text):
+    if re.search(r"谢谢|喜欢|可爱|支持", text):
         return "interaction"
     return "general"
 

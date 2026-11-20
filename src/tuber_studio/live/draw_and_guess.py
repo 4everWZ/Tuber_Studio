@@ -313,22 +313,13 @@ class DrawAndGuessService:
         self.winner = None
         self.winner_user_id = None
 
-        if gift_name:
-            spoken_text = (
-                f"当当当！大肥鱼灵魂画手上线！感谢【{trigger_user}】送出的【{gift_name}】开启你画我猜！"
-                f"猜猜本鱼画的是什么？弹幕发答案抢答哦！"
-            )
-        else:
-            spoken_text = (
-                f"当当当！大肥鱼灵魂画手上线！由【{trigger_user}】发起了你画我猜！"
-                f"快看看画布，猜猜本鱼画的是什么？"
-            )
-
         return {
             "status": "started",
             "word_id": chosen["id"],
             "category": chosen["category"],
-            "spoken_text": spoken_text,
+            "trigger_user": trigger_user,
+            "gift_name": gift_name,
+            "spoken_text": f"{trigger_user}开启了你画我猜，欢迎在弹幕里作答。",
             "duration_sec": duration_sec,
         }
 
@@ -339,7 +330,7 @@ class DrawAndGuessService:
         text: str,
         is_gift: bool = False,
         coin: int = 0,
-        character_id: str = "whale",
+        character_id: str | None = None,
         character_version: int = 1,
     ) -> dict | None:
         """
@@ -371,12 +362,7 @@ class DrawAndGuessService:
         self.last_finish_at = time.time()
         word = self.current_word["word"]
 
-        spoken_text = (
-            f"哇！恭喜【{display_name}】猜对啦！答案就是【{word}】！"
-            f"太懂大肥鱼的灵魂画风了吧，必须给你比个大爱心！"
-        )
-
-        if self.daily_memory and hasattr(self.daily_memory, "record_highlight"):
+        if character_id and self.daily_memory and hasattr(self.daily_memory, "record_highlight"):
             try:
                 from datetime import UTC, datetime
 
@@ -388,7 +374,7 @@ class DrawAndGuessService:
                     category="live_highlight",
                     headline=f"观众 {display_name} 猜中了你画我猜题目【{word}】",
                     quote=f"{display_name}: {text}",
-                    anecdote=f"在直播间【你画我猜】环节中，大肥鱼手绘了【{word}】，观众【{display_name}】眼疾手快第一个猜中！",
+                    anecdote=f"【你画我猜】的答案是【{word}】，观众【{display_name}】第一个猜中。",
                     source_ref=f"draw_guess_{self.current_word['id']}",
                     source_user=display_name,
                     tags=["你画我猜", "互动", word],
@@ -406,7 +392,6 @@ class DrawAndGuessService:
             "status": "won",
             "winner": display_name,
             "word": word,
-            "spoken_text": spoken_text,
             "elapsed_sec": round(time.time() - self.started_at, 1),
         }
 
@@ -425,14 +410,9 @@ class DrawAndGuessService:
             self.last_finish_at = time.time()
             word = self.current_word["word"]
 
-            spoken_text = (
-                f"时间到啦！居然没人猜出来！答案其实是【{word}】呀！"
-                f"本鱼画得明明这么传神，你们这群小鱼籽还得继续修炼眼力哦！"
-            )
             return {
                 "status": "timeout",
                 "word": word,
-                "spoken_text": spoken_text,
             }
         return None
 

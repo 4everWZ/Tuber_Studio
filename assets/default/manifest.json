@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "id": "default_idle",
+      "tag": "idle",
+      "path": "assets/default/idle.png",
+      "title": "默认形象"
+    }
+  ]
+}

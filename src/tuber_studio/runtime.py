@@ -13,6 +13,7 @@ from .api_providers import create_llm, create_operation_llm
 from .context import ContextManager
 from .context_delivery import comment_scope
 from .daily_memory import DailyMemoryService, MemoryChanged
+from .front_persona import front_identity
 from .generation_meter import budgeted_call
 from .live.scene import LiveScene
 from .live.session import HANDOFF_PLATFORM, LiveSession
@@ -89,7 +90,7 @@ class Runtime:
 
     @property
     def character(self):
-        return self.store.character()
+        return self.store.persona_defaults(self.store.character())
 
     @property
     def llm(self):
@@ -289,7 +290,7 @@ class Runtime:
         return {
             "state": self.live.state,
             "muted": self.live.muted,
-            "character": character_card(character),
+            "character": character_card(self.store.web_character(character)) | {"version": character["version"]},
             "session_id": self.live.session_id,
             "queue_length": len(self.live.queue),
             "overlay_connected": self.live.overlay is not None,
@@ -516,7 +517,8 @@ class Runtime:
         text = event["text"]
         messages = [
             {"role": "system", "content": "以当前角色口吻向直播观众讲一句。根据交接文字说结论。"
-             "使用 spoken_text、emotion、animation_id 和 reply_to 输出。角色表达：" + dump(character["style"])},
+             "使用 spoken_text、emotion、animation_id 和 reply_to 输出。\n" + front_identity(character)
+             + "\n角色表达：" + dump(character["style"])},
             {"role": "user", "content": dump({"交接文字": text, "直播偏好": [row["anecdote"] for row in style]})},
         ]
         # Provider wrappers otherwise resolve and append the active account.

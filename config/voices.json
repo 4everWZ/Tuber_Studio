@@ -1,5 +1,17 @@
 [
   {
+    "id": "neutral_reference",
+    "name": "中性 · 合成参考",
+    "provider": "omni_reference",
+    "reference_asset": "assets/default/voice.wav",
+    "reference_text": "Good morning. We can work through this together.",
+    "source": "assets/default/voice.wav",
+    "attribution": "Flite awb 合成示例",
+    "license_status": "synthetic_reference",
+    "commercial_allowed": false,
+    "version": "1"
+  },
+  {
     "id": "whale_sample_v1",
     "name": "大肥鱼 · 固定试听",
     "provider": "prerecorded",

@@ -2,10 +2,10 @@
 
 import re
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 from .operation_text import validate_operation_text
 
@@ -81,6 +81,8 @@ class BilibiliOwner(StrictModel):
 
 
 _PROFILE_LIMIT = 120
+DEFAULT_CHARACTER_VOICE = "neutral_reference"
+DEFAULT_CHARACTER_MANIFEST = "assets/default/manifest.json"
 _IDENTITY_START = re.compile(r"^(?:[我你她他]是(?!否)|(?:I am|I'm|You are|You're)\s+)", re.I)
 _STYLE_START = re.compile(r"^(?:说话|语气|口吻|对白|措辞|用词|表达方式|自称|I speak\b|You speak\b|Speak\b)", re.I)
 
@@ -102,6 +104,8 @@ def _legacy_profile_clause(value, opening):
 def resident_character_profile(character):
     """Read the conversational identity without materializing defaults into a saved card."""
     profile = {"name": character["name"]}
+    if aliases := character.get("aliases"):
+        profile["aliases"] = aliases
     for key, section, legacy_key, opening in (
         ("self_description", "core", "identity", _IDENTITY_START),
         ("speaking_style", "style", "instructions", _STYLE_START),
@@ -131,6 +135,10 @@ class Character(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(pattern=r"^[a-z0-9_-]{1,50}$")
     name: str = Field(min_length=1, max_length=60)
+    display_name: str | None = Field(default=None, max_length=60, exclude_if=lambda value: value is None)
+    aliases: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]] | None = Field(
+        default=None, max_length=12, exclude_if=lambda value: value is None
+    )
     self_description: str | None = Field(default=None, max_length=_PROFILE_LIMIT, exclude_if=lambda value: value is None)
     speaking_style: str | None = Field(default=None, max_length=_PROFILE_LIMIT, exclude_if=lambda value: value is None)
     version: int = Field(default=1, ge=1)
@@ -148,6 +156,25 @@ class Character(BaseModel):
     @classmethod
     def reference_voice(cls, value):
         return canonical_voice_id(value)
+
+    @field_validator("aliases")
+    @classmethod
+    def validate_aliases(cls, value):
+        if value is None:
+            return None
+        if any(len(name.splitlines()) != 1 for name in value):
+            raise ValueError("每个称呼须为一行")
+        return list(dict.fromkeys(value))
+
+    @field_validator("display_name")
+    @classmethod
+    def single_line_display_name(cls, value):
+        if value is None:
+            return None
+        value = value.strip()
+        if len(value.splitlines()) > 1:
+            raise ValueError("前台显示名须为一行")
+        return value
 
     @field_validator("self_description", "speaking_style", mode="before")
     @classmethod

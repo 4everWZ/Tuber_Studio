@@ -6,6 +6,7 @@
   const catBadge = document.getElementById("category-badge");
   const timerBadge = document.getElementById("timer-badge");
   const triggerUser = document.getElementById("trigger-user");
+  const title = document.getElementById("draw-guess-title");
   const clueText = document.getElementById("clue-text");
   const winnerBanner = document.getElementById("winner-banner");
   const bannerTitle = document.getElementById("banner-title");
@@ -64,6 +65,7 @@
           hideTimer = null;
         }
         container.hidden = false;
+        title.textContent = data.character ? `${data.character} · 你画我猜` : "你画我猜";
 
         catBadge.textContent = "分类: " + (data.category || "趣味猜猜看");
         timerBadge.textContent = Math.ceil(data.remaining) + "s";
@@ -76,7 +78,9 @@
           winnerBanner.classList.remove("hidden");
           if (data.winner) {
             bannerTitle.textContent = "🎉 抢答成功！";
-            bannerWinner.innerHTML = `恭喜 <strong>${data.winner}</strong> 猜对！`;
+            const winner = document.createElement("strong");
+            winner.textContent = data.winner;
+            bannerWinner.replaceChildren("恭喜 ", winner, " 猜对！");
             bannerAnswer.textContent = `答案：【${data.word}】`;
           } else {
             bannerTitle.textContent = "⏰ 时间到！";

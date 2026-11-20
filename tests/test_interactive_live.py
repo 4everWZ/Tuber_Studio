@@ -153,6 +153,9 @@ async def test_live_mock_event_draw_guess_flow(settings):
     assert res_guess["status"] == "queued"
     assert runtime.live.draw_and_guess.winner == "猜谜高手"
     assert runtime.live.draw_and_guess.state == "finished"
+    payload = runtime.store.event(runtime.store.job(res_guess["job_id"])["event_id"])["payload"]
+    assert payload["text"] == "我猜是西瓜！"
+    assert payload["metadata"]["draw_guess_won"]["word"] == "西瓜"
 
     # Verify highlight was recorded to daily_memory
     highlights = runtime.daily_memory.list_highlights(runtime.character["id"], runtime.character["version"])

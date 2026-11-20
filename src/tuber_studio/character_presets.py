@@ -42,6 +42,8 @@ def _fingerprint(config):
         # Unknown fields and malformed historical/custom configs are left alone.
         return None
     data.pop("version", None)
+    data.pop("aliases", None)
+    data.pop("display_name", None)
     # Compare using the spelling in the original fingerprints, even after an equivalent voice rename.
     for old, current in LEGACY_VOICE_IDS.items():
         if data["voice_profile"] == current:

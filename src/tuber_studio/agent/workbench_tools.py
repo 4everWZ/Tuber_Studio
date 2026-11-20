@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import Field, StrictBool, StrictFloat, StrictInt
 
+from ..front_persona import character_names
 from ..models import StrictModel
 from .workshop_settings import read_settings, settings_catalog, update_settings
 
@@ -71,9 +72,7 @@ def setting_target(group, source, *, character, read_only):
     if group == "pets":
         labels = ("宠物", "形象", "表情", "皮肤")
         if not read_only:
-            labels += (character["name"],)
-            if character["id"] == "whale":
-                labels += ("鱼鱼", "鲸鲸", "小鲸鱼")
+            labels += character_names(character)
         return any(label in source for label in labels)
     entry = settings_catalog().get(group)
     if not entry:

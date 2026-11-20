@@ -1,4 +1,5 @@
 import {api} from "./api.js";
+import {webCharacterName} from "./core.js";
 
 export function initArtworkReferences() {
   const scope = document.getElementById("artwork-reference-scope");
@@ -88,7 +89,7 @@ export function initArtworkReferences() {
     characterId = id;
     data = null;
     busy = false;
-    scope.textContent = id ? (character.name || id) + " · PNG 或 JPEG，最多 4 MiB、800 万像素。" : "等待读取当前角色。";
+    scope.textContent = id ? webCharacterName(character) + " · PNG 或 JPEG，最多 4 MiB、800 万像素。" : "等待读取当前角色。";
     result.textContent = id ? "正在读取参考图…" : "";
     render();
     if (!id) return;

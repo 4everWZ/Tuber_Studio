@@ -13,7 +13,8 @@ from uuid import uuid4
 import httpx
 
 from . import omni_speech
-from .front_persona import front_identity
+from .front_background import front_background
+from .front_persona import expressive_persona, front_identity
 from .http_api import api_client, check_response_status, models_health
 from .models import OperationReply, Reply
 from .operation_identity import (
@@ -50,8 +51,7 @@ def build_messages(character, event, relationship, mode="live", *, history=()):
     if operator_chat:
         system_content = SYSTEM_RULES + front_identity(character)
     else:
-        fixed = {"identity": character["core"], "style": character["style"], "rules": character["rules"]}
-        system_content = SYSTEM_RULES + json.dumps(fixed, ensure_ascii=False)
+        system_content = SYSTEM_RULES + json.dumps(expressive_persona(character), ensure_ascii=False)
 
     messages = [
         {"role": "system", "content": system_content},
@@ -61,6 +61,11 @@ def build_messages(character, event, relationship, mode="live", *, history=()):
         messages[1]["content"] += (
             "\n会话记录中 viewer 是来信人，operator 是号主代回，oc 是你已实际发送的话。"
             "以当前 open 来信为回复对象，先前记录用于承接话题。"
+        )
+    if mode == "live" and event.get("live_outcome"):
+        messages[1]["content"] += (
+            "\n按 live_outcome 里已确认的结果向观众接话。"
+            "游戏动作状态 enqueued 表示已经排队，可以感谢送礼的人并说接下来要做的事。"
         )
     actors = None
     if mode == "comment_draft" and event.get("self_actor"):
@@ -78,11 +83,9 @@ def build_messages(character, event, relationship, mode="live", *, history=()):
     # Logical history and its compacted summary belong to ContextManager. Do not
     # inject a second, empty history snapshot after the actual conversation.
     optional = {"confirmed_relationship": relationship}
+    if background := front_background(character, event["text"], history=history):
+        optional["角色背景"] = background
     if operator_chat:
-        from .front_background import front_background
-
-        if background := front_background(character, event["text"], history=history):
-            optional["角色背景"] = background
         messages[1]["content"] += "\n" + private_participant_instructions(
             character, event.get("platform"), event.get("platform_user_id")
         )

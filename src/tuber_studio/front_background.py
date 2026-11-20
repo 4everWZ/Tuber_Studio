@@ -4,6 +4,7 @@ import json
 import re
 
 from .daily_memory import front_topic_keywords
+from .front_persona import without_address
 
 _PAST = re.compile(
     r"(?:(?:你的|角色的)(?:过去|过往|经历|故事|背景|身世|来历)|"
@@ -98,18 +99,13 @@ def _last_topic(history):
 
 def front_background(character, query: str, *, history=()) -> list[str]:
     """History may supply the referent of a follow-up, never the returned text."""
-    query = _PERSONA_QUESTION.sub(" ", query).strip(" ，,。！？!?～~\n")
+    query = _PERSONA_QUESTION.sub(" ", without_address(query, character)).strip(" ，,。！？!?～~\n")
     if _FOLLOWUP.fullmatch(query):
         # Take the last exchange only. An earlier topic cannot cross a change
         # of subject or replace an absent/disabled conversation window.
-        query = _PERSONA_QUESTION.sub(" ", _last_topic(history))
-    name = character.get("name")
-    if name:
-        query = query.replace(name, " ").strip(" ，,。！？!?")
+        query = _PERSONA_QUESTION.sub(" ", without_address(_last_topic(history), character))
     if not query:
         return []
-    if character.get("id") == "whale":
-        query = re.sub(r"(?:小鲸鱼|鱼鱼|鲸鲸)(?=[，,、\s]|你好|早|晚上好|$)", " ", query)
     topics = front_topic_keywords(_BACKGROUND_FRAMING.sub(" ", query))
     general = bool(_PAST.search(query))
     home = bool(_HOME.search(query))

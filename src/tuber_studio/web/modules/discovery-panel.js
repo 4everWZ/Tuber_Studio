@@ -1,4 +1,4 @@
-import { $, node, safeMessage } from "./core.js";
+import { $, node, safeMessage, webCharacterName } from "./core.js";
 import { evidenceList } from "./comment-queue.js?v=20261107.21";
 
 const states = {
@@ -195,7 +195,7 @@ export function initDiscoveryPanel(api) {
   function render(data) {
     value = data;
     const label = states[data.state] || "状态未知";
-    $("workspace-character").textContent = data.character?.name || data.character?.id || "角色待确认";
+    $("workspace-character").textContent = webCharacterName(data.character) || "待确认";
     status.textContent = label;
     if (!dirty) {
       source.value = data.source.mode;

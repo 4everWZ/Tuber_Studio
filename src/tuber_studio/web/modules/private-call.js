@@ -29,6 +29,7 @@ async function check() {
   try {
     const state = await api("/api/chat/private-call");
     open.disabled = open.hidden = !state.configured || workspace.hidden || chat.hidden;
+    if (state.character) byId("private-call-title").textContent = `与 ${state.character} 通话`;
     const recordings = byId("private-call-recordings");
     recordings.replaceChildren();
     for (const [profile, label] of [["mature", "常规版通话实录"], ["q", "Q 版通话实录"]]) {
@@ -48,6 +49,10 @@ async function check() {
 const visibility = new MutationObserver(check);
 for (const target of [workspace, chat]) visibility.observe(target, {attributes: true, attributeFilter: ["hidden"]});
 check();
+document.addEventListener("studio-character-change", () => {
+  if (current) finish(current, "character_changed", "角色已切换，可重新拨打。");
+  void check();
+});
 
 function finish(call, cause, message, code = null) {
   if (call !== current || !call) return;
@@ -81,7 +86,7 @@ function finish(call, cause, message, code = null) {
   status.textContent = message;
 }
 
-async function capture(call, identity) {
+async function capture(call, identity, voice) {
   status.textContent = "等待麦克风授权…";
   await call.context.audioWorklet.addModule("/static/modules/private-call-capture.js");
   if (current !== call) return;
@@ -101,7 +106,7 @@ async function capture(call, identity) {
     const audio = btoa(String.fromCharCode(...new Uint8Array(data)));
     call.send({type: "input_audio_buffer.append", format: "pcm16", sample_rate_hz: 16000, audio});
   };
-  status.textContent = `正在与${identity}私聊 · 麦克风已开启`;
+  status.textContent = `正在与${identity}私聊 · 麦克风已开启${voice ? ` · ${voice}` : ""}`;
 }
 
 async function begin(previous = null) {
@@ -172,6 +177,7 @@ async function begin(previous = null) {
     call.socket.onopen = () => call.send({type: "session.update", session: {
       instructions: config.instructions, modalities: ["audio", "text"], input_audio_format: "pcm16",
       output_audio_format: "pcm16", playback_commit_policy: "ack_only", extra_body: {auto_response: true},
+      ...(config.voice?.ref_audio ? {ref_audio: config.voice.ref_audio} : {}),
     }});
     call.socket.onerror = () => finish(call, "realtime_ws_error", "无法连接私聊语音服务");
     call.socket.onclose = event => finish(call, "realtime_ws_close", "私聊连接已断开", event.code);
@@ -198,7 +204,7 @@ async function begin(previous = null) {
           work.hidden = ephemeral;
           call.receipts = setInterval(() => call.playback.acknowledge(), 200);
           call.heartbeat = setInterval(() => call.send({type: "session.heartbeat"}), 20000);
-          await capture(call, config.character);
+          await capture(call, config.character, config.voice?.name);
         } else if (call.stream) {
           const text = !ephemeral && call.utterances.accept(event);
           if (text) call.review.add(text);

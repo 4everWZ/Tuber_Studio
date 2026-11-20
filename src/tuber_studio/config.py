@@ -18,7 +18,7 @@ from .deployment_profiles import (
 )
 from .http_api import endpoint
 from .inference_validation import project_wav
-from .models import canonical_voice_id
+from .models import DEFAULT_CHARACTER_VOICE, canonical_voice_id
 from .responses_provider import ResponsesConfig
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -234,6 +234,14 @@ class Settings:
             raise ValueError("商业模式不能启用未获商业授权的音色")
         return voice
 
+    def default_character_voice(self) -> str:
+        try:
+            voice = self.voice("yaoyao_reference")
+            self.voice_reference_path(voice)
+        except (ValueError, OSError):
+            return DEFAULT_CHARACTER_VOICE
+        return voice["id"]
+
     def assets(self, character: dict | None = None) -> list[dict]:
         manifest = (character or {}).get("avatar_manifest", "assets/whale/manifest.json")
         try:
@@ -242,6 +250,11 @@ class Settings:
             for entry in entries:
                 path = entry["path"].replace("\\", "/")
                 entry["url"] = "/" + path
+                if still := entry.get("still_path"):
+                    try:
+                        entry["still_url"] = "/" + self.asset_path(still).relative_to(self.root).as_posix()
+                    except ValueError:
+                        pass
                 # A character owns its manifest reference. A cloned card may deliberately
                 # reuse that manifest without inheriting the original character identity.
                 if character:
@@ -249,6 +262,16 @@ class Settings:
             return entries
         except (ValueError, OSError, KeyError):
             return []
+
+    def idle_avatar(self, character: dict) -> dict:
+        for entry in self.assets(character):
+            if entry.get("tag") == "idle":
+                try:
+                    self.asset_path(entry["path"])
+                except ValueError:
+                    continue
+                return entry
+        return {}
 
 
 def validate_api_key(value):

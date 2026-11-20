@@ -98,8 +98,8 @@ def test_game_livestream_service():
     # Handle gift action
     act_res = service.handle_gift_action("water_crops", "浇水", "观众小明", "小心心")
     assert act_res["status"] == "enqueued"
-    assert "观众小明" in act_res["spoken_text"]
-    assert "浇水" in act_res["spoken_text"]
+    assert act_res["user_name"] == "观众小明"
+    assert act_res["label"] == "浇水"
 
     adapter = service.get_active_adapter()
     assert len(adapter.priority_tasks) == 1

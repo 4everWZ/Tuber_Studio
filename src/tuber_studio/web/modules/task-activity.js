@@ -547,7 +547,10 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
     const artifact = task.artifact;
     if (!artifact) return;
     const card = node("section", null, "chat-task-result");
-    card.append(node("h3", "私有成果"), node("small", `任务 r${artifact.task_revision} · 成果 v${artifact.edition}`, "hint"));
+    const editionLabel = edition => [
+      edition.author_name, `任务 r${edition.task_revision}`, `成果 v${edition.edition}`,
+    ].filter(Boolean).join(" · ");
+    card.append(node("h3", "私有成果"), node("small", editionLabel(artifact), "hint"));
     const body = node("div");
     renderArtifact(body, artifact.body);
     onArtifact({ task_id: task.id, task_revision: artifact.task_revision, edition: artifact.edition });
@@ -569,7 +572,7 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
           for (const entry of versions) {
             if (entry.task_revision === artifact.task_revision && entry.edition === artifact.edition) continue;
             const details = node("details"), text = node("div");
-            details.append(node("summary", `任务 r${entry.task_revision} · 成果 v${entry.edition}`), text);
+            details.append(node("summary", editionLabel(entry)), text);
             details.ontoggle = async () => {
               if (!details.open) return;
               const coordinate = { task_id: task.id, task_revision: entry.task_revision, edition: entry.edition };

@@ -34,7 +34,7 @@ def test_start_round():
     assert res["status"] == "started"
     assert service.is_active() is True
     assert "小明" in res["spoken_text"]
-    assert "画笔" in res["spoken_text"]
+    assert res["gift_name"] == "画笔"
     assert service.current_word is not None
 
 
@@ -57,12 +57,11 @@ def test_check_guess_and_win():
     assert service.is_active() is True
 
     # Correct guess with alias
-    win_res = service.check_guess("u2", "小红", "我猜是小猫！")
+    win_res = service.check_guess("u2", "小红", "我猜是小猫！", character_id="test-role")
     assert win_res is not None
     assert win_res["status"] == "won"
     assert win_res["winner"] == "小红"
     assert win_res["word"] == "猫咪"
-    assert "恭喜【小红】猜对啦" in win_res["spoken_text"]
     assert service.is_active() is False
 
     # Verify daily memory recorded
@@ -86,7 +85,7 @@ def test_tick_timeout():
     timeout_res = service.tick()
     assert timeout_res is not None
     assert timeout_res["status"] == "timeout"
-    assert "时间到啦" in timeout_res["spoken_text"]
+    assert timeout_res["word"]
     assert service.state == "finished"
 
 

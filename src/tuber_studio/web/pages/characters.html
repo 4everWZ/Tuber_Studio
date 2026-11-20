@@ -3,23 +3,23 @@
   <div class="page-heading win-heading">
     <div class="heading-title-box">
       <h1>角色卡</h1>
-      <p class="hint">当前激活角色 · <strong id="persona-current">待读取</strong></p>
+      <p class="hint">当前角色 · <strong id="persona-current">待读取</strong></p>
     </div>
   </div>
 
   <!-- 角色卡编辑器双栏 -->
   <div class="character-layout win-split-pane">
     <article class="win-group-box">
-      <div class="win-group-title">角色卡列表</div>
+      <div class="win-group-title">切换角色</div>
       <div id="character-list" class="object-list" style="margin-top:10px;"></div>
 
       <div class="win-subgroup-box" style="margin-top:16px;">
-        <label class="win-subgroup-title" for="oc-bilibili-owner">B 站号主</label>
+        <label class="win-subgroup-title" for="oc-bilibili-owner">绑定的 B 站号主</label>
         <input id="oc-bilibili-owner" maxlength="2048" placeholder="UID 或 B 站个人空间链接"
                aria-describedby="oc-owner-help oc-owner-status" autocomplete="off" disabled>
         <div class="actions" style="margin-top:8px;">
           <button id="oc-owner-lookup" type="button" class="win-btn" disabled>查询账号</button>
-          <button id="oc-owner-current" type="button" class="win-btn" disabled>使用当前登录账号</button>
+          <button id="oc-owner-current" type="button" class="win-btn" disabled>使用运营登录账号</button>
         </div>
         <div class="actions" style="margin-top:8px;">
           <span id="oc-owner-avatar" class="account-avatar" hidden><img alt="" referrerpolicy="no-referrer"></span>
@@ -32,7 +32,7 @@
       <div class="win-subgroup-box" style="margin-top:16px;">
         <div class="win-subgroup-title">新建角色卡</div>
         <form id="create-character-form">
-          <label>新角色名称<input id="new-character-name" maxlength="60" placeholder="例如：电台大肥鱼" required></label>
+          <label>新角色名称<input id="new-character-name" maxlength="60" required></label>
           <button type="submit" class="win-btn" style="margin-top:8px;">创建角色卡</button>
         </form>
       </div>
@@ -58,7 +58,10 @@
 
       <!-- Tab 1: 核心设定 -->
       <div class="oc-tab-content active" id="tab-oc-persona" role="tabpanel" aria-labelledby="oc-tab-persona" style="margin-top:12px;">
-        <label>角色名称<input id="oc-name" maxlength="60" disabled></label>
+        <label>人设名称<input id="oc-name" maxlength="60" disabled></label>
+        <label>前台显示名<input id="oc-display-name" maxlength="60" aria-describedby="oc-display-help"></label>
+        <p class="hint" id="oc-display-help">用于对话、通话和直播。留空显示角色 ID。</p>
+        <label>常用称呼<input id="oc-aliases" maxlength="732" placeholder="多个称呼用逗号分隔"></label>
         <label>角色自述（常驻）<input id="oc-self-description" aria-describedby="oc-profile-help"></label>
         <label>说话风格（常驻）<input id="oc-speaking-style" aria-describedby="oc-profile-help"></label>
         <p class="hint" id="oc-profile-help">各用一行填写，最多 120 字。留空时，从已有身份或表达规范取可识别的简短说明。</p>
@@ -84,7 +87,7 @@
           </label>
         </div>
         <label style="margin-top:10px;">口头禅 (Catchphrases，每行一条)
-          <textarea id="oc-catchphrases" rows="3" placeholder="什么嘛&#10;再来一碗白饭&#10;本鱼"></textarea>
+          <textarea id="oc-catchphrases" rows="3"></textarea>
         </label>
         <label style="margin-top:10px;">表达规范与去AI味指导语 (Instructions)
           <textarea id="oc-instructions" class="code-editor" rows="4"></textarea>
@@ -95,11 +98,11 @@
       <div class="oc-tab-content" id="tab-oc-assets" role="tabpanel" aria-labelledby="oc-tab-assets" hidden style="margin-top:12px;">
         <div class="form-grid">
           <label>绑定默认音色 (Voice Profile)
-            <input id="oc-voice-profile" placeholder="whale_reference" list="character-voice-options">
+            <input id="oc-voice-profile" list="character-voice-options">
           </label>
           <datalist id="character-voice-options"></datalist>
           <label>形象描述清单 (Avatar Manifest)
-            <input id="oc-avatar-manifest" value="assets/whale/manifest.json">
+            <input id="oc-avatar-manifest" placeholder="assets/default/manifest.json">
           </label>
         </div>
       </div>

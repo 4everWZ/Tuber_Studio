@@ -1,7 +1,7 @@
 import { illustrationUrl, illustrationStatus } from "./operation-image.js";
 "use strict";
 
-import { $ } from "./core.js";
+import { $, webCharacterName } from "./core.js";
 
 export function localDateTime(value, display) {
   if (value == null) return "—";
@@ -37,7 +37,7 @@ export function renderDynamicPolicy(model, describe, display) {
   const character = model.status?.character;
   if ($("dynamic-policy-status")) {
     describe($("dynamic-policy-status"), [
-      ["当前角色", character ? character.name : "未报告"],
+      ["当前角色", webCharacterName(character) || "未报告"],
       ["共用B站账号", policy.credentials_configured ? "已配置（不回显）" : "未配置，可手动生成草稿"],
       ["下次评估（当地时间）", localDateTime(policy.next_evaluation_at, display)],
       ["退避至（当地时间）", localDateTime(policy.backoff_until, display)],
