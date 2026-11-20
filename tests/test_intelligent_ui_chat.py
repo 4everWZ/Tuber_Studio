@@ -263,7 +263,7 @@ async def test_chat_lifecycle_separates_live_status_from_persistent_work(setting
             if menu == ["chat"]:
                 assert any("读取回执" in row["content"] for row in messages)
                 return {"action": "chat", "reply_markdown": "我已经读到直播状态了。"}
-            assert set(menu) == {"chat", "direct_tool", "agent_task", "clarify"}
+            assert set(menu) == {"chat", "identity_read", "direct_tool", "agent_task", "clarify"}
             return direct_request(messages[-1]["content"]) if lifecycle == "direct_tool" else {"action": lifecycle}
         assert "live_status" in menu and not {"direct_tool", "agent_task", "steer_task", "chat"}.intersection(menu)
         assert options["on_content"] is None

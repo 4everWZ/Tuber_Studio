@@ -14,7 +14,7 @@ import httpx
 
 from . import omni_speech
 from .front_background import front_background
-from .front_persona import expressive_persona, front_identity
+from .front_persona import expressive_persona, persona_instructions
 from .http_api import api_client, check_response_status, models_health
 from .models import OperationReply, Reply
 from .operation_identity import (
@@ -43,13 +43,13 @@ def single_system_messages(messages):
     return ([{"role": "system", "content": "\n\n".join(instructions)}] if instructions else []) + dialogue
 
 
-def build_messages(character, event, relationship, mode="live", *, history=()):
+def build_messages(character, event, relationship, mode="live", *, history=(), operating_account=None):
     operator_chat = mode == "operator_chat"
-    if mode != "live":
+    if mode != "live" and not operator_chat:
         character = operation_character(character)
 
     if operator_chat:
-        system_content = SYSTEM_RULES + front_identity(character)
+        system_content = SYSTEM_RULES + persona_instructions(character)
     else:
         system_content = SYSTEM_RULES + json.dumps(expressive_persona(character), ensure_ascii=False)
 
@@ -83,11 +83,12 @@ def build_messages(character, event, relationship, mode="live", *, history=()):
     # Logical history and its compacted summary belong to ContextManager. Do not
     # inject a second, empty history snapshot after the actual conversation.
     optional = {"confirmed_relationship": relationship}
-    if background := front_background(character, event["text"], history=history):
-        optional["角色背景"] = background
+    if not operator_chat:
+        if background := front_background(character, event["text"], history=history):
+            optional["角色背景"] = background
     if operator_chat:
         messages[1]["content"] += "\n" + private_participant_instructions(
-            character, event.get("platform"), event.get("platform_user_id")
+            character, event.get("platform"), event.get("platform_user_id"), operating_account=operating_account,
         )
     else:
         optional["active_lore"] = [

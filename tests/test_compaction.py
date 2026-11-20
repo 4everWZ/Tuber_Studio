@@ -245,6 +245,21 @@ class TokenCountSummarizer(Summarizer):
         return next(self.counts)
 
 
+async def test_summary_receives_dialogue_and_generation_retains_single_resident_context(settings, store):
+    provider = TokenCountSummarizer(["整理了两轮对话。"], [120])
+    manager = ContextManager(settings, store, provider)
+    character = store.character()
+    scope = "operator:summary-context"
+    manager.record(scope, character, {"event_id": "private-1", "text": "昨天讨论了上架流程。"}, "我记得。", "operator_chat")
+    row = manager.window(scope, character)
+    await manager._compact(row, [{"role": "system", "content": "常驻的完整角色卡"}],
+                           [{"role": "user", "content": "常驻记忆使用月度表"}], output_tokens=1)
+    assert "昨天讨论了上架流程。" in str(provider.inputs)
+    for value in ("常驻的完整角色卡", "常驻记忆使用月度表"):
+        assert value not in str(provider.inputs)
+        assert str(provider.counted_frames).count(value) == 1
+
+
 @pytest.mark.parametrize("counts,rounds", [([52428], 1), ([52429, 45000], 2)])
 async def test_40_percent_threshold_runs_second_full_core_round_only_when_reached(
     settings, store, counts, rounds

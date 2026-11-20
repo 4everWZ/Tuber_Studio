@@ -135,6 +135,13 @@ def binding_matches(subject, character):
     return subject == owner_object(character)
 
 
+def operating_account_object(facts):
+    if uid := facts.get("uid"):
+        return ConversationObject(kind="account", identity=uid, label="工坊运营登录账号",
+                                  revision=content_hash(facts))
+    return None
+
+
 def owner_binding(character):
     binding = character.get("bilibili_owner") or {}
     if not binding.get("uid"):

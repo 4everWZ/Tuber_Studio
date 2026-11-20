@@ -64,7 +64,7 @@ def test_stored_experiences_follow_last_available_topic_only():
     ]:
         assert not front_background(card, question, history=window)
     messages = build_messages(card, {"text": "后来呢？"}, {}, "operator_chat", history=history)
-    assert json.loads(messages[2]["content"].removeprefix("上下文数据："))["角色背景"] == [experience]
+    assert sum(item["content"].count(experience) for item in messages) == 1
     assert "隐藏元数据" not in str(messages)
 
 

@@ -22,7 +22,7 @@ from .memory import missing_slots
 from .models import OperationReply, Reply, canonical_voice_id
 from .operation_continuations import ContinuationCoordinator, content_hash
 from .operation_generation import generate_with_recovery, hold_comment_body, reply_generation_binding
-from .operation_identity import identity_messages, identity_snapshot
+from .operation_identity import identity_messages, identity_snapshot, operating_account_facts
 from .operation_images import OperationImages
 from .operation_text import operation_output_diagnostics
 from .operation_turns import OperationTurns, operation_lane, operation_ready_at, operation_ticket
@@ -370,6 +370,7 @@ class Runtime:
             scope, character, event, relationship, mode, evidence=evidence, extra=extra,
             daily_memory_enabled=preference["enabled"] if preference else not hasattr(self, "browsing"),
             on_memory=remember_dependency,
+            operating_account=operating_account_facts(self.account.status()) if mode == "operator_chat" and hasattr(self, "account") else None,
         )
         generation_identity = self.identity_snapshot(character, event.get("account_id"))
         if mode != "operator_chat":

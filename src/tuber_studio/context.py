@@ -19,6 +19,7 @@ from .compaction import (
 )
 from .context_delivery import DELIVERY_SCOPES, delivered_history, memory_source_allowed, operation_delivery
 from .memory import GroundedMemory, extract_facts
+from .operation_identity import without_model_identity
 from .operation_text import reply_output_budget
 from .providers import build_messages, public_error
 from .store import Store
@@ -214,8 +215,8 @@ class ContextManager:
         self.last_key = row["key"]
 
     @staticmethod
-    def parts(character, event, relationship, mode, *, history=()):
-        scaffold = build_messages(character, event, relationship, mode, history=history)
+    def parts(character, event, relationship, mode, *, history=(), operating_account=None):
+        scaffold = build_messages(character, event, relationship, mode, history=history, operating_account=operating_account)
         prefix = scaffold[:2]
         initial_context = [dict(scaffold[2], kind="context")]
         pending = dict(
@@ -237,18 +238,9 @@ class ContextManager:
             + (suffix or [])
         )
 
-    @staticmethod
-    def compaction_prefix(prefix):
-        return prefix + [
-            {
-                "role": "system",
-                "content": "用中文整理前文对话，供下一轮继续交流。",
-            }
-        ]
-
     async def prepare(
         self, scope, character, event, relationship=None, mode="live", *, evidence=None, output_tokens=None,
-        extra=(), daily_memory_enabled=True, on_memory=None,
+        extra=(), daily_memory_enabled=True, on_memory=None, operating_account=None,
     ):
         row = self.window(scope, character)
         history = self.history_for_model(scope, character, json.loads(row["history"]))
@@ -258,6 +250,7 @@ class ContextManager:
             relationship or {},
             mode,
             history=history,
+            operating_account=operating_account,
         )
         if event is None:
             pending = None
@@ -275,10 +268,7 @@ class ContextManager:
                     + json.dumps(evidence, ensure_ascii=False),
                 }
             )
-        recalled_blocks = set()
-
         def record_recalled_block(block):
-            recalled_blocks.add(id(block))
             if on_memory:
                 on_memory()
 
@@ -289,7 +279,6 @@ class ContextManager:
                 }
             )
             initial.extend(augmentations)
-        compaction_context = [block for block in initial if id(block) not in recalled_blocks]
         initial.extend(extra)
         messages = self.render(prefix, initial, history, pending, suffix)
         overflow = False
@@ -307,8 +296,7 @@ class ContextManager:
             if not history and (config.get("context_source") != "model_card" or overflow or total > limits(config)[1]):
                 raise ContextWindowExceeded("核心设定或当前输入已超窗，没有可压缩历史；请调整输入")
             if history:
-                # Persist summaries of conversation history, without transient recalled memories.
-                await self._compact(row, prefix, compaction_context, pending, suffix, output_tokens=output)
+                await self._compact(row, prefix, initial, pending, suffix, output_tokens=output)
                 row = self.window(scope, character)
                 history = json.loads(row["history"])
                 messages = self.render(prefix, initial, history, pending, suffix)
@@ -345,15 +333,14 @@ class ContextManager:
                 passes += 1
                 budget = summary_budget(replacement, config)
                 budgets.append(budget)
-                replacement = await compact_history(
-                    replacement,
-                    self.compaction_prefix(prefix),
-                    initial,
-                    BudgetedSummary(self.provider, budget),
-                    max_retries=config.get("compaction_max_retries", 3),
-                    summary_prompt=SUMMARIZATION_PROMPT + "\n\n" + DOMAIN_GUIDANCE,
-                    retained_user_tokens=retained_user_budget(config),
-                )
+                with without_model_identity():
+                    replacement = await compact_history(
+                        replacement, [{"role": "system", "content": "用中文整理前文对话，供下一轮继续交流。"}],
+                        [], BudgetedSummary(self.provider, budget),
+                        max_retries=config.get("compaction_max_retries", 3),
+                        summary_prompt=SUMMARIZATION_PROMPT + "\n\n" + DOMAIN_GUIDANCE,
+                        retained_user_tokens=retained_user_budget(config),
+                    )
                 # Use the entire actual input frame, including pending event and
                 # output instructions. The denominator is the full model window.
                 count = await self.provider.count_tokens(

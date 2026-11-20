@@ -415,6 +415,10 @@ async def advance(runtime, task):
                 tool["parameters"]["properties"]["sources"]["items"]["enum"] = list(evidence)
     tools.extend([submission, function("ask_owner", "向号主询问完成委派所缺的资料。", Clarification)])
     history = nomination_input(task, evidence, context) if nominate else model_input(task, context)
+    if runtime.scope() != task["scope"]:
+        return
+    if context_for_model := getattr(runtime, "model_context", None):
+        history[0]["content"] += "\n" + context_for_model()
     checkpoint = [task["revision"], current[-1]["id"] if current else None, bool(nominate)]
     empty = task["plan"].get("empty_tool_turn", {})
     retrying = empty.get("checkpoint") == checkpoint

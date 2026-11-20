@@ -14,7 +14,7 @@ from ..web_fetch import programme_credit_text
 LABELS = {
     "inbox_received": "定向来信入库回执",
     "web_search": "检索候选来源", "web_page": "读取网页", "bilibili_owner": "B 站号主",
-    "operation_status": "自主运营", "today_activity": "当日运营事件", "inspect_video": "视频取材",
+    "operating_account": "B 站运营账号", "operation_status": "自主运营", "today_activity": "当日运营事件", "inspect_video": "视频取材",
     "live_status": "直播状态", "live_handoff": "节目交接", "game_status": "模拟游戏", "game_action": "模拟游戏动作",
 }
 OPERATIONS = {
@@ -682,6 +682,12 @@ def _describe(tool, result):
     if tool == "bilibili_owner":
         name, uid, origin = _text(result.get("name")), _text(result.get("uid")), _source(result.get("url"))
         return [f"{name}（UID {uid}）", origin] if name and uid and origin else ["缺少已核验的号主资料。"], bool(name and uid and origin)
+    if tool == "operating_account":
+        name, uid, origin = _text(result.get("name")), _text(result.get("uid")), _source(result.get("homepage"))
+        if name and uid and origin:
+            label = "上次核验的运营账号" if result.get("verification_stale") else "当前运营账号"
+            return [f"{label} {name}（UID {uid}）", origin], True
+        return ["暂时读不到已核验的 B 站运营账号。"], False
     if tool == "today_activity":
         date = _text(result.get("date"))
         events = [item | {"url": (item.get("source") or {}).get("href")} for item in result.get("events") or []

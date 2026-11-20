@@ -1,5 +1,6 @@
 """Character-card projections shared by conversation and delivery."""
 
+import json
 import re
 
 from .models import resident_character_profile
@@ -28,3 +29,15 @@ def expressive_persona(character):
     return resident_character_profile(character) | {
         "core": character["core"], "style": character["style"], "rules": character["rules"],
     }
+
+
+def persona_instructions(character):
+    """The complete expressive card; account bindings and Web presentation are separate."""
+    profile = expressive_persona(character) | {"lore": character.get("lore", [])}
+    core = profile["core"]
+    if isinstance(core.get("experiences"), list):
+        profile["core"] = core | {"experiences": [
+            {key: entry[key] for key in ("title", "text") if key in entry} if isinstance(entry, dict) else entry
+            for entry in core["experiences"]
+        ]}
+    return "当前角色卡（背景、性格、表达和示例）：\n" + json.dumps(profile, ensure_ascii=False, separators=(",", ":"))

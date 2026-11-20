@@ -41,14 +41,29 @@ def bilibili_owner_context(character, platform, speaker_uid):
     }
 
 
-def private_participant_instructions(character, platform=None, speaker_uid=None):
+def operating_account_facts(status):
+    facts = {"state": status["state"]}
+    profile = status.get("profile")
+    if status["state"] == "logged_in" and profile and profile.get("uid") and profile.get("name"):
+        uid = str(profile["uid"])
+        facts |= {"name": profile["name"], "uid": uid, "homepage": f"https://space.bilibili.com/{uid}",
+                  "verification_stale": status["verification_stale"]}
+    return facts
+
+
+def private_participant_instructions(character, platform=None, speaker_uid=None, *, operating_account=None):
     owner = bilibili_owner_context(character, platform, speaker_uid)
     participants = {"当前交谈者": "工坊号主", "角色": character["name"],
                     "bilibili_owner": owner.get("bilibili_owner")}
     if owner and platform == "bilibili" and speaker_uid:
         participants["speaker_is_bilibili_owner"] = owner["speaker_is_bilibili_owner"]
+    if operating_account is not None:
+        participants["operating_account"] = operating_account
+    names = (" 当前交谈者是登录工坊的操作者。operating_account 是角色通过工坊在 B 站活动时使用的账号。"
+             "B 站的昵称、用户名和口语所问的 ID 对应 name，数字 UID 对应 uid。"
+             "代词按当前话题指向相应资料，当前字段优先于旧聊天。") if operating_account is not None else ""
     return (
-        "bilibili_owner 是角色绑定的 B 站号主。\n私聊参与者："
+        "bilibili_owner 是角色绑定的 B 站号主。" + names + "\n私聊参与者："
         + json.dumps(participants, ensure_ascii=False)
     )
 

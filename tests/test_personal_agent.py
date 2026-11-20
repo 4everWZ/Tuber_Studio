@@ -44,6 +44,34 @@ async def turn(client, message, *, stream=False, **fields):
                 if part.startswith("event: done"))
 
 
+async def test_identity_reads_project_only_the_selected_account_and_fields(studio, monkeypatch):
+    runtime, client = studio
+    runtime.store.replace_character(runtime.character | {"bilibili_owner": {"uid": "123", "name": "海灯岸"}})
+    account = {"state": "logged_in", "verification_stale": False, "profile": {"uid": "456", "name": "潮汐便笺"}}
+    monkeypatch.setattr(runtime.account, "status", lambda: account)
+    lookups = iter([
+        {"subject": "bilibili_owner", "fields": ["name"]},
+        {"subject": "operating_account", "fields": ["uid"]},
+        {"subject": "operating_account", "fields": ["uid"]},
+    ])
+
+    async def model(messages, schema, **kwargs):
+        assert schema["title"] == "WorkLifecycle"
+        return {"action": "identity_read", "identities": [next(lookups)]}
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
+    owner = await turn(client, "绑给你的号主名字叫什么呀？")
+    assert owner["tool_receipt"]["values"] == {"bilibili_owner": {"name": "海灯岸"}}
+    assert "海灯岸" in owner["reply_text"] and "123" not in owner["reply_text"]
+    operating = await turn(client, "我想要你自己运营账号的数字 UID。", stream=True)
+    assert operating["tool_receipt"]["values"] == {"operating_account": {"uid": "456"}}
+    assert "456" in operating["reply_text"] and "123" not in operating["reply_text"]
+    account["state"] = "unverified"
+    missing = await turn(client, "那个 UID 再说一下？")
+    assert not missing["tool_receipt"]["values"] and "456" not in missing["reply_text"]
+    assert not runtime.tasks.activity()
+
+
 async def test_bound_person_resolves_a_new_projection_and_expires_on_rebind(studio, monkeypatch):
     runtime, client = studio
     card = {key: value for key, value in runtime.character.items() if not key.startswith("_")}

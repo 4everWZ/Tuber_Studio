@@ -17,11 +17,11 @@ from pydantic import BaseModel, Field
 
 from ..daily_memory import contains_memory_credential
 from ..deployment_profiles import omni_base
-from ..front_persona import front_identity
+from ..front_persona import persona_instructions
 from ..http_api import endpoint
 from ..memory_sources import original_turn
 from ..operation_continuations import content_hash
-from ..operation_identity import private_participant_instructions
+from ..operation_identity import operating_account_facts, private_participant_instructions
 from ..performance import performance
 from ..store import dump
 from .memory_organizer import is_chat_turn
@@ -42,9 +42,6 @@ def shared_call_facts(runtime, operator_chat, turn_id):
     account = str(runtime.tasks.scope()[0] or "")
     shared = []
     for subject in operator_chat.conversation_objects(character, account, turn_id).values():
-        if subject.kind == "owner" and (owner := character.get("bilibili_owner")):
-            shared.append({"kind": subject.label, "name": owner["name"], "uid": owner["uid"],
-                           "url": f"https://space.bilibili.com/{owner['uid']}"})
         if subject.kind in {"task", "artifact"} and not contains_memory_credential(subject.label):
             if task := runtime.tasks.current(subject.identity):
                 shared.append({"kind": "交办", "goal": subject.label, "revision": task["revision"],
@@ -216,23 +213,15 @@ def register_private_call(app, runtime, require_admin, *, operator_chat=None):
             topic = inherited_topic(runtime, options.topic_turn)
         shared = shared_call_facts(runtime, operator_chat, options.topic_turn) if inherited else []
         rows = private_rows(runtime, topic) if topic else []
-        # A corrected chat turn can resolve an existing memory by ID, but its ID is not spoken wording.
-        source_lookup = inherited and topic == f"turn:{options.topic_turn}"
-        background = []
-        if topic and not source_lookup:
-            from ..front_background import front_background
-
-            background = front_background(character, topic)
         topic_source = None
-        if inherited and (rows or background or shared):
+        if inherited and (rows or shared):
             topic_source = {"turn_id": options.topic_turn, "history_revision": history_preference(runtime)["history_revision"],
-                            "topic_stamp": content_hash(topic) if rows or background else None,
+                            "topic_stamp": content_hash(topic) if rows else None,
                             **({"shared_stamp": content_hash(shared)} if shared else {})}
         # A retained headline or source quote may contain the superseded preference.
         notes = [row["anecdote"] for row in rows]
-        instructions = [front_identity(character), private_participant_instructions(character)]
-        if background:
-            instructions.append("与本次话题有关的角色背景：" + dump(background))
+        instructions = [persona_instructions(character), private_participant_instructions(
+            character, operating_account=operating_account_facts(runtime.account.status()))]
         if notes:
             instructions.append("与本次私聊话题有关的记忆资料：" + dump(notes))
         if shared:

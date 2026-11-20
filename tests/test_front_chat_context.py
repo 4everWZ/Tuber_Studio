@@ -5,7 +5,8 @@ import httpx
 import pytest
 
 from tuber_studio.app import create_app
-from tuber_studio.front_persona import front_identity
+from tuber_studio.agent.operator_chat import OperatorChat
+from tuber_studio.front_persona import front_identity, persona_instructions
 from tuber_studio.models import Reply, resident_character_profile
 from tuber_studio.operation_identity import provider_identity_messages
 
@@ -31,16 +32,25 @@ async def test_chat_model_packet_keeps_account_out_and_uses_current_question(
 ):
     app = create_app(settings)
     runtime = app.state.runtime
+    runtime.store.replace_character(runtime.character | {"bilibili_owner": {"uid": "101", "name": "绑定号主"}})
     provider = runtime.llm
     provider.identity_resolver = lambda: {"account_bio": "运营账号探针", "identity_version": "test"}
+    monkeypatch.setattr(runtime.account, "status", lambda: {
+        "state": "logged_in", "verification_stale": False,
+        "profile": {"uid": "202", "name": "运营频道", "bio": "运营账号探针"},
+    })
     calls = []
 
     def capture(messages):
         wire = provider_identity_messages(provider, messages)
         calls.append(wire)
         assert "运营账号探针" not in json.dumps(wire, ensure_ascii=False)
-        assert front_identity(runtime.character) in wire[0]["content"]
-        assert runtime.character["core"]["identity"] not in wire[0]["content"]
+        assert wire[0]["content"].count(persona_instructions(runtime.character)) == 1
+        assert runtime.character["core"]["identity"] in wire[0]["content"]
+        identities = next(row["content"].split("私聊参与者：", 1)[1] for row in wire if "私聊参与者：" in row["content"])
+        facts = json.loads(identities.splitlines()[0])
+        assert facts["bilibili_owner"] == {"uid": "101", "name": "绑定号主"}
+        assert (facts["operating_account"]["uid"], facts["operating_account"]["name"]) == ("202", "运营频道")
 
     question = "帮我数一下有几个字。"
     if semantic:
@@ -77,3 +87,18 @@ async def test_chat_model_packet_keeps_account_out_and_uses_current_question(
     assert "运营账号探针" in json.dumps(provider_identity_messages(provider, []), ensure_ascii=False)
     await app.state.comments.adapter.close()
     app.state.store.close()
+
+
+async def test_window_slides_whole_turns_without_changing_the_resident_context():
+    class Provider:
+        capacity_window = 3000
+
+        async def count_tokens(self, messages):
+            return sum(len(row["content"]) for row in messages)
+
+    resident = [{"role": "system", "content": "OC" * 350}, {"role": "system", "content": "记忆" * 150}]
+    old = [{"role": "user", "content": "旧问题" * 350}, {"role": "assistant", "content": "旧回复" * 350}]
+    recent = [{"role": "user", "content": "最近问题" * 80}, {"role": "assistant", "content": "最近回复" * 80}]
+    current = {"role": "user", "content": "当前问题"}
+    packed = await OperatorChat._fit_assistant_history(Provider(), resident, old + recent, current, None, 1800)
+    assert packed == resident + recent + [current]

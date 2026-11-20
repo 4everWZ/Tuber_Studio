@@ -10,8 +10,8 @@ from fastapi.testclient import TestClient
 
 from tuber_studio.agent import private_call, private_call_work, voice_origin
 from tuber_studio.app import create_app
-from tuber_studio.front_persona import front_identity
-from tuber_studio.operation_identity import private_participant_instructions
+from tuber_studio.front_persona import persona_instructions
+from tuber_studio.operation_identity import operating_account_facts, private_participant_instructions
 from tuber_studio.store import editable_character
 
 
@@ -154,7 +154,8 @@ def test_ticket_instructions_follow_current_character_owner(settings, monkeypatc
             assert reference.headers["cache-control"] == "no-store"
             assert "ref_audio" not in ticket["voice"]
             participants = json.loads(instructions.split("私聊参与者：", 1)[1].splitlines()[0])
-            assert participants == {"当前交谈者": "工坊号主", "角色": runtime.character["name"], "bilibili_owner": owner}
+            assert participants == {"当前交谈者": "工坊号主", "角色": runtime.character["name"], "bilibili_owner": owner,
+                                    "operating_account": {"state": "not_configured"}}
             if owner is None:
                 assert "示例号主" not in instructions
 
@@ -228,7 +229,7 @@ async def test_ticket_uses_only_the_eligible_chat_topic_and_revalidates_it(setti
     app.state.store.close()
 
 
-async def test_role_background_is_selected_at_open_and_its_inherited_source_can_be_withdrawn(settings, monkeypatch):
+async def test_call_uses_the_same_complete_role_card_across_topics(settings, monkeypatch):
     app = create_app(settings)
     runtime = app.state.runtime
     passage = "白塔码头的铜钟曾被海浪冲走。"
@@ -239,7 +240,8 @@ async def test_role_background_is_selected_at_open_and_its_inherited_source_can_
                 style={"instructions": "旧卡风格长段，后面还有旧示例。"},
                 lore=[{"keywords": ["白塔码头"], "text": passage}, {"keywords": ["北岭茶馆"], "text": unrelated}])
     runtime.store.replace_character(card)
-    base = "\n".join([front_identity(runtime.character), private_participant_instructions(runtime.character)])
+    base = "\n".join([persona_instructions(runtime.character), private_participant_instructions(
+        runtime.character, operating_account=operating_account_facts(runtime.account.status()))])
     assert all(word in base for word in ("码头看守", "轻声慢讲", runtime.character["name"]))
     monkeypatch.setattr(private_call, "private_service", lambda settings: ("https://voice.example", "test-key"))
 
@@ -257,22 +259,19 @@ async def test_role_background_is_selected_at_open_and_its_inherited_source_can_
         assert (await ticket(topic="晚饭吃西瓜吗"))["instructions"] == base
         assert (await ticket(temporary=True, topic=query))["instructions"] == base
         explicit = await ticket(topic=query)
-        assert explicit["instructions"].startswith(base) and passage in explicit["instructions"]
-        assert unrelated not in explicit["instructions"] and "旧卡" not in explicit["instructions"]
+        assert explicit["instructions"] == base
+        assert all(base.count(text) == 1 for text in (passage, unrelated, "码头看守", card["core"]["identity"]))
         turn = str(uuid4())
         (await client.post("/api/chat/intelligent", json={
             "request_id": turn, "message": query, "intent": {"action": "chat"},
         })).raise_for_status()
         inherited = await ticket(topic_turn=turn)
         assert inherited["instructions"] == explicit["instructions"]
-        assert not inherited["memory_citations"] and inherited["memory_use"]["ids"] == []
-        use = inherited["memory_use"] | {"topic_source": inherited["topic_source"]}
-        assert (await client.post(path + "/memory-validate", json=use)).status_code == 200
+        assert not inherited["memory_citations"] and inherited["memory_use"] is None
+        assert inherited.get("topic_source") is None
         runtime.store.execute("UPDATE operator_chat_turns SET message=? WHERE request_id=?", ("今天吃西瓜吧。", turn))
-        assert (await client.post(path + "/memory-validate", json=use)).status_code == 409
         assert (await ticket(topic_turn=turn))["instructions"] == base
         runtime.store.execute("DELETE FROM operator_chat_turns WHERE request_id=?", (turn,))
-        assert (await client.post(path + "/memory-validate", json=use)).status_code == 409
         assert (await ticket(topic_turn=turn))["instructions"] == base
     await app.state.comments.adapter.close()
     app.state.store.close()
