@@ -57,7 +57,7 @@ async def test_capability_discovery_reads_catalog_without_settings_writes(studio
     calls = choose_tools(runtime, monkeypatch, {"action": "workbench_capabilities"})
     response = await client.post("/api/chat/intelligent", json=turn("先告诉我你能调什么"))
     text = response.raise_for_status().json()["reply_text"]
-    assert all(label in text for label in ("宠物", "每日观看", "点歌", "动态草稿", "直播画布", "后台"))
+    assert all(label in text for label in ("宠物", "每日观看", "点歌", "运营配图", "直播画布", "后台"))
     assert before == (runtime.pets.state(char), runtime.browsing.policy())
     assert calls == ["FrontToolDiscovery"]
 
