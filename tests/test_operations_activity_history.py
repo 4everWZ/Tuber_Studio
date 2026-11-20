@@ -8,6 +8,7 @@ from test_browsing_activity_history import service as service
 
 from tuber_studio.operation_feedback import publication_binding
 from tuber_studio.operations.browsing.activity_history import activity, history
+from tuber_studio.operations.browsing.comment_timeline import observe_thread
 from tuber_studio.operations_control import OperationsControl
 
 
@@ -289,3 +290,23 @@ def test_comment_result_filter_runs_before_pagination_and_uses_operation_day(cha
     assert read["total"] == 0 and read["counts"]["sent"] == 2
     all_comments = activity(channels, day="2026-11-08", kind="comments", comment_filter="all")
     assert all_comments["counts"]["pending"] == 1 and all_comments["counts"]["sent"] == 2
+
+
+def test_activity_merges_repeated_observations_of_same_reply_before_pagination(channels, monkeypatch):
+    at = stamp("2026-11-07T17:00:00+08:00")
+    rounds = [round_row(channels) for _ in range(3)]
+    monkeypatch.setattr("tuber_studio.operations.browsing.comment_timeline.time.time", lambda: at)
+    for row in rounds:
+        for root in (601, 701):
+            observe_thread(channels.store, row, BV, [
+                {"comment_id": str(root), "thread_id": str(root), "platform_user_id": "300",
+                 "content": "同一句原评", "created_at": at - 30},
+                {"comment_id": str(root + 1), "thread_id": str(root), "parent_comment_id": str(root),
+                 "parent_verified": True, "platform_user_id": "100", "content": "同一句回复",
+                 "created_at": at - 10},
+            ], via="comment_visit")
+    result = activity(channels, day="2026-11-07", kind="comments", comment_filter="replied", page_size=1)
+    assert result["total"] == 2 and result["pages"] == 2
+    assert result["counts"]["sent"] == 0
+    second = activity(channels, day="2026-11-07", kind="comments", comment_filter="replied", page_size=1, page=2)
+    assert {result["items"][0]["source_comment_id"], second["items"][0]["source_comment_id"]} == {"601", "701"}

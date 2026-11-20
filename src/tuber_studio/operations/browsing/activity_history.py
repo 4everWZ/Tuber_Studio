@@ -592,6 +592,9 @@ def activity(browsing, *, day=None, kind="all", comment_filter="all", page=1, pa
 
     if kind in {"all", "comments", "public"}:
         lower, upper = (cutoff, 253402300800) if round_id else (max(start, cutoff), end)
+        shown_replies = {(item["source_href"], item["sent_href"]) for item in items
+                         if item.get("source_href") and item.get("sent_href")}
+        shown_reads = set()
         for observed in comment_activity(store, account, character, start=lower, end=upper, round_id=round_id):
             resource, root, observed_round = (observed[key] for key in ("resource", "root_id", "round_id"))
             if (resource, root, observed_round) in listed_threads:
@@ -605,11 +608,22 @@ def activity(browsing, *, day=None, kind="all", comment_filter="all", page=1, pa
             target_id = outcome["parent_comment_id"] if outcome else root
             source = next((item for item in thread["comments"] if item["comment_id"] == target_id), None)
             row = {"status": "read", "updated_at": observed["observed_at"]}
+            details = thread_details(resource, root, target_id, row)
+            if details.get("sent_href"):
+                reply_key = (details["source_href"], details["sent_href"])
+                if reply_key in shown_replies:
+                    continue
+                shown_replies.add(reply_key)
+            else:
+                thread_key = (resource, root)
+                if thread_key in shown_reads:
+                    continue
+                shown_reads.add(thread_key)
             add(row, channel="comment", identity=f"comment/thread/{resource}/{root}/{observed_round}",
                 text="", source_text=(source or {}).get("text"), title="浏览评论楼", href=comment_href(resource, root),
                 round_id=observed_round, bvid=resource if not resource.startswith("dynamic:") else None,
                 comment_kind="reply" if outcome else None,
-                **thread_details(resource, root, target_id, row))
+                **details)
 
     if kind != "public" and account and "dm_inbox" in tables:
         for row in store.all(
