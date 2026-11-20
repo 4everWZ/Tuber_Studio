@@ -2,6 +2,10 @@
  * API Client for Tuber Studio
  */
 
+import "../studio-path.js";
+
+export const studioPath = globalThis.StudioPath;
+
 export async function api(path, options = {}, onUnauthorized = null) {
   const { body, headers } = options;
   const config = { ...options, headers: new Headers(headers), credentials: "same-origin" };
@@ -9,7 +13,7 @@ export async function api(path, options = {}, onUnauthorized = null) {
     config.headers.set("Content-Type", "application/json");
     config.body = JSON.stringify(body);
   }
-  const response = await fetch(path, config);
+  const response = await fetch(studioPath(path), config);
   if (response.ok && options.onEvent && response.headers.get("content-type")?.includes("text/event-stream")) {
     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
     let buffer = "";

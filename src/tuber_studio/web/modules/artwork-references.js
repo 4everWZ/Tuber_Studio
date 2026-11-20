@@ -1,4 +1,4 @@
-import {api} from "./api.js";
+import {api, studioPath} from "./api.js";
 import {webCharacterName} from "./core.js";
 
 export function initArtworkReferences() {
@@ -17,8 +17,8 @@ export function initArtworkReferences() {
       slot.status.textContent = !ref ? "" : ref.source === "upload" ? "已上传" : ref.available ? "默认图" : "暂无默认图";
       slot.preview.hidden = !ref?.available;
       if (ref?.available && ref.preview_url) {
-        const url = new URL(ref.preview_url, location.origin);
-        const thumbnail = new URL(ref.thumbnail_url || ref.preview_url, location.origin);
+        const url = new URL(studioPath(ref.preview_url), location.origin);
+        const thumbnail = new URL(studioPath(ref.thumbnail_url || ref.preview_url), location.origin);
         if (slot.image.src !== thumbnail.href) slot.image.src = thumbnail.href;
         slot.preview.href = url.href;
       } else {

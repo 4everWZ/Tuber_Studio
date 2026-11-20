@@ -86,7 +86,7 @@ export function initWorkspaceNavigation(model, loadPage) {
       if (active) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
     });
-    document.title = `${pages[model.page]} · Tuber Studio`;
+    document.title = `${pages[model.page]} · 大肥鱼工坊`;
     closeWorkspaceMenu();
     if (!anchor && previous !== model.page) window.scrollTo(0, scrollPositions.get(model.page) || 0);
 

@@ -1,6 +1,8 @@
+import { studioPath } from "./api.js";
+
 // Arm the owner's revocation stream before opening either media transport.
 export async function guardCall(call, use, invalidate) {
-  const response = await fetch("/api/chat/private-call/memory-watch", {
+  const response = await fetch(studioPath("/api/chat/private-call/memory-watch"), {
     method: "POST", signal: call.abort.signal, headers: {"Content-Type": "application/json"},
     body: JSON.stringify(use)
   });

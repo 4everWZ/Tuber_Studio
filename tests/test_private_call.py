@@ -15,6 +15,38 @@ from tuber_studio.operation_identity import private_participant_instructions
 from tuber_studio.store import editable_character
 
 
+def test_public_mount_keeps_the_shell_assets_auth_and_call_tickets_together(settings, monkeypatch):
+    monkeypatch.setenv("TUBER_WEB_PREFIX", "/dafeiyu")
+    monkeypatch.setattr(private_call, "private_service", lambda settings: ("https://studio.example", "test-key"))
+
+    async def mint(origin, token):
+        return "test-ticket"
+
+    monkeypatch.setattr(private_call, "mint_ticket", mint)
+    with TestClient(create_app(settings), base_url="https://studio.example") as browser:
+        assert browser.get("/dafeiyu?x=1", follow_redirects=False).headers["location"] == "/dafeiyu/?x=1"
+        for route in ("", "/live", "/overlay", "/overlay/draw-guess"):
+            page = browser.get("/dafeiyu" + route)
+            assert page.status_code == 200 and '<base href="/dafeiyu/">' in page.text
+        assert '<base href="/">' in browser.get("/").text
+        assert browser.get("/dafeiyu/static/studio-path.js").status_code == 200
+        assert browser.get("/dafeiyu/assets/whale/idle.gif").status_code == 200
+        assert browser.get("/dafeiyu/settings", follow_redirects=False).headers["location"] == "/dafeiyu/#settings"
+        login = browser.post("/dafeiyu/api/auth", json={"token": settings.admin_token},
+                             headers={"Origin": "https://studio.example"})
+        assert login.status_code == 200
+        assert browser.get("/dafeiyu/api/settings").json()["overlay_url"].startswith(
+            "https://studio.example/dafeiyu/overlay#")
+        ticket = browser.post("/dafeiyu/api/chat/private-call/ticket", json={"temporary": True})
+        assert ticket.status_code == 200 and ticket.headers["cache-control"] == "no-store"
+        assert ticket.json()["socket"] == "wss://studio.example/dafeiyu/v1/realtime"
+        assert browser.post("/api/chat/private-call/ticket", json={"temporary": True}).json()["socket"] == (
+            "wss://studio.example/v1/realtime")
+        with browser.websocket_connect("wss://studio.example/dafeiyu/ws/admin",
+                                       headers={"Origin": "https://studio.example"}) as socket:
+            assert socket.receive_json()["type"] == "status"
+
+
 async def test_signed_voice_work_stays_in_the_original_chat(settings, monkeypatch):
     key = "fixture-gateway"
     app = create_app(settings)

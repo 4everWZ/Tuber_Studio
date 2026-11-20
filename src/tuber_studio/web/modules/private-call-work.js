@@ -1,4 +1,4 @@
-import {api} from "./api.js";
+import {api, studioPath} from "./api.js";
 import {renderAssistantAnswer} from "./operator-chat-answer.js";
 
 const path = "/api/chat/private-call";
@@ -87,7 +87,7 @@ export function callWork(call, context, output, note) {
     const selected = {task, request: new AbortController()};
     readback = selected;
     try {
-      const response = await fetch(`${path}/work/${task.id}/read`, {method: "POST",
+      const response = await fetch(studioPath(`${path}/work/${task.id}/read`), {method: "POST",
         headers: {"Content-Type": "application/json"}, signal: selected.request.signal,
         body: JSON.stringify({call: context, revision: task.revision})});
       if (!response.ok) throw Error((await response.json()).detail);

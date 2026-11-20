@@ -1,6 +1,6 @@
 "use strict";
 import { $ } from "./modules/core.js";
-import { api as baseApi } from "./modules/api.js";
+import { api as baseApi, studioPath } from "./modules/api.js";
 import { LiveDesk } from "./modules/live-desk.js?v=20261111.1";
 
 (() => {
@@ -12,7 +12,7 @@ import { LiveDesk } from "./modules/live-desk.js?v=20261111.1";
   document.querySelector(`[data-live-tab="${page}"]`).setAttribute("aria-current", "page");
   if (frame) {
     for (const link of document.querySelectorAll("[data-desk-link]")) {
-      link.href = `/#live-${link.dataset.deskLink}`;
+      link.href = studioPath(`/#live-${link.dataset.deskLink}`);
       link.target = "_top";
     }
   }

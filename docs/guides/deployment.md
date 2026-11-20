@@ -30,7 +30,7 @@ CI 分别运行锁定项目环境的 Python 测试和可选点歌组件的 Node 
 
 ## 业务部署与服务接入
 
-大肥鱼工坊的正式入口部署在工作站。Core 在同一进程提供工作台前端、静态文件和业务 API，工作站同时承载数据库、推理与 Avatar。笔电浏览器直接打开工作站的 HTTPS IP。麦克风需要浏览器信任该 IP 对应的服务器证书。[工作站 IP 部署](../../deploy/omni/README.md#工作站-ip-入口)
+大肥鱼工坊的正式入口部署在工作站。Core 在同一进程提供工作台前端、静态文件和业务 API，工作站同时承载数据库、推理与 Avatar。笔电浏览器打开工作站 HTTPS 地址下的 `/dafeiyu`。麦克风需要浏览器信任该 IP 对应的服务器证书。[工作站 IP 部署](../../deploy/omni/README.md#工作站-ip-入口)
 
 在「设置 → 共用 Omni API」填写网关地址、图文与语音模型别名、后台 Responses 别名和普通应用凭据，点击「保存 Omni 设置」。新装示例的 `omni.base_url` 为 `http://127.0.0.1:8000/v1`。使用工作站时填 Core 可达的网关地址。前台和后台可使用服务分配的不同别名；后台 Responses、视频取帧、参考朗读和配图共用这项连接。[能力路由及验收](../specs/foundation/omni-deployment.md)
 

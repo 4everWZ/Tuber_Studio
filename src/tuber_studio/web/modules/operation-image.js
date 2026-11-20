@@ -1,6 +1,8 @@
+import { studioPath } from "./api.js";
+
 export function illustrationUrl(channel, draftId, ref) {
-  if (ref?.asset_id) return `/api/memes/${encodeURIComponent(ref.asset_id)}/preview`;
-  if (ref?.artifact_id) return `/api/operations/illustrations/${channel}/${encodeURIComponent(draftId)}/${encodeURIComponent(ref.artifact_id)}`;
+  if (ref?.asset_id) return studioPath(`/api/memes/${encodeURIComponent(ref.asset_id)}/preview`);
+  if (ref?.artifact_id) return studioPath(`/api/operations/illustrations/${channel}/${encodeURIComponent(draftId)}/${encodeURIComponent(ref.artifact_id)}`);
   return "";
 }
 

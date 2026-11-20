@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, studioPath } from "./api.js";
 import { PrivatePlayback } from "./private-call-playback.js";
 import { guardCall } from "./private-call-guard.js";
 import { FinalUtterances, transcriptReview } from "./private-call-handoff.js";
@@ -44,7 +44,7 @@ async function check() {
       const url = state.recordings?.[profile];
       if (!url) continue;
       const link = document.createElement("a");
-      link.href = url;
+      link.href = studioPath(url);
       link.textContent = label;
       link.target = "_blank";
       link.rel = "noopener";
@@ -56,7 +56,7 @@ async function check() {
 }
 
 async function voiceReference(signal) {
-  const response = await fetch("/api/chat/private-call/reference", {signal, cache: "no-store"});
+  const response = await fetch(studioPath("/api/chat/private-call/reference"), {signal, cache: "no-store"});
   if (!response.ok) {
     const error = new Error((await response.json()).detail || "暂时读不到参考录音");
     error.status = response.status;
@@ -115,7 +115,7 @@ function finish(call, cause, message, code = null) {
 
 async function capture(call, identity, voice) {
   status.textContent = "等待麦克风授权…";
-  await call.context.audioWorklet.addModule("/static/modules/private-call-capture.js?v=2");
+  await call.context.audioWorklet.addModule(studioPath("/static/modules/private-call-capture.js?v=2"));
   if (current !== call) return;
   const stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true,
     noiseSuppression: true}, video: false});

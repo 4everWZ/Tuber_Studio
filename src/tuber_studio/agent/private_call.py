@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
@@ -192,7 +192,7 @@ def register_private_call(app, runtime, require_admin, *, operator_chat=None):
         return Response(reference, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
     @app.post("/api/chat/private-call/ticket", dependencies=[Depends(require_admin)])
-    async def create_ticket(options: CallOptions = CallOptions()):
+    async def create_ticket(request: Request, options: CallOptions = CallOptions()):
         service = private_service(runtime.settings)
         if service is None:
             raise HTTPException(503, "尚未配置可用的 Omni 私聊连接")
@@ -244,8 +244,11 @@ def register_private_call(app, runtime, require_admin, *, operator_chat=None):
         if encoded_bytes + len(dump({"instructions": instruction_text}).encode()) + 512 > 8 * 1024 * 1024:
             raise HTTPException(409, "参考录音超过实时网关的单条消息大小，请在角色卡中更换音色。")
         show = performance(runtime.store)
+        socket_origin = browser_socket_origin(origin)
+        request_origin = f"{'wss' if request.url.scheme == 'https' else 'ws'}://{request.url.netloc}"
+        socket_prefix = request.scope.get("root_path", "").rstrip("/") if socket_origin == request_origin else ""
         return {
-            "socket": browser_socket_origin(origin) + "/v1/realtime",
+            "socket": socket_origin + socket_prefix + "/v1/realtime",
             "ticket": ticket,
             "voice_context": ticket_context(token, ticket, grant) if not options.temporary else None,
             "call_scope": content_hash(grant),

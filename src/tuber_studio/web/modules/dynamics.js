@@ -1,4 +1,5 @@
 import { illustrationUrl, illustrationStatus } from "./operation-image.js";
+import { studioPath } from "./api.js";
 "use strict";
 
 import { $, webCharacterName } from "./core.js";
@@ -197,7 +198,7 @@ export function renderDynamicPost(model, {
       const images = [];
       for (let page = 1; page <= pages; page++) {
         const image = node("img", null, "dynamic-comment-card");
-        image.src = `/api/dynamics/posts/${encodeURIComponent(post.id)}/comment-card?page=${page}`;
+        image.src = studioPath(`/api/dynamics/posts/${encodeURIComponent(post.id)}/comment-card?page=${page}`);
         image.alt = `评论对话第 ${page} 张，共 ${pages} 张`;
         image.loading = page === 1 ? "eager" : "lazy";
         image.onerror = () => {

@@ -3,6 +3,7 @@ import { node, safeMessage } from "./core.js?v=20261105.32";
 import { memoryGroupNames, memoryVisibility } from "./personalization.js?v=20261116.1";
 import { renderArtifact, renderAssistantAnswer } from "./operator-chat-answer.js";
 import { operationControlCard } from "./operator-chat-control.js?v=20261113.12";
+import { studioPath } from "./api.js";
 
 const statuses = {
   queued: "排队中", waiting: "等待资源", running: "运行中", completed: "已完成", paused: "已暂停",
@@ -87,7 +88,7 @@ function dynamicCard(root, initial, api) {
       `/api/dynamics/posts/${data.id}/comment-card?page=${i + 1}`) : [illustrationUrl("dynamics", data.id, ref)];
     for (const url of urls.filter(Boolean)) {
       const image = node("img", null, "dynamic-comment-card");
-      image.src = url;
+      image.src = studioPath(url);
       image.alt = "随正文发布的动态配图";
       root.append(image);
     }
@@ -262,7 +263,7 @@ function videoCard(root, turn, { api, path }) {
       details.ontoggle = () => {
         if (!details.open || details.querySelector("img")) return;
         const picture = node("img");
-        picture.src = `${path}/turns/${turn.request_id}/inspection-image`;
+        picture.src = studioPath(`${path}/turns/${turn.request_id}/inspection-image`);
         picture.alt = `P${frame.part} ${formatTimecode(frame.actual_time)} 的${source}画面`;
         picture.style.maxWidth = "100%";
         details.append(picture);

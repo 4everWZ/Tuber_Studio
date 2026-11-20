@@ -15,6 +15,7 @@ from pydantic import Field
 from ..media_cache import CachePolicy
 from ..models import Event, StrictModel
 from ..performance import performance
+from ..web_entry import web_page
 from .activity_filter import LivePoll
 from .avatar import LiveAvatar
 from .media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
@@ -96,8 +97,8 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
         }
 
     @app.get("/live")
-    async def workbench():
-        return FileResponse(Path(__file__).parents[1] / "web/live.html")
+    async def workbench(request: Request):
+        return web_page(request, (Path(__file__).parents[1] / "web/live.html").read_text(encoding="utf-8"))
 
     @app.get("/api/live/view", dependencies=[Depends(require_view)])
     async def live_view(request: Request):

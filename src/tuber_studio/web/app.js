@@ -1,7 +1,7 @@
 "use strict";
 
 import { $, node, notice, safeMessage, webCharacterName } from "./modules/core.js?v=20261120.1";
-import { api as baseApi } from "./modules/api.js";
+import { api as baseApi, studioPath } from "./modules/api.js";
 import { initOperatorChat } from "./modules/operator-chat.js?v=20261120.2";
 import { initChatPet } from "./modules/chat-pet.js";
 import { characterDisplay, bindDisplaySettings } from "./modules/character-display.js";
@@ -240,7 +240,7 @@ async function enterWorkspace() {
 function connectAdmin() {
   if (model.socket) model.socket.close();
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  model.socket = new WebSocket(`${protocol}//${location.host}/ws/admin`);
+  model.socket = new WebSocket(`${protocol}//${location.host}${studioPath("/ws/admin")}`);
   model.socket.onmessage = event => {
     const message = JSON.parse(event.data);
     if (message.type === "context_updated" && message.context) renderContext(message.context);
@@ -291,11 +291,11 @@ async function loadAssets() {
       const audio = document.createElement("audio");
       audio.controls = true;
       audio.preload = "none";
-      audio.src = url;
+      audio.src = studioPath(url);
       preview.append(audio);
     } else {
       const image = document.createElement("img");
-      image.src = url;
+      image.src = studioPath(url);
       image.alt = asset.tag || asset.event_tag || asset.id;
       image.loading = "lazy";
       image.onerror = () => {
@@ -580,7 +580,7 @@ $("preview-form")?.addEventListener("submit", event => {
       });
       if ($("preview-voice").value !== voice.id) return;
       if ($("preview-audio")) {
-        $("preview-audio").src = result.audio_ref;
+        $("preview-audio").src = studioPath(result.audio_ref);
         $("preview-audio").hidden = false;
       }
       const recorded = voice?.provider === "prerecorded";

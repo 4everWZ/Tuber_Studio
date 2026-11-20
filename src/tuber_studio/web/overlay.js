@@ -1,5 +1,6 @@
 "use strict";
 (() => {
+  const studioPath = globalThis.StudioPath;
   const get = id => document.getElementById(id), audio = new Audio(); audio.preload = "auto";
   const renderer = new LiveScene(get("scene"));
   let socket, active, knownOwner = false, generation = 0, reconnectTimer, view = null, loading = false;
@@ -32,18 +33,18 @@
     audio.volume = typeof message.volume === "number" ? Math.max(0,Math.min(1,message.volume)) : 1;
     audio.onplaying = () => { if (!valid(job)) return; if (!job.started) { job.started = true; acknowledge("started",job); } get("enable-audio").hidden = true; status(""); report(); draw(); };
     audio.onended = () => { if (!valid(job)) return; if (!job.started) return fail(job,"音频未开始便结束"); acknowledge("ended",job); stop(); status(""); };
-    audio.onerror = () => fail(job,audio.error?.message || "音频读取失败"); audio.src = message.audio_ref;
+    audio.onerror = () => fail(job,audio.error?.message || "音频读取失败"); audio.src = studioPath(message.audio_ref);
     try { await audio.play(); } catch(error) { fail(job,error.message,error.name === "NotAllowedError"); }
   }
   async function sync() {
     if (loading) return; loading = true;
-    try { const response = await fetch("/api/live/view",{credentials:"same-origin"}); if (!response.ok) return; view = await response.json(); if (JSON.stringify(view.scene) !== renderer.signature) renderer.load(view.scene); draw(); }
+    try { const response = await fetch(studioPath("/api/live/view"),{credentials:"same-origin"}); if (!response.ok) return; view = await response.json(); if (JSON.stringify(view.scene) !== renderer.signature) renderer.load(view.scene); draw(); }
     catch { /* The playback websocket owns connection failure and cancellation. */ }
     finally { loading = false; }
   }
   function connect() {
     clearTimeout(reconnectTimer);
-    socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/overlay`);
+    socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${studioPath("/ws/overlay")}`);
     socket.onopen = () => status("已连接，等待播放权确认");
     socket.onmessage = event => {
       let message; try { message = JSON.parse(event.data); } catch { return; }
@@ -70,7 +71,7 @@
   };
   async function boot() {
     const token = new URLSearchParams(location.hash.slice(1)).get("token");
-    if (token) { try { const response = await fetch("/api/overlay/auth",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({token})}); if (!response.ok) throw new Error("播放器凭证无效"); history.replaceState(null,"",location.pathname+location.search); } catch(error) { return status(error.message,true); } }
+    if (token) { try { const response = await fetch(studioPath("/api/overlay/auth"),{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({token})}); if (!response.ok) throw new Error("播放器凭证无效"); history.replaceState(null,"",location.pathname+location.search); } catch(error) { return status(error.message,true); } }
     await sync(); connect();
   }
   const tick = setInterval(draw,100), heartbeat = setInterval(report,500), refresh = setInterval(sync,1000);

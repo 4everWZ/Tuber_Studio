@@ -1,6 +1,7 @@
 "use strict";
 
 import { $, webCharacterName } from "./core.js";
+import { studioPath } from "./api.js";
 
 function editableCard(character) {
   const { version, avatar_url, persona_type, fine_tuned_model, compact_system_prompt, ...card } = character;
@@ -151,7 +152,7 @@ export function renderCharacterList(model, { busy, node, onSelect }) {
     const heading = node("span", null, "character-list-heading");
     if (character.avatar_url) {
       const image = node("img");
-      image.src = character.avatar_url;
+      image.src = studioPath(character.avatar_url);
       image.alt = "";
       heading.append(image);
     }

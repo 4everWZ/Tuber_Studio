@@ -91,7 +91,7 @@
 #chat-pet.pet-placeholder::after { content: "选表情"; font-size: .8rem; }
 #chat-pet img { display: block; width: 100%; height: 100%; object-fit: contain; }
 /* All seven idle frames fit within x=71..322, y=53..353 of the 384px canvas. */
-#chat-pet img[src="/assets/whale/idle.gif"] { transform: translateY(-3%) scale(1.2); }
+#chat-pet img[src$="/assets/whale/idle.gif"] { transform: translateY(-3%) scale(1.2); }
 #private-call-pet-slot { display: grid; justify-items: center; }
 #private-call-pet-slot #chat-pet { --pet-size: min(224px, 28dvh, 64vw); }
 #private-call-dialog {

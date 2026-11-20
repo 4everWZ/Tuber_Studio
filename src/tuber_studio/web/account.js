@@ -1,5 +1,7 @@
 "use strict";
 
+const accountPath = globalThis.StudioPath ?? (value => value);
+
 class BilibiliAccountUI {
   constructor({header, settings = null, badges = [], api, notify, shouldPoll = () => true, onSessionRevoked = () => {}, onChange = () => {}}) {
     this.header = header; this.settings = settings; this.api = api; this.notify = notify;
@@ -130,14 +132,14 @@ class BilibiliAccountUI {
       if (badge.dataset.avatar !== (avatarKey || "")) {
         badge.dataset.avatar = avatarKey || "";
         image.hidden = false;
-        if (avatarKey) image.src = `/api/account/bilibili/avatar?v=${encodeURIComponent(avatarKey)}`;
+        if (avatarKey) image.src = accountPath(`/api/account/bilibili/avatar?v=${encodeURIComponent(avatarKey)}`);
         else { image.hidden = true; image.removeAttribute("src"); }
         image.onerror = () => { image.hidden = true; };
       }
     }
     if (avatarKey !== this.avatarKey) {
       this.avatarKey = avatarKey; this.h("[data-avatar]").hidden = true; this.h("[data-avatar-placeholder]").hidden = false;
-      if (avatarKey) this.h("[data-avatar]").src = `/api/account/bilibili/avatar?v=${encodeURIComponent(avatarKey)}`;
+      if (avatarKey) this.h("[data-avatar]").src = accountPath(`/api/account/bilibili/avatar?v=${encodeURIComponent(avatarKey)}`);
       else this.h("[data-avatar]").removeAttribute("src");
     }
     if (this.settings) {
@@ -226,7 +228,7 @@ class BilibiliAccountUI {
       const path = `/api/account/bilibili/login/${encodeURIComponent(value.id)}`;
       const login = {path, expires: Date.now() + value.expires_in * 1000};
       this.login = login;
-      this.s("[data-qr-image]").src = path + "/image";
+      this.s("[data-qr-image]").src = accountPath(path + "/image");
       this.s("[data-login-qr]").hidden = false;
       this.s("[data-qr-status]").textContent = "用 B站手机应用扫码并确认登录。";
       login.timer = setTimeout(() => this.pollScanLogin(login), 3000);

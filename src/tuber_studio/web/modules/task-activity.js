@@ -5,6 +5,7 @@ import { mountFollowup } from "./goal-followup.js";
 import { mountGoalEvents } from "./goal-events.js";
 import { browserTaskForm, mountTaskBrowser } from "./task-browser.js";
 import { renderCapabilityStrip } from "./operation-capabilities.js";
+import { studioPath } from "./api.js";
 
 const base = "/api/agent/tasks";
 const states = {
@@ -371,7 +372,7 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
           video.preload = "none";
           video.playsInline = true;
           video.style.maxWidth = "100%";
-          video.src = `${base}/${encodeURIComponent(task.id)}/clips/${encodeURIComponent(step.id)}`;
+          video.src = studioPath(`${base}/${encodeURIComponent(task.id)}/clips/${encodeURIComponent(step.id)}`);
           preview.ontoggle = () => { if (!preview.open) video.pause(); };
           preview.append(video, node("p", `${clip.bvid} · CID ${clip.cid} · ${clip.frames} 个连续原帧 · 仅画面`, "hint"));
           if (/^BV[0-9A-Za-z]{10}$/.test(clip.bvid) && Number.isInteger(clip.part) &&
@@ -445,7 +446,7 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
         const url = illustrationUrl(channel || "dynamics", draft_id || post_id, ref);
         if (url) {
           const image = node("img", null, "dynamic-comment-card");
-          image.src = url;
+          image.src = studioPath(url);
           image.alt = "本次审批绑定的图片";
           action.append(image);
         }
@@ -462,7 +463,7 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
             (_, index) => `/api/dynamics/posts/${encodeURIComponent(postId)}/comment-card?page=${index + 1}`) : [];
         for (const url of previews) {
           const image = node("img", null, "dynamic-comment-card");
-          image.src = url;
+          image.src = studioPath(url);
           image.alt = "将随正文一起发布的配图";
           action.append(image);
         }

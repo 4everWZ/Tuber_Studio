@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .agent.api import register_agent_api
@@ -56,6 +56,7 @@ from .runtime import Runtime
 from .runtime_authority import acquire_business_writer
 from .store import Store
 from .video_vision_service import configured_video_provider
+from .web_entry import WebMount, route_path, web_page
 
 
 def create_app(
@@ -204,13 +205,14 @@ def create_app(
 
     @app.middleware("http")
     async def boundaries(request, call_next):
+        path = route_path(request)
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             if not same_origin(request):
                 return JSONResponse({"detail": "跨站写入被拒绝"}, status_code=403)
-            uploading = request.url.path == "/api/live/uploads" and request.method == "POST"
-            meme_upload = request.url.path == "/api/memes" and request.method == "POST"
+            uploading = path == "/api/live/uploads" and request.method == "POST"
+            meme_upload = path == "/api/memes" and request.method == "POST"
             limit = MAX_UPLOAD if uploading else MAX_MEME_REQUEST if meme_upload else 2_100_000
-            reference_upload = request.method == "PUT" and request.url.path.startswith(REFERENCE_PREFIX + "/")
+            reference_upload = request.method == "PUT" and path.startswith(REFERENCE_PREFIX + "/")
             if reference_upload:
                 limit = MAX_REFERENCE_BYTES
             if int(request.headers.get("content-length", "0")) > limit:
@@ -224,13 +226,13 @@ def create_app(
         if (
             cookie
             and response.status_code < 400
-            and request.url.path not in {"/api/auth", "/api/logout", "/api/auth/reset-token"}
+            and path not in {"/api/auth", "/api/logout", "/api/auth/reset-token"}
             and sessions.needs_cookie_refresh(cookie)
         ):
             admin_cookie(response, request, cookie)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["Cache-Control"] = "no-store" if request.url.path.startswith("/api/") else "no-cache"
+        response.headers["Cache-Control"] = "no-store" if path.startswith("/api/") else "no-cache"
         return response
 
     @app.exception_handler(ValueError)
@@ -265,26 +267,26 @@ def create_app(
     )
 
     @app.get("/settings", include_in_schema=False)
-    async def settings_page():
-        return RedirectResponse("/#settings")
+    async def settings_page(request: Request):
+        return RedirectResponse(request.scope.get("root_path", "").rstrip("/") + "/#settings")
 
     @app.get("/")
-    async def index():
+    async def index(request: Request):
         shell = (web / "index.html").read_text(encoding="utf-8")
         content = re.sub(
             r"<!-- page: ([a-z-]+) -->",
             lambda match: (web / "pages" / f"{match[1]}.html").read_text(encoding="utf-8"),
             shell,
         )
-        return HTMLResponse(content, headers={"Cache-Control": "no-cache, must-revalidate"})
+        return web_page(request, content)
 
     @app.get("/overlay")
-    async def overlay():
-        return FileResponse(web / "overlay.html")
+    async def overlay(request: Request):
+        return web_page(request, (web / "overlay.html").read_text(encoding="utf-8"))
 
     @app.get("/overlay/draw-guess")
-    async def draw_guess_overlay():
-        return FileResponse(web / "draw-guess-overlay.html")
+    async def draw_guess_overlay(request: Request):
+        return web_page(request, (web / "draw-guess-overlay.html").read_text(encoding="utf-8"))
 
     @app.post("/api/auth")
     async def login(request: Request, data: dict = Body(...)):
@@ -406,4 +408,6 @@ def create_app(
         except (WebSocketDisconnect, RuntimeError):
             pass
 
+    if prefix := os.getenv("TUBER_WEB_PREFIX"):
+        app.add_middleware(WebMount, prefix=prefix)
     return app

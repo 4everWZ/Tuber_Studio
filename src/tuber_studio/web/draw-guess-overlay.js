@@ -55,7 +55,7 @@
 
   async function poll() {
     try {
-      const res = await fetch("/api/draw-and-guess/overlay", { cache: "no-store" });
+      const res = await fetch(globalThis.StudioPath("/api/draw-and-guess/overlay"), { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
 

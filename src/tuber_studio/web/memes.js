@@ -1,5 +1,7 @@
 "use strict";
 
+import { studioPath } from "./modules/api.js";
+
 const memeEmotions = {idle: "平常", cheerful: "开心", angry: "生气", shy: "害羞", confused: "困惑", excited: "兴奋"};
 let memePickerCount = 0;
 function memeElement(tag, text, className) { const item = document.createElement(tag); if (text != null) item.textContent = text; if (className) item.className = className; return item; }
@@ -23,12 +25,12 @@ function readImage(file) {
     reader.readAsDataURL(file);
   });
 }
-export function memePreviewUrl(asset) { return `/api/memes/${encodeURIComponent(asset.asset_id)}/preview`; }
+export function memePreviewUrl(asset) { return studioPath(`/api/memes/${encodeURIComponent(asset.asset_id)}/preview`); }
 export function memePreview(asset, url = memePreviewUrl(asset)) {
   const frame = memeElement("div", null, "meme-preview");
   const fallback = memeElement("span", asset.missing ? "图片文件缺失" : "图片预览不可用", "hint");
   if (asset.missing) { frame.append(fallback); return frame; }
-  const image = document.createElement("img"); image.loading = "lazy"; image.alt = asset.title || "表情包"; image.src = url;
+  const image = document.createElement("img"); image.loading = "lazy"; image.alt = asset.title || "表情包"; image.src = studioPath(url);
   image.onerror = () => { image.hidden = true; if (!fallback.isConnected) frame.append(fallback); };
   frame.append(image); return frame;
 }

@@ -98,15 +98,16 @@ window.LiveScene = class {
           if (body.childElementCount) body.replaceChildren();
           continue;
         }
-        const assets = (state.assets || []).filter(a=>!this.failedAssets.has(a.url || "/"+a.path));
+        const studioPath = globalThis.StudioPath;
+        const assets = (state.assets || []).filter(asset => !this.failedAssets.has(studioPath(asset.url || "/" + asset.path)));
         const asset = assets.find(a => a.id === "idle") || assets[0];
         let image = body.querySelector("img");
         if (asset) {
           if (!image) { image = make("img"); image.alt = state.character?.name || "角色"; image.draggable = false; body.prepend(image); image.onerror = () => { this.failedAssets.add(image.getAttribute("src")); this.onWarning("角色素材加载失败，画面已降级为可用素材"); this.update(this.state); }; }
-          const url = asset.url || "/" + asset.path;
-          const source = this.reducedMotion.matches && asset.still_url &&
-            !this.failedAssets.has(asset.still_url) ? asset.still_url : url;
-          if (this.reducedMotion.matches && !asset.still_url && url.toLowerCase().endsWith(".gif")) {
+          const url = studioPath(asset.url || "/" + asset.path);
+          const still = studioPath(asset.still_url);
+          const source = this.reducedMotion.matches && still && !this.failedAssets.has(still) ? still : url;
+          if (this.reducedMotion.matches && !still && url.toLowerCase().endsWith(".gif")) {
             image.remove();
             if (!body.querySelector(".avatar-empty")) body.prepend(make("span", state.character?.name, "avatar-empty"));
             continue;

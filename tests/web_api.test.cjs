@@ -5,6 +5,20 @@ const { test } = require("node:test");
 
 const client = import("../src/tuber_studio/web/modules/api.js");
 
+test("a mounted workbench sends app requests under its own path", async t => {
+  const {api, studioPath} = await client;
+  const document = globalThis.document;
+  globalThis.document = {querySelector: () => ({getAttribute: () => "/dafeiyu/"})};
+  t.after(() => { globalThis.document = document; });
+  t.mock.method(globalThis, "fetch", async path => {
+    assert.equal(path, "/dafeiyu/api/settings");
+    return Response.json({ready: true});
+  });
+  assert.deepEqual(await api("/api/settings"), {ready: true});
+  assert.equal(studioPath("/dafeiyu/assets/pet.gif"), "/dafeiyu/assets/pet.gif");
+  assert.equal(studioPath("https://example.com/asset.gif"), "https://example.com/asset.gif");
+});
+
 test("shared API sends JSON, multipart forms and WAV files in their original formats", async t => {
   const { api } = await client;
   const sent = [];

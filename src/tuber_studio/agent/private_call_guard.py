@@ -10,6 +10,7 @@ from starlette.responses import StreamingResponse
 from ..daily_memory import MemoryChanged
 from ..models import StrictModel
 from ..operation_continuations import content_hash
+from ..web_entry import route_path
 from .owner_memory import history_preference
 from .owner_memory_use import MemoryUse, check_use, read_stamp
 from .private_call import inherited_topic, shared_call_facts
@@ -67,7 +68,7 @@ def register_call_guards(app, runtime, require_admin, *, operator_chat=None):
     @app.middleware("http")
     async def wake_after_mutation(request, call_next):
         response = await call_next(request)
-        if guards and request.method in ("POST", "PUT", "PATCH", "DELETE") and not request.url.path.startswith(
+        if guards and request.method in ("POST", "PUT", "PATCH", "DELETE") and not route_path(request).startswith(
                 ("/api/chat/private-call", "/api/agent/memory/validate")):
             for guard in guards.values():
                 guard.wake.set()

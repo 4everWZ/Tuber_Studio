@@ -1,4 +1,5 @@
 import { MemePicker } from "../memes.js?v=20261119.1";
+import { studioPath } from "./api.js";
 
 export function hasPetSource(asset) {
   return Boolean(asset.source?.author?.trim() && asset.license?.name?.trim() &&
@@ -50,7 +51,10 @@ export function initChatPet(api, display, report) {
     pet.classList.toggle("pet-placeholder", !url);
     pet.title = expression ? `${expression.title} · 换个表情` : "换个表情";
     if (image.hidden) image.removeAttribute("src");
-    else if (image.getAttribute("src") !== url) image.src = url;
+    else {
+      const source = studioPath(url);
+      if (image.getAttribute("src") !== source) image.src = source;
+    }
   }
   image.onerror = () => { image.hidden = true; pet.classList.add("pet-placeholder"); };
   pet.onclick = () => picker.open(expression?.asset_id);
