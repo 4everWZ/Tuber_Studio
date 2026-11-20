@@ -370,9 +370,12 @@ async def advance(runtime, task):
     if "web_page" in allowed and hasattr(runtime, "unread_web_addresses"):
         goal = "\n".join([*task["plan"]["prior_goals"], task["goal"]])
         addresses = runtime.unread_web_addresses(goal, context)
+        page = next(tool for tool in tools if tool["name"] == "web_page")
         if addresses:
-            page = next(tool for tool in tools if tool["name"] == "web_page")
             page["parameters"]["properties"]["web_fetch"]["enum"] = addresses
+        else:
+            tools.remove(page)
+            allowed.pop("web_page")
     submission = function("submit_materials", "向前台 Omni 提交候选证据与缺口，不直接向号主交付。", PrivateDelivery)
     items = submission["parameters"]["properties"]["items"]
     evidence = evidence_index(context)

@@ -145,7 +145,7 @@ async def test_bad_tool_arguments_return_a_diagnostic_without_execution(runtime,
     gateway(runtime.settings, monkeypatch, model)
     tasks = task_tools.create_task_runtime(runtime, store, None)
     identity = str(uuid4())
-    tasks.create(identity, "帮我核对并保存页面摘要")
+    tasks.create(identity, "帮我核对 https://example.org/page 并保存页面摘要")
     tasks.start()
     try:
         expected = "failed" if repeat else "needs_input"
@@ -163,6 +163,7 @@ async def test_steered_task_can_submit_evidence_from_both_status_reads(settings,
     calls = {"operation_status": "operations", "live_status": "live"}
 
     def worker(payload):
+        assert all(tool["name"] != "web_page" for tool in payload["tools"])
         receipts = {item["call_id"]: json.loads(item["output"]) for item in payload["input"]
                     if item.get("type") == "function_call_output"}
         if not receipts:
