@@ -135,6 +135,9 @@ def test_background_recall_passes_each_read_as_evidence_once(studio):
                "result": result | {"items": [s for s in result["items"] if s["type"] != "watched_video"]}}
     task = {"revision": 1, "goal": "找以前读过的鲸鱼材料", "plan": {"prior_goals": [],
             "delegation_brief": {"read_tools": [NAME]}}}
-    packet = dump(model_input(task, [previous, current]))
+    duplicate = current | {"id": "cached", "call_id": "read-again", "response_id": "retry"}
+    invalid = current | {"id": "invalid", "call_id": "read-invalid", "response_id": "invalid", "result": {"error": "缺少对象"}}
+    packet = dump(model_input(task, [previous, current, duplicate, invalid]))
     assert packet.count(ORIGINAL) == 1
-    assert "?p=2&t=19" in packet and "#reply6789" in packet
+    assert packet.count("?p=2&t=19") == packet.count("#reply6789") == 1
+    assert "缺少对象" in packet

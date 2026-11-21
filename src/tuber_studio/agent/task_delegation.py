@@ -143,7 +143,8 @@ def model_input(task, context):
             receipt = step["result"]
             if step["tool"] == "delegate_text" and receipt.get("memory_use"):
                 receipt = {k: receipt[k] for k in ("draft", "sources") if k in receipt}
-            if step["tool"] == "recall_memory":
+            if step["tool"] == "recall_memory" and "items" in receipt:
+                sources = {key: evidence[key] for key in sources if key in evidence}
                 receipt = {"state": receipt["state"], "source_ids": [item["id"] for item in receipt["items"]]}
             if sources and step["tool"] == "inspect_video":
                 findings = []
