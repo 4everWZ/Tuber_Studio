@@ -92,8 +92,11 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
             assert isinstance(content, str)
             if path == "/v1/chat/completions" and content in (replay.REQUEST, replay.CHANGE):
                 schema = json.loads(body["structured_outputs"]["structural_tag"])["format"]["json_schema"]
-                if schema["title"] == "WorkLifecycle":
-                    assert "reply_markdown" in schema["properties"]
+                if schema["title"] == "ReplyDelivery":
+                    assert "reply_markdown" not in schema["properties"]
+                    decision = {"action": "work", "clock_fields": []}
+                elif schema["title"] == "WorkLifecycle":
+                    assert "reply_markdown" not in schema["properties"]
                     decision = {"action": "agent_task" if content == replay.REQUEST else "task_turn"}
                 else:
                     assert schema["title"] == "CardTurnIntent" and content == replay.CHANGE and edits == [2]

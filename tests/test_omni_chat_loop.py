@@ -40,8 +40,11 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
             if content in (replay.REQUEST, replay.CHANGE):
                 schema = json.loads(body["structured_outputs"]["structural_tag"])["format"]["json_schema"]
                 chat_stages.append(schema["title"])
-                if schema["title"] == "WorkLifecycle":
-                    assert "reply_markdown" in schema["properties"] and path == "/v1/chat/completions"
+                if schema["title"] == "ReplyDelivery":
+                    assert path == "/v1/chat/completions" and body["temperature"] == 0
+                    decision = {"action": "tool" if behavior == "public_action" else "work", "clock_fields": []}
+                elif schema["title"] == "WorkLifecycle":
+                    assert "reply_markdown" not in schema["properties"] and path == "/v1/chat/completions"
                     if behavior == "public_action":
                         decision = direct_request(content, mode="change", target="演播间")
                     else:
@@ -119,16 +122,15 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
                 await replay.run(config)
         if behavior == "public_action":
             assert calls.count("/llm/v1/responses") == 0
-            assert chat_stages == ["WorkLifecycle", "AssistantDecision"]
+            assert chat_stages == ["ReplyDelivery", "WorkLifecycle", "AssistantDecision"]
         else:
             assert calls.count("/llm/v1/responses") == (3 if behavior == "invented_source" else 2)
-            expected = ["WorkLifecycle", "WorkLifecycle", "card_steering"]
+            expected = ["ReplyDelivery", "WorkLifecycle", "ReplyDelivery", "WorkLifecycle", "card_steering"]
             assert chat_stages == (expected + ["evidence_editor"] if behavior == "invented_editor_source" else expected)
         return
     async with asyncio.timeout(5):
         result = await replay.run(config)
     assert result == {"status": "passed", "task_revision": 2, "local_reads": ["operation_status"], "platform_writes": 0}
-    assert chat_stages == ["WorkLifecycle", "WorkLifecycle", "card_steering", "evidence_editor"]
+    assert chat_stages == ["ReplyDelivery", "WorkLifecycle", "ReplyDelivery", "WorkLifecycle", "card_steering", "evidence_editor"]
     assert [path for path in calls if path.endswith(("chat/completions", "responses"))] == [
-        "/v1/chat/completions", "/v1/chat/completions", "/v1/chat/completions", "/llm/v1/responses", "/llm/v1/responses",
-        "/llm/v1/chat/completions"]
+        *(["/v1/chat/completions"] * 5), "/llm/v1/responses", "/llm/v1/responses", "/llm/v1/chat/completions"]

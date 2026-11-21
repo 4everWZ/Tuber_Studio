@@ -138,7 +138,7 @@ async def test_capability_discovery_reads_catalog_without_settings_writes(studio
     text = response.raise_for_status().json()["reply_text"]
     assert all(label in text for label in ("宠物", "每日观看", "点歌", "运营配图", "直播画布", "后台"))
     assert before == (runtime.pets.state(char), runtime.browsing.policy())
-    assert calls == ["WorkLifecycle", "AssistantDecision", "WorkLifecycle"]
+    assert calls == ["WorkLifecycle", "AssistantDecision"]
 
 
 async def test_pet_choice_from_real_catalog_is_bound_and_replayable(studio, monkeypatch):
