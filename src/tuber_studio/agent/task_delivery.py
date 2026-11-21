@@ -72,6 +72,10 @@ class CreativeItem(StrictModel):
 class PrivateDelivery(StrictModel):
     items: list[CreativeItem]
     gaps: list[str]
+    table_columns: tuple[str, str] | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+        description="文字交付要求两栏对照表时，填写两个栏名。每项 title 和 rationale 分别是同一行的两格。",
+    )
     _field_sources: dict = PrivateAttr(default_factory=dict)
     _frame_reviews: dict = PrivateAttr(default_factory=dict)
     _window_reviews: dict = PrivateAttr(default_factory=dict)
@@ -589,12 +593,16 @@ def _previous_rendered_items(task, evidence):
 
 def render_private_delivery(product, evidence):
     blocks = []
+    table = product.table_columns if not evidence.points else None
+    if table and product.items:
+        blocks.append("| " + " | ".join(map(_text, table)) + " |\n| --- | --- |\n" +
+                      "\n".join(f"| {_text(item.title)} | {_text(item.rationale)} |" for item in product.items))
     windows = []
     bylines = set()
     used = set()
     for item in product.items:
         primary = primary_frame(item, evidence)
-        lines = [f"**{_text(item.title)}**", f"选材理由：{_text(item.rationale)}"]
+        lines = [f"**{_text(item.title)}**"] if table else [f"**{_text(item.title)}**", f"选材理由：{_text(item.rationale)}"]
         if primary:
             point = evidence.points[primary]
             if origin := evidence.part_bylines.get((point.bvid, point.part, point.cid)):
@@ -645,6 +653,17 @@ def render_private_delivery(product, evidence):
 
 
 def _describe(tool, result):
+    if tool == "workshop_lookup":
+        if metrics := result.get("metrics"):
+            from .workshop_lookup import watch_answer
+            return [watch_answer(metrics)], metrics["available"]
+        lines = []
+        for item in result.get("items", []):
+            lines.append(" · ".join(filter(None, (_text(item["title"]), item["identity"], item["state"],
+                                                 _source(item.get("href"))))))
+            for entry in item["entries"]:
+                lines.append(" · ".join(filter(None, (_text(entry["text"]), _source(entry.get("href"))))))
+        return lines or ["这次工坊查询没有取得对应记录。"], bool(lines)
     if tool == "publish_dynamic_batch":
         rows = result.get("items", [])
         labels = {"published": "已发", "not_sent": "没发", "unconfirmed": "待核对"}

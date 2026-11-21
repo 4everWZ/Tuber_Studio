@@ -465,6 +465,12 @@ export function createOperatorCard(root, turn, context) {
         if (approval.payload?.mentions?.length) preview.append(mentionLinks(approval.payload.mentions, node));
       }
       actionInteraction(preview, value.interaction);
+      if (value.artifact_download) {
+        const download = node("a", "下载成果");
+        download.href = studioPath(value.artifact_download);
+        download.download = "";
+        preview.append(download);
+      }
       if (value.items) {
         const list = node("ul");
         for (const item of value.items) {

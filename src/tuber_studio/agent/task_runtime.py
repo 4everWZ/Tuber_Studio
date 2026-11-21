@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..http_api import InferenceBudgetExceeded, InferenceQueueBusy
 from ..store import dump
 from . import task_delegation
+from .chat_delivery import waiting_delivery
 from .archived_video import ArchiveUnavailable
 from .creative_workspace import CreativeWorkspace
 from .public_sources import restriction_messages
@@ -92,6 +93,7 @@ class ToolRequest:
     approval: dict | None
     receipts: tuple[dict, ...] = ()
     video_grant: dict | None = None
+    research_day: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -263,7 +265,7 @@ class TaskRuntime:
 
     def create(self, identity, goal, *, due=None, source_key=None, creative_goal_id=None, attachments=(),
                video_selection=None, allow_code=False, browser_sources=None, delegation=None, on_create=None,
-               prepared_step=None):
+               prepared_step=None, read_receipts=()):
         scope, now = dump(self.scope()), time.time()
         if creative_goal_id:
             project = self.workspace.goal(creative_goal_id)
@@ -287,7 +289,11 @@ class TaskRuntime:
         if delegation:
             selection["delegation_brief"] = delegation
         plan = dump({"backend": "responses", "prior_goals": [], **selection}) if inputs or selection else None
-        steps = inputs
+        steps = inputs + [
+            {"id": str(uuid5(UUID(identity), f"foreground-read:{index}")), "revision": 0, **record}
+            for index, record in enumerate(read_receipts)
+            if (tool := self.tools.get(record["tool"])) and tool.foreground_read and tool.reusable and not tool.review
+        ]
         if prepared_step:
             plan = dump({"backend": "fixed"})
             steps = [{"id": str(uuid5(UUID(identity), "prepared-step")), "revision": 1, **prepared_step}]
@@ -584,10 +590,10 @@ class TaskRuntime:
                     database.execute("INSERT OR IGNORE INTO kv VALUES(?,?)",
                                      (f"private_edition_memory:{task['id']}:{task['revision']}", dump(uses)))
             status = changes.get("status")
-            interaction = status == "waiting" and steps and (steps[-1].get("checkpoint") or {}).get("interaction")
+            notify_waiting = status == "waiting" and waiting_delivery(steps)
             fixed_cancelled = status == "cancelled" and (task["plan"] == {"backend": "fixed"} or any(
                 (tool := self.tools.get(step["tool"])) and tool.fixed_only for step in steps))
-            if applied and (status in {"completed", "failed", "awaiting_approval", "needs_input"} or interaction
+            if applied and (status in {"completed", "failed", "awaiting_approval", "needs_input"} or notify_waiting
                             or fixed_cancelled):
                 self.workspace.notify(database, task["id"], changes["updated"])
                 if self.record_chat_delivery:
@@ -826,8 +832,9 @@ class TaskRuntime:
             binding = video_binding(task | {"plan": {"prior_goals": [], **(task["plan"] or {})}}) if (
                 step["tool"] in {"inspect_video", "web_search", "web_page"} and isinstance(task["plan"], (dict,type(None)))
             ) else None
+            brief = task["plan"].get("delegation_brief", {}) if isinstance(task["plan"], dict) else {}
             request = ToolRequest(step.get("resource_id", step["id"]), goal, task["scope"], step.get("checkpoint"),
-                                  step.get("approval"), receipts, binding)
+                                  step.get("approval"), receipts, binding, brief.get("research_day"))
             if tool.checkpoint_submission and not step.get("checkpoint"):
                 if not step.get("approved") or not request.approval:
                     raise ValueError("没有当前步骤的明确审批")

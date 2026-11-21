@@ -1,10 +1,26 @@
 """Read the source a task named, including a specific part of a Bilibili submission."""
 
 import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from ..platforms.bilibili import PlatformReadError
 from ..platforms.bilibili_browsing import BrowsingAdapter
 from ..web_fetch import MAX_EXCERPT, source_url
+
+
+def published_on(value, day, timezone, *, now=None):
+    if not isinstance(value, str):
+        return False
+    try:
+        published = datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    if published.tzinfo:
+        published = published.astimezone(ZoneInfo(timezone))
+        if published > (now or datetime.now(published.tzinfo)):
+            return False
+    return published.date().isoformat() == day
 
 
 def video_read_restriction(error, bvid, part, stage):

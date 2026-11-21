@@ -264,7 +264,7 @@ async def test_chat_lifecycle_separates_live_status_from_persistent_work(setting
                 assert any("读取回执" in row["content"] for row in messages)
                 return {"action": "chat", "reply_markdown": "我已经读到直播状态了。"}
             assert set(menu) == {"chat", "identity_read", "direct_tool", "agent_task", "clarify",
-                                 "prepare_publication", "task_status"}
+                             "prepare_publication", "task_status", "workshop_lookup", "watch_totals"}
             return direct_request(messages[-1]["content"]) if lifecycle == "direct_tool" else {"action": lifecycle}
         assert "live_status" in menu and not {"direct_tool", "agent_task", "steer_task", "chat"}.intersection(menu)
         assert options["on_content"] is None
@@ -824,7 +824,8 @@ def test_chat_history_cursor_and_activity_are_bound_to_current_scope(settings):
         card = client.post(path, json=query).json()["card"]
         assert card["type"] == "video_activity"
         data = card["data"]
-        assert (data["started"], data["completed"], data["fully_read"]) == (2, 1, 1)
+        assert (data["started"], data["completed"], data["fully_read"]) == (1, 1, 1)
+        assert len(data["records"]) == 2
         assert any(entry["round_id"] == round_["id"] for entry in data["records"])
         browsing.discovery.remember_account("200")
         assert client.get(path + "/turns/" + query["request_id"]).json()["card"]["data"]["available"] is False

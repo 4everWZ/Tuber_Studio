@@ -15,6 +15,7 @@ from . import operator_facts
 from .goal_comment_events import CommentWatch
 from .goal_events import EventGrant
 from .goal_followups import FollowupGrant, StatusSource
+from .public_sources import published_on
 
 
 @dataclass(frozen=True)
@@ -40,7 +41,7 @@ CAPABILITIES = {
                            ("outgoing_queue", "task_status"), ("prepare_publication", "dynamic", "edit_dynamic"),
                            selection_action="prepare_publication"),
     "video": Capability("视频和分 P", "已读材料、时码、读取进度", "刷视频、整段取材、续看或精查指定范围",
-                        ("video_activity", "video_details", "inspect_video_frame"), ("browse", "full_video", "resume_video", "stop")),
+                        ("video_activity", "video_details"), ("browse", "full_video", "resume_video", "stop")),
     "live": Capability("直播和点歌播放", "场次、节目、播放和回执", "交接台词、调整直播习惯或停止直播",
                        ("live_status", "live_history"), ("start_live", "live_handoff", "live_preference", "stop")),
     "game": Capability("当前游戏会话", "局面与控制权", "由场景授权控制", ("game_status",), ("game_handoff",)),
@@ -53,11 +54,13 @@ CAPABILITIES = {
 }
 
 class ConversationObject(StrictModel):
-    kind: Literal["owner", "account", "setting", "operations", "event", "video", "live", "game", "memory", "task", "artifact", "web", "outgoing"]
+    kind: Literal["owner", "account", "setting", "operations", "event", "video", "watch_history", "watched_video", "public_comment",
+                  "dynamic_post", "live", "game", "memory", "task", "artifact", "web", "outgoing"]
     identity: str = Field(min_length=1, max_length=2048)
     label: str = Field(max_length=200)
     revision: str | int | None = None
     part: int | None = None
+    seconds: float | None = None
 
 
 class PublicSearchTerms(StrictModel):
@@ -213,11 +216,17 @@ async def public_research(runtime, request_id, message, *, topic="", localized="
         receipts.append({"tool": name, "arguments": args, "result": result})
         return result
 
-    async with asyncio.timeout(10):
-        if not tasks.unread_web_addresses(message, ()):
-            await read("web_search", {"query": query, **({"news": True, "bulletin": topic is None} if today else {})})
-        addresses = tasks.unread_web_addresses(message, receipts)[:4]
-        opened = await asyncio.gather(*(read("web_page", {"web_fetch": url}) for url in addresses))
+    addresses = []
+    timed_out = False
+    try:
+        async with asyncio.timeout(10):
+            if not tasks.unread_web_addresses(message, ()):
+                await read("web_search", {"query": query, **({"news": True, "bulletin": topic is None} if today else {})})
+            addresses = tasks.unread_web_addresses(message, receipts)[:4]
+            await asyncio.gather(*(read("web_page", {"web_fetch": url}) for url in addresses))
+    except TimeoutError:
+        timed_out = True
+    opened = [step["result"] for step in receipts if step["tool"] == "web_page"]
     sources = {}
     undated = 0
     for page in opened:
@@ -228,10 +237,7 @@ async def public_research(runtime, request_id, message, *, topic="", localized="
             if not value:
                 undated += 1
                 continue
-            published = datetime.fromisoformat(value)
-            if published.tzinfo:
-                published = published.astimezone(local_now.tzinfo)
-            if published.date() != today or (published.tzinfo and published > local_now):
+            if not published_on(value, today.isoformat(), local_now.tzinfo.key, now=local_now):
                 continue
         sources[page["url"]] = {
             "title": page["title"] or httpx.URL(page["url"]).host,
@@ -245,10 +251,20 @@ async def public_research(runtime, request_id, message, *, topic="", localized="
         reply = f"我打开了候选网页，目前没有核实到 {today} 发布且可读取的来源。"
         if undated:
             reply += f"其中 {undated} 个可读网页没有可核对的发布日期。"
+    elif timed_out:
+        reply = "公开来源还在响应，这轮暂时没读到正文。"
     else:
         reply = "这次公开检索没有读到可用来源。"
+    # A dated continuation retains the same day filter. Candidate URLs and
+    # completed, eligible reads can seed a read-only background task.
+    usable = [{"tool": step["tool"], "arguments": step["arguments"], "result": step["result"]}
+              for step in receipts if not step["result"].get("error") and (
+                  step["tool"] == "web_search" or step["result"].get("url") in sources)]
     return {"reply_text": reply, "card": None, "sources": list(sources.values()),
-            "tool_receipt": {"action": "read", "group": "web", "state": "ok" if sources else "unavailable",
+            "research_continuation": {"reads": usable, "local_date": str(today) if today else None,
+                                      "timezone": str(local_now.tzinfo)} if timed_out else None,
+            "tool_receipt": {"action": "read", "group": "web",
+                             "state": "partial" if timed_out and sources else "unavailable" if not sources else "ok",
                              "local_date": str(today) if today else None,
                              "calls": [{"tool": step["tool"], "status": "unavailable" if step["result"].get("error")
                                         else "ok"} for step in receipts]}}

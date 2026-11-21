@@ -28,14 +28,14 @@ from ..responses_provider import ResponsesClient
 from ..store import dump
 from ..web_fetch import WebFetchRequest, fetch_excerpt, programme_credit_text, source_url
 from ..web_search import search_broadcast_programmes, search_public_web
-from . import operator_facts
+from . import operator_facts, workshop_lookup
 from .archived_video import MountedArchive
 from .clip_refinement import positive_subwindows, subwindow_brief
 from .clip_review import review_clip_window, unreviewed_preview
 from .clip_screening import fit_review_group, observe_clip_batch
 from .dynamic_publication import register_dynamic_publication
 from .handoff import PublicText, handoff_text, supplied_private_fragments, video_findings
-from .public_sources import fetch_task_source, video_read_restriction
+from .public_sources import fetch_task_source, published_on, video_read_restriction
 from .public_video import clip_path, read_public_part, save_clip
 from .task_delivery import (
     NO_SPOILERS,
@@ -789,7 +789,7 @@ def plan_condition_options(steps):
 
 
 def explicit_video_research(goal, tools, maximum):
-    if maximum < 3 or set(tools) != {"inspect_video", "web_search", "web_page"}:
+    if maximum < 3 or set(tools) - {workshop_lookup.LOOKUP_TOOL} != {"inspect_video", "web_search", "web_page"}:
         return None
     if len(set(_VIDEO_ID.findall(goal))) != 1 or _HTTPS_LINK.search(goal):
         return None
@@ -1536,6 +1536,13 @@ def create_task_runtime(runtime, store, browsing):
                 "这些偏好只影响私有交付的表达，不是视频事实或引用来源。"
             )
         schema = PrivateDelivery.model_json_schema()
+        if evidence.points:
+            schema["properties"].pop("table_columns")
+        else:
+            messages[0]["content"] += (
+                "\n文字交付按号主最新要求排版。若要求两栏表，填写 table_columns，"
+                "把每一行的内容填到对应的 title、rationale，按行给已读证据 ID。"
+            )
         bind_delivery_schema(schema["properties"]["items"], schema["$defs"]["CreativeItem"], pool)
         if replacements:
             schema["properties"]["items"]["maxItems"] = len(replacements)
@@ -2053,7 +2060,12 @@ def create_task_runtime(runtime, store, browsing):
             package = archive.open() if known else archive.optional()
             if package and url in package.pages:
                 return package.page(url)
-        return await fetch_task_source(args.web_fetch, fetch_excerpt)
+        result = await fetch_task_source(args.web_fetch, fetch_excerpt)
+        if request.research_day and not result.get("error") and not published_on(
+            result.get("published_at"), request.research_day["date"], request.research_day["timezone"],
+        ):
+            return {"error": "来源没有符合本次查证日期的发布日期。", "url": url}
+        return result
 
     async def owner(request, args):
         return await bound_owner(runtime, runtime.character)
@@ -2070,6 +2082,9 @@ def create_task_runtime(runtime, store, browsing):
         events = operator_facts.daily_events(browsing, date)
         return {"date": date, "events": [{"title": event["title"], "source": event["source"]}
                                         for event in events[:6]]}
+
+    async def lookup_workshop(request, args):
+        return workshop_lookup.lookup(browsing, request.scope, args)
 
     async def live(request, args):
         return await observed_live_status(runtime)
@@ -2234,6 +2249,10 @@ def create_task_runtime(runtime, store, browsing):
                                   StrictModel, operating_account, foreground_read=True),
         "operation_status": Tool("读取真实自主运营状态。", StrictModel, operations, parallel_read=True, foreground_read=True),
         "today_activity": Tool("读取当前业务日的公开运营事件和来源。", StrictModel, today, foreground_read=True),
+        workshop_lookup.LOOKUP_TOOL: Tool(
+            workshop_lookup.LOOKUP_DESCRIPTION, workshop_lookup.WorkshopLookup, lookup_workshop, foreground_read=True,
+            reusable=True,
+        ),
         "inspect_video": Tool("读取指定BV和分P，返回该部分时长及真实采样时码。可自行勘察候选位置。"
                               "需要可播放选段时，分别指定不超过10秒的[start,end)读取连续纯画面，按回执核对。",
                               Video, video, stop_video, parallel_read=True, reusable=True, own_deadline=True),

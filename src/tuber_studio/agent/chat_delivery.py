@@ -3,12 +3,28 @@
 import json
 from uuid import UUID, uuid5
 
+from ..operation_continuations import content_hash
 from ..store import dump
 
 
+def waiting_delivery(steps):
+    checkpoint = (steps[-1].get("checkpoint") or {}) if steps else {}
+    return checkpoint.get("interaction") or checkpoint.get("status") == "needs_reconciliation"
+
+
 def delivery_turn_id(task, status, steps):
-    step = steps[-1]["id"] if status == "awaiting_approval" and steps else None
-    return str(uuid5(UUID(task["id"]), f"chat:{task['revision']}:{status}:{step or ''}")), step
+    step = steps[-1]["id"] if status in {"awaiting_approval", "waiting"} and steps else None
+    event = f"chat:{task['revision']}:{status}:{step or ''}"
+    if status == "waiting" and step:
+        checkpoint = steps[-1].get("checkpoint") or {}
+        items = checkpoint.get("items") or {}
+        event += ":" + content_hash({
+            "interaction": checkpoint.get("interaction"),
+            "status": checkpoint.get("status"),
+            "items": {key: (item.get("status"), item.get("number")) for key, item in items.items()}
+            if isinstance(items, dict) else {},
+        })
+    return str(uuid5(UUID(task["id"]), event)), step
 
 
 def record_chat_delivery(database, task, status, steps, created):
@@ -31,5 +47,7 @@ def record_chat_delivery(database, task, status, steps, created):
     result = {"task_delivery": delivery, "account_id": account, "owner_source": owner,
               "conversation_id": saved.get("conversation_id"),
               "character_name": saved.get("character_name"), "memory_intent": "task_delivery"}
+    if saved.get("call_origin"):
+        result["call_origin"] = saved["call_origin"]
     database.execute("INSERT OR IGNORE INTO operator_chat_turns VALUES (?,?,?,?,?,?)",
                      (identity, character, version, "", dump(result), created))

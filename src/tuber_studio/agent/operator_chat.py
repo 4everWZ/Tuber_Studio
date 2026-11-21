@@ -9,7 +9,7 @@ import time
 import unicodedata
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 from enum import Enum
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
@@ -31,9 +31,9 @@ from ..operations.browsing.quotas import day_window
 from ..providers import build_messages
 from ..sse import encode_event
 from ..store import dump
-from . import operator_facts, outgoing_queue, workbench_tools
+from . import operator_facts, outgoing_queue, workbench_tools, workshop_lookup
 from .assistant_output import AssistantTextStream, assistant_markdown, workbench_fields
-from .chat_delivery import delivery_turn_id, record_chat_delivery
+from .chat_delivery import delivery_turn_id, record_chat_delivery, waiting_delivery
 from .dynamic_publication import PUBLICATION_TOOL, publication_progress, requested_draft_ids
 from .handoff import (
     LIVE_STYLE,
@@ -72,6 +72,7 @@ from .personal_agent import (
 from .private_memory_writer import connect_private_writer
 from .task_history import TaskHistory, reason_reply, select_reason_lines
 from .voice_origin import CallOrigin, verify_call
+from .workshop_lookup import WorkshopLookup
 
 _BV = re.compile(r"(?:https://www\.bilibili\.com/video/)?(BV[0-9A-Za-z]{10})/?")
 _MENTIONED_BV = re.compile(r"(?<![0-9A-Za-z])BV[0-9A-Za-z]{10}(?![0-9A-Za-z])")
@@ -113,6 +114,7 @@ _LIVE_TOOL_CONTEXT = (
 )
 
 _DIRECT_READS = {action for domain in CAPABILITIES.values() for action in domain.read_actions}
+_PRESENTED_READS = _DIRECT_READS | {workshop_lookup.LOOKUP_TOOL}
 _DIRECT_CHANGES = {action for domain in CAPABILITIES.values() for action in domain.change_actions}
 # These read exactly one current workshop object. The current turn and execution
 # scope identify it without an extracted name, UID or argument.
@@ -141,6 +143,9 @@ _OBJECT_READS = {
     "operations": {"operation_status", "activity", "video_activity"},
     "event": {"event_author", "event_details", "event_reply"},
     "video": {"video_details", "inspect_video_frame", "full_video"},
+    "watched_video": {"workshop_lookup"},
+    "public_comment": {"workshop_lookup"},
+    "dynamic_post": {"workshop_lookup"},
     "live": {"live_status", "live_history"},
     "game": {"game_status"},
     "memory": {"recall_experience", "memory_summary"},
@@ -150,6 +155,7 @@ _OBJECT_READS = {
     "outgoing": {"outgoing_queue"},
 }
 _TASK_CONTROLS = {"pause_task", "resume_task", "watch_goal"}
+_WORKSHOP_OBJECTS = {"watched_video": "video", "public_comment": "comment", "dynamic_post": "dynamic"}
 
 _WORKBENCH_TOOL_CONTEXT = (
     "即时工具可列出工坊能力和当前可调项目、读设置、在已有宠物形象与表情中选择、"
@@ -207,6 +213,9 @@ class ChatIntent(StrictModel):
     _settings_read_only: bool = PrivateAttr(default=False)
     _setting_fields: tuple[str, ...] = PrivateAttr(default=())
     _subject: ConversationObject | None = PrivateAttr(default=None)
+    _lookup: WorkshopLookup | None = PrivateAttr(default=None)
+    _fixed_metrics: bool = PrivateAttr(default=False)
+    _continue_research: bool = PrivateAttr(default=False)
     action: Literal[
         "chat", "clarify", "identity_read", "clock", "activity", "event_details", "event_author", "event_reply",
         "video_activity", "dynamic", "edit_dynamic", "browse", "full_video", "public_experiences", "remember_event",
@@ -216,7 +225,7 @@ class ChatIntent(StrictModel):
         "operation_status", "web_lookup", "task_status", "agent_task", "steer_task", "cancel_task",
         "pause_task", "resume_task", "watch_goal",
         "workbench_capabilities", "pet_settings", "daily_settings",
-        "outgoing_queue", "prepare_publication",
+        "outgoing_queue", "prepare_publication", "workshop_lookup",
     ]
     publication_channel: Literal["dynamics", "comments", "messages"] | None = Field(
         default=None, exclude_if=lambda value: value is None,
@@ -296,6 +305,9 @@ class DirectRequest(StrictModel):
     followup: bool = Field(default=False, strict=True)
     object_ref: str | None = Field(default=None, max_length=12)
     domain: str | None = Field(default=None, max_length=24)
+    continue_research: bool = Field(
+        default=False, description="号主明确交代查到结果回来时为真，普通即时提问留空。",
+    )
 
 
 class CardTurnIntent(StrictModel):
@@ -326,7 +338,7 @@ class CardTurnIntent(StrictModel):
 
 class TurnPlan(StrictModel):
     action: Literal["chat", "identity_read", "prepare_publication", "task_status", "watch_goal", "direct_tool",
-                    "agent_task", "task_turn", "clarify", "owner_identity"]
+                    "agent_task", "task_turn", "clarify", "owner_identity", "workshop_lookup", "watch_totals"]
     publication_channel: Literal["dynamics", "comments", "messages"] | None = Field(
         default=None, exclude_if=lambda value: value is None,
     )
@@ -340,6 +352,9 @@ class TurnPlan(StrictModel):
 
 
 class WorkLifecycle(TurnPlan):
+    lookup: WorkshopLookup | None = Field(default=None, exclude_if=lambda value: value is None)
+    object_ref: str | None = Field(default=None, max_length=12, exclude_if=lambda value: value is None)
+    watch_day: Literal["today", "yesterday"] | date | None = Field(default=None, exclude_if=lambda value: value is None)
     reply_markdown: str = Field(default="", max_length=16000, validate_default=True)
     _identity_reply: bool = PrivateAttr(default=False)
 
@@ -377,16 +392,18 @@ class WorkLifecycle(TurnPlan):
                 properties["action"]["enum"].remove("owner_identity")
         required_by_action = {"chat": "reply_markdown", "direct_tool": "operation", "clarify": "topic",
                               "identity_read": "identities", "prepare_publication": "publication_channel",
-                              "watch_goal": "arrangement"}
+                              "watch_goal": "arrangement", "workshop_lookup": "lookup"}
         properties = schema["properties"]
         branches = []
         descriptions = {
-            "chat": "自然聊日常、感受和假设，或当场给点子和短文案。查询已交办任务的真实进度时选 task_status。",
+            "chat": "仅凭角色和对话就能完成的接话、点子和假设。需要新的事实、来源或执行回执时使用相应工具。",
             "identity_read": "回答 B 站号主或工坊运营登录账号的昵称、数字 UID、主页。",
             "prepare_publication": "接受发送现有待发稿件的请求，准备一批供用户确认的发布任务。",
             "task_status": "查询先前交办、发送和其他操作是否真的执行，以及具体结果。缺少记录也用此工具。",
             "watch_goal": "给对话中的已有任务设置定期复查，或等获准的外部来信再继续。",
             "direct_tool": "当场完成一次具体读取或操作。",
+            "workshop_lookup": workshop_lookup.LOOKUP_DESCRIPTION,
+            "watch_totals": "仅查询某个业务日看了几部、读了多少、还有多少在进行。想讨论实际视频内容时选 workshop_lookup。",
             "agent_task": "接下独立工作，稍后把成果送回对话。",
             "task_turn": "接续同一份已有工作、要求或成果。",
             "clarify": "询问独立工作或操作所缺的具体信息。",
@@ -398,11 +415,17 @@ class WorkLifecycle(TurnPlan):
                     branch[field] = {"enum": list(outgoing_queue.CHANNELS)}
                 elif field == "operation":
                     branch[field] = {"$ref": "#/$defs/DirectRequest"}
+                elif field == "lookup":
+                    branch[field] = {"$ref": "#/$defs/WorkshopLookup"}
                 elif field == "arrangement":
                     branch[field] = {"$ref": "#/$defs/Arrangement"}
                 else:
                     branch[field] = properties[field] | {"minItems" if field == "identities" else "minLength": 1}
             required = list(branch)
+            if action == "workshop_lookup":
+                branch["object_ref"] = properties["object_ref"]
+            if action == "watch_totals":
+                branch["watch_day"] = properties["watch_day"]
             if action in {"task_status", "watch_goal"} and task_ids:
                 branch["reference"] = {"enum": [None, *task_ids]}
             if action in {"agent_task", "clarify"} and not chat_only:
@@ -415,6 +438,20 @@ class WorkLifecycle(TurnPlan):
         schema["oneOf"] = branches
         return schema
 
+
+class LookupPresentation(StrictModel):
+    view: Literal["metrics", "sources", "clarify"] | None = Field(
+        default=None, description="统计问题选 metrics；查、分享具体内容、出处或链接选 sources；缺对象时选 clarify。",
+    )
+    reply: str = Field(max_length=1200, description="简短接话或一个具体的澄清问题。")
+    evidence: list[str] = Field(max_length=4, description="这次回复实际谈到的来源 ID，按正文顺序。")
+    next_lookup: WorkshopLookup | None = Field(
+        default=None, description="已有回执只能回答一部分时，填写下一次要读的具体工坊资料。",
+    )
+
+
+class GroundedFollowup(StrictModel):
+    selection: str = Field(max_length=24)
 
 class AssistantDecision(ChatIntent):
     setting_fields: list[str] = Field(default_factory=list, max_length=12, exclude=True)
@@ -668,10 +705,19 @@ class OperatorChat:
             if not self.runtime.daily_memory.history_turn_available(origin, source, self.private_owner):
                 continue
             reply = saved.get("reply_text", "")
+            if not discussion and readback and (receipt := saved.get("tool_receipt") or {}).get("group") == workshop_lookup.LOOKUP_TOOL:
+                # Preserve the previous observation as tool data, so a count
+                # stays a count when the next turn asks for its underlying items.
+                reply = "工坊读取回执：" + dump({
+                    "state": receipt["state"],
+                    "values": receipt.get("values"),
+                    "objects": [{key: item[key] for key in ("kind", "label", "part", "seconds") if key in item}
+                                for item in saved.get("conversation_objects", [])],
+                })
             if not reply:
                 continue
             message = row["message"]
-            reply_prompts.setdefault(reply, set()).add(message)
+            reply_prompts.setdefault(saved["reply_text"], set()).add(message)
             if not full_turns:
                 message, reply = message[:320], reply[:420]
             if row["character_version"] != char["version"] or saved.get("account_id") != account:
@@ -778,7 +824,8 @@ class OperatorChat:
         rows = self.store.all(
             "SELECT result FROM operator_chat_turns WHERE character_id=? AND character_version=? "
             "AND json_extract(result,'$.account_id')=?"
-            + (" AND request_id=?" if turn_id else "")
+            + (" AND request_id=?" if turn_id else
+               " AND json_type(result,'$.task_delivery') IS NULL")
             + " ORDER BY created_at DESC,request_id DESC LIMIT 4",
             (char["id"], char["version"], account, *([str(turn_id)] if turn_id else [])),
         )
@@ -787,6 +834,7 @@ class OperatorChat:
         for row in rows:
             result = json.loads(row["result"])
             if (result.get("owner_source") != self.private_owner or result.get("object_scope") != scope
+                    or result.get("conversation_id", char["id"]) != self._conversation(char)
                     or not result.get("conversation_objects")):
                 break
             kinds = {raw["kind"] for raw in result["conversation_objects"]}
@@ -810,11 +858,23 @@ class OperatorChat:
         return {f"obj{index}": obj for index, obj in enumerate(list(objects.values())[:4], 1)}
 
     def _result_objects(self, result, intent, char):
+        if "lookup_items" in result:
+            references = []
+            for item in result["lookup_items"]:
+                anchor = next(iter(item["entries"]), {})
+                references.append(ConversationObject(
+                    kind=item["kind"], identity=item["identity"], label=workshop_lookup.label(item)[:200],
+                    revision=item["source_version"], part=anchor.get("part"), seconds=anchor.get("start"),
+                ))
+            return references
         if intent.action == "identity_read":
             return [ConversationObject.model_validate(item) for item in result.get("identity_objects", [])]
         card = result.get("card") or {}
         body = card.get("data") or {}
         card_type = card.get("type")
+        if card_type == "video_activity" and body.get("available"):
+            return [ConversationObject(kind="watch_history", identity=body["day"],
+                                       label=f"{body['day']} 的观看记录，可查具体视频、片段和链接")]
         if getattr(intent, "_identity_reply", False) or card_type == "owner_profile":
             owner = owner_object(char)
             return [owner] if owner else []
@@ -971,10 +1031,11 @@ class OperatorChat:
                 )
                 actions = schema["properties"]["action"]["enum"]
                 instruction = (
-                    f"用{char['name']}的第一人称接住号主最后一句。日常闲聊简短自然，角色的感受、想象和玩笑可以直接说。"
-                    "有具体问题先回答，再接梗。闲聊不用追问目的，按需要展开细节。"
-                    "对近况、感受或假设，从角色视角和当前话题接话。"
-                    "工坊事实只供回答与该事实直接相关的问题。"
+                    f"你是{char['name']}。按号主这句话要的结果行动。"
+                    "只要答复要用工坊事实或外部资料，先调用可用读取工具。"
+                    "包括这些事实上的感想、分享和追问。工具回传材料后才写这部分正文。"
+                    "发生在工坊里的经历由业务记录提供，角色卡描述你的性格和表达。"
+                    "闲聊、感觉、玩笑和假设直接用第一人称接话。"
                 )
                 instruction += "在 reply_markdown 写本轮说的话。"
                 instruction += (
@@ -989,7 +1050,7 @@ class OperatorChat:
                         "identities 填所指账号和本轮所问字段。接续已有对象时，沿用该对象，按这轮要求选字段。"
                     )
                 plan += (
-                    "自然接话、解释、讨论设定、转述或谈假设时，选 chat 并写正文。"
+                    "只需自然接话、讨论设定、转述或谈假设时，选 chat 并写正文。"
                     "参照最近话轮理解代词和纠正。"
                 )
                 if cards:
@@ -1006,6 +1067,10 @@ class OperatorChat:
                         "这两种交付由系统直接给出。"
                         "需要研究、整理材料或创作独立成果，选 agent_task。"
                         "brief 写目标、约束、交付标准和实际相关对象的 material_refs。"
+                        "实际观看数量用 watch_totals。已读视频或片段、公开原评、动态草稿及发布记录用 workshop_lookup。"
+                        "想从实际看过的内容里聊一件事时先用 video 取材。追问链接、标题或时码时，"
+                        "在 object_ref 选择所指的已读对象；具体片段用 part 和 seconds。"
+                        "前文助手说过的工坊经历可用作检索线索，实际记录由读取工具提供。"
                         "能在这轮用一次读取或操作完成整个请求，选 direct_tool。"
                         "operation 写能力 domain 和读写方向。检索与核查看 read，要求修改、发送或提交审批用 change。"
                         "request 抄当前请求，target 抄具体对象或字段。"
@@ -1088,12 +1153,20 @@ class OperatorChat:
                     if route_context and "direct_tool" in schema["properties"]["action"]["enum"]:
                         menu = {key: {"subject": domain.subject, "read": domain.reads, "change": domain.changes}
                                 for key, domain in CAPABILITIES.items()}
-                        prefix.append({"role": "system", "content": plan + "\n可用能力：" + dump(menu)})
+                        prefix.insert(0, {"role": "system", "content": (
+                            "按号主最后一句交付。action 会实际调用工坊工具，你随后能看到查回的资料。"
+                            "\n查数量用 watch_totals。查看或讨论具体工坊记录用 workshop_lookup，"
+                            "lookup.collection 填 video（从实际读到的内容里选一部讨论，或查视频出处、片段、链接）、"
+                            "comment（原评）、dynamic（草稿或发布）。今天填 day=today。"
+                            "查阅可直接执行。先前的聊天文字供理解所指对象，具体资料从工具取回。"
+                            "\n" + plan + "\n可用能力：" + dump(menu)
+                        )})
                     if route_context:
                         routing = {key: packet[key] for key in ("clarification", "video_selection", "latest_tool", "identity_reference")
                                    if key in packet}
                         if objects := packet.get("objects"):
-                            routing["objects"] = {key: {"kind": obj.kind, "label": obj.label, "part": obj.part}
+                            routing["objects"] = {key: {"kind": obj.kind, "label": obj.label, "part": obj.part,
+                                                        "seconds": obj.seconds}
                                                   for key, obj in objects.items()}
                         if cards:
                             routing["task_candidates"] = [{key: card.get(key) for key in ("id", "goal", "status")}
@@ -1125,6 +1198,14 @@ class OperatorChat:
                         raise HTTPException(409, "推理模型已切换，可重新发送")
                     maximum = max(1024, min(4096, getattr(provider, "config", {}).get("max_tokens", 1024)))
                     lifecycle = await generate_turn(schema, current, route_context=True)
+                    if lifecycle.action == "identity_read" and not (
+                        _OWNER_RELATION.search(data.message) or _OWNER_PLATFORM.search(data.message)
+                        or _CURRENT_ACCOUNT.search(data.message)
+                        or (packet.get("identity_reference") and _OWNER_FIELDS.search(data.message))
+                    ):
+                        lifecycle = await generate_turn(
+                            WorkLifecycle.schema_for_turn(chat_only=True, allow_owner_identity=False), current,
+                        )
                     if lifecycle.action == "task_turn" or (lifecycle.action == "agent_task" and cards):
                         validate_history()
                         routed = await self._classify_card_turn(provider, card_turn, cards, history, maximum, report,
@@ -1222,14 +1303,31 @@ class OperatorChat:
                             lifecycle = await generate_turn(
                                 WorkLifecycle.schema_for_turn(chat_only=True, allow_owner_identity=False), current
                             )
-                    if lifecycle.action == "owner_identity":
+                    if lifecycle.action == "watch_totals":
+                        if uses_model_card:
+                            decision = await self._continue_grounded_turn(provider, data, packet)
+                        if decision is None:
+                            decision = ChatIntent(action=workshop_lookup.LOOKUP_TOOL)
+                            decision._lookup = WorkshopLookup(collection="watch_count", day=lifecycle.watch_day or "today")
+                            decision._fixed_metrics = True
+                    elif lifecycle.action == workshop_lookup.LOOKUP_TOOL:
+                        decision = self._workshop_decision(lifecycle, packet)
+                    elif lifecycle.action == "clarify" and uses_model_card and not data.temporary:
+                        decision = await self._continue_grounded_turn(provider, data, packet)
+                        if decision is None:
+                            decision = ChatIntent(action="clarify", topic=lifecycle.topic,
+                                                  clarification_id=lifecycle.clarification_id)
+                    elif lifecycle.action == "owner_identity":
                         decision = self._identity_reply(char)
                         audit = None
                     elif lifecycle.action == "chat":
-                        decision = lifecycle.model_copy(update={
-                            "reference": discussed["task_id"] if discussed else None,
-                            "reply_markdown": workbench_fields(lifecycle.reply_markdown, local),
-                        })
+                        if uses_model_card and not data.temporary and not data.intent and not discussed and first_text is None:
+                            decision = await self._continue_grounded_turn(provider, data, packet)
+                        if decision is None:
+                            decision = lifecycle.model_copy(update={
+                                "reference": discussed["task_id"] if discussed else None,
+                                "reply_markdown": workbench_fields(lifecycle.reply_markdown, local),
+                            })
                     elif decision is None:
                         decision = ChatIntent.model_validate(lifecycle.model_dump(exclude={"reply_markdown", "operation"}))
                     check_delivery_scope()
@@ -1585,6 +1683,8 @@ class OperatorChat:
         if decision.action in {"owner_profile", "owner_binding"} and not (subject or target):
             return None
         decision._subject = subject
+        if decision.action == "web_lookup" and operation:
+            decision._continue_research = operation.continue_research
         if subject and subject.kind in {"task", "artifact", "video", "event"}:
             decision.reference = subject.identity
             if subject.part and decision.part is None:
@@ -1609,7 +1709,81 @@ class OperatorChat:
                 decision._setting_fields = fields or tuple(dict.fromkeys(decision.setting_fields))
         return decision
 
+    @staticmethod
+    def _workshop_decision(route, context):
+        args = route.lookup
+        if args is None:
+            return ChatIntent(action="clarify", topic="你想查哪条工坊记录？")
+        decision = ChatIntent(action=workshop_lookup.LOOKUP_TOOL)
+        objects = context.get("objects", {})
+        ref = route.object_ref
+        if ref is None and not (args.identity or args.terms or args.day):
+            same_collection = [key for key, item in objects.items() if _WORKSHOP_OBJECTS.get(item.kind) == args.collection]
+            if len(same_collection) == 1:
+                ref = same_collection[0]
+        if ref:
+            subject = objects.get(ref)
+            if subject and subject.kind == "watch_history" and args.collection in {"watch_count", "video"}:
+                decision._lookup = args.model_copy(update={"day": args.day or WorkshopLookup(
+                    collection=args.collection, day=subject.identity,
+                ).day})
+                return decision
+            if subject is None or _WORKSHOP_OBJECTS.get(subject.kind) != args.collection:
+                return ChatIntent(action="clarify", topic="你指的是哪条记录？说一下标题或编号就行。")
+            decision._subject = subject
+            args = args.model_copy(update={
+                "identity": subject.identity, "terms": [],
+                "part": args.part or (subject.part if args.seconds is None else None),
+                "seconds": args.seconds if args.seconds is not None else (subject.seconds if args.part is None else None),
+            })
+        decision._lookup = args
+        return decision
+
+    async def _continue_grounded_turn(self, provider, data, context):
+        # Omni has already generated a conversational draft. When its topic
+        # includes a known source, give it a chance to request the missing
+        # record before displaying the answer.
+        subjects = {key: item for key, item in context.get("objects", {}).items()
+                    if item.kind in {*_WORKSHOP_OBJECTS, "watch_history"}}
+        if not subjects:
+            return None
+        schema = GroundedFollowup.model_json_schema()
+        options = [*subjects, "video", "comment", "dynamic", "reply"]
+        schema["properties"]["selection"]["enum"] = options
+        messages = [
+            {"role": "system", "content": "为号主最后一句选择要打开的来源。"
+             "追问已谈到的对象、字段或链接时，selection 填那个对象的编号。"
+             "从记录中挑一件事给号主时，打开相应集合：video 视频、comment 评论、dynamic 动态。"
+             "接话无需再读时选 reply。\n最近查到的对象：" +
+             dump({key: value.label for key, value in subjects.items()})},
+            {"role": "user", "content": data.message},
+        ]
+        try:
+            value = await provider.generate_assistant_json(
+                messages, schema, max_tokens=768, on_content=None, on_stage=None,
+            )
+            outcome = GroundedFollowup.model_validate(value)
+        except (ValueError, TimeoutError, httpx.HTTPError, ContextWindowExceeded):
+            return None
+        if outcome.selection not in options or outcome.selection == "reply":
+            return None
+        decision = ChatIntent(action=workshop_lookup.LOOKUP_TOOL)
+        if subject := subjects.get(outcome.selection):
+            if subject.kind == "watch_history":
+                decision._lookup = WorkshopLookup(collection="video", day=subject.identity)
+            else:
+                decision._subject = subject
+                decision._lookup = WorkshopLookup(collection=_WORKSHOP_OBJECTS[subject.kind], identity=subject.identity,
+                                                  part=subject.part, seconds=subject.seconds)
+        else:
+            summary = next((subject for subject in subjects.values() if subject.kind == "watch_history"), None)
+            decision._lookup = WorkshopLookup(collection=outcome.selection,
+                                              day=summary.identity if summary else None)
+        return decision
+
     def _visible(self, result, *, historical=False):
+        if "lookup_items" in result and result.get("assistant_read_scope") != object_scope(self.runtime):
+            return {"reply_text": "这条记录当前不可查看。", "card": None}
         publication_scope = result.get("publication_scope")
         if publication_scope is not None and publication_scope != self._binding(self.runtime.character):
             return {"reply_text": "请切回当时的账号和角色查看稿件。", "card": None}
@@ -1654,7 +1828,7 @@ class OperatorChat:
                   if key not in {"submission", "binding", "account_id", "memory", "confirmations", "organized_memory",
                                  "memory_intent", "assistant_context", "clarification_request", "private_owner",
                                  "owner_source", "execution_scope", "conversation_objects", "object_scope", "direct_context",
-                                 "publication_scope", "call_origin"}}
+                                 "publication_scope", "call_origin", "lookup_items", "lookup_candidates", "lookup_request"}}
         card = result.get("card")
         if card is None:
             return result
@@ -1722,7 +1896,7 @@ class OperatorChat:
             memory = self.runtime.daily_memory
             scope = self.runtime.memory_organizer.scope()
             return result | {"card": card | {"data": {"groups": memory.summary(scope)}}}
-        if card["type"] == "video_activity":
+        if card["type"] == "video_activity" and "available" not in card["data"]:
             return result | {"card": card | {"data": self.video_activity(card["data"])}}
         if card["type"] in {"operation_events", "operation_event"}:
             data = card["data"]
@@ -1798,6 +1972,7 @@ class OperatorChat:
                     "task_delivery": delivery, "character_name": result.get("character_name")}
             task = self.runtime.tasks.current(delivery["task_id"])
             if (not task or result["account_id"] != self._account() or delivery["revision"] != task["revision"]
+                    or (result.get("conversation_id") and result["conversation_id"] != self._conversation(self.runtime.character))
                     or delivery["status"] != task["status"]):
                 return turn | {"hidden": True}
             steps = self.runtime.tasks._current_steps(task)
@@ -1812,21 +1987,33 @@ class OperatorChat:
             action = steps[-1] if steps and steps[-1]["tool"] == PUBLICATION_TOOL and self.runtime.tasks.can_control(task) else {}
             checkpoint = action.get("checkpoint") or {}
             items = (action.get("result") or {}).get("items")
+            pending_items = checkpoint.get("items")
+            if items is None and pending_items:
+                items = list(pending_items.values())
             interaction = checkpoint.get("interaction")
-            if delivery["status"] == "waiting" and not interaction:
+            if delivery["status"] == "waiting" and (
+                not waiting_delivery(steps) or delivery_turn_id(task, "waiting", steps)[0] != row["request_id"]
+            ):
                 return turn | {"hidden": True}
             reply = view["message"]
             if action and approval:
                 reply = "核对这批待发动态后，勾选要公开发布的草稿。"
-            elif items is not None:
+            elif items is not None and delivery["status"] != "waiting":
                 reply = publication_progress(items, len(items))
+            if items is not None:
                 items = [{key: value for key, value in item.items() if key != "write_token"} for item in items]
+            artifact = self.runtime.tasks.workspace.latest(task["id"]) if delivery["status"] == "completed" else None
+            artifact_link = None
+            if (artifact and artifact["task_revision"] == delivery["revision"]
+                    and self.runtime.tasks.edition_recallable(task["id"], artifact["task_revision"])):
+                artifact_link = (f"/api/agent/tasks/{task['id']}/artifacts/"
+                                 f"{artifact['task_revision']}/{artifact['edition']}?download=true")
             return turn | {"reply_text": reply, "reply_format": "markdown",
                            "card": {"type": "task_delivery", "data": {
                                "id": task["id"], "status": view["status"], "approval": approval,
                                "revision": task["revision"], "step_id": delivery["step_id"],
                                "can_control": self.runtime.tasks.can_control(task), "items": items,
-                               "interaction": interaction, "title": task["goal"] if (
+                               "interaction": interaction, "artifact_download": artifact_link, "title": task["goal"] if (
                                    task["creative_goal_id"] and task["creative_goal_id"] != task["id"]) else None,
                            }}}
         card = result.get("card") or {}
@@ -2056,7 +2243,7 @@ class OperatorChat:
                 else:
                     events, tasks, focus = {}, {}, None
                 source = {"call_origin": call_origin} if call_origin else {}
-                present = (decision and intent.action in _DIRECT_READS
+                present = (decision and intent.action in _PRESENTED_READS
                            and (intent.action not in _SETTING_ACTIONS or intent._settings_read_only))
                 permission = (object_scope(self.runtime), history_preference(self.runtime)) if present else None
                 try:
@@ -2162,6 +2349,8 @@ class OperatorChat:
 
     async def _present_read(self, result, data, request_id, char, account, audit):
         # Card projections and citations keep their own authorization and link handling.
+        if "lookup_candidates" in result:
+            return await self._present_lookup(result, data, request_id, char, account, audit)
         if result.get("reply_sections") or result.get("clarification_request") or not result.get("reply_text"):
             return result
         provider = self.runtime.llm
@@ -2171,6 +2360,7 @@ class OperatorChat:
         messages.extend([
             {"role": "system", "content": "这次读取已经结束。用角色口吻把查到的答案告诉号主。以下是本轮已经取得的读取回执：" + dump({
                 "summary": result["reply_text"], "receipt": result.get("tool_receipt"),
+                "sources": result.get("sources", [])[:4],
             })},
             {"role": "user", "content": data.message},
         ])
@@ -2188,6 +2378,123 @@ class OperatorChat:
         if reply.action == "chat":
             return result | {"reply_text": reply.reply_markdown, "reply_format": "markdown"}
         return result
+
+    async def _present_lookup(self, result, data, request_id, char, account, audit, *, remaining=1):
+        items = result["lookup_candidates"]
+        receipt = result["tool_receipt"]
+        if receipt["state"] == "unavailable":
+            return result
+        provider = self.runtime.llm
+        event = {"event_id": request_id, "text": data.message, "sender_name": "号主", "is_operator": True}
+        messages = build_messages(char, event, {}, "operator_chat")[:-2]
+        packet = [{key: item[key] for key in ("kind", "state", "entries")} |
+                  {"source_id": f"m{number}", "title": workshop_lookup.label(item)}
+                  for number, item in enumerate(items, 1)]
+        source = {"问题": data.message, "已执行的查询": result["lookup_request"], "状态": receipt["state"],
+                  "统计": receipt.get("values"), "查到的材料": packet}
+        guidance = ("用角色口吻直接交付号主最后一句要的东西。需要实际内容时挑材料并填其 source_id。"
+                    "分享一件值得分享的事时选择一条，用户要多个结果再列举。"
+                    "只问统计时 evidence 留空，直接用统计回执。"
+                    "多个对象同样符合时选 clarify，并在 reply 问一个具体问题。"
+                    "reply 写一句自然的感想或接话。原片摘录、出处、编号和状态由工坊从所选记录渲染。")
+        if remaining:
+            guidance += ("先核对取得的内容能否完整回应号主。需要具体材料时继续读取，统计只提供数量。"
+                         "在 next_lookup 指定要查的资料。")
+        messages.extend([{"role": "system", "content": guidance}, {"role": "user", "content": dump(source)}])
+        chosen = items if len(items) == 1 and not receipt.get("values") else []
+        reply = ""
+        needs_choice = False
+        scope = object_scope(self.runtime), history_preference(self.runtime)
+        next_read = None
+        try:
+            schema = LookupPresentation.model_json_schema()
+            if packet:
+                schema["properties"]["evidence"]["items"]["enum"] = [entry["source_id"] for entry in packet]
+            if not remaining:
+                del schema["properties"]["next_lookup"]
+            async with asyncio.timeout(24), self._generation_slot():
+                if getattr(provider, "uses_model_card", False):
+                    # Leave room for the reply even when source excerpts use
+                    # most of the gateway's actual window.
+                    while len(packet) > 1 and await provider.count_tokens(
+                        provider.prepare_json_messages(messages, schema, max_tokens=512)
+                    ) > provider.capacity_window - 512:
+                        packet.pop()
+                        schema["properties"]["evidence"]["items"]["enum"] = [entry["source_id"] for entry in packet]
+                        messages[-1]["content"] = dump(source)
+                value = await provider.generate_assistant_json(
+                    messages, schema, max_tokens=512, on_content=None, on_stage=None,
+                )
+            presented = LookupPresentation.model_validate(value)
+            next_read = presented.next_lookup
+            by_id = {entry["source_id"]: item for entry, item in zip(packet, items)}
+            references = list(dict.fromkeys(presented.evidence))
+            if all(ref in by_id for ref in references):
+                chosen = [by_id[ref] for ref in references]
+                needs_choice = presented.view == "clarify" and not chosen
+                if chosen or needs_choice:
+                    reply = presented.reply.strip()
+            if receipt.get("values") and presented.view == "metrics":
+                chosen = []
+        except (ValueError, TimeoutError, httpx.HTTPError, ContextWindowExceeded):
+            pass
+        self._check_scope(char, account)
+        self.runtime.validate_memory_delivery(audit)
+        if scope != (object_scope(self.runtime), history_preference(self.runtime)):
+            raise HTTPException(409, "读取权限已变化，请重新查询")
+        if remaining and next_read and next_read.model_dump(mode="json") != result["lookup_request"]:
+            followup = await self._lookup_workshop(next_read, request_id, data.message)
+            continuation = await self._present_lookup(followup, data, request_id, char, account, audit, remaining=remaining - 1)
+            return continuation | {"tool_receipt": continuation["tool_receipt"] | {
+                "calls": [receipt, continuation["tool_receipt"]],
+            }}
+        if not chosen and (not items or receipt.get("values")):
+            return result
+        if not chosen:
+            if needs_choice and reply:
+                _, sources = workshop_lookup.present(items, "")
+                return result | {"reply_text": reply, "reply_format": "plain", "sources": sources,
+                                 "lookup_items": items}
+            chosen = items
+        sections, sources = workshop_lookup.present(chosen, reply)
+        return result | {"lookup_items": chosen, "reply_sections": sections, "sources": sources,
+                         "reply_text": "\n\n".join(sections), "reply_format": "plain", "card": None}
+
+    async def _lookup_workshop(self, args, request_id, request):
+        tasks = self.runtime.tasks
+        result = await tasks.read(workshop_lookup.LOOKUP_TOOL, request_id, request, tasks.scope(),
+                                  args.model_dump(mode="json"))
+        receipt = {"action": "read", "group": workshop_lookup.LOOKUP_TOOL, "state": result["state"]}
+        context = {"lookup_request": args.model_dump(mode="json"), "lookup_candidates": result["items"]}
+        if metrics := result.get("metrics"):
+            return {"reply_text": workshop_lookup.watch_answer(metrics), "card": {
+                        "type": "video_activity", "data": metrics,
+                    }, "reply_sections": [workshop_lookup.watch_answer(metrics)],
+                    "tool_receipt": receipt | {"values": {key: value for key, value in metrics.items() if key != "records"}},
+                    **context}
+        labels = {"video": "已读视频", "comment": "公开评论", "dynamic": "动态记录"}
+        return {"reply_text": result.get("reason") or f"这次查不到对应的{labels[args.collection]}。", "card": None,
+                "lookup_items": [], "tool_receipt": receipt, **context}
+
+    async def _delegated_reads(self, brief, request_id, request):
+        if not brief:
+            return []
+        tasks = self.runtime.tasks
+        scope = tasks.scope()
+        policy = history_preference(self.runtime)
+        receipts = []
+        allowed = brief.get("read_tools")
+        if allowed is not None and workshop_lookup.LOOKUP_TOOL not in allowed:
+            return receipts
+        for material in brief["materials"]:
+            if collection := _WORKSHOP_OBJECTS.get(material["kind"]):
+                args = WorkshopLookup(collection=collection, identity=material["identity"],
+                                      part=material.get("part"), seconds=material.get("seconds")).model_dump(mode="json")
+                result = await tasks.read(workshop_lookup.LOOKUP_TOOL, request_id, request, scope, args)
+                receipts.append({"tool": workshop_lookup.LOOKUP_TOOL, "arguments": args, "result": result})
+        if receipts and policy != history_preference(self.runtime):
+            raise PermissionError("历史引用权限已变化")
+        return receipts
 
     def _read_identities(self, char, queries):
         if not queries:
@@ -2342,6 +2649,13 @@ class OperatorChat:
             return owner_binding(char)
         if kind == "identity_read":
             return self._read_identities(char, intent.identities)
+        if kind == workshop_lookup.LOOKUP_TOOL:
+            if not intent._lookup:
+                return {"reply_text": "你想查哪条工坊记录？", "card": None}
+            read = await self._lookup_workshop(intent._lookup, request_id, request)
+            if intent._fixed_metrics:
+                read.pop("lookup_candidates")
+            return read
         if kind == "owner_profile":
             try:
                 profile = await self.runtime.tasks.read("bilibili_owner", request_id, request, self.runtime.tasks.scope())
@@ -2379,6 +2693,7 @@ class OperatorChat:
                                      "values": {"state": state["state"], **permissions}}}
         if kind == "web_lookup":
             try:
+                research_scope = self.runtime.tasks.scope()
                 source_request = request
                 topic, localized = "", ""
                 if intent._subject and intent._subject.kind == "web":
@@ -2396,14 +2711,31 @@ class OperatorChat:
                         topic, localized = search_terms(query, query_source)
                     except (HTTPException, TimeoutError):
                         pass
-                return await public_research(self.runtime, request_id, source_request,
-                                             topic=topic if topic is None or all(t in request for t in topic.split()) else "",
-                                             localized=localized)
+                research = await public_research(
+                    self.runtime, request_id, source_request,
+                    topic=topic if topic is None or all(t in request for t in topic.split()) else "",
+                    localized=localized,
+                )
+                continuation = research.pop("research_continuation", None)
+                if not continuation or not intent._continue_research:
+                    return research
+                if research_scope != self.runtime.tasks.scope():
+                    raise PermissionError("读取权限已变化")
+                task = {"reply_text": "已接下后续查证，有结果会回到这段对话。",
+                        "card": {"type": "agent_task", "data": {"id": request_id}}}
+                brief = {"goal": "继续已开始的公开资料核查", "deliverable": "给出查到的事实及打开过的来源。",
+                         "read_tools": ["web_search", "web_page"], "constraints": [], "materials": []}
+                if local_date := continuation["local_date"]:
+                    brief["constraints"].append(f"只引用可核验为 {continuation['timezone']} {local_date} 发布的来源。")
+                    brief["research_day"] = {"date": local_date, "timezone": continuation["timezone"]}
+                self.runtime.tasks.create(
+                    request_id, source_request, source_key=call_origin or request_id,
+                    delegation=brief, read_receipts=continuation["reads"],
+                    on_create=(lambda database: persist_turn(database, task)) if persist_turn else None,
+                )
+                return task
             except PermissionError:
                 raise HTTPException(409, "读取权限已变化，请重新查询") from None
-            except TimeoutError:
-                # The existing task entry owns persistence and repeat delivery.
-                kind = "agent_task"
         if kind == "task_status" or kind in _TASK_CONTROLS:
             task_ids = {entry["id"] for category in ("recent_task_cards", "history_task_cards")
                         for entry in task_context.get(category, [])}
@@ -2470,12 +2802,13 @@ class OperatorChat:
                 except ValueError as error:
                     return {"reply_text": str(error), "card": None, **clarification}
             brief = self._delegation(intent.brief, task_context)
+            reads = await self._delegated_reads(brief, request_id, request)
             text = "已交办。" if call_origin else "我接下了，有结果就在这里跟你说。"
             if due:
                 text = f"已预约 {intent.arrangement.local_date} {intent.arrangement.local_time}。"
             result = {"reply_text": text, "card": {"type": "agent_task", "data": {"id": request_id}}}
             self.runtime.tasks.create(request_id, request, due=due, source_key=call_origin or request_id,
-                                      video_selection=selection, delegation=brief,
+                                      video_selection=selection, delegation=brief, read_receipts=reads,
                                       creative_goal_id=str(data.creative_goal_id) if data.creative_goal_id else None,
                                       on_create=(lambda database: persist_turn(database, result)) if persist_turn else None)
             return result
@@ -2683,9 +3016,9 @@ class OperatorChat:
         if kind == "video_activity":
             account, _, _ = self.browsing.discovery.history_scope()
             timezone = self.browsing.policy()["business_timezone"]
-            return {"reply_text": "这是该业务日的观看记录。", "card": {
-                "type": kind, "data": {"account_id": account, "timezone": timezone, **day_window(timezone)},
-            }}
+            window = {"account_id": account, "timezone": timezone, **day_window(timezone)}
+            stats = self.video_activity(window)
+            return {"reply_text": workshop_lookup.watch_answer(stats), "card": {"type": kind, "data": stats}}
         view = self._live_view()
         text = "这是直播工作台的当前状态。"
         if kind == "live_status":
@@ -3134,29 +3467,7 @@ class OperatorChat:
         base = {key: period[key] for key in ("day", "timezone", "start_at", "next_at")}
         if not account or account != period["account_id"]:
             return base | {"available": False}
-        entries = self.store.all(
-            "SELECT w.bvid,w.started_at,t.round_id,t.status,t.material_key,"
-            "json_extract(t.payload,'$.coverage') AS coverage,"
-            "json_extract(t.payload,'$.full_coverage.viewing') AS priority_viewing,"
-            "COALESCE(json_array_length(t.payload,'$.missing_parts'),0) AS missing_parts "
-            "FROM browsing_watch_starts w "
-            "LEFT JOIN (browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id) "
-            "ON t.id=w.task_id AND r.account_id=w.account_id AND r.character_id=w.character_id "
-            "WHERE w.account_id=? AND w.character_id=? AND w.started_at>=? AND w.started_at<? "
-            "ORDER BY w.started_at DESC,w.task_id DESC",
-            (account, character, base["start_at"], base["next_at"]),
-        )
-        completed = [
-            item for item in entries if (item["status"] in {"selected", "viewed_without_comment"} and item["material_key"])
-            or (item["status"] == "completed" and item["priority_viewing"] in {"watched", "subtitles_only", "visual_only"})
-        ]
-        fully_read = sum(item["priority_viewing"] == "watched" or (item["coverage"] == "all_available_cc"
-                         and not item["missing_parts"]) for item in completed)
-        fields = ("bvid", "started_at", "round_id", "status", "coverage")
-        return base | {
-            "available": True, "started": len(entries), "completed": len(completed), "fully_read": fully_read,
-            "records": [{key: item[key] for key in fields} for item in entries[:20]],
-        }
+        return workshop_lookup.viewing(self.store, account, character, base)
 
     async def update_video(self, request_id, *, resume):
         async with self.lock:

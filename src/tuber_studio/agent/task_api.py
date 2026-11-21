@@ -197,12 +197,20 @@ def register_task_api(app, tasks, require_admin):
         return FileResponse(path, media_type="video/mp4", headers={"Cache-Control": "private, no-store"})
 
     @app.get("/api/agent/tasks/{identity}/artifacts/{revision}/{edition}", dependencies=deps)
-    async def read_artifact(identity: UUID, revision: PositiveInt, edition: PositiveInt):
+    async def read_artifact(identity: UUID, revision: PositiveInt, edition: PositiveInt, download: bool = False):
         task = visible(identity)
         result = tasks.store.one("SELECT * FROM creative_editions WHERE task_id=? AND task_revision=? AND edition=?",
                                  (task["id"], revision, edition))
         if result is None:
             raise HTTPException(404, "找不到这个成果版本")
+        if download:
+            if not tasks.edition_recallable(task["id"], revision):
+                raise HTTPException(404, "这个成果版本当前不可下载")
+            return Response(
+                result["body"], media_type="text/markdown",
+                headers={"Content-Disposition": f'attachment; filename="studio-{identity}-r{revision}-v{edition}.md"',
+                         "Cache-Control": "private, no-store"},
+            )
         return tasks.workspace.edition_view(task, result)
 
     @app.put("/api/agent/tasks/{identity}/goal", dependencies=deps)

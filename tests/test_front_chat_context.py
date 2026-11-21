@@ -9,6 +9,7 @@ from tuber_studio.agent.operator_chat import OperatorChat
 from tuber_studio.front_persona import front_identity, persona_instructions
 from tuber_studio.models import Reply, resident_character_profile
 from tuber_studio.operation_identity import provider_identity_messages
+from tuber_studio.providers import single_system_messages
 
 
 @pytest.mark.parametrize("fields", [
@@ -42,7 +43,7 @@ async def test_chat_model_packet_keeps_account_out_and_uses_current_question(
     calls = []
 
     def capture(messages):
-        wire = provider_identity_messages(provider, messages)
+        wire = single_system_messages(provider_identity_messages(provider, messages))
         calls.append(wire)
         assert "运营账号探针" not in json.dumps(wire, ensure_ascii=False)
         assert wire[0]["content"].count(persona_instructions(runtime.character)) == 1
