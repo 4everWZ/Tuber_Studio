@@ -28,7 +28,7 @@ from ...publication_errors import SendLimitReached
 from ...store import dump
 from .comment_reader import (
     CommentProgress,
-    enqueue_comment_visit,
+    admit_comment_page,
     evaluate_comment_visit,
     handoff_comment,
     merge_continuous_comments,
@@ -254,6 +254,7 @@ class BrowsingDecisions:
                 video_actions=data.get("video_actions", False),
                 allow_public=data.get("allow_public", True),
                 allow_comment_like=data.get("allow_comment_like", False),
+                dynamic_ref=response_input.dynamic_ref,
                 allow_comments=data.get("allow_comments", True),
                 allow_visual=allow_visual,
                 grouped_comment_refs=response_input.grouped_comment_refs,
@@ -1085,7 +1086,7 @@ class BrowsingDecisions:
             if defer_comments:
                 context = await self.browsing.video_comment_context(row, bvid)
                 with self.browsing.store.db:
-                    enqueue_comment_visit(
+                    admit_comment_page(
                         self.browsing, row, identity, material["metadata"], context.get("items", [])
                     )
             comments_complete = True
@@ -1342,6 +1343,7 @@ class BrowsingDecisions:
         comment_materials = context.pop("_comment_materials", [])
         allow_public = context.pop("_allow_public", True)
         allow_comment_like = context.pop("_allow_comment_like", False)
+        dynamic_source = context.pop("_dynamic_like_source", None)
         if kind != "top_level":
             metadata = material.get("metadata", {}) if material else {}
             if (context.get("target") or {}).get("bvid") == metadata.get("bvid") and metadata.get("owner_uid"):
@@ -1393,6 +1395,10 @@ class BrowsingDecisions:
                 else {}
             ),
         }
+        if dynamic_source:
+            reference = "dynamic:" + dynamic_source["dynamic_id"]
+            data["dynamic_evidence"] = reference
+            data["evidence"].append({"id": reference, "text": dynamic_source["text"], "source_label": "原动态"})
         if video_actions:
             data["available_actions"] = {
                 "read_comments": data["allow_comments"],
@@ -1431,6 +1437,7 @@ class BrowsingDecisions:
                "用当前原评编号引用，依据实际读到的内容。" if comment_materials else "")
             + (" 想给当前评论点个赞时选like_comment，引用该评论，正文留空。"
                if allow_comment_like else "")
+            + (" 想给原动态点赞时选like_dynamic，引用原动态，正文留空。" if dynamic_source else "")
             + (" grouped_comments是同一用户对同一对象的连续来评。若一并公开回答，"
                "covered_comments列当前回复目标和正文一并回答的其他来评编号。"
                if context.get("grouped_comments") else "")

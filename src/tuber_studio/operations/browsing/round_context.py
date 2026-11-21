@@ -4,3 +4,4 @@ import contextvars
 
 read_round = contextvars.ContextVar("browsing_read_round", default=None)
 agent_depth = contextvars.ContextVar("browsing_agent_depth", default=0)
+proactive_read = contextvars.ContextVar("browsing_proactive_read", default=False)

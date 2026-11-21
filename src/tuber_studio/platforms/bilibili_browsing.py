@@ -304,6 +304,37 @@ class BrowsingAdapter(BilibiliAdapter):
             raise PlatformReadError("permission", "无法核验当前账号的动态评论区")
         return target
 
+    @staticmethod
+    def _dynamic_reaction_source(item):
+        modules = item.get("modules") or {}
+        state = ((modules.get("module_stat") or {}).get("like") or {}).get("status")
+        text = _text(((modules.get("module_dynamic") or {}).get("desc") or {}).get("text"))
+        author = (modules.get("module_author") or {}).get("mid")
+        if type(state) is not bool or not author or not text:
+            return None
+        return {"dynamic_id": _identifier(item["id_str"]), "author_uid": _identifier(author), "text": text, "liked": state}
+
+    async def read_dynamic_like(self, dynamic_id):
+        return self._dynamic_reaction_source(await self._dynamic_detail(_identifier(dynamic_id)))
+
+    async def like_dynamic(self, target, *, before_send):
+        if not self._sessdata or not self._csrf:
+            raise ValueError("动态点赞需要当前账号的登录凭证")
+        identifier = _identifier(target["dynamic_id"])
+        before_send()
+        try:
+            response = await self.client.post("/x/dynamic/feed/dyn/thumb", params={"csrf": self._csrf},
+                                              json={"dyn_id_str": identifier, "up": 1})
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError):
+            raise PublishUncertain("动态点赞结果待核对") from None
+        if not isinstance(payload, dict) or type(payload.get("code")) is not int:
+            raise PublishUncertain("B 站返回的动态点赞回执格式无效")
+        if payload["code"] != 0:
+            raise platform_rejection(payload, fallback="平台明确拒绝了本次动态点赞")
+        return {"platform": "bilibili", "code": 0, "action": "dynamic_like", "dynamic_id": identifier}
+
     async def fetch_dynamic_comments(self, target):
         target = self._target(target, top_level=True)
         data = await self._get("/x/v2/reply", {"oid": target["oid"], "type": target["type"],
@@ -812,6 +843,7 @@ class BrowsingAdapter(BilibiliAdapter):
             },
             "items": items,
             "public_text": public_text,
+            **({"dynamic_source": self._dynamic_reaction_source(dynamic)} if dynamic else {}),
             "coverage": coverage,
         }
 

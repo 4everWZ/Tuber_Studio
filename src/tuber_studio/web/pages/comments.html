@@ -38,6 +38,8 @@
         <legend>评论处理</legend><input id="queue-view" type="hidden" value="review">
         <label><input type="radio" name="queue-status" value="sources"><span>选择评论</span></label>
         <label><input type="radio" name="queue-status" value="review" checked><span>待审核</span></label>
+        <label><input type="radio" name="queue-status" value="authorized"><span>已授权待发</span></label>
+        <label><input type="radio" name="queue-status" value="blocked"><span>发布被拒／待处理</span></label>
         <label><input type="radio" name="queue-status" value="verify"><span>待核对</span></label>
         <label><input type="radio" name="queue-status" value="processing"><span>处理中</span></label>
         <label><input type="radio" name="queue-status" value="history"><span>已执行与历史</span></label>
@@ -62,7 +64,8 @@
         <div id="queue-batch-actions" class="actions queue-batch-actions" hidden>
           <button id="queue-batch-toggle" type="button">全选所有页</button>
           <span id="queue-batch-count" class="hint" aria-live="polite"></span>
-          <button id="queue-batch-publish" class="primary" type="button">发布所选草稿</button>
+          <button id="queue-batch-save" type="button">保存审核结果</button>
+          <button id="queue-batch-publish" class="primary" type="button">审核并排队发送</button>
           <button id="queue-batch-delegate" type="button">交办逐条送审</button>
         </div>
         <p id="queue-batch-progress" class="hint" role="status" hidden></p>
@@ -75,6 +78,15 @@
       </article>
       <article class="win-group-box review-detail draft-panel" id="queue-detail" aria-label="记录详情"></article>
     </div>
+    <dialog id="queue-approval" aria-labelledby="queue-approval-title">
+      <h2 id="queue-approval-title">确认排队发送</h2>
+      <p id="queue-approval-scope"></p>
+      <ol id="queue-approval-items" class="queue-batch-results"></ol>
+      <form method="dialog" class="actions">
+        <button value="cancel" autofocus>取消</button>
+        <button id="queue-approval-submit" value="confirm" class="primary">确认排队</button>
+      </form>
+    </dialog>
   </section>
 
   <details id="comment-review" class="comment-context-details" data-workspace-anchor>

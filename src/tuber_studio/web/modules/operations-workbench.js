@@ -645,7 +645,7 @@
           <p>${escapeHtml(target.title || bvid || (target.dynamic_id ? "动态 " + target.dynamic_id : ""))}</p>
           ${bvid ? `<a href="https://www.bilibili.com/video/${encodeURIComponent(bvid)}" target="_blank" rel="noreferrer">在 B 站查看来源</a>` :
             target.dynamic_id ? `<a href="https://t.bilibili.com/${encodeURIComponent(target.dynamic_id)}" target="_blank" rel="noreferrer">在 B 站查看来源</a>` : ""}
-          <blockquote class="quoted-text">${escapeHtml(intent.kind === "comment_like" ? target.source_text : intent.text)}</blockquote>
+          <blockquote class="quoted-text">${escapeHtml(["comment_like", "dynamic_like"].includes(intent.kind) ? target.source_text : intent.text)}</blockquote>
           <p class="hint">${escapeHtml(this.intentReviewNote(intent))}</p>
           <div class="actions">
             ${intent.status === "pending_review" ? '<button type="button" data-review="approve" class="primary">审核通过</button>' : ""}

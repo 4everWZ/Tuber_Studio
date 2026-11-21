@@ -43,6 +43,10 @@ class BrowsingBatches:
             CREATE TABLE IF NOT EXISTS browsing_batch_comment_events(
                 batch_id TEXT NOT NULL,event_id TEXT NOT NULL,
                 PRIMARY KEY(batch_id,event_id));
+            CREATE TABLE IF NOT EXISTS browsing_comment_page_handoffs(
+                account_id TEXT NOT NULL,character_id TEXT NOT NULL,review_session TEXT NOT NULL,bvid TEXT NOT NULL,
+                page_key TEXT NOT NULL,document TEXT NOT NULL,created_at REAL NOT NULL,
+                PRIMARY KEY(account_id,character_id,review_session,bvid,page_key));
             CREATE TABLE IF NOT EXISTS browsing_title_decisions(
                 account_id TEXT NOT NULL,character_id TEXT NOT NULL,bvid TEXT NOT NULL,
                 title_hash TEXT NOT NULL,decision TEXT NOT NULL,updated_at REAL NOT NULL,
@@ -51,6 +55,14 @@ class BrowsingBatches:
                 batch_id TEXT NOT NULL,bvid TEXT NOT NULL,signature TEXT NOT NULL,
                 error TEXT NOT NULL,count INTEGER NOT NULL,updated_at REAL NOT NULL,
                 PRIMARY KEY(batch_id,bvid,signature));
+            CREATE VIEW IF NOT EXISTS browsing_video_work AS
+                SELECT r.account_id,r.character_id,r.preview,COALESCE(json_extract(r.config,'$.review_session_id'),'') AS review,
+                       i.bvid,i.kind,COUNT(*) AS history_count,MIN(b.created_at) AS first_at,
+                       MAX(CASE WHEN i.status='daily_wait' THEN COALESCE(json_extract(i.payload,'$.next_at'),0) ELSE 0 END) AS wake_at
+                FROM browsing_batch_items i JOIN browsing_batches b ON b.id=i.batch_id
+                JOIN browsing_rounds r ON r.id=b.round_id
+                WHERE b.state<>'invalid' AND i.status IN ('selected','running','paused','failed','later','daily_wait')
+                GROUP BY r.account_id,r.character_id,r.preview,review,i.bvid,i.kind;
         """)
 
     def ensure(self, row):
@@ -143,14 +155,18 @@ class BrowsingBatches:
 
     def deferred_candidates(self, row):
         items = self.store.all(
-            "SELECT i.payload FROM browsing_batch_items i JOIN browsing_batches b ON b.id=i.batch_id "
-            "JOIN browsing_rounds r ON r.id=b.round_id WHERE r.account_id=? AND r.character_id=? "
-            "AND i.status='later' AND b.state='completed' ORDER BY b.updated_at",
-            (row["account_id"], row["character_id"]),
+            """WITH recent AS (
+                SELECT i.payload,b.updated_at,i.bvid,ROW_NUMBER() OVER(PARTITION BY i.bvid,i.kind ORDER BY b.updated_at DESC,b.id) AS position
+                FROM browsing_batch_items i JOIN browsing_batches b ON b.id=i.batch_id
+                JOIN browsing_rounds r ON r.id=b.round_id JOIN browsing_video_work w ON w.account_id=r.account_id
+                AND w.character_id=r.character_id AND w.bvid=i.bvid AND w.kind=i.kind AND w.preview=r.preview
+                AND w.review=COALESCE(json_extract(r.config,'$.review_session_id'),'')
+                WHERE r.account_id=? AND r.character_id=? AND r.preview=? AND w.review=? AND w.wake_at<=?
+                AND i.status='later' AND b.state='completed'
+            ) SELECT payload FROM recent WHERE position=1 ORDER BY updated_at,bvid""",
+            (row["account_id"], row["character_id"], row["preview"], row["config"].get("review_session_id", ""), time.time()),
         )
-        return list(
-            {item["bvid"]: item for value in items if (item := json.loads(value["payload"]))}.values()
-        )
+        return [json.loads(item["payload"]) for item in items]
 
     def save_plan(self, row, plan, *, presented=None):
         with self.store.db:
@@ -309,12 +325,15 @@ class BrowsingBatches:
                 SELECT i.batch_id,i.bvid,i.payload,b.created_at,i.position
                 FROM browsing_batch_items i JOIN browsing_batches b ON b.id=i.batch_id
                 JOIN browsing_rounds r ON r.id=b.round_id
+                JOIN browsing_video_work w ON w.account_id=r.account_id AND w.character_id=r.character_id
+                AND w.preview=r.preview AND w.review=:review AND w.bvid=i.bvid AND w.kind=i.kind
                 LEFT JOIN browsing_tasks t ON t.id=i.task_id
                 LEFT JOIN browsing_rounds owner ON owner.id=t.round_id
                 WHERE r.account_id=:account AND r.character_id=:character
                   AND r.character_version=:version AND r.preview=:preview
                   AND COALESCE(json_extract(r.config,'$.review_session_id'),'')=:review
                   AND i.kind='comment_visit'
+                  AND w.wake_at<=:now
                   AND NOT EXISTS(SELECT 1 FROM browsing_batch_comment_pages p
                                  WHERE p.batch_id=i.batch_id AND p.bvid=i.bvid)
                   AND (i.status IN ('selected','running','paused','failed')
@@ -337,12 +356,12 @@ class BrowsingBatches:
             candidate["comment_batch_ids"].append(item["batch_id"])
         return list(candidates.values())
 
-    def waiting_until(self, row, bvid):
+    def waiting_until(self, row, bvid, kind=None):
         value = self.store.one(
-            "SELECT MAX(json_extract(i.payload,'$.next_at')) AS next_at FROM browsing_batch_items i "
-            "JOIN browsing_batches b ON b.id=i.batch_id JOIN browsing_rounds r ON r.id=b.round_id "
-            "WHERE r.account_id=? AND r.character_id=? AND i.bvid=? AND i.status='daily_wait'",
-            (row["account_id"], row["character_id"], bvid),
+            "SELECT MAX(wake_at) AS next_at FROM browsing_video_work WHERE account_id=? AND character_id=? AND bvid=? "
+            "AND review=? AND preview=? AND (? IS NULL OR kind=?)",
+            (row["account_id"], row["character_id"], bvid, row["config"].get("review_session_id", ""),
+             row["preview"], kind, kind),
         )
         return value["next_at"] if value and value["next_at"] and value["next_at"] > time.time() else None
 
@@ -448,7 +467,9 @@ async def execute(browsing, row, notifications_only):
                 "browsing_discovery_pending:" + row["account_id"], False
             ):
                 browsing.store.set("browsing_discovery_pending:" + row["account_id"], False)
-                candidates = await browsing._discover(row)
+                candidates = (await browsing._read_proactively(browsing._discover, row)
+                              if row["config"].get("autonomous_batch") and not row["config"].get("review_session_id")
+                              else await browsing._discover(row))
                 metrics["workers"] = row["config"].get("batch_workers", row["config"]["workers"])
                 semaphore = asyncio.Semaphore(row["config"].get("batch_workers", row["config"]["workers"]))
                 if row["config"].get("autonomous_batch"):
@@ -489,6 +510,9 @@ async def execute(browsing, row, notifications_only):
         if isinstance(error, asyncio.CancelledError) or stopping:
             status = "paused" if browsing.operations.draining and not browsing.operations.policy()["emergency"] else "cancelled"
             task_error = "运营已收尾，保留进度" if status == "paused" else "父轮取消"
+        elif isinstance(error, SendLimitReached):
+            status = "paused"
+            task_error = public_error(error)
         else:
             continuation = getattr(error, "continuation", None)
             status = (

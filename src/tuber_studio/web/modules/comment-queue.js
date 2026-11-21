@@ -11,11 +11,15 @@ const statuses = {
   publishing: "提交中", published: "平台已受理", rejected: "已拒绝", copied: "已复制", operator_replied: "账号已在原楼回复",
   private_handoff: "已转私信", pending: "排队中", queued: "排队中", running: "处理中", completed: "已完成",
   failed: "失败", partial: "部分完成", cancelled: "已取消",
+  send_queued: "已授权待发", send_waiting: "等额度或恢复", send_blocked: "发布被拒／待处理",
+  rejected_by_platform: "平台已拒绝", source_changed: "原楼已失效或变化", unverified: "原楼暂时无法核验", ready: "可排队",
 };
-export const commentQueueViews = ["review", "verify", "processing", "history", "activity"];
+export const commentQueueViews = ["review", "authorized", "blocked", "verify", "processing", "history", "activity"];
 const queueViewForStatus = status => {
   if (["pending_review", "approved"].includes(status)) return "review";
   if (status === "publish_uncertain") return "verify";
+  if (["send_queued", "send_waiting"].includes(status)) return "authorized";
+  if (["send_blocked", "rejected_by_platform"].includes(status)) return "blocked";
   if (["pending", "queued", "running", "publishing"].includes(status)) return "processing";
   return "history";
 };
@@ -58,6 +62,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
   const list = $("queue-list"), detail = $("queue-detail"), feedback = $("queue-feedback");
   const filter = $("queue-view");
   const batchActions = $("queue-batch-actions"), batchToggle = $("queue-batch-toggle"), batchPublish = $("queue-batch-publish");
+  const batchSave = $("queue-batch-save"), approval = $("queue-approval");
   const batchProgress = $("queue-batch-progress"), batchResult = $("queue-batch-result");
   const draftEdits = new Map();
   const checkedDrafts = new Map(), rowChecks = new Map();
@@ -83,6 +88,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     batchToggle.disabled = busy || selectionLoading;
     batchToggle.textContent = allSelected ? "全不选" : "全选所有页";
     batchPublish.disabled = busy || selectionLoading || !checkedDrafts.size;
+    batchSave.disabled = batchPublish.disabled;
     const selectedRows = [...checkedDrafts.values()];
     batchDelegate.disabled = batchPublish.disabled || selectedRows.length > 100 ||
       selectedRows.some(row => row.channel !== "comments" || !row.comment_id || draftEdits.has(keyOf(row)));
@@ -110,22 +116,21 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     syncBatchControls();
   }
 
-  function showBatchResult(result, submitted, counts) {
-    const key = keyOf(result);
-    const { status, error } = result;
-    const outcome = ["published", "publish_uncertain"].includes(status) ? status :
-      ["skipped", "operator_replied", "rejected", "copied", "private_handoff", "publishing", "invalidated"].includes(status) ? "skipped" : "failed";
-    counts[outcome]++;
-    const item = node("li");
-    const label = { published: "已发送", publish_uncertain: "待核对", skipped: "已跳过", failed: "未发送" }[outcome];
-    const route = status === "skipped" || status === "failed" ? `#comments/${key}` : `#comments/${queueViewForStatus(status)}/${key}`;
-    const state = outcome === "skipped" && statuses[status] ? `（${statuses[status]}）` : "";
-    item.append(link(submitted.get(key)?.excerpt?.slice(0, 80) || "查看草稿", route), ` · ${label}${state}`);
-    if (error) item.append(` · ${safeMessage(error)}`);
-    $("queue-batch-results").append(item);
-    const summary = `批量发布 · 已发送 ${counts.published} · 待核对 ${counts.publish_uncertain} · 已跳过 ${counts.skipped} · 未发送 ${counts.failed}`;
-    $("queue-batch-summary").textContent = summary;
+  function showBatchResults(results, submitted, mode) {
+    const output = $("queue-batch-results");
+    output.replaceChildren();
+    for (const result of results) {
+      const key = keyOf(result);
+      const item = node("li");
+      item.append(link(submitted.get(key)?.excerpt?.slice(0, 80) || "查看草稿", `#comments/${key}`),
+        ` · ${statuses[result.status] || result.status}`);
+      if (result.error) item.append(` · ${safeMessage(result.error)}`);
+      output.append(item);
+    }
+    const done = results.filter(row => row.status === (mode === "save" ? "approved" : "send_queued")).length;
+    $("queue-batch-summary").textContent = `${mode === "save" ? "已保存审核" : "已入发送队列"} ${done} 条 · 另有 ${results.length - done} 条待处理`;
     batchResult.hidden = false;
+    batchResult.open = true;
   }
 
   function emptyDetail(text) {
@@ -171,6 +176,10 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
           node("strong", (row.excerpt || statuses[row.status] || "评论记录").slice(0, 80) + ((row.excerpt?.length || 0) > 80 ? "…" : "")),
           node("span", row.video_id || (row.channel === "jobs" ? "生成任务" : ""), "hint"),
         );
+        if (row.send_error) item.append(node("small", safeMessage(row.send_error), "hint"));
+        if (row.status === "send_waiting" && row.send_wake_at) {
+          item.append(node("small", `预计 ${new Date(row.send_wake_at * 1000).toLocaleString()} 恢复`, "hint"));
+        }
         if (generation) item.onclick = event => {
           if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
@@ -212,8 +221,9 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     const signature = JSON.stringify([key, row]);
     if (signature === detailSignature) return;
     const channel = key.split("/")[0], status = row.status;
+    const send = row.send_queue;
     detailSignature = signature;
-    detail.replaceChildren(node("h2", statuses[status] || "记录详情"));
+    detail.replaceChildren(node("h2", statuses[send?.status || status] || "记录详情"));
     if (status === "private_handoff") {
       detail.append(link("到私信工作台处理", "#messages"));
       return;
@@ -229,6 +239,9 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
       row.account_id && `账号 ${row.account_id}`, (row.platform_user_id || target.recipient) && `对方 UID ${row.platform_user_id || target.recipient}`,
       (row.platform_comment_id || target.parent) && `父评 ${row.platform_comment_id || target.parent}`, row.character_id].filter(Boolean);
     if (metadata.length) detail.append(node("p", metadata.join(" · "), "hint"));
+    if (send?.status === "send_waiting") {
+      detail.append(node("p", `预计 ${new Date(send.wake_at * 1000).toLocaleString()} 恢复`, "hint"));
+    }
     if (original) detail.append(node("blockquote", original, "quoted-text"));
     let sourceUrl;
     try {
@@ -251,11 +264,11 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     field.append(editor);
     detail.append(field);
     const actions = node("div", null, "actions");
-    const message = node("p", row.error || "", row.error ? "error-text" : "hint");
+    const message = node("p", send?.error || row.error || "", send?.error || row.error ? "error-text" : "hint");
     message.setAttribute("role", "status");
     const base = channel === "comments" ? "/api/comments/drafts/" : "/api/automation/intents/";
     const continuation = new OperationContinuationView(node("section"), api, error => { message.textContent = error; }, () => refresh(true));
-    const canPublish = Boolean(row.can_publish);
+    const canPublish = Boolean(row.can_publish && !send);
     let publish, copy;
 
     function syncActions() {
@@ -345,7 +358,8 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
       if (row.image_ref || target.image_ref) action("移除配图", () => save(null));
     }
     if (editable) {
-      action("保存", () => post("review", { action: "approve", text: editor.value, updated_at: row.updated_at, expected_image: imageRef ?? null }), "primary", "已保存，草稿审核通过。");
+      action(send ? "保存并撤回排队" : "保存", () => post("review", { action: "approve", text: editor.value, updated_at: row.updated_at, expected_image: imageRef ?? null }), "primary", "已保存，草稿审核通过。");
+      if (send) action("取消排队", () => post("review", { action: "approve", updated_at: row.updated_at, expected_image: imageRef ?? null }), "", "已取消排队。", false);
       action("拒绝", () => post("review", { action: "reject" }));
       publish = action("发布", async () => {
         if (status !== "approved" || draftEdits.has(key)) {
@@ -408,7 +422,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
       if (routeKey && inferRouteView) {
         routedDetail = await api(`/api/comments/workbench/${routeKey}`);
         if (request !== version || !active) return;
-        setView(queueViewForStatus(routedDetail.status));
+        setView(queueViewForStatus(routedDetail.send_queue?.status || routedDetail.status));
         inferRouteView = false;
       }
       const scope = scopeParams();
@@ -580,7 +594,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     }
   };
 
-  batchPublish.onclick = async () => {
+  async function finishReview(mode) {
     if (busy || selectionLoading || view !== "review" || !checkedDrafts.size) return;
     const submitted = new Map(checkedDrafts);
     const scope = batchScope;
@@ -593,45 +607,55 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     batchResult.open = false;
     $("queue-batch-results").replaceChildren();
     syncBatchControls();
-    const completed = new Set();
-    const counts = { published: 0, publish_uncertain: 0, skipped: 0, failed: 0 };
-    const progress = () => setBatchProgress(`已处理 ${completed.size} / ${items.length} 条`);
-    const applyResult = row => {
-      const key = keyOf(row);
-      if (completed.has(key)) return;
-      completed.add(key);
-      if (["published", "publish_uncertain", "operator_replied"].includes(row.status)) draftEdits.delete(key);
-      if (view === "review" && batchScope === scope) {
-        checkedDrafts.delete(key);
-        allSelected = false;
-        syncBatchControls();
-        if (["published", "operator_replied"].includes(row.status) && selected === key) clearProcessedSelection();
-        progress();
-      }
-      showBatchResult(row, submitted, counts);
-    };
-    progress();
+    setBatchProgress(mode === "save" ? "正在保存审核结果…" : "正在核对所选草稿的原楼…");
     try {
-      const result = await api(`${workbench}/batch-publish`, {
-        method: "POST", body: { items }, headers: { Accept: "text/event-stream" },
-        onEvent: (event, row) => { if (event === "progress") applyResult(row); },
-      });
-      for (const row of result.items) applyResult(row);
+      let checked = [];
+      let send = items;
+      if (mode === "queue") {
+        checked = (await api(`${workbench}/batch-review/preview`, { method: "POST", body: { items } })).items;
+        const ready = new Set(checked.filter(row => row.status === "ready").map(keyOf));
+        send = items.filter(row => ready.has(keyOf(row)));
+        $("queue-approval-scope").textContent = `B 站账号 UID ${checked.find(row => row.account_id)?.account_id ?? "待核验"} · ${send.length} 条可排队`;
+        $("queue-approval-items").replaceChildren(...checked.map(row => {
+          const entry = node("li");
+          entry.append(node("strong", statuses[row.status] || row.status));
+          if (row.source_url) entry.append(" · ", link("查看原楼", row.source_url));
+          if (row.updated_at) entry.append(` · ${new Date(row.updated_at * 1000).toLocaleString()}`);
+          if (row.text) entry.append(node("p", row.text, "quoted-text"));
+          const url = illustrationUrl(row.channel, row.id, row.illustration);
+          if (url) entry.append(link("查看配图", url));
+          if (row.error) entry.append(node("p", safeMessage(row.error), "hint"));
+          return entry;
+        }));
+        $("queue-approval-submit").disabled = !send.length;
+        approval.returnValue = "cancel";
+        approval.showModal();
+        await new Promise(resolve => approval.addEventListener("close", resolve, { once: true }));
+        if (approval.returnValue !== "confirm") {
+          setBatchProgress("");
+          return;
+        }
+      }
+      const result = await api(`${workbench}/batch-review/${mode}`, { method: "POST", body: { items: send } });
+      showBatchResults([...result.items, ...checked.filter(row => row.status !== "ready")], submitted, mode);
+      for (const row of result.items) {
+        if (!["approved", "send_queued"].includes(row.status)) continue;
+        draftEdits.delete(keyOf(row));
+        checkedDrafts.delete(keyOf(row));
+      }
+      allSelected = false;
+      setBatchProgress("");
     } catch (error) {
-      if (batchScope === scope) {
-        setBatchProgress(`已取得 ${completed.size} / ${items.length} 条结果。连接失败：${safeMessage(error.message)}。请先核对其余草稿的状态与回执。`);
-      }
+      if (batchScope === scope) setBatchProgress(safeMessage(error.message));
     } finally {
-      if (batchScope === scope) {
-        for (const key of submitted.keys()) checkedDrafts.delete(key);
-        allSelected = false;
-      }
       busy = detail.inert = false;
       syncBatchControls();
       detailSignature = "";
       await refresh(true);
     }
-  };
+  }
+  batchSave.onclick = () => finishReview("save");
+  batchPublish.onclick = () => finishReview("queue");
 
   $("refresh-queue").onclick = async event => {
     if (busy) return;

@@ -70,6 +70,8 @@ class BrowsingPolicy(StrictModel):
     comment_like_auto_publish: bool = False
     video_like_enabled: bool = False
     video_like_auto_publish: bool = False
+    dynamic_like_enabled: bool = False
+    dynamic_like_auto_publish: bool = False
     video_fav_enabled: bool = False
     video_fav_auto_publish: bool = False
     max_replies_per_video: int = Field(default=2, ge=0)
@@ -347,6 +349,7 @@ class ResponseDecision(StrictModel):
     action: Literal[
         "reply_public",
         "like_comment",
+        "like_dynamic",
         "handoff_private",
         "skip",
         "wait",
@@ -473,6 +476,7 @@ def response_schema(
     video_actions=False,
     allow_public=True,
     allow_comment_like=False,
+    dynamic_ref=None,
     allow_comments=True,
     allow_visual=True,
     grouped_comment_refs=(),
@@ -486,6 +490,8 @@ def response_schema(
     }
     if allow_comment_like and evidence_ids:
         reasons["like_comment"] = ["specific_detail", "light_interaction"]
+    if dynamic_ref:
+        reasons["like_dynamic"] = ["specific_detail", "light_interaction"]
     if video_actions:
         reasons.update(
             {
@@ -529,9 +535,9 @@ def response_schema(
                     "action": {"type": "string", "enum": [action]},
                     "evidence_ids": {
                         "type": "array",
-                        "minItems": 1 if sending or action == "like_comment" else 0,
+                        "minItems": 1 if sending or action in {"like_comment", "like_dynamic"} else 0,
                         "maxItems": 8,
-                        "items": {"$ref": "#/$defs/evidence_id"}
+                        "items": {"const": dynamic_ref} if action == "like_dynamic" else {"$ref": "#/$defs/evidence_id"}
                         if evidence_ids
                         else {"type": "string"},
                     },

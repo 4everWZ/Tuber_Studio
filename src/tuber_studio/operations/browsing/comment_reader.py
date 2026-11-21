@@ -24,6 +24,8 @@ from .models import ResponseDecision
 from .quotas import DailyReplyLimitReached, day_window
 from .thread_context import comment_source, comment_thread_context, operator_reply, read_scoped_thread
 
+PENDING_VISITS = "'received','source_verified','context_ready','reply_deferred'"
+
 
 def source_discussion(source_row, context, items):
     def snapshot(row, parent):
@@ -185,7 +187,10 @@ async def round_comment_page(browsing, row, bvid):
     )
     if saved:
         return json.loads(saved["document"])
-    context = await video_comment_context(browsing, row, bvid, scroll=True, latest_only=True)
+    if row["config"].get("review_session_id"):
+        context = await video_comment_context(browsing, row, bvid, scroll=True, latest_only=True)
+    else:
+        context = await browsing._read_proactively(video_comment_context, browsing, row, bvid, scroll=True, latest_only=True)
     if context.get("video_id", bvid) != bvid:
         raise ValueError("评论页与当前视频不一致")
     if context.get("comment_fetch_status") in {"unavailable", "blocked", "failed"}:
@@ -215,19 +220,37 @@ def commit_comment_context(browsing, context):
             browsing.store.set(progress["key"], progress["next_page"])
 
 
-def enqueue_comment_visit(browsing, row, task_id, metadata, items, *, interactive=True):
+def enqueue_comment_visit(browsing, row, task_id, metadata, items, *, interactive=True, staged=False):
     bvid, oid = metadata["bvid"], str(metadata["aid"])
     observe_thread(browsing.store, row, bvid, items, via="comment_visit",
                    resource_author_uid=metadata.get("owner_uid"))
     if not interactive:
-        return
+        return []
     scope = [row["account_id"], row["character_id"], row["config"].get("review_session_id"), oid]
-    for item in merge_continuous_comments(items):
+    groups = items if staged else merge_continuous_comments(items)
+    live = not (row["preview"] or scope[2])
+    capacity = browsing.backlog_status(persist=False) if live else None
+    free = capacity["high_heads"] - capacity["total_heads"] if capacity else len(groups)
+    remainder = []
+    for item in groups:
         source = comment_source(item)
         if not source["author_uid"] or source["author_uid"] == str(row["account_id"]):
             continue
         root = str(item.get("thread_id") or source["comment_id"])
         identity = "visit:" + content_hash([*scope, source["comment_id"]])
+        existing = browsing.store.one("SELECT status FROM browsing_events WHERE id=?", (identity,))
+        heads = browsing.store.all(
+            "SELECT id,source_key,timestamp,error,created_at FROM browsing_events WHERE account_id=? AND kind='comment_visit' "
+            f"AND status IN ({PENDING_VISITS}) AND json_extract(payload,'$.character_id')=? "
+            "AND json_extract(payload,'$.review_session_id') IS ? AND CAST(json_extract(payload,'$.oid') AS TEXT)=? "
+            "AND CAST(json_extract(payload,'$.root') AS TEXT)=? ORDER BY timestamp DESC,created_at DESC,id DESC",
+            (*scope, root),
+        ) if not existing and live else []
+        timestamp = _extract_timestamp(item) or 0
+        newer = not heads or (timestamp, source["comment_id"]) > (heads[0]["timestamp"], heads[0]["source_key"])
+        if not existing and live and not heads and free <= 0:
+            remainder.append(item)
+            continue
         event = {
             "event_id": identity, "kind": "comment_visit", "account_id": row["account_id"],
             "character_id": row["character_id"], "review_session_id": scope[2],
@@ -238,11 +261,21 @@ def enqueue_comment_visit(browsing, row, task_id, metadata, items, *, interactiv
             "visit_task_id": task_id, "grouped_ids": [str(x["comment_id"]) for x in item.get("grouped_comments", [])],
             "items": [x for x in items if str(x.get("thread_id") or x["comment_id"]) == root],
         }
-        browsing.store.db.execute(
-            "INSERT OR IGNORE INTO browsing_events VALUES(?,?,?,?,?,'received',?,NULL,?)",
-            (identity, row["account_id"], event["kind"], source["comment_id"], _extract_timestamp(item) or 0,
-             dump(event), time.time()),
-        )
+        if not existing:
+            state = "received" if newer else "revisit_merged"
+            if live and timestamp > 0 and timestamp < time.time() - 72 * 3600:
+                state = "archived" if timestamp <= time.time() - 7 * 86400 else "revisit_parked"
+            if state == "received" and not heads:
+                free -= 1
+            if state == "received" and heads:
+                browsing.store.db.executemany("UPDATE browsing_events SET status='revisit_merged' WHERE id=?",
+                                             [(head["id"],) for head in heads if head["id"] not in browsing.event_active])
+            browsing.store.db.execute(
+                "INSERT OR IGNORE INTO browsing_events VALUES(?,?,?,?,?,?,?,?,?)",
+                (identity, row["account_id"], event["kind"], source["comment_id"], timestamp, state,
+                 dump(event), heads[0]["error"] if heads and state == "received" else None,
+                 min((head["created_at"] for head in heads), default=time.time())),
+            )
         if browsing.store.one(
             "SELECT 1 FROM browsing_events WHERE account_id=? AND id<>? "
             "AND (status IN ('drafted','operator_replied') OR error='同一公开评论已处理') "
@@ -261,6 +294,59 @@ def enqueue_comment_visit(browsing, row, task_id, metadata, items, *, interactiv
             browsing.store.db.execute(
                 "INSERT OR IGNORE INTO browsing_batch_comment_events VALUES(?,?)", (batch_id, identity),
             )
+    return remainder
+
+
+def admit_comment_page(browsing, row, task_id, metadata, items, *, cursor=None, page_key=None):
+    remainder = enqueue_comment_visit(browsing, row, task_id, metadata, items)
+    if remainder:
+        browsing.store.db.execute(
+            "INSERT INTO browsing_comment_page_handoffs VALUES(?,?,?,?,?,?,?) "
+            "ON CONFLICT(account_id,character_id,review_session,bvid,page_key) DO NOTHING",
+            (row["account_id"], row["character_id"], row["config"].get("review_session_id", ""), metadata["bvid"],
+             page_key or (f"old:{cursor['page']}" if cursor else "batch:" + str(row["config"].get("batch_id") or row["id"])),
+             dump({"metadata": metadata, "items": remainder, "cursor": cursor, "task_id": task_id,
+                   "batch_id": row["config"].get("batch_id")}), time.time()),
+        )
+    return not remainder
+
+
+def _advance_old_page(browsing, row, bvid, page, next_page):
+    browsing.store.db.execute(
+        "UPDATE browsing_comment_revisits SET page=?,next_at=?,error=NULL WHERE account_id=? "
+        "AND character_id=? AND review_session=? AND bvid=? AND page=?",
+        (next_page, time.time() + row["config"]["notification_interval_seconds"], row["account_id"],
+         row["character_id"], row["config"].get("review_session_id", ""), bvid, page),
+    )
+    cursor = comment_cursor_key(row, bvid)
+    if next_page is not None and browsing.store.get(cursor, 1) <= page:
+        browsing.store.db.execute("INSERT OR REPLACE INTO kv VALUES(?,?)", (cursor, dump(next_page)))
+
+
+def resume_comment_page(browsing, row):
+    state = browsing.backlog_status(persist=False)
+    if state["comment_hourly_resume_at"] or state["total_heads"] >= state["high_heads"]:
+        return False
+    record = browsing.store.one(
+        "SELECT rowid,document FROM browsing_comment_page_handoffs WHERE account_id=? AND character_id=? "
+        "AND review_session=? ORDER BY created_at,rowid LIMIT 1",
+        (row["account_id"], row["character_id"], row["config"].get("review_session_id", "")),
+    )
+    if not record:
+        return False
+    document = json.loads(record["document"])
+    config = row["config"] | {"batch_id": document["batch_id"]}
+    with browsing.store.db:
+        remainder = enqueue_comment_visit(browsing, row | {"config": config}, document["task_id"],
+                                          document["metadata"], document["items"], staged=True)
+        if remainder:
+            browsing.store.db.execute("UPDATE browsing_comment_page_handoffs SET document=? WHERE rowid=?",
+                                     (dump(document | {"items": remainder}), record["rowid"]))
+        else:
+            if cursor := document["cursor"]:
+                _advance_old_page(browsing, row, document["metadata"]["bvid"], cursor["page"], cursor["next_page"])
+            browsing.store.db.execute("DELETE FROM browsing_comment_page_handoffs WHERE rowid=?", (record["rowid"],))
+    return True
 
 
 async def read_old_comment_page(browsing, row):
@@ -278,7 +364,7 @@ async def read_old_comment_page(browsing, row):
     if "start_page" not in inspect.signature(browsing.adapter.fetch).parameters:
         return False
     try:
-        context = await browsing._read(browsing.adapter.fetch, bvid, 1, start_page=page)
+        context = await browsing._read_proactively(browsing._read, browsing.adapter.fetch, bvid, 1, start_page=page)
         metadata = {"bvid": bvid, "aid": context.get("aid"), "owner_uid": context.get("owner_uid")}
         if not metadata["aid"]:
             materials = browsing.repo.watch_material(row, bvid)
@@ -291,21 +377,15 @@ async def read_old_comment_page(browsing, row):
         if next_page is not None and (type(next_page) is not int or next_page <= page):
             raise ValueError("评论分页没有前进")
         with browsing.store.db:
-            enqueue_comment_visit(browsing, row, None, metadata, context.get("items", []))
-            browsing.store.db.execute(
-                "UPDATE browsing_comment_revisits SET page=?,next_at=?,error=NULL WHERE account_id=? "
-                "AND character_id=? AND character_version=? AND review_session=? AND bvid=?",
-                (next_page, time.time() + row["config"]["notification_interval_seconds"], *scope, bvid),
-            )
-            cursor = comment_cursor_key(row, bvid)
-            previous = browsing.store.get(cursor, 1)
-            if next_page is not None and previous <= page:
-                browsing.store.db.execute("INSERT OR REPLACE INTO kv VALUES(?,?)", (cursor, dump(next_page)))
+            if admit_comment_page(browsing, row, None, metadata, context.get("items", []),
+                                  cursor={"page": page, "next_page": next_page}):
+                _advance_old_page(browsing, row, bvid, page, next_page)
     except (ValueError, TimeoutError) as error:
         browsing.store.execute(
             "UPDATE browsing_comment_revisits SET next_at=?,error=? WHERE account_id=? "
             "AND character_id=? AND character_version=? AND review_session=? AND bvid=?",
-            (time.time() + row["config"]["notification_interval_seconds"], public_error(error), *scope, bvid),
+            (getattr(error, "next_at", time.time() + row["config"]["notification_interval_seconds"]),
+             public_error(error), *scope, bvid),
         )
     return True
 
@@ -324,7 +404,7 @@ async def evaluate_comment_visit(browsing, result, row, metrics):
         items = context.get("items", [])
         if (row["config"].get("interaction_only") or row["config"].get("autonomous_batch")) and not row["preview"]:
             with browsing.store.db:
-                enqueue_comment_visit(browsing, row, identity, metadata, items)
+                admit_comment_page(browsing, row, identity, metadata, items)
             browsing.repo.complete(identity, result["owner"], result["generation"], status, payload, key)
             browsing.commit_comment_context(context)
             return
@@ -552,7 +632,7 @@ def eligible_event_heads():
                    AND json_extract(payload,'$.review_session_id') IS :review))
         ), heads AS (
             SELECT *, ROW_NUMBER() OVER (PARTITION BY resource_type,resource,root
-                                         ORDER BY timestamp,created_at,id) AS position
+                                         ORDER BY (kind='comment_visit'),timestamp,created_at,id) AS position
             FROM pending
         )
     """
@@ -569,6 +649,8 @@ async def process_events(browsing, row, metrics, *, own_only=False, batch_only=F
     scope = event_scope(row) | {
         "own": own_only, "batch_only": batch_only, "batch": row["config"].get("batch_id"),
         "now": time.time(), "limit": max(2, row["config"]["workers"]),
+        "revisits": row["preview"] or bool(row["config"].get("review_session_id")) or (
+            not browsing.comment_window_due() and not browsing._ready_approved_comments()),
     }
     selected = browsing.store.all(
         eligible_event_heads() + """
@@ -578,6 +660,7 @@ async def process_events(browsing, row, metrics, *, own_only=False, batch_only=F
         FROM heads h
         WHERE position=1 AND COALESCE(CASE WHEN json_valid(error) THEN json_extract(error,'$.next_at') END,0)<=:now
           AND (NOT :own OR kind='own_comment')
+          AND (:revisits OR kind<>'comment_visit')
           AND (NOT :batch_only OR EXISTS(
               SELECT 1 FROM browsing_batch_comment_events item
               JOIN browsing_events event ON event.id=item.event_id
@@ -716,7 +799,7 @@ async def event(browsing, event_row, row, metrics):
     event.setdefault("kind", event_row["kind"])
     config = row["config"]
     if event_row["kind"] == "mention" and not config["mention_reply_enabled"] or not (
-        config["reply_enabled"] or config.get("comment_like_enabled")
+        config["reply_enabled"] or config.get("comment_like_enabled") or config.get("dynamic_like_enabled")
     ):
         browsing.store.execute(
             "UPDATE browsing_events SET status='skipped',error='评论处理权限已关闭' WHERE id=?",
@@ -859,6 +942,11 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
                          browsing.comment_admission.review_reply_limit_reached(row, target["bvid"]))
     allow_public = config["reply_enabled"] and not admission and not (like_enabled and reply_limited)
     allow_like = can_like and not like_admission
+    dynamic = thread.get("dynamic_source")
+    if not (config.get("dynamic_like_enabled") and dynamic and not dynamic["liked"]
+            and dynamic["author_uid"] != str(row["account_id"]) and callable(getattr(browsing.adapter, "like_dynamic", None))
+            and not browsing.publication.dynamic_like_intent(row, dynamic["dynamic_id"])):
+        dynamic = None
     blocked = min(
         (error for error in (admission, like_admission if can_like else None) if error),
         key=lambda error: error.next_at,
@@ -882,7 +970,7 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
     if event_row["kind"] == "own_comment":
         thread["resource_author_uid"] = str(row["account_id"])
     reply = browsing.decisions.invited_private_response(row, thread)
-    if reply is None and blocked and not (allow_public or allow_like):
+    if reply is None and blocked and not (allow_public or allow_like or dynamic):
         raise blocked
     material, keys = None, []
     allowed = {"public:" + str(source["comment_id"])}
@@ -912,13 +1000,13 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
         if previous and (
             previous.action == "reply_public" and allow_public
             or previous.action == "like_comment" and allow_like
-            or previous.action == "skip" and not allow_like
+            or previous.action == "skip" and not (allow_like or dynamic)
         ):
             reply = previous
     can_send = (allow_public and config["reply_auto_publish"]) or (
         allow_like and config.get("comment_like_auto_publish")
-    )
-    if (reply is None and (allow_public or allow_like) and not can_send
+    ) or (dynamic and config.get("dynamic_like_auto_publish"))
+    if (reply is None and allow_public and not can_send
             and not browsing.review_capacity("comments", row)):
         browsing.store.execute(
             "UPDATE browsing_events SET status='received',error=? WHERE id=?",
@@ -929,11 +1017,12 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
     if reply is None:
         thread["_allow_public"] = allow_public
         thread["_allow_comment_like"] = allow_like
-        if allow_public or allow_like:
+        thread["_dynamic_like_source"] = dynamic
+        if allow_public or allow_like or dynamic:
             attachments = await prepare_comment_materials(browsing, target, source_row, row=row)
             if attachments:
                 thread["_comment_materials"] = attachments
-            if not material and not source["text"].strip() and not any(item["status"] == "read" for item in attachments):
+            if not dynamic and not material and not source["text"].strip() and not any(item["status"] == "read" for item in attachments):
                 reply = ResponseDecision(action="skip", reason="insufficient_evidence",
                                          explanation="评论没有可读正文，附件也未能读取")
                 reply._comment_materials = attachments
@@ -986,7 +1075,13 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
         intent = await handoff_comment(browsing, row, reply, target, thread, material, keys,
                                        event=target.get("source_event"), created_at=event_row.get("timestamp", ""))
     else:
-        kind = "comment_like" if reply.action == "like_comment" else "reply_public"
+        kind = {"like_comment": "comment_like", "like_dynamic": "dynamic_like"}.get(reply.action, "reply_public")
+        if kind == "dynamic_like":
+            if not dynamic or reply.evidence_ids != ["dynamic:" + dynamic["dynamic_id"]]:
+                raise ValueError("原动态来源已变化")
+            target = {key: target[key] for key in ("oid", "type", "resource_type", "dynamic_id")} | {
+                "source_text": dynamic["text"], "recipient": dynamic["author_uid"], "root": "0", "parent": "0",
+            }
         if kind == "reply_public":
             target["source_discussion"] = source_discussion(source_row, discussion, items_list)
             if reply._comment_materials:

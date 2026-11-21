@@ -3,17 +3,22 @@
 import json
 import math
 import re
+import time
 from datetime import datetime
 
-from .operation_attachments import can_attach_comment_image, decision, row_ref, uploads
+from .operation_attachments import can_attach_comment_image, comment_payload, decision, row_ref, uploads
 from .operation_feedback import continuation_view
-from .operations.browsing.thread_context import COMMENT_ID, VIDEO_ID, public_discussion_url
+from .operation_sends import approved_version
+from .operations.browsing.thread_context import COMMENT_ID, VIDEO_ID, operator_reply, public_discussion_url, read_scoped_thread
+from .platforms.bilibili import PlatformReadError
 from .providers import public_error
 
 FILTERS = {
     "review": ("pending_review", "approved"),
     "verify": ("publish_uncertain",),
     "processing": ("pending", "queued", "running", "publishing"),
+    "authorized": ("send_queued", "send_waiting"),
+    "blocked": ("send_blocked", "rejected_by_platform"),
 }
 PUBLIC_KINDS = ("top_level", "reply_public", "private_handoff")
 REVIEW_STATES = frozenset(FILTERS["review"])
@@ -63,7 +68,7 @@ def generation_task(store, identity, *, can_write=False):
     return row
 
 
-def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, task_id=None, can_write=False):
+def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, task_id=None, can_write=False, scope=None):
     if view == "history":
         states = tuple(status for statuses in FILTERS.values() for status in statuses)
         condition = "status NOT IN (" + ",".join("?" for _ in states) + ")"
@@ -71,6 +76,10 @@ def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, t
         states = FILTERS[view]
         condition = "status IN (" + ",".join("?" for _ in states) + ")"
     args = list(states)
+    if scope:
+        condition += " AND (channel='jobs' OR (channel='comments' AND COALESCE(account_id,'')='') "
+        condition += "OR (account_id=? AND character_id=? AND character_version=?))"
+        args.extend(scope)
     if video_id:
         condition += (
             " AND ((channel<>'jobs' AND video_id=?) OR (channel='jobs' AND id IN ("
@@ -90,14 +99,19 @@ def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, t
     if task_id:
         condition += " AND ((channel='comments' AND generation_task_id=?) OR (channel='jobs' AND id=?))"
         args.extend((task_id, task_id))
+    sends = "operation_send_items" if store.one("SELECT 1 FROM sqlite_master WHERE name='operation_send_items'") else (
+        "(SELECT NULL channel,NULL source_id,NULL error,NULL blocked,NULL wake_at WHERE 0)"
+    )
+    rejections = "(SELECT channel,entity_id,json_extract(feedback,'$.message') AS error FROM operation_continuations "
+    rejections += "WHERE state IN ('checkpoint','waiting','needs_material') AND json_extract(feedback,'$.kind')='platform_rejection')"
     rows = store.all(
         """
-        WITH queue AS (
+        WITH originals AS (
             SELECT 'comments' AS channel, CAST(d.id AS TEXT) AS id, d.status,
                    'manual' AS source, CASE WHEN d.status='private_handoff' THEN NULL ELSE c.video_id END AS video_id,
                    CASE WHEN d.status='private_handoff' THEN '' ELSE substr(c.content,1,180) END AS excerpt,
                    d.updated_at,d.comment_id,d.generation_task_id,c.platform,
-                   c.comment_id AS platform_comment_id, d.image_ref
+                   c.comment_id AS platform_comment_id, d.image_ref,d.account_id,d.character_id,d.character_version
               FROM drafts d JOIN comments c ON c.id=d.comment_id
             UNION ALL
             SELECT 'browsing', i.id, i.status,
@@ -108,11 +122,21 @@ def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, t
                    CASE WHEN i.kind='private_handoff' OR i.status='private_handoff' THEN ''
                         ELSE substr(coalesce(json_extract(i.target,'$.source_text'),i.text),1,180) END,
                    i.updated_at,NULL,NULL,'bilibili',
-                   json_extract(i.target,'$.parent'),json_extract(i.target,'$.image_ref')
+                   json_extract(i.target,'$.parent'),json_extract(i.target,'$.image_ref'),i.account_id,i.character_id,i.character_version
               FROM browsing_intents i WHERE i.kind IN (?,?,?)
               AND i.status NOT IN ('automatic_pending','automatic_skipped','archived')
             UNION ALL
-            SELECT 'jobs', id, status, 'manual', NULL, '评论生成任务', updated_at,NULL,NULL,NULL,NULL,NULL FROM comment_tasks
+            SELECT 'jobs', id, status, 'manual', NULL, '评论生成任务', updated_at,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL FROM comment_tasks
+        ), queue AS (
+            SELECT o.channel,o.id,CASE WHEN o.status IN ('approved','pending_review') THEN
+                   CASE WHEN q.blocked='review' THEN 'send_blocked' WHEN q.wake_at>unixepoch() THEN 'send_waiting'
+                        WHEN q.source_id IS NOT NULL THEN 'send_queued' WHEN r.entity_id IS NOT NULL THEN 'send_blocked'
+                        ELSE o.status END ELSE o.status END AS status,
+                   o.source,o.video_id,o.excerpt,o.updated_at,o.comment_id,o.generation_task_id,o.platform,
+                   o.platform_comment_id,o.image_ref,o.account_id,o.character_id,o.character_version,
+                   COALESCE(q.error,r.error) AS send_error,q.wake_at AS send_wake_at
+            FROM originals o LEFT JOIN """ + sends + """ q ON q.channel=o.channel AND q.source_id=o.id
+            LEFT JOIN """ + rejections + """ r ON r.channel=o.channel AND r.entity_id=o.id
         ), filtered AS (SELECT * FROM queue WHERE """
         + condition
         + """)
@@ -122,7 +146,7 @@ def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, t
         (*PUBLIC_KINDS, *args, limit, offset),
     )
     if not rows and offset:
-        return list_queue(store, view, limit, 0, video_id=video_id, comment_ids=ids, task_id=task_id, can_write=can_write)
+        return list_queue(store, view, limit, 0, video_id=video_id, comment_ids=ids, task_id=task_id, can_write=can_write, scope=scope)
     total = rows[0]["total"] if rows else 0
     for row in rows:
         del row["total"]
@@ -262,6 +286,85 @@ async def publish_queue_selection(store, comments, browsing, selection):
         yield index, result
 
 
+def draft_for_review(browsing, item):
+    channel, identity = item["channel"], item["id"]
+    row = browsing._send_draft({"channel": channel, "source_id": identity})
+    if not row or (channel == "browsing" and row["kind"] not in {"top_level", "reply_public"}):
+        raise ValueError("草稿不存在")
+    actor = browsing.runtime.character
+    if (row["account_id"], row["character_id"], row["character_version"]) != (
+            browsing.comments.display_account_id(), actor["id"], actor["version"]):
+        raise ValueError("草稿属于其他账号或角色版本")
+    if row["status"] not in REVIEW_STATES:
+        raise ValueError("草稿已处理，请刷新")
+    ref = decision(browsing.runtime, channel, row, row_ref(row))
+    if item.get("updated_at") != row["updated_at"] or item.get("expected_image") != ref:
+        raise ValueError("正文或附件已变化，请核对最新草稿")
+    return row, ref
+
+
+async def check_queue_source(browsing, channel, row):
+    account = await browsing._current_account(row["account_id"])
+    if channel == "comments":
+        target = {"bvid": row["video_id"], "root": row["thread_id"], "parent": row["platform_comment_id"]}
+        if row["platform"] != "bilibili" or not VIDEO_ID.fullmatch(target["bvid"] or ""):
+            raise ValueError("草稿未绑定 B 站视频")
+        thread = await read_scoped_thread(browsing.store, browsing.adapter.read_video_thread, target,
+                                          target | {"account_id": account, "resource_type": "video"}, invoke=browsing._read)
+        if thread["source"]["text"] != row["content"] or str(thread["source"]["author_uid"]) != row["platform_user_id"]:
+            return "source_changed"
+    else:
+        target = row["target"]
+        if row["kind"] == "top_level":
+            metadata = await browsing._read(browsing.adapter.video_metadata, target["bvid"])
+            if metadata["bvid"] != target["bvid"] or str(metadata["aid"]) != str(target["oid"]):
+                return "source_changed"
+            return "ready"
+        thread = await browsing.publication._verify_reply_source(target, account)
+    return "operator_replied" if operator_reply(thread.get("items", []), target, account) else "ready"
+
+
+async def review_queue_selection(browsing, selection, action):
+    results = [None] * len(selection)
+    for index, item, _ in selection:
+        channel, identity = item["channel"], item["id"]
+        result = {"channel": channel, "id": identity}
+        results[index] = result
+        try:
+            row, ref = draft_for_review(browsing, item)
+            if action != "save":
+                try:
+                    state = await check_queue_source(browsing, channel, row)
+                except PlatformReadError as exc:
+                    state = "source_changed" if exc.kind in {"not_found", "missing", "deleted", "invalid"} else "unverified"
+                    result["error"] = public_error(exc)
+                except (ValueError, TimeoutError, AttributeError) as exc:
+                    state = "unverified"
+                    result["error"] = public_error(exc)
+                row, ref = draft_for_review(browsing, item)
+                target = row.get("target") or {}
+                result.update(status=state, account_id=row["account_id"], updated_at=row["updated_at"],
+                              source_url=public_discussion_url(row.get("video_id") or target.get("bvid"),
+                                  row.get("platform_comment_id") or target.get("parent"), target.get("dynamic_id")),
+                              text=item.get("text", row["text"]), illustration=ref)
+                if action == "preview" or state != "ready":
+                    continue
+            if action == "queue" and ref and ref.get("job_id"):
+                raise ValueError("配图尚未完成，待配图就绪后再确认")
+            service = browsing.comments if channel == "comments" else browsing.publication
+            if row["status"] != "approved" or item.get("text", row["text"]) != row["text"]:
+                service.review(identity, "approve", item.get("text"), updated_at=row["updated_at"], expected_image=ref)
+            if action == "queue":
+                fresh = browsing._send_draft({"channel": channel, "source_id": identity})
+                fingerprint = approved_version(fresh, comment_payload(fresh, browsing.runtime, channel))
+                browsing.sends.enqueue(channel, identity, approval=fingerprint,
+                                       scope=(fresh["account_id"], fresh["character_id"], fresh["character_version"]))
+            result["status"] = "send_queued" if action == "queue" else "approved"
+        except Exception as exc:
+            result.update(status="failed", error=public_error(exc))
+    return {"items": results}
+
+
 def queue_detail(store, comments, browsing, channel, identity):
     if channel == "jobs":
         row = store.one("SELECT * FROM comment_tasks WHERE id=?", (identity,))
@@ -292,4 +395,10 @@ def queue_detail(store, comments, browsing, channel, identity):
         if row["illustration"] and not row["can_attach_image"] and row["status"] in REVIEW_STATES:
             row["can_publish"] = False
         row["image_uploads"] = uploads(store, channel, identity)
+        queued = store.one("SELECT blocked,wake_at,error FROM operation_send_items WHERE channel=? AND source_id=?",
+                           (channel, str(identity)))
+        if queued and row["status"] in REVIEW_STATES:
+            queued["status"] = ("send_blocked" if queued["blocked"] == "review" else
+                                "send_waiting" if queued["wake_at"] > time.time() else "send_queued")
+            row["send_queue"] = queued
     return row

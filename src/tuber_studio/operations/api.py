@@ -16,6 +16,7 @@ from ..comment_workbench import (
     publish_queue_selection,
     queue_detail,
     queue_selection,
+    review_queue_selection,
 )
 from ..providers import public_error
 from ..sse import encode_event
@@ -47,6 +48,11 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
 
     def can_write_comments():
         return comments.policy()["credentials_configured"]
+
+    def workbench_scope():
+        actor = browsing.runtime.character
+        account_id = comments.display_account_id()
+        return (account_id, actor["id"], actor["version"]) if account_id else None
 
     @app.get("/api/account/bilibili", dependencies=[Depends(require_admin)])
     async def account_status():
@@ -135,7 +141,7 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
 
     @app.get("/api/comments/workbench", dependencies=[Depends(require_admin)])
     async def comment_queue(
-        view: Literal["review", "verify", "processing", "history"] = "review",
+        view: Literal["review", "verify", "processing", "history", "authorized", "blocked"] = "review",
         limit: int = Query(30, ge=1, le=100),
         offset: int = Query(0, ge=0),
         video_id: str | None = None,
@@ -144,7 +150,7 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
     ):
         return list_queue(
             store, view, limit, offset, video_id=video_id, comment_ids=comment_ids, task_id=task_id,
-            can_write=can_write_comments(),
+            can_write=can_write_comments(), scope=workbench_scope() if not (task_id or comment_ids) else None,
         )
 
     @app.get("/api/comments/workbench/selection", dependencies=[Depends(require_admin)])
@@ -155,7 +161,14 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
     ):
         return queue_selection(
             store, can_write=can_write_comments(), video_id=video_id, comment_ids=comment_ids, task_id=task_id,
+            scope=workbench_scope() if not (task_id or comment_ids) else None,
         )
+
+    @app.post("/api/comments/workbench/batch-review/{action}", dependencies=[Depends(require_admin)])
+    async def comment_queue_batch_review(action: Literal["preview", "save", "queue"], data: dict = Body(...)):
+        selection = prepare_queue_selection(store, data)
+        async with comment_batch_lock:
+            return await review_queue_selection(browsing, selection, action)
 
     @app.post("/api/comments/workbench/batch-publish", dependencies=[Depends(require_admin)])
     async def comment_queue_batch_publish(data: dict = Body(...), accept: str = Header("")):

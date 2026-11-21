@@ -26,6 +26,8 @@ function setupDOM(t) {
       setAttribute(name, value) { this.attributes[name] = value; },
       getAttribute(name) { return this.attributes[name]; },
       addEventListener(type, listener) { this.listeners[type] = listener; },
+      showModal() { this.open = true; },
+      close(value) { this.returnValue = value; this.open = false; this.listeners.close?.(); },
       querySelector() { return null; },
       querySelectorAll(selector) {
         const descendants = this.children.filter(child => child && typeof child === "object");
@@ -183,7 +185,7 @@ test("comments use ten compact records per page without loading browsing history
   assert.deepEqual(calls, ["/api/comments/workbench?view=review&limit=10&offset=0"]);
 });
 
-test("batch approval keeps cross-page selections and routes uncertain and failed items separately", async t => {
+test("batch confirmation keeps cross-page drafts and queues only the verified selection", async t => {
   const byId = setupDOM(t);
   globalThis.location = { hash: "#comments/review" };
   globalThis.history = { pushState(_, title, hash) { location.hash = hash; }, replaceState() {} };
@@ -194,23 +196,16 @@ test("batch approval keeps cross-page selections and routes uncertain and failed
     excerpt: `来源 ${index + 1}`, text: `草稿 ${index + 1}`, updated_at: index + 100, can_publish: index < 11,
   }));
   const writes = [];
-  let finishBatch;
-  const batchGate = new Promise(resolve => { finishBatch = resolve; });
   const api = async (path, options) => {
     if (options) {
-      const { onEvent, ...request } = options;
-      writes.push([path, request]);
-      records[0].status = "published";
-      records[9].status = "publish_uncertain";
-      const items = options.body.items.map(({ channel, id }) => ({
-        channel, id, status: records[Number(id) - 1].status,
-        ...(id === "11" ? { error: "草稿在选择后已变化" } : {}),
-      }));
-      onEvent("progress", items[1]);
-      await batchGate;
-      onEvent("progress", items[0]);
-      onEvent("progress", items[2]);
-      return { items };
+      writes.push([path, options]);
+      if (path.endsWith("/preview")) return { items: options.body.items.map(item => ({
+        ...item, account_id: "100", status: item.id === "11" ? "source_changed" : "ready",
+      })) };
+      return { items: options.body.items.map(item => {
+        records[Number(item.id) - 1].status = "send_queued";
+        return { ...item, status: "send_queued" };
+      }) };
     }
     if (path.endsWith("/selection")) return { items: records.filter(row => row.can_publish), total: 11 };
     if (path.includes("?view=")) {
@@ -247,23 +242,21 @@ test("batch approval keeps cross-page selections and routes uncertain and failed
   check(0, true);
   check(9, true);
   const publishing = byId("queue-batch-publish").onclick();
-  assert.equal(byId("queue-batch-progress").textContent, "已处理 1 / 3 条");
-  assert.equal(byId("queue-batch-count").textContent, "已选 2 条");
-  assert.match(byId("queue-batch-summary").textContent, /已发送 1/);
-  assert.equal(byId("queue-batch-results").children.length, 1);
-  finishBatch();
+  await Promise.resolve();
+  assert.equal(byId("queue-approval").open, true);
+  assert.match(byId("queue-approval-scope").textContent, /UID 100.*2 条可排队/);
+  assert.equal(writes.length, 1);
+  byId("queue-approval").close("confirm");
   await publishing;
-  assert.deepEqual(writes, [["/api/comments/workbench/batch-publish", { method: "POST", headers: { Accept: "text/event-stream" }, body: { items: [
-    { channel: "comments", id: "11", updated_at: 110, expected_image: null },
+
+  assert.deepEqual(writes[1], ["/api/comments/workbench/batch-review/queue", { method: "POST", body: { items: [
     { channel: "comments", id: "1", updated_at: 100, text: "确认过的正文", expected_image: null },
     { channel: "comments", id: "10", updated_at: 109, expected_image: null },
-  ] } }]]);
-  assert.match(byId("queue-batch-summary").textContent, /已发送 1 · 待核对 1 · 已跳过 0 · 未发送 1/);
-  const [sent, failed, uncertain] = byId("queue-batch-results").children;
-  assert.match(failed.children[2], /草稿在选择后已变化/);
-  assert.equal(sent.children[0].href, "#comments/history/comments/1");
-  assert.equal(uncertain.children[0].href, "#comments/verify/comments/10");
-  assert.equal(byId("queue-batch-publish").disabled, true);
+  ] } }]);
+  assert.match(byId("queue-batch-summary").textContent, /已入发送队列 2 条 · 另有 1 条待处理/);
+  const [queued, , excluded] = byId("queue-batch-results").children;
+  assert.equal(queued.children[0].href, "#comments/comments/1");
+  assert.match(excluded.children[1], /原楼已失效或变化/);
   assert.equal(queue.hasUnsaved(), false);
 });
 
@@ -805,15 +798,15 @@ test("one parent start action uses saved permissions without enabling additional
 test("capability lamps separate saved permissions from actual runtime and private polling", async () => {
   const { operationCapabilities } = await import("../src/tuber_studio/web/modules/operation-capabilities.js");
   const permissions = { video_enabled: true, top_level: "auto", replies: "review", private_poll: false,
-    private_messages: "auto", dynamics: "review", video_like: "off", video_fav: "off", comment_like: "review" };
+    private_messages: "auto", dynamics: "review", video_like: "off", video_fav: "off", comment_like: "review", dynamic_like: "auto" };
   const off = operationCapabilities({ policy: { enabled: false }, state: "off", permissions });
-  assert.equal(off.length, 9);
+  assert.equal(off.length, 10);
   assert.ok(off.every(item => item.color === "gray"));
   assert.equal(off.find(item => item.id === "videos").state, "待启动");
   assert.equal(off.find(item => item.id === "message_poll").state, "关闭");
   const active = Object.fromEntries(operationCapabilities({ policy: { enabled: true }, state: "running", permissions })
     .map(item => [item.id, item]));
-  for (const key of ["videos", "top_level", "message_reply"]) assert.equal(active[key].color, "green");
+  for (const key of ["videos", "top_level", "message_reply", "dynamic-like"]) assert.equal(active[key].color, "green");
   for (const key of ["comments", "dynamics", "comment-like"]) assert.equal(active[key].color, "yellow");
   for (const key of ["message_poll", "like", "favorite"]) assert.equal(active[key].color, "gray");
 });

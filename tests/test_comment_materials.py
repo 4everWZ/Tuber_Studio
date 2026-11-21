@@ -1,4 +1,5 @@
 import json
+import time
 from io import BytesIO
 
 import httpx
@@ -83,10 +84,11 @@ async def test_article_and_image_transport_refuses_external_redirect_and_strips_
 
 async def test_real_reply_entry_uses_current_attachment_and_falls_back_on_article_failure(browsing, monkeypatch):
     await enable_comment_choices(browsing, monkeypatch)
-    own = comment() | {"platform_user_id": "100", "created_at": "10",
+    now = int(time.time())
+    own = comment() | {"platform_user_id": "100", "created_at": str(now - 10),
         "attachments": [{"kind": "image", "url": "https://i0.hdslb.com/bfs/new_dyn/unrelated.jpg"}]}
     target = comment("602", "601") | {"content": "怎么解读这张图 https://www.bilibili.com/read/cv12/？",
-        "created_at": "20", "parent_comment_id": "601", "parent_verified": True,
+        "created_at": str(now), "parent_comment_id": "601", "parent_verified": True,
         "attachments": [{"kind": "article", "article_id": "12"}, {"kind": "image", "url": IMAGE}]}
     calls, packets = [], []
 
@@ -137,7 +139,7 @@ async def test_real_reply_entry_uses_current_attachment_and_falls_back_on_articl
     intent = browsing.intents()[0]
     assert intent["evidence"] == ["public:602"]
     assert intent["target"]["comment_materials"][0]["reason"] == "restricted"
-    assert intent["target"]["source_discussion"]["parent"]["created_at"] == "10"
+    assert intent["target"]["source_discussion"]["parent"]["created_at"] == own["created_at"]
     await prepare_comment_materials(browsing, {"parent": "different-comment"}, target)
     assert calls[-1] == ("article", "12") and len(calls) == 4
 

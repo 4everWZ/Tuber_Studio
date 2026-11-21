@@ -9,7 +9,8 @@ from ...operation_turns import operation_lane
 from ...providers import public_error
 from ...video_vision import VideoPartText
 from .caption_corrections import CORRECTED_VIDEOS, corrected_caption
-from .comment_reader import commit_comment_context, enqueue_comment_visit, video_comment_context
+from ...operation_continuations import content_hash
+from .comment_reader import admit_comment_page, commit_comment_context, enqueue_comment_visit, video_comment_context
 from .evidence import (
     STORYBOARD_SCAN_QUESTION,
     EvidenceUnavailable,
@@ -458,7 +459,8 @@ def _record_comments(browsing, row, identity, metadata, context):
         items = context.get("items", [])
         enqueue_comment_visit(browsing, row, identity, metadata, items, interactive=False)
         if interactive:
-            enqueue_comment_visit(browsing, active, identity, metadata, items)
+            page_key = "specified:" + content_hash([identity, [item["comment_id"] for item in items]])
+            admit_comment_page(browsing, active, identity, metadata, items, page_key=page_key)
     if interactive:
         browsing.interactions_changed.set()
 

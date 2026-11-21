@@ -32,7 +32,8 @@ async def test_fixed_comment_page_blocks_next_batch_and_survives_restart(browsin
     worker = browsing.active[start["id"]]
     await asyncio.wait_for(entered.wait(), 3)
     assert browsing.repo.round(start["id"])["status"] == "running"
-    assert {intent["target"]["parent"] for intent in browsing.intents()} == {"601"}
+    assert not browsing.intents()
+    assert browsing.store.one("SELECT status FROM browsing_events WHERE source_key='601'")["status"] == "revisit_merged"
     mode["action"] = "watch"
     await browsing.configure({"watch_videos": ["BV1xx411c7mD"]})
     again = await browsing.run(automatic=True, video_only=True)
@@ -45,7 +46,7 @@ async def test_fixed_comment_page_blocks_next_batch_and_survives_restart(browsin
     resumed = await finished(browsing, automatic=True, video_only=True)
     assert resumed["id"] == start["id"] and resumed["status"] == "completed"
     assert reads == [(BV, 1, True)]
-    assert {intent["target"]["parent"] for intent in browsing.intents()} == {"601", "602"}
+    assert {intent["target"]["parent"] for intent in browsing.intents()} == {"602"}
     assert not browsing.store.all("SELECT * FROM browsing_watch_starts")
 
 

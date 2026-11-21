@@ -815,7 +815,10 @@ class ContinuationCoordinator:
                 or previous.get("binding") != binding
             ):
                 raise ValueError("人工修订需要原平台明确拒绝的绑定发送")
-            if content_hash(visible_payload(value)) == trigger.get("content_hash"):
+            from .publication_errors import platform_recovery_condition
+
+            if (content_hash(visible_payload(value)) == trigger.get("content_hash")
+                    and not platform_recovery_condition(trigger.get("code"))):
                 raise ValueError("人工修订正文未变化，不能重发原文")
             # Fence an expired worker; its owner-qualified writes may not adopt
             # a late result over the newly reviewed draft.

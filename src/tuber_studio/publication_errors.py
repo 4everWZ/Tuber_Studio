@@ -6,11 +6,23 @@ class PlatformRejected(ValueError):
         super().__init__(display_message or message)
         self.code, self.message, self.correctable = code, message, correctable
 
+    @property
+    def wait_for(self):
+        return platform_recovery_condition(self.code)
+
     def feedback(self):
         value = {"kind": "platform_rejection", "code": self.code, "message": self.message}
         if self.correctable is not None:
             value["correctable_hint"] = self.correctable
         return value
+
+
+def platform_recovery_condition(code):
+    if code in {-101, -111}:
+        return "login"
+    if code == -509:
+        return "rate_limit"
+    return None
 
 
 class PublishUncertain(ValueError):

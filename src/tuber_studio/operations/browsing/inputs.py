@@ -453,6 +453,7 @@ class ResponseDecisionInput:
         self.recipient_name = source.get("author_name") or ""
         self.allow_public = data.get("allow_public", True)
         self.allow_comment_like = data.get("allow_comment_like", False)
+        self.dynamic_ref = next((ref.alias for ref in refs if data.get("dynamic_evidence") == ref.canonical_id), None)
         group = {"public:" + str(item["comment_id"]) for item in thread.get("grouped_comments", [])}
         self.grouped_comment_refs = frozenset(ref.alias for ref in refs if ref.canonical_id in group)
         self.anchor_alias = next((ref.alias for ref in refs if ref.canonical_id ==
@@ -544,6 +545,8 @@ class ResponseDecisionInput:
             not self.allow_comment_like or self.anchor_alias not in value.evidence_ids or value.text
         ):
             raise ValueError("点赞只接受本次已核验的目标评论")
+        if value.action == "like_dynamic" and (not self.dynamic_ref or value.evidence_ids != [self.dynamic_ref] or value.text):
+            raise ValueError("动态点赞须引用本次已读的原动态")
         if value.action == "reply_public" and self.grouped_comment_refs:
             covered = set(value.covered_comments)
             if self.anchor_alias not in covered or not covered <= self.grouped_comment_refs:

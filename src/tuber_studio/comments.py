@@ -4,6 +4,7 @@ import asyncio
 import csv
 import io
 import json
+import math
 import re
 import time
 from collections import deque
@@ -42,6 +43,8 @@ from .operations.browsing.thread_context import (
 )
 from .operations_control import OperationsControl, canonical_intent
 from .platforms.bilibili import BilibiliAdapter, PublishUncertain
+from .operations.browsing.quotas import DailyReplyLimitReached
+from .publication_errors import SendLimitReached
 from .platforms.bilibili_login import validate_credentials
 from .providers import public_error
 from .publication_errors import PlatformRejected, UnknownPublication
@@ -826,10 +829,13 @@ class Comments:
         if ref is not None and (action == "approve" or "image_ref" in options):
             require_comment_attachment("comments", row, ref)
         status = {"approve": "approved", "reject": "rejected", "edit": "pending_review"}[action]
+        updated_at = max(time.time(), math.nextafter(row["updated_at"], math.inf))
         self.store.execute(
             "UPDATE drafts SET text=?,status=?,image_ref=?,error=NULL,updated_at=? WHERE id=?",
-            (text, status, dump(ref) if ref else None, time.time(), draft_id),
+            (text, status, dump(ref) if ref else None, updated_at, draft_id),
         )
+        if browsing := getattr(self.runtime, "browsing", None):
+            browsing.sends.withdraw("comments", draft_id)
         if action == "reject":
             source = self.store.one("SELECT * FROM comments WHERE id=?", (row["comment_id"],))
             character = self.store.character(row["character_id"], row["character_version"])
@@ -1176,17 +1182,6 @@ class Comments:
             validate_comment_body(row["text"], recipient_name=row["display_name"] or "")
             if automatic and json.loads(row["answer_check"] or "{}").get("output", {}).get("needs_review"):
                 raise ValueError("正文诊断尚待审核，未自动发布")
-            for seconds, cap in (
-                (3600, policy["max_replies_per_hour"]),
-                (86400, policy["max_replies_per_day"]),
-            ):
-                if not cap:
-                    continue
-                count = self.store.one(
-                    "SELECT COUNT(*) AS n FROM publish_attempts WHERE started_at>?", (time.time() - seconds,)
-                )["n"]
-                if count >= cap:
-                    raise ValueError("达到已配置回复频率上限，保留草稿")
             previous = row["status"]
             account_id = await self.account_id()
             if row["account_id"] and row["account_id"] != account_id:
@@ -1283,6 +1278,8 @@ class Comments:
                 ):
                     raise ValueError("发送前账号、来源或授权已变化，保留草稿")
                 browsing = getattr(self.runtime, "browsing", None)
+                if browsing:
+                    browsing.sends.assert_approval("comments", draft_id, fresh, payload)
                 if automatic and browsing:
                     current_draft = self.store.one("SELECT input_summary FROM drafts WHERE id=?", (draft_id,))
                     browsing.assert_comment_evidence(json.loads(current_draft["input_summary"] or "{}"))
@@ -1379,6 +1376,8 @@ class Comments:
                 self.store.execute(
                     "UPDATE publish_attempts SET status='failed',error=? WHERE id=?", (message, attempt)
                 )
+                if isinstance(error, (SendLimitReached, DailyReplyLimitReached)):
+                    raise
                 if isinstance(error, PlatformRejected):
                     error.write_token = token
                     error.body_hash = content_hash(payload)

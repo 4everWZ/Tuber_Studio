@@ -58,6 +58,8 @@
         return { label: "👍 视频点赞", icon: "👍", type: "video_like" };
       case "comment_like":
         return { label: "👍 评论点赞", icon: "👍", type: "comment_like" };
+      case "dynamic_like":
+        return { label: "👍 动态点赞", icon: "👍", type: "dynamic_like" };
       case "video_fav":
         return { label: "⭐ 视频收藏", icon: "⭐", type: "video_fav" };
       case "private_handoff":

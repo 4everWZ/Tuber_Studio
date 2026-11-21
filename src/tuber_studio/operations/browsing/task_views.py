@@ -1,6 +1,7 @@
 """Read-only task DTOs for durable batch choices that need no worker."""
 
 import json
+from .backlog import flow_window
 
 from ...message_outreach import contact_state as outreach_contact_state
 from ...operation_feedback import continuation_view, generation_view
@@ -146,7 +147,7 @@ def public_resolution(browsing, resolution, task_id):
 
 def rounds(browsing):
     return [
-        browsing.repo.decode(r)
+        browsing.repo.decode(r) | {"backlog_flow": flow_window(browsing.store, r)}
         for r in browsing.store.all(
             """SELECT r.*, (SELECT COUNT(*) FROM browsing_intents i
                    WHERE i.round_id=r.id AND i.kind IN ('top_level','reply_public')) AS public_drafts,

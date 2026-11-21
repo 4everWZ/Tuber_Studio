@@ -42,7 +42,8 @@ async def test_ready_direct_reply_gets_last_shared_send_slot(browsing, monkeypat
     deferred, = browsing.store.all("SELECT * FROM operation_send_queue")
     assert deferred["source_id"] == top["id"] and deferred["wake_at"] > time.time()
     assert len(browsing.store.all("SELECT * FROM account_writes")) == 1
-    assert (await finished(browsing, automatic=True, video_only=True))["id"] != top["round_id"]
+    wait = await browsing.run(automatic=True, video_only=True)
+    assert wait["status"] == "deferred" and wait["next_at"] > time.time()
 
     await browsing.stop()
     await browsing.set_enabled(True)
@@ -153,7 +154,7 @@ async def test_replies_wait_for_every_exhausted_window(browsing, monkeypatch, ho
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["0", "502"]
 
 
-async def test_last_account_slot_is_shared_with_messages_and_dynamics(browsing, monkeypatch):
+async def test_comment_slots_do_not_reserve_private_message_or_dynamic_capacity(browsing, monkeypatch):
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({"max_per_hour": 1, "max_per_day": 0, "recipient_cooldown_seconds": 0,
                               "top_level_auto_publish": True})
@@ -165,21 +166,11 @@ async def test_last_account_slot_is_shared_with_messages_and_dynamics(browsing, 
     await finished(browsing, automatic=True, video_only=True)
     assert browsing.store.one("SELECT channel FROM operation_send_queue") == {"channel": "browsing"}
 
-    calls = len(browsing.runtime.operation_llm.calls)
     message_id = incoming(browsing.messages, account_id="100")
     browsing.messages._queue_newest_messages("100")
-    assert not browsing.store.all("SELECT * FROM dm_drafts")
-    draft_id = browsing.messages.enqueue("message", message_id, automatic=True, schedule=False)
-    await browsing.messages._generate(draft_id, automatic=True)
-    draft = browsing.store.one("SELECT status,resume_pending,next_attempt_at,text FROM dm_drafts WHERE id=?", (draft_id,))
-    assert draft["status"] == "queued" and draft["resume_pending"] and draft["next_attempt_at"] > time.time()
-    assert not draft["text"]
-
-    result = await browsing.dynamics.evaluate()
-    assert result["action"] == "wait" and result["next_evaluation_at"] > time.time()
-    assert not browsing.store.all("SELECT * FROM dynamic_posts")
-    assert len(browsing.runtime.operation_llm.calls) == calls
-    assert browsing.store.all("SELECT channel FROM operation_send_queue") == [{"channel": "browsing"}]
+    assert browsing.store.one("SELECT source_id FROM dm_drafts") == {"source_id": message_id}
+    assert browsing.sends.preparation_block("100", "dynamics", browsing.dynamics.policy(), retry_seconds=60) is None
+    assert browsing.sends.preparation_block("100", "comments", browsing.comments.publication_limits(), retry_seconds=60)
 
 
 @pytest.mark.parametrize("account_daily", [0, 1])

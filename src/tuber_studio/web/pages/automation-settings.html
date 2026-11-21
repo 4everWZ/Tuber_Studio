@@ -64,10 +64,10 @@
             <input id="op-max-replies" type="number" min="0" required>
             <small class="hint">主评与跟帖合计，只计发布成功的回复</small>
           </label>
-          <label>每小时发布上限
+          <label>评论每小时发布上限
             <input id="op-max-per-hour" type="number" min="0" required>
           </label>
-          <label>每日发布上限
+          <label>评论滚动 24 小时发布上限
             <input id="matrix-max-per-day" type="number" min="0" required>
           </label>
           <label>每日计数时区
@@ -165,6 +165,14 @@
             <label><input type="radio" name="matrix_video_like" value="0"> 禁止</label>
             <label><input type="radio" name="matrix_video_like" value="1"> 需要审核</label>
             <label><input type="radio" name="matrix_video_like" value="2"> 自动点赞</label>
+          </div>
+        </fieldset>
+        <fieldset class="matrix-action-card">
+          <legend>动态点赞</legend>
+          <div class="matrix-radio-group">
+            <label><input type="radio" name="matrix_dynamic_like" value="0"> 禁止</label>
+            <label><input type="radio" name="matrix_dynamic_like" value="1"> 需要审核</label>
+            <label><input type="radio" name="matrix_dynamic_like" value="2"> 自动点赞</label>
           </div>
         </fieldset>
         <fieldset class="matrix-action-card">

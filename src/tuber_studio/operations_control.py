@@ -23,6 +23,11 @@ class OperationsPolicy(StrictModel):
     max_recoveries: int = Field(default=8, ge=0, le=64)
 
 
+REACTION_CHANNELS = frozenset({"comment_likes", "video_likes", "video_favorites", "dynamic_likes",
+                               "comment_dislikes", "video_dislikes"})
+COMMENT_WRITE_FILTER = "COALESCE(CASE WHEN json_valid(intent) THEN json_extract(intent,'$[2]') END,'') NOT IN ('like','favorite')"
+
+
 AUTOMATIC_SWITCHES = {
     "comments": {"auto_reply"},
     "messages": {"auto_poll", "auto_send"},
@@ -150,7 +155,13 @@ class OperationsControl:
             self.store.db.execute(
                 "INSERT OR REPLACE INTO kv VALUES('operations_binding',?)", (json.dumps(binding),)
             )
+            if limits := {key: value[key] for key in ("max_per_hour", "max_per_day") if key in patch}:
+                self.store.db.execute("INSERT OR REPLACE INTO kv VALUES('operation_explicit_account_limits',?)",
+                                      (json.dumps(self.account_limits() | limits),))
         return self.policy()
+
+    def account_limits(self):
+        return self.store.get("operation_explicit_account_limits", {})
 
     def effective(self, channel, base):
         result = dict(base)
@@ -294,29 +305,32 @@ class OperationsControl:
                 )
             elif db.execute(
                 "SELECT 1 FROM account_writes WHERE account_id=? AND intent=? AND "
-                "(character_id=? OR (channel='comment_likes' AND ?='comment_likes'))",
-                (str(account_id), intent, character["id"], channel),
+                "(character_id=? OR (channel=? AND ? IN ('comment_likes','dynamic_likes')))",
+                (str(account_id), intent, character["id"], channel, channel),
             ).fetchone():
                 raise ValueError("此回应意图已尝试提交，禁止重复发送")
             blocks = []
-            for scope, quotas in ((None, policy), (channel, limits)):
-                where = "account_id=? AND started_at>?" + (" AND channel=?" if scope is not None else "")
-                for seconds, name in ((3600, "max_per_hour"), (86400, "max_per_day")):
+            where = "account_id=? AND started_at>? AND channel=?"
+            if channel == "comments":
+                where += " AND " + COMMENT_WRITE_FILTER
+            account_where = ("account_id=? AND started_at>? AND channel NOT IN (SELECT value FROM json_each(?)) "
+                             f"AND (channel<>'comments' OR {COMMENT_WRITE_FILTER})")
+            for detail, quotas, condition, channel_filter in (
+                ("渠道", limits, where, channel),
+                ("账号全渠道", self.account_limits() if channel not in REACTION_CHANNELS else {},
+                 account_where, json.dumps(sorted(REACTION_CHANNELS))),
+            ):
+                for seconds, name, label in ((3600, "max_per_hour", "每小时"), (86400, "max_per_day", "滚动24小时")):
                     maximum = quotas.get(name, 0)
                     if not maximum:
                         continue
-                    params = (str(account_id), now - seconds, *((scope,) if scope is not None else ()))
-                    count = db.execute(
-                        f"SELECT COUNT(*) FROM operation_write_attempts WHERE {where}", params
-                    ).fetchone()[0]
-                    if count >= maximum:
-                        oldest = db.execute(
-                            f"SELECT started_at FROM operation_write_attempts WHERE {where} "
-                            "ORDER BY started_at DESC LIMIT 1 OFFSET ?",
-                            (*params, maximum - 1),
-                        ).fetchone()[0]
-                        detail = "账号全渠道" if scope is None else "渠道"
-                        blocks.append(SendLimitReached(f"达到{detail}发送上限，保留草稿", oldest + seconds))
+                    cutoff = db.execute(
+                        f"SELECT started_at FROM operation_write_attempts WHERE {condition} "
+                        "ORDER BY started_at DESC LIMIT 1 OFFSET ?",
+                        (str(account_id), now - seconds, channel_filter, maximum - 1),
+                    ).fetchone()
+                    if cutoff:
+                        blocks.append(SendLimitReached(f"达到{detail}{label}发送频率上限", cutoff[0] + seconds))
             if blocks:
                 raise max(blocks, key=lambda error: error.next_at)
             cooldown = max(policy["recipient_cooldown_seconds"], limits.get("recipient_cooldown_seconds", 0))
@@ -348,7 +362,7 @@ class OperationsControl:
                 self.revisions.bind_initial(token, binding)
             else:
                 self.revisions.insert_retry(revision_ticket, previous, values)
-        if automatic and self.on_reserved:
+        if self.on_reserved:
             self.on_reserved()
         return token
 

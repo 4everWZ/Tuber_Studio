@@ -5,6 +5,7 @@ const actions = {
   matrix_reply: ["reply_enabled", "reply_auto_publish"],
   matrix_comment_like: ["comment_like_enabled", "comment_like_auto_publish"],
   matrix_video_like: ["video_like_enabled", "video_like_auto_publish"],
+  matrix_dynamic_like: ["dynamic_like_enabled", "dynamic_like_auto_publish"],
   matrix_video_fav: ["video_fav_enabled", "video_fav_auto_publish"],
 };
 

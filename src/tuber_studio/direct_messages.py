@@ -206,6 +206,7 @@ class DirectMessages:
             if "sequence" not in {row[1] for row in store.db.execute(f"PRAGMA table_info({table})")}:
                 store.execute(f"ALTER TABLE {table} ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0")
         store.execute("CREATE INDEX IF NOT EXISTS dm_inbox_sequence ON dm_inbox(platform,account_id,character_id,platform_user_id,sent_at,sequence,id)")
+        store.execute("CREATE TABLE IF NOT EXISTS dm_recovered_incoming(incoming_id INTEGER PRIMARY KEY)")
         if "origin" not in {row[1] for row in store.db.execute("PRAGMA table_info(dm_operator_replies)")}:
             store.execute("ALTER TABLE dm_operator_replies ADD COLUMN origin TEXT NOT NULL DEFAULT 'operator'")
         store.execute("""CREATE TABLE IF NOT EXISTS dm_incoming_settlements(
@@ -487,8 +488,8 @@ class DirectMessages:
         key = f"message_inbox_cutoff:{account_id}:{self.runtime.character['id']}"
         cutoff = self.store.get(key)
         baseline = max(int(self.enabled_at), int(self.operations.policy()["enabled_at"] or 0))
-        if cutoff is None or cutoff < baseline:
-            cutoff = max(baseline, self.started_at if cutoff is None else 0)
+        if cutoff is None:
+            cutoff = max(baseline, self.started_at)
             self.store.set(key, cutoff)
         return cutoff
 
@@ -510,7 +511,8 @@ class DirectMessages:
                    SELECT id,platform,platform_user_id,sent_at,
                           MIN(received_at) OVER (PARTITION BY platform,platform_user_id) AS waiting_since,
                           ROW_NUMBER() OVER (PARTITION BY platform,platform_user_id ORDER BY sequence DESC,sent_at DESC,id DESC) AS rank
-                   FROM dm_inbox i WHERE account_id=? AND character_id=? AND sent_at>=?
+                   FROM dm_inbox i WHERE account_id=? AND character_id=? AND (sent_at>=? OR EXISTS(
+                     SELECT 1 FROM dm_recovered_incoming r WHERE r.incoming_id=i.id))
                    AND NOT EXISTS (SELECT 1 FROM dm_incoming_settlements s WHERE s.incoming_id=i.id)
                    AND NOT EXISTS (SELECT 1 FROM dm_sync_cursors c WHERE c.account_id=i.account_id
                        AND c.character_id=i.character_id AND c.platform_user_id=i.platform_user_id AND c.before_sequence<>0)
@@ -730,7 +732,7 @@ class DirectMessages:
         trigger = json.loads(draft.get("trigger_source") or "{}")
         cutoff = (
             self.store.get(f"message_inbox_cutoff:{draft['account_id']}:{draft['character_id']}", 0)
-            if trigger.get("continuous")
+            if trigger.get("continuous") and not self._recovered_incoming(source["id"])
             else 0
         )
         batch_start = max(source["sent_at"] - 600, cutoff)
@@ -799,6 +801,9 @@ class DirectMessages:
                 for value in incoming_ids
             ],
         )
+
+    def _recovered_incoming(self, incoming_id):
+        return self.store.one("SELECT 1 FROM dm_recovered_incoming WHERE incoming_id=?", (incoming_id,)) is not None
 
     def _conversation_matches(self, draft, expected):
         if draft["source_kind"] != "message":
@@ -1993,6 +1998,7 @@ class DirectMessages:
                 and row["source_kind"] == "message"
                 and source["sent_at"]
                 < self._inbox_cutoff(row["account_id"])
+                and not self._recovered_incoming(source["id"])
             ):
                 raise ValueError("历史来信不自动追发，保留草稿")
             # The account ledger applies the channel quota and cooldown atomically.

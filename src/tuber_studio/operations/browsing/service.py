@@ -9,17 +9,21 @@ from uuid import uuid4
 
 from ...deployment_profiles import operation_profile
 from ...direct_messages import MessagePolicy
-from ...operation_attachments import can_attach_comment_image, image_decision_pending
-from ...operation_sends import OperationSends
+from ...operation_attachments import can_attach_comment_image, comment_payload, image_decision_pending
+from ...operation_sends import OperationSends, ReconciliationPending
 from ...operation_turns import operation_checkpoint, operation_lane
+from ...operations_control import COMMENT_WRITE_FILTER
 from ...providers import public_error
+from ...publication_errors import SendLimitReached
 from ...store import dump
 from . import batches as batches_tasks
+from .backlog import flow_window, install_flow_ledger
 from . import comment_reader as comment_reader_tasks
 from . import discovery as discovery_tasks
 from . import progress as progress_tasks
 from . import task_views as task_views_tasks
 from .comment_admission import CommentAdmission
+from .comment_timeline import ensure_comment_timeline
 from .decisions import BrowsingDecisions
 from .discovery import BackgroundDiscovery
 from .evidence import BrowsingEvidence, EvidenceUnavailable
@@ -30,7 +34,7 @@ from .models import (
 )
 from .notifications import NotificationInbox
 from .publication import BrowsingPublication
-from .round_context import read_round
+from .round_context import proactive_read, read_round
 from .thread_context import comment_thread_context
 
 
@@ -69,8 +73,10 @@ class BrowsingService:
         self.publication = BrowsingPublication(self)
         self.comment_admission = CommentAdmission(self)
         self.sends = OperationSends(store, self.operations, self.operation_scope, self._send_automatic,
-                                    waiting_for_image=self._send_waiting_for_image)
-        self.operations.on_reserved = self.sends.attempt_started
+                                    waiting_for_image=self._send_waiting_for_image, settled=self._send_settled)
+        install_flow_ledger(store)
+        ensure_comment_timeline(store)
+        self.operations.on_reserved = self._send_reserved
         self.drain_task = None
         self.abort_task = None
         self.control_generation = 0
@@ -131,6 +137,7 @@ class BrowsingService:
             "top_level": mode(config["top_level_enabled"], config["top_level_auto_publish"]),
             "replies": mode(config["reply_enabled"], config["reply_auto_publish"]),
             "comment_like": mode(config["comment_like_enabled"], config["comment_like_auto_publish"]),
+            "dynamic_like": mode(config["dynamic_like_enabled"], config["dynamic_like_auto_publish"]),
             "private_messages": mode(messages.enabled, messages.auto_send),
             "private_poll": messages.enabled and messages.auto_poll,
             "mentions": config["mentions_enabled"],
@@ -143,7 +150,7 @@ class BrowsingService:
     def has_interactions(self, config=None):
         config = config or self.effective()
         return any(config.get(key) for key in (
-            "reply_enabled", "comment_like_enabled", "mentions_enabled", "replies_enabled",
+            "reply_enabled", "comment_like_enabled", "dynamic_like_enabled", "mentions_enabled", "replies_enabled",
         ))
 
     def model_signature(self):
@@ -180,7 +187,7 @@ class BrowsingService:
         return {
             "status_sequence": self.status_sequence,
             "started_at": self.started_at,
-            "policy": control,
+            "policy": control | self.comments.publication_limits(),
             "settings": self.policy(),
             "permissions": self.permissions(),
             "review_session": self.store.get("browsing_review_session", {}),
@@ -238,9 +245,8 @@ class BrowsingService:
         config = BrowsingPolicy.model_validate(merged).model_dump()
         # Saved channel permissions remain independent from the runtime switch.
         self.store.set("browsing_policy", config)
-        limits = {k: config[k] for k in ("max_per_hour", "max_per_day", "recipient_cooldown_seconds") if k in data}
-        if limits:
-            self.operations.configure(limits)
+        if "recipient_cooldown_seconds" in data:
+            self.operations.configure({"recipient_cooldown_seconds": config["recipient_cooldown_seconds"]})
         self.changed.set()
         self.interactions_changed.set()
         self.notification_schedule.set()
@@ -316,6 +322,8 @@ class BrowsingService:
                 required.add("like_comment")
         if config["mentions_enabled"] or config["replies_enabled"]:
             required.update(("notifications", "read_public_thread"))
+        if config["dynamic_like_enabled"]:
+            required.update(("read_dynamic_like", "like_dynamic"))
         self.blockers.extend(
             "平台缺少能力：" + name
             for name in sorted(required)
@@ -462,6 +470,7 @@ class BrowsingService:
         self.notification_schedule.set()
         self.sends.start()
         self.sends.changed.set()
+        self._resume_reactions()
         return self.status()
 
     async def stop(self, *, emergency=False):
@@ -564,7 +573,16 @@ class BrowsingService:
             self.repo.reserve_budget(identity, reads=1)
         async with self.read_lock:
             await asyncio.sleep(max(0, self.last_read + self.read_interval - time.monotonic()))
+            if proactive_read.get() and (due := self.comment_window_due()):
+                raise SendLimitReached("评论小时额度已用完，读取进度已保存", due)
             self.last_read = time.monotonic()
+
+    async def _read_proactively(self, method, *args, **kwargs):
+        token = proactive_read.set(True)
+        try:
+            return await method(*args, **kwargs)
+        finally:
+            proactive_read.reset(token)
 
     async def _read(self, method, *args, **kwargs):
         identity = read_round.get()
@@ -808,6 +826,9 @@ class BrowsingService:
             character = self.runtime.character
             scope = {"account_id": self.account, "character_id": character["id"],
                      "character_version": character["version"], "config": config}
+            if not config.get("review_session_id") and (due := self.comment_window_due()):
+                self.backlog_status()
+                return {"status": "deferred", "reason": "评论小时额度已用完", "next_at": due}
             if not self.repo.batches.has_open_round(scope):
                 if self._background_publications_pending(scope):
                     return {"status": "deferred", "reason": "上一轮配图或自动发送尚未结清"}
@@ -864,28 +885,43 @@ class BrowsingService:
         scope = {"account": account, "character": character, "version": version, "review": review,
                  "mentions": self.effective()["mention_reply_enabled"], "now": now}
         heads = self.store.one(
-            comment_reader_tasks.eligible_event_heads() + """
-            SELECT COUNT(*) AS count, MIN(created_at) AS oldest FROM heads
-            WHERE position=1 AND kind='comment_visit'
-              AND COALESCE(CASE WHEN json_valid(error) THEN json_extract(error,'$.next_at') END,0)<=:now
-            """, scope,
+            """WITH floors AS (
+                 SELECT MIN(created_at) AS waiting_since,
+                        MIN(COALESCE(CASE WHEN json_valid(error) THEN json_extract(error,'$.next_at') END,0)) AS due
+                 FROM browsing_events WHERE account_id=:account AND kind='comment_visit'
+                   AND json_extract(payload,'$.character_id')=:character
+                   AND json_extract(payload,'$.review_session_id') IS :review
+                   AND status IN ('received','source_verified','context_ready','reply_deferred')
+                 GROUP BY json_extract(payload,'$.resource_type'),
+                   COALESCE(CAST(json_extract(payload,'$.oid') AS TEXT),json_extract(payload,'$.bvid'),source_key,id),
+                   COALESCE(NULLIF(NULLIF(CAST(json_extract(payload,'$.root') AS TEXT),'0'),''),source_key,id)
+               ) SELECT COUNT(*) AS total,COUNT(CASE WHEN due<=:now THEN 1 END) AS count,
+                        MIN(waiting_since) AS oldest,MIN(CASE WHEN due<=:now THEN waiting_since END) AS oldest_ready
+                 FROM floors""", scope,
         )
         rate = max(0.2, float(self.store.get("operation_background_heads_per_minute", 2.9)))
         high, low = max(1, math.ceil(5 * rate)), max(0, math.ceil(2 * rate) - 1)
         age = max(0, now - heads["oldest"]) if heads["oldest"] is not None else 0
+        ready_age = max(0, now - heads["oldest_ready"]) if heads["oldest_ready"] is not None else 0
         key = f"operation_discovery_paused:{account}:{character}:{version}:{review or ''}"
         old = self.store.get(key, False)
-        paused = (heads["count"] > low or age > 120) if old else (heads["count"] >= high or age >= 300)
+        hourly_due = self.comment_window_due(now=now)
+        ready_sends = self._ready_approved_comments(now=now)
+        cooling = bool(hourly_due or self.store.get(key + ':quota', False))
+        if cooling and not hourly_due and ready_sends == 0 and heads["count"] == 0 and heads["total"] <= low:
+            cooling = False
+        paused = (heads["total"] > low or ready_age > 120) if old else (
+            heads["total"] >= high or heads["count"] >= high or ready_age >= 300)
+        if persist and bool(self.store.get(key + ':quota', False)) != cooling:
+            self.store.set(key + ':quota', cooling)
         if persist and paused != old:
             self.store.set(key, paused)
-        waiting = self.store.one(
-            """SELECT COUNT(*) AS count FROM browsing_events WHERE account_id=:account
-               AND ((status='reply_deferred' OR status='received') AND
-                   CASE WHEN json_valid(error) THEN json_extract(error,'$.next_at') END>:now)""", scope,
-        )
         sends = self.store.one(
-            """SELECT COUNT(*) AS queued, COALESCE(SUM(wake_at>:now),0) AS deferred
-               FROM operation_send_queue WHERE account_id=:account AND character_id=:character
+            """SELECT COUNT(CASE WHEN reaction=0 THEN 1 END) AS queued,
+                      COUNT(CASE WHEN reaction=0 AND wake_at>:now AND blocked IS NOT 'reconciliation' THEN 1 END) AS deferred,
+                      COUNT(CASE WHEN blocked='review' THEN 1 END) AS rejected,
+                      COUNT(CASE WHEN reaction=1 THEN 1 END) AS reactions
+               FROM operation_send_items WHERE account_id=:account AND character_id=:character
                  AND character_version=:version""", scope,
         )
         discovery = self.store.one(
@@ -907,17 +943,65 @@ class BrowsingService:
                 f"SELECT COUNT(*) AS n FROM {table} WHERE account_id=? AND character_id=? AND status='publish_uncertain'",
                 (account, character),
             )["n"]
+        videos = self.store.one("SELECT COUNT(*) AS pending,COALESCE(SUM(history_count),0) AS history "
+                                "FROM browsing_video_work WHERE account_id=? AND character_id=? AND review=? AND preview=0",
+                                (account, character, review or ""))
+        latest = self.store.one("SELECT * FROM browsing_rounds WHERE account_id=? AND character_id=? AND preview=0 "
+                                "AND json_extract(config,'$.review_session_id') IS NULL ORDER BY created_at DESC LIMIT 1",
+                                (account, character))
+        sends["rejected"] += self.store.one("""SELECT COUNT(*) AS n FROM operation_continuations c
+             WHERE c.channel IN ('comments','browsing') AND c.state IN ('checkpoint','waiting','needs_material')
+               AND json_extract(c.feedback,'$.kind')='platform_rejection' AND json_extract(c.binding,'$.account_id')=?
+               AND json_extract(c.binding,'$.character.id')=?
+               AND NOT EXISTS(SELECT 1 FROM operation_send_queue q WHERE q.channel=c.channel AND q.source_id=c.entity_id)""",
+                                           (account, character))["n"]
         return {"discovery_delay": {"direct_public": discovery, "direct_messages": inbox},
-                "ready_heads": heads["count"], "oldest_seconds": int(age), "high_heads": high,
-                "low_heads": low, "heads_per_minute": rate, "discovery_paused": paused,
-                "waiting_comments": waiting["count"], "sends": sends,
-                "review": self.review_counts(account, character), "uncertain": uncertain}
+                "total_heads": heads["total"], "ready_heads": heads["count"], "oldest_seconds": int(age), "high_heads": high,
+                "low_heads": low, "heads_per_minute": rate, "discovery_paused": paused or cooling,
+                "comment_hourly_resume_at": hourly_due, "catching_up": cooling and not hourly_due,
+                "waiting_comments": heads["total"] - heads["count"], "sends": sends,
+                "review": self.review_counts(account, character), "uncertain": uncertain, "video_work": videos,
+                "saved_pages": self.store.one("SELECT COUNT(*) AS n FROM browsing_comment_page_handoffs WHERE account_id=? "
+                                             "AND character_id=? AND review_session=?", (account, character, review or ""))["n"],
+                "last_round_flow": flow_window(self.store, latest) if latest else {}}
+
+    def comment_window_due(self, *, now=None):
+        maximum = self.comments.publication_limits()["max_per_hour"]
+        if not maximum:
+            return None
+        now = time.time() if now is None else now
+        account, _, _ = self.operation_scope()
+        row = self.store.one(
+            "SELECT started_at FROM operation_write_attempts WHERE account_id=? AND channel='comments' "
+            f"AND started_at>? AND {COMMENT_WRITE_FILTER} ORDER BY started_at DESC LIMIT 1 OFFSET ?",
+            (account, now - 3600, maximum - 1),
+        )
+        return row["started_at"] + 3600 if row else None
+
+    def _ready_approved_comments(self, *, now=None):
+        return sum(bool(item["approval"]) and item["blocked"] != "reconciliation"
+                   for item in self.sends.ready_heads(self.operation_scope(), time.time() if now is None else now))
+
+    def _send_reserved(self):
+        self.sends.attempt_started()
+        try:
+            asyncio.get_running_loop().call_soon(self._snapshot_comment_window)
+        except RuntimeError:
+            pass
+
+    def _snapshot_comment_window(self):
+        if not self.closed and self.operations.accepting_work and self.comment_window_due():
+            self.backlog_status()
+
+    def _send_settled(self):
+        self.interactions_changed.set()
+        self.changed.set()
 
     def review_counts(self, account, character):
         result = {}
         for channel, table in (("comments", "browsing_intents"), ("messages", "dm_drafts"),
                                ("dynamics", "dynamic_posts")):
-            policy = "AND kind<>'private_handoff'" if channel == "comments" else ""
+            policy = "AND kind IN ('reply_public','top_level')" if channel == "comments" else ""
             result[channel] = self.store.one(
                 f"SELECT COUNT(*) AS n FROM {table} AS d WHERE account_id=? AND character_id=? "
                 f"AND status='pending_review' {policy} AND NOT EXISTS("
@@ -936,12 +1020,14 @@ class BrowsingService:
                 return True
         if self.effective().get("review_session_id"):
             return True
-        limit = self.operations.policy()["max_per_day"]
+        limit = (self.comments.publication_limits()["max_per_day"] if channel == "comments" else
+                 self.messages.policy()["max_per_day"] if channel == "messages" else
+                 self.dynamics.policy()["max_per_day"])
         return not limit or self.review_counts(account, character)[channel] < limit
 
     def page_capacity(self):
         state = self.backlog_status()
-        return not state["discovery_paused"] and state["ready_heads"] < state["high_heads"]
+        return not state["discovery_paused"] and not state["saved_pages"] and state["total_heads"] < state["high_heads"]
 
     def _background_publications_pending(self, scope):
         now = time.time()
@@ -957,12 +1043,16 @@ class BrowsingService:
         identity, channel = item["source_id"], item["channel"]
         if channel == "browsing":
             return self.repo.decode(self.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
+        if channel == "comments":
+            return self.comments._draft_source(identity)
         if channel == "messages":
             return self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         if channel == "dynamics":
             return self.dynamics._post(identity)
 
     def _send_waiting_for_image(self, item):
+        if item["approval"]:
+            return False
         if item["epoch"] != self.operations.policy()["epoch"]:
             return False
         draft, channel = self._send_draft(item), item["channel"]
@@ -986,21 +1076,29 @@ class BrowsingService:
         control = self.operations.policy()
         if not self.operations.accepting_work:
             return False
+        if item["approval"]:
+            return await self._send_approved(item)
         if item["epoch"] != control["epoch"]:
             return True
         draft = self._send_draft(item)
         if channel == "browsing":
             candidate = draft if draft and draft["auto_authorized"] else None
             if candidate and candidate["status"] == "publish_uncertain":
-                await self.publication._reconcile(identity)
+                if not await self.publication._reconcile(identity):
+                    raise ReconciliationPending()
             elif candidate and candidate["status"] == "pending_review" and self.publication._action_allowed(
                 candidate["kind"], self.effective()
             ):
+                if item["reaction"] and candidate["kind"] != "video_fav" and candidate["created_at"] <= time.time() - 72 * 3600:
+                    self.store.execute("UPDATE browsing_intents SET status='archived',auto_authorized=0 WHERE id=?", (identity,))
+                    return True
                 origin = self.repo.round(candidate["round_id"])
                 if not origin or origin["preview"] or origin["status"] in {"cancelled", "invalid"}:
                     return True
                 self.store.execute("UPDATE browsing_intents SET epoch=? WHERE id=?", (control["epoch"], identity))
-                await self.publish(identity, automatic=True)
+                result = await self.publish(identity, automatic=True)
+                if result and result.get("status") == "publish_uncertain":
+                    raise ReconciliationPending()
         elif channel == "messages":
             if draft and draft["status"] == "pending_review" and self.messages.policy()["auto_send"]:
                 self.messages.authorizations[int(identity)] = control["epoch"]
@@ -1018,6 +1116,45 @@ class BrowsingService:
     def queue_publication(self, identity):
         context = operation_lane.get()
         self.sends.enqueue("browsing", identity, direct=context == "direct")
+
+    async def _send_approved(self, item):
+        identity, channel = item["source_id"], item["channel"]
+        draft = self._send_draft(item)
+        if not draft:
+            return True
+        service = self.comments if channel == "comments" else self.publication
+        if draft["status"] == "publish_uncertain":
+            if not await service._reconcile(identity):
+                raise ReconciliationPending()
+            return True
+        if draft["status"] != "approved":
+            return True
+        self.sends.assert_approval(channel, identity, draft, comment_payload(draft, self.runtime, channel))
+        if due := self.comment_window_due():
+            raise SendLimitReached("评论每小时发送额度已用完", due)
+        await service.publish(identity)
+        return True
+
+    def _resume_reactions(self):
+        if not self.operations.accepting_work:
+            return
+        scope = self.operation_scope()
+        if self.store.one("SELECT 1 FROM operation_send_items WHERE account_id=? AND character_id=? "
+                          "AND character_version=? AND reaction=1 AND blocked IS NOT 'reconciliation' LIMIT 1", scope):
+            return
+        current = self.effective()
+        for kind in ("comment_like", "video_like", "dynamic_like"):
+            if not self.publication._action_allowed(kind, current):
+                continue
+            item = self.store.one("""SELECT i.id FROM browsing_intents i JOIN browsing_rounds r ON r.id=i.round_id
+                WHERE i.account_id=? AND i.character_id=? AND i.character_version=? AND i.kind=? AND i.auto_authorized=1
+                  AND i.status='pending_review' AND i.created_at>? AND r.preview=0 AND r.status NOT IN ('cancelled','invalid')
+                  AND json_extract(r.config,'$.review_session_id') IS NULL
+                  AND NOT EXISTS(SELECT 1 FROM account_writes w WHERE w.account_id=i.account_id AND w.intent=i.source_key)
+                ORDER BY i.created_at,i.id LIMIT 1""", (*scope, kind, time.time() - 72 * 3600))
+            if item:
+                self.sends.enqueue("browsing", item["id"])
+                return
 
     def resume_publication(self, row, intent, target):
         if self.store.one(
@@ -1274,13 +1411,16 @@ class BrowsingService:
         )
 
     async def _run_interactions(self, row, metrics):
+        self._resume_reactions()
         discovery_paused = self.backlog_status()["discovery_paused"]
         if not row["config"].get("local_interactions"):
             await comment_reader_tasks.run_interactions(self, row, metrics)
         claimed = await self._process_events(row, metrics)
         if self.page_capacity() and (row["config"]["reply_enabled"] or row["config"].get("comment_like_enabled")):
-            if not await comment_reader_tasks.read_old_comment_page(self, row):
+            if not comment_reader_tasks.resume_comment_page(self, row) and not await comment_reader_tasks.read_old_comment_page(self, row):
                 await batches_tasks.process_comment_visits(self, row, metrics)
+        elif not self._ready_approved_comments() and not self.comment_window_due():
+            comment_reader_tasks.resume_comment_page(self, row)
         claimed += await self._process_events(row, metrics)
         if claimed and self.operations.accepting_work:
             self.interactions_changed.set()
@@ -1360,7 +1500,10 @@ class BrowsingService:
             except Exception as error:
                 self.last_error = public_error(error)
             try:
-                await asyncio.wait_for(self.changed.wait(), self.policy()["interval_seconds"])
+                delay = self.policy()["interval_seconds"]
+                if self.operations.accepting_work and (due := self.comment_window_due()):
+                    delay = min(delay, max(0.1, due - time.time()))
+                await asyncio.wait_for(self.changed.wait(), delay)
             except TimeoutError:
                 pass
 

@@ -101,16 +101,24 @@ export function renderOperationsQuickBar(status) {
     const seconds = backlog.oldest_seconds ?? 0;
     const age = seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
     $("op-backlog-heading").textContent = [
-      `后台评论 ${backlog.ready_heads} 楼`, `最老等待 ${age}`,
+      `待回访 ${backlog.total_heads} 楼 · 可执行 ${backlog.ready_heads} 楼`, `最老等待 ${age}`,
       backlog.discovery_paused ? "新视频与旧页暂缓" : "",
     ].filter(Boolean).join(" · ");
     const review = backlog.review || {};
+    const flow = backlog.last_round_flow || {};
+    const changes = ([key, label]) => flow[key] && `${label}新增 ${flow[key].added}／结清 ${flow[key].settled}／净变化 ${flow[key].net}`;
     $("op-backlog-detail").textContent = [
-      `评论延后 ${backlog.waiting_comments}`,
-      `发送排队 ${backlog.sends.queued}（延期 ${backlog.sends.deferred}）`,
+      `等额度或其他条件 ${backlog.waiting_comments} 楼`,
+      `已授权待发 ${backlog.sends.queued}（等待 ${backlog.sends.deferred}）`,
+      `点赞与点踩待执行 ${backlog.sends.reactions}`,
+      `发布被拒／待处理 ${backlog.sends.rejected}`,
+      backlog.video_work && `视频待办 ${backlog.video_work.pending} 项 · 关联 ${backlog.video_work.history} 条批次记录`,
+      backlog.comment_hourly_resume_at ? `评论小时额度预计 ${new Date(backlog.comment_hourly_resume_at * 1000).toLocaleString()} 恢复` : "",
+      backlog.catching_up ? "正在清理积压" : "",
       `待审核 评论 ${review.comments}／私信 ${review.messages}／动态 ${review.dynamics}`,
       `待核对 ${Object.values(backlog.uncertain || {}).reduce((sum, count) => sum + count, 0)}`,
       `楼头水位 ${backlog.low_heads}–${backlog.high_heads}`,
+      ...[["revisit", "本轮回访"], ["send", "本轮发送队列"]].map(changes),
       status.send_error || "",
     ].filter(Boolean).join(" · ");
   }
