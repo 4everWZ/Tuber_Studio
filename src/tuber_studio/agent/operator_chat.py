@@ -32,7 +32,13 @@ from ..providers import build_messages
 from ..sse import encode_event
 from ..store import dump
 from . import operator_facts, outgoing_queue, recall_memory, workbench_tools, workshop_lookup
-from .assistant_output import AssistantTextStream, assistant_markdown, clock_readout, workbench_fields
+from .assistant_output import (
+    AssistantTextStream,
+    assistant_markdown,
+    calendar_fields,
+    clock_readout,
+    workbench_fields,
+)
 from .chat_delivery import delivery_turn_id, record_chat_delivery, waiting_delivery
 from .dynamic_publication import PUBLICATION_TOOL, publication_progress, requested_draft_ids
 from .handoff import (
@@ -464,7 +470,7 @@ class LookupPresentation(StrictModel):
 
 
 class ReplyDelivery(StrictModel):
-    action: Literal["answer", "clock", "tool", "work"]
+    action: Literal["answer", "tool", "work"]
     clock_fields: list[Literal["local_time", "local_date", "local_weekday"]] = Field(max_length=3)
     object_ref: str | None = Field(default=None, max_length=12)
 
@@ -1254,8 +1260,7 @@ class OperatorChat:
                         value = await provider.generate_assistant_json(
                             [{"role": "system", "content": (
                                 "号主正在跟" + "、".join(character_names(char)) + "聊天。按号主最后一句的交付要求选择。"
-                                "answer：直接接话，聊彼此的日常和感受，表达想法，讨论设想。"
-                                "clock：要日历或时钟的实际读数，包括问几号、几点或星期几。只填所问字段。"
+                                "answer：直接接话，聊彼此的日常和感受，表达想法，讨论设想或用当前日历回答。"
                                 "tool：明确要取真实记录、来源或已有工作的进展，或当场做一个具体操作。"
                                 "从刚读过的材料里挑一条聊，仍是取真实记录。"
                                 "work：交办后台、稍后交付一份成果、安排持续工作、修改或取消已交办事项。"
@@ -1265,12 +1270,12 @@ class OperatorChat:
                             )}, current], ReplyDelivery.wire_schema(references), max_tokens=200, on_stage=report, temperature=0,
                         )
                         delivery = ReplyDelivery.model_validate(value)
-                        dispatch_kind = "answer" if delivery.action == "clock" else delivery.action
+                        dispatch_kind = delivery.action
                         if not data.intent and not data.temporary:
                             bound = self._bound_intent(data, char, packet)
                             setting = (workbench_tools.settings_catalog().get(bound.settings_group)
                                        if bound and bound.action == "daily_settings" and bound._settings_read_only else None)
-                            inline = (setting and not delivery.clock_fields and bound._setting_fields and
+                            inline = (setting and bound._setting_fields and
                                       (packet.get("latest_tool") or {}).get("group") == bound.settings_group)
                             selected_read = (bound and dispatch_kind == "tool" and (
                                 bound.action in {"owner_binding", "owner_profile", "web_lookup", "workbench_capabilities", "clarify"}
@@ -1308,7 +1313,7 @@ class OperatorChat:
                             if bound_lookup and lifecycle.action == "workshop_lookup" and not lifecycle.object_ref:
                                 lifecycle.object_ref = delivery.object_ref
                         else:
-                            clock_fields = delivery.clock_fields
+                            clock_fields = calendar_fields(_memory_query(data.message, char), delivery.clock_fields)
                             if clock_fields:
                                 messages.append({"role": "system", "content": (
                                     "本轮查询的工坊日历值：" + workbench_fields(
@@ -2354,7 +2359,7 @@ class OperatorChat:
                 if present and (result.get("card") or {}).get("type") != "agent_task":
                     if permission != (object_scope(self.runtime), history_preference(self.runtime)):
                         raise HTTPException(409, "读取权限已变化，请重新查询")
-                    if intent.action not in _CURRENT_SCOPE_READS | _SETTING_ACTIONS | {"web_lookup"}:
+                    if intent.action not in _CURRENT_SCOPE_READS | _SETTING_ACTIONS | {"web_lookup", "owner_binding", "owner_profile"}:
                         result = await self._present_read(result, data, request_id, char, account, audit)
                     if permission != (object_scope(self.runtime), history_preference(self.runtime)):
                         raise HTTPException(409, "读取权限已变化，请重新查询")

@@ -8,7 +8,7 @@ from test_personal_agent import CHAT, turn
 from test_personal_agent import studio as studio
 
 from tuber_studio.agent import operator_facts
-from tuber_studio.agent.assistant_output import clock_readout
+from tuber_studio.agent.assistant_output import calendar_fields, clock_readout
 from tuber_studio.operations.browsing.comment_timeline import ensure_comment_timeline
 from tuber_studio.store import dump
 
@@ -27,6 +27,13 @@ PENDING = "BV1ab411c7mF"
 def test_clock_readout_keeps_supported_values(reply, expected):
     clock = datetime(2026, 11, 21, 19, 42, tzinfo=ZoneInfo("Asia/Taipei"))
     assert clock_readout(reply, ["local_time"], clock) == expected
+
+
+def test_calendar_projection_binds_the_requested_fields():
+    assert calendar_fields("日期呀，年月日", []) == ("local_date",)
+    assert calendar_fields("今儿过得还好吗？", ["local_date", "local_weekday"]) == ()
+    assert calendar_fields("今天看了几部视频？", ["local_date"]) == ()
+    assert calendar_fields("现在几点，请问星期几？", ["local_time"]) == ("local_time", "local_weekday")
 
 
 def seed_workshop(runtime):

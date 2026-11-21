@@ -14,6 +14,16 @@ _EXACT_CLOCK_READOUT = {
     "local_time": re.compile(r"(?<!\d)\d{1,2}:\d{2}(?!\d)"),
     "local_weekday": re.compile(r"星期[一二三四五六日天]"),
 }
+_CALENDAR_FIELDS = {
+    "local_date": re.compile(r"(?:年月日|日期|几月几[日号]|几[日号])"),
+    "local_time": re.compile(r"(?:钟点|时刻|时间|几点|几分)"),
+    "local_weekday": re.compile(r"(?:星期[几哪]|周几|礼拜几)"),
+}
+_CLOCK_QUESTION = re.compile(
+    r"(?:(?:现在|今天|今日|当前|此刻|本地|工坊|日历|的|上|是|具体|完整|什么|查一下|告诉我|说一下|请问|说起来|那|我说的是))*"
+    r"(?:年月日|日期|几月几[日号]|几[日号]|钟点|时刻|时间|几点(?:几分)?|几分|星期[几哪]|周几|礼拜几)"
+    r"(?:是(?:多少|什么)|是什么|是多少|了|来着|呀|啊|呢|哦|吧|嘛|吗)*"
+)
 
 
 def workbench_fields(text, clock, *, partial=False):
@@ -41,6 +51,15 @@ def clock_readout(reply, fields, clock):
         exact = "现在是" + "、".join(missing) + "。"
         return reply.rstrip() + "\n\n" + exact if reply else exact
     return reply
+
+
+def calendar_fields(message, selected):
+    clauses = [clause for clause in re.split(r"[\s，,。！？?!、]+", message) if clause]
+    named = tuple(field for field, label in _CALENDAR_FIELDS.items()
+                  if any(label.search(clause) and _CLOCK_QUESTION.fullmatch(clause) for clause in clauses))
+    if named and all(_CLOCK_QUESTION.fullmatch(clause) for clause in clauses):
+        return named
+    return tuple(field for field in selected if _CALENDAR_FIELDS[field].search(message))
 
 
 def assistant_markdown(text):

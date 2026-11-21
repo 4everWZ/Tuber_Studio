@@ -87,9 +87,6 @@ async def test_bound_person_resolves_a_new_projection_and_expires_on_rebind(stud
         if name == "AssistantDecision":
             assert set(actions) == {"owner_binding", "owner_profile", "operating_account", "clarify"}
             return {"action": "owner_binding"}
-        if actions == ["chat"]:
-            assert any("https://space.bilibili.com/123" in row["content"] for row in messages)
-            return {"action": "chat", "reply_markdown": "号主甲的 UID 是 123。"}
         if message == "给我能点过去的地址和数字编号":
             return {"action": "direct_tool", "operation": {
                 "mode": "read", "domain": "identity", "request": message, "target": "地址和数字编号",
@@ -112,7 +109,8 @@ async def test_bound_person_resolves_a_new_projection_and_expires_on_rebind(stud
     assert "号主甲" in (await turn(client, "是谁养你的呀？", stream=True))["reply_text"]
     result = await turn(client, "给我能点过去的地址和数字编号")
     assert result["card"]["data"] == {"name": "号主甲", "uid": "123", "url": "https://space.bilibili.com/123"}
-    assert chat == ["WorkLifecycle", "WorkLifecycle", "AssistantDecision", "WorkLifecycle"]
+    assert "号主甲" in result["reply_text"] and "123" in result["reply_text"]
+    assert chat == ["WorkLifecycle", "WorkLifecycle", "AssistantDecision"]
     card["bilibili_owner"] = {"uid": "456", "name": "号主乙"}
     runtime.store.replace_character(card)
     assert not (await turn(client, "他还有其他地址吗？")).get("card")

@@ -675,12 +675,13 @@ async def check(args):
                     )
                     async def deliveries():
                         return [row for row in (await read(CHAT))["turns"] if row.get("assistant_only")
-                                and (row.get("task_delivery") or {}).get("task_id") == identity]
+                                and not row.get("hidden") and (row.get("task_delivery") or {}).get("task_id") == identity]
 
                     delivered = await deliveries()
                     assert len(delivered) == 1 and delivered[0]["task_delivery"]["revision"] == task["revision"]
                     await page.reload(wait_until="commit")
                     assert await deliveries() == delivered
+                    await page.locator(f'[data-request-id="{delivered[0]["request_id"]}"]').wait_for()
                     trace["observed_operation_state"] = (await read("/api/automation"))["state"]
                     assert await task_ids() == start_ids | {identity}, "unexpected additional task"
                     trace["backend_delivery"] = "completed"
