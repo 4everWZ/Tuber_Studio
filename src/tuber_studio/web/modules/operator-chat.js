@@ -1,8 +1,8 @@
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
-import { createOperatorCard } from "./operator-chat-cards.js?v=20261120.2";
+import { createOperatorCard } from "./operator-chat-cards.js?v=20261121.1";
 import { inferenceDisplay } from "./inference-status.js?v=20261111.07";
 import { renderAssistantAnswer } from "./operator-chat-answer.js";
-import { initTaskActivity } from "./task-activity.js?v=20261116.3";
+import { initTaskActivity } from "./task-activity.js?v=20261121.1";
 
 const path = "/api/chat/intelligent";
 const pageSize = 20;
@@ -329,6 +329,9 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   async function refreshCards() {
     if (!active || cardRefreshPending) return;
     void taskActivity.refreshAttention().catch(() => {});
+    // A delivery can arrive for a turn older than the loaded history page.
+    // Read the conversation itself, independently of the visible task cards.
+    void refresh();
     const bounds = timeline.getBoundingClientRect();
     if ([...turns.values()].some(entry => {
       if (entry.turn.card?.type !== "operation_control") return false;

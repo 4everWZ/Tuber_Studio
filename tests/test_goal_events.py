@@ -1,15 +1,19 @@
 import asyncio
+import json
 import sqlite3
+from dataclasses import replace
 from uuid import uuid4
 
 import httpx
 import pytest
 
 from tuber_studio.agent.goal_events import BATCH, EventGrant, GoalEvents
+from tuber_studio.agent.task_delivery import PrivateDelivery, evidence_index
 from tuber_studio.agent.task_identity import TaskIdentity
 from tuber_studio.agent.task_runtime import TaskRuntime
 from tuber_studio.app import create_app
 from tuber_studio.operations.browsing.comment_timeline import observe_thread
+from tuber_studio.responses_provider import FunctionCall, ResponseTurn
 from tuber_studio.store import Store
 
 
@@ -36,6 +40,68 @@ def incoming(app, key, *, sender="200", account="100", outgoing=False):
 def grant(tasks, goal, sender="200"):
     state = tasks.goal_events.get(goal)
     return EventGrant(source="bilibili_inbox", epoch=state["epoch"], revision=state["revision"], sender_uid=sender)
+
+
+async def test_next_authorized_reply_starts_private_work_and_delivers_to_original_conversation(studio, monkeypatch):
+    app, tasks, goal = studio
+    monkeypatch.setenv("TUBER_ADMIN_TOKEN", "fixture-only")
+    scope = tasks.scope()
+    tasks.store.execute("INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)", (
+        goal, scope[1], scope[2], "到回信以后帮我整理确认邮件",
+        json.dumps({"card": {"type": "agent_task", "data": {"id": goal}}, "account_id": scope[0],
+                    "owner_source": scope[-2], "conversation_id": scope[1]}), 1,
+    ))
+    service = tasks.goal_events
+    service.configure(goal, grant(tasks, goal).model_copy(update={"after_reply": "整理一份私有确认邮件"}))
+    incoming(app, 1, sender="300")
+    service.consume()
+    assert len(tasks.workspace.runs(goal)) == 1
+    incoming(app, 2)
+    incoming(app, 3)
+    service.consume()
+    service.consume()
+    _, queued = tasks.workspace.runs(goal)
+    assert queued["status"] == "queued"
+
+    async def planner(*, input, tools, **kwargs):
+        allowed = {tool["name"] for tool in tools}
+        assert allowed == {"delegate_text", "submit_materials", "ask_owner"}
+        payload = json.loads(input[1]["content"])
+        source, = [key for key, content in payload["saved_evidence"].items() if "只有收件箱" in content]
+        output = next((item for item in input if item.get("type") == "function_call_output"), None)
+        if output:
+            assert json.loads(output["output"])["receipt"]["draft"] == "确认邮件草稿"
+            call = FunctionCall("submit", "submit_materials", {
+                "items": [{"title": "确认邮件草稿", "rationale": "来信已经入库", "sources": [source]}], "gaps": [],
+            })
+        else:
+            call = FunctionCall("write", "delegate_text", {"objective": "拟一份确认邮件", "sources": [source]})
+        return ResponseTurn("planner", (call,), "", {})
+
+    async def write(request, args):
+        assert "只有收件箱可以读到的正文" in evidence_index(request.receipts)[args.sources[0]]
+        return {"draft": "确认邮件草稿", "sources": args.sources, "response_id": "writer"}
+
+    async def edit(task, evidence):
+        return PrivateDelivery.model_validate(task["plan"]["candidate"])
+
+    tasks.responses_client = lambda: planner
+    tasks.tools["delegate_text"] = replace(tasks.tools["delegate_text"], run=write)
+    tasks.edit_delivery = edit
+    for _ in range(5):
+        task = tasks.current(queued["id"])
+        if task["status"] in {"completed", "failed"}:
+            break
+        await tasks._advance(task)
+    assert tasks.current(queued["id"])["status"] == "completed"
+    assert tasks.workspace.latest(queued["id"])
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
+                                 headers={"Authorization": "Bearer fixture-only"}) as client:
+        turns = (await client.get("/api/chat/intelligent")).raise_for_status().json()["turns"]
+    delivered, = [turn for turn in turns if turn.get("task_delivery")]
+    assert delivered["task_delivery"]["task_id"] == queued["id"]
+    assert "确认邮件草稿" in delivered["reply_text"]
+    assert not tasks.store.all("SELECT id FROM dm_attempts")
 
 
 async def test_inbox_event_worker_readback_filters_and_never_replies(studio, monkeypatch):

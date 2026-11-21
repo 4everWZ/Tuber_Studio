@@ -25,9 +25,9 @@ def has_code_grant(steps):
 def private_tools(tools, context):
     if has_code_grant(context):
         return {name: tool for name, tool in tools.items() if name in {"delegate_text", "private_code"}}
-    if any(s["tool"] == "owner_attachment" for s in context):
+    if any(s["tool"] in {"owner_attachment", "authorized_inbox_text"} for s in context):
         return {name: tool for name, tool in tools.items() if name == "delegate_text"}
-    return {name: tool for name, tool in tools.items() if name != "private_code"}
+    return {name: tool for name, tool in tools.items() if name != "private_code" and not tool.fixed_only}
 
 
 async def run_code(request, args):

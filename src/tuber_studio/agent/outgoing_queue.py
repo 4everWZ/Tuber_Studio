@@ -10,6 +10,13 @@ CHANNELS = {
 STATES = ("pending_review", "approved", "copied", "publishing", "publish_uncertain")
 
 
+def pending_dynamic_ids(store, scope):
+    return [row["id"] for row in store.all(
+        "SELECT id FROM dynamic_posts WHERE account_id=? AND character_id=? AND character_version=? "
+        "AND status IN ('approved','pending_review') AND attempted_at IS NULL ORDER BY id", tuple(scope[:3]),
+    )]
+
+
 def named_channel(source):
     names = {"dynamics": ("动态", "帖子"), "comments": ("评论", "留言"), "messages": ("私信", "站内信")}
     matches = [key for key, terms in names.items() if any(term in source for term in terms)]
@@ -71,5 +78,5 @@ def queue_answer(snapshot):
         elif len(snapshot["groups"]) == 1:
             lines.append(f"{label}队列里没有待处理的草稿。")
     if snapshot["prepare"] and any(group["ids"] for group in snapshot["groups"]):
-        lines.append("选中稿件核对正文后，就可以确认发送。")
+        lines.append("可以打开对应工作台核对稿件。")
     return "\n".join(lines) or "当前没有待处理的稿件。"

@@ -55,7 +55,7 @@ def visible_steps(runtime, task):
             if step["revision"] == task["revision"]:
                 context.append(step)
             continue
-        if step["tool"] in {"owner_attachment", "owner_code_grant"}:
+        if step["tool"] in {"owner_attachment", "owner_code_grant", "authorized_inbox_text"}:
             context.append(step)
             continue
         if step["revision"] != task["revision"]:

@@ -241,14 +241,10 @@ async def test_existing_outgoing_work_is_bound_to_account_and_shows_review_actio
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     result = await turn(client, "把没发的帖子叫出来，我挑一条现在发", stream=True)
-    assert result["card"]["type"] == "publication_queue"
-    assert result["tool_receipt"]["values"] == {"dynamics": {"approved": 1, "pending_review": 1}}
-    group, = result["card"]["data"]["groups"]
-    assert [(item["draft"]["id"], item["draft"]["content"]) for item in group["items"]] == [
-        (1, "草稿 1"), (2, "草稿 2"),
-    ]
+    assert result["card"]["type"] == "agent_task"
+    task = runtime.tasks.current(result["card"]["data"]["id"])
+    assert task["steps"][0]["arguments"] == {"post_ids": [1, 2]}
     assert not runtime.store.one("SELECT 1 FROM account_writes")
-    assert not runtime.tasks.activity()
     runtime.browsing.discovery.remember_account("567")
     history = (await client.get(CHAT)).json()
     assert all(row["card"] is None for row in history["turns"])

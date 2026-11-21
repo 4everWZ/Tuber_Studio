@@ -35,9 +35,9 @@ CAPABILITIES = {
     "operations": Capability("运营、公开活动和平台回执", "运行状态、经历、来源、作者、送达", "停止运营",
                              ("activity", "event_details", "event_author", "event_reply", "video_activity", "operation_status"),
                              ("stop",)),
-    "outgoing": Capability("动态、评论回复、私信的待发草稿与提交记录", "查看队列、待审核数、已审核数及回执",
-                           "选已有草稿，查看正文并确认发布。创建动态草稿，或拟定已发布动态的修改",
-                           ("outgoing_queue",), ("prepare_publication", "dynamic", "edit_dynamic"),
+    "outgoing": Capability("动态、评论回复、私信的待发草稿与提交记录", "查看队列，或查已交办发布的实际进度",
+                           "把已有动态草稿交给发布工具准备确认。创建动态草稿，或拟定已发布动态的修改",
+                           ("outgoing_queue", "task_status"), ("prepare_publication", "dynamic", "edit_dynamic"),
                            selection_action="prepare_publication"),
     "video": Capability("视频和分 P", "已读材料、时码、读取进度", "刷视频、整段取材、续看或精查指定范围",
                         ("video_activity", "video_details", "inspect_video_frame"), ("browse", "full_video", "resume_video", "stop")),
@@ -76,6 +76,8 @@ class Arrangement(StrictModel):
     sender_uid: str | None = Field(default=None, pattern=r"^[1-9]\d{0,19}$")
     resource: str | None = Field(default=None, max_length=32)
     root_id: str | None = Field(default=None, pattern=r"^[1-9]\d{0,19}$")
+    after_reply: str | None = Field(default=None, min_length=1, max_length=400,
+                                    description="仅在号主明确交代来信后的私有文本工作时，逐字摘录该交付要求。")
 
     def due(self, message, now):
         if (self.quote not in message or not self.local_date or not self.local_time
@@ -89,8 +91,15 @@ class Arrangement(StrictModel):
         return local.timestamp()
 
     def configure(self, tasks, goal_id, message, now):
-        if self.quote not in message or not tasks.executable(goal_id) or not tasks.workspace.goal(goal_id):
+        if self.quote not in message or not (task := tasks.executable(goal_id)):
             raise ValueError("请指定当前授权下的长期目标及跟进条件。")
+        if self.after_reply and (self.kind != "inbox" or self.after_reply not in self.quote):
+            raise ValueError("请说明收到这封来信后要完成的具体私有文本工作。")
+
+        def as_goal():
+            if not tasks.workspace.goal(goal_id):
+                tasks.workspace.promote(task)
+
         epoch = tasks.scope()[-1]
         if self.kind in {"daily", "weekly"}:
             cadence = r"每[天日]|天天|逐日" if self.kind == "daily" else r"每周|每星期|每个星期|逐周"
@@ -103,16 +112,21 @@ class Arrangement(StrictModel):
             pages = tasks.unread_web_addresses(self.quote, ())
             grant = FollowupGrant(epoch=epoch, cadence=self.kind, local_time=self.local_time or "",
                                   timezone=now.tzinfo.key, weekday=self.weekday, states=self.states, pages=pages)
+            as_goal()
             return tasks.followups.configure(goal_id, grant, now.timestamp())
-        if self.kind == "inbox" and self.sender_uid and self.sender_uid in self.quote and re.search(r"私信|来信|收件", self.quote):
+        if (self.kind == "inbox" and self.sender_uid
+                and re.search(rf"(?<![0-9]){self.sender_uid}(?![0-9])", self.quote)
+                and re.search(r"私信|来信|收件", self.quote)):
+            as_goal()
             state = tasks.goal_events.get(goal_id)
             grant = EventGrant(source="bilibili_inbox", sender_uid=self.sender_uid, epoch=epoch,
-                               revision=state["revision"])
+                               revision=state["revision"], after_reply=self.after_reply)
             return tasks.goal_events.configure(goal_id, grant)
         if self.kind == "comment" and self.resource and self.root_id and re.search(r"评论|楼", self.quote) and all(
             coordinate in self.quote for coordinate in (self.resource.removeprefix("dynamic:"), self.root_id)
         ):
             manager = tasks.goal_events.comments
+            as_goal()
             grant = CommentWatch(resource=self.resource, root_id=self.root_id, epoch=epoch,
                                  revision=manager.get(goal_id)["revision"])
             return manager.configure(goal_id, grant)

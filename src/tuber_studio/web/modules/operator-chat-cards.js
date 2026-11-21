@@ -4,6 +4,7 @@ import { memoryGroupNames, memoryVisibility } from "./personalization.js?v=20261
 import { renderArtifact, renderAssistantAnswer } from "./operator-chat-answer.js";
 import { operationControlCard } from "./operator-chat-control.js?v=20261113.12";
 import { studioPath } from "./api.js";
+import { dynamicPublicationApproval } from "./task-confirmation.js";
 
 const statuses = {
   queued: "排队中", waiting: "等待资源", running: "运行中", completed: "已完成", paused: "已暂停",
@@ -43,6 +44,12 @@ function videoHref(bvid, suffix = "") {
 
 function platformLink(value) {
   return typeof value === "string" && /^https:\/\/(?:www\.|t\.)bilibili\.com\//.test(value);
+}
+
+function actionInteraction(root, interaction) {
+  if (interaction?.kind === "login" && interaction.href === "#accounts") {
+    root.append(node("p", interaction.target), link("打开 B 站账号登录", interaction.href));
+  }
 }
 
 function eventContent(item, heading = "h2") {
@@ -130,7 +137,7 @@ function dynamicCard(root, initial, api) {
   return { update, revision: () => revision, needsRefresh: () => !dirty && !busy && !["published", "rejected", "invalidated"].includes(data.status) };
 }
 
-function publicationQueue(root, initial, api) {
+function publicationQueue(root, initial) {
   const pages = { dynamics: "#dynamics", messages: "#messages", comments: "#comments" };
   let signature;
   function update(data) {
@@ -142,12 +149,9 @@ function publicationQueue(root, initial, api) {
       section.append(node("h2", group.label));
       for (const item of group.items) {
         const caption = `${label(item.status)} · ${item.preview}`;
-        if (item.draft) {
-          const details = node("details"), body = node("div");
-          details.append(node("summary", caption), body);
-          details.ontoggle = () => {
-            if (details.open && !body.hasChildNodes()) dynamicCard(body, item.draft, api);
-          };
+        if (item.draft?.content) {
+          const details = node("details");
+          details.append(node("summary", caption), node("blockquote", item.draft.content, "quoted-text"));
           section.append(details);
         } else {
           section.append(node("p", caption, "quoted-text"));
@@ -443,20 +447,43 @@ export function createOperatorCard(root, turn, context) {
     const preview = node("div");
     open.onclick = () => context.openTask(data.id);
     root.append(preview, open);
+    let signature;
     const update = value => {
+      const next = JSON.stringify(value);
+      if (signature === next) return;
+      signature = next;
       const approval = value.approval;
       preview.replaceChildren();
-      if (approval) {
+      if (value.title) preview.append(node("p", value.title, "hint"));
+      if (approval?.kind === "dynamic_publication" && value.can_control) {
+        dynamicPublicationApproval(preview, value, approval, context.api, () =>
+          document.dispatchEvent(new CustomEvent("operator-chat-changed")));
+      } else if (approval && approval.kind !== "dynamic_publication") {
         preview.append(node("p", approval.target || "等你确认"));
         if (approval.text) preview.append(node("p", approval.text));
+      }
+      actionInteraction(preview, value.interaction);
+      if (value.items) {
+        const list = node("ul");
+        for (const item of value.items) {
+          const status = { published: "已发", not_sent: "没发", unconfirmed: "待核对" }[item.status];
+          const caption = item.text.replace(/\s+/g, " ").slice(0, 72);
+          const row = node("li", `${status} · ${caption || `草稿 #${item.post_id}`}`);
+          if (item.status === "published" && platformLink(item.href)) row.append(" · ", link("查看动态", item.href));
+          if (item.number) row.append(` · 编号 ${item.number}`);
+          if (item.reason) row.append(` · ${safeMessage(item.reason)}`);
+          list.append(row);
+        }
+        preview.append(list);
       }
     };
     update(data);
     return {update};
   }
+  if (type === "action_interaction") actionInteraction(root, data);
   if (type === "owner_profile") root.append(link("打开绑定号主的 B 站主页", data.url));
   if (type === "dynamic_draft") return dynamicCard(root, data, context.api);
-  if (type === "publication_queue") return publicationQueue(root, data, context.api);
+  if (type === "publication_queue") return publicationQueue(root, data);
   if (type === "dynamic_edit") {
     const note = node("p", "", "hint");
     note.setAttribute("role", "status");

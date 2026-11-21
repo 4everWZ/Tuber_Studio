@@ -5,11 +5,12 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import Field, PositiveInt, field_validator
 
 from ..models import StrictModel
 from ..store import dump
+from .dynamic_publication import approval_image
 from .goal_events import register_goal_events
 from .goal_followups import register_goal_followups
 from .operator_chat import VideoSelection
@@ -55,6 +56,7 @@ class TaskControl(StrictModel):
     goal: str | None = Field(default=None, max_length=2000)
     step_id: UUID | None = None
     video_selection: VideoSelection | None = None
+    selected_ids: list[PositiveInt] | None = Field(default=None, min_length=1)
 
 
 class EditionEdit(StrictModel):
@@ -159,6 +161,17 @@ def register_task_api(app, tasks, require_admin):
     async def get(identity: UUID):
         return detail(visible(identity))
 
+    @app.get("/api/agent/tasks/{identity}/approval/{step_id}/dynamics/{post_id}/images/{index}", dependencies=deps)
+    async def get_approval_image(identity: UUID, step_id: UUID, post_id: PositiveInt, index: int):
+        task = visible(identity)
+        try:
+            if not tasks.can_control(task):
+                raise LookupError(post_id)
+            image = approval_image(app.state.dynamics, task, str(step_id), post_id, index)
+        except (ValueError, LookupError):
+            raise HTTPException(404, "这张待确认配图已变化") from None
+        return Response(image["content"], media_type=image["mime_type"], headers={"Cache-Control": "private, no-store"})
+
     @app.get("/api/agent/tasks/{identity}/artifacts", dependencies=deps)
     async def artifact_history(identity: UUID):
         task = visible(identity)
@@ -232,9 +245,12 @@ def register_task_api(app, tasks, require_admin):
             raise HTTPException(400, "请填写新的任务要求")
         if body.action != "steer" and body.video_selection is not None:
             raise HTTPException(400, "只有改口可以更换视频范围")
+        if body.action != "approve" and body.selected_ids is not None:
+            raise HTTPException(400, "只有确认可以提交选择清单")
         try:
             task = await tasks.control(str(identity), body.revision, body.action, goal,
-                                       str(body.step_id) if body.step_id else None, video_selection=body.video_selection)
+                                       str(body.step_id) if body.step_id else None, video_selection=body.video_selection,
+                                       selected_ids=body.selected_ids)
         except LookupError as error:
             raise HTTPException(404, "找不到这项任务") from error
         except ValueError as error:

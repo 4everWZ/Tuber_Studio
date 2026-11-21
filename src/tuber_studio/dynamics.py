@@ -774,6 +774,19 @@ class Dynamics:
             value.update(image_payload(row["illustration"]))
         return value
 
+    def _publication_images(self, row):
+        if card := row["comment_card"]:
+            return [{"mime_type": "image/png", "content": render_comment_card(card, page)}
+                    for page in range(card.get("page_count", 1))]
+        if row.get("meme_id"):
+            if not self.memes:
+                raise ValueError("配图服务未连接，草稿已保存")
+            return [self.memes.read(row["meme_id"], row["character_id"])]
+        if row.get("illustration"):
+            return [checked_image(self.memes, row["illustration"], row["character_id"],
+                                  runtime=self.runtime, scope=image_scope("dynamics", row))]
+        return []
+
     async def _refresh_post_identity(self, post_id, automatic, epoch):
         refresh = getattr(self.runtime, "refresh_identity", None)
         if refresh is None:
@@ -904,8 +917,9 @@ class Dynamics:
                 if audit["state"] == "awaiting_review":
                     self._status(post_id, "pending_review", "正文诊断尚待审核")
 
-    async def _publication_context(self, post_id, automatic, epoch):
-        await self._refresh_post_identity(post_id, automatic, epoch)
+    async def _publication_context(self, post_id, automatic, epoch, *, submission=None):
+        if submission is None:
+            await self._refresh_post_identity(post_id, automatic, epoch)
         row = self._post(post_id)
         character = self.store.character(row["character_id"], row["character_version"])
         cached = getattr(self.comments, "display_account_id", lambda: "")()
@@ -1050,7 +1064,7 @@ class Dynamics:
         return await FeedbackPublication(self.runtime, self.store, self.operations).submit(
             "dynamics",
             post_id,
-            prepare=lambda: self._publication_context(post_id, automatic, epoch),
+            prepare=lambda: self._publication_context(post_id, automatic, epoch, submission=submission),
             send=lambda ticket, binding, body_hash: self._publish_once(
                 post_id,
                 automatic,
@@ -1081,7 +1095,8 @@ class Dynamics:
         submission=None,
     ):
         # Complete any identity refresh before taking the platform write lock.
-        await self._refresh_post_identity(post_id, automatic, authorization_epoch)
+        if submission is None:
+            await self._refresh_post_identity(post_id, automatic, authorization_epoch)
         checked = self._post(post_id) if automatic else None
         async with self.comments.publish_lock:
             row, policy = self._post(post_id), self.policy()
@@ -1108,18 +1123,9 @@ class Dynamics:
             ):
                 raise ValueError("相同正文已尝试发布，请勿重复发送")
             self._check_used_sources(row)
-            image = None
-            if card := row["comment_card"]:
-                pages = [{"mime_type": "image/png", "content": render_comment_card(card, page)}
-                         for page in range(card.get("page_count", 1))]
-                image = pages if len(pages) > 1 else pages[0]
-            elif row.get("meme_id"):
-                if not self.memes:
-                    raise ValueError("配图服务未连接，草稿已保存")
-                image = self.memes.read(row["meme_id"], row["character_id"])
-            elif row.get("illustration"):
-                image = checked_image(self.memes, row["illustration"], row["character_id"],
-                                      runtime=self.runtime, scope=image_scope("dynamics", row))
+            card = row["comment_card"]
+            pages = self._publication_images(row)
+            image = (pages if len(pages) > 1 else pages[0]) if pages else None
             adapter = self.comments.adapter
             account_id = (
                 await self.comments.account_id()

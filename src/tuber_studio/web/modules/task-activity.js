@@ -6,6 +6,7 @@ import { mountGoalEvents } from "./goal-events.js";
 import { browserTaskForm, mountTaskBrowser } from "./task-browser.js";
 import { renderCapabilityStrip } from "./operation-capabilities.js";
 import { studioPath } from "./api.js";
+import { dynamicPublicationApproval } from "./task-confirmation.js";
 
 const base = "/api/agent/tasks";
 const states = {
@@ -439,6 +440,15 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
     mountTaskBrowser(task, content, api, open, value => { editing = value; });
     if (task.can_control !== false && task.status === "awaiting_approval") {
       const step = task.steps.at(-1);
+      if (step.approval.kind === "dynamic_publication") {
+        const panel = node("section");
+        dynamicPublicationApproval(panel, { ...task, step_id: step.id }, step.approval, api, updated => {
+          renderTask(updated);
+          document.dispatchEvent(new CustomEvent("operator-chat-changed"));
+        });
+        content.append(panel);
+        return;
+      }
       const action = node("p", `${step.approval.target} · ${step.approval.text || step.arguments.action}`);
       if (["publish_dynamic_draft", "submit_selected_reply"].includes(step.tool)) {
         const {payload, channel, draft_id, post_id} = step.approval;

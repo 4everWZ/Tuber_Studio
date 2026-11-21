@@ -12,13 +12,17 @@ def delivery_turn_id(task, status, steps):
 
 
 def record_chat_delivery(database, task, status, steps, created):
-    origin = database.execute("SELECT * FROM operator_chat_turns WHERE request_id=?", (task["id"],)).fetchone()
+    origin_id = task["id"]
+    origin = database.execute("SELECT * FROM operator_chat_turns WHERE request_id=?", (origin_id,)).fetchone()
+    if not origin and task.get("creative_goal_id"):
+        origin_id = task["creative_goal_id"]
+        origin = database.execute("SELECT * FROM operator_chat_turns WHERE request_id=?", (origin_id,)).fetchone()
     if not origin:
         return
     saved = json.loads(origin["result"])
     card = saved.get("card") or {}
     account, character, version, _, owner, _ = task["scope"]
-    if (card.get("type") != "agent_task" or card["data"]["id"] != task["id"]
+    if (card.get("type") != "agent_task" or card["data"]["id"] != origin_id
             or origin["character_id"] != character or origin["character_version"] != version
             or saved.get("owner_source") != owner or saved.get("account_id") != account):
         return

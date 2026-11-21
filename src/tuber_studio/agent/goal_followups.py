@@ -218,8 +218,13 @@ class GoalFollowups:
                 return
             if success:
                 self.tasks.workspace.record_delivery(db, {"id": run_id, "revision": 1, "scope": json.loads(scope)}, body)
-            if previous is not None and previous != (success, observations(steps)):
-                self.tasks.workspace.notify(db, run_id, now)
+            if previous != (success, observations(steps)):
+                if previous is not None:
+                    self.tasks.workspace.notify(db, run_id, now)
+                if self.tasks.record_chat_delivery:
+                    self.tasks.record_chat_delivery(db, {
+                        "id": run_id, "scope": json.loads(scope), "revision": 1, "creative_goal_id": row["goal_id"],
+                    }, "completed" if success else "failed", steps, now)
 
 
 def register_goal_followups(app, tasks, require_admin):

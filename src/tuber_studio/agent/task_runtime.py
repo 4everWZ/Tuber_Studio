@@ -12,7 +12,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
-from uuid import UUID, uuid5
+from uuid import UUID, uuid4, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -100,6 +100,11 @@ class ToolWait:
     delay: float
 
 
+class ReviewBlocked(ValueError):
+    def __init__(self, result: dict):
+        self.result = result
+
+
 @dataclass(frozen=True)
 class Tool:
     description: str
@@ -115,6 +120,8 @@ class Tool:
     accepts_goal: Callable[[str, BaseModel], bool] | None = None
     checkpoint_submission: bool = False
     foreground_read: bool = False
+    select_approval: Callable[[dict, list[int] | None], tuple[dict, bool]] | None = None
+    fixed_only: bool = False
 
     async def invoke(self, request, arguments):
         async with asyncio.timeout(None if self.own_deadline else 20):
@@ -255,7 +262,8 @@ class TaskRuntime:
                 for task in (self.view(self._decode(row)) for row in rows)]
 
     def create(self, identity, goal, *, due=None, source_key=None, creative_goal_id=None, attachments=(),
-               video_selection=None, allow_code=False, browser_sources=None, delegation=None, on_create=None):
+               video_selection=None, allow_code=False, browser_sources=None, delegation=None, on_create=None,
+               prepared_step=None):
         scope, now = dump(self.scope()), time.time()
         if creative_goal_id:
             project = self.workspace.goal(creative_goal_id)
@@ -279,13 +287,17 @@ class TaskRuntime:
         if delegation:
             selection["delegation_brief"] = delegation
         plan = dump({"backend": "responses", "prior_goals": [], **selection}) if inputs or selection else None
+        steps = inputs
+        if prepared_step:
+            plan = dump({"backend": "fixed"})
+            steps = [{"id": str(uuid5(UUID(identity), "prepared-step")), "revision": 1, **prepared_step}]
         due = now if due is None else due
         with self.store.db as database:
             database.execute(
                 "INSERT OR IGNORE INTO agent_tasks"
                 "(id,scope,goal,revision,status,steps,message,source_key,due,created,updated,creative_goal_id,plan) "
                 "VALUES (?,?,?,1,?,?,'',?,?,?,?,?,?)",
-                (identity, scope, goal, "scheduled" if due > now else "queued", dump(inputs), key, due, now, now,
+                (identity, scope, goal, "scheduled" if due > now else "queued", dump(steps), key, due, now, now,
                  creative_goal_id, plan),
             )
             task = self.executable(identity)
@@ -331,7 +343,7 @@ class TaskRuntime:
             return False
         # Finish the original reconciliation before removing the task from
         # worker admission. An uncertain external submission keeps its step ID.
-        if any(s.get("checkpoint") and "result" not in s and
+        if any(s.get("checkpoint") and not s["checkpoint"].get("safe_to_pause") and "result" not in s and
                (tool := self.tools.get(s["tool"])) and tool.checkpoint_submission
                for s in self._current_steps(task)):
             return False
@@ -343,12 +355,13 @@ class TaskRuntime:
         return applied
 
     async def control(self, identity, revision, action, goal=None, step_id=None, *, video_selection=None, replace_goal=False,
-                      delegation=None):
+                      delegation=None, selected_ids=None):
         async with self.controls:
-            return await self._control(identity, revision, action, goal, step_id, video_selection, replace_goal, delegation)
+            return await self._control(identity, revision, action, goal, step_id, video_selection, replace_goal, delegation,
+                                       selected_ids)
 
     async def _control(self, identity, revision, action, goal, step_id, video_selection=None, replace_goal=False,
-                       delegation=None):
+                       delegation=None, selected_ids=None):
         task = self.current(identity)
         if not task:
             raise LookupError(identity)
@@ -389,7 +402,20 @@ class TaskRuntime:
             if (status != "awaiting_approval" or not step or step["id"] != step_id
                     or step["revision"] != revision or "approval" not in step):
                 raise ValueError("待确认步骤已变化")
-            step = step | {"approved": True}
+            approval = step["approval"]
+            if approval.get("expires_at", math.inf) <= time.time():
+                raise ValueError("确认已过期，请重新选择草稿。")
+            tool = self.tools.get(step["tool"])
+            if tool and tool.select_approval:
+                approval, review_again = tool.select_approval(approval, selected_ids)
+                if review_again:
+                    step = step | {"id": str(uuid4()), "approval": approval}
+                    if not self._save(task, status="awaiting_approval", steps=[*task["steps"][:-1], step]):
+                        raise ValueError("待确认步骤已变化")
+                    return self.current(identity)
+            elif selected_ids is not None:
+                raise ValueError("这项确认不接受选择清单")
+            step = step | {"approved": True, "approval": approval}
             if not self._save(task, status="queued", steps=[*task["steps"][:-1], step], due=time.time()):
                 raise ValueError("待确认步骤已变化")
             self.wake.set()
@@ -401,6 +427,11 @@ class TaskRuntime:
         }
         if status not in allowed[action]:
             raise ValueError("任务当前无法执行此操作")
+        if action == "cancel" and step_id and (status != "awaiting_approval" or not task["steps"]
+                                               or task["steps"][-1]["id"] != step_id):
+            raise ValueError("待确认步骤已变化")
+        if action == "steer" and task["plan"] == {"backend": "fixed"}:
+            raise ValueError("请从新请求里选择草稿，原任务仍保留。")
         pending = [item for item in self._current_steps(task) if "result" not in item]
         stops = self._stop_ids(task)
         final_status = "cancelled" if action == "cancel" else "queued"
@@ -552,10 +583,16 @@ class TaskRuntime:
                 if uses:
                     database.execute("INSERT OR IGNORE INTO kv VALUES(?,?)",
                                      (f"private_edition_memory:{task['id']}:{task['revision']}", dump(uses)))
-            if applied and changes.get("status") in {"completed", "failed", "awaiting_approval", "needs_input"}:
+            status = changes.get("status")
+            interaction = status == "waiting" and steps and (steps[-1].get("checkpoint") or {}).get("interaction")
+            fixed_cancelled = status == "cancelled" and (task["plan"] == {"backend": "fixed"} or any(
+                (tool := self.tools.get(step["tool"])) and tool.fixed_only for step in steps))
+            if applied and (status in {"completed", "failed", "awaiting_approval", "needs_input"} or interaction
+                            or fixed_cancelled):
                 self.workspace.notify(database, task["id"], changes["updated"])
                 if self.record_chat_delivery:
-                    self.record_chat_delivery(database, task, changes["status"], steps, changes["updated"])
+                    self.record_chat_delivery(database, task | {"revision": changes.get("revision", task["revision"])},
+                                              status, steps, changes["updated"])
             elif applied and changes.get("status") and changes["status"] != task["status"]:
                 database.execute("DELETE FROM creative_attention WHERE task_id=?", (task["id"],))
             return applied
@@ -715,6 +752,10 @@ class TaskRuntime:
         if task_delegation.uses_responses(task):
             await task_delegation.advance(self, task)
             return
+        if task["plan"] == {"backend": "fixed"} and current_steps and "result" in current_steps[-1]:
+            verified, delivery = self._deliver(task)
+            self._save(task, status="completed" if verified else "failed", message=delivery)
+            return
         if task["plan"] is None and not steps and (self.requires_responses() or self.responses_client() is not None):
             self._save(task, plan={"backend": "responses", "prior_goals": []}, status="queued", due=time.time())
             return
@@ -722,7 +763,7 @@ class TaskRuntime:
         if step is None:
             tools = {name: {"description": tool.description, "arguments": tool.arguments.model_json_schema(),
                             "requires_approval": tool.review is not None}
-                     for name, tool in self.tools.items() if not tool.responses_only}
+                     for name, tool in self.tools.items() if not (tool.responses_only or tool.fixed_only)}
             used = len(current_steps)
             planned = None
             if task["plan"] is None and self.make_plan and not current_steps:
@@ -756,12 +797,16 @@ class TaskRuntime:
 
         step, status, due = await self._invoke(task, step, self._current_steps(task), task["goal"])
         if self.scope() == task["scope"]:
-            changes = {"plan_cursor": task["plan_cursor"] + 1} if "result" in step and task["plan"] is not None else {}
+            changes = {"plan_cursor": task["plan_cursor"] + 1} if "result" in step and isinstance(task["plan"], list) else {}
+            if (checkpoint := step.get("checkpoint")) and checkpoint.get("message"):
+                changes["message"] = checkpoint["message"]
             self._save(task, status=status, steps=[*task["steps"][:-1], step], due=due, **changes)
 
     async def _invoke(self, task, step, context, goal):
         tool = self.tools[step["tool"]]
         try:
+            if tool.fixed_only and task["plan"] != {"backend": "fixed"}:
+                raise ValueError("工具需要事先绑定的步骤")
             arguments = tool.arguments.model_validate(step["arguments"])
             if step["tool"] == "inspect_video":
                 for prior in self._current_steps(task):
@@ -792,6 +837,8 @@ class TaskRuntime:
             result = await tool.invoke(request, arguments)
         except InferenceQueueBusy as busy:
             return step, "waiting", time.time() + busy.retry_after
+        except ReviewBlocked as blocked:
+            result = blocked.result
         except (ArchiveUnavailable, InferenceBudgetExceeded) as error:
             result = {"error": str(error)}
         except Exception as error:

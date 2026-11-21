@@ -34,6 +34,7 @@ from ..store import dump
 from . import operator_facts, outgoing_queue, workbench_tools
 from .assistant_output import AssistantTextStream, assistant_markdown, workbench_fields
 from .chat_delivery import delivery_turn_id, record_chat_delivery
+from .dynamic_publication import PUBLICATION_TOOL, publication_progress, requested_draft_ids
 from .handoff import (
     LIVE_STYLE,
     LIVE_STYLE_GROUP,
@@ -284,6 +285,7 @@ class CardEffect(Enum):
     recall_reason = "查当初为何作出某个选择的原文"
     new_work = "另立交办"
     use_tool = "当场调用工具"
+    progress = "读取已交办任务的实际进度或执行结果"
     clarify = "需要澄清"
 
 
@@ -299,7 +301,7 @@ class DirectRequest(StrictModel):
 class CardTurnIntent(StrictModel):
     patch: TaskPatch | None = None
     reference: str | None
-    intent: Literal["keep_current", "revise", "cancel", "recall_reason", "discuss", "new_work", "use_tool", "clarify"]
+    intent: Literal["keep_current", "revise", "cancel", "recall_reason", "discuss", "new_work", "use_tool", "progress", "clarify"]
     read_original: bool = Field(default=False, strict=True)
     topic: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     clarification_id: UUID | None = None
@@ -323,7 +325,11 @@ class CardTurnIntent(StrictModel):
 
 
 class TurnPlan(StrictModel):
-    action: Literal["chat", "owner_identity", "identity_read", "direct_tool", "agent_task", "task_turn", "clarify"]
+    action: Literal["chat", "identity_read", "prepare_publication", "task_status", "watch_goal", "direct_tool",
+                    "agent_task", "task_turn", "clarify", "owner_identity"]
+    publication_channel: Literal["dynamics", "comments", "messages"] | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
     reference: Annotated[str, StringConstraints(max_length=90)] | None = None
     topic: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     clarification_id: UUID | None = None
@@ -350,7 +356,7 @@ class WorkLifecycle(TurnPlan):
         return text
 
     @classmethod
-    def schema_for_turn(cls, *, chat_only, has_cards=False, allow_owner_identity=True):
+    def schema_for_turn(cls, *, chat_only, has_cards=False, allow_owner_identity=True, task_ids=()):
         schema = cls.model_json_schema()
         if chat_only:
             props = schema["properties"]
@@ -366,15 +372,20 @@ class WorkLifecycle(TurnPlan):
             direct["properties"]["domain"] = {"anyOf": [{"enum": list(CAPABILITIES)}, {"type": "null"}]}
             if not has_cards:
                 properties["action"]["enum"].remove("task_turn")
+                properties["action"]["enum"].remove("watch_goal")
             if not allow_owner_identity:
                 properties["action"]["enum"].remove("owner_identity")
         required_by_action = {"chat": "reply_markdown", "direct_tool": "operation", "clarify": "topic",
-                              "identity_read": "identities"}
+                              "identity_read": "identities", "prepare_publication": "publication_channel",
+                              "watch_goal": "arrangement"}
         properties = schema["properties"]
         branches = []
         descriptions = {
-            "chat": "延续对话并直接说出本轮正文。",
+            "chat": "自然聊日常、感受和假设，或当场给点子和短文案。查询已交办任务的真实进度时选 task_status。",
             "identity_read": "回答 B 站号主或工坊运营登录账号的昵称、数字 UID、主页。",
+            "prepare_publication": "接受发送现有待发稿件的请求，准备一批供用户确认的发布任务。",
+            "task_status": "查询先前交办、发送和其他操作是否真的执行，以及具体结果。缺少记录也用此工具。",
+            "watch_goal": "给对话中的已有任务设置定期复查，或等获准的外部来信再继续。",
             "direct_tool": "当场完成一次具体读取或操作。",
             "agent_task": "接下独立工作，稍后把成果送回对话。",
             "task_turn": "接续同一份已有工作、要求或成果。",
@@ -383,10 +394,17 @@ class WorkLifecycle(TurnPlan):
         for action in properties["action"]["enum"]:
             branch = {"action": {"type": "string", "const": action}}
             if field := required_by_action.get(action):
-                branch[field] = {"$ref": "#/$defs/DirectRequest"} if field == "operation" else properties[field] | {
-                    "minItems" if field == "identities" else "minLength": 1,
-                }
+                if field == "publication_channel":
+                    branch[field] = {"enum": list(outgoing_queue.CHANNELS)}
+                elif field == "operation":
+                    branch[field] = {"$ref": "#/$defs/DirectRequest"}
+                elif field == "arrangement":
+                    branch[field] = {"$ref": "#/$defs/Arrangement"}
+                else:
+                    branch[field] = properties[field] | {"minItems" if field == "identities" else "minLength": 1}
             required = list(branch)
+            if action in {"task_status", "watch_goal"} and task_ids:
+                branch["reference"] = {"enum": [None, *task_ids]}
             if action in {"agent_task", "clarify"} and not chat_only:
                 branch["clarification_id"] = properties["clarification_id"]
             if action == "agent_task" and not chat_only:
@@ -703,8 +721,10 @@ class OperatorChat:
         rows = self.store.all(
             "SELECT json_extract(result,'$.card.data.id') AS id FROM operator_chat_turns "
             "WHERE character_id=? AND character_version=? AND json_extract(result,'$.account_id')=? "
-            "AND json_extract(result,'$.card.type')='agent_task' GROUP BY id ORDER BY MAX(created_at) DESC,id LIMIT 4",
-            (char["id"], char["version"], account),
+            "AND json_extract(result,'$.card.type')='agent_task' "
+            "AND COALESCE(json_extract(result,'$.conversation_id'),character_id)=? "
+            "GROUP BY id ORDER BY MAX(created_at) DESC,id LIMIT 4",
+            (char["id"], char["version"], account, self._conversation(char)),
         )
         cards = [{**{key: task[key] for key in ("id", "goal", "revision", "status")},
                   **(editable_fields(self.runtime, task, self.task_history) if semantic else {})}
@@ -947,6 +967,7 @@ class OperatorChat:
                 schema = WorkLifecycle.schema_for_turn(
                     chat_only=bool(data.intent), has_cards=bool(cards),
                     allow_owner_identity=False,
+                    task_ids=tuple(card["id"] for card in cards),
                 )
                 actions = schema["properties"]["action"]["enum"]
                 instruction = (
@@ -972,17 +993,23 @@ class OperatorChat:
                     "参照最近话轮理解代词和纠正。"
                 )
                 if cards:
-                    plan += ("涉及前面交办的同一份工作时选 task_turn，包括接续、改口、补条件和取消。"
-                             "agent_task 只收彼此独立的新工作。")
+                    plan += ("已有任务接续、改口和取消选 task_turn。"
+                             "agent_task 只收彼此独立的新工作。"
+                             "给已有任务安排定期复查，或等指定 UID 的来信再继续，选 watch_goal，"
+                             "在 arrangement 记录原话、来源和时间或发送者。来信后的私有文本交付填 after_reply。")
                 if not data.temporary and not history_preference(self.runtime)["history_enabled"]:
                     instruction += ("本轮只提供当前对话。若问题需要早先的记录，问号主要用的那条消息或成果。")
                 if "direct_tool" in actions:
                     plan += (
-                        "以号主想收到的交付为准。交代稍后交付、持续推进、准备独立成果或需要分步骤处理的新工作，选 agent_task。"
+                        "已有待发稿件要提交发布时，用 prepare_publication 并选择渠道，系统会建立可确认的任务。"
+                        "查先前的任务或动作做到哪、是否发出、完成了没有，用 task_status。"
+                        "这两种交付由系统直接给出。"
+                        "需要研究、整理材料或创作独立成果，选 agent_task。"
                         "brief 写目标、约束、交付标准和实际相关对象的 material_refs。"
                         "能在这轮用一次读取或操作完成整个请求，选 direct_tool。"
                         "operation 写能力 domain 和读写方向。检索与核查看 read，要求修改、发送或提交审批用 change。"
                         "request 抄当前请求，target 抄具体对象或字段。"
+                        "日常对话写 reply_markdown。表达工坊动作的接单、执行和结果时，使用对应工具及已记录的事实。"
                         "追问承接已绑定对象时填 object_ref 和 followup=true，省略的对象可留空 target。"
                         "多个对象都可能时只问指哪个；无关闲聊不承接引用。"
                         "只沿用仍相关的要求。明确要求办事但缺必要信息才选 clarify。"
@@ -1116,7 +1143,8 @@ class OperatorChat:
                                 self._check_scope(char, account)
                                 self.runtime.validate_memory_delivery(audit)
                             else:
-                                action = {"revise": "steer_task", "cancel": "cancel_task", "new_work": "agent_task", "clarify": "clarify"}[routed.intent]
+                                action = {"revise": "steer_task", "cancel": "cancel_task", "new_work": "agent_task",
+                                          "progress": "task_status", "clarify": "clarify"}[routed.intent]
                                 decision = ChatIntent(action=action, **routed.model_dump(
                                     exclude={"intent", "read_original", "patch", "operation"},
                                 ))
@@ -1172,7 +1200,9 @@ class OperatorChat:
                         messages.append({"role": "system", "content": "这是只读交谈。本轮没有新交办或修改，"
                                          "按附带版本回答。选材理由只引用记录中的理由，区分号主原话和编辑说明；"
                                          "记录没说为什么时直接说明。"})
-                        lifecycle = await generate_turn(WorkLifecycle.schema_for_turn(chat_only=True), current)
+                        lifecycle = await generate_turn(
+                            WorkLifecycle.schema_for_turn(chat_only=True, allow_owner_identity=False), current,
+                        )
                     decision = None
                     if lifecycle.action == "direct_tool":
                         self._check_scope(char, account)
@@ -1299,7 +1329,8 @@ class OperatorChat:
             "实际修改原交付（包括礼貌请求）选修改，只有独立任务才另立。reference 选对应卡。"
             "opened_artifact 是号主打开的版本；历史卡只读。承接澄清填 clarification_id。"
             + ("" if read_only else
-               "若明确要求一次即时查询或操作，用当场调用工具，并在 operation 摘出本轮请求和具体对象，标明 read 或 change。")
+               "问已接下的活做到哪、是否已执行时，选读取实际进度并绑定 reference。"
+               "若明确要求另一次即时查询或操作，用当场调用工具，并在 operation 摘出本轮请求和具体对象，标明 read 或 change。")
         )}, {"role": "assistant", "content": dump(packet)}]
         current = {"role": "user", "content": message}
         if getattr(provider, "uses_model_card", False):
@@ -1324,6 +1355,8 @@ class OperatorChat:
         target = next((c for c in recent if c["id"] == routed.reference), None)
         if not target and len(recent) == 1 and routed.reference is None:
             target = recent[0]
+        if routed.intent == "progress" and target:
+            routed.reference = target["id"]
         if not target and routed.intent == "new_work" and choices and not read_only:
             # A new task with a possible existing operand needs an independent
             # deliverable. Without a resolved card the reviewer cannot authorize an edit.
@@ -1504,7 +1537,8 @@ class OperatorChat:
             "动态引用私聊注明 discussion。live_preference 处理长期直播习惯。"
             "operation_status 查自主运营状态和各渠道的启用方式。" + account_tools +
             "web_lookup 搜索公开资料或打开原话所给网页。task_status 查已交办任务和成果进度。"
-            "outgoing_queue 查待发草稿。prepare_publication 把已有草稿带到对话供号主选稿和确认。"
+            "outgoing_queue 查待发草稿。prepare_publication 建立任务并准备已有草稿的发布确认；用户可选稿，不需要知道编号。"
+            "问上次交办发完了没有，选 task_status。"
             "指定动态、评论或私信时，publication_channel 填 dynamics、comments 或 messages。"
             "dynamic 写一条新动态，edit_dynamic 处理已发动态的修改。"
             "pause_task 暂停指定任务，resume_task 恢复。watch_goal 给已有目标设跟进，"
@@ -1767,15 +1801,33 @@ class OperatorChat:
                     or delivery["status"] != task["status"]):
                 return turn | {"hidden": True}
             steps = self.runtime.tasks._current_steps(task)
+            if not steps and task["status"] == "cancelled":
+                steps = task["steps"][-1:]
             if delivery["step_id"] and (not steps or steps[-1]["id"] != delivery["step_id"]):
                 return turn | {"hidden": True}
             view = self.runtime.tasks.view(task)
             approval = steps[-1].get("approval") if view["status"] == "awaiting_approval" and steps else None
             if approval and not any(step.get("id") == delivery["step_id"] for step in view["steps"]):
                 approval = None
-            return turn | {"reply_text": view["message"], "reply_format": "markdown",
+            action = steps[-1] if steps and steps[-1]["tool"] == PUBLICATION_TOOL and self.runtime.tasks.can_control(task) else {}
+            checkpoint = action.get("checkpoint") or {}
+            items = (action.get("result") or {}).get("items")
+            interaction = checkpoint.get("interaction")
+            if delivery["status"] == "waiting" and not interaction:
+                return turn | {"hidden": True}
+            reply = view["message"]
+            if action and approval:
+                reply = "核对这批待发动态后，勾选要公开发布的草稿。"
+            elif items is not None:
+                reply = publication_progress(items, len(items))
+                items = [{key: value for key, value in item.items() if key != "write_token"} for item in items]
+            return turn | {"reply_text": reply, "reply_format": "markdown",
                            "card": {"type": "task_delivery", "data": {
                                "id": task["id"], "status": view["status"], "approval": approval,
+                               "revision": task["revision"], "step_id": delivery["step_id"],
+                               "can_control": self.runtime.tasks.can_control(task), "items": items,
+                               "interaction": interaction, "title": task["goal"] if (
+                                   task["creative_goal_id"] and task["creative_goal_id"] != task["id"]) else None,
                            }}}
         card = result.get("card") or {}
         message = row["message"]
@@ -2048,7 +2100,8 @@ class OperatorChat:
             result["conversation_objects"] = [obj.model_dump(mode="json") for obj in objects]
             result["object_scope"] = object_scope(self.runtime)
             result["owner_source"] = self.private_owner
-        if intent.action == "agent_task" and (result.get("card") or {}).get("type") == "agent_task":
+        card = result.get("card") or {}
+        if card.get("type") == "agent_task" and card["data"]["id"] == request_id:
             result["owner_source"] = self.private_owner
         if result.get("clarification_request") or (result.get("card") or {}).get("type") in {
             "video_browsing", "live_confirmation", "operation_control",
@@ -2214,12 +2267,38 @@ class OperatorChat:
         if kind in {"outgoing_queue", "prepare_publication"}:
             scope = self._binding(char)
             if not scope[0]:
+                if kind == "prepare_publication":
+                    return {"reply_text": "还没有核验 B 站运营账号，这次没发。",
+                            "card": {"type": "action_interaction", "data": {
+                                "kind": "login", "href": "#accounts", "target": "B 站运营登录账号",
+                            }}}
                 return {"reply_text": "请先连接 B 站运营登录账号。", "card": None}
-            channel = outgoing_queue.named_channel(request) or intent.publication_channel
+            channel = intent.publication_channel or outgoing_queue.named_channel(request)
             if channel is None and intent._subject and intent._subject.kind == "outgoing":
                 channel = intent._subject.identity
             snapshot = outgoing_queue.queue_snapshot(self.store, scope, channel,
                                                      prepare=kind == "prepare_publication")
+            if kind == "prepare_publication" and channel == "dynamics":
+                post_ids = outgoing_queue.pending_dynamic_ids(self.store, scope)
+                if named := requested_draft_ids(request):
+                    post_ids = [key for key in post_ids if key in named]
+                runtime = self.runtime.tasks
+                client = getattr(self.dynamics.comments.adapter, "client", None)
+                if (PUBLICATION_TOOL not in runtime.tools or not callable(getattr(client, "post", None))
+                        or getattr(client, "is_closed", False)):
+                    return {"reply_text": "动态发布工具当前不可用，这次没发。可以先查看草稿。",
+                            "assistant_read_scope": object_scope(self.runtime),
+                            "publication_scope": scope, "card": {"type": "publication_queue", "data": snapshot}}
+                if not post_ids:
+                    return {"reply_text": "当前没有可送审的待发动态，这次没发。",
+                            "assistant_read_scope": object_scope(self.runtime),
+                            "publication_scope": scope, "card": {"type": "publication_queue", "data": snapshot}}
+                result = {"reply_text": "已接下核对待发动态。核对后会在这里请你确认。",
+                          "card": {"type": "agent_task", "data": {"id": request_id}}}
+                runtime.create(request_id, request, source_key=request_id,
+                               prepared_step={"tool": PUBLICATION_TOOL, "arguments": {"post_ids": post_ids}},
+                               on_create=(lambda database: persist_turn(database, result)) if persist_turn else None)
+                return result
             return {"reply_text": outgoing_queue.queue_answer(snapshot), "publication_scope": scope,
                     "card": {"type": "publication_queue", "data": snapshot},
                     "tool_receipt": {"action": "read", "group": "outgoing", "values": {
@@ -2331,7 +2410,7 @@ class OperatorChat:
             bound = intent._subject and intent._subject.kind in {"task", "artifact"}
             if data.creative_goal_id and kind == "watch_goal":
                 reference = str(data.creative_goal_id)
-            elif not bound:
+            elif not bound and reference not in task_ids:
                 explicit = [entry for entry in self.runtime.tasks.activity()
                             if entry["id"] in request or entry["goal"] in request]
                 matches = {entry["id"] for entry in explicit} or task_ids
@@ -2346,8 +2425,12 @@ class OperatorChat:
                         if kind == "watch_goal":
                             if not intent.arrangement:
                                 return {"reply_text": "你希望何时检查哪些来源，或由哪个事件触发？", "card": None, **clarification}
-                            intent.arrangement.configure(self.runtime.tasks, reference, request, operator_facts.now(self.browsing))
-                            text = "已保存长期目标的跟进安排，结果会出现在私有活动。"
+                            arrangement = intent.arrangement
+                            arrangement.configure(self.runtime.tasks, reference, request, operator_facts.now(self.browsing))
+                            if arrangement.after_reply:
+                                text = f"我会等 UID {arrangement.sender_uid} 的下一条私信，再{arrangement.after_reply}。结果会回到这里。"
+                            else:
+                                text = "已保存跟进安排，有更新会回到发起这项任务的对话。"
                         else:
                             action = "pause" if kind == "pause_task" else "resume"
                             task = await self.runtime.tasks.control(reference, task["revision"], action)
@@ -2356,13 +2439,27 @@ class OperatorChat:
                     except (ValueError, LookupError) as error:
                         return {"reply_text": str(error), "card": None, **clarification}
                     return {"reply_text": text, "card": {"type": "agent_task", "data": {"id": task["id"]}}}
-                status = self.runtime.tasks.view(task)["status"]
+                view = self.runtime.tasks.view(task)
+                status = view["status"]
                 labels = {"queued": "等待执行", "scheduled": "已预约", "running": "正在处理", "waiting": "等待结果",
                           "awaiting_approval": "等待确认", "needs_input": "需要你补充信息", "completed": "已完成",
                           "paused": "已暂停", "cancelled": "已停止", "failed": "未完成"}
+                steps = self.runtime.tasks._current_steps(task)
+                if steps and (step := steps[-1])["tool"] == PUBLICATION_TOOL:
+                    outcome = step.get("result") or {}
+                    checkpoint = step.get("checkpoint") or {}
+                    if "items" in outcome:
+                        progress = publication_progress(outcome["items"], len(outcome["items"]))
+                    elif checkpoint.get("message"):
+                        progress = checkpoint["message"]
+                    else:
+                        progress = f"这批动态{labels.get(status, '待核对')}，还没发。"
+                    return {"reply_text": progress, "card": {"type": "agent_task", "data": {"id": task["id"]}}}
                 return {"reply_text": f"这项交办当前{labels.get(status, '状态暂不可查')}。",
                         "card": {"type": "agent_task", "data": {"id": task["id"]}}}
-            return {"reply_text": "你想查哪项交办？说一下目标或任务编号就行。", "card": None, **clarification}
+            reply = ("这段对话里没查到对应的执行记录，无法确认。"
+                     if not task_ids and kind == "task_status" else "你想查哪项交办？说一下目标或任务编号就行。")
+            return {"reply_text": reply, "card": None, **clarification}
         if kind == "agent_task":
             due = None
             if intent.arrangement:

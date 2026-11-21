@@ -12,6 +12,7 @@ from ..models import StrictModel
 from ..web_fetch import programme_credit_text
 
 LABELS = {
+    "publish_dynamic_batch": "B 站动态发布",
     "inbox_received": "定向来信入库回执",
     "web_search": "检索候选来源", "web_page": "读取网页", "bilibili_owner": "B 站号主",
     "operating_account": "B 站运营账号", "operation_status": "自主运营", "today_activity": "当日运营事件", "inspect_video": "视频取材",
@@ -434,7 +435,7 @@ def evidence_index(steps):
         result = step.get("result") or {}
         tool = step["tool"]
         evidence.provided_pages.update(dict.fromkeys(url for url in step.get("provided_page_urls", ()) if _source(url)))
-        if tool == "owner_attachment":
+        if tool in {"owner_attachment", "authorized_inbox_text"}:
             body = result["text"]
             for offset in range(0, len(body), 800):
                 label = f"{_text(result['name'])} · 字符 {offset + 1}–{min(offset + 800, len(body))}"
@@ -644,6 +645,16 @@ def render_private_delivery(product, evidence):
 
 
 def _describe(tool, result):
+    if tool == "publish_dynamic_batch":
+        rows = result.get("items", [])
+        labels = {"published": "已发", "not_sent": "没发", "unconfirmed": "待核对"}
+        lines = []
+        for item in rows:
+            status = labels[item["status"]]
+            evidence = _source(item.get("href")) or item.get("number") or _text(item.get("reason"))
+            preview = _text(item["text"][:72]) or f"草稿 #{item['post_id']}"
+            lines.append(f"{status} · {preview}" + (f" · {evidence}" if evidence else ""))
+        return lines, any(item["status"] == "published" for item in rows)
     if tool == "private_code":
         if result.get("name") and "text" in result:
             return [f"工件 {_text(result['name'])}：{_text(result['text'])}"], True
