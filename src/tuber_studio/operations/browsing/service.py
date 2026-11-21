@@ -966,7 +966,7 @@ class BrowsingService:
                 "last_round_flow": flow_window(self.store, latest) if latest else {}}
 
     def comment_window_due(self, *, now=None):
-        maximum = self.comments.publication_limits()["max_per_hour"]
+        maximum = self.comments.publication_limits().get("max_per_hour", 0)
         if not maximum:
             return None
         now = time.time() if now is None else now
@@ -1020,7 +1020,7 @@ class BrowsingService:
                 return True
         if self.effective().get("review_session_id"):
             return True
-        limit = (self.comments.publication_limits()["max_per_day"] if channel == "comments" else
+        limit = (self.comments.publication_limits().get("max_per_day", 0) if channel == "comments" else
                  self.messages.policy()["max_per_day"] if channel == "messages" else
                  self.dynamics.policy()["max_per_day"])
         return not limit or self.review_counts(account, character)[channel] < limit

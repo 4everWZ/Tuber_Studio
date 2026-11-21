@@ -76,7 +76,8 @@ async def test_tool_changes_preserve_ui_siblings_and_private_authority(workshop)
     assert result["values"]["daily_watch_limit"] == runtime.browsing.policy()["daily_watch_limit"] == 13
     assert runtime.operations.policy() == original
     (await client.put("/api/automation/settings", json={"max_per_hour": 4})).raise_for_status()
-    assert runtime.operations.policy()["max_per_hour"] == 4 and runtime.operations.policy()["max_per_day"] == 3
+    assert runtime.browsing.policy()["max_per_hour"] == 4
+    assert runtime.operations.account_limits() == limits
     result = await set_values(workshop, "illustrations", {"use_memes": True})
     assert result["values"]["use_memes"]
     for group in ("messages", "dynamics"):

@@ -6,6 +6,7 @@ from test_browsing import BV, finished, model_packet, wait_for_sends
 from test_browsing import browsing as browsing
 from test_browsing_comment_only import enable_comment_choices, finish_comment_round
 
+from tuber_studio.operations.browsing.comment_reader import admit_comment_page
 from tuber_studio.platforms.bilibili import PlatformReadError, PublishUncertain
 
 
@@ -163,7 +164,7 @@ async def test_comment_like_after_reply_quota_is_full_is_single_and_reconcilable
     first = item("601")
     first["created_at"] -= 2
     second = item("602", uid="301", parent="601") | {"content": "加了三勺盐以后鸡蛋才浮起来。"}
-    items = [second, first]
+    items = [first]
     likes = []
 
     async def like(target, *, before_send):
@@ -205,7 +206,12 @@ async def test_comment_like_after_reply_quota_is_full_is_single_and_reconcilable
         return await generate(messages, schema, max_tokens=max_tokens)
 
     monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", choose)
-    await finish_comment_round(browsing)
+    row = await finish_comment_round(browsing)
+    items.insert(0, second)
+    with browsing.store.db:
+        admit_comment_page(browsing, row, None, {"bvid": BV, "aid": "42"}, items)
+    await finished(browsing, automatic=True, interaction_only=True)
+    await wait_for_sends(browsing)
     assert len(offered) == 2 and "reply_public" in offered[0] and "reply_public" not in offered[1]
     assert "like_comment" in offered[1]
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["601"]
