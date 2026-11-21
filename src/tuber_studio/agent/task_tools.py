@@ -1040,8 +1040,9 @@ def create_task_runtime(runtime, store, browsing):
             return TaskDecision.model_validate(await request_json(messages, schema))
 
     tasks = TaskRuntime(store, scope, decide, make_plan)
-    tasks.recall_dynamics = browsing.dynamics
-    tasks.validate_recall_read = lambda receipt: recall_memory.validate_read(browsing.dynamics, receipt)
+    if (dynamics := getattr(browsing, "dynamics", None)) is not None:
+        tasks.recall_dynamics = dynamics
+        tasks.validate_recall_read = lambda receipt: recall_memory.validate_read(dynamics, receipt)
     tasks.model_context = model_context
     tasks.unread_web_addresses = available_web_addresses
     tasks.read_parallelism = lambda: runtime.settings.responses_config.get("parallel_reads", 2)
@@ -2262,8 +2263,6 @@ def create_task_runtime(runtime, store, browsing):
             workshop_lookup.LOOKUP_DESCRIPTION, workshop_lookup.WorkshopLookup, lookup_workshop, foreground_read=True,
             reusable=True,
         ),
-        recall_memory.NAME: Tool(recall_memory.DESCRIPTION, recall_memory.RecallQuery, recall_workshop,
-                                 foreground_read=True, reusable=True, responses_only=True),
         "inspect_video": Tool("读取指定BV和分P，返回该部分时长及真实采样时码。可自行勘察候选位置。"
                               "需要可播放选段时，分别指定不超过10秒的[start,end)读取连续纯画面，按回执核对。",
                               Video, video, stop_video, parallel_read=True, reusable=True, own_deadline=True),
@@ -2276,8 +2275,10 @@ def create_task_runtime(runtime, store, browsing):
                             GameAction, game_action, review=review_game),
     }.items():
         tasks.register(name, tool)
-    if getattr(browsing, "dynamics", None) is not None:
-        register_dynamic_publication(tasks, browsing.dynamics)
+    if dynamics is not None:
+        tasks.register(recall_memory.NAME, Tool(recall_memory.DESCRIPTION, recall_memory.RecallQuery, recall_workshop,
+                                                foreground_read=True, reusable=True, responses_only=True))
+        register_dynamic_publication(tasks, dynamics)
     tasks.register("delegate_text", Tool("按 objective 和选定证据 ID 委派独立文本创作。只返回草稿，不是新证据。",
                                         TextBrief, delegate_text, parallel_read=True, reusable=True, own_deadline=True,
                                         responses_only=True))
