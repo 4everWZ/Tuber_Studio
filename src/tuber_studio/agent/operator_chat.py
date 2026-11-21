@@ -2050,7 +2050,9 @@ class OperatorChat:
                     and self.runtime.tasks.edition_recallable(task["id"], artifact["task_revision"])):
                 artifact_link = (f"/api/agent/tasks/{task['id']}/artifacts/"
                                  f"{artifact['task_revision']}/{artifact['edition']}?download=true")
+            sources = recall_memory.delivery_citations(view["steps"], (task["plan"] or {}).get("selected", {}))
             return turn | {"reply_text": reply, "reply_format": "markdown",
+                           **({"sources": sources} if sources else {}),
                            "card": {"type": "task_delivery", "data": {
                                "id": task["id"], "status": view["status"], "approval": approval,
                                "revision": task["revision"], "step_id": delivery["step_id"],

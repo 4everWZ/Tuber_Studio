@@ -137,6 +137,18 @@ def citations(sources):
     return groups
 
 
+def delivery_citations(steps, selection):
+    selected = {source for item in selection.get("items", []) for source in item.get("sources", [])}
+    sources = {}
+    for step in steps:
+        if step["tool"] != NAME:
+            continue
+        for index, source in enumerate((step.get("result") or {}).get("items", []), 1):
+            if f"{step['id']}:{index}" in selected:
+                sources.setdefault(canonical_id(source), source)
+    return citations(sources.values())
+
+
 def search(dynamics, args, *, private=False):
     runtime = dynamics.runtime
     browsing = getattr(runtime, "browsing", None)

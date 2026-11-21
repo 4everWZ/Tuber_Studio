@@ -522,8 +522,12 @@ async def advance(runtime, task):
             continue
         if call.name == "inspect_video" and not permits(video_binding(task), arguments):
             raise DelegationError("视频、分P或时段超出了号主给定的来源。")
-        if any(step["tool"] == call.name and step["arguments"] == arguments for step in steps):
-            raise DelegationError("同一批次存在重复委派。")
+        if earlier := next((s for s in steps if s["tool"] == call.name and s["arguments"] == arguments), None):
+            if call.name != "recall_memory":
+                raise DelegationError("同一批次存在重复委派。")
+            steps.append(step | {"arguments": arguments, "reused_from": earlier.get("reused_from", earlier["id"]),
+                                 "result": {"state": "already_requested", "error": "同批次已有这次查询。"}})
+            continue
         cached = next((step for step in reversed(context) if tool.reusable and step["tool"] == call.name
                        and step["arguments"] == arguments and step.get("result") and not step["result"].get("error")
                        and step["result"].get("status", "completed") == "completed"), None)

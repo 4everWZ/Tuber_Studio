@@ -1,13 +1,15 @@
 import json
 import time
 
+from test_agent_task_recovery import wait_status
 from test_owner_memory_entries import save
 from test_personal_agent import CHAT, turn
 from test_personal_agent import studio as studio
 from test_workshop_lookup import ACCOUNT, SOURCE, seed_workshop
 
-from tuber_studio.agent.recall_memory import NAME, RecallQuery, search
+from tuber_studio.agent.recall_memory import NAME, RecallQuery, RecallSession, search
 from tuber_studio.agent.task_delegation import model_input
+from tuber_studio.agent.task_delivery import PrivateDelivery
 from tuber_studio.responses_provider import FunctionCall, ResponseTurn
 from tuber_studio.store import dump
 
@@ -141,3 +143,49 @@ def test_background_recall_passes_each_read_as_evidence_once(studio):
     assert packet.count(ORIGINAL) == 1
     assert packet.count("?p=2&t=19") == packet.count("#reply6789") == 1
     assert "缺少对象" in packet
+
+
+async def test_slow_recall_continues_with_parallel_reads_and_delivers_once(studio, monkeypatch):
+    runtime, client = studio
+    seed_history(runtime)
+
+    async def route(*args, **kwargs):
+        return {"action": NAME, "recall": {"topic": "鲸鱼"}}
+
+    async def deadline(session, *args, **kwargs):
+        session.read(RecallQuery(source_id=f"video:{SOURCE}"))
+        raise TimeoutError
+
+    async def respond(*, input, **kwargs):
+        conversation = json.loads(input[1]["content"])
+        saved = list(conversation["saved_evidence"])
+        assert len(saved) == 1
+        if len(input) == 2:
+            calls = (FunctionCall("old", NAME, {"topic": "鲸鱼"}),
+                     FunctionCall("same", NAME, {"topic": "鲸鱼"}),
+                     FunctionCall("other", NAME, {"topic": "无关"}))
+        else:
+            assert dump(input).count(ORIGINAL) == 1
+            calls = (FunctionCall("deliver", "submit_materials", {"items": [{
+                "title": "鲸鱼记录", "rationale": "旧视频里确实读到过，出处在这里。", "sources": saved,
+            }], "gaps": []}),)
+        return ResponseTurn("fixture", calls, "", {})
+
+    async def edit(task, evidence):
+        return PrivateDelivery.model_validate(task["plan"]["candidate"])
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", route, raising=False)
+    monkeypatch.setattr(RecallSession, "collect", deadline)
+    monkeypatch.setattr(runtime.tasks, "responses_client", lambda: respond)
+    monkeypatch.setattr(runtime.tasks, "edit_delivery", edit)
+    accepted = await turn(client, "回查鲸鱼声音相关的旧记录", stream=True)
+    identity = accepted["card"]["data"]["id"]
+    done = await wait_status(runtime.tasks, identity, "completed")
+    assert "?p=2&t=19" in done["message"]
+    matches = runtime.store.all("SELECT result FROM operator_chat_turns "
+                                "WHERE json_extract(result,'$.task_delivery.task_id')=?", (identity,))
+    assert len(matches) == 1
+    transcript = (await client.get(CHAT)).json()
+    delivered = next(turn for turn in transcript["turns"] if turn.get("task_delivery", {}).get("task_id") == identity)
+    assert "鲸鱼记录" in delivered["reply_text"]
+    assert any(entry["href"].endswith("?p=2&t=19") for source in delivered["sources"] for entry in source["entries"])
