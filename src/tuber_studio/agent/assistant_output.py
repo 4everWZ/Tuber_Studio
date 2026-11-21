@@ -9,6 +9,11 @@ _ANALYSIS_MARKER = re.compile(r"<\s*/?\s*(?:t(?:h(?:i(?:n(?:k)?)?)?)?)?$|<\s*/?\
 _WRAPPER_SUFFIX = re.compile(r'[\s"”}]+$')
 _MARKDOWN_CODE = re.compile(r"```[\s\S]*?```|`[^`\n]+`")
 _WORKBENCH_FIELD = re.compile(r"\{\{(local_date|local_time|local_weekday)\}\}")
+_EXACT_CLOCK_READOUT = {
+    "local_date": re.compile(r"\d{4}年\d{1,2}月\d{1,2}日"),
+    "local_time": re.compile(r"(?<!\d)\d{1,2}:\d{2}(?!\d)"),
+    "local_weekday": re.compile(r"星期[一二三四五六日天]"),
+}
 
 
 def workbench_fields(text, clock, *, partial=False):
@@ -22,6 +27,20 @@ def workbench_fields(text, clock, *, partial=False):
     parts = re.split("(" + _MARKDOWN_CODE.pattern + ")", text)
     return "".join(part if index % 2 else _WORKBENCH_FIELD.sub(lambda match: values[match[1]], part)
                    for index, part in enumerate(parts))
+
+
+def clock_readout(reply, fields, clock):
+    values = {field: workbench_fields("{{" + field + "}}", clock) for field in fields}
+    compact = re.sub(r"\s+", "", reply)
+    if "{{" in compact or any(
+        match != values.get(field) for field, pattern in _EXACT_CLOCK_READOUT.items() for match in pattern.findall(compact)
+    ):
+        reply = compact = ""
+    missing = [value for value in values.values() if value not in compact]
+    if missing:
+        exact = "现在是" + "、".join(missing) + "。"
+        return reply.rstrip() + "\n\n" + exact if reply else exact
+    return reply
 
 
 def assistant_markdown(text):

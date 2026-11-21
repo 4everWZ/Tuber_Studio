@@ -9,10 +9,12 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import tempfile
-from contextlib import nullcontext
+from contextlib import ExitStack, nullcontext
 from contextvars import ContextVar
 from datetime import datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -66,7 +68,7 @@ def task_facts(task):
 def serve(args):
     import uvicorn
 
-    from tuber_studio.agent import task_delegation
+    from tuber_studio.agent import operator_facts, task_delegation, task_tools
     from tuber_studio.agent.personal_agent import object_scope
     from tuber_studio.api_providers import APIProvider
     from tuber_studio.app import create_app
@@ -118,7 +120,7 @@ def serve(args):
             raise
         entry["finish"] = getattr(provider, "last_finish_reason", None)
         entry["selection"] = {key: value[key] for key in (
-            "action", "intent", "operation", "settings_group", "reference", "patch", "terms", "localized",
+            "action", "intent", "operation", "settings_group", "reference", "patch", "terms", "localized", "clock_fields",
         ) if key in value}
         return value
 
@@ -250,7 +252,25 @@ def serve(args):
                 "actions": {row["request_id"]: row["action"] for row in rows},
             }
 
-        uvicorn.run(app, host=args.bind, port=args.port, access_log=False, log_level="warning")
+        with ExitStack() as sources:
+            if os.getenv("REPLAY_PUBLIC_FIXTURE") == "1":
+                address = "https://example.org/today"
+
+                async def search_fixture(query, *, news=False):
+                    assert news
+                    public_reads["search"] += 1
+                    return [address]
+
+                async def open_fixture(url):
+                    assert url == address
+                    public_reads["page"] += 1
+                    return {"url": address, "title": "公开来源回放", "excerpt": "这份来源用于验证检索和链接。",
+                            "published_at": operator_facts.now(runtime.browsing).replace(
+                                hour=0, minute=0, second=0, microsecond=0).isoformat()}
+
+                sources.enter_context(patch.object(task_tools, "search_public_web", search_fixture))
+                sources.enter_context(patch.object(task_tools, "fetch_excerpt", open_fixture))
+            uvicorn.run(app, host=args.bind, port=args.port, access_log=False, log_level="warning")
 
 
 async def check(args):
@@ -401,6 +421,26 @@ async def check(args):
             async def task_ids():
                 return {task["id"] for task in (await read("/api/agent/tasks"))["tasks"]}
 
+            async def clock_dialogue():
+                zone = ZoneInfo("Asia/Taipei")
+                task_start = await task_ids()
+                before = datetime.now(zone).replace(second=0, microsecond=0)
+                time_reply = await turn("clock_time", "小鱼，现在几点了呀")
+                after = datetime.now(zone)
+                possible = set()
+                while before <= after:
+                    possible.add(before.strftime("%H:%M"))
+                    before += timedelta(minutes=1)
+                clock_pattern = r"(?<!\d)\d{2}:\d{2}(?!\d)"
+                assert possible.intersection(re.findall(clock_pattern, time_reply["reply_text"]))
+                casual = await turn("clock_to_chat", "小鱼，有没有什么要分享的")
+                assert not re.search(clock_pattern, casual["reply_text"])
+                dated = await turn("clock_date", "今天几号呀")
+                current = datetime.now(zone)
+                assert f"{current.year}年{current.month}月{current.day}日" in re.sub(r"\s+", "", dated["reply_text"])
+                assert all(not row.get("tool_receipt") and not row.get("card") for row in (time_reply, casual, dated))
+                assert await task_ids() == task_start
+
             async def dialogue():
                 before = await read(PET), (await read("/api/live/studio"))["scene"], await task_ids()
                 for index, question in enumerate((
@@ -459,11 +499,13 @@ async def check(args):
             async def call_text():
                 start_ids = await task_ids()
                 scope = (await read("/replay/front-tools"))["call_scope"]
+                reference = b"isolated voice reference"
                 async def ticket(route):
                     await route.fulfill(json={
                         "socket": base.replace("http://", "ws://") + "/replay/voice",
                         "ticket": "isolated-transport-fixture", "call_scope": scope, "character": "大肥鱼",
                         "instructions": "", "performance": {"pets_enabled": False}, "avatar": {},
+                        "voice": {"reference_sha256": sha256(reference).hexdigest()},
                     })
 
                 async def socket(ws):
@@ -472,6 +514,7 @@ async def check(args):
                     }}}))
 
                 await page.route("**/api/chat/private-call", lambda route: route.fulfill(json={"configured": True}))
+                await page.route("**/api/chat/private-call/reference", lambda route: route.fulfill(body=reference, content_type="audio/wav"))
                 await page.route("**/api/chat/private-call/ticket", ticket)
                 await page.route_web_socket("**/replay/voice?*", socket)
                 await page.reload(wait_until="commit")
@@ -582,6 +625,10 @@ async def check(args):
                 read_path = "/api/agent/tasks/" + identity
                 before = await read(read_path)
                 trace["before"] = task_facts(before)
+                trace["failure_stage"] = "interleaved_chat"
+                casual = await turn(label + "_casual", "今晚风好大，你喜欢听风声吗？")
+                assert casual["reply_text"].strip() and not casual.get("tool_receipt") and not casual.get("card")
+                assert await task_ids() == start_ids | {identity}, "casual turn started work"
                 trace["failure_stage"] = "foreground_revision"
                 try:
                     changed = await turn(
@@ -626,6 +673,14 @@ async def check(args):
                         and saved["body"]
                         and saved["body"] == task["artifact"]["body"]
                     )
+                    async def deliveries():
+                        return [row for row in (await read(CHAT))["turns"] if row.get("assistant_only")
+                                and (row.get("task_delivery") or {}).get("task_id") == identity]
+
+                    delivered = await deliveries()
+                    assert len(delivered) == 1 and delivered[0]["task_delivery"]["revision"] == task["revision"]
+                    await page.reload(wait_until="commit")
+                    assert await deliveries() == delivered
                     trace["observed_operation_state"] = (await read("/api/automation"))["state"]
                     assert await task_ids() == start_ids | {identity}, "unexpected additional task"
                     trace["backend_delivery"] = "completed"
@@ -670,7 +725,7 @@ async def check(args):
                 )
 
             failed = []
-            for case in (dialogue, canvas, owner, personal, fresh_news, call_text, discover, expression, setting, mixed, matched_control,
+            for case in (clock_dialogue, dialogue, canvas, owner, personal, fresh_news, call_text, discover, expression, setting, mixed, matched_control,
                          continuation, existing, restart_seed, restart_resume):
                 if args.cases and case.__name__ not in args.cases:
                     continue
@@ -682,7 +737,7 @@ async def check(args):
                 start_trace = len((await read("/replay/front-tools"))["model_calls"])
                 try:
                     await case()
-                except (AssertionError, TimeoutError, BrowserError) as error:
+                except (AssertionError, KeyError, TimeoutError, BrowserError) as error:
                     failed.append(
                         {
                             "case": case.__name__,
@@ -726,7 +781,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cases",
         nargs="+",
-        choices=["dialogue", "canvas", "owner", "personal", "fresh_news", "call_text", "discover", "expression", "setting", "mixed",
+        choices=["clock_dialogue", "dialogue", "canvas", "owner", "personal", "fresh_news", "call_text", "discover", "expression", "setting", "mixed",
                  "matched_control", "continuation", "existing", "restart_seed", "restart_resume"],
     )
     options = parser.parse_args()

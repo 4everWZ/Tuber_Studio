@@ -1,7 +1,6 @@
 import asyncio
 import json
 from datetime import datetime
-from types import SimpleNamespace
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -10,6 +9,7 @@ import pytest
 from test_agent_task_recovery import wait_status
 
 from tuber_studio.agent import operator_facts, task_tools
+from tuber_studio.agent.operator_chat import ChatIntent, OperatorChat
 from tuber_studio.agent.owner_memory import history_preference
 from tuber_studio.agent.personal_agent import (
     PublicSearchTerms,
@@ -85,7 +85,7 @@ async def test_bound_person_resolves_a_new_projection_and_expires_on_rebind(stud
         chat.append(name)
         actions = schema["properties"]["action"]["enum"]
         if name == "AssistantDecision":
-            assert set(actions) == {"owner_binding", "owner_profile", "operating_account", "clarify", "agent_task"}
+            assert set(actions) == {"owner_binding", "owner_profile", "operating_account", "clarify"}
             return {"action": "owner_binding"}
         if actions == ["chat"]:
             assert any("https://space.bilibili.com/123" in row["content"] for row in messages)
@@ -147,6 +147,28 @@ async def test_public_news_cites_opened_sources_from_the_current_local_day(studi
     assert len(calls) == 4 and not runtime.tasks.activity()
 
 
+async def test_unavailable_research_keeps_its_readback_in_chat(studio, monkeypatch):
+    runtime, client = studio
+
+    async def generate(messages, schema, **kwargs):
+        assert schema["title"] == "PublicSearchTerms"
+        return {"terms": [], "localized": ""}
+
+    async def unavailable(query, *, news):
+        raise OSError("search unavailable")
+
+    async def select_tool(*args, **kwargs):
+        return ChatIntent(action="web_lookup"), None
+
+    monkeypatch.setattr(OperatorChat, "_assistant", select_tool)
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
+    monkeypatch.setattr(task_tools, "search_public_web", unavailable)
+    result = await turn(client, "联网查一下今儿有什么新闻", stream=True)
+    assert result["tool_receipt"]["state"] == "unavailable"
+    assert result["reply_text"] == "这次公开检索没有读到可用来源。"
+    assert result["sources"] == []
+
+
 async def test_direct_read_binds_a_current_workshop_object_when_model_paraphrases(studio, monkeypatch):
     runtime, client = studio
     calls = []
@@ -155,9 +177,6 @@ async def test_direct_read_binds_a_current_workshop_object_when_model_paraphrase
         calls.append(schema["title"])
         if schema["title"] == "WorkLifecycle":
             assert "owner_identity" not in schema["properties"]["action"]["enum"]
-            if schema["properties"]["action"]["enum"] == ["chat"]:
-                assert any("not_configured" in row["content"] for row in messages)
-                return {"action": "chat", "reply_markdown": "工坊还没连接 B 站运营账号。"}
             return {"action": "direct_tool", "operation": {
                 "mode": "read", "request": "查看当前账号信息", "target": "账号信息",
             }}
@@ -170,7 +189,8 @@ async def test_direct_read_binds_a_current_workshop_object_when_model_paraphrase
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     result = await turn(client, "请帮我查 Ｂ 站登录账号", stream=True)
     assert result["tool_receipt"] == {"action": "read", "group": "account", "values": {"state": "not_configured"}}
-    assert calls == ["WorkLifecycle", "AssistantDecision", "WorkLifecycle"]
+    assert result["reply_text"] == "工坊还没连接 B 站运营账号。"
+    assert calls == ["WorkLifecycle", "AssistantDecision"]
 
 
 async def test_work_plan_uses_capabilities_and_current_request_instead_of_repeated_answers(studio, monkeypatch):
@@ -192,7 +212,7 @@ async def test_work_plan_uses_capabilities_and_current_request_instead_of_repeat
         assert all(old_reply not in row["content"] for row in messages)
         if schema["title"] == "AssistantDecision":
             calls.append("read")
-            assert set(actions) == {"game_status", "clarify", "agent_task"}
+            assert set(actions) == {"game_status", "clarify"}
             return {"action": "game_status"}
         if "direct_tool" in actions:
             calls.append("omni")
@@ -205,17 +225,14 @@ async def test_work_plan_uses_capabilities_and_current_request_instead_of_repeat
                     "mode": "read", "domain": "game", "request": text, "target": "田里",
                 }}
             return {"action": "chat", "reply_markdown": "聊会儿呀。"}
-        calls.append("readback")
-        assert actions == ["chat"]
-        assert any("还有 7 格没浇水。" in row["content"] for row in messages)
-        return {"action": "chat", "reply_markdown": "还有 7 格没浇水。"}
+        raise AssertionError("游戏状态直接取执行回执")
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     monkeypatch.setattr(runtime.live.game_livestream, "status",
                         lambda: {"active_status": {"summary": "还有 7 格没浇水。"}})
     assert (await turn(client, "陪我说会儿话", stream=True))["reply_text"] == "聊会儿呀。"
     assert (await turn(client, "田里还有什么活？"))["reply_text"] == "还有 7 格没浇水。"
-    assert calls == ["omni", "omni", "read", "readback"]
+    assert calls == ["omni", "omni", "read"]
     assert (await client.get(CHAT)).json()["turns"][0]["reply_text"] == old_reply
 
 

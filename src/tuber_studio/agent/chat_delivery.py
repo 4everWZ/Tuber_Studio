@@ -36,9 +36,13 @@ def record_chat_delivery(database, task, status, steps, created):
     if not origin:
         return
     saved = json.loads(origin["result"])
-    card = saved.get("card") or {}
+    bound = saved.get("task_origin")
+    if bound is None:
+        card = saved.get("card") or {}
+        if card.get("type") == "agent_task":
+            bound = card["data"]["id"]
     account, character, version, _, owner, _ = task["scope"]
-    if (card.get("type") != "agent_task" or card["data"]["id"] != origin_id
+    if (bound != origin_id
             or origin["character_id"] != character or origin["character_version"] != version
             or saved.get("owner_source") != owner or saved.get("account_id") != account):
         return

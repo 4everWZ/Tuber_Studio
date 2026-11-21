@@ -79,7 +79,11 @@ async def test_chat_delegation_survives_interleaved_conversation_and_delivers_la
         await wait_status(runtime.tasks, separate_id, "completed")
         assert (await send(casual))["reply_text"] == "窗朝东，早上可以晒到太阳。"
         assert len(runtime.tasks.activity()) == 2
+        # Presentation of the original acknowledgement is independent of the delivery address.
         assert (await send(change))["card"]["data"]["revision"] == 2
+        origin = json.loads(runtime.store.one("SELECT result FROM operator_chat_turns WHERE request_id=?", (task_id,))["result"])
+        assert origin.pop("card")["data"]["id"] == origin["task_origin"] == task_id
+        runtime.store.execute("UPDATE operator_chat_turns SET result=? WHERE request_id=?", (json.dumps(origin), task_id))
         await wait_status(runtime.tasks, task_id, "completed")
         for _ in range(2):
             turns = (await client.get(path)).raise_for_status().json()["turns"]
@@ -280,11 +284,13 @@ async def test_chat_lifecycle_separates_live_status_from_persistent_work(setting
         expected = ["WorkLifecycle"]
         if lifecycle == "direct_tool":
             expected.append("AssistantDecision")
-            if expected_card:
-                expected.append("WorkLifecycle")
         assert calls == expected
         if expected_card:
-            assert response.raise_for_status().json()["card"]["type"] == expected_card
+            result = response.raise_for_status().json()
+            assert result["card"]["type"] == expected_card
+            if tool == "live_status":
+                assert result["reply_text"] == "直播间当前未开播。"
+                assert result["tool_receipt"]["values"]["state"] == "stopped"
         else:
             assert response.status_code == 503
             assert not app.state.store.one("SELECT 1 FROM operator_chat_turns")

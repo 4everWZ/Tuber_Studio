@@ -1,17 +1,32 @@
 import json
+from datetime import datetime
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
-from test_personal_agent import CHAT, studio as studio, turn
+import pytest
+from test_personal_agent import CHAT, turn
+from test_personal_agent import studio as studio
 
 from tuber_studio.agent import operator_facts
+from tuber_studio.agent.assistant_output import clock_readout
 from tuber_studio.operations.browsing.comment_timeline import ensure_comment_timeline
 from tuber_studio.store import dump
-
 
 ACCOUNT = "12345"
 SOURCE = "BV1ab411c7mD"
 OTHER = "BV1ab411c7mE"
 PENDING = "BV1ab411c7mF"
+
+
+@pytest.mark.parametrize("reply, expected", [
+    ("贝壳灯都犯困啦。", "贝壳灯都犯困啦。\n\n现在是19:42。"),
+    ("嗯，{{time}}到了。", "现在是19:42。"),
+    ("星期日，19:42。", "现在是19:42。"),
+    ("现在是 19:42。", "现在是 19:42。"),
+])
+def test_clock_readout_keeps_supported_values(reply, expected):
+    clock = datetime(2026, 11, 21, 19, 42, tzinfo=ZoneInfo("Asia/Taipei"))
+    assert clock_readout(reply, ["local_time"], clock) == expected
 
 
 def seed_workshop(runtime):
@@ -164,7 +179,12 @@ async def test_clear_retires_grounded_objects_and_keeps_task_history(studio, mon
     assert (await turn(client, "它的链接呢"))["reply_text"] == "你想查哪条视频？"
 
 
-async def test_count_receipt_can_lead_to_another_read_in_same_sse_turn(studio, monkeypatch):
+@pytest.mark.parametrize("follow_up, allowed", [
+    ({"collection": "video", "terms": ["蓝色灯塔"]}, True),
+    ({"collection": "video", "day": "yesterday", "terms": ["蓝色灯塔"]}, False),
+    ({"collection": "dynamic", "day": "today"}, False),
+])
+async def test_count_receipt_can_lead_to_scoped_read_in_same_sse_turn(studio, monkeypatch, follow_up, allowed):
     runtime, client = studio
     seed_workshop(runtime)
 
@@ -174,12 +194,78 @@ async def test_count_receipt_can_lead_to_another_read_in_same_sse_turn(studio, m
         source = json.loads(messages[-1]["content"])
         if source["统计"]:
             assert source["统计"]["completed"] == 2
-            return {"reply": "", "evidence": [],
-                    "next_lookup": {"collection": "video", "day": "today", "terms": ["蓝色灯塔"]}}
+            return {"reply": "", "evidence": [], "next_lookup": follow_up}
         return {"reply": "画面里的灯塔很有意思。", "evidence": ["m1"]}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     selected = await turn(client, "今天刷到的东西里挑一段给我聊聊", stream=True)
-    assert selected["tool_receipt"]["calls"][0]["values"]["completed"] == 2
-    assert f"/video/{SOURCE}?p=2&t=19" in selected["sources"][0]["entries"][0]["href"]
+    receipt = selected["tool_receipt"]
+    if allowed:
+        assert receipt["calls"][0]["values"]["completed"] == 2
+        assert f"/video/{SOURCE}?p=2&t=19" in selected["sources"][0]["entries"][0]["href"]
+    else:
+        assert "calls" not in receipt and receipt["values"]["completed"] == 2
     assert not runtime.tasks.activity()
+
+
+async def test_omni_chat_keeps_clock_readout_and_bound_sources_in_their_turn(studio, monkeypatch):
+    runtime, client = studio
+    clock = datetime(2026, 11, 21, 19, 42, tzinfo=ZoneInfo("Asia/Taipei"))
+    monkeypatch.setattr(operator_facts, "now", lambda browsing: clock)
+    seed_workshop(runtime)
+    provider = runtime.llm
+    monkeypatch.setattr(provider, "uses_model_card", True, raising=False)
+    monkeypatch.setattr(provider, "config", {"max_tokens": 1024}, raising=False)
+    monkeypatch.setattr(provider, "capacity_window", 16384, raising=False)
+    monkeypatch.setattr(provider, "prepare_json_messages", lambda messages, *args, **kwargs: messages, raising=False)
+
+    async def count(messages):
+        return 128
+
+    monkeypatch.setattr(provider, "count_tokens", count, raising=False)
+    calls = []
+    lookup_routes = {
+        "你现在看过多少视频？": {"action": "watch_totals", "watch_day": "today"},
+        "那些里面挑一条具体的聊聊": {"action": "workshop_lookup", "lookup": {"collection": "video"}, "object_ref": "obj1"},
+        "刚才那段的链接呢？": {"action": "workshop_lookup", "lookup": {"collection": "video"}, "object_ref": "obj1"},
+    }
+    fields = {"小鱼，现在几点了呀": ["local_time"], "日期呢？": ["local_date"], "讲点你想讲的吧": []}
+    natural = {"小鱼，现在几点了呀": "贝壳灯都犯困啦。", "日期呢？": "今天都到二十一号啦。",
+               "讲点你想讲的吧": "今天想和你随便聊聊。"}
+
+    async def model(messages, schema, **kwargs):
+        title = schema["title"]
+        calls.append(title)
+        utterance = messages[-1]["content"]
+        if title == "ReplyDelivery":
+            assert "可用能力" not in dump(messages)
+            assert not any(row["role"] == "assistant" for row in messages)
+            return {"action": "tool" if utterance in lookup_routes else "answer", "clock_fields": fields.get(utterance, [])}
+        if title == "LookupPresentation":
+            return {"reply": "我想聊这一条。", "evidence": ["m1"]}
+        if utterance in lookup_routes:
+            return lookup_routes[utterance]
+        assert schema["properties"]["action"]["enum"] == ["chat"]
+        assert all("{{local_time}}" not in row["content"] for row in messages)
+        if utterance == "讲点你想讲的吧":
+            assert all("19:42" not in row["content"] for row in messages)
+            assert all("贝壳灯都犯困啦" not in row["content"] for row in messages)
+        return {"action": "chat", "reply_markdown": natural[utterance]}
+
+    monkeypatch.setattr(provider, "generate_assistant_json", model, raising=False)
+    counted = await turn(client, "你现在看过多少视频？")
+    assert counted["tool_receipt"]["values"]["completed"] == 2
+    shared = await turn(client, "那些里面挑一条具体的聊聊", stream=True)
+    link = await turn(client, "刚才那段的链接呢？")
+    assert shared["sources"][0]["entries"][0]["href"] == link["sources"][0]["entries"][0]["href"]
+    calls.clear()
+    timed = await turn(client, "小鱼，现在几点了呀", stream=True)
+    dated = await turn(client, "日期呢？")
+    casual = await turn(client, "讲点你想讲的吧", stream=True)
+    assert timed["reply_text"] == "贝壳灯都犯困啦。\n\n现在是19:42。"
+    assert dated["reply_text"] == "今天都到二十一号啦。\n\n现在是2026年11月21日。"
+    assert casual["reply_text"] == "今天想和你随便聊聊。"
+    assert [result.get("tool_receipt") for result in (timed, dated, casual)] == [None, None, None]
+    assert calls == ["ReplyDelivery", "WorkLifecycle"] * 3
+    short_lived = await turn(client, "小鱼，现在几点了呀", temporary=True)
+    assert short_lived["reply_text"] == timed["reply_text"] and short_lived["card"] is None

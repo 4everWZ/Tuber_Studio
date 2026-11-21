@@ -243,7 +243,7 @@ async def test_live_status_reports_native_program_separately_in_tasks_and_chat(s
         result = response.json()
         assert result["card"]["data"]["state"] == "stopped"
         assert result["card"]["data"]["native_program"] == {"state": "publishing"}
-        assert result["reply_text"] == "Omni 原生节目正在发布。"
+        assert result["reply_text"] == "直播间当前未开播。Omni 原生节目正在发布。"
         for bridge_state in ("idle", "unexpected", None):
             status = await live_tool.run(None, StrictModel())
             assert status["state"] == "stopped"

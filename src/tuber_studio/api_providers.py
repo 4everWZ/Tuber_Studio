@@ -136,7 +136,7 @@ class APIProvider:
         return min(thinking_budget(output), self.config.get("thinking_token_limit", output))
 
     async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None,
-                        on_content=None):
+                        on_content=None, temperature=None):
         payload = self.chat_payload(messages) | {"max_tokens": budget, "stream": False}
         if self.background and self.config.get("enable_thinking"):
             payload["thinking_token_budget"] = self._thinking_budget(budget)
@@ -145,7 +145,7 @@ class APIProvider:
         if self.uses_model_card and not self.background:
             payload["include_reasoning"] = False
         if not probe:
-            payload["temperature"] = self.config.get(
+            payload["temperature"] = temperature if temperature is not None else self.config.get(
                 "summary_temperature" if summary else "temperature", 0.2 if summary else 0.7
             )
             if self.uses_model_card:
@@ -318,7 +318,8 @@ class APIProvider:
         ]
         return single_system_messages(provider_identity_messages(self, messages))
 
-    async def generate_json(self, messages, schema, *, max_tokens, on_content=None, use_remaining_window=False):
+    async def generate_json(self, messages, schema, *, max_tokens, on_content=None, use_remaining_window=False,
+                            temperature=None):
         self.last_content = None
         self.last_finish_reason = None
         self.last_usage = {}
@@ -349,7 +350,7 @@ class APIProvider:
                                         f"有效窗口 {self.capacity_window} tokens。")
         reservation = self._reserve_counted(count, max_tokens)
         content, actual = await self._complete(messages, budget=max_tokens, structured=True, schema=schema,
-                                               on_content=on_content)
+                                               on_content=on_content, temperature=temperature)
         if actual + max_tokens > self.capacity_window:
             raise ContextWindowExceeded(f"结构化实际输入 {actual} tokens，分配输出 {max_tokens} tokens，"
                                         f"有效窗口 {self.capacity_window} tokens。")
@@ -357,12 +358,14 @@ class APIProvider:
         settle_generation(reservation, self.last_usage)
         return value
 
-    async def generate_assistant_json(self, messages, schema, *, max_tokens, on_content=None, on_stage=None):
+    async def generate_assistant_json(self, messages, schema, *, max_tokens, on_content=None, on_stage=None,
+                                      temperature=None):
         if on_stage:
             on_stage("generating")
         return await self.generate_json(
             messages, schema, max_tokens=max_tokens, use_remaining_window=self.uses_model_card,
             on_content=on_content if self.config.get("structured_output") in {"json_schema", "structural_tag"} else None,
+            temperature=temperature,
         )
 
 def validate_image(image, mime_type):
