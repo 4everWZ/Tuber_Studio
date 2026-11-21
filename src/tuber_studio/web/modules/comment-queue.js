@@ -1,5 +1,5 @@
 import { MemePicker } from "../memes.js";
-import { illustrationUrl, illustrationStatus } from "./operation-image.js";
+import { illustrationUrl, illustrationStatus } from "./operation-image.js?v=20261121.4";
 import { $, node, safeMessage } from "./core.js";
 import { commentFinished } from "./comment-state.js?v=20261107.13";
 import { replyHandoff } from "./reply-handoff.js";
@@ -270,12 +270,16 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     const base = channel === "comments" ? "/api/comments/drafts/" : "/api/automation/intents/";
     const continuation = new OperationContinuationView(node("section"), api, error => { message.textContent = error; }, () => refresh(true));
     const canPublish = Boolean(row.can_publish && !send);
-    let publish, copy;
+    const awaitingImage = row.illustration_choice === "awaiting_choice";
+    const hasImageJob = Boolean(row.image_ref?.job_id || target.image_ref?.job_id);
+    let approve, publish, copy;
 
     function syncActions() {
       const dirty = draftEdits.has(key);
-      if (publish) publish.disabled = !canPublish || busy;
-      if (copy) copy.disabled = busy || Boolean(row.image_ref || target.image_ref);
+      const needsPreview = awaitingImage || (dirty && hasImageJob);
+      if (publish) publish.disabled = !canPublish || busy || needsPreview;
+      if (approve) approve.disabled = busy || needsPreview;
+      if (copy) copy.disabled = busy || Boolean(row.illustration);
       continuation.render(row.continuation, { channel, localId: row.id, dirty, entityStatus: status });
     }
     editor.addEventListener("input", () => {
@@ -327,6 +331,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     };
     const post = (endpoint, body) => api(`${base}${encodeURIComponent(row.id)}/${endpoint}`, { method: "POST", body });
     const imageRef = row.illustration;
+    if (row.illustration_choice === "text_only") detail.append(node("small", "纯文字"));
     if (imageRef) {
       const url = illustrationUrl(channel, row.id, imageRef);
       if (url) {
@@ -356,10 +361,17 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
         };
         actions.append(choose);
       }
-      if (row.image_ref || target.image_ref) action("移除配图", () => save(null));
+      if (imageRef) action("使用纯文字", () => save(null));
+      if (row.can_attach_image && hasImageJob) {
+        action("保存正文", () => post("review", {action: "edit", text: editor.value, updated_at: row.updated_at}));
+        action("重新选图", () => {
+          if (editor.value !== row.text) throw Error("请先保存正文");
+          return post("review", {action: "reselect_image", updated_at: row.updated_at, expected_image: imageRef ?? null});
+        });
+      }
     }
     if (editable) {
-      action(send ? "保存并撤回排队" : "保存", () => post("review", { action: "approve", text: editor.value, updated_at: row.updated_at, expected_image: imageRef ?? null }), "primary", "已保存，草稿审核通过。");
+      approve = action(send ? "保存并撤回排队" : "保存", () => post("review", { action: "approve", text: editor.value, updated_at: row.updated_at, expected_image: imageRef ?? null }), "primary", "已保存，草稿审核通过。");
       if (send) action("取消排队", () => post("review", { action: "approve", updated_at: row.updated_at, expected_image: imageRef ?? null }), "", "已取消排队。", false);
       action("拒绝", () => post("review", { action: "reject" }));
       publish = action("发布", async () => {
@@ -393,6 +405,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
         try {
           await post("review", { action: "edit", text: editor.value, updated_at: row.updated_at, mentions });
           draftEdits.delete(key);
+          busy = false;
           await refresh(true);
           feedback.textContent = "提及已保存，草稿待审核。";
         } catch (error) {

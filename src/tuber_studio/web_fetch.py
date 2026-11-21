@@ -108,11 +108,15 @@ class OperationWebFetch:
                     ' 楼里其他人的话用来理解来龙去脉；这一条只是分享近况时，直接接话。'
                 )
             choices = schema.get("oneOf")
-            wire_schema = (
-                schema | {"oneOf": [*choices, *tools]}
-                if choices
-                else {"type": "object", "oneOf": [schema, *tools]}
-            )
+            if choices:
+                wire_schema = schema | {"oneOf": [*choices, *tools]}
+            else:
+                # A local JSON Pointer resolves from the document root, even
+                # when the reply schema is placed inside a choice branch.
+                reply = {key: value for key, value in schema.items() if key != "$defs"}
+                wire_schema = {"type": "object", "oneOf": [reply, *tools]}
+                if "$defs" in schema:
+                    wire_schema["$defs"] = schema["$defs"]
             choice = await invoke(
                 [*messages, {"role": "system", "content": instruction}],
                 wire_schema,

@@ -1,4 +1,4 @@
-import { illustrationUrl, illustrationStatus } from "./operation-image.js";
+import { illustrationUrl, illustrationStatus } from "./operation-image.js?v=20261121.4";
 import { studioPath } from "./api.js";
 import { mentionEditor } from "./public-mentions.js";
 "use strict";
@@ -166,7 +166,9 @@ export function renderDynamicPost(model, {
   const memeId = card ? null : post?.meme_id;
   const imageInfo = memeId ? model.dynamicMemeCache.get(`${post.character_id}:${memeId}`) : null;
   const ref = post?.illustration;
-  const unavailable = !!ref?.job_id || !!memeId && !!imageInfo && !imageInfo.error && (!imageInfo.asset || !imageInfo.asset.enabled || imageInfo.asset.missing);
+  const awaiting = post?.illustration_choice === "awaiting_choice";
+  const textOnly = post?.illustration_choice === "text_only";
+  const unavailable = awaiting || !!ref?.job_id || !!memeId && !!imageInfo && !imageInfo.error && (!imageInfo.asset || !imageInfo.asset.enabled || imageInfo.asset.missing);
 
   if ($("dynamic-post-status")) {
     if (post) setBadge($("dynamic-post-status"), post.status);
@@ -180,14 +182,17 @@ export function renderDynamicPost(model, {
     $("dynamic-post-text").readOnly = !editable;
     if (!model.dynamicPostDirty) $("dynamic-post-text").value = post?.content || "";
   }
-  if ($("approve-dynamic")) $("approve-dynamic").disabled = !editable || model.dynamicPostPending || !!post?.pending_mentions?.length;
+  if ($("save-dynamic-caption")) $("save-dynamic-caption").disabled = !editable || model.dynamicPostPending || !model.dynamicPostDirty;
+  if ($("approve-dynamic")) $("approve-dynamic").disabled = !editable || model.dynamicPostPending || awaiting ||
+    (model.dynamicPostDirty && post?.presentation?.image_choice === "shared") || !!post?.pending_mentions?.length;
   if ($("reject-dynamic")) $("reject-dynamic").disabled = !editable || model.dynamicPostPending;
   if ($("publish-dynamic")) {
     $("publish-dynamic").disabled = !post || post.status !== "approved" || model.dynamicPostDirty || model.dynamicPostPending || unavailable || !model.dynamicPolicy?.credentials_configured;
     $("publish-dynamic").textContent = card || memeId || ref ? "发布已审核图文" : "发布已审核动态";
   }
   if ($("dynamic-pick-meme")) $("dynamic-pick-meme").disabled = !editable || model.dynamicPostPending;
-  if ($("dynamic-clear-meme")) $("dynamic-clear-meme").disabled = !editable || model.dynamicPostPending || !(memeId || ref);
+  if ($("dynamic-reselect-image")) $("dynamic-reselect-image").disabled = !editable || model.dynamicPostPending || model.dynamicPostDirty || !post?.account_id;
+  if ($("dynamic-clear-meme")) $("dynamic-clear-meme").disabled = !editable || model.dynamicPostPending || textOnly;
 
 
   if ($("dynamic-posts")) {
@@ -196,7 +201,7 @@ export function renderDynamicPost(model, {
     }
   }
   for (const option of $("dynamic-post-views")?.querySelectorAll("input") || []) option.disabled = !!model.dynamicPostPending;
-  if ($("dynamic-meme-preview")) $("dynamic-meme-preview").hidden = !card && !memeId && !ref;
+  if ($("dynamic-meme-preview")) $("dynamic-meme-preview").hidden = !card && !memeId && !ref && !awaiting && !textOnly;
   if ($("dynamic-comment-sources")) $("dynamic-comment-sources").hidden = !sourceCard;
   if (sourceCard && $("dynamic-comment-conversation")) renderCommentConversation($("dynamic-comment-conversation"), sourceCard, commentLinks, node);
   if (card) {
@@ -246,9 +251,13 @@ export function renderDynamicPost(model, {
       model.dynamicMemePreviewKey = key;
       $("dynamic-meme-image")?.replaceChildren(memePreview({ asset_id: post.meme_id, title: imageInfo?.asset?.title || "动态配图" }));
     }
-  } else if (model.dynamicMemePreviewKey) {
-    model.dynamicMemePreviewKey = null;
-    $("dynamic-meme-image")?.replaceChildren();
+  } else {
+    if ($("dynamic-meme-name")) $("dynamic-meme-name").textContent = textOnly ? "纯文字" : awaiting ? "配图待决定" : "";
+    if ($("dynamic-meme-availability")) $("dynamic-meme-availability").textContent = "";
+    if (model.dynamicMemePreviewKey) {
+      model.dynamicMemePreviewKey = null;
+      $("dynamic-meme-image")?.replaceChildren();
+    }
   }
 
   if ($("dynamic-post-meta")) {
@@ -661,7 +670,7 @@ export function initDynamicsModule(model, {
     try {
       await api(`/api/dynamics/posts/${encodeURIComponent(post.id)}/review`, {
         method: "POST",
-        body: { action, text: $("dynamic-post-text")?.value, review_key: post.review_key,
+        body: { action, ...(action === "reselect_image" ? {} : { text: $("dynamic-post-text")?.value }), review_key: post.review_key,
           ...(mentions ? { mentions } : {}) }
       });
       model.dynamicPostDirty = false;
@@ -692,7 +701,7 @@ export function initDynamicsModule(model, {
       model.dynamicPostDirty = false;
       model.dynamicDraftEdits.delete(post.id);
       await doRefreshDynamics();
-      notice(meme_id ? "已为动态附加1张图片，正文保留；请重新审核。" : "已移除动态配图，正文保留；请重新审核。");
+      notice(meme_id ? "已附加图片，草稿待审核。" : "已选择纯文字，草稿待审核。");
     } finally {
       model.dynamicPostPending = false;
       doRenderPost();
@@ -700,6 +709,8 @@ export function initDynamicsModule(model, {
   }
 
   // Bind Listeners
+  $("save-dynamic-caption")?.addEventListener("click", () => busy($("save-dynamic-caption"), () => doReviewDynamic("edit")));
+  $("dynamic-reselect-image")?.addEventListener("click", () => busy($("dynamic-reselect-image"), () => doReviewDynamic("reselect_image")));
   $("dynamic-post-text")?.addEventListener("input", () => {
     const post = model.dynamicPosts.find(item => item.id === model.dynamicPostId);
     model.dynamicPostDirty = !!post && $("dynamic-post-text").value !== post.content;

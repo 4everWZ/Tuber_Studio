@@ -11,6 +11,7 @@ from .operations.browsing.thread_context import COMMENT_ID, VIDEO_ID
 from .workstation_images import gateway_base
 
 PENDING_IMAGE_STATES = ("queued", "deciding", "submitting", "running")
+TEXT_ONLY_IMAGE = {"text_only": True}
 
 
 def bound_comment(row):
@@ -87,25 +88,28 @@ def can_attach_comment_image(channel, row):
     )
 
 
-def queue_image(runtime, channel, row, context, text):
+def queue_image(runtime, channel, row, context, text, *, comment_card=None, require_choice=False):
     if not row.get("account_id") or not workstation_image_decisions(runtime):
         return None
     if channel in {"comments", "browsing"} and not can_attach_comment_image(channel, row):
         return None
     scope = image_scope(channel, row)
     options = image_permissions(runtime.store)
-    if not any(options):
+    if not (any(options) or comment_card or require_choice):
         return None
     if callable(context):
         context = context()
-    key = content_hash([scope, row["character_version"], text, context, options])
+    key = content_hash([scope, row["character_version"], text, context, options, comment_card])
     job = runtime.operation_images.decide(
-        scope, request_key=key, context=context, draft=text, character_version=row["character_version"]
+        scope, request_key=key, context=context, draft=text, character_version=row["character_version"],
+        comment_card=comment_card,
     )
     return {"job_id": job["job_id"]}
 
 
 def decision(runtime, channel, row, ref):
+    if ref == TEXT_ONLY_IMAGE:
+        return None
     if not ref or "job_id" not in ref:
         return ref
     scope = image_scope(channel, row)
@@ -115,22 +119,72 @@ def decision(runtime, channel, row, ref):
         return {"job_id": ref["job_id"], "status": "failed", "error": "配图任务与当前草稿来源不符"}
     if job["status"] == "text_only":
         return None
+    if job["status"] == "comment_card":
+        return {"comment_card_sha256": job["comment_card_sha256"]}
     if job["status"] == "gallery":
+        try:
+            catalog = runtime.operation_images.catalog
+            current = (image_permissions(runtime.store)[0] and catalog
+                       and catalog.read(job["asset_id"], row["character_id"])["asset"]["sha256"]) == job["asset_sha256"]
+        except (LookupError, ValueError, OSError):
+            current = False
+        if not current:
+            if row["status"] == "pending_review" and not row.get("attempted_at"):
+                runtime.operation_images.reselect(scope, job["job_id"])
+            return {"job_id": job["job_id"], "status": "awaiting_choice", "error": "图库配图已变更，等待重新选图。"}
         return {"asset_id": job["asset_id"], "sha256": job["asset_sha256"]}
     if job["status"] != "ready":
         return {"job_id": job["job_id"], "status": job["status"], "error": job.get("error")}
-    artifact = runtime.operation_images.read(scope, job["artifact_id"])
+    if not image_permissions(runtime.store)[1] and row["status"] in {"pending_review", "approved", "publishing"}:
+        return {"job_id": job["job_id"], "status": "awaiting_choice",
+                "error": "生成图片的权限已关闭，可以重新选图。"}
+    try:
+        artifact = runtime.operation_images.read(scope, job["artifact_id"])
+    except LookupError:
+        return {"job_id": job["job_id"], "status": "awaiting_choice", "error": "生成的图片暂时读不到。"}
     if artifact["character_version"] != row["character_version"]:
         return {"job_id": job["job_id"], "status": "failed", "error": "工件绑定的角色版本不同，请重新选图"}
     return {"artifact_id": artifact["artifact_id"], "sha256": artifact["sha256"]}
 
 
-def image_decision_pending(runtime, channel, row):
+def image_choice(runtime, channel, row, raw, resolved):
+    if raw == TEXT_ONLY_IMAGE:
+        return "text_only"
+    if resolved:
+        if resolved.get("job_id"):
+            return "awaiting_choice"
+        return "image"
+    if raw and "job_id" in raw:
+        try:
+            if runtime.operation_images.status(image_scope(channel, row), raw["job_id"])["status"] == "text_only":
+                return "text_only"
+        except LookupError:
+            pass
+    return None
+
+
+def rebind_image(runtime, channel, row, text, *, retry=False):
+    raw = row_ref(row)
+    if not raw or "job_id" not in raw:
+        if retry:
+            raise ValueError("这份草稿没有可恢复的选图记录")
+        return raw
+    scope = image_scope(channel, row)
+    material = runtime.operation_images.material(scope, raw["job_id"])
+    result = queue_image(runtime, channel, row, material["context"], text, require_choice=True)
+    if retry and result == raw:
+        runtime.operation_images.reselect(scope, raw["job_id"])
+    return result or raw
+
+
+def image_decision_pending(runtime, channel, row, *, include_choice=True):
     ref = row_ref(row)
     if not ref or "job_id" not in ref:
         return False
     status = runtime.operation_images.status(image_scope(channel, row), ref["job_id"])["status"]
-    return status in PENDING_IMAGE_STATES
+    if status in PENDING_IMAGE_STATES:
+        return True
+    return include_choice and "job_id" in (decision(runtime, channel, row, ref) or {})
 
 
 async def wait_decision(runtime, channel, row, authorized):
@@ -138,14 +192,14 @@ async def wait_decision(runtime, channel, row, authorized):
     if not ref or "job_id" not in ref:
         return
     while authorized():
-        if not image_decision_pending(runtime, channel, row):
+        if not image_decision_pending(runtime, channel, row, include_choice=False):
             return
         await asyncio.sleep(0.5)
     raise ValueError("等待配图期间原发送授权已停止")
 
 
 def require_comment_attachment(channel, row, ref):
-    if ref and not can_attach_comment_image(channel, row):
+    if ref and ref != TEXT_ONLY_IMAGE and not can_attach_comment_image(channel, row):
         raise ValueError("仅视频一级评论可配图。已有附件可从草稿移除。")
 
 
@@ -180,7 +234,7 @@ def image_payload(ref):
     if not ref:
         return {}
     if "job_id" in ref:
-        raise ValueError("配图决定尚未完成或失败，可在草稿中查看或移除")
+        raise ValueError(ref.get("error") or "配图待决定")
     key = "meme_id" if "asset_id" in ref else "artifact_id"
     return {key: ref.get("asset_id") or ref["artifact_id"], "asset_sha256": ref["sha256"]}
 

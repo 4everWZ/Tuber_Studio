@@ -10,7 +10,7 @@ from .models import StrictModel
 
 
 class ReviewMessage(StrictModel):
-    action: Literal["approve", "reject", "edit", "copy"]
+    action: Literal["approve", "reject", "edit", "copy", "reselect_image"]
     text: str | None = Field(default=None, min_length=1, max_length=1000)
     meme_id: str | None = Field(default=None, pattern=r"^meme_[a-f0-9]{32}$")
     image_ref: dict | None = None

@@ -1,4 +1,4 @@
-import { illustrationUrl, illustrationStatus } from "./modules/operation-image.js";
+import { illustrationUrl, illustrationStatus } from "./modules/operation-image.js?v=20261121.4";
 "use strict";
 import { MemePicker, memePreviewUrl } from "./memes.js?v=20261118.1";
 import { contactLabel, contactReason, contactStatus } from "./modules/message-labels.js?v=20261107.20";
@@ -63,8 +63,9 @@ export class MessagesPanel {
     this.privateContinuation=new OperationContinuationView(privateProgress,api,notify,()=>this.refresh());
     const imageActions=this.element('div',null,'actions dm-meme-actions');
     const pick=this.element('button','选择表情包');pick.type='button';pick.dataset.pickMeme='';
-    const clear=this.element('button','改用文字');clear.type='button';clear.dataset.clearMeme='';
-    const manage=this.element('a','管理表情包图库 →');manage.href='#assets';const attach=this.element('button','附图并保留正文');attach.type='button';attach.dataset.attachImage='';imageActions.append(pick,attach,clear,manage);
+    const clear=this.element('button','使用纯文字');clear.type='button';clear.dataset.clearMeme='';
+    const reselect=this.element('button','重新选图');reselect.type='button';reselect.dataset.reselectImage='';
+    const manage=this.element('a','管理表情包图库 →');manage.href='#assets';const attach=this.element('button','附图并保留正文');attach.type='button';attach.dataset.attachImage='';imageActions.append(pick,attach,reselect,clear,manage);
     const imagePreview=this.element('div',null,'dm-meme-preview');imagePreview.dataset.memePreview='';imagePreview.hidden=true;
     imagePreview.innerHTML='<strong data-meme-name></strong><figure><img data-meme-image alt="已选私信配图" hidden><span data-meme-fallback class="hint" hidden>图片暂时无法预览。</span></figure><p data-meme-availability class="hint"></p><p data-image-mode class="hint"></p>';
     const textLabel=this.$('[data-text]').parentElement;const title=this.element('span','私信内容');title.dataset.textLabel='';textLabel.firstChild.replaceWith(title);textLabel.before(imageActions,imagePreview);
@@ -72,6 +73,11 @@ export class MessagesPanel {
     pick.onclick=()=>{const row=this.value?.drafts.find(item=>item.id===this.selected);if(!row)return;this.pickerContext={id:row.id,account:this.value.account_id,character:row.character_id,updated_at:row.updated_at};this.memePicker.open(row.meme_id);};
     attach.onclick=()=>{const row=this.value?.drafts.find(item=>item.id===this.selected);if(!row)return;this.pickerContext={id:row.id,account:this.value.account_id,character:row.character_id,updated_at:row.updated_at,attach:true};this.memePicker.open(row.illustration?.asset_id);};
     clear.onclick=()=>this.chooseMeme(null).catch(error=>{this.$('[data-error]').textContent=error.message;});
+    reselect.onclick=()=>this.action(async()=>{
+      const row=this.value?.drafts.find(item=>item.id===this.selected);if(!row)return;
+      await api(`/api/messages/drafts/${row.id}/review`,{method:'POST',body:{action:'reselect_image',updated_at:row.updated_at,expected_image:row.illustration??null}});
+      await this.refresh();
+    });
     this.$('[data-refresh]').onclick=()=>this.refresh();
     this.$('[data-sync]').onclick=()=>this.action(async()=>{const result=await api('/api/messages/sync',{method:'POST'});notify(`读取完成，新增 ${result.imported} 条私信${result.errors.length?'，部分会话读取失败':''}`);await this.refresh();});
     this.$('[data-sync]').disabled=true;this.$('[data-policy] button').disabled=true;
@@ -255,24 +261,28 @@ export class MessagesPanel {
     for (const check of this.root.querySelectorAll('[data-drafts] input[type=checkbox]')) check.disabled=this.busy;
     for(const radio of this.$('[data-draft-views]').querySelectorAll('input'))radio.disabled=this.busy;
     const ref=row?.illustration,legacy=row?.message_kind==='image',image=legacy||!!ref,asset=row?.meme||this.memeCache.get(`${row?.character_id}:${row?.meme_id}`),unavailable=image&&asset&&(!asset.enabled||asset.missing);
+    const awaiting=row?.illustration_choice==='awaiting_choice',textOnly=row?.illustration_choice==='text_only';
     this.$('[data-text-label]').textContent=legacy?'审阅文字 / 文字备选（不会随图片发送）':'私信内容';
     this.$('[data-pick-meme]').disabled=!editable||this.busy;this.$('[data-clear-meme]').disabled=!editable||this.busy||!image;this.$('[data-pick-meme]').hidden=!editable;this.$('[data-clear-meme]').hidden=!editable;
+    this.$('[data-reselect-image]').hidden=!editable||!row?.image_ref?.job_id;
+    this.$('[data-reselect-image]').disabled=this.busy||this.dirty||!awaiting;
     this.$('[data-attach-image]').disabled=!editable||this.busy||!row?.account_id;this.$('[data-attach-image]').hidden=!editable;
-    this.$('[data-image-mode]').textContent=legacy?'只发一条图片消息，正文保留作备选。':'先发图片，再向同一 UID 发送正文，各自取得平台回执。';
-    this.$('[data-meme-preview]').hidden=!image;
+    this.$('[data-image-mode]').textContent=legacy?'只发一条图片消息，正文保留作备选。':image&&!awaiting?'先发图片，再向同一 UID 发送正文，各自取得平台回执。':'';
+    this.$('[data-meme-preview]').hidden=!image&&!textOnly;
     if(ref){
       this.$('[data-meme-name]').textContent=ref.asset_id?'图库配图':ref.artifact_id?'生成配图':'私信配图';
       this.$('[data-meme-availability]').textContent=illustrationStatus(ref);
       const url=illustrationUrl('messages',row.id,ref),preview=this.$('[data-meme-image]');
       if(this.previewKey!==url){this.previewKey=url;preview.hidden=true;preview.onload=()=>{preview.hidden=false;};preview.onerror=()=>{this.$('[data-meme-fallback]').hidden=false;};this.$('[data-meme-fallback]').hidden=true;if(url)preview.src=url;else preview.removeAttribute('src');}
     }else if(legacy){this.$('[data-meme-name]').textContent=asset?.title||row.meme_id||'已选图片';this.$('[data-meme-availability]').textContent=unavailable?'当前图片已禁用或缺失，请更换图片或改用文字。':'';const key=`${row.character_id}:${row.meme_id}`;if(this.previewKey!==key){this.previewKey=key;const preview=this.$('[data-meme-image]');preview.hidden=true;this.$('[data-meme-fallback]').hidden=true;preview.onload=()=>{preview.hidden=false;this.$('[data-meme-fallback]').hidden=true;};preview.onerror=()=>{preview.hidden=true;this.$('[data-meme-fallback]').hidden=false;};preview.src=memePreviewUrl({asset_id:row.meme_id});}}
-    else if(this.previewKey){this.previewKey=null;this.$('[data-meme-image]').removeAttribute('src');}
+    else{this.previewKey=null;this.$('[data-meme-image]').removeAttribute('src');this.$('[data-meme-image]').hidden=true;this.$('[data-meme-fallback]').hidden=true;this.$('[data-meme-name]').textContent=textOnly?'纯文字':'';this.$('[data-meme-availability]').textContent='';}
     this.$('[data-source]').textContent=row?`${this.contactLabel(row)} · ${row.display_name||row.platform_user_id} · UID ${row.platform_user_id} · ${row.source_kind==='comment'?'评论转入':row.source_kind==='message'?'对方来信':'来源记录'} #${row.source_id} · ${contactReason(row.reason)} · ${row.character_id}`:'选择草稿查看来源和回复。';this.renderTrigger(row);
     this.$('[data-draft-status]').textContent=this.dirty&&!editable?'草稿已移出当前列表，本地修改可复制。':row?`${state.label}${row.purpose&&state.waiting?' · '+row.purpose:''}${row.error&&row.status!=='publish_uncertain'?' · '+row.error:''}${this.dirty?' · 有未保存修改':''}`:'';this.$('[data-receipt]').textContent=row?.image_uploads?.length||row?.delivery_steps?.length?JSON.stringify({图片上传:row.image_uploads,分步送达:row.delivery_steps,最终回执:row.receipt},null,2):row?.receipt||(row?.status==='publish_uncertain'?row.error||'':'');
-    for(const button of this.root.querySelectorAll('[data-review]')){button.disabled=!editable||this.busy;button.hidden=!editable;}
+    const needsImagePreview=awaiting||(this.dirty&&!!row?.image_ref?.job_id);
+    for(const button of this.root.querySelectorAll('[data-review]')){button.disabled=!editable||this.busy||(button.dataset.review==='approve'&&needsImagePreview);button.hidden=!editable;}
     this.$('[data-copy]').disabled=image||!row||!['approved','copied'].includes(row.status)||this.dirty||this.busy;
     this.$('[data-send]').textContent=legacy?'批准并发送图片':'发送已审核私信';
-    this.$('[data-send]').disabled=!row||!(legacy?['pending_review','approved','copied']:['approved','copied']).includes(row.status)||this.dirty||this.busy||!!unavailable||!this.value.policy.enabled||!this.value.policy.credentials_configured;
+    this.$('[data-send]').disabled=!row||awaiting||!(legacy?['pending_review','approved','copied']:['approved','copied']).includes(row.status)||this.dirty||this.busy||!!unavailable||!this.value.policy.enabled||!this.value.policy.credentials_configured;
     this.$('[data-send]').hidden=!editable;this.$('[data-copy]').hidden=!editable;
     for(const button of this.root.querySelectorAll('[data-drafts] button'))button.disabled=this.busy;
     const canRetry=state.continueAgreement||['failed','cancelled'].includes(row?.status);

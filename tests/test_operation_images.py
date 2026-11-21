@@ -13,6 +13,7 @@ from PIL import Image
 from tuber_studio import operation_images as ops
 from tuber_studio.artwork_references import Reference
 from tuber_studio.memes import MemeCatalog
+from tuber_studio.operation_attachments import decision, image_scope
 from tuber_studio.workstation_images import ImageBrief, image_payload
 
 
@@ -179,6 +180,64 @@ async def test_text_only_does_not_submit(fixture, store, monkeypatch):
     assert not monitor["posts"]
 
 
+async def test_missing_selection_keeps_draft_and_retries_after_restart(fixture, store, monkeypatch):
+    service, scope, monitor = fixture
+    scope = scope.model_copy(update={"channel": "dynamic"})
+    draft, card = "雨天撑伞。", "c" * 64
+    job = service.decide(scope, request_key="draft", context=[], draft=draft, comment_card=card)
+
+    async def omit(*args):
+        raise ValueError("缺少选项")
+
+    monkeypatch.setattr(ops, "choose", omit)
+    def queued():
+        return store.one("SELECT * FROM operation_image_jobs WHERE job_id=?", (job["job_id"],))
+
+    await service._process(queued())
+    assert service.status(scope, job["job_id"])["status"] == "awaiting_choice"
+
+    async def choose_card(settings, packet):
+        material = json.loads(packet)
+        assert material["draft"] == draft and material["comment_card"] == card
+        return ops.CommentCardImage(comment_card_sha256=card)
+
+    monkeypatch.setattr(ops, "choose", choose_card)
+    restarted = ops.OperationImages(service.settings, store)
+    restarted.reselect(scope, job["job_id"])
+    await restarted._process(queued())
+    status = restarted.status(scope, job["job_id"])
+    assert (status["status"], status["comment_card_sha256"]) == ("comment_card", card)
+    assert not monitor["posts"]
+
+
+async def test_revoked_gallery_choice_preserves_approved_content(fixture, store, monkeypatch):
+    service, _, monitor = fixture
+    row = {"id": 1, "account_id": "owner", "character_id": "whale", "character_version": 1,
+           "status": "approved", "content": "看海。"}
+    scope = image_scope("dynamics", row)
+    service.catalog = MemeCatalog(service.settings, store)
+    asset = await service.catalog.register("whale", monitor["selection"].data, title="海边", emotions=["idle"],
+                                           source={"kind": "user_upload", "author": "test"},
+                                           license={"name": "fixture"})
+    store.set("illustration_policy", {"use_memes": True, "generate_images": False})
+
+    async def pick(settings, packet):
+        assert json.loads(packet)["gallery"][0]["asset_id"] == asset["asset_id"]
+        return ops.GalleryImage(asset_id=asset["asset_id"], sha256=asset["sha256"])
+
+    monkeypatch.setattr(ops, "choose", pick)
+    job = service.decide(scope, request_key="draft", context="看海", draft=row["content"])
+    ref = {"job_id": job["job_id"]}
+    pending = store.one("SELECT * FROM operation_image_jobs WHERE job_id=?", (ref["job_id"],))
+    await service._process(pending)
+    runtime = SimpleNamespace(store=store, operation_images=service)
+    assert decision(runtime, "dynamics", row, ref)["sha256"] == asset["sha256"]
+    store.set("illustration_policy", {"use_memes": False, "generate_images": False})
+    assert decision(runtime, "dynamics", row, ref)["status"] == "awaiting_choice"
+    assert service.status(scope, job["job_id"])["asset_id"] == asset["asset_id"]
+    assert not monitor["posts"]
+
+
 @pytest.mark.parametrize("channel", ["comment", "direct_message", "dynamic"])
 async def test_gallery_and_generated_scene_share_scoped_choice(fixture, store, monkeypatch, channel):
     images, scope, monitor = fixture
@@ -208,7 +267,7 @@ async def test_gallery_and_generated_scene_share_scoped_choice(fixture, store, m
     other = images.decide(scope, request_key="changed", context="海边", draft="一起看海。")
     store.set("illustration_policy", {"use_memes": False, "generate_images": False})
     await images._process(store.one("SELECT * FROM operation_image_jobs WHERE job_id=?", (other["job_id"],)))
-    assert images.status(scope, other["job_id"])["status"] == "text_only"
+    assert images.status(scope, other["job_id"])["status"] == "awaiting_choice"
     assert not monitor["posts"]
 
 

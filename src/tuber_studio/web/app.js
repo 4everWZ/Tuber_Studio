@@ -7,13 +7,13 @@ import { initChatPet } from "./modules/chat-pet.js";
 import { characterDisplay, bindDisplaySettings } from "./modules/character-display.js";
 import { initArtworkReferences } from "./modules/artwork-references.js";
 import { initIllustrationPolicy } from "./modules/illustration-policy.js";
-import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261121.2";
+import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261121.4";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261115.2";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261119.3";
 import { renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js?v=20261120.1";
-import { MessagesPanel } from "./messages.js?v=20261118.1";
+import { MessagesPanel } from "./messages.js?v=20261121.4";
 import { UserMemoryEditor } from "./user-memory.js";
 import {
   applyAutomationStatus,
@@ -29,7 +29,7 @@ import {
 } from "./modules/comments.js?v=20261107.17";
 import {
   initDynamicsModule,
-} from "./modules/dynamics.js?v=20261121.3";
+} from "./modules/dynamics.js?v=20261121.4";
 import {
   initMaintenanceModule,
 } from "./modules/maintenance.js?v=20261107.12";

@@ -21,6 +21,12 @@ def text_only(monkeypatch):
 
     monkeypatch.setattr(operation_attachments, "gateway_base", lambda _: "http://fixture/v1")
     monkeypatch.setattr(operation_images, "choose", choose)
+    original = operation_images.OperationImages._choice_material
+
+    def options(images, scope, job, excluded_assets=()):
+        return original(images, scope, job, excluded_assets) | {"variants": ["q"]}
+
+    monkeypatch.setattr(operation_images.OperationImages, "_choice_material", options)
 
 
 async def settled(runtime, channel, row):
@@ -67,7 +73,6 @@ async def test_autonomous_video_comment_and_video_dynamic_use_scoped_material(
     assert {s["id"] for s in comment["context"]["evidence"]} <= set(main["evidence"])
     await browsing.comments.account_id()
     model = Model()
-    model.illustration = "picture"
     monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", model.generate_json)
     monkeypatch.setattr(browsing.runtime.operation_llm, "count_tokens", model.count_tokens)
     browsing.operations.configure({"enabled": True}, account_id="100", character=browsing.runtime.character)

@@ -224,7 +224,9 @@ async def test_public_comment_can_illustrate_its_story_without_losing_the_source
     published_reply(service)
     service.runtime.operation_llm.illustration = "picture"
     generated = {"artifact_id": "a" * 32, "sha256": "b" * 64}
-    monkeypatch.setattr(module, "queue_image", lambda *args: generated)
+    monkeypatch.setattr(module, "workstation_image_decisions", lambda _: True)
+    monkeypatch.setattr(module, "queue_image", lambda *args, **kwargs: generated)
+    monkeypatch.setattr(service.comments, "display_account_id", lambda: "100", raising=False)
     draft = await service.evaluate(manual=True)
     row = service._post(draft["post_id"])
     assert row["comment_card"] is None
@@ -235,6 +237,32 @@ async def test_public_comment_can_illustrate_its_story_without_losing_the_source
     without_illustration = service.review(row["id"], "edit", meme_id=None)
     assert without_illustration["comment_card"] is None
     assert without_illustration["outgoing_links"] == row["outgoing_links"]
+
+
+async def test_legacy_public_dynamic_reselects_from_saved_actor_and_text(service, monkeypatch):
+    published_reply(service)
+    monkeypatch.setattr(service.comments, "display_account_id", lambda: "100", raising=False)
+    service.runtime.operation_llm.illustration = "none"
+    legacy = service._post((await service.evaluate(manual=True))["post_id"])
+    assert legacy["comment_card"] is None and legacy["generation_identity"].startswith("{")
+    received = []
+
+    def queue(runtime, channel, row, context, text, *, comment_card, require_choice):
+        assert channel == "dynamics" and text == legacy["content"]
+        assert comment_card and require_choice
+        return {"job_id": "legacy-reselected"}
+
+    def status(scope, job_id):
+        assert scope["account_id"] == "100" and job_id == "legacy-reselected"
+        return {"job_id": job_id, "status": "queued"}
+
+    monkeypatch.setattr(module, "queue_image", queue)
+    monkeypatch.setattr(service.runtime, "operation_images", SimpleNamespace(
+        status=status, reselect=lambda scope, job_id: received.append(job_id),
+    ), raising=False)
+    saved = service.review(legacy["id"], "reselect_image", review_key=legacy["review_key"])
+    assert received == ["legacy-reselected"] and saved["illustration_choice"] == "awaiting_choice"
+    assert saved["content"] == legacy["content"] and saved["source_comment_card"]
 
 
 def test_old_dynamic_card_preserves_the_original_quote_order_for_reconciliation():

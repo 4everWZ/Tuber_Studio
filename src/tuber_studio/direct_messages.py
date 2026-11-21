@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import httpx
 from pydantic import Field, StrictInt
 
+from .dynamic_materials import REFLECTION_INSTRUCTION, REFLECTIONS, ensure_reflections
 from .generation_meter import GenerationMeter, budgeted_json
 from .illustration_policy import illustration_policy
 from .meme_selection import select_meme
@@ -21,13 +22,15 @@ from .message_outreach import (
     invitation_key,
     verified_agreement,
 )
-from .dynamic_materials import REFLECTION_INSTRUCTION, REFLECTIONS, ensure_reflections
 from .models import OperationReply, ReflectionDirection, StrictModel
 from .operation_attachments import (
+    TEXT_ONLY_IMAGE,
     checked_image,
+    image_choice,
     image_payload,
     image_scope,
     queue_image,
+    rebind_image,
     record_upload,
     row_ref,
     uploads,
@@ -1523,25 +1526,46 @@ class DirectMessages:
         row = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         if not row or row["status"] not in {"pending_review", "approved", "rejected", "copied"}:
             raise ValueError("当前私信草稿不能编辑或审核")
-        if action not in {"approve", "reject", "edit", "copy"}:
+        reselect = action == "reselect_image"
+        if action not in {"approve", "reject", "edit", "copy", "reselect_image"}:
             raise ValueError("未知私信审核操作")
         expected = options.pop("updated_at", None)
         if "expected_image" in options and options.pop("expected_image") != image_decision(self.runtime, "messages", row, row_ref(row)):
             raise ValueError("配图已变化，请核对当前私信")
         if expected is not None and expected != row["updated_at"]:
             raise ValueError("草稿版本已变化，请刷新")
+        raw = row_ref(row)
+        if reselect:
+            if text is not None or options or row["status"] not in {"pending_review", "approved"}:
+                raise ValueError("仅待发私信可以重新选图")
+            if self.display_account_id() != row["account_id"]:
+                raise ValueError("请切换到草稿所属账号")
+            options["image_ref"] = rebind_image(self.runtime, "messages", row, row["text"], retry=True)
+            action = "edit"
         if set(options) - {"meme_id", "image_ref"} or len(options) > 1 or options and action != "edit":
             raise ValueError("更换表情需要重新编辑并审核")
-        ref = None if "meme_id" in options else options.get("image_ref", row_ref(row))
+        ref = (options.get("image_ref") or TEXT_ONLY_IMAGE) if "image_ref" in options else raw
+        if "meme_id" in options:
+            ref = None if options["meme_id"] else TEXT_ONLY_IMAGE
+        if raw and "job_id" in raw and text is not None and text.strip() != row["text"] and not options:
+            if action == "approve":
+                raise ValueError("正文已修改，请先保存并查看新稿的配图决定")
+            if action == "edit":
+                ref = rebind_image(self.runtime, "messages", row, validate_operation_text(text, label="私信内容"))
         if action == "approve":
             ref = image_decision(self.runtime, "messages", row, ref)
-        if ref and ("image_ref" in options or action == "approve"):
+            if ref and "job_id" in ref:
+                raise ValueError("配图待决定，请重新选图或使用纯文字")
+            if ref is None and image_choice(self.runtime, "messages", row, raw, ref) == "text_only":
+                ref = TEXT_ONLY_IMAGE
+        if ref and ref != TEXT_ONLY_IMAGE and not reselect and ("image_ref" in options or action == "approve"):
             if not row["account_id"] or not row["platform_user_id"]:
                 raise ValueError("图文私信需要绑定账号和收件人")
             checked_image(self.memes, ref, row["character_id"], runtime=self.runtime, scope=image_scope("messages", row))
         meme_id = None if "image_ref" in options else options.get("meme_id", row.get("meme_id"))
-        kind = "text_image" if ref else ("image" if meme_id else "text")
-        if action == "copy" and (meme_id or ref):
+        image = ref and ref != TEXT_ONLY_IMAGE
+        kind = "text_image" if image else ("image" if meme_id else "text")
+        if action == "copy" and (meme_id or image):
             raise ValueError("图片私信不能复制为文本，请使用发送图片")
         if meme_id and action != "reject":
             if not self.memes:
@@ -1560,7 +1584,9 @@ class DirectMessages:
         try:
             self.store.execute(
                 "UPDATE dm_drafts SET text=?,status=?,message_kind=?,meme_id=?,image_ref=?,error=NULL,updated_at=? WHERE id=?",
-                (text.strip(), status, kind, meme_id, json.dumps(ref) if ref else None, time.time(), identity),
+                (text.strip(), status, kind, meme_id,
+                 json.dumps(raw if action == "approve" and raw and "job_id" in raw else ref) if ref else None,
+                 time.time(), identity),
             )
         except BaseException:
             if self.memes and meme_id != row.get("meme_id"):
@@ -2406,7 +2432,9 @@ class DirectMessages:
 
     def _draft_view(self, row):
         ref = row_ref(row)
-        row = row | {"illustration": image_decision(self.runtime, "messages", row, ref),
+        attachment = image_decision(self.runtime, "messages", row, ref)
+        row = row | {"illustration": attachment,
+                     "illustration_choice": image_choice(self.runtime, "messages", row, ref, attachment),
                      "image_ref": ref, "image_uploads": uploads(self.store, "messages", row["id"]),
                      "delivery_steps": [step | {"receipt": json.loads(step["receipt"])} for step in self.store.all(
                          "SELECT s.attempt_id,s.kind,s.receipt FROM dm_delivery_steps s JOIN dm_attempts a ON a.id=s.attempt_id "

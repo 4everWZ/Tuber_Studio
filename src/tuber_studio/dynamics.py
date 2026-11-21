@@ -24,6 +24,7 @@ from .meme_selection import select_meme
 from .operation_attachments import (
     checked_image,
     decision,
+    image_choice,
     image_payload,
     image_scope,
     queue_image,
@@ -121,7 +122,6 @@ def dynamic_decision_messages(character, recent_posts, public_sources, *, curren
                 "几条素材在讲同一件事时可以合成一条。points 记录这次聊到的各个要点和对应的 source_ids。"
                 "参考相关待发稿和已分享记录。后来只换说法重复同一个点就先等，有新发现或进展可以接着分享。"
                 "source_ids 写实际用过的素材，随想可留空。想附具体链接才填 link_source_ids。"
-                "illustration 可选 none、comment_card（选用素材里的评论图）或 picture（图库或配图）。"
                 + MENTION_INSTRUCTION +
                 "分享时选post，content写动态正文。暂缓时选wait，content留空。"
                 "reason说明决定，next_evaluation_seconds是下次评估间隔。"
@@ -629,17 +629,40 @@ class Dynamics:
         post = self._decode(row)
         post.pop("send_payload", None)
         post["image_ref"] = row_ref(post)
-        post["illustration"] = decision(self.runtime, "dynamics", post, post["image_ref"])
-        if post["image_ref"] or post.get("meme_id") or post.get("comment_card_snapshot"):
-            post["image_uploads"] = uploads(self.store, "dynamics", post["id"])
+        mode = (post.get("presentation") or {}).get("image_choice")
         snapshot = post.pop("comment_card_snapshot", None)
-        post["comment_card"] = json.loads(snapshot) if snapshot is not None else comment_card(post["sources"], legacy=True)
-        if post["comment_card"] and post["illustration"]:
-            post["source_comment_card"] = post["comment_card"]
-            post["comment_card"] = None
+        candidate = json.loads(snapshot) if snapshot is not None else comment_card(post["sources"], legacy=True)
+        if (mode == "shared" and not post["image_ref"] and post["status"] == "pending_review"
+                and post["account_id"] == self._source_account()
+                and self._valid_sources(post)):
+            post["image_ref"] = self._queue_image(post, candidate)
+            if post["image_ref"]:
+                self.store.execute("UPDATE dynamic_posts SET image_ref=? WHERE id=? AND image_ref IS NULL",
+                                   (_json(post["image_ref"]), post["id"]))
+        attachment = decision(self.runtime, "dynamics", post, post["image_ref"])
+        post["illustration_choice"] = image_choice(self.runtime, "dynamics", post, post["image_ref"], attachment)
+        card_ref = (attachment or {}).get("comment_card_sha256")
+        if card_ref:
+            if candidate and content_hash(candidate) == card_ref:
+                attachment = None
+            else:
+                attachment = {"job_id": (post["image_ref"] or {}).get("job_id", "unavailable"),
+                              "status": "awaiting_choice", "error": "原评论图已变化，请重新选图。"}
+                post["illustration_choice"] = "awaiting_choice"
+        post["illustration"] = attachment
+        if post["image_ref"] or post.get("meme_id") or snapshot:
+            post["image_uploads"] = uploads(self.store, "dynamics", post["id"])
+        show_card = mode == "comment_card" or mode == "shared" and bool(card_ref) and attachment is None
+        post["comment_card"] = candidate if show_card or (mode is None and not attachment) else None
+        if candidate and not post["comment_card"]:
+            post["source_comment_card"] = candidate
+        if mode == "text_only":
+            post["illustration_choice"] = "text_only"
+        elif mode == "shared" and not post["image_ref"]:
+            post["illustration_choice"] = "awaiting_choice"
         post["review_key"] = content_hash([post.get(k) for k in (
             "id", "account_id", "character_id", "character_version", "updated_at", "content",
-            "sources", "meme_id", "illustration", "comment_card", "presentation")])
+            "sources", "meme_id", "illustration", "illustration_choice", "comment_card", "presentation")])
         post["mentions"] = (post.get("presentation") or {}).get("mentions", [])
         post["pending_mentions"] = (post.get("presentation") or {}).get("pending_mentions", [])
         post["outgoing_links"] = [url for url in self._comment_links(post) if url.startswith("https://")]
@@ -696,7 +719,7 @@ class Dynamics:
 
     def review(self, post_id, action, text=None, **options):
         row = self._post(post_id)
-        if action not in {"approve", "reject", "edit", "copy"} or row["status"] not in {
+        if action not in {"approve", "reject", "edit", "copy", "reselect_image"} or row["status"] not in {
             "pending_review",
             "approved",
             "rejected",
@@ -704,6 +727,27 @@ class Dynamics:
             raise ValueError("当前动态不能执行该审核操作")
         if options.pop("review_key", row["review_key"]) != row["review_key"]:
             raise ValueError("草稿已变化，请刷新配图与正文")
+        if action == "reselect_image":
+            if text is not None or options or row["status"] == "rejected" or row.get("attempted_at"):
+                raise ValueError("仅待发草稿可以重新选图")
+            if row["account_id"] != self._source_account() or not self._valid_sources(row):
+                raise ValueError("切换到草稿所属账号，或重新核对来源后再选图")
+            candidate = row.get("source_comment_card") or row["comment_card"] or self._comment_card(
+                row["sources"], json.loads(row.get("generation_identity") or "null"),
+            )
+            ref = self._queue_image(row, candidate)
+            if not ref:
+                raise ValueError("配图服务未连接，正文已保留")
+            self.runtime.operation_images.reselect(image_scope("dynamics", row), ref["job_id"])
+            presentation = (row.get("presentation") or {}) | {"image_choice": "shared"}
+            self.store.execute("UPDATE dynamic_posts SET status='pending_review',meme_id=NULL,image_ref=?,"
+                               "comment_card_snapshot=?,presentation=?,error=NULL,updated_at=? WHERE id=?",
+                               (_json(ref), _json(candidate), _json(presentation), time.time(), post_id))
+            if self.memes:
+                self.memes.release(f"dynamic-draft:{post_id}")
+            if browsing := getattr(self.runtime, "browsing", None):
+                browsing.sends.withdraw("dynamics", post_id)
+            return self._post(post_id)
         selection = options.pop("mention_selection", None)
         if set(options) - {"meme_id"} or (options or selection is not None) and action != "edit":
             raise ValueError("保存配图或提及后需重新审核")
@@ -713,6 +757,8 @@ class Dynamics:
             raise ValueError("人物版本或公开来源已变化，需重新评估")
         illustration = None if "meme_id" in options else row["illustration"]
         if action == "approve":
+            if row["illustration_choice"] == "awaiting_choice" and not illustration:
+                raise ValueError("配图待决定，请重新选图或使用纯文字")
             image_payload(illustration)
         if action == "copy":
             if illustration or meme_id or row["comment_card"]:
@@ -722,6 +768,8 @@ class Dynamics:
             return row | {"copy_text": row["content"]}
         content = validate_text(text) if text is not None else row["content"]
         presentation = row.get("presentation")
+        if action == "approve" and content != row["content"] and (presentation or {}).get("image_choice") == "shared":
+            raise ValueError("正文已修改，请先保存并查看新稿的配图决定")
         if selection is not None:
             presentation = (presentation if presentation is not None else {"link_source_ids": None}) | selection
         elif presentation and content != row["content"] and action != "reject":
@@ -739,9 +787,20 @@ class Dynamics:
         bound_ref = illustration if action == "approve" else row["image_ref"]
         if "meme_id" in options:
             bound_ref = None
-            if meme_id and (row["comment_card"] or row.get("source_comment_card")):
+            if meme_id:
                 asset = self.memes.resolve(meme_id, row["character_id"])
                 bound_ref = {"asset_id": meme_id, "sha256": asset["sha256"]}
+            presentation = (presentation or {}) | {"image_choice": "manual" if meme_id else "text_only"}
+        elif (presentation or {}).get("image_choice") == "shared":
+            if action == "approve":
+                if (row["image_ref"] or {}).get("job_id"):
+                    bound_ref = row["image_ref"]
+                else:
+                    mode = "comment_card" if row["comment_card"] else "manual" if illustration else "text_only"
+                    presentation = presentation | {"image_choice": mode}
+            elif action == "edit" and content != row["content"]:
+                bound_ref = self._queue_image(row | {"content": content},
+                                              row.get("source_comment_card") or row["comment_card"])
         try:
             self.store.execute(
                 "UPDATE dynamic_posts SET status=?,content=?,content_hash=?,meme_id=?,image_ref=?,presentation=?,error=NULL,updated_at=? WHERE id=?",
@@ -872,13 +931,15 @@ class Dynamics:
                     value["comment_card_sha256"],
                     *(hashlib.sha256(render_comment_card(card, page)).hexdigest() for page in range(1, pages)),
                 ]
+        elif row.get("illustration"):
+            value.update(image_payload(row["illustration"]))
+        elif row.get("illustration_choice") == "awaiting_choice":
+            raise ValueError("配图待决定，请重新选图或使用纯文字")
         elif row.get("meme_id"):
             if not self.memes:
                 raise ValueError("配图组件未挂载")
             asset = self.memes.resolve(row["meme_id"], character)
             value |= {"meme_id": row["meme_id"], "asset_sha256": asset["sha256"]}
-        elif row.get("illustration"):
-            value.update(image_payload(row["illustration"]))
         return value
 
     async def resolve_review_mentions(self, post_id, text, requests):
@@ -891,13 +952,13 @@ class Dynamics:
         if card := row["comment_card"]:
             return [{"mime_type": "image/png", "content": render_comment_card(card, page)}
                     for page in range(card.get("page_count", 1))]
+        if row.get("illustration"):
+            return [checked_image(self.memes, row["illustration"], row["character_id"],
+                                  runtime=self.runtime, scope=image_scope("dynamics", row))]
         if row.get("meme_id"):
             if not self.memes:
                 raise ValueError("配图服务未连接，草稿已保存")
             return [self.memes.read(row["meme_id"], row["character_id"])]
-        if row.get("illustration"):
-            return [checked_image(self.memes, row["illustration"], row["character_id"],
-                                  runtime=self.runtime, scope=image_scope("dynamics", row))]
         return []
 
     async def _refresh_post_identity(self, post_id, automatic, epoch):
@@ -1616,7 +1677,6 @@ class Dynamics:
                     "items": {"type": "string", **({"enum": [source["id"] for source in sources]} if sources else {})},
                 },
                 "link_source_ids": {"type": "array", "items": {"type": "string"}},
-                "illustration": {"enum": ["none", "comment_card", "picture"]},
                 "mentions": MENTION_REQUESTS,
                 "points": {"type": "array", "items": {"type": "object", "additionalProperties": False,
                            "required": ["text", "source_ids"], "properties": {
@@ -1654,8 +1714,8 @@ class Dynamics:
         linkable = {source["id"] for source in sources if source["id"] in ids and source_links(source)}
         if not isinstance(links, list) or any(not isinstance(item, str) or item not in linkable for item in links):
             raise ValueError("附加链接须选自用到的公开素材")
-        illustration = data.get("illustration", "none")
-        if illustration not in ("none", "comment_card", "picture"):
+        illustration = data.get("illustration")
+        if illustration not in (None, "none", "comment_card", "picture"):
             raise ValueError("模型配图选择无效")
         mentions = mention_requests(data.get("mentions", []))
         points = data.get("points", [])
@@ -1672,7 +1732,7 @@ class Dynamics:
             raise ValueError("模型下次评估间隔无效")
         if data["action"] == "post":
             data["content"] = validate_text(data["content"])
-        elif data["content"] != "" or links or mentions or points or illustration != "none":
+        elif data["content"] != "" or links or mentions or points or illustration not in (None, "none"):
             raise ValueError("等待决定不得包含待发布正文")
         return data | {"link_source_ids": links, "illustration": illustration, "mentions": mentions, "points": points}
 
@@ -1681,6 +1741,12 @@ class Dynamics:
         mentions, pending = await bind_mentions(self.comments.adapter, data["content"], data["mentions"], participants)
         return {"link_source_ids": data["link_source_ids"], "mentions": mentions, "pending_mentions": pending,
                 "points": data["points"]}
+
+    def _queue_image(self, post, candidate):
+        public = [{key: source[key] for key in ("id", "type", "text", "source_url") if key in source}
+                  for source in post["sources"]]
+        return queue_image(self.runtime, "dynamics", post, public, post["content"],
+                           comment_card=content_hash(candidate) if candidate else None, require_choice=True)
 
     def _save_decision(
         self, char, manual, data, sources, error=None, *, generation_identity=None, schedule=True, account_id=None,
@@ -1699,7 +1765,12 @@ class Dynamics:
         model = str(self.settings.data["omni"]["responses_model"])
         next_at = now + data["next_evaluation_seconds"]
         presentation = data.get("presentation")
-        card_selected = presentation is None or data.get("illustration") == "comment_card"
+        owner = (account_id if account_id is not None else
+                 getattr(self.comments, "display_account_id", lambda: "")() or "")
+        shared_choice = bool(owner and decide_image and workstation_image_decisions(self.runtime))
+        if shared_choice:
+            presentation = (presentation or {}) | {"image_choice": "shared"}
+        card_selected = shared_choice or presentation is None or data.get("illustration") == "comment_card"
         with self.store.db:
             decision_id = self.store.db.execute(
                 "INSERT INTO dynamic_decisions(character_id,character_version,model,manual,action,reason,content,"
@@ -1743,7 +1814,7 @@ class Dynamics:
                         now,
                         _content_hash(data["content"]),
                         int(manual),
-                        account_id if account_id is not None else getattr(self.comments, "display_account_id", lambda: "")() or "",
+                        owner,
                         _json(self._comment_card(selected, generation_identity) if card_selected else None),
                         _json(memory_dependencies),
                     ),
@@ -1754,14 +1825,8 @@ class Dynamics:
                     (_json(generation_identity or runtime_identity(self.runtime, char)),
                      _json(presentation) if presentation is not None else None, post_id),
                 )
-        if data["action"] == "post" and decide_image and (presentation is None or data.get("illustration") == "picture"):
-            post = self._post(post_id)
-            # Only selected public sources cross into the illustration prompt.
-            public = [{k: source[k] for k in ("id", "type", "text", "source_url") if k in source}
-                      for source in selected]
-            ref = queue_image(self.runtime, "dynamics", post, public, data["content"])
-            if ref:
-                self.store.execute("UPDATE dynamic_posts SET image_ref=? WHERE id=?", (_json(ref), post_id))
+        if data["action"] == "post" and shared_choice:
+            self._post(post_id)
         if schedule:
             self._schedule(data["next_evaluation_seconds"], error)
         return next(d for d in self.list_decisions(100) if d["id"] == decision_id)

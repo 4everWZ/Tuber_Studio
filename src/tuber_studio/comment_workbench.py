@@ -6,10 +6,23 @@ import re
 import time
 from datetime import datetime
 
-from .operation_attachments import can_attach_comment_image, comment_payload, decision, row_ref, uploads
+from .operation_attachments import (
+    can_attach_comment_image,
+    comment_payload,
+    decision,
+    image_choice,
+    row_ref,
+    uploads,
+)
 from .operation_feedback import continuation_view
 from .operation_sends import approved_version
-from .operations.browsing.thread_context import COMMENT_ID, VIDEO_ID, operator_reply, public_discussion_url, read_scoped_thread
+from .operations.browsing.thread_context import (
+    COMMENT_ID,
+    VIDEO_ID,
+    operator_reply,
+    public_discussion_url,
+    read_scoped_thread,
+)
 from .platforms.bilibili import PlatformReadError
 from .providers import public_error
 
@@ -396,7 +409,9 @@ def queue_detail(store, comments, browsing, channel, identity):
         row["mentions"] = selection.get("mentions", [])
         row["pending_mentions"] = selection.get("pending_mentions", [])
         row["can_attach_image"] = can_attach_comment_image(channel, row)
-        row["illustration"] = decision(comments.runtime, channel, row, row_ref(row))
+        ref = row_ref(row)
+        row["illustration"] = decision(comments.runtime, channel, row, ref)
+        row["illustration_choice"] = image_choice(comments.runtime, channel, row, ref, row["illustration"])
         if row["illustration"] and not row["can_attach_image"] and row["status"] in REVIEW_STATES:
             row["can_publish"] = False
         if row["pending_mentions"]:

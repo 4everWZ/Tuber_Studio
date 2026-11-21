@@ -7,6 +7,6 @@ export function illustrationUrl(channel, draftId, ref) {
 }
 
 export function illustrationStatus(ref) {
-  if (ref?.status === "failed") return ref.error || "配图失败，可换图或移除配图。";
+  if (["failed", "awaiting_choice"].includes(ref?.status)) return ref.error || "配图待决定";
   return ref?.job_id ? "正在决定或生成配图" : "配图已绑定";
 }

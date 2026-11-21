@@ -12,18 +12,18 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import uvicorn
 from PIL import Image
-from tuber_studio import operation_images, operation_attachments
-from tuber_studio.artwork_references import Reference
-from playwright.sync_api import sync_playwright, expect
+from playwright.sync_api import expect, sync_playwright
 
+from tuber_studio import operation_attachments, operation_images
 from tuber_studio.app import create_app
+from tuber_studio.artwork_references import Reference
 from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
 from tuber_studio.platforms.bilibili_messages import BilibiliMessagesAdapter
-
 
 BV = "BV1d8pU6xEZX"
 ORIGINAL = "把视频里这段灯光变化也画出来吧。"
 BODY = "灯光转蓝的那一刻我也看见了。"
+WAITING_BODY = "明晚八点直播。"
 COMMENT_BODY = BODY + " @珊瑚 下次一起看！"
 OWNER, RECIPIENT, AUTHOR = "900", "123", "124"
 
@@ -111,7 +111,7 @@ def browse(origin, token):
                 "document.querySelector('button[data-send]').hidden || document.querySelector('[data-drafts]').innerText.includes('暂无待处理')"
             )
             page.locator('a[data-operations-tab="dynamics"]').click()
-            page.locator("#dynamic-posts button").first.click()
+            page.locator("#dynamic-posts").get_by_role("button", name=BODY, exact=True).click()
             expect(page.locator("#dynamic-post-text")).to_have_value(BODY)
             expect(page.locator("#dynamic-meme-image img")).to_be_visible()
             preview = page.locator("#dynamic-meme-image img")
@@ -120,8 +120,20 @@ def browse(origin, token):
             page.locator("#approve-dynamic").click()
             page.locator("#publish-dynamic").click()
             page.wait_for_function(
-                "document.querySelector('#dynamic-post-receipt').innerText.includes('99001') || !document.querySelector('#dynamic-posts button')"
+                "!Array.from(document.querySelectorAll('#dynamic-posts button')).some(b => b.textContent.includes('灯光转蓝'))"
             )
+            page.locator("#dynamic-posts").get_by_role("button", name=WAITING_BODY, exact=True).click()
+            page.locator("#dynamic-reselect-image").click()
+            expect(page.locator("#dynamic-meme-availability")).to_contain_text("重新选图")
+            expect(page.locator("#approve-dynamic")).to_be_disabled()
+            expect(page.locator("#publish-dynamic")).to_be_disabled()
+            page.locator("#dynamic-clear-meme").click()
+            expect(page.locator("#dynamic-meme-name")).to_have_text("纯文字")
+            expect(page.locator("#dynamic-post-text")).to_have_value(WAITING_BODY)
+            expect(page.locator("#dynamic-meme-image img")).to_have_count(0)
+            page.locator("#approve-dynamic").click()
+            page.locator("#publish-dynamic").click()
+            expect(page.locator("#dynamic-posts").get_by_role("button", name=WAITING_BODY, exact=True)).to_have_count(0)
         finally:
             browser.close()
 
@@ -198,9 +210,13 @@ async def test_operations_images_browser(settings, monkeypatch):
                 data = {"msg_key": "2002"}
         elif path.endswith("/create/dyn"):
             body = json.loads(request.content)["dyn_req"]
-            assert body["scene"] == 2 and body["pics"][0]["img_width"] == 64
-            assert body["content"]["contents"][0]["raw_text"] == BODY
-            data = {"dyn_id_str": "99001"}
+            caption = body["content"]["contents"][0]["raw_text"]
+            if caption == BODY:
+                assert body["scene"] == 2 and body["pics"][0]["img_width"] == 64
+                data = {"dyn_id_str": "99001"}
+            else:
+                assert caption == WAITING_BODY and body["scene"] == 1 and not body.get("pics")
+                data = {"dyn_id_str": "99002"}
         else:
             raise AssertionError(path)
         return httpx.Response(200, json={"code": 0, "data": data})
@@ -261,6 +277,8 @@ async def test_operations_images_browser(settings, monkeypatch):
 
     async def choose(settings, material):
         prompt = json.loads(material)
+        if prompt["draft"] == WAITING_BODY:
+            raise ValueError("模型漏填配图决定")
         assert prompt["channel"] == "dynamic" and prompt["draft"] == BODY
         assert prompt["context"][0]["id"] == "video:" + BV
         return operation_images.ImageBrief(variant="q", prompt="A blue light")
@@ -289,6 +307,7 @@ async def test_operations_images_browser(settings, monkeypatch):
         ),
     )
     sources = state.dynamics._sources()
+    await state.dynamics.set_policy({"min_post_interval_seconds": 0})
     store.set("illustration_policy", {"use_memes": True, "generate_images": True})
     state.dynamics._save_decision(
         char,
@@ -302,6 +321,12 @@ async def test_operations_images_browser(settings, monkeypatch):
         },
         sources,
         account_id=OWNER,
+    )
+    state.dynamics._save_decision(
+        char, False,
+        {"action": "post", "reason": "通知", "source_ids": [], "content": WAITING_BODY,
+         "next_evaluation_seconds": 1800},
+        [], account_id=OWNER, decide_image=False,
     )
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -320,6 +345,7 @@ async def test_operations_images_browser(settings, monkeypatch):
                 "send_msg",
                 "send_msg",
                 "upload_bfs",
+                "dyn",
                 "dyn",
             ]
             assert store.one("SELECT COUNT(*) AS n FROM operation_image_uploads")["n"] == 2

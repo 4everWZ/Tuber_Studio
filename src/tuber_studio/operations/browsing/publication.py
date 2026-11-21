@@ -9,19 +9,21 @@ from uuid import uuid4
 
 from ...comment_materials import model_comment_materials, validate_comment_material_sources
 from ...operation_attachments import (
+    TEXT_ONLY_IMAGE,
     checked_image,
     comment_image,
     comment_payload,
     decision,
+    image_choice,
     image_scope,
     queue_image,
+    rebind_image,
     record_upload,
     require_comment_attachment,
     row_ref,
     wait_decision,
 )
 from ...operation_continuations import content_hash
-from ...operation_sends import current_send
 from ...operation_feedback import (
     FeedbackPublication,
     PublicationContext,
@@ -29,6 +31,7 @@ from ...operation_feedback import (
 )
 from ...operation_generation import generate_with_recovery, generation_requires_review
 from ...operation_identity import runtime_identity
+from ...operation_sends import current_send
 from ...operation_text import (
     comment_body_issue,
     validate_comment_body,
@@ -37,8 +40,8 @@ from ...operation_text import (
 from ...operations_control import canonical_intent
 from ...platforms.bilibili import PlatformReadError, PublishUncertain
 from ...providers import public_error
-from ...publication_errors import PlatformRejected, UnknownPublication
 from ...public_mentions import rebase_mentions, revision_payload
+from ...publication_errors import PlatformRejected, UnknownPublication
 from ...store import dump
 from .comment_timeline import observe_thread, resource_key
 from .inputs import ResponseDecisionInput
@@ -237,7 +240,7 @@ class BrowsingPublication:
             not row
             or row["status"] not in {"pending_review", "approved"}
             or not isinstance(action, str)
-            or action not in {"approve", "reject", "edit", "save"}
+            or action not in {"approve", "reject", "edit", "save", "reselect_image"}
         ):
             raise ValueError("当前候选不能审核")
         if text is not None and not isinstance(text, str):
@@ -267,20 +270,41 @@ class BrowsingPublication:
             raise ValueError("配图已变化，请核对当前候选")
         if expected is not None and expected != row["updated_at"]:
             raise ValueError("候选版本已变化，请刷新")
+        scoped = row | {"target": target}
+        raw = target.get("image_ref")
+        if action == "reselect_image":
+            if options or text != row["text"] or row["account_id"] != self.browsing.comments.display_account_id():
+                raise ValueError("请切换到草稿所属账号，并先保存正文")
+            require_comment_attachment("browsing", scoped, raw)
+            target["image_ref"] = rebind_image(self.browsing.runtime, "browsing", scoped, text, retry=True)
+            action = "edit"
+            row = row | {"status": "pending_review"}
+        elif raw and "job_id" in raw and text != row["text"] and not options:
+            if action == "approve":
+                raise ValueError("正文已修改，请先保存并查看新稿的配图决定")
+            if action in {"edit", "save"}:
+                target["image_ref"] = rebind_image(self.browsing.runtime, "browsing", scoped, text)
         if action == "approve" and target.get("image_ref"):
             ref = decision(self.browsing.runtime, "browsing", row | {"target": target}, target["image_ref"])
             if ref:
+                if "job_id" in ref:
+                    raise ValueError("配图待决定，请重新选图或使用纯文字")
                 require_comment_attachment("browsing", row | {"target": target}, ref)
                 checked_image(self.browsing.comments.memes, ref, row["character_id"], runtime=self.browsing.runtime,
                               scope=image_scope("browsing", row | {"target": target}))
-                target["image_ref"] = ref
+                if not raw or "job_id" not in raw:
+                    target["image_ref"] = ref
             else:
-                target.pop("image_ref")
+                if image_choice(self.browsing.runtime, "browsing", scoped, raw, ref) != "text_only":
+                    target.pop("image_ref")
         if options:
             if action != "edit" or set(options) != {"image_ref"} or row["kind"] not in _COMMENT_KINDS:
                 raise ValueError("配图变更须保存为待审的评论")
             if options["image_ref"] is None:
-                target.pop("image_ref", None)
+                if raw:
+                    target["image_ref"] = TEXT_ONLY_IMAGE
+                else:
+                    target.pop("image_ref", None)
             else:
                 require_comment_attachment("browsing", row | {"target": target}, options["image_ref"])
                 checked_image(self.browsing.comments.memes, options["image_ref"], row["character_id"],

@@ -154,6 +154,25 @@ async def test_web_timeout_still_delivers_a_final_model_turn(monkeypatch):
     assert result["reply"] == "鱼鱼这次没读到网页。" and len(requests) == 2
 
 
+async def test_tool_union_preserves_reply_schema_reference_scope():
+    schema = {
+        "$defs": {"Mention": {"type": "object", "properties": {"uid": {"type": "string"}}}},
+        "type": "object",
+        "properties": {"mentions": {"type": "array", "items": {"$ref": "#/$defs/Mention"}}},
+    }
+
+    async def invoke(messages, wire):
+        reply, *tools = wire["oneOf"]
+        assert "$defs" not in reply and tools
+        ref = reply["properties"]["mentions"]["items"]["$ref"]
+        section, key = ref.removeprefix("#/").split("/")
+        assert wire[section][key] == schema["$defs"]["Mention"]
+        return {"mentions": [{"uid": "42"}]}
+
+    result = await web_fetch.OperationWebFetch(lambda: None).complete([], schema, invoke)
+    assert result == {"mentions": [{"uid": "42"}]} and "$defs" in schema
+
+
 async def test_model_selected_public_page_does_not_require_a_user_supplied_url(monkeypatch):
     fetched = []
 

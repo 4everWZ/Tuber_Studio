@@ -9,10 +9,14 @@
 | 服务方法 | 结果 |
 | --- | --- |
 | `decide(scope, request_key=..., context=..., draft=..., character_version=...)` | 同步登记，立即返回 `job_id` 和状态。角色版本可选，已有版本的草稿应传其快照版本。同一作用域和键恢复原任务；不同材料或改稿使用新键。 |
-| `status(scope, job_id)` | `queued / deciding / submitting / running / text_only / gallery / ready / failed`。另返回网关实报 `remote_state`、`seed`，已选参考的来源、版本和 SHA-256，完成时给 `artifact_id`，失败时给 `error`。 |
+| `status(scope, job_id)` | `queued / deciding / awaiting_choice / text_only / comment_card / gallery / submitting / running / ready / failed`。返回选择对应的来源指纹或工件 ID、网关状态及失败原因。 |
 | `read(scope, artifact_id)` | 同一作用域内读取原始 PNG `content`、`mime_type`、`width`、`height`、`sha256`、模型、参考版本与来源。可重复读取。 |
 
-每个 Core 写者运行一个配图队列。楼内回复在入队前按目标获得文字能力。设置页的「运营配图」为视频一级评论、私信和动态共用两个独立开关「生图」与「图库」。两者皆关时只写正文。新装仅启用图库；已有渠道设置合并时，只保留三个渠道均允许的来源。后台 Responses 在同一次决定中从已启用的图库条目、已绑定原稿的 Q／常规版和保留正文中选择。图库图按 ID 和内容摘要绑定草稿。选图库或无需新图时，工坊不提交图片推理。没有工作站生图接口的旧部署仍可用原图库功能。生图使用普通应用凭据访问工作站 `/v1/images/jobs`，不持有 Studio 的前台 generation lock。当前部署固定 FLUX.2-klein-4B，无调用方模型选择字段。共享 GPU 的释放、优先级和队列由工作站管理。网关返回 429 时依照 Retry-After 等待；Core 已记录远端任务 ID 时重启后继续轮询。如果提交结果未知，任务保留失败原因以免重复生成。
+每个 Core 写者运行一个配图队列。楼内回复和动态评论使用文字。通过共用网关生成正文后，视频一级评论、私信和动态交给同一个后台 Responses 步骤选图。选项包括纯文字、已开启且可读的图库、已开启且绑定参考图的 Q／常规版，以及动态当前来源能生成的原评论图。图库按 ID 和内容摘要绑定，原评论图按保存的快照绑定。工作台的「生图」与「图库」独立控制来源，新装默认启用图库。
+
+纯文字由模型或号主明确选择。候选耗尽、模型决定无法读取、图片失效或撤权时保留正文，自动发送等待。号主可重新选图或明确使用纯文字。改正文会重新绑定该稿的选图请求，审核后按已确认的正文和图片提交。图库与生图均由号主关闭时，新评论和新私信直接走该渠道的文字流程。没有配置共用网关的旧部署仍可使用原图库功能。
+
+生图使用普通应用凭据访问工作站 `/v1/images/jobs`，独立于前台 generation lock。当前部署使用 FLUX.2-klein-4B，共享 GPU 的队列由工作站管理。网关返回 429 时依照 Retry-After 等待，已有远端任务 ID 时重启后继续轮询。提交结果待核对时保留原请求记录。
 
 入队时按角色、Q／mature 和所选版本绑定参考摘要与来源。工作站业务卷按角色和版本在 `artwork-references` 中保存上传件，`active` 指向当前选择，`default` 指向号主指定的默认件。「恢复默认」清除当前选择。未指定默认件的大肥鱼角色使用 `private-artifacts/artwork-defaults/{original.png,Q_original.png}`。实际发起推理时按入队时的 digest 取回原字节，再核对摘要。外部请求只得到经过 Base64 编码的内联参考和场景文字。任务工具没有路径、URL 或文件浏览参数。
 
