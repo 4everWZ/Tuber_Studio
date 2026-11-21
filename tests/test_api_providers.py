@@ -293,15 +293,19 @@ async def test_omni_chat_uses_the_reported_full_window_and_remaining_output_budg
         await provider.close()
 
 
-@pytest.mark.parametrize(("latest_size", "expected_history"), [(10, 2), (40950, 0)])
-async def test_omni_chat_reserves_output_without_shortening_current_input(latest_size, expected_history):
+@pytest.mark.parametrize(
+    ("older_size", "latest_size", "expected_history"),
+    [(39916, 10, 4), (39917, 10, 2), (39000, 40950, 0)],
+    ids=["history-fits-with-1024-output", "history-exceeds-reserve", "current-input-near-window-limit"],
+)
+async def test_omni_chat_reserves_output_without_shortening_current_input(older_size, latest_size, expected_history):
     async def count(messages):
         return sum(len(message["content"]) for message in messages)
 
     provider = SimpleNamespace(capacity_window=40960, count_tokens=count)
     prefix = [{"role": "system", "content": "设定"}]
     history = [
-        {"role": "user", "content": "甲" * 39000},
+        {"role": "user", "content": "甲" * older_size},
         {"role": "assistant", "content": "收到"},
         {"role": "user", "content": "还是这里"},
         {"role": "assistant", "content": "明白"},
