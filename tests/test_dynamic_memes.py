@@ -43,6 +43,7 @@ class Model:
             "reason": "公开分享虚构故事",
             "content": CAPTION,
             "source_ids": [source["id"] for source in payload["public_sources"][:1]],
+            "illustration": "picture",
             "next_evaluation_seconds": 1800,
         }
 
@@ -206,7 +207,7 @@ async def test_review_omission_retains_image_null_clears_and_text_path_stays_sce
     service, _, asset, state, _ = dynamic_memes
     identity = await draft(dynamic_memes)
     assert service.review(identity, "approve")["meme_id"] == asset["asset_id"]
-    with pytest.raises(ValueError, match="edit"):
+    with pytest.raises(ValueError, match="重新审核"):
         service.review(identity, "approve", meme_id=None)
     cleared = service.review(identity, "edit", meme_id=None)
     assert (

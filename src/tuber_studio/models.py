@@ -64,8 +64,18 @@ class Reply(BaseModel):
         return text
 
 
+class PublicMentionRequest(StrictModel):
+    label: str = Field(min_length=2, max_length=101, pattern=r"^@")
+    account: str = Field(min_length=1, max_length=100)
+
+
+ReflectionDirection = Literal["gratitude", "touched", "amused", "curious", "inspired", "reflective"]
+
+
 class OperationReply(Reply):
     spoken_text: str = Field(min_length=1)
+    mentions: list[PublicMentionRequest] = Field(default_factory=list)
+    public_reflection: ReflectionDirection | None = None
 
     @field_validator("spoken_text")
     @classmethod

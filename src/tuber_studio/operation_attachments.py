@@ -186,10 +186,13 @@ def image_payload(ref):
 
 
 def comment_payload(row, runtime=None, channel="comments"):
+    from .public_mentions import draft_mentions
+
     ref = row_ref(row)
     if runtime:
         ref = decision(runtime, channel, row, ref)
-    return {"text": row["text"]} | image_payload(ref)
+    mentions = draft_mentions(row).get("mentions")
+    return {"text": row["text"]} | ({"mentions": mentions} if mentions else {}) | image_payload(ref)
 
 
 def comment_image(catalog, payload, character, *, runtime=None, scope=None):

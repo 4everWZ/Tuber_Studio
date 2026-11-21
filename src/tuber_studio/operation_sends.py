@@ -299,7 +299,7 @@ class OperationSends:
                                 else:
                                     self._remove(item)
                             except UnknownPublication:
-                                if item["approval"] or item["channel"] == "browsing":
+                                if item["approval"] or item["channel"] in {"browsing", "dynamics"}:
                                     waiting = ReconciliationPending()
                                     self._defer(item, waiting, waiting.next_at, "reconciliation")
                                 else:

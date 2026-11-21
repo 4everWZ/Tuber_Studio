@@ -217,8 +217,17 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
 
     @app.post("/api/comments/drafts/{draft_id}/review", dependencies=[Depends(require_admin)])
     async def review(draft_id: int, data: dict = Body(...)):
-        return comments.review(draft_id, data.get("action"), data.get("text"),
-                               **{k: data[k] for k in ("image_ref", "updated_at", "expected_image") if k in data})
+        options = {k: data[k] for k in ("image_ref", "updated_at", "expected_image") if k in data}
+        if "mentions" in data:
+            from ..public_mentions import bind_mentions
+
+            row = comments._draft_source(draft_id)
+            if not row or data.get("updated_at") != row["updated_at"]:
+                raise ValueError("草稿已变化，请刷新正文和提及")
+            mentions, pending = await bind_mentions(comments.adapter, data.get("text", row["text"]), data["mentions"],
+                [{"uid": row["platform_user_id"], "name": row["display_name"]}])
+            options["mention_selection"] = {"mentions": mentions, "pending_mentions": pending}
+        return comments.review(draft_id, data.get("action"), data.get("text"), **options)
 
     @app.post("/api/comments/drafts/{draft_id}/copy", dependencies=[Depends(require_admin)])
     async def copy(draft_id: int):
@@ -270,9 +279,16 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
 
     @app.post("/api/dynamics/posts/{post_id}/review", dependencies=[Depends(require_admin)])
     async def review_dynamic(post_id: int, data: dict = Body(...)):
-        if set(data) - {"action", "text", "meme_id", "review_key"}:
+        if set(data) - {"action", "text", "meme_id", "review_key", "mentions"}:
             raise ValueError("未知动态审核字段")
         options = {key: data[key] for key in ("meme_id", "review_key") if key in data}
+        if "mentions" in data:
+            row = dynamics._post(post_id)
+            if data.get("review_key") != row["review_key"]:
+                raise ValueError("草稿已变化，请刷新正文和提及")
+            options["mention_selection"] = await dynamics.resolve_review_mentions(
+                post_id, data.get("text", row["content"]), data["mentions"]
+            )
         return dynamics.review(post_id, data.get("action"), data.get("text"), **options)
 
     @app.post("/api/dynamics/posts/{post_id}/publish", dependencies=[Depends(require_admin)])
@@ -282,12 +298,15 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
             if set(data) - {"text", "review_key"} or not isinstance(data.get("text"), str):
                 raise ValueError("仅可提交当前动态正文")
             row = dynamics._post(post_id)
-            if row["status"] == "published":
-                return row
             if row["status"] in {"pending_review", "approved"} and not row.get("attempted_at"):
-                if ("review_key" in data or row["illustration"] or row["meme_id"] or row["comment_card"]) and data.get("review_key") != row["review_key"]:
+                if ("review_key" in data or row["illustration"] or row["meme_id"] or row["comment_card"]
+                        or row["mentions"] or row["pending_mentions"]) and data.get("review_key") != row["review_key"]:
                     raise ValueError("正文、账号或配图已变化，请查看当前草稿后重新确认")
-                expected = dynamics.review(post_id, "approve", data["text"])["content"]
+                expected = row["content"] if row["status"] == "approved" and data["text"] == row["content"] else (
+                    dynamics.review(post_id, "approve", data["text"])["content"]
+                )
+            elif row["status"] == "published":
+                return row
         return await dynamics.publish(post_id, expected_text=expected) if expected else await dynamics.publish(post_id)
 
     @app.post("/api/dynamics/edits/{request_id}/apply", dependencies=[Depends(require_admin)])

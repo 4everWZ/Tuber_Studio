@@ -878,9 +878,12 @@ class BrowsingAdapter(BilibiliAdapter):
         }
 
     async def _publish_target(self, target, text, before_send, *, image=None, prepare_authorized=None, on_uploaded=None):
+        from ..public_mentions import comment_mention_form
+
         if not self._sessdata or not self._csrf:
             raise ValueError("发布需要当前账号SESSDATA及CSRF")
         text = validate_comment_body(text)
+        mention_form = comment_mention_form(text, target.get("mentions", []))
         params = await self.wbi_params()
         from .bilibili_images import comment_pictures
 
@@ -897,6 +900,7 @@ class BrowsingAdapter(BilibiliAdapter):
                     "root": target["root"],
                     "parent": target["parent"],
                     "message": text,
+                    **mention_form,
                     **pictures,
                     "plat": 1,
                     "csrf": self._csrf,
@@ -924,13 +928,13 @@ class BrowsingAdapter(BilibiliAdapter):
         }
 
     async def publish_top_level(self, target, text, before_send=None, **images):
-        target = self._target(target, top_level=True)
+        target = self._target(target, top_level=True) | {"mentions": target.get("mentions", [])}
         if images.get("image") is not None and target["type"] != 1:
             raise ValueError("仅视频一级评论提供配图能力")
         return await self._publish_target(target, text, before_send, **images)
 
     async def publish_resource_reply(self, target, text, before_send=None):
-        target = self._target(target)
+        target = self._target(target) | {"mentions": target.get("mentions", [])}
         return await self._publish_target(target, text, before_send)
 
     async def like_comment(self, target, *, before_send=None):

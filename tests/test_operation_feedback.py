@@ -630,7 +630,7 @@ async def test_other_channels_revise_real_business_rejection_under_same_intent(
     else:
         await transport(comments.adapter).aclose()
         store.execute(
-            "UPDATE drafts SET status='published',receipt=? WHERE id=?",
+            "UPDATE drafts SET status='published',account_id='100',receipt=? WHERE id=?",
             (json.dumps({"rpid": "77"}), comment_draft),
         )
         service = Dynamics(settings, store, runtime, comments)

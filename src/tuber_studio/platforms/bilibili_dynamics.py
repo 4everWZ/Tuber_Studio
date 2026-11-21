@@ -11,6 +11,7 @@ import re
 import httpx
 
 from ..operation_text import validate_operation_text
+from ..public_mentions import dynamic_contents, dynamic_read_mentions
 from ..publication_errors import platform_rejection
 from .bilibili import _ERRORS, PublishUncertain, _data, _positive_id
 from .bilibili_images import bfs_image_path, upload_image
@@ -35,7 +36,7 @@ def validate_text(text):
     return text.strip()
 
 
-async def publish_text(adapter, text, *, before_send=None):
+async def publish_text(adapter, text, *, before_send=None, mentions=()):
     """Never cache adapter/credentials: caller resolves Comments.adapter per send."""
     text = validate_text(text)
     if not (adapter._sessdata and adapter._csrf):
@@ -45,7 +46,7 @@ async def publish_text(adapter, text, *, before_send=None):
     params = await adapter.wbi_params({"csrf": adapter._csrf})
     body = {
         "dyn_req": {
-            "content": {"contents": [{"raw_text": text, "biz_id": "", "type": 1}]},
+            "content": {"contents": dynamic_contents(text, mentions)},
             "scene": 1,
             "meta": {"app_meta": {"from": "create.dynamic.web", "mobi_app": "web"}},
             "attach_card": None,
@@ -54,8 +55,10 @@ async def publish_text(adapter, text, *, before_send=None):
     return await _create(adapter, params, body, before_send=before_send)
 
 
-async def publish_image(adapter, text, image, *, before_send=None, prepare_authorized=None, on_prepared=None, on_uploaded=None):
+async def publish_image(adapter, text, image, *, before_send=None, prepare_authorized=None, on_prepared=None,
+                        on_uploaded=None, mentions=()):
     text = validate_text(text)
+    contents = dynamic_contents(text, mentions)
     if not (adapter._sessdata and adapter._csrf):
         raise ValueError("发布动态需要先配置账号登录凭证")
     try:
@@ -77,7 +80,7 @@ async def publish_image(adapter, text, image, *, before_send=None, prepare_autho
         raise PublishPreparationFailed("配图准备失败，正文和图片已保存") from None
     body = {
         "dyn_req": {
-            "content": {"contents": [{"raw_text": text, "biz_id": "", "type": 1}]},
+            "content": {"contents": contents},
             "scene": 2,
             "pics": [
                 {"img_src": item["url"], "img_width": item["width"], "img_height": item["height"]}
@@ -125,10 +128,11 @@ async def read_dynamic_caption(adapter, identifier, account):
             raise ValueError("无法核对原动态的配图")
     except (AttributeError, TypeError, KeyError) as error:
         raise ValueError("无法读取原动态的正文与配图") from error
-    return {"text": text, "pictures": pictures}
+    mentions = dynamic_read_mentions(summary)
+    return {"text": text, "pictures": pictures} | ({"mentions": mentions} if mentions else {})
 
 
-async def edit_dynamic_caption(adapter, identifier, text, pictures, *, before_send):
+async def edit_dynamic_caption(adapter, identifier, text, pictures, *, before_send, mentions=()):
     if not (adapter._sessdata and adapter._csrf):
         raise ValueError("编辑动态需要有效的账号登录凭证")
     text = validate_text(text)
@@ -140,7 +144,7 @@ async def edit_dynamic_caption(adapter, identifier, text, pictures, *, before_se
         raise ValueError("这条动态包含需要在 B 站保留的组件，请在原动态编辑")
     params = await adapter.wbi_params({"csrf": adapter._csrf, "platform": "web"})
     request = {
-        "content": {"contents": [{"raw_text": text, "biz_id": "", "type": 1}]},
+        "content": {"contents": dynamic_contents(text, mentions)},
         "scene": 2 if pictures else 1,
         "meta": {"app_meta": {"from": "create.dynamic.web", "mobi_app": "web"}},
         "attach_card": None,

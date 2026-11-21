@@ -100,6 +100,8 @@ async def reconcile_comment(read, target, *, author_uid, text, started_at, recei
         records = _rows(data, "replies")[:20]
         coverage["records"] = len(records)
         matches, known_seen = {}, False
+        expected_uids = {item["uid"] for item in target.get("mentions", [])}
+        mismatch = None
         for row in records:
             try:
                 identifier = _raw_id(row, "rpid")
@@ -116,13 +118,21 @@ async def reconcile_comment(read, target, *, author_uid, text, started_at, recei
                     or ("type" in row and (type(row["type"]) is not int or row["type"] != kind))
                 ):
                     continue
+                members = row["content"].get("members") or []
+                if expected_uids:
+                    observed = {_id(person.get("mid")) for person in members}
+                    if observed != expected_uids:
+                        if expected:
+                            mismatch = sorted(observed)
+                        continue
                 matches[identifier] = row.get("invisible") in (True, 1, "1")
             except (ValueError, TypeError, KeyError, AttributeError):
                 continue
         if len(matches) > 1:
             return _result("ambiguous", coverage, candidate_count=len(matches))
         if not matches:
-            return _result("check_failed" if known_seen else "not_found", coverage)
+            return _result("check_failed" if known_seen else "not_found", coverage,
+                           **({"reason": "mentions_mismatch", "observed_mention_uids": mismatch} if mismatch is not None else {}))
         identifier, hidden = next(iter(matches.items()))
         return _result(
             "not_visible" if hidden else "visible",
@@ -134,6 +144,7 @@ async def reconcile_comment(read, target, *, author_uid, text, started_at, recei
                 "type": kind,
                 "root": root,
                 "parent": parent,
+                **({"mention_uids": sorted(expected_uids), "mention_status": "verified"} if expected_uids else {}),
             },
         )
     except (ValueError, TypeError, KeyError, httpx.HTTPError) as error:
@@ -253,25 +264,38 @@ async def reconcile_dynamic(read, target, *, author_uid, text, started_at, recei
             )
             records = _rows(data, "items")[:20]
         coverage["records"] = len(records)
+        from ..public_mentions import dynamic_read_mentions
+
         matches = {}
+        mentions = target.get("mentions", [])
+        mismatch = None
         for item in records:
             try:
                 identifier = _id(item.get("id_str"))
                 modules = item["modules"]
                 poster = modules["module_author"]
                 dynamic = modules["module_dynamic"]
+                summary = ((dynamic.get("major") or {}).get("opus") or {}).get("summary") or dynamic["desc"]
                 if (
                     (expected and identifier != expected)
                     or _id(poster["mid"]) != author
-                    or dynamic["desc"]["text"] != text
+                    or summary["text"] != text
                     or item.get("type") != ("DYNAMIC_TYPE_DRAW" if image else "DYNAMIC_TYPE_WORD")
                     or (not expected and _timestamp(poster.get("pub_ts")) < cutoff)
                 ):
                     continue
+                if mentions:
+                    observed = [(item["start"], item["uid"]) for item in dynamic_read_mentions(summary)]
+                    if observed != [(item["start"], item["uid"]) for item in mentions]:
+                        if expected:
+                            mismatch = [uid for _, uid in observed]
+                        continue
                 if image:
-                    images = dynamic["major"]["draw"]["items"]
+                    major = dynamic["major"]
+                    images = (major.get("draw") or {}).get("items") or (major.get("opus") or {})["pics"]
                     actual = [
-                        {"path": bfs_image_path(entry["src"]), "width": entry["width"], "height": entry["height"]}
+                        {"path": bfs_image_path(entry.get("src") or entry["url"]),
+                         "width": entry["width"], "height": entry["height"]}
                         for entry in images
                     ]
                     if not all(entry["path"] for entry in actual) or actual != expected_images:
@@ -282,7 +306,8 @@ async def reconcile_dynamic(read, target, *, author_uid, text, started_at, recei
         if len(matches) > 1:
             return _result("ambiguous", coverage, candidate_count=len(matches))
         if not matches:
-            return _result("check_failed" if expected else "not_found", coverage)
+            return _result("check_failed" if expected else "not_found", coverage,
+                           **({"reason": "mentions_mismatch", "observed_mention_uids": mismatch} if mismatch is not None else {}))
         identifier, hidden = next(iter(matches.items()))
         return _result(
             "not_visible" if hidden else "visible",
@@ -292,6 +317,8 @@ async def reconcile_dynamic(read, target, *, author_uid, text, started_at, recei
                 "code": 0,
                 "dynamic_id": identifier,
                 "url": f"https://t.bilibili.com/{identifier}",
+                **({"mention_uids": sorted({item["uid"] for item in mentions}), "mention_status": "verified"}
+                   if mentions else {}),
             },
         )
     except (ValueError, TypeError, KeyError, httpx.HTTPError) as error:

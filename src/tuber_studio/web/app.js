@@ -2,12 +2,12 @@
 
 import { $, node, notice, safeMessage, webCharacterName } from "./modules/core.js?v=20261120.1";
 import { api as baseApi, studioPath } from "./modules/api.js";
-import { initOperatorChat } from "./modules/operator-chat.js?v=20261121.1";
+import { initOperatorChat } from "./modules/operator-chat.js?v=20261121.2";
 import { initChatPet } from "./modules/chat-pet.js";
 import { characterDisplay, bindDisplaySettings } from "./modules/character-display.js";
 import { initArtworkReferences } from "./modules/artwork-references.js";
 import { initIllustrationPolicy } from "./modules/illustration-policy.js";
-import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261120.1";
+import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261121.2";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261115.2";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261119.3";
@@ -29,7 +29,7 @@ import {
 } from "./modules/comments.js?v=20261107.17";
 import {
   initDynamicsModule,
-} from "./modules/dynamics.js?v=20261115.1";
+} from "./modules/dynamics.js?v=20261121.2";
 import {
   initMaintenanceModule,
 } from "./modules/maintenance.js?v=20261107.12";

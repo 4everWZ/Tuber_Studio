@@ -366,6 +366,8 @@ async def review_queue_selection(browsing, selection, action):
 
 
 def queue_detail(store, comments, browsing, channel, identity):
+    from .public_mentions import draft_mentions
+
     if channel == "jobs":
         row = store.one("SELECT * FROM comment_tasks WHERE id=?", (identity,))
     elif channel == "comments":
@@ -390,9 +392,14 @@ def queue_detail(store, comments, browsing, channel, identity):
         target = row["target"]
         row["source_url"] = public_discussion_url(target.get("bvid"), target.get("parent"), target.get("dynamic_id"))
     if row and channel in {"comments", "browsing"}:
+        selection = draft_mentions(row)
+        row["mentions"] = selection.get("mentions", [])
+        row["pending_mentions"] = selection.get("pending_mentions", [])
         row["can_attach_image"] = can_attach_comment_image(channel, row)
         row["illustration"] = decision(comments.runtime, channel, row, row_ref(row))
         if row["illustration"] and not row["can_attach_image"] and row["status"] in REVIEW_STATES:
+            row["can_publish"] = False
+        if row["pending_mentions"]:
             row["can_publish"] = False
         row["image_uploads"] = uploads(store, channel, identity)
         queued = store.one("SELECT blocked,wake_at,error FROM operation_send_items WHERE channel=? AND source_id=?",

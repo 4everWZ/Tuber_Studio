@@ -67,6 +67,7 @@ async def test_autonomous_video_comment_and_video_dynamic_use_scoped_material(
     assert {s["id"] for s in comment["context"]["evidence"]} <= set(main["evidence"])
     await browsing.comments.account_id()
     model = Model()
+    model.illustration = "picture"
     monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", model.generate_json)
     monkeypatch.setattr(browsing.runtime.operation_llm, "count_tokens", model.count_tokens)
     browsing.operations.configure({"enabled": True}, account_id="100", character=browsing.runtime.character)

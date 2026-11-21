@@ -15,6 +15,7 @@ from .context_delivery import memory_source_allowed
 from .daily_memory import DailyMemoryService
 from .deployment_profiles import operation_profile
 from .dynamic_comment_card import comment_card, render_comment_card
+from .dynamic_materials import ensure_reflections, public_reads, reflections, source_links
 from .front_persona import expressive_persona
 from .generation_meter import budgeted_json
 from .illustration_policy import illustration_policy
@@ -61,6 +62,7 @@ from .platforms.bilibili_dynamics import (
 )
 from .platforms.bilibili_images import bfs_image_path
 from .publication_errors import PlatformRejected, SendLimitReached, UnknownPublication
+from .public_mentions import MENTION_INSTRUCTION, MENTION_REQUESTS, bind_mentions, mention_requests, rebase_mentions
 
 MAX_SAFE_INTEGER = (1 << 53) - 1  # Exact integer range shared with browser JSON.
 
@@ -108,8 +110,12 @@ def dynamic_decision_messages(character, recent_posts, public_sources, *, curren
                 "public_incident是公开经历和原评论，published_reply是来评和你当时发出的回复，"
                 "public_memory是角色故事摘录，runtime_event是运行记录，operator_note是号主确认的经历。"
                 "随想、创作、兴趣、日常观察、角色小故事或公开互动都可以独立成稿，篇幅随话题。"
-                "写公开互动时，可以从对方说的话、你当时的回复或事情的来龙去脉聊起。"
-                "source_ids 写这次实际用到的素材；随想、玩笑和角色故事可留空。"
+                "看过的视频、读到的公开评论和自己的心情都能单独分享，也可以自然地一起聊。"
+                "几条素材在讲同一件事时可以合成一条。points 记录这次聊到的各个要点和对应的 source_ids。"
+                "参考相关待发稿和已分享记录。后来只换说法重复同一个点就先等，有新发现或进展可以接着分享。"
+                "source_ids 写实际用过的素材，随想可留空。想附具体链接才填 link_source_ids。"
+                "illustration 可选 none、comment_card（选用素材里的评论图）或 picture（图库或配图）。"
+                + MENTION_INSTRUCTION +
                 "分享时选post，content写动态正文。暂缓时选wait，content留空。"
                 "reason说明决定，next_evaluation_seconds是下次评估间隔。"
             ),
@@ -134,6 +140,16 @@ def _content_hash(text):
     return hashlib.sha256(
         "".join(c for c in text if not c.isspace() and not unicodedata.category(c).startswith("P")).encode()
     ).hexdigest()
+
+
+def _delivery_key(payload):
+    text = payload["text"]
+    pictures = payload.get("comment_card_page_sha256") or [
+        payload.get("comment_card_sha256") or payload.get("asset_sha256")
+    ]
+    mentions = [(_content_hash(text[:item["start"]]), item["uid"]) for item in payload.get("mentions", [])]
+    return content_hash([_content_hash(text), re.findall(r"https?://[^\s]+", text),
+                         [item for item in pictures if item], mentions])
 
 
 class Dynamics:
@@ -189,10 +205,20 @@ class Dynamics:
             store.execute("ALTER TABLE dynamic_posts ADD COLUMN context_sources TEXT")
         if "send_payload" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
             store.execute("ALTER TABLE dynamic_posts ADD COLUMN send_payload TEXT")
+        columns = {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}
+        for name, definition in (("presentation", "TEXT"), ("delivery_key", "TEXT"), ("duplicate_of", "INTEGER")):
+            if name not in columns:
+                store.execute(f"ALTER TABLE dynamic_posts ADD COLUMN {name} {definition}")
+        store.execute("CREATE INDEX IF NOT EXISTS dynamic_posts_delivery ON dynamic_posts(account_id,delivery_key)")
+        if "mentions" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_edits)")}:
+            store.execute("ALTER TABLE dynamic_edits ADD COLUMN mentions TEXT")
+        ensure_reflections(store)
         if "generation_continuation_id" not in {
             row[1] for row in store.db.execute("PRAGMA table_info(dynamic_decisions)")
         }:
             store.execute("ALTER TABLE dynamic_decisions ADD COLUMN generation_continuation_id TEXT")
+        if "points" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_decisions)")}:
+            store.execute("ALTER TABLE dynamic_decisions ADD COLUMN points TEXT")
         interrupted = store.all("SELECT id,send_payload FROM dynamic_posts WHERE status='publishing'")
         for post in interrupted:
             saved = json.loads(post["send_payload"] or "null")
@@ -280,20 +306,9 @@ class Dynamics:
         }
         return hashlib.sha256(_json(identity).encode()).hexdigest()
 
-    def _used_source_ids(self):
-        result = set()
-        for row in self.store.all("SELECT source_ids FROM dynamic_posts WHERE status != 'invalidated'"):
-            result.update(json.loads(row["source_ids"]))
-        return result
-
     def _summary_sources(self):
-        used = self._used_source_ids()
-        # Keep existing public material for the preview, while new material has
-        # priority when the bounded source window fills. Canonical ordering keeps
-        # the same source set reusable when a draft merely changes review state.
-        candidates = sorted(self._sources(), key=lambda source: source["id"] in used)
         sources, size = [], 0
-        for source in candidates:
+        for source in self._sources():
             length = len(_json(source))
             if len(sources) < 8 and size + length <= 6000:
                 sources.append(source)
@@ -391,8 +406,10 @@ class Dynamics:
         scope = organizer.scope() if organizer and getattr(self.runtime, "browsing", None) else None
         return scope, self.daily_memory.preference(scope) if scope else {"enabled": True, "revision": 0}
 
-    def _sources(self, *, bound_videos=()):
+    def _sources(self, *, bound_ids=()):
         char = self._character()
+        browsing = getattr(self.runtime, "browsing", None)
+        account_id = getattr(self.comments, "display_account_id", lambda: "")() or (browsing.account if browsing else "")
         scope, preference = self._memory_preference()
         result = []
         if preference["enabled"]:
@@ -414,12 +431,15 @@ class Dynamics:
         if preference["revision"]:
             for source in result:
                 source["memory_preference_revision"] = preference["revision"]
+        scoped = account_id and any(row[1] == "account_id" for row in self.store.db.execute("PRAGMA table_info(drafts)"))
         rows = self.store.all(
             "SELECT d.id,d.text,d.receipt,c.video_id,c.comment_id,c.content FROM drafts d "
             "JOIN comments c ON c.id=d.comment_id WHERE d.status='published' AND c.platform='bilibili' "
             "AND json_extract(d.answer_check,'$.organized_memory') IS NULL "
-            "AND d.character_id=? AND d.character_version=? ORDER BY d.id DESC LIMIT 100",
-            (char["id"], char["version"]),
+            "AND d.character_id=? AND d.character_version=? " + (
+                "AND (d.account_id=? OR d.account_id='' AND json_extract(d.receipt,'$.account_id')=?) " if scoped else ""
+            ) + "ORDER BY d.id DESC LIMIT 100",
+            (char["id"], char["version"], *((account_id, account_id) if scoped else ())),
         )
         for row in rows:
             try:
@@ -442,32 +462,10 @@ class Dynamics:
                     "receipt_id": str(receipt["rpid"]),
                 }
             )
-        if browsing := getattr(self.runtime, "browsing", None):
-            account_id = browsing.account or self.comments.display_account_id()
+        material = list(reflections(self.store, account_id, char["id"], char["version"], bound_ids)) if account_id else []
+        if browsing:
             if account_id:
-                watched = self.store.all(
-                    "WITH watched AS (SELECT bvid,material,updated_at FROM browsing_video_progress "
-                    "WHERE account_id=? AND character_id=? AND read_state IN ('complete','viewed')) "
-                    "SELECT bvid,material FROM watched WHERE bvid IN (SELECT bvid FROM watched ORDER BY updated_at DESC LIMIT 8) "
-                    "OR bvid IN (SELECT value FROM json_each(?)) ORDER BY updated_at DESC",
-                    (account_id, char["id"], _json(bound_videos)),
-                )
-                for video in watched:
-                    material = json.loads(video["material"])
-                    bvid = video["bvid"]
-                    if material.get("metadata", {}).get("bvid") != bvid or not re.fullmatch(r"BV[0-9A-Za-z]{10}", bvid):
-                        continue
-                    excerpts = []
-                    for part in material.get("parts", []):
-                        for segment in part.get("segments", []):
-                            if segment.get("text") and len(excerpts) < 4:
-                                excerpts.append(f"CID {part['cid']} · {segment['start']}s · {segment['text'][:240]}")
-                        if len(excerpts) == 4:
-                            break
-                    if excerpts:
-                        result.append({"id": f"video:{bvid}", "type": "watched_video", "fictional": False,
-                                       "text": material["metadata"].get("title", "") + " · 已读片段\n" + "\n".join(excerpts),
-                                       "source_url": f"https://www.bilibili.com/video/{bvid}"})
+                material.extend(public_reads(self.store, account_id, char["id"], bound_ids))
                 for row in self.store.all(
                     "SELECT id,text,target,receipt FROM browsing_intents WHERE kind='reply_public' AND status='published' "
                     "AND json_extract(target,'$.memory_audit') IS NULL "
@@ -501,7 +499,7 @@ class Dynamics:
                         **({"memory_preference_revision": preference["revision"]} if preference["revision"] else {}),
                     }
                 )
-        return result
+        return [source for _, source in sorted(material, key=lambda item: -item[0])] + result
 
     @staticmethod
     def _limit(value, maximum=100):
@@ -516,6 +514,10 @@ class Dynamics:
         for name in ("source_ids", "sources", "receipt"):
             if name in row:
                 row[name] = json.loads(row[name]) if row[name] else ([] if name != "receipt" else None)
+        if row.get("presentation") is not None:
+            row["presentation"] = json.loads(row["presentation"])
+        if row.get("points") is not None:
+            row["points"] = json.loads(row["points"])
         if "manual" in row:
             row["manual"] = bool(row["manual"])
         if row.get("error") in _RETIRED_CAPTION_DIAGNOSTICS:
@@ -567,7 +569,16 @@ class Dynamics:
             post["comment_card"] = None
         post["review_key"] = content_hash([post.get(k) for k in (
             "id", "account_id", "character_id", "character_version", "updated_at", "content",
-            "sources", "meme_id", "illustration", "comment_card")])
+            "sources", "meme_id", "illustration", "comment_card", "presentation")])
+        post["mentions"] = (post.get("presentation") or {}).get("mentions", [])
+        post["pending_mentions"] = (post.get("presentation") or {}).get("pending_mentions", [])
+        post["outgoing_links"] = [url for url in self._comment_links(post) if url.startswith("https://")]
+        if post.get("duplicate_of"):
+            original = self.store.one("SELECT status,receipt,error FROM dynamic_posts WHERE id=?", (post["duplicate_of"],))
+            if original and original["status"] == "published":
+                post.update(status="published", receipt=json.loads(original["receipt"]), error=None)
+            else:
+                post.update(status="publish_uncertain", error="相同内容的原提交待核对")
         return continuation_view(self.runtime, "dynamics", post)
 
     def _comment_card(self, sources, actor):
@@ -593,15 +604,21 @@ class Dynamics:
                 and decision is not None
                 and json.loads(decision["sources"]) == sources
             )
-        bound_videos = [s["id"].removeprefix("video:") for s in sources if s.get("type") == "watched_video"]
-        current = {s["id"]: s for s in (self._sources(bound_videos=bound_videos) if bound_videos else self._sources())}
+        bound_ids = [s["id"] for s in sources]
+        current_sources = self._sources(bound_ids=bound_ids) if any(
+            s["type"] in {"watched_video", "public_comment", "own_reflection"} for s in sources
+        ) else self._sources()
+        current = {s["id"]: s for s in current_sources}
         dependencies = [item for source in sources for item in source.get("memory_dependencies", [])]
         dependencies.extend(json.loads(row.get("context_sources") or "[]"))
         originals = [{key: value for key, value in source.items() if key != "memory_dependencies"} for source in sources]
         return (
             row["character_id"] == char["id"]
             and row["character_version"] == char["version"]
-            and all(current.get(s["id"]) == s for s in originals + dependencies)
+            and all(current.get(s["id"]) == s or (
+                s.get("type") == "watched_video" and "participants" not in s
+                and {k: v for k, v in current.get(s["id"], {}).items() if k != "participants"} == s
+            ) for s in originals + dependencies)
         )
 
     def review(self, post_id, action, text=None, **options):
@@ -614,8 +631,9 @@ class Dynamics:
             raise ValueError("当前动态不能执行该审核操作")
         if options.pop("review_key", row["review_key"]) != row["review_key"]:
             raise ValueError("草稿已变化，请刷新配图与正文")
-        if set(options) - {"meme_id"} or options and action != "edit":
-            raise ValueError("更换配图需要edit并重新审核")
+        selection = options.pop("mention_selection", None)
+        if set(options) - {"meme_id"} or (options or selection is not None) and action != "edit":
+            raise ValueError("保存配图或提及后需重新审核")
         meme_id = options.get("meme_id", row.get("meme_id"))
         if not self._valid_sources(row):
             self._status(post_id, "invalidated", "人物版本或公开来源已变化")
@@ -630,6 +648,15 @@ class Dynamics:
                 raise ValueError("请先审核动态再复制")
             return row | {"copy_text": row["content"]}
         content = validate_text(text) if text is not None else row["content"]
+        presentation = row.get("presentation")
+        if selection is not None:
+            presentation = (presentation if presentation is not None else {"link_source_ids": None}) | selection
+        elif presentation and content != row["content"] and action != "reject":
+            presentation = presentation | {"mentions": rebase_mentions(content, row["mentions"])}
+        if presentation and _content_hash(content) != row["content_hash"]:
+            presentation = presentation | {"points": []}
+        if action == "approve" and (presentation or {}).get("pending_mentions"):
+            raise ValueError("请先选择这条动态要 @ 的账号")
         owner = f"dynamic-draft:{post_id}"
         if meme_id and action != "reject":
             if not self.memes:
@@ -644,9 +671,9 @@ class Dynamics:
                 bound_ref = {"asset_id": meme_id, "sha256": asset["sha256"]}
         try:
             self.store.execute(
-                "UPDATE dynamic_posts SET status=?,content=?,content_hash=?,meme_id=?,image_ref=?,error=NULL,updated_at=? WHERE id=?",
+                "UPDATE dynamic_posts SET status=?,content=?,content_hash=?,meme_id=?,image_ref=?,presentation=?,error=NULL,updated_at=? WHERE id=?",
                 (status, content, _content_hash(content), meme_id, _json(bound_ref) if bound_ref else None,
-                 time.time(), post_id),
+                 _json(presentation) if presentation is not None else None, time.time(), post_id),
             )
         except BaseException:
             if self.memes and meme_id != row.get("meme_id"):
@@ -715,7 +742,7 @@ class Dynamics:
         intent = (
             existing["binding"]["intent"]
             if existing
-            else canonical_intent("bilibili", "dynamic", row["content_hash"], character["id"])
+            else canonical_intent("bilibili", "dynamic", _delivery_key(self._outgoing(row, character)), character["id"])
         )
         decision = self.store.one(
             "SELECT sources,source_ids FROM dynamic_decisions WHERE id=?", (row["decision_id"],)
@@ -736,6 +763,11 @@ class Dynamics:
 
     @staticmethod
     def _comment_links(row):
+        selected = (row.get("presentation") or {}).get("link_source_ids")
+        if selected is not None:
+            by_id = {source["id"]: source for source in row["sources"]}
+            return list(dict.fromkeys(link for identity in selected if identity in by_id
+                                      for link in source_links(by_id[identity])))
         if card := row.get("source_comment_card") or row["comment_card"]:
             links = card["comments"] if card.get("legacy") else card["links"]
             return list(dict.fromkeys(item["url"] for item in links))
@@ -744,7 +776,7 @@ class Dynamics:
     @classmethod
     def _outgoing_text(cls, row, text):
         if links := cls._comment_links(row):
-            text += "\n\n" + "\n".join(f"原评论：{url}" for url in links)
+            text += "\n\n" + "\n".join(("原评论：" if "#reply" in url else "") + url for url in links)
         return text
 
     @classmethod
@@ -752,11 +784,13 @@ class Dynamics:
         text = validate_text(text)
         if links := cls._comment_links(row):
             known = "|".join(re.escape(url) for url in links)
-            text = re.sub(rf"(?:\s*原评论(?:链接)?\s*[：:]\s*(?:{known}))+\s*\Z", "", text)
+            text = re.sub(rf"(?:\s*(?:原评论(?:链接)?\s*[：:]\s*)?(?:{known}))+\s*\Z", "", text)
         return validate_text(text)
 
     def _outgoing(self, row, character):
         value = {"text": self._outgoing_text(row, row["content"])}
+        if row["mentions"]:
+            value["mentions"] = row["mentions"]
         if card := row["comment_card"]:
             pages = card.get("page_count", 1)
             value["comment_card_sha256"] = hashlib.sha256(render_comment_card(card)).hexdigest()
@@ -773,6 +807,12 @@ class Dynamics:
         elif row.get("illustration"):
             value.update(image_payload(row["illustration"]))
         return value
+
+    async def resolve_review_mentions(self, post_id, text, requests):
+        row = self._post(post_id)
+        participants = [person for source in row["sources"] for person in source.get("participants", [])]
+        mentions, pending = await bind_mentions(self.comments.adapter, validate_text(text), requests, participants)
+        return {"mentions": mentions, "pending_mentions": pending}
 
     def _publication_images(self, row):
         if card := row["comment_card"]:
@@ -818,7 +858,7 @@ class Dynamics:
         previous = json.loads(row.get("generation_identity") or "null")
         if previous and previous.get("identity_version") == identity["identity_version"]:
             return
-        original = {key: row.get(key) for key in ("status", "content", "sources", "meme_id", "account_id")}
+        original = {key: row.get(key) for key in ("status", "content", "sources", "meme_id", "account_id", "presentation")}
 
         def guard():
             fresh = self._post(post_id)
@@ -884,11 +924,29 @@ class Dynamics:
                 self._status(post_id, "rejected", data["reason"])
                 raise ValueError("身份更新后模型决定暂不发布：" + data["reason"])
             selected = [source for source in row["sources"] if source["id"] in data["source_ids"]]
-            if len(selected) != len(row["sources"]):
-                raise ValueError("身份更新后的正文缺少原来源，请重新评估")
+            if row.get("presentation") is not None:
+                try:
+                    mentions = rebase_mentions(data["content"], row["mentions"])
+                except ValueError:
+                    self._status(post_id, "pending_review", "身份更新后的正文需要重新确认提及")
+                    raise
+                presentation = row["presentation"] | {"mentions": mentions}
+                if data["points"]:
+                    presentation["points"] = data["points"]
+                if presentation.get("link_source_ids") is not None:
+                    presentation["link_source_ids"] = [item for item in presentation["link_source_ids"]
+                                                       if item in data["source_ids"]]
+                # An approved target can only change through the draft editor.
+                if data["mentions"] and data["mentions"] != [
+                    {"label": "@" + item["name"], "account": item["uid"]} for item in mentions
+                ]:
+                    self._status(post_id, "pending_review", "身份更新后的正文需要重新确认提及")
+                    raise ValueError("请重新确认动态的提及对象")
+            else:
+                presentation = None
             self.store.execute(
                 "UPDATE dynamic_posts SET content=?,content_hash=?,reason=?,sources=?,source_ids=?,"
-                "generation_identity=?,comment_card_snapshot=?,updated_at=?,error=NULL WHERE id=?",
+                "generation_identity=?,comment_card_snapshot=?,presentation=?,updated_at=?,error=NULL WHERE id=?",
                 (
                     data["content"],
                     _content_hash(data["content"]),
@@ -896,7 +954,8 @@ class Dynamics:
                     _json(selected),
                     _json(data["source_ids"]),
                     _json(identity),
-                    _json(self._comment_card(selected, identity)),
+                    _json(self._comment_card(selected, identity) if row["comment_card"] or row.get("source_comment_card") else None),
+                    _json(presentation) if presentation is not None else None,
                     time.time(),
                     post_id,
                 ),
@@ -938,7 +997,7 @@ class Dynamics:
                 not self._valid_sources(fresh)
                 or any(
                     fresh.get(key) != row.get(key)
-                    for key in ("status", "content", "meme_id", "character_id", "character_version")
+                    for key in ("status", "content", "meme_id", "character_id", "character_version", "presentation")
                 )
                 or self._publication_binding(fresh, account, character) != binding
             ):
@@ -958,6 +1017,10 @@ class Dynamics:
             prepared.guard()
             self._status(post_id, "rejected" if state == "abandoned" else "pending_review")
 
+        def revised(value):
+            text = validate_text(value)
+            return self._outgoing(row | {"content": text, "mentions": rebase_mentions(text, row["mentions"])}, character)
+
         return PublicationContext(
             binding,
             row["content"],
@@ -965,7 +1028,7 @@ class Dynamics:
             {"public_sources": row["sources"], "reason": row["reason"]},
             guard,
             payload=self._outgoing(row, character),
-            encode_revision=lambda value: self._outgoing(row | {"content": validate_text(value)}, character),
+            encode_revision=revised,
             on_defer=defer,
             manual_approved=row["status"] == "approved",
         )
@@ -973,9 +1036,13 @@ class Dynamics:
     def _apply_revision(self, post_id, prepared, text):
         prepared.guard()
         text = validate_text(text)
+        row = self._post(post_id)
+        presentation = row.get("presentation")
+        if presentation is not None:
+            presentation = presentation | {"mentions": rebase_mentions(text, row["mentions"]), "points": []}
         self.store.execute(
-            "UPDATE dynamic_posts SET content=?,content_hash=?,status='pending_review',error=NULL,updated_at=? WHERE id=?",
-            (text, _content_hash(text), time.time(), post_id),
+            "UPDATE dynamic_posts SET content=?,content_hash=?,presentation=?,status='pending_review',error=NULL,updated_at=? WHERE id=?",
+            (text, _content_hash(text), _json(presentation) if presentation is not None else None, time.time(), post_id),
         )
 
     async def resume_continuation(self, post_id, continuation_id):
@@ -1026,6 +1093,8 @@ class Dynamics:
             }
             if payload.get("prepared_images"):
                 target["images"] = payload["prepared_images"]
+            if "mentions" in payload:
+                target["mentions"] = payload["mentions"]
             result = await adapter.reconcile_dynamic_publication(
                 target,
                 author_uid=account,
@@ -1033,6 +1102,8 @@ class Dynamics:
                 started_at=attempt["started_at"],
                 receipt=attempt["receipt"],
             )
+            if self.comments.adapter is not adapter:
+                return {"status": "check_failed", "reason": "account_changed"}
             if guard:
                 guard(row, attempt)
             return result
@@ -1045,6 +1116,20 @@ class Dynamics:
         return await feedback.reconcile("dynamics", post_id, read, commit)
 
     async def publish(self, post_id, automatic=False, *, expected_text=None, submission=None):
+        saved = self._post(post_id)
+        if expected_text is not None and expected_text != saved["content"]:
+            raise ValueError("草稿已变化，请重新检查当前正文")
+        if saved["status"] == "published" and saved["receipt"] and submission is None:
+            return saved
+        if saved.get("duplicate_of"):
+            if submission is not None:
+                submission.check(saved)
+            cached_account = getattr(self.comments, "display_account_id", lambda: "")()
+            if cached_account and cached_account != saved["account_id"]:
+                raise ValueError("该动态草稿属于其他账号")
+            if saved["status"] != "published":
+                await self._reconcile(saved["duplicate_of"])
+            return self._post(post_id)
         if submission is not None:
             if automatic or expected_text is None:
                 raise ValueError("限定草稿提交必须绑定人工确认的正文")
@@ -1115,14 +1200,8 @@ class Dynamics:
             if not self._valid_sources(row):
                 self._status(post_id, "invalidated", "人物版本或公开来源已变化")
                 raise ValueError("人物版本或公开来源已变化，需重新评估")
-            self._quota(post_id if revision_ticket else None)
-            if self.store.one(
-                "SELECT id FROM dynamic_posts WHERE content_hash=? AND attempted_at IS NOT NULL"
-                + (" AND id<>?" if revision_ticket else ""),
-                (row["content_hash"], *((post_id,) if revision_ticket else ())),
-            ):
-                raise ValueError("相同正文已尝试发布，请勿重复发送")
-            self._check_used_sources(row)
+            if row["pending_mentions"]:
+                raise ValueError("请先选择这条动态要 @ 的账号")
             card = row["comment_card"]
             pages = self._publication_images(row)
             image = (pages if len(pages) > 1 else pages[0]) if pages else None
@@ -1132,6 +1211,9 @@ class Dynamics:
                 if hasattr(self.comments, "account_id")
                 else "injected-test-account"
             )
+            fresh = self._post(post_id)
+            if fresh["status"] != row["status"] or fresh["review_key"] != row["review_key"]:
+                raise ValueError("账号核验期间草稿已变化，请重新确认后发布")
             if row.get("account_id") and row["account_id"] != str(account_id):
                 raise ValueError("该动态草稿属于其他账号")
             if not row.get("account_id"):
@@ -1142,6 +1224,20 @@ class Dynamics:
             character = self.store.character(row["character_id"], row["character_version"])
             actual_binding = self._publication_binding(row, account_id, character)
             payload = self._outgoing(row, character)
+            if (binding is not None and binding != actual_binding
+                    or body_hash is not None and body_hash != content_hash(payload)):
+                raise ValueError("发送前动态原始绑定或正文已变化")
+            delivery = _delivery_key(payload)
+            duplicate = self._duplicate_delivery(post_id, str(account_id), delivery, row["content_hash"])
+            if duplicate:
+                if submission is not None:
+                    submission.check(row)
+                self.store.execute("UPDATE dynamic_posts SET status='duplicate',duplicate_of=?,updated_at=? WHERE id=?",
+                                   (duplicate, time.time(), post_id))
+                if self.memes and row.get("meme_id"):
+                    self.memes.release(f"dynamic-draft:{post_id}")
+                return self._post(post_id)
+            self._quota(post_id if revision_ticket else None)
             prepared_images = []
 
             def record_uploaded(index, picture):
@@ -1164,19 +1260,12 @@ class Dynamics:
 
             def save_attempt(attempt_token):
                 self.store.db.execute(
-                    "UPDATE dynamic_posts SET attempted_at=?,updated_at=?,send_payload=? WHERE id=?",
+                    "UPDATE dynamic_posts SET attempted_at=?,updated_at=?,send_payload=?,delivery_key=? WHERE id=?",
                     (time.time(), time.time(), _json({
                         "token": attempt_token, "binding": actual_binding, "payload": attempted_payload(),
                         **({"agent_step": submission.step_id} if submission is not None else {}),
-                    }), post_id),
+                    }), delivery, post_id),
                 )
-            if (
-                binding is not None
-                and binding != actual_binding
-                or body_hash is not None
-                and body_hash != content_hash(payload)
-            ):
-                raise ValueError("发送前动态原始绑定或正文已变化")
             token = None
 
             def before_send(*, reserve=True):
@@ -1199,6 +1288,7 @@ class Dynamics:
                     or not self._valid_sources(fresh)
                     or fresh["content"] != row["content"]
                     or fresh["sources"] != row["sources"]
+                    or fresh.get("presentation") != row.get("presentation")
                     or fresh["comment_card"] != row["comment_card"]
                     or fresh.get("meme_id") != row.get("meme_id") or fresh.get("illustration") != row.get("illustration")
                 ):
@@ -1212,13 +1302,8 @@ class Dynamics:
                         raise PublishCancelled("当前配图已禁用、解绑或变化，取消发送") from None
                 try:
                     self._quota(post_id if revision_ticket else None)
-                    self._check_used_sources(fresh)
-                    if self.store.one(
-                        "SELECT id FROM dynamic_posts WHERE content_hash=? AND attempted_at IS NOT NULL"
-                        + (" AND id<>?" if revision_ticket else ""),
-                        (fresh["content_hash"], *((post_id,) if revision_ticket else ())),
-                    ):
-                        raise ValueError("相同正文已尝试发布")
+                    if self._duplicate_delivery(post_id, str(account_id), delivery, row["content_hash"]):
+                        raise ValueError("相同动态已有提交记录")
                 except ValueError:
                     raise PublishCancelled("发布频率、正文或来源已不满足发送条件") from None
                 try:
@@ -1260,6 +1345,7 @@ class Dynamics:
                 fresh["status"] != row["status"]
                 or fresh["content"] != row["content"]
                 or fresh["sources"] != row["sources"]
+                or fresh.get("presentation") != row.get("presentation")
                 or fresh["comment_card"] != row["comment_card"]
                 or fresh.get("meme_id") != row.get("meme_id")
             ):
@@ -1267,6 +1353,7 @@ class Dynamics:
             self.store.execute(
                 "UPDATE dynamic_posts SET status='publishing',updated_at=? WHERE id=?", (time.time(), post_id)
             )
+            receipt = None
             try:
                 if image:
                     receipt = await publish_image(
@@ -1276,9 +1363,23 @@ class Dynamics:
                         before_send=before_send,
                         prepare_authorized=lambda: before_send(reserve=False),
                         on_prepared=record_prepared_images, on_uploaded=record_uploaded,
+                        **({"mentions": payload["mentions"]} if "mentions" in payload else {}),
                     )
                 else:
-                    receipt = await publish_text(adapter, payload["text"], before_send=before_send)
+                    receipt = await publish_text(adapter, payload["text"], before_send=before_send,
+                                                 **({"mentions": payload["mentions"]} if "mentions" in payload else {}))
+                if "mentions" in payload:
+                    self.operations.finish(token, "uncertain", receipt=receipt)
+                    self._status(post_id, "publish_uncertain", "动态已受理，正在核对提及", receipt=receipt)
+                    FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
+                        "dynamics", post_id, token, actual_binding, attempted_payload(), "动态已受理，提及待核对"
+                    )
+                    checked = await self._reconcile(post_id)
+                    if checked is not None:
+                        return self._post(post_id)
+                    raise UnknownPublication("动态已受理，提及待核对", token)
+            except UnknownPublication:
+                raise
             except PublishPreparationCancelled:
                 self._status(post_id, row["status"], "配图准备已取消，尚未提交动态")
                 raise
@@ -1296,7 +1397,7 @@ class Dynamics:
                     self._status(post_id, row["status"], "准备已取消，未提交动态")
                     raise
                 if token:
-                    self.operations.finish(token, "uncertain")
+                    self.operations.finish(token, "uncertain", receipt=receipt)
                     FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
                         "dynamics", post_id, token, actual_binding, attempted_payload(), "动态发送结果不确定"
                     )
@@ -1304,7 +1405,7 @@ class Dynamics:
                 raise
             except PublishUncertain:
                 if token:
-                    self.operations.finish(token, "uncertain")
+                    self.operations.finish(token, "uncertain", receipt=receipt)
                     FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
                         "dynamics", post_id, token, actual_binding, attempted_payload(), "动态发送结果不确定"
                     )
@@ -1323,7 +1424,7 @@ class Dynamics:
                 raise ValueError("平台拒绝动态写入，请检查账号和内容") from None
             except Exception:
                 if token:
-                    self.operations.finish(token, "uncertain")
+                    self.operations.finish(token, "uncertain", receipt=receipt)
                     FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
                         "dynamics", post_id, token, actual_binding, attempted_payload(), "动态发送结果不确定"
                     )
@@ -1355,13 +1456,17 @@ class Dynamics:
         if operation_output_diagnostics(row["content"])["needs_review"]:
             raise ValueError("正文诊断尚待审核，未自动发布")
 
-    def _check_used_sources(self, row):
-        wanted = set(row["source_ids"])
+    def _duplicate_delivery(self, post_id, account, delivery, text_hash):
         for other in self.store.all(
-            "SELECT source_ids FROM dynamic_posts WHERE attempted_at IS NOT NULL AND id<>?", (row["id"],)
+            "SELECT id,delivery_key,send_payload,content FROM dynamic_posts WHERE account_id=? AND id<>? "
+            "AND status IN ('publishing','publish_uncertain','published') AND attempted_at IS NOT NULL "
+            "AND (delivery_key=? OR (delivery_key IS NULL AND (send_payload IS NOT NULL OR content_hash=?))) "
+            "ORDER BY attempted_at,id", (account, post_id, delivery, text_hash),
         ):
-            if wanted.intersection(json.loads(other["source_ids"])):
-                raise ValueError("此来源已尝试用于动态，请等待新的公开来源")
+            payload = json.loads(other["send_payload"] or "{}").get("payload") or {"text": other["content"]}
+            if (other["delivery_key"] or _delivery_key(payload)) == delivery:
+                return other["id"]
+        return None
 
     def _live_busy(self):
         live = getattr(self.runtime, "live", None)
@@ -1369,10 +1474,12 @@ class Dynamics:
 
     def _recent_public_posts(self, character):
         _, preference = self._memory_preference()
+        account = getattr(self.comments, "display_account_id", lambda: "")()
         return [
             {"content": post["content"], "published_at": post["published_at"]}
             for post in self.list_posts("published", 5)
             if (post["character_id"], post["character_version"]) == (character["id"], character["version"])
+            and (not account or post["account_id"] == account)
             and not _has_legacy_chat_lineage(post)
             and not json.loads(post.get("context_sources") or "[]")
             and not any(
@@ -1385,21 +1492,64 @@ class Dynamics:
             )
         ]
 
+    def _related_posts(self, character, account, sources):
+        if not sources or not account:
+            return []
+        ids = _json([source["id"] for source in sources])
+        resources = _json(sorted({link.partition("#")[0] for source in sources for link in source_links(source)}))
+        history = []
+        for shared in (False, True):
+            candidates = self.store.all(
+                "SELECT * FROM dynamic_posts p WHERE account_id=? AND character_id=? "
+                "AND status IN ('pending_review','approved','publishing','publish_uncertain','published') "
+                "AND COALESCE(status='published',0)=? "
+                "AND (status!='published' OR json_extract(receipt,'$.dynamic_id') IS NOT NULL) "
+                "AND EXISTS (SELECT 1 FROM json_each(p.sources) s WHERE "
+                "json_extract(s.value,'$.id') IN (SELECT value FROM json_each(?)) OR "
+                "substr(json_extract(s.value,'$.source_url') || '#', 1, "
+                "instr(json_extract(s.value,'$.source_url') || '#','#')-1) IN (SELECT value FROM json_each(?)) OR "
+                "EXISTS (SELECT 1 FROM json_each(json_extract(s.value,'$.public_sources')) r "
+                "WHERE 'https://www.bilibili.com/video/'||json_extract(r.value,'$.bvid') "
+                "IN (SELECT value FROM json_each(?)))) ORDER BY updated_at DESC LIMIT 12",
+                (account, character["id"], int(shared), ids, resources, resources),
+            )
+            found = 0
+            for row in candidates:
+                row = self._decode(row)
+                if not self._valid_sources(row | {"character_version": character["version"]}):
+                    continue
+                history.append({
+                    "status": "shared" if shared else "pending", "content": row["content"][:600],
+                    "source_ids": row["source_ids"], "points": (row.get("presentation") or {}).get("points", [])[:8],
+                })
+                found += 1
+                if found == 4:
+                    break
+        return history
+
     @staticmethod
     def decision_schema(sources):
         return {
             "type": "object",
             "additionalProperties": False,
-            "required": ["action", "reason", "content", "source_ids", "next_evaluation_seconds"],
+            "required": ["action", "reason", "content", "source_ids", "points", "next_evaluation_seconds"],
             "properties": {
                 "action": {"type": "string", "enum": ["post", "wait"]},
                 "reason": {"type": "string", "minLength": 1, "maxLength": 500},
                 "content": {"type": "string"},
                 "source_ids": {
                     "type": "array",
-                    "maxItems": min(len(sources), 1),
+                    "maxItems": len(sources),
                     "items": {"type": "string", **({"enum": [source["id"] for source in sources]} if sources else {})},
                 },
+                "link_source_ids": {"type": "array", "items": {"type": "string"}},
+                "illustration": {"enum": ["none", "comment_card", "picture"]},
+                "mentions": MENTION_REQUESTS,
+                "points": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                           "required": ["text", "source_ids"], "properties": {
+                               "text": {"type": "string", "minLength": 1, "maxLength": 300},
+                               "source_ids": {"type": "array", "items": {"type": "string"}},
+                           }}},
                 "next_evaluation_seconds": {"type": "integer", "minimum": 1, "maximum": MAX_SAFE_INTEGER},
             },
         }
@@ -1408,13 +1558,14 @@ class Dynamics:
     def _parse(data, sources):
         if not isinstance(data, dict) or len(_json(data).encode("utf-8")) > MAX_OPERATION_TEXT_BYTES + 16384:
             raise ValueError("模型决定格式无效")
-        if not isinstance(data, dict) or set(data) != {
+        required = {
             "action",
             "reason",
             "content",
             "source_ids",
             "next_evaluation_seconds",
-        }:
+        }
+        if not required <= data.keys() or data.keys() - required - {"link_source_ids", "illustration", "mentions", "points"}:
             raise ValueError("模型决定字段无效")
         if data["action"] not in {"post", "wait"}:
             raise ValueError("模型决定动作无效")
@@ -1422,18 +1573,41 @@ class Dynamics:
             raise ValueError("模型决定理由无效")
         ids = data["source_ids"]
         allowed = {s["id"] for s in sources}
-        if not isinstance(ids, list) or len(ids) > 1 or any(not isinstance(i, str) for i in ids):
+        if not isinstance(ids, list) or any(not isinstance(i, str) for i in ids) or len(ids) != len(set(ids)):
             raise ValueError("模型来源列表无效")
         if not set(ids) <= allowed:
             raise ValueError("模型引用了未授权来源")
+        links = data.get("link_source_ids", [])
+        linkable = {source["id"] for source in sources if source["id"] in ids and source_links(source)}
+        if not isinstance(links, list) or any(not isinstance(item, str) or item not in linkable for item in links):
+            raise ValueError("附加链接须选自用到的公开素材")
+        illustration = data.get("illustration", "none")
+        if illustration not in ("none", "comment_card", "picture"):
+            raise ValueError("模型配图选择无效")
+        mentions = mention_requests(data.get("mentions", []))
+        points = data.get("points", [])
+        if not isinstance(points, list) or any(
+            not isinstance(point, dict) or set(point) != {"text", "source_ids"}
+            or not isinstance(point["text"], str) or not 1 <= len(point["text"].strip()) <= 300
+            or not isinstance(point["source_ids"], list)
+            or any(not isinstance(item, str) or item not in ids for item in point["source_ids"])
+            for point in points
+        ):
+            raise ValueError("分享要点须关联本次用到的素材")
         seconds = data["next_evaluation_seconds"]
         if type(seconds) is not int or not 1 <= seconds <= MAX_SAFE_INTEGER:
             raise ValueError("模型下次评估间隔无效")
         if data["action"] == "post":
             data["content"] = validate_text(data["content"])
-        elif data["content"] != "":
+        elif data["content"] != "" or links or mentions or points or illustration != "none":
             raise ValueError("等待决定不得包含待发布正文")
-        return data
+        return data | {"link_source_ids": links, "illustration": illustration, "mentions": mentions, "points": points}
+
+    async def _presentation(self, data, sources):
+        participants = [person for source in sources for person in source.get("participants", [])]
+        mentions, pending = await bind_mentions(self.comments.adapter, data["content"], data["mentions"], participants)
+        return {"link_source_ids": data["link_source_ids"], "mentions": mentions, "pending_mentions": pending,
+                "points": data["points"]}
 
     def _save_decision(
         self, char, manual, data, sources, error=None, *, generation_identity=None, schedule=True, account_id=None,
@@ -1451,10 +1625,12 @@ class Dynamics:
             memory_dependencies = []
         model = str(self.settings.data["omni"]["responses_model"])
         next_at = now + data["next_evaluation_seconds"]
+        presentation = data.get("presentation")
+        card_selected = presentation is None or data.get("illustration") == "comment_card"
         with self.store.db:
             decision_id = self.store.db.execute(
                 "INSERT INTO dynamic_decisions(character_id,character_version,model,manual,action,reason,content,"
-                "source_ids,sources,next_evaluation_at,created_at,status,error) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "source_ids,sources,next_evaluation_at,created_at,status,error,points) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     char["id"],
                     char["version"],
@@ -1469,6 +1645,7 @@ class Dynamics:
                     now,
                     data["action"],
                     error,
+                    _json(presentation["points"]) if presentation is not None and "points" in presentation else None,
                 ),
             ).lastrowid
             if data["action"] == "post":
@@ -1491,16 +1668,17 @@ class Dynamics:
                         _content_hash(data["content"]),
                         int(manual),
                         account_id if account_id is not None else getattr(self.comments, "display_account_id", lambda: "")() or "",
-                        _json(self._comment_card(selected, generation_identity)),
+                        _json(self._comment_card(selected, generation_identity) if card_selected else None),
                         _json(memory_dependencies),
                     ),
                 ).lastrowid
                 self.store.db.execute("UPDATE dynamic_decisions SET post_id=? WHERE id=?", (post_id, decision_id))
                 self.store.db.execute(
-                    "UPDATE dynamic_posts SET generation_identity=? WHERE id=?",
-                    (_json(generation_identity or runtime_identity(self.runtime, char)), post_id),
+                    "UPDATE dynamic_posts SET generation_identity=?,presentation=? WHERE id=?",
+                    (_json(generation_identity or runtime_identity(self.runtime, char)),
+                     _json(presentation) if presentation is not None else None, post_id),
                 )
-        if data["action"] == "post" and decide_image:
+        if data["action"] == "post" and decide_image and (presentation is None or data.get("illustration") == "picture"):
             post = self._post(post_id)
             # Only selected public sources cross into the illustration prompt.
             public = [{k: source[k] for k in ("id", "type", "text", "source_url") if k in source}
@@ -1556,6 +1734,9 @@ class Dynamics:
             data = self._parse(result, sources)
             if data["action"] != "post" or data["source_ids"] != [source["id"]]:
                 raise ValueError("本次没有可保存的动态正文")
+            data["presentation"] = await self._presentation(data, sources)
+            if str(scope()[0] or "") != account or self._character() != current:
+                raise ValueError("核对提及期间账号或角色已变化")
             saved = self._save_decision(character, True, data, sources, generation_identity=identity,
                                         schedule=False, account_id=account)
             return self._post(saved["post_id"])
@@ -1567,6 +1748,7 @@ class Dynamics:
         )
         if row is None:
             raise ValueError("未找到当前账号和角色的动态修订")
+        row["mentions"] = json.loads(row["mentions"]) if row["mentions"] is not None else None
         if row["status"] == "draft":
             post = self._post(row["post_id"])
             caption = self._edit_caption(post, row["caption"])
@@ -1596,11 +1778,11 @@ class Dynamics:
             result = await budgeted_json(self.runtime.operation_llm, [
                 {"role": "system", "content": (
                     "按号主的要求改写一条已经发布的动态。只输出可直接使用的正文。"
-                    "事实以公开来源为准，原动态可能有错。可以只写一句日常感想。"
-                    "删除无依据的动作、次数和结果。原评论链接由程序添加。"
+                    "原来的 @ 保留正文中的写法。只有号主要求改提及时才填 mentions，空列表表示全部移除。"
+                    + MENTION_INSTRUCTION
                 )},
                 {"role": "user", "content": _json({
-                    "instruction": instruction, "original": original["text"],
+                    "instruction": instruction, "original": original["text"], "original_mentions": original.get("mentions", []),
                     "public_sources": [
                         {key: value for key, value in source.items() if key != "memory_dependencies"}
                         for source in row["sources"]
@@ -1608,17 +1790,26 @@ class Dynamics:
                 })},
             ], {
                 "type": "object", "additionalProperties": False, "required": ["caption"],
-                "properties": {"caption": {"type": "string", "minLength": 1}},
+                "properties": {"caption": {"type": "string", "minLength": 1}, "mentions": MENTION_REQUESTS},
             }, max_tokens=1024)
-        if not isinstance(result, dict) or set(result) != {"caption"}:
+        if not isinstance(result, dict) or "caption" not in result or set(result) - {"caption", "mentions"}:
             raise ValueError("模型未返回完整的动态修订")
         if adapter is not self.comments.adapter or self._post(row["id"]) != row or not self._valid_sources(row):
             raise ValueError("账号、动态或公开来源已变化")
         caption = self._edit_caption(row, result["caption"])
+        if "mentions" in result:
+            mentions, pending = await bind_mentions(adapter, caption, result["mentions"], original.get("mentions", []))
+            if pending:
+                raise ValueError("请在编辑要求中提供要 @ 的 B 站 UID 和当前昵称")
+        else:
+            mentions = rebase_mentions(caption, original.get("mentions", []))
+        if adapter is not self.comments.adapter or self._post(row["id"]) != row:
+            raise ValueError("核对提及期间账号或动态已变化")
         self.store.execute(
-            "INSERT INTO dynamic_edits VALUES(?,?,?,?,?,?,?,?,?,NULL)",
+            "INSERT INTO dynamic_edits(request_id,post_id,account_id,character_id,platform_id,original,caption,outgoing,status,mentions)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?)",
             (request_id, row["id"], account, character["id"], identifier, _json(original),
-             caption, self._outgoing_text(row, caption), "draft"),
+             caption, self._outgoing_text(row, caption), "draft", _json(mentions)),
         )
         return self.dynamic_edit(request_id, account, character["id"])
 
@@ -1646,7 +1837,10 @@ class Dynamics:
                 )
 
             actual = await read_dynamic_caption(adapter, identifier, account)
-            expected = original | {"text": edit["outgoing"]}
+            mentions = edit["mentions"] if edit["mentions"] is not None else rebase_mentions(edit["outgoing"], original.get("mentions", []))
+            expected = {key: value for key, value in original.items() if key != "mentions"} | {"text": edit["outgoing"]}
+            if mentions:
+                expected["mentions"] = mentions
             if actual != expected and edit["status"] != "pending_verification":
                 if actual != original or not self._valid_sources(row):
                     raise ValueError("原动态或公开来源已变化，请重新生成修订")
@@ -1667,7 +1861,7 @@ class Dynamics:
 
                 try:
                     await edit_dynamic_caption(adapter, identifier, edit["outgoing"], original["pictures"],
-                                               before_send=reserve)
+                                               before_send=reserve, **({"mentions": mentions} if mentions else {}))
                 except PlatformRejected as error:
                     self.store.execute(
                         "UPDATE dynamic_edits SET status='draft',error=? WHERE request_id=?",
@@ -1692,10 +1886,15 @@ class Dynamics:
                     return self.dynamic_edit(request_id, account, character["id"])
             if actual == expected:
                 guard()
+                presentation = row.get("presentation")
+                if presentation is not None or mentions:
+                    presentation = (presentation or {"link_source_ids": None}) | {"mentions": mentions, "points": []}
+                edited = self._outgoing(row | {"content": edit["caption"], "mentions": mentions}, character)
                 with self.store.db:
                     self.store.db.execute(
-                        "UPDATE dynamic_posts SET content=?,content_hash=?,updated_at=? WHERE id=?",
-                        (edit["caption"], _content_hash(edit["caption"]), time.time(), row["id"]),
+                        "UPDATE dynamic_posts SET content=?,content_hash=?,presentation=?,delivery_key=?,updated_at=? WHERE id=?",
+                        (edit["caption"], _content_hash(edit["caption"]), _json(presentation) if presentation else None,
+                         _delivery_key(edited), time.time(), row["id"]),
                     )
                     self.store.db.execute(
                         "UPDATE dynamic_edits SET status='applied',error=NULL WHERE request_id=?", (request_id,),
@@ -1772,7 +1971,8 @@ class Dynamics:
                         return (
                             self._character()["id"] == char["id"]
                             and self._character()["version"] == char["version"]
-                            and self._summary_sources() == sources
+                            and self._valid_sources({"character_id": char["id"], "character_version": char["version"],
+                                                     "sources": sources})
                             and self._memory_preference() == memory_preference
                             and self._summary_model() == model_identity
                             and runtime_identity(self.runtime, self._character())["identity_version"]
@@ -1781,7 +1981,6 @@ class Dynamics:
                             and (not include_enabled or manual or self.policy()["enabled"])
                         )
 
-                    by_id = {source["id"]: source for source in sources}
                     public_sources = [source for source in sources if source["type"] != "public_memory"]
                     stories = [source for source in sources if source["type"] == "public_memory"]
                     if stories:
@@ -1789,8 +1988,6 @@ class Dynamics:
                             self.runtime.operation_llm, char, stories, budget, model_identity, authorized=authorized,
                         )
                         public_sources.extend(self.memory_summary.public_sources(summary))
-                    used_ids = self._used_source_ids()
-                    public_sources = [source for source in public_sources if source["id"] not in used_ids]
                     if not manual and self._live_busy():
                         base["reason"] = "直播队列繁忙，延后动态评估"
                         return self._save_decision(char, manual, base, [])
@@ -1798,6 +1995,8 @@ class Dynamics:
                         raise ValueError("运营记忆来源或授权已变化")
                     payload = json.loads(messages[1]["content"])
                     payload["public_sources"] = public_sources
+                    account = getattr(self.comments, "display_account_id", lambda: "")()
+                    payload["related_posts"] = self._related_posts(char, account, public_sources)
                     messages[1]["content"] = _json(payload)
                     maximum = self.settings.data["omni"].get("operations_max_tokens", 8192)
                     binding = {
@@ -1805,7 +2004,8 @@ class Dynamics:
                         "character": {"id": char["id"], "version": char["version"]},
                         "source_sha256": content_hash(public_sources),
                         "self_identity": generation_identity,
-                        **({"evaluation_time": current_time} if not public_sources else {}),
+                        "evaluation_slot": current_time if manual else policy["next_evaluation_at"],
+                        "epoch": self.operations.policy()["epoch"],
                     }
 
                     async def invoke_model(packet, schema):
@@ -1844,9 +2044,11 @@ class Dynamics:
                         context_data={"public_sources": public_sources},
                         allow_web_fetch=True,
                     )
-                    selected_sources = [by_id[source_id] for source_id in data["source_ids"]]
+                    data["presentation"] = await self._presentation(data, public_sources)
+                    if not authorized(include_enabled=False):
+                        raise ValueError("动态素材或账号已变化")
                     if (
-                        data["action"] == "post" and not comment_card(selected_sources)
+                        data["action"] == "post" and data["illustration"] == "picture"
                         and illustration_policy(self.store).use_memes and self.memes and not workstation_image_decisions(self.runtime)
                     ):
                         try:
@@ -1931,6 +2133,7 @@ class Dynamics:
                 and self.policy()["auto_publish"]
                 and not selection_failed
                 and not output_review
+                and not data["presentation"]["pending_mentions"]
             ):
                 self._automatic_post_id = decision["post_id"]
                 try:

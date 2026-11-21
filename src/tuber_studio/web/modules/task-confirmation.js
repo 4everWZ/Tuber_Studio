@@ -1,4 +1,5 @@
 import { studioPath } from "./api.js";
+import { mentionLinks } from "./public-mentions.js";
 import { node, safeMessage } from "./core.js?v=20261105.32";
 
 export function dynamicPublicationApproval(root, task, approval, api, onChange) {
@@ -49,6 +50,7 @@ export function dynamicPublicationApproval(root, task, approval, api, onChange) 
     const details = node("details");
     details.append(node("summary", item.image_hashes?.length ? "查看原文和配图" : "查看原文"),
                    node("blockquote", item.text, "quoted-text"));
+    if (item.payload?.mentions?.length) details.append(mentionLinks(item.payload.mentions, node));
     const imagePath = `/api/agent/tasks/${task.id}/approval/${task.step_id}/dynamics/${item.post_id}/images`;
     for (const index of (item.image_hashes || []).keys()) {
       const image = node("img", null, "dynamic-comment-card");

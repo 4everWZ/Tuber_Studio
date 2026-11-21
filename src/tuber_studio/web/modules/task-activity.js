@@ -7,6 +7,7 @@ import { browserTaskForm, mountTaskBrowser } from "./task-browser.js";
 import { renderCapabilityStrip } from "./operation-capabilities.js";
 import { studioPath } from "./api.js";
 import { dynamicPublicationApproval } from "./task-confirmation.js";
+import { mentionLinks } from "./public-mentions.js";
 
 const base = "/api/agent/tasks";
 const states = {
@@ -452,6 +453,7 @@ export function initTaskActivity(api, requestId, onArtifact = () => {}) {
       const action = node("p", `${step.approval.target} · ${step.approval.text || step.arguments.action}`);
       if (["publish_dynamic_draft", "submit_selected_reply"].includes(step.tool)) {
         const {payload, channel, draft_id, post_id} = step.approval;
+        if (payload.mentions?.length) action.append(mentionLinks(payload.mentions, node));
         const ref = {asset_id: channel && payload.meme_id, artifact_id: payload.artifact_id};
         const url = illustrationUrl(channel || "dynamics", draft_id || post_id, ref);
         if (url) {

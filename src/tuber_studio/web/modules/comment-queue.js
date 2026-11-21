@@ -3,6 +3,7 @@ import { illustrationUrl, illustrationStatus } from "./operation-image.js";
 import { $, node, safeMessage } from "./core.js";
 import { commentFinished } from "./comment-state.js?v=20261107.13";
 import { replyHandoff } from "./reply-handoff.js";
+import { mentionEditor } from "./public-mentions.js";
 
 const pageSize = 10;
 const sources = { manual: "手动", interaction: "公开互动", discovery: "自主浏览" };
@@ -384,6 +385,24 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     if (status === "publish_uncertain" && !row.continuation) {
       message.textContent ||= "请打开对应 B 站评论楼核对。";
     }
+    detail.append(mentionEditor({
+      mentions: row.mentions, pending: row.pending_mentions, editable, node,
+      save: async mentions => {
+        if (busy) return;
+        busy = true;
+        try {
+          await post("review", { action: "edit", text: editor.value, updated_at: row.updated_at, mentions });
+          draftEdits.delete(key);
+          await refresh(true);
+          feedback.textContent = "提及已保存，草稿待审核。";
+        } catch (error) {
+          feedback.textContent = error.message;
+        } finally {
+          busy = false;
+          syncActions();
+        }
+      },
+    }));
     detail.append(actions, message, continuation.root);
     syncActions();
     if (row.round_id) detail.append(link("查看来源轮次", `#automation/round/${row.round_id}`));

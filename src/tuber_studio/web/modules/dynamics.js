@@ -1,5 +1,6 @@
 import { illustrationUrl, illustrationStatus } from "./operation-image.js";
 import { studioPath } from "./api.js";
+import { mentionEditor } from "./public-mentions.js";
 "use strict";
 
 import { $, webCharacterName } from "./core.js";
@@ -108,20 +109,27 @@ function renderCommentConversation(container, card, links, node) {
 }
 
 export function appendDynamicSources(container, sources, { node, display, commentLinks = new Map() }) {
+  const expanded = new Set([...container.querySelectorAll("details")]
+    .filter(entry => entry.open && entry.dataset.sourceId).map(entry => entry.dataset.sourceId));
   container.replaceChildren();
   if (!Array.isArray(sources) || !sources.length) {
     container.append(node("p", "暂无可展示的来源原文。", "hint"));
     return;
   }
   sources.forEach(source => {
-    const entry = node("div", null, "dynamic-source");
-    entry.append(node("strong", `${source.fictional ? "虚构角色故事" : "公开来源"} · ${source.type || "来源"} · ${source.id || "—"}`));
+    const entry = node("details", null, "dynamic-source");
+    entry.dataset.sourceId = source.id || "";
+    entry.open = expanded.has(entry.dataset.sourceId);
+    const names = { public_comment: "原评论", watched_video: "视频片段", own_reflection: "自己的感想",
+      published_reply: "公开回复", public_incident: "公开经历", public_memory: "角色故事" };
+    const author = source.participants?.[0]?.name;
+    entry.append(node("summary", [names[source.type] || "素材", author].filter(Boolean).join(" · ")));
     entry.append(node("p", source.text || "未返回来源文字。"));
     if (source.original_comment) entry.append(node("p", `原评论：${display(source.original_comment)}`, "hint"));
     if (source.source_url) {
       try {
         const url = new URL(source.source_url);
-        if (url.protocol === "https:" && !commentLinks.has(videoId(url))) {
+        if (url.protocol === "https:" && (source.type === "public_comment" || !commentLinks.has(videoId(url)))) {
           const link = node("a", "打开来源");
           link.href = url.href;
           link.target = "_blank";
@@ -143,7 +151,7 @@ export function renderDynamicPost(model, {
   dynamicContinuation,
   memePreview,
   publicSettings,
-  node
+  node, saveMentions
 }) {
   const post = (model.dynamicPosts || []).find(item => item.id === model.dynamicPostId);
   const terminalInPending = model.dynamicPostView !== "history" && ["published", "rejected", "invalidated"].includes(post?.status);
@@ -168,7 +176,7 @@ export function renderDynamicPost(model, {
     $("dynamic-post-text").readOnly = !editable;
     if (!model.dynamicPostDirty) $("dynamic-post-text").value = post?.content || "";
   }
-  if ($("approve-dynamic")) $("approve-dynamic").disabled = !editable || model.dynamicPostPending;
+  if ($("approve-dynamic")) $("approve-dynamic").disabled = !editable || model.dynamicPostPending || !!post?.pending_mentions?.length;
   if ($("reject-dynamic")) $("reject-dynamic").disabled = !editable || model.dynamicPostPending;
   if ($("publish-dynamic")) {
     $("publish-dynamic").disabled = !post || post.status !== "approved" || model.dynamicPostDirty || model.dynamicPostPending || unavailable || !model.dynamicPolicy?.credentials_configured;
@@ -253,6 +261,29 @@ export function renderDynamicPost(model, {
   if ($("dynamic-post-sources")) {
     const sources = $("dynamic-post-sources");
     appendDynamicSources(sources, post?.sources, { node, display, commentLinks });
+    if (post?.presentation?.points?.length) {
+      const summary = node("ul");
+      for (const point of post.presentation.points) summary.append(node("li", point.text));
+      const details = node("details");
+      details.append(node("summary", "分享要点"), summary);
+      sources.append(details);
+    }
+  }
+  const mentionPanel = $("dynamic-post-mentions");
+  if (mentionPanel && mentionPanel.dataset.revision !== String(post?.review_key || "")) {
+    mentionPanel.dataset.revision = post?.review_key || "";
+    mentionPanel.replaceChildren(...(post ? [mentionEditor({ mentions: post.mentions, pending: post.pending_mentions,
+      editable, node, save: requests => saveMentions?.(requests) })] : []));
+  }
+  const linksPanel = $("dynamic-post-links");
+  if (linksPanel) {
+    linksPanel.replaceChildren(...(post?.outgoing_links || []).map(url => {
+      const link = node("a", "随动态发布的链接");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      return link;
+    }));
   }
 
   if ($("dynamic-post-receipt")) {
@@ -513,6 +544,7 @@ export function initDynamicsModule(model, {
     memePreview,
     publicSettings,
     node,
+    saveMentions: mentions => busy($("dynamic-post-mentions"), () => doReviewDynamic("edit", mentions)),
   });
 
   const doRenderDecisions = () => renderDynamicDecisions(model, {
@@ -657,7 +689,7 @@ export function initDynamicsModule(model, {
     }
   }
 
-  async function doReviewDynamic(action) {
+  async function doReviewDynamic(action, mentions) {
     const post = (model.dynamicPosts || []).find(item => item.id === model.dynamicPostId);
     if (!post || model.dynamicPostPending) return;
     model.dynamicPostPending = true;
@@ -665,7 +697,8 @@ export function initDynamicsModule(model, {
     try {
       await api(`/api/dynamics/posts/${encodeURIComponent(post.id)}/review`, {
         method: "POST",
-        body: { action, text: $("dynamic-post-text")?.value, review_key: post.review_key }
+        body: { action, text: $("dynamic-post-text")?.value, review_key: post.review_key,
+          ...(mentions ? { mentions } : {}) }
       });
       model.dynamicPostDirty = false;
       model.dynamicDraftEdits.delete(post.id);
@@ -776,7 +809,9 @@ export function initDynamicsModule(model, {
     try {
       let result;
       try {
-        result = await api(`/api/dynamics/posts/${encodeURIComponent(post.id)}/publish`, { method: "POST" });
+        result = await api(`/api/dynamics/posts/${encodeURIComponent(post.id)}/publish`, {
+          method: "POST", body: { text: post.content, review_key: post.review_key }
+        });
       } catch (error) {
         await doRefreshDynamics().catch(() => {});
         throw error;

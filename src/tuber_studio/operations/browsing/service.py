@@ -1078,9 +1078,13 @@ class BrowsingService:
             return False
         if item["approval"]:
             return await self._send_approved(item)
-        if item["epoch"] != control["epoch"]:
+        if item["epoch"] != control["epoch"] and channel != "dynamics":
             return True
         draft = self._send_draft(item)
+        if item["epoch"] != control["epoch"] and not (
+            channel == "dynamics" and draft and draft["status"] == "publish_uncertain"
+        ):
+            return True
         if channel == "browsing":
             candidate = draft if draft and draft["auto_authorized"] else None
             if candidate and candidate["status"] == "publish_uncertain":
@@ -1105,10 +1109,15 @@ class BrowsingService:
                 await self.messages.send(int(identity), automatic=True, authorization_epoch=control["epoch"])
         elif channel == "dynamics":
             post = draft
-            if post and post["status"] == "pending_review" and self.dynamics.policy()["auto_publish"]:
+            if post and post["status"] == "publish_uncertain":
+                if not await self.dynamics._reconcile(post.get("duplicate_of") or post["id"]):
+                    raise ReconciliationPending()
+            elif post and post["status"] == "pending_review" and self.dynamics.policy()["auto_publish"]:
                 self.dynamics._automatic_post_id = post["id"]
                 try:
-                    await self.dynamics.publish(post["id"], automatic=True)
+                    published = await self.dynamics.publish(post["id"], automatic=True)
+                    if published.get("status") == "publish_uncertain":
+                        raise ReconciliationPending()
                 finally:
                     self.dynamics._automatic_post_id = None
         return True

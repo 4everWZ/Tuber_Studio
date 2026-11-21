@@ -5,6 +5,7 @@ import { renderArtifact, renderAssistantAnswer } from "./operator-chat-answer.js
 import { operationControlCard } from "./operator-chat-control.js?v=20261113.12";
 import { studioPath } from "./api.js";
 import { dynamicPublicationApproval } from "./task-confirmation.js";
+import { mentionLinks } from "./public-mentions.js";
 
 const statuses = {
   queued: "排队中", waiting: "等待资源", running: "运行中", completed: "已完成", paused: "已暂停",
@@ -461,12 +462,13 @@ export function createOperatorCard(root, turn, context) {
       } else if (approval && approval.kind !== "dynamic_publication") {
         preview.append(node("p", approval.target || "等你确认"));
         if (approval.text) preview.append(node("p", approval.text));
+        if (approval.payload?.mentions?.length) preview.append(mentionLinks(approval.payload.mentions, node));
       }
       actionInteraction(preview, value.interaction);
       if (value.items) {
         const list = node("ul");
         for (const item of value.items) {
-          const status = { published: "已发", not_sent: "没发", unconfirmed: "待核对" }[item.status];
+          const status = item.duplicate_of ? "已有发布记录" : { published: "已发", not_sent: "没发", unconfirmed: "待核对" }[item.status];
           const caption = item.text.replace(/\s+/g, " ").slice(0, 72);
           const row = node("li", `${status} · ${caption || `草稿 #${item.post_id}`}`);
           if (item.status === "published" && platformLink(item.href)) row.append(" · ", link("查看动态", item.href));

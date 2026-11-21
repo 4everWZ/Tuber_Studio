@@ -48,6 +48,7 @@ from .publication_errors import SendLimitReached
 from .platforms.bilibili_login import validate_credentials
 from .providers import public_error
 from .publication_errors import PlatformRejected, UnknownPublication
+from .public_mentions import bind_mentions, draft_mentions, mention_participants, rebase_mentions, revision_payload
 from .store import dump
 
 CATEGORIES = {"question", "suggestion", "interaction", "spam", "general"}
@@ -735,6 +736,12 @@ class Comments:
                         **({"context": candidate} if candidate else {}),
                     )
                     check.setdefault("generation_identity", generation_identity)
+                    mentions = getattr(reply, "mentions", [])
+                    if mentions:
+                        bound, pending = await bind_mentions(self.adapter, reply.spoken_text,
+                            [item.model_dump() for item in mentions],
+                            mention_participants({"source": comment_source(row)}))
+                        check.update(mentions=bound, pending_mentions=pending)
                     if materials:
                         check["comment_materials"] = materials
                     if candidate:
@@ -793,7 +800,9 @@ class Comments:
                 break
         # Independent threads may prepare/publish concurrently; all model calls
         # above stay serialized, and publish() owns its one-shot write lock.
-        if automatic and self.policy()["auto_reply"] and not check.get("output", {}).get("needs_review"):
+        if automatic and self.policy()["auto_reply"] and not (
+            check.get("output", {}).get("needs_review") or check.get("pending_mentions")
+        ):
             await self.publish(draft_id, automatic=True, authorization_epoch=self.active_automation_epoch)
 
     def _task_progress(self, task_id, error=None):
@@ -810,6 +819,9 @@ class Comments:
         if row["status"] in {"published", "publishing", "publish_uncertain", "private_handoff", "operator_replied"}:
             raise ValueError("这条回复已提交，可查看平台回执")
         expected = options.pop("updated_at", None)
+        selection = options.pop("mention_selection", None)
+        if selection is not None and action != "edit":
+            raise ValueError("保存提及后需重新审核")
         if "expected_image" in options and options.pop("expected_image") != decision(self.runtime, "comments", row, row_ref(row)):
             raise ValueError("配图已变化，请核对当前草稿")
         if expected is not None and expected != row["updated_at"]:
@@ -823,6 +835,13 @@ class Comments:
             text = validate_comment_body(text, recipient_name=row["display_name"] or "")
         else:
             text = validate_operation_text(text, label="回复")
+        audit = draft_mentions(row)
+        if selection is not None:
+            audit.update(selection)
+        elif text != row["text"] and audit.get("mentions") and action != "reject":
+            audit["mentions"] = rebase_mentions(text, audit["mentions"])
+        if action == "approve" and audit.get("pending_mentions"):
+            raise ValueError("请先选择这条评论要 @ 的账号")
         ref = options.get("image_ref", row_ref(row))
         if "image_ref" not in options and action == "approve":
             ref = decision(self.runtime, "comments", row, ref)
@@ -831,8 +850,8 @@ class Comments:
         status = {"approve": "approved", "reject": "rejected", "edit": "pending_review"}[action]
         updated_at = max(time.time(), math.nextafter(row["updated_at"], math.inf))
         self.store.execute(
-            "UPDATE drafts SET text=?,status=?,image_ref=?,error=NULL,updated_at=? WHERE id=?",
-            (text, status, dump(ref) if ref else None, updated_at, draft_id),
+            "UPDATE drafts SET text=?,status=?,image_ref=?,answer_check=?,error=NULL,updated_at=? WHERE id=?",
+            (text, status, dump(ref) if ref else None, dump(audit), updated_at, draft_id),
         )
         if browsing := getattr(self.runtime, "browsing", None):
             browsing.sends.withdraw("comments", draft_id)
@@ -929,7 +948,7 @@ class Comments:
             },
             guard,
             payload=comment_payload(row, self.runtime),
-            encode_revision=lambda value: comment_payload(row, self.runtime) | {"text": value},
+            encode_revision=lambda value: revision_payload(comment_payload(row, self.runtime), value),
             on_defer=lambda prepared, state: self._defer_revision(draft_id, prepared, state),
             manual_approved=row["status"] in {"approved", "copied"},
         )
@@ -975,6 +994,10 @@ class Comments:
                 if runtime_identity(self.runtime, character, account)["identity_version"] != current["identity_version"]:
                     raise ValueError("生成期间账号身份再次变化，保留草稿")
                 check["generation_identity"] = current
+                old_mentions = draft_mentions(row)
+                if old_mentions.get("mentions") or old_mentions.get("pending_mentions"):
+                    check["mentions"] = rebase_mentions(reply.spoken_text, old_mentions.get("mentions", []))
+                    check["pending_mentions"] = old_mentions.get("pending_mentions", [])
                 if materials:
                     check["comment_materials"] = materials
                 changed = self.store.execute(
@@ -992,9 +1015,13 @@ class Comments:
 
     def _apply_revision(self, draft_id, prepared, text):
         prepared.guard()
+        audit = draft_mentions(self._draft_source(draft_id))
+        if audit.get("mentions"):
+            audit["mentions"] = rebase_mentions(text, audit["mentions"])
         cursor = self.store.execute(
-            "UPDATE drafts SET text=?,status='pending_review',error=NULL,updated_at=? WHERE id=? AND text=? AND status IN('approved','copied','pending_review')",
-            (text, time.time(), draft_id, prepared.text),
+            "UPDATE drafts SET text=?,answer_check=?,status='pending_review',error=NULL,updated_at=? "
+            "WHERE id=? AND text=? AND status IN('approved','copied','pending_review')",
+            (text, dump(audit), time.time(), draft_id, prepared.text),
         )
         if cursor.rowcount != 1:
             raise ValueError("草稿已被更新，修订结果保留在恢复记录")
@@ -1066,7 +1093,7 @@ class Comments:
                 guard(row, attempt)
             adapter, credential = self.adapter, dict(self.credentials)
             result = await adapter.reconcile_publication(
-                row["binding"]["target"],
+                row["binding"]["target"] | {"mentions": row["feedback"]["sent_payload"].get("mentions", [])},
                 author_uid=account,
                 text=row["feedback"]["sent_payload"].get("text", ""),
                 started_at=attempt["started_at"],
@@ -1238,6 +1265,8 @@ class Comments:
                 raise ValueError("发送准备期间草稿或来源已变化")
             require_comment_attachment("comments", row, row_ref(row))
             payload = comment_payload(row, self.runtime)
+            if draft_mentions(row).get("pending_mentions"):
+                raise ValueError("请先选择这条评论要 @ 的账号")
             actual_binding = self._publication_binding(row, account_id, character)
             if (
                 binding is not None
@@ -1323,6 +1352,7 @@ class Comments:
             self.store.execute(
                 "UPDATE drafts SET status='publishing',updated_at=? WHERE id=?", (time.time(), draft_id)
             )
+            receipt = None
             try:
                 options = (
                     {"thread_id": row["thread_id"]} if row["thread_id"] != row["platform_comment_id"] else {}
@@ -1331,6 +1361,8 @@ class Comments:
                     options["before_send"] = before_send
                 else:
                     before_send()
+                if payload.get("mentions"):
+                    options["mentions"] = payload["mentions"]
                 receipt = await self.adapter.publish(
                     row["video_id"], row["platform_comment_id"], row["text"], **options
                 )
@@ -1338,6 +1370,20 @@ class Comments:
                     r"[1-9][0-9]{0,19}", str(receipt.get("rpid", ""))
                 ):
                     raise PublishUncertain("平台没有返回有效评论ID")
+                if payload.get("mentions"):
+                    self.operations.finish(token, "uncertain", receipt=receipt)
+                    self.store.execute("UPDATE drafts SET status='publish_uncertain',receipt=?,error=? WHERE id=?",
+                                       (dump(receipt), "评论已受理，提及待核对", draft_id))
+                    self.store.execute("UPDATE publish_attempts SET status='uncertain',receipt=? WHERE id=?",
+                                       (dump(receipt), attempt))
+                    FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
+                        "comments", draft_id, token, actual_binding, payload, "评论已受理，提及待核对"
+                    )
+                    if await self._reconcile(draft_id) is not None:
+                        return self.store.one("SELECT * FROM drafts WHERE id=?", (draft_id,))
+                    raise UnknownPublication("评论已受理，提及待核对", token)
+            except UnknownPublication:
+                raise
             except (PublishUncertain, asyncio.CancelledError) as error:
                 if token is None and isinstance(error, asyncio.CancelledError):
                     self.store.execute(
@@ -1350,7 +1396,7 @@ class Comments:
                     )
                     raise
                 if token:
-                    self.operations.finish(token, "uncertain")
+                    self.operations.finish(token, "uncertain", receipt=receipt)
                     FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
                         "comments", draft_id, token, actual_binding, payload, "发布结果不确定"
                     )

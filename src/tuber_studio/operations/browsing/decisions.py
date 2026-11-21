@@ -25,6 +25,7 @@ from ...operation_turns import operation_lane
 from ...operations_control import canonical_intent
 from ...providers import SYSTEM_RULES, public_error
 from ...publication_errors import SendLimitReached
+from ...public_mentions import MENTION_INSTRUCTION, bind_mentions, mention_participants
 from ...store import dump
 from .comment_reader import (
     CommentProgress,
@@ -189,7 +190,7 @@ class BrowsingDecisions:
                     "按材料类型和时码区分字幕与画面。台词如果提到两者，就分别引用能支持它们的编号。"
                     "只看到了片段，可以就那个细节接话。"
                 )
-            instruction += RESPONSE_ACTOR_INSTRUCTION + RESPONSE_REFERENCE_INSTRUCTION
+            instruction += RESPONSE_ACTOR_INSTRUCTION + RESPONSE_REFERENCE_INSTRUCTION + MENTION_INSTRUCTION
             if response_input.comment_reply:
                 instruction += (
                     " 先接当前评论实际问的事，回复引用当前评论。"
@@ -477,6 +478,11 @@ class BrowsingDecisions:
         result = response_input.resolve(value) if response_input is not None else value
         if schema is ResponseDecision:
             self.browsing.runtime.validate_memory_delivery(memory_audit)
+            if result.action == "reply_public" and result.mentions:
+                participants = mention_participants(data.get("thread") or {}, data.get("video_source"))
+                mentions, pending = await bind_mentions(self.browsing.adapter, result.text.strip(),
+                                                        [item.model_dump() for item in result.mentions], participants)
+                result._mention_selection = {"mentions": mentions, "pending_mentions": pending}
             result._memory_audit = memory_audit
             result._generation_identity = binding["self_identity"]
             saved_generation = self.browsing.runtime.continuations.find("generation.browsing", identity)

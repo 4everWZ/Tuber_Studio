@@ -372,6 +372,14 @@ class Runtime:
             on_memory=remember_dependency,
             operating_account=operating_account_facts(self.account.status()) if mode == "operator_chat" and hasattr(self, "account") else None,
         )
+        if mode == "comment_draft":
+            from .public_mentions import MENTION_INSTRUCTION
+
+            messages.append({"role": "system", "content": MENTION_INSTRUCTION})
+        elif mode == "direct_message" and event.get("share_reflection"):
+            from .dynamic_materials import REFLECTION_INSTRUCTION
+
+            messages.append({"role": "system", "content": REFLECTION_INSTRUCTION})
         generation_identity = self.identity_snapshot(character, event.get("account_id"))
         if mode != "operator_chat":
             messages = identity_messages(messages, generation_identity)

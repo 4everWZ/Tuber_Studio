@@ -38,6 +38,7 @@ from ...operations_control import canonical_intent
 from ...platforms.bilibili import PlatformReadError, PublishUncertain
 from ...providers import public_error
 from ...publication_errors import PlatformRejected, UnknownPublication
+from ...public_mentions import rebase_mentions, revision_payload
 from ...store import dump
 from .comment_timeline import observe_thread, resource_key
 from .inputs import ResponseDecisionInput
@@ -113,6 +114,7 @@ class BrowsingPublication:
                            or runtime_identity(self.browsing.runtime, character, row["account_id"])}
         if response._generation_id:
             target["generation_continuation_id"] = response._generation_id
+        target.update(getattr(response, "_mention_selection", {}))
         if response._memory_audit:
             self.browsing.runtime.validate_memory_delivery(response._memory_audit)
             target["memory_audit"] = response._memory_audit
@@ -155,6 +157,7 @@ class BrowsingPublication:
         auto = (
             not row["preview"]
             and not body_issue
+            and not target.get("pending_mentions")
             and self.browsing.operations.policy()["enabled"]
             and self.browsing.operations.policy()["epoch"] == row["epoch"]
             and self._action_allowed(kind, self.browsing.effective())
@@ -248,6 +251,15 @@ class BrowsingPublication:
             if issue and action == "approve":
                 raise ValueError(issue)
         target = json.loads(row["target"])
+        selection = options.pop("mention_selection", None)
+        if selection is not None:
+            if action != "edit" or row["kind"] not in _COMMENT_KINDS:
+                raise ValueError("保存提及后需重新审核")
+            target.update(selection)
+        elif text != row["text"] and target.get("mentions") and action != "reject":
+            target["mentions"] = rebase_mentions(text, target["mentions"])
+        if action == "approve" and target.get("pending_mentions"):
+            raise ValueError("请先选择这条评论要 @ 的账号")
         expected = options.pop("updated_at", None)
         if "expected_image" in options and options.pop("expected_image") != decision(
             self.browsing.runtime, "browsing", row | {"target": target}, target.get("image_ref")
@@ -275,7 +287,7 @@ class BrowsingPublication:
                               runtime=self.browsing.runtime, scope=image_scope("browsing", row | {"target": target}))
                 target["image_ref"] = options["image_ref"]
         new_status = (
-            ("pending_review" if issue or options or text != row["text"] else row["status"])
+            ("pending_review" if issue or options or selection is not None or text != row["text"] else row["status"])
             if action in {"edit", "save"}
             else ("approved" if action == "approve" else "rejected")
         )
@@ -421,7 +433,7 @@ class BrowsingPublication:
             if active
             else self.browsing.policy()["decision_max_tokens"],
             payload=comment_payload(row, self.browsing.runtime, "browsing"),
-            encode_revision=lambda value: comment_payload(row, self.browsing.runtime, "browsing") | {"text": value},
+            encode_revision=lambda value: revision_payload(comment_payload(row, self.browsing.runtime, "browsing"), value),
             on_defer=lambda prepared, state: self._defer_revision(identity, prepared, state),
             manual_approved=row["status"] == "approved",
         )
@@ -519,6 +531,8 @@ class BrowsingPublication:
             if response.action != "reply_public":
                 raise ValueError("身份更新后选择暂不发送：" + (response.explanation or response.reason))
             target = target | {"generation_identity": current}
+            if target.get("mentions"):
+                target["mentions"] = rebase_mentions(response.text, target["mentions"])
             if audit:
                 target["generation_continuation_id"] = audit["id"]
             browsing.store.execute(
@@ -534,11 +548,15 @@ class BrowsingPublication:
     def _apply_revision(self, identity, prepared, text):
         prepared.guard()
         text = validate_operation_text(text)
+        target = json.loads(self.browsing.store.one("SELECT target FROM browsing_intents WHERE id=?", (identity,))["target"])
+        if target.get("mentions"):
+            target["mentions"] = rebase_mentions(text, target["mentions"])
         self.browsing.store.execute(
-            "UPDATE browsing_intents SET status=?,text=?,error=NULL,updated_at=? WHERE id=?",
+            "UPDATE browsing_intents SET status=?,text=?,target=?,error=NULL,updated_at=? WHERE id=?",
             (
                 "pending_review",
                 text,
+                dump(target),
                 time.time(),
                 identity,
             ),
@@ -668,7 +686,7 @@ class BrowsingPublication:
             if not hasattr(self.browsing.adapter, "reconcile_publication"):
                 return {"status": "unsupported"}
             return await self.browsing.adapter.reconcile_publication(
-                row["binding"]["target"],
+                row["binding"]["target"] | {"mentions": row["feedback"]["sent_payload"].get("mentions", [])},
                 author_uid=row["binding"]["account_id"],
                 text=row["feedback"]["sent_payload"]["text"],
                 started_at=attempt["started_at"],
@@ -839,6 +857,8 @@ class BrowsingPublication:
             )
             require_comment_attachment("browsing", row, row_ref(row))
             payload = comment_payload(row, self.browsing.runtime, "browsing")
+            if row["target"].get("pending_mentions"):
+                raise ValueError("请先选择这条评论要 @ 的账号")
             image = (comment_image(self.browsing.comments.memes, payload, character, runtime=self.browsing.runtime,
                                    scope=image_scope("browsing", row)) if payload.get("asset_sha256") else None)
             if image and not any(str(m["metadata"].get("aid")) == str(row["target"]["oid"])
@@ -929,6 +949,7 @@ class BrowsingPublication:
                     (time.time(), identity),
                 )
 
+            receipt = None
             try:
                 options = {}
                 if image:
@@ -968,13 +989,29 @@ class BrowsingPublication:
                     raise PublishUncertain("没有有效一次提交回执")
                 if is_dynamic_like and not await self._verify_dynamic_like(row["target"]):
                     raise PublishUncertain("动态点赞已受理，等状态读回")
+                if payload.get("mentions"):
+                    self.browsing.operations.finish(token, "uncertain", receipt=receipt)
+                    self.browsing.store.execute(
+                        "UPDATE browsing_intents SET status='publish_uncertain',receipt=?,error=?,updated_at=? WHERE id=?",
+                        (dump(receipt), "评论已受理，提及待核对", time.time(), identity),
+                    )
+                    FeedbackPublication(self.browsing.runtime, self.browsing.store, self.browsing.operations).record_unknown(
+                        "browsing", identity, token, actual_binding, payload, "评论已受理，提及待核对"
+                    )
+                    if await self._reconcile(identity) is not None:
+                        return self.browsing.repo.decode(
+                            self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
+                        )
+                    raise UnknownPublication("评论已受理，提及待核对", token)
+            except UnknownPublication:
+                raise
             except BaseException as error:
                 if token:
                     uncertain = isinstance(
                         error, (PublishUncertain, asyncio.CancelledError)
                     ) or not isinstance(error, ValueError)
                     self.browsing.operations.finish(
-                        token, "uncertain" if uncertain else "rejected", error=public_error(error)
+                        token, "uncertain" if uncertain else "rejected", receipt=receipt, error=public_error(error)
                     )
                     if uncertain:
                         FeedbackPublication(

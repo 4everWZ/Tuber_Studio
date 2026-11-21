@@ -21,6 +21,9 @@ MAX_CARD_PAGES = 9
 def _references(source):
     if source.get("type") == "public_incident":
         return source.get("public_sources") or []
+    if source.get("type") == "public_comment" and (ref := source.get("reference")):
+        resource = ref["resource"]
+        return [ref | {"bvid": resource, "quote": source["text"]}]
     if source.get("type") == "published_reply" and (video := VIDEO.fullmatch(source.get("source_url", ""))):
         original = source.get("original_comment") or {}
         return [{"bvid": video[1], "comment_id": original.get("id"), "quote": original.get("text")}]
@@ -51,7 +54,8 @@ def comment_card(sources, *, store=None, actor=None, legacy=False, timezone="Asi
     def add(bvid, identifier, quote, *, author=None, uid=None, created_at=None, parent=None):
         if not COMMENT_ID.fullmatch(str(identifier)) or not isinstance(quote, str) or not quote.strip():
             return
-        url = public_discussion_url(bvid, identifier)
+        url = (public_discussion_url(comment_id=identifier, dynamic_id=bvid.removeprefix("dynamic:"))
+               if str(bvid).startswith("dynamic:") else public_discussion_url(bvid, identifier))
         if not url:
             return
         entries.setdefault(url, {
@@ -72,9 +76,9 @@ def comment_card(sources, *, store=None, actor=None, legacy=False, timezone="Asi
                 anchor = {}
             url = add(
                 bvid, comment_id, quote,
-                author=original.get("display_name") or anchor.get("author_name") or published.get("recipient_name"),
-                uid=original.get("platform_user_id") or anchor.get("author_uid") or published.get("recipient"),
-                created_at=original.get("created_at") or anchor.get("created_at"),
+                author=original.get("display_name") or anchor.get("author_name") or ref.get("author_name") or published.get("recipient_name"),
+                uid=original.get("platform_user_id") or anchor.get("author_uid") or ref.get("author_uid") or published.get("recipient"),
+                created_at=original.get("created_at") or anchor.get("created_at") or ref.get("created_at"),
                 parent=original.get("parent_comment_id") or anchor.get("parent_comment_id"),
             )
             if not url:

@@ -141,10 +141,20 @@ def register_browsing_api(app, browsing, require_admin):
 
     @app.post("/api/automation/intents/{identity}/review", dependencies=dependencies)
     async def review(identity: str, data: dict = Body(...)):
-        if set(data) - {"action", "text", "image_ref", "updated_at", "expected_image"}:
+        if set(data) - {"action", "text", "image_ref", "updated_at", "expected_image", "mentions"}:
             raise ValueError("未知审核字段")
-        return browsing.review(identity, data.get("action"), data.get("text"),
-                               **{k: data[k] for k in ("image_ref", "updated_at", "expected_image") if k in data})
+        options = {k: data[k] for k in ("image_ref", "updated_at", "expected_image") if k in data}
+        if "mentions" in data:
+            from ...public_mentions import bind_mentions
+
+            row = browsing.repo.decode(browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
+            if not row or data.get("updated_at") != row["updated_at"]:
+                raise ValueError("候选已变化，请刷新正文和提及")
+            target = row["target"]
+            mentions, pending = await bind_mentions(browsing.adapter, data.get("text", row["text"]), data["mentions"],
+                [{"uid": target.get("recipient"), "name": target.get("recipient_name")}])
+            options["mention_selection"] = {"mentions": mentions, "pending_mentions": pending}
+        return browsing.review(identity, data.get("action"), data.get("text"), **options)
 
     @app.post("/api/automation/intents/{identity}/publish", dependencies=dependencies)
     async def publish(identity: str):

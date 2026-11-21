@@ -24,6 +24,7 @@ from tuber_studio.platforms.bilibili_messages import BilibiliMessagesAdapter
 BV = "BV1d8pU6xEZX"
 ORIGINAL = "把视频里这段灯光变化也画出来吧。"
 BODY = "灯光转蓝的那一刻我也看见了。"
+COMMENT_BODY = BODY + " @珊瑚 下次一起看！"
 OWNER, RECIPIENT, AUTHOR = "900", "123", "124"
 
 
@@ -79,8 +80,17 @@ def browse(origin, token):
             expect(panel).to_contain_text(AUTHOR)
             expect(panel.locator("textarea")).to_have_value(BODY)
             expect(panel.get_by_role("button", name="选择配图")).to_have_count(0)
+            panel.locator("textarea").fill(COMMENT_BODY)
+            panel.get_by_text("编辑 @", exact=True).click()
+            panel.get_by_role("button", name="添加 @").click()
+            panel.get_by_label("正文中的 @昵称").fill("@珊瑚")
+            panel.get_by_label("B 站 UID 或昵称").fill("75")
+            panel.get_by_role("button", name="保存提及").click()
+            expect(panel.get_by_role("link", name="@珊瑚")).to_have_attribute("href", "https://space.bilibili.com/75")
             panel.get_by_role("button", name="保存", exact=True).click()
-            panel.get_by_role("button", name="发布", exact=True).click()
+            with page.expect_response(lambda response: response.url.endswith("/publish")) as sent_comment:
+                panel.get_by_role("button", name="发布", exact=True).click()
+            assert sent_comment.value.ok and json.loads(sent_comment.value.json()["receipt"])["mention_uids"] == ["75"]
             page.wait_for_function(
                 "!document.querySelector('#queue-detail textarea') || document.querySelector('#queue-detail textarea').readOnly"
             )
@@ -150,6 +160,9 @@ async def test_operations_images_browser(settings, monkeypatch):
             data = {"mid": int(OWNER), "name": "测试号主"}
         elif path.endswith("/relation/stat"):
             data = {"follower": 0}
+        elif path.endswith("/card"):
+            assert request.url.params["mid"] == "75"
+            data = {"card": {"mid": "75", "name": "珊瑚"}}
         elif path.endswith("/view"):
             data = {"aid": 12, "bvid": BV}
         elif path.endswith("/fetch_session_msgs"):
@@ -167,8 +180,12 @@ async def test_operations_images_browser(settings, monkeypatch):
         elif path.endswith("/reply/add"):
             fields = parse_qs(request.content.decode())
             assert fields["oid"] == ["12"] and fields["root"] == ["11"] and fields["parent"] == ["13"]
-            assert fields["message"] == [BODY] and "pictures" not in fields
+            assert fields["message"] == [COMMENT_BODY] and "pictures" not in fields
+            assert json.loads(fields["at_name_to_mid"][0]) == {"珊瑚": 75}
             data = {"rpid": 1001}
+        elif path.endswith("/reply/reply"):
+            data = {"replies": [{"rpid": 1001, "root": 11, "parent": 13, "member": {"mid": int(OWNER)},
+                                 "content": {"message": COMMENT_BODY, "members": [{"mid": 75, "uname": "珊瑚"}]}}]}
         elif path.endswith("/send_msg"):
             fields = parse_qs(request.content.decode())
             assert fields["msg[sender_uid]"] == [OWNER] and fields["msg[receiver_id]"] == [RECIPIENT]

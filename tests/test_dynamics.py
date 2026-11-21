@@ -23,6 +23,7 @@ class Model:
         self.summary_output = None
         self.summary_hook = None
         self.hook = None
+        self.illustration = None
 
     async def generate_json(self, messages, schema, *, max_tokens):
         self.calls.append(messages)
@@ -48,6 +49,8 @@ class Model:
         if self.output is None and not payload["public_sources"]:
             return {"action": "wait", "reason": "这次先不发", "content": "", "source_ids": [],
                     "next_evaluation_seconds": 1800}
+        source = next(iter(payload["public_sources"]), {})
+        discussion = source.get("type") in {"public_incident", "published_reply"}
         return (
             json.loads(self.output)
             if self.output is not None
@@ -56,7 +59,9 @@ class Model:
                     "action": "post",
                     "reason": "和大家分享公开的虚构故事",
                     "content": "海底小剧场：今天又多盛了一碗饭。",
-                    "source_ids": [json.loads(messages[1]["content"])["public_sources"][0]["id"]],
+                    "source_ids": [source["id"]],
+                    "link_source_ids": [source["id"]] if discussion else [],
+                    "illustration": self.illustration or ("comment_card" if discussion else "none"),
                     "next_evaluation_seconds": 1800,
                 }
             )
@@ -217,17 +222,19 @@ async def test_dynamic_from_public_reply_publishes_the_reviewed_text_and_comment
 
 async def test_public_comment_can_illustrate_its_story_without_losing_the_source_link(service, monkeypatch):
     published_reply(service)
+    service.runtime.operation_llm.illustration = "picture"
     generated = {"artifact_id": "a" * 32, "sha256": "b" * 64}
     monkeypatch.setattr(module, "queue_image", lambda *args: generated)
     draft = await service.evaluate(manual=True)
     row = service._post(draft["post_id"])
-    assert row["comment_card"] is None and row["source_comment_card"]
+    assert row["comment_card"] is None
     reviewed = service.review(row["id"], "approve")
     payload = service._outgoing(reviewed, service._character())
     assert payload == {"text": reviewed["content"] + "\n\n原评论：https://www.bilibili.com/video/BV1d8pU6xEZX#reply42",
                        "artifact_id": generated["artifact_id"], "asset_sha256": generated["sha256"]}
     without_illustration = service.review(row["id"], "edit", meme_id=None)
-    assert without_illustration["comment_card"] == row["source_comment_card"]
+    assert without_illustration["comment_card"] is None
+    assert without_illustration["outgoing_links"] == row["outgoing_links"]
 
 
 def test_old_dynamic_card_preserves_the_original_quote_order_for_reconciliation():
@@ -287,14 +294,15 @@ def test_long_card_keeps_ancestors_and_confirmed_outcome_across_pages(service, m
     assert dynamic_comment_card.render_comment_card(card, 0) != dynamic_comment_card.render_comment_card(card, 1)
 
 
-def test_dynamic_decision_picks_one_episode(service):
+def test_dynamic_decision_can_merge_episodes(service):
     sources = [{"id": "incident:1"}, {"id": "reply:2"}]
-    assert service.decision_schema(sources)["properties"]["source_ids"]["maxItems"] == 1
-    with pytest.raises(ValueError, match="模型来源列表无效"):
-        service._parse({
-            "action": "post", "reason": "想分享", "content": "动态正文。",
-            "source_ids": [source["id"] for source in sources], "next_evaluation_seconds": 300,
-        }, sources)
+    identifiers = [source["id"] for source in sources]
+    assert service.decision_schema(sources)["properties"]["source_ids"]["maxItems"] == 2
+    result = service._parse({
+        "action": "post", "reason": "想分享", "content": "动态正文。", "source_ids": identifiers,
+        "points": [{"text": "两件事的共通点", "source_ids": identifiers}], "next_evaluation_seconds": 300,
+    }, sources)
+    assert result["points"][0]["source_ids"] == identifiers
 
 
 async def test_dynamic_refreshes_identity_regenerates_and_keeps_existing_approval(service):
@@ -437,7 +445,9 @@ async def test_disabled_default_and_manual_never_auto_sends(service):
     with pytest.raises(ValueError, match="未授权"):
         await service.publish(result["post_id"], automatic=True)
     due(service)
-    assert (await service.evaluate())["action"] == "wait"
+    await service.set_policy({"auto_publish": False})
+    fresh = await service.evaluate()
+    assert fresh["action"] == "post" and fresh["post_id"] != result["post_id"]
     assert service.sent == []  # No queue sweep of manual drafts.
 
 
@@ -449,8 +459,8 @@ async def test_enabled_auto_publishes_only_new_background_decision(service):
     assert len(service.sent) == 1
     post = service.list_posts()[0]
     assert post["receipt"]["dynamic_id"] == "12345" and post["published_at"]
-    with pytest.raises(ValueError):
-        await service.publish(post["id"])
+    assert (await service.publish(post["id"]))["receipt"] == post["receipt"]
+    assert len(service.sent) == 1
 
 
 @pytest.mark.parametrize("caption", [
@@ -606,6 +616,7 @@ async def test_automatic_dynamic_publishes_caption_and_bound_thread_image(servic
     service.runtime.operation_llm.output = json.dumps({
         "action": "post", "reason": "分享评论区互动", "content": caption,
         "source_ids": [source["id"]], "next_evaluation_seconds": 1800,
+        "illustration": "comment_card", "link_source_ids": [source["id"]],
     })
     sent = []
 
@@ -839,23 +850,24 @@ async def test_default_dynamic_frequency(service):
     assert len(service.sent) == 2
 
 
-async def test_normalized_duplicate_and_used_sources_block_repetition(service):
+async def test_normalized_duplicate_reuses_original_delivery(service):
     public_memory(service)
     first = await service.evaluate(manual=True)
     service.review(first["post_id"], "approve", "海底 小剧场！")
     await service.publish(first["post_id"])
     calls = len(service.runtime.operation_llm.calls)
-    assert (await service.evaluate(manual=True))["action"] == "wait"
+    assert (await service.evaluate(manual=True))["action"] == "post"
     assert len(service.runtime.operation_llm.calls) == calls + 1
-    assert json.loads(service.runtime.operation_llm.calls[-1][1]["content"])["public_sources"] == []
+    assert json.loads(service.runtime.operation_llm.calls[-1][1]["content"])["public_sources"]
     public_memory(service, text="另一条公开的虚构故事")
     second = await service.evaluate(manual=True)
     service.review(second["post_id"], "approve", "海底小剧场。")
     service.store.execute(
         "UPDATE dynamic_posts SET attempted_at=? WHERE attempted_at IS NOT NULL", (time.time() - 90000,)
     )
-    with pytest.raises(ValueError, match="相同正文"):
-        await service.publish(second["post_id"])
+    duplicate = await service.publish(second["post_id"])
+    assert duplicate["duplicate_of"] == first["post_id"] and duplicate["status"] == "published"
+    assert len(service.sent) == 1
 
 
 async def test_operator_controls_dynamic_quota_and_interval_independently(service):
@@ -974,12 +986,9 @@ async def test_public_revoke_while_waiting_for_model_lock_never_enters_prompt(se
     assert result["action"] == "wait" and not service.runtime.operation_llm.calls
 
 
-async def test_old_draft_cannot_reuse_already_attempted_source(service):
+async def test_distinct_posts_can_reuse_the_same_source(service):
     mid = public_memory(service)
     first = await service.evaluate(manual=True)
-    # An old independently created draft of the same source must not evade
-    # evaluation-time filtering. Simulate a legacy invalidation and reactivation,
-    # independent from the current rule that an operator's rejection stays final.
     service.store.execute("UPDATE dynamic_posts SET status='invalidated' WHERE id=?", (first["post_id"],))
     second = await service.evaluate(manual=True)
     service.store.execute("UPDATE dynamic_posts SET status='approved' WHERE id=?", (first["post_id"],))
@@ -988,9 +997,8 @@ async def test_old_draft_cannot_reuse_already_attempted_source(service):
     service.store.execute(
         "UPDATE dynamic_posts SET attempted_at=? WHERE id=?", (time.time() - 90000, first["post_id"])
     )
-    with pytest.raises(ValueError, match="来源已尝试"):
-        await service.publish(second["post_id"])
-    assert service.list_memories()[0]["id"] == mid and len(service.sent) == 1
+    assert (await service.publish(second["post_id"]))["status"] == "published"
+    assert service.list_memories()[0]["id"] == mid and len(service.sent) == 2
 
 
 def test_memory_id_reuse_new_created_at_needs_new_public_mark(service):
@@ -1230,7 +1238,7 @@ async def test_decision_grammar_references_only_actual_summary_sources(service):
     assert result["action"] == "post"
     schema = service.runtime.operation_llm.schemas[-1]
     assert schema["type"] == "object" and schema["additionalProperties"] is False
-    assert set(schema["required"]) == {"action", "reason", "content", "source_ids", "next_evaluation_seconds"}
+    assert set(schema["required"]) == {"action", "reason", "content", "source_ids", "points", "next_evaluation_seconds"}
     props = schema["properties"]
     assert props["action"]["enum"] == ["post", "wait"]
     assert props["source_ids"]["items"]["enum"] == [f"memory:{chosen}"]
@@ -1270,16 +1278,16 @@ async def test_decision_input_echo_extra_fields_or_non_object_never_publishes(se
     assert result["action"] == "error" and service.list_posts() == [] and service.sent == []
 
 
-async def test_rejected_source_is_not_regenerated_by_autonomous_publisher(service):
+async def test_rejected_draft_does_not_remove_its_source_from_the_next_evaluation(service):
     public_memory(service)
     decision = await service.evaluate(manual=True)
     service.review(decision["post_id"], "reject")
     count = len(service.runtime.operation_llm.calls)
-    await service.set_policy({"enabled": True})
+    await service.set_policy({"enabled": True, "auto_publish": False})
     due(service)
-    assert (await service.evaluate())["action"] == "wait"
+    assert (await service.evaluate())["action"] == "post"
     assert len(service.runtime.operation_llm.calls) == count + 1 and service.sent == []
-    assert json.loads(service.runtime.operation_llm.calls[-1][1]["content"])["public_sources"] == []
+    assert service._post(decision["post_id"])["status"] == "rejected"
 
 
 async def test_decision_with_internal_source_id_in_body_is_not_a_publishable_draft(service):

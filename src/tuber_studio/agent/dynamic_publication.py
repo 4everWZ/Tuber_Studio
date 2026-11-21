@@ -73,12 +73,14 @@ def register_dynamic_publication(tasks, dynamics):
         if decision is None or json.loads(decision["sources"]) != row["sources"]:
             raise ValueError("无法核对草稿的原始公开来源")
         sources = []
+        if row.get("pending_mentions"):
+            raise ValueError("请先选择这条动态要 @ 的账号")
         for source in row["sources"]:
             kind = source["type"]
             if allow_manual and row["manual"] and kind == "operator_topic":
                 continue
-            if kind not in {"published_reply", "public_incident", "watched_video", "public_memory"} or (
-                    kind != "public_memory" and not (source.get("source_url") or source.get("public_sources"))):
+            if kind not in {"published_reply", "public_incident", "watched_video", "public_memory", "public_comment", "own_reflection"} or (
+                    kind not in {"public_memory", "own_reflection"} and not (source.get("source_url") or source.get("public_sources"))):
                 raise ValueError("这条限定发布路径只能使用已核实的公开出处")
             item = {key: source[key] for key in ("id", "type", "text", "source_url", "public_sources", "receipt_id")
                     if key in source}
@@ -88,7 +90,7 @@ def register_dynamic_publication(tasks, dynamics):
         character = dynamics._character()
         binding = dynamics._publication_binding(row, row["account_id"], character)
         payload = dynamics._outgoing(row, character)
-        attachment = " · 含配图" if len(payload) > 1 else ""
+        attachment = " · 含配图" if "asset_sha256" in payload or "comment_card_sha256" in payload else ""
         return {"target": f"B站 UID {row['account_id']} 的公开动态 · 草稿 #{row['id']} · "
                           f"{character['name']} v{row['character_version']}{attachment}",
                 "post_id": row["id"], "revision": row["updated_at"], "status": row["status"],
@@ -108,6 +110,9 @@ def register_dynamic_publication(tasks, dynamics):
         post_id = approval["post_id"]
         if tasks.scope() != approval["scope"]:
             return pending("原授权范围已变化")
+        duplicate = await reused_delivery(approval, allow_read=allow_read)
+        if duplicate is not None:
+            return duplicate
         row = dynamics.store.one("SELECT send_payload FROM dynamic_posts WHERE id=?", (post_id,))
         saved = json.loads(row["send_payload"] or "null") if row else None
         if (not saved or saved.get("agent_step") != step_id or saved.get("binding") != approval["binding"]
@@ -141,6 +146,23 @@ def register_dynamic_publication(tasks, dynamics):
             await dynamics._reconcile(post_id, guard=guard)
             return await reconcile(step_id, approval, allow_read=False)
         return pending("原回执尚未核实，不再发送")
+
+    async def reused_delivery(approval, *, allow_read):
+        post = dynamics._post(approval["post_id"])
+        if not post.get("duplicate_of"):
+            return None
+        bound(post)
+        account = approval["binding"]["account_id"]
+        if tasks.scope() != approval["scope"] or dynamics.comments.display_account_id() != account:
+            return pending("原授权范围已变化")
+        original_id = post["duplicate_of"]
+        if post["status"] != "published" and allow_read:
+            await dynamics._reconcile(original_id)
+            post = dynamics._post(post["id"])
+        if post["status"] == "published" and post["receipt"]:
+            return {"status": "published", "post_id": post["id"], "receipt": post["receipt"],
+                    "duplicate_of": original_id, "target": approval["target"], "text": approval["text"]}
+        return pending("相同内容的原提交待核对")
 
     def approval_post(row):
         item = snapshot(row, allow_manual=True)
@@ -253,6 +275,14 @@ def register_dynamic_publication(tasks, dynamics):
             if not saved and fresh and fresh["status"] == "publishing":
                 return batch_item_result(item, "unconfirmed", "正等待原提交记录")
         if not saved or saved.get("agent_step") != identity:
+            prior = (request.checkpoint or {}).get("items", {}).get(str(post_id))
+            reused = await reused_delivery(item, allow_read=bool(prior and prior["status"] == "unconfirmed"))
+            if isinstance(reused, ToolWait):
+                return batch_item_result(item, "unconfirmed", reused.checkpoint["reason"])
+            if reused is not None:
+                return batch_item_result(item, "published", "已沿用相同动态的原回执", receipt=reused["receipt"]) | {
+                    "duplicate_of": reused["duplicate_of"]
+                }
             return batch_item_result(item, "not_sent", reason or "草稿状态已变化，这次没有提交")
         # The first observation after a send reports uncertainty before doing
         # any additional platform reads. Later passes only reconcile this ID.

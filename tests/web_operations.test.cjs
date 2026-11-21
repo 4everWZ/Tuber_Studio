@@ -121,7 +121,8 @@ test("publishing saves the current draft and a failed attempt remains retryable"
   const editor = detail.children.find(child => child.tagName === "LABEL").children[0];
   editor.value = "编辑后的内容";
   editor.listeners.input();
-  assert.deepEqual(detail.querySelectorAll("button").map(button => button.textContent), ["保存", "拒绝", "发布", "复制"]);
+  assert.deepEqual(detail.querySelectorAll("button").map(button => button.textContent),
+    ["添加 @", "保存提及", "保存", "拒绝", "发布", "复制"]);
   await detail.querySelectorAll("button").find(button => button.textContent === "发布").onclick();
   assert.equal(byId("queue-feedback").textContent, "临时网络错误");
   assert.deepEqual(writes, [

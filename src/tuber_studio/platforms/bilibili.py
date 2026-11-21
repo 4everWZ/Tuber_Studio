@@ -179,6 +179,15 @@ class BilibiliAdapter:
             raise ValueError("B 站返回的资料与所填 UID 不一致")
         return {"uid": uid, "name": card.get("name"), "avatar_url": card.get("face")}
 
+    async def mention_accounts(self, name):
+        data = await self._get("/x/polymer/web-dynamic/v1/mention/search", {"keyword": name})
+        accounts = {}
+        for group in data.get("groups") or []:
+            for item in group.get("items") or []:
+                if (item.get("name") or item.get("uname")) == name:
+                    accounts[_positive_id(item.get("uid") or item.get("mid"))] = name
+        return accounts
+
     async def account_profile(self):
         if not self._sessdata:
             raise BilibiliAccountExpired("尚未配置B站登录")
@@ -409,13 +418,17 @@ class BilibiliAdapter:
 
     async def publish(
         self, video_id: str, comment_id: str, text: str, *, thread_id: str | None = None, before_send=None,
+        mentions=(),
     ) -> dict:
+        from ..public_mentions import comment_mention_form
+
         if not self._sessdata or not self._csrf:
             raise ValueError("发布需要配置 SESSDATA 和 CSRF；当前仅可生成或复制草稿")
         text = validate_comment_body(text)
         parent = _positive_id(comment_id)
         root = _positive_id(thread_id) if thread_id is not None else parent
         info = await self._video(video_id)
+        mention_form = comment_mention_form(text, mentions)
         if before_send is not None:
             before_send()
         try:
@@ -427,6 +440,7 @@ class BilibiliAdapter:
                     "root": root,
                     "parent": parent,
                     "message": text,
+                    **mention_form,
                     "plat": 1,
                     "csrf": self._csrf,
                     "csrf_token": self._csrf,

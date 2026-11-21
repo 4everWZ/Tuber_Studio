@@ -21,7 +21,8 @@ from .message_outreach import (
     invitation_key,
     verified_agreement,
 )
-from .models import OperationReply, StrictModel
+from .dynamic_materials import REFLECTION_INSTRUCTION, REFLECTIONS, ensure_reflections
+from .models import OperationReply, ReflectionDirection, StrictModel
 from .operation_attachments import (
     checked_image,
     image_payload,
@@ -99,6 +100,7 @@ class ConversationReply(StrictModel):
     reason: str = Field(min_length=1, max_length=1024)
     reply_to: list[StrictInt] = Field(default_factory=list, max_length=8)
     handled: list[IncomingSettlement] = Field(default_factory=list, max_length=8)
+    public_reflection: ReflectionDirection | None = None
 
 
 @dataclass(frozen=True)
@@ -112,6 +114,7 @@ class ConversationWindow:
 class DirectMessages:
     def __init__(self, settings, store, runtime, comments, adapter=None, *, memes=None):
         self.settings, self.store, self.runtime, self.comments = settings, store, runtime, comments
+        ensure_reflections(store)
         self.adapter, self.injected = adapter, adapter is not None
         self.memes = memes
         self.credential_signature = None
@@ -881,7 +884,7 @@ class DirectMessages:
                     "conversation依次列出用户、号主和你已发送的话。open是待处理来信。"
                     "把相近的来信一起自然接话，正文放text，实际回复的来信编号放reply_to。"
                     "号主答过的放handled，填来信incoming、号主发言outgoing和对应原话quote。"
-                    "待判断的来信留在open，在reason说明原因。全答过时text留空。"
+                    "待判断的来信留在open，在reason说明原因。全答过时text留空。" + REFLECTION_INSTRUCTION
                 ),
             }
         )
@@ -1368,6 +1371,7 @@ class DirectMessages:
                 if origin and origin["status"] in {"queued", "running"} else nullcontext()
             )
             with meter:
+                reflection = None
                 snapshot = runtime_identity(self.runtime, character, draft["account_id"])
                 proposal_identity = json.loads(draft.get("proposal_identity") or "null")
                 if draft.get("proposed_text") and proposal_identity == snapshot:
@@ -1380,6 +1384,7 @@ class DirectMessages:
                     }, "reused_proposal": True}
                 elif draft["source_kind"] == "message" and (links or len(refs) > 1):
                     decision, check = await self._reply_to_conversation(draft, character, event, relationship, refs, links)
+                    reflection = decision.public_reflection
                     handled = [(refs[item.incoming], links[(item.incoming, item.outgoing)]) for item in decision.handled]
                     reply_ids = [refs[ref] for ref in dict.fromkeys(decision.reply_to)]
                     reply = OperationReply(spoken_text=decision.text) if decision.text else None
@@ -1387,7 +1392,7 @@ class DirectMessages:
                     if set(refs.values()) != set(reply_ids) | {incoming for incoming, _ in handled}:
                         check["output"]["needs_review"] = True
                 else:
-                    generation_event = event
+                    generation_event = event | {"share_reflection": True} if draft["source_kind"] == "message" else event
                     if draft["source_kind"] == "comment":
                         thread = event["public_source_thread"]
                         generation_event = event | {
@@ -1403,6 +1408,7 @@ class DirectMessages:
                     )
                     if draft["source_kind"] == "message":
                         reply_ids = list(refs.values())
+                        reflection = getattr(reply, "public_reflection", None)
                 selected, selection_failed = None, False
                 if (reply and not preserve_attachments and illustration_policy(self.store).use_memes and self.memes
                         and not workstation_image_decisions(self.runtime)):
@@ -1421,6 +1427,12 @@ class DirectMessages:
             if draft["source_kind"] == "message":
                 self._check_conversation(draft, event["conversation_sha256"], automatic=automatic)
                 with self.store.db:
+                    if reflection in REFLECTIONS and draft["account_id"]:
+                        key = "reflection:" + content_hash([draft["account_id"], sorted(refs.values())])
+                        self.store.db.execute(
+                            "INSERT OR IGNORE INTO dynamic_reflections VALUES(?,?,?,?,?,?)",
+                            (draft["account_id"], character["id"], character["version"], key, reflection, time.time()),
+                        )
                     for incoming, outgoing in handled:
                         self._settle_incoming(draft, [incoming], outgoing)
                     check["reply_incoming_ids"] = reply_ids

@@ -104,6 +104,29 @@ async def test_unpublished_private_draft_does_not_become_sent_context(messages):
     assert not messages.adapter.sent and draft["receipt"] is None
 
 
+async def test_processed_private_message_shares_only_role_reflection(messages, monkeypatch):
+    from tuber_studio.dynamics import Dynamics
+    from tuber_studio.models import OperationReply
+
+    account = "900"
+    secret = "这条私信含不公开的行程和我的姓名，星路下午四点。"
+    identity = messages.enqueue("message", incoming(messages, account_id=account, text=secret), schedule=False)
+
+    async def generate(scope, character, event, *args, **kwargs):
+        assert secret in event["text"] and event["share_reflection"]
+        return OperationReply(spoken_text="谢谢你和我聊这件事。", public_reflection="touched"), {"output": {}}
+
+    monkeypatch.setattr(messages.runtime, "generate_reply", generate)
+    await messages._generate(identity, False)
+    assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "pending_review"
+    monkeypatch.setattr(messages.comments, "display_account_id", lambda: account)
+    dynamics = Dynamics(messages.settings, messages.store, messages.runtime, messages.comments)
+    reflection, = [source for source in dynamics._sources() if source["type"] == "own_reflection"]
+    assert secret not in json.dumps(reflection, ensure_ascii=False) and "鱼宝" not in str(reflection)
+    assert "感动" in reflection["text"] and set(reflection) == {"id", "type", "text", "fictional"}
+    assert not messages.adapter.sent
+
+
 @pytest.mark.parametrize(
     ("automatic", "continuous", "expected_lane"),
     [

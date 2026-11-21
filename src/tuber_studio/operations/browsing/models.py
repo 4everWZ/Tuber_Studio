@@ -5,8 +5,9 @@ from typing import Literal, Protocol
 
 from pydantic import Field, PrivateAttr, field_validator, model_validator
 
-from ...models import StrictModel
+from ...models import PublicMentionRequest, StrictModel
 from ...operation_text import validate_operation_text
+from ...public_mentions import MENTION_REQUESTS
 
 
 def browsing_filter_reason(item, config, *, complete=False):
@@ -341,6 +342,8 @@ class ResponseDecision(StrictModel):
     _generation_identity: dict | None = PrivateAttr(default=None)
     _memory_audit: dict | None = PrivateAttr(default=None)
     _comment_materials: list[dict] = PrivateAttr(default_factory=list)
+    _mention_selection: dict = PrivateAttr(default_factory=dict)
+    mentions: list[PublicMentionRequest] = Field(default_factory=list)
     explanation: str = ""
     contact_purpose: str = ""
     contact_trigger: Literal["invitation", "agreement"] | None = None
@@ -547,6 +550,7 @@ def response_schema(
                        if action == "watch_frames" and evidence_ids else {}),
                     **({"source_quote": {"type": "string", "minLength": 2, "maxLength": 240}}
                        if comment_lookup else {}),
+                    **({"mentions": MENTION_REQUESTS} if sending else {}),
                     "text": {
                         "type": "string",
                         "minLength": 1 if sending else 0,
