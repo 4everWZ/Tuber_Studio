@@ -7,6 +7,7 @@ from test_personal_agent import studio as studio
 from test_workshop_lookup import ACCOUNT, SOURCE, seed_workshop
 
 from tuber_studio.agent.recall_memory import NAME, RecallQuery, search
+from tuber_studio.agent.task_delegation import model_input
 from tuber_studio.responses_provider import FunctionCall, ResponseTurn
 from tuber_studio.store import dump
 
@@ -121,3 +122,19 @@ async def test_private_preference_only_resolves_in_owner_chat_and_revokes(studio
     (await client.delete(f"/api/daily-memory/organized/{memory_id}")).raise_for_status()
     assert search(dynamics, query, private=True)["items"] == []
     assert text not in (await client.get(CHAT)).text
+
+
+def test_background_recall_passes_each_read_as_evidence_once(studio):
+    runtime, _ = studio
+    seed_history(runtime)
+    result = search(runtime.browsing.dynamics, RecallQuery(topic="鲸鱼"))
+    previous = {"id": "foreground", "revision": 0, "tool": NAME,
+                "result": result | {"items": [s for s in result["items"] if s["type"] == "watched_video"]}}
+    current = {"id": "backend", "revision": 1, "tool": NAME, "call_id": "read", "response_id": "turn",
+               "arguments": {"topic": "鲸鱼"},
+               "result": result | {"items": [s for s in result["items"] if s["type"] != "watched_video"]}}
+    task = {"revision": 1, "goal": "找以前读过的鲸鱼材料", "plan": {"prior_goals": [],
+            "delegation_brief": {"read_tools": [NAME]}}}
+    packet = dump(model_input(task, [previous, current]))
+    assert packet.count(ORIGINAL) == 1
+    assert "?p=2&t=19" in packet and "#reply6789" in packet

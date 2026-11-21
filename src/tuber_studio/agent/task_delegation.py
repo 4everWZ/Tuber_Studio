@@ -78,7 +78,7 @@ def visible_steps(runtime, task):
     return context
 
 
-def function(name, description, arguments):
+def function(name, description, arguments, *, require_all=True):
     schema = arguments.copy() if isinstance(arguments, dict) else arguments.model_json_schema()
     definitions = schema.pop("$defs", {})
 
@@ -93,10 +93,11 @@ def function(name, description, arguments):
         result = {key: wire(value) for key, value in node.items() if key not in {"title", "default", "properties"}}
         if "properties" in node:
             result["properties"] = {field: wire(value) for field, value in node["properties"].items()}
-            result["required"] = list(result["properties"])
+            if require_all:
+                result["required"] = list(result["properties"])
         return result
 
-    return {"type": "function", "name": name, "description": description, "parameters": wire(schema), "strict": True}
+    return {"type": "function", "name": name, "description": description, "parameters": wire(schema), "strict": require_all}
 
 
 def model_input(task, context):
@@ -142,6 +143,8 @@ def model_input(task, context):
             receipt = step["result"]
             if step["tool"] == "delegate_text" and receipt.get("memory_use"):
                 receipt = {k: receipt[k] for k in ("draft", "sources") if k in receipt}
+            if step["tool"] == "recall_memory":
+                receipt = {"state": receipt["state"], "source_ids": [item["id"] for item in receipt["items"]]}
             if sources and step["tool"] == "inspect_video":
                 findings = []
                 for index, finding in enumerate(receipt["findings"], 1):
@@ -374,7 +377,8 @@ async def advance(runtime, task):
         allowed.pop("recall_memory", None)
     if browser:
         allowed = browser.menu(task, allowed)
-    tools = [function(name, tool.description, tool.arguments) for name, tool in allowed.items()]
+    tools = [function(name, tool.description, tool.arguments, require_all=name != "recall_memory")
+             for name, tool in allowed.items()]
     if browser:
         browser.bind(task, tools)
         allowed = {tool["name"]: allowed[tool["name"]] for tool in tools}

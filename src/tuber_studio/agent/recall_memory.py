@@ -247,9 +247,7 @@ class RecallSession:
         history = [{"role": "user", "content": dump(objective)}]
         if seed:
             history.append({"role": "user", "content": dump({"近期来源": self.read(seed)})})
-        search_tool = function(NAME, DESCRIPTION, RecallQuery)
-        search_tool["strict"] = False
-        search_tool["parameters"].pop("required", None)
+        search_tool = function(NAME, DESCRIPTION, RecallQuery, require_all=False)
         for _ in range(4):
             guard()
             self.check()
