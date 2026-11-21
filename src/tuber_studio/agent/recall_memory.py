@@ -269,7 +269,8 @@ class RecallSession:
                 choose["parameters"]["properties"]["source_ids"]["items"]["enum"] = ids
             else:
                 choose["parameters"]["properties"]["source_ids"]["maxItems"] = 0
-            turn = await client(input=history, tools=[search_tool, choose], max_output_tokens=1024,
+            tools = [search_tool, choose] if self.receipts else [search_tool]
+            turn = await client(input=history, tools=tools, max_output_tokens=1024,
                                 store=False, thinking=False, tool_choice="required",
                                 instructions="用工具完成当前查找。按话题找时传 topic 即可。日期、视频、评论楼和来源 ID"
                                              "只在目标确实包含该筛选时填写。已读来源可直接选择。"
@@ -279,7 +280,7 @@ class RecallSession:
             if not turn.calls or len(turn.calls) > 4:
                 raise ValueError("记忆查询没有返回有效工具调用")
             for call in turn.calls:
-                if call.name == "select_memory":
+                if call.name == "select_memory" and choose in tools:
                     choice = Selection.model_validate(call.arguments)
                     if not set(choice.source_ids) <= set(ids):
                         raise ValueError("选择的记忆来源未读取")

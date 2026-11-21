@@ -2071,13 +2071,11 @@ class Dynamics:
                     if client and sources:
                         browsing = self.runtime.browsing
                         recall = recall_memory.RecallSession(self, private=False)
-                        recent = recall_memory.recent_query(browsing)
-                        sources = await recall.collect(client, {
-                            "目标": "按近期经历找适合公开分享的素材，按相关话题补查旧记录。"
-                                    "选择可以交给本轮动态评估的记录，日常随想可以零引用。",
-                            "近期日期": recent.model_dump(mode="json"),
-                            **({"本次话题": topic} if topic else {}),
-                        }, seed=recent if not topic else None, guard=guard)
+                        recent = None if topic else recall_memory.recent_query(browsing)
+                        objective = ({"目标": "按指定话题查找适合公开分享的相关素材，供本轮动态评估。", "本次话题": topic}
+                                     if topic else {"目标": "从近期经历选话题，按话题回查相关旧记录。"
+                                                          "选择可以交给本轮动态评估的记录，日常随想可以零引用。"})
+                        sources = await recall.collect(client, objective, seed=recent, guard=guard)
                     elif topic:
                         sources = recall_memory.search(self, recall_memory.RecallQuery(topic=topic))["items"]
                     originals = recall_memory.originals(sources)

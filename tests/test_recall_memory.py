@@ -50,6 +50,9 @@ async def test_chat_and_dynamic_use_same_older_sources_after_scoped_search(studi
         read_calls.append(dump(input))
         outputs = [json.loads(item["output"]) for item in input if item.get("type") == "function_call_output"]
         if not outputs:
+            objective = json.loads(input[0]["content"])
+            if "本次话题" in objective:
+                assert "近期" not in dump(objective)
             tool = FunctionCall("read", NAME, {"topic": "鲸鱼", "resource": SOURCE})
         elif len(outputs) == 1:
             assert {item["id"] for item in outputs[0]["items"]} == expected
