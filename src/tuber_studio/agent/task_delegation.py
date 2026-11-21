@@ -143,9 +143,6 @@ def model_input(task, context):
             receipt = step["result"]
             if step["tool"] == "delegate_text" and receipt.get("memory_use"):
                 receipt = {k: receipt[k] for k in ("draft", "sources") if k in receipt}
-            if step["tool"] == "recall_memory" and "items" in receipt:
-                sources = {key: evidence[key] for key in sources if key in evidence}
-                receipt = {"state": receipt["state"], "source_ids": [item["id"] for item in receipt["items"]]}
             if sources and step["tool"] == "inspect_video":
                 findings = []
                 for index, finding in enumerate(receipt["findings"], 1):
@@ -210,6 +207,11 @@ async def run_pending(runtime, task, pending, context):
 
 
 async def advance(runtime, task):
+    if "candidate" not in task["plan"] and (task["plan"].get("delegation_brief") or {}).get("read_tools") == ["recall_memory"]:
+        from .recall_memory import continue_task
+
+        await continue_task(runtime, task)
+        return
     browser = getattr(runtime, "private_browser", None)
     if browser and any(s["tool"] == "owner_browser_grant" for s in task["steps"]):
         state = browser.state(task["id"])
@@ -374,12 +376,10 @@ async def advance(runtime, task):
     read_tools = (task["plan"].get("delegation_brief") or {}).get("read_tools")
     if read_tools is not None:
         allowed = {name: allowed[name] for name in read_tools if name in allowed}
-    if read_tools != ["recall_memory"]:
-        allowed.pop("recall_memory", None)
+    allowed.pop("recall_memory", None)
     if browser:
         allowed = browser.menu(task, allowed)
-    tools = [function(name, tool.description, tool.arguments, require_all=name != "recall_memory")
-             for name, tool in allowed.items()]
+    tools = [function(name, tool.description, tool.arguments) for name, tool in allowed.items()]
     if browser:
         browser.bind(task, tools)
         allowed = {tool["name"]: allowed[tool["name"]] for tool in tools}
@@ -522,12 +522,8 @@ async def advance(runtime, task):
             continue
         if call.name == "inspect_video" and not permits(video_binding(task), arguments):
             raise DelegationError("视频、分P或时段超出了号主给定的来源。")
-        if earlier := next((s for s in steps if s["tool"] == call.name and s["arguments"] == arguments), None):
-            if call.name != "recall_memory":
-                raise DelegationError("同一批次存在重复委派。")
-            steps.append(step | {"arguments": arguments, "reused_from": earlier.get("reused_from", earlier["id"]),
-                                 "result": {"state": "already_requested", "error": "同批次已有这次查询。"}})
-            continue
+        if any(step["tool"] == call.name and step["arguments"] == arguments for step in steps):
+            raise DelegationError("同一批次存在重复委派。")
         cached = next((step for step in reversed(context) if tool.reusable and step["tool"] == call.name
                        and step["arguments"] == arguments and step.get("result") and not step["result"].get("error")
                        and step["result"].get("status", "completed") == "completed"), None)

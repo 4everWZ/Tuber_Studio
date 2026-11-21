@@ -1,8 +1,10 @@
 """Scoped recall over source records. The models choose queries and citations."""
 
 import re
+import time
 from datetime import date, timedelta
 from typing import Annotated
+from uuid import UUID, uuid5
 
 from pydantic import Field, StringConstraints, ValidationError, model_validator
 
@@ -231,6 +233,12 @@ class RecallSession:
         self.conclusion = ""
         self.selected = []
 
+    def restore(self, receipts):
+        self.receipts.extend(receipts)
+        for receipt in receipts:
+            for source in receipt["result"]["items"]:
+                self.sources.setdefault(canonical_id(source), source)
+
     def check(self):
         if self.private:
             if self.runtime.tasks.scope() != self.scope or history_preference(self.runtime) != self.history_policy:
@@ -257,6 +265,11 @@ class RecallSession:
 
     async def collect(self, client, objective, *, seed=None, guard=lambda: None):
         history = [{"role": "user", "content": dump(objective)}]
+        if self.sources:
+            quotes = originals(self.sources.values())
+            history.append({"role": "user", "content": dump({"已读来源": [
+                model_material(source, comment_texts=quotes) for source in self.sources.values()
+            ]})})
         if seed:
             history.append({"role": "user", "content": dump({"近期来源": self.read(seed)})})
         search_tool = function(NAME, DESCRIPTION, RecallQuery, require_all=False)
@@ -299,6 +312,41 @@ class RecallSession:
                                  "arguments": dump(call.arguments)},
                                 {"type": "function_call_output", "call_id": call.call_id, "output": dump(read)}])
         raise TimeoutError("记忆查询需要继续读取")
+
+
+async def continue_task(tasks, task):
+    client = tasks.responses_client()
+    if client is None:
+        tasks._save(task, status="waiting", due=time.time() + 30, message="等待后台记忆查询服务。")
+        return
+    runtime = tasks.recall_dynamics.runtime
+    initial = [step for step in task["steps"] if step["tool"] == NAME and "items" in (step.get("result") or {})]
+    session = RecallSession(tasks.recall_dynamics, private=True, scope=task["scope"])
+    session.restore(initial)
+    brief = task["plan"]["delegation_brief"]
+    async with runtime.offline_generation("background"):
+        selected = await session.collect(client, {"问题": task["goal"], "检索线索": brief["materials"]})
+    session.check()
+    steps = [*task["steps"], *[
+        {"id": str(uuid5(UUID(task["id"]), f"recall:{task['revision']}:{index}")),
+         "revision": task["revision"], **receipt}
+        for index, receipt in enumerate(session.receipts[len(initial):], start=len(initial))
+    ]]
+    if not selected:
+        tasks._save(task, steps=steps, status="completed", message="这轮没有找到对应的记录。")
+        return
+    wanted = {canonical_id(source) for source in selected}
+    refs = {}
+    for step in steps:
+        if step["tool"] == NAME:
+            for index, source in enumerate((step.get("result") or {}).get("items", []), 1):
+                key = canonical_id(source)
+                if key in wanted:
+                    refs.setdefault(key, f"{step['id']}:{index}")
+    candidate = {"items": [{"title": "查到的记录", "rationale": session.conclusion or "找到了对应的记录。",
+                             "sources": list(refs.values())}], "gaps": []}
+    tasks._save(task, steps=steps, plan=task["plan"] | {"candidate": candidate}, status="queued",
+                due=time.time(), message="查到了相关记录，正在准备交付。")
 
 
 def recent_query(browsing):

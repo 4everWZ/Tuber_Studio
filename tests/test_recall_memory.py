@@ -8,8 +8,7 @@ from test_personal_agent import studio as studio
 from test_workshop_lookup import ACCOUNT, SOURCE, seed_workshop
 
 from tuber_studio.agent.recall_memory import NAME, RecallQuery, RecallSession, search
-from tuber_studio.agent.task_delegation import model_input
-from tuber_studio.agent.task_delivery import PrivateDelivery
+from tuber_studio.agent.task_delivery import PrivateDelivery, evidence_index
 from tuber_studio.responses_provider import FunctionCall, ResponseTurn
 from tuber_studio.store import dump
 
@@ -138,14 +137,11 @@ def test_background_recall_passes_each_read_as_evidence_once(studio):
     current = {"id": "backend", "revision": 1, "tool": NAME, "call_id": "read", "response_id": "turn",
                "arguments": {"topic": "鲸鱼"},
                "result": result | {"items": [s for s in result["items"] if s["type"] != "watched_video"]}}
-    task = {"revision": 1, "goal": "找以前读过的鲸鱼材料", "plan": {"prior_goals": [],
-            "delegation_brief": {"read_tools": [NAME]}}}
     duplicate = current | {"id": "cached", "call_id": "read-again", "response_id": "retry"}
     invalid = current | {"id": "invalid", "call_id": "read-invalid", "response_id": "invalid", "result": {"error": "缺少对象"}}
-    packet = dump(model_input(task, [previous, current, duplicate, invalid]))
+    packet = dump(evidence_index([previous, current, duplicate, invalid]))
     assert packet.count(ORIGINAL) == 1
     assert packet.count("?p=2&t=19") == packet.count("#reply6789") == 1
-    assert "缺少对象" in packet
 
 
 async def test_slow_recall_continues_with_parallel_reads_and_delivers_once(studio, monkeypatch):
@@ -155,13 +151,17 @@ async def test_slow_recall_continues_with_parallel_reads_and_delivers_once(studi
     async def route(*args, **kwargs):
         return {"action": NAME, "recall": {"topic": "鲸鱼"}}
 
+    collect = RecallSession.collect
+
     async def deadline(session, *args, **kwargs):
+        if session.sources:
+            return await collect(session, *args, **kwargs)
         session.read(RecallQuery(source_id=f"video:{SOURCE}"))
         raise TimeoutError
 
     async def respond(*, input, **kwargs):
         conversation = json.loads(input[1]["content"])
-        saved = list(conversation["saved_evidence"])
+        saved = conversation["已读来源"]
         assert len(saved) == 1
         if len(input) == 2:
             calls = (FunctionCall("old", NAME, {"topic": "鲸鱼"}),
@@ -169,9 +169,8 @@ async def test_slow_recall_continues_with_parallel_reads_and_delivers_once(studi
                      FunctionCall("other", NAME, {"topic": "无关"}))
         else:
             assert dump(input).count(ORIGINAL) == 1
-            calls = (FunctionCall("deliver", "submit_materials", {"items": [{
-                "title": "鲸鱼记录", "rationale": "旧视频里确实读到过，出处在这里。", "sources": saved,
-            }], "gaps": []}),)
+            calls = (FunctionCall("deliver", "select_memory", {"source_ids": [saved[0]["id"]],
+                "conclusion": "鲸鱼记录里的旧视频，出处在这里。"}),)
         return ResponseTurn("fixture", calls, "", {})
 
     async def edit(task, evidence):

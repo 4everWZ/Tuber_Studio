@@ -1040,6 +1040,7 @@ def create_task_runtime(runtime, store, browsing):
             return TaskDecision.model_validate(await request_json(messages, schema))
 
     tasks = TaskRuntime(store, scope, decide, make_plan)
+    tasks.recall_dynamics = browsing.dynamics
     tasks.validate_recall_read = lambda receipt: recall_memory.validate_read(browsing.dynamics, receipt)
     tasks.model_context = model_context
     tasks.unread_web_addresses = available_web_addresses
@@ -2262,7 +2263,7 @@ def create_task_runtime(runtime, store, browsing):
             reusable=True,
         ),
         recall_memory.NAME: Tool(recall_memory.DESCRIPTION, recall_memory.RecallQuery, recall_workshop,
-                                 foreground_read=True, parallel_read=True, reusable=True, responses_only=True),
+                                 foreground_read=True, reusable=True, responses_only=True),
         "inspect_video": Tool("读取指定BV和分P，返回该部分时长及真实采样时码。可自行勘察候选位置。"
                               "需要可播放选段时，分别指定不超过10秒的[start,end)读取连续纯画面，按回执核对。",
                               Video, video, stop_video, parallel_read=True, reusable=True, own_deadline=True),
