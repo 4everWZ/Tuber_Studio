@@ -154,7 +154,7 @@ async def test_public_incident_is_factual_cited_and_removed_from_draft_sources(s
     assert post["sources"][0]["fictional"] is False
     payload = json.loads(service.runtime.operation_llm.calls[-1][1]["content"])
     assert payload["public_sources"][0]["fictional"] is False
-    assert payload["public_sources"][0]["public_sources"][0]["quote"] == "你消息是不是回错了"
+    assert json.dumps(payload["public_sources"], ensure_ascii=False).count("你消息是不是回错了") == 1
     original, = post["comment_card"]["comments"]
     assert original["quote"] == "你消息是不是回错了" and original["author"] == "作者资料未保存"
     assert post["comment_card"]["links"] == [{
@@ -1042,169 +1042,30 @@ async def test_receipt_persistence_failure_is_uncertain_even_for_value_error(ser
     assert not service.policy()["enabled"] and len(service.sent) == 1
 
 
-async def test_operations_summary_exact_quote_only_prompt_full_original_saved(service):
-    mid = public_memory(service, text="在虚构的海底厨房，我又盛了一碗饭。另一个无关细节不应进入决定。")
-    service.runtime.operation_llm.summary_output = json.dumps(
-        {
-            "entries": [
-                {"source_id": f"memory:{mid}", "quote": "在虚构的海底厨房，我又盛了一碗饭。"},
-            ]
-        },
-        ensure_ascii=False,
-    )
+async def test_dynamic_evaluation_reads_public_story_without_summary(service):
+    text = "在虚构的海底厨房，我又盛了一碗饭。"
+    mid = public_memory(service, text=text)
     decision = await service.evaluate(manual=True)
     assert decision["status"] == "pending_review"
-    decision_prompt = service.runtime.operation_llm.calls[-1]
-    public_sources = json.loads(decision_prompt[1]["content"])["public_sources"]
-    assert public_sources == [
-        {
-            "id": f"memory:{mid}",
-            "text": "在虚构的海底厨房，我又盛了一碗饭。",
-            "type": "public_memory",
-            "fictional": True,
-        }
-    ]
-    assert "另一个无关细节" not in json.dumps(decision_prompt, ensure_ascii=False)
-    assert "另一个无关细节" in decision["sources"][0]["text"]
-    status = service.summary_status()
-    assert status["valid"] and status["max_tokens"] == 2048 and status["entries"]
-    assert status["token_count"] <= status["max_tokens"]
-
-
-async def test_summary_reused_without_append_new_source_updates_and_budget_invalidates(service):
-    public_memory(service)
-    service.runtime.operation_llm.output = json.dumps(
-        {
-            "action": "wait",
-            "reason": "暂不发布",
-            "content": "",
-            "source_ids": [],
-            "next_evaluation_seconds": 1800,
-        }
-    )
-    await service.evaluate(manual=True)
-    initial = service.summary_status()
-    await service.evaluate(manual=True)
-
-    def summary_counts():
-        return [
-            messages
-            for messages in service.runtime.operation_llm.count_calls
-            if len(messages) == 1 and "entries" in json.loads(messages[0]["content"])
-        ]
-
-    assert len(summary_counts()) == 1
-    assert service.summary_status()["updated_at"] == initial["updated_at"]
-    public_memory(service, text="新的公开虚构故事")
-    assert service.summary_status()["valid"] is False and service.summary_status()["entries"] == []
-    await service.evaluate(manual=True)
-    assert len(summary_counts()) == 2
-    assert service.store.one("SELECT COUNT(*) AS n FROM dynamic_memory_summaries")["n"] == 1
-    await service.set_policy({"memory_summary_max_tokens": 512})
-    assert service.summary_status()["max_tokens"] == 512 and not service.summary_status()["valid"]
-
-
-@pytest.mark.parametrize(
-    "field,value",
-    [
-        ("base_url", "https://api.example.test/v1"),
-        ("responses_model", "different-model"),
-        ],
-)
-async def test_omni_configuration_invalidates_token_measurement(service, field, value):
-    public_memory(service)
-    await service.evaluate(manual=True)
-    assert service.summary_status()["valid"]
-    service.settings.data["omni"][field] = value
-    status = service.summary_status()
-    assert status["valid"] is False and status["entries"] == [] and status["token_count"] is None
-
-
-async def test_public_revoke_invalid_preview_and_retention_delete_rebuild_safe(service):
-    mid = public_memory(service)
-    await service.evaluate(manual=True)
+    assert len(service.runtime.operation_llm.calls) == 1
+    packet = json.loads(service.runtime.operation_llm.calls[0][1]["content"])
+    assert [(item["id"], item["text"]) for item in packet["public_sources"]] == [(f"memory:{mid}", text)]
+    assert service.latest_materials()["sources"][0]["id"] == f"memory:{mid}"
     service.mark_memory(mid, False)
-    assert service.summary_status()["entries"] == [] and not service.summary_status()["valid"]
-    service.store.execute("DELETE FROM dynamic_memory_summaries")
-    assert service.summary_status()["updated_at"] is None
+    assert service.latest_materials()["sources"] == []
 
 
-@pytest.mark.parametrize("failure", ["rewrite", "overbudget", "incomplete", "unquoted_id"])
-async def test_summary_failure_never_falls_back_to_original_source_decision(service, monkeypatch, failure):
-    mid = public_memory(service)
-    await service.set_policy({"enabled": True})
-    if failure == "rewrite":
-        service.runtime.operation_llm.summary_output = json.dumps(
-            {
-                "entries": [
-                    {"source_id": f"memory:{mid}", "quote": "改写而非原句"},
-                ]
-            },
-            ensure_ascii=False,
-        )
-    elif failure == "incomplete":
-        service.runtime.operation_llm.summary_output = '{"entries":['
-    elif failure == "overbudget":
-
-        async def count(messages):
-            assert service.runtime.generation_lock.locked()
-            return 2049
-
-        monkeypatch.setattr(service.runtime.operation_llm, "count_tokens", count)
-    else:
-        second = public_memory(service, text="第二条未选入摘要的公开来源")
-        service.runtime.operation_llm.summary_output = json.dumps(
-            {
-                "entries": [
-                    {"source_id": f"memory:{mid}", "quote": "我又盛了一碗饭。"},
-                ]
-            },
-            ensure_ascii=False,
-        )
-        service.runtime.operation_llm.output = json.dumps(
-            {
-                "action": "post",
-                "reason": "wrong source",
-                "content": "虚构故事",
-                "source_ids": [f"memory:{second}"],
-                "next_evaluation_seconds": 1800,
-            }
-        )
-    result = await service.evaluate()
-    assert result["action"] == "error" and not service.list_posts() and not service.sent
-    if failure != "unquoted_id":
-        assert len(service.runtime.operation_llm.calls) == 1
-        assert not service.summary_status()["valid"]
-
-
-async def test_summary_and_its_token_measurement_hold_same_gpu_generation_lock(service, monkeypatch):
-    public_memory(service)
-    counted = service.runtime.operation_llm.count_tokens
-
-    async def assert_count(messages):
-        assert service.runtime.generation_lock.locked()
-        return await counted(messages)
-
-    async def assert_summary():
-        assert service.runtime.generation_lock.locked()
-
-    service.runtime.operation_llm.summary_hook = assert_summary
-    service.runtime.operation_llm.hook = assert_summary
-    monkeypatch.setattr(service.runtime.operation_llm, "count_tokens", assert_count)
-    await service.evaluate(manual=True)
-    assert len(service.runtime.operation_llm.calls) == 2 and len(service.runtime.operation_llm.count_calls) == 2
-
-
-async def test_revoke_during_summary_generation_prevents_commit_and_decision(service):
+async def test_revoke_during_dynamic_evaluation_prevents_draft(service):
     mid = public_memory(service)
 
     async def revoke():
+        assert service.runtime.generation_lock.locked()
         service.mark_memory(mid, False)
 
-    service.runtime.operation_llm.summary_hook = revoke
+    service.runtime.operation_llm.hook = revoke
     result = await service.evaluate(manual=True)
     assert result["action"] == "error" and len(service.runtime.operation_llm.calls) == 1
-    assert not service.summary_status()["valid"] and not service.list_posts()
+    assert not service.latest_materials()["sources"] and not service.list_posts()
 
 
 @pytest.mark.parametrize("value", [0, -1, True, "2048"])
@@ -1213,27 +1074,20 @@ async def test_summary_budget_policy_bounds(service, value):
         await service.set_policy({"memory_summary_max_tokens": value})
 
 
-async def test_posting_does_not_clear_summary_preview_but_does_not_reuse_source(service):
+async def test_posting_keeps_evaluation_sources_and_deduplicates_content(service):
     public_memory(service)
     await service.set_policy({"enabled": True})
     assert (await service.evaluate())["status"] == "published"
-    assert service.summary_status()["valid"] and service.summary_status()["entries"]
+    assert service.latest_materials()["sources"]
     due(service)
     assert (await service.evaluate())["action"] == "wait"
     assert len(service.sent) == 1
 
 
-async def test_decision_grammar_references_only_actual_summary_sources(service):
+async def test_decision_grammar_references_only_authorized_sources(service):
     chosen = public_memory(service)
-    omitted = public_memory(service, text="不进入摘要的另一条公开故事")
-    service.runtime.operation_llm.summary_output = json.dumps(
-        {
-            "entries": [
-                {"source_id": f"memory:{chosen}", "quote": "我又盛了一碗饭。"},
-            ]
-        },
-        ensure_ascii=False,
-    )
+    omitted = public_memory(service, text="已撤销公开授权的角色故事")
+    service.mark_memory(omitted, False)
     result = await service.evaluate(manual=True)
     assert result["action"] == "post"
     schema = service.runtime.operation_llm.schemas[-1]

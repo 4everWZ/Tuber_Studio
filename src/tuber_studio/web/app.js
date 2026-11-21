@@ -29,7 +29,7 @@ import {
 } from "./modules/comments.js?v=20261107.17";
 import {
   initDynamicsModule,
-} from "./modules/dynamics.js?v=20261121.2";
+} from "./modules/dynamics.js?v=20261121.3";
 import {
   initMaintenanceModule,
 } from "./modules/maintenance.js?v=20261107.12";
@@ -68,7 +68,7 @@ const model = {
   dynamicPosts: [], dynamicDecisions: [], dynamicMemories: [], dynamicPostId: null, dynamicPostDirty: false, dynamicDecisionId: null,
   dynamicPostPending: false, dynamicMemorySaving: new Set(),
   dynamicListsLoaded: false,
-  dynamicMemorySummary: null,
+  dynamicMaterials: null,
   dynamicMemeCache: new Map(), dynamicMemePending: new Set(), dynamicMemeContext: null, dynamicMemePreviewKey: null,
 };
 

@@ -267,6 +267,10 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
     async def dynamic_memory_summary():
         return dynamics.summary_status()
 
+    @app.get("/api/dynamics/materials", dependencies=[Depends(require_admin)])
+    async def dynamic_materials():
+        return dynamics.latest_materials()
+
     @app.put("/api/dynamics/memories/{memory_id}", dependencies=[Depends(require_admin)])
     async def dynamic_memory(memory_id: int, data: dict = Body(...)):
         if set(data) != {"public"} or type(data["public"]) is not bool:
@@ -274,8 +278,8 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
         return dynamics.mark_memory(memory_id, data["public"])
 
     @app.post("/api/dynamics/evaluate", dependencies=[Depends(require_admin)])
-    async def evaluate_dynamic():
-        return await dynamics.evaluate(manual=True)
+    async def evaluate_dynamic(topic: str = Body("", embed=True, max_length=200)):
+        return await dynamics.evaluate(manual=True, topic=topic.strip())
 
     @app.post("/api/dynamics/posts/{post_id}/review", dependencies=[Depends(require_admin)])
     async def review_dynamic(post_id: int, data: dict = Body(...)):

@@ -11,11 +11,12 @@ from datetime import datetime
 
 import httpx
 
+from .agent import recall_memory
 from .context_delivery import memory_source_allowed
 from .daily_memory import DailyMemoryService
 from .deployment_profiles import operation_profile
 from .dynamic_comment_card import comment_card, render_comment_card
-from .dynamic_materials import ensure_reflections, public_reads, reflections, source_links
+from .dynamic_materials import MaterialFilter, ensure_reflections, public_reads, reflections, source_links
 from .front_persona import expressive_persona
 from .generation_meter import budgeted_json
 from .illustration_policy import illustration_policy
@@ -61,8 +62,14 @@ from .platforms.bilibili_dynamics import (
     validate_text,
 )
 from .platforms.bilibili_images import bfs_image_path
+from .public_mentions import (
+    MENTION_INSTRUCTION,
+    MENTION_REQUESTS,
+    bind_mentions,
+    mention_requests,
+    rebase_mentions,
+)
 from .publication_errors import PlatformRejected, SendLimitReached, UnknownPublication
-from .public_mentions import MENTION_INSTRUCTION, MENTION_REQUESTS, bind_mentions, mention_requests, rebase_mentions
 
 MAX_SAFE_INTEGER = (1 << 53) - 1  # Exact integer range shared with browser JSON.
 
@@ -191,6 +198,8 @@ class Dynamics:
             store.execute(sql)
         if "image_ref" not in {r[1] for r in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
             store.execute("ALTER TABLE dynamic_posts ADD COLUMN image_ref TEXT")
+        if "evaluation_account_id" not in {r[1] for r in store.db.execute("PRAGMA table_info(dynamic_decisions)")}:
+            store.execute("ALTER TABLE dynamic_decisions ADD COLUMN evaluation_account_id TEXT")
         if "meme_id" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
             store.execute("ALTER TABLE dynamic_posts ADD COLUMN meme_id TEXT")
         if "account_id" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
@@ -323,15 +332,20 @@ class Dynamics:
             self._summary_model(),
         )
 
-    def _memory_rows(self):
+    def _memory_rows(self, *, query=None, bound_ids=(), authorized_only=False):
         if not self.store.one("SELECT name FROM sqlite_master WHERE type='table' AND name='grounded_memory'"):
             return []
         char = self._character()
+        where, args = (query or MaterialFilter()).sql("g.text", "g.created_at", None)
         rows = self.store.all(
-            "SELECT * FROM grounded_memory WHERE character_id=? AND character_version=? "
+            "SELECT g.* FROM grounded_memory g " + (
+                "JOIN dynamic_memory_public m ON m.memory_id=g.id " if authorized_only else ""
+            ) + "WHERE character_id=? AND character_version=? "
             "AND role='assistant' AND kind='role_story' AND fictional=1 "
-            "AND scope NOT LIKE 'dm:%' AND scope NOT LIKE 'operator:%' ORDER BY id DESC LIMIT 200",
-            (char["id"], char["version"]),
+            "AND scope NOT LIKE 'dm:%' AND scope NOT LIKE 'operator:%' "
+            "AND ('memory:'||g.id IN (SELECT value FROM json_each(?)) OR (1" + where + ")) "
+            "ORDER BY ('memory:'||g.id IN (SELECT value FROM json_each(?))) DESC,g.id DESC LIMIT 200",
+            (char["id"], char["version"], _json(bound_ids), *args, _json(bound_ids)),
         )
         account = runtime_identity(self.runtime, char).get("account_uid") or ""
         return [row for row in rows if memory_source_allowed(self.store, row, account_id=account)]
@@ -406,24 +420,41 @@ class Dynamics:
         scope = organizer.scope() if organizer and getattr(self.runtime, "browsing", None) else None
         return scope, self.daily_memory.preference(scope) if scope else {"enabled": True, "revision": 0}
 
-    def _sources(self, *, bound_ids=()):
+    def _source_account(self):
+        browsing = getattr(self.runtime, "browsing", None)
+        discovery = getattr(browsing, "discovery", None)
+        return str(getattr(self.comments, "display_account_id", lambda: "")()
+                   or (discovery.history_scope()[0] if discovery else getattr(browsing, "account", "")) or "")
+
+    def _sources(self, *, bound_ids=(), query=None):
         char = self._character()
         browsing = getattr(self.runtime, "browsing", None)
-        account_id = getattr(self.comments, "display_account_id", lambda: "")() or (browsing.account if browsing else "")
+        account_id = self._source_account()
+        query = query or MaterialFilter()
         scope, preference = self._memory_preference()
         result = []
         if preference["enabled"]:
-            result = self.daily_memory.public_incident_sources(char["id"], char["version"])
-            result.extend(self.daily_memory.public_experience_sources(char["id"], char["version"]))
+            result = self.daily_memory.public_incident_sources(char["id"], char["version"],
+                                                                material_query=query, bound_ids=bound_ids)
+            result.extend(self.daily_memory.public_experience_sources(char["id"], char["version"],
+                                                                     material_query=query, bound_ids=bound_ids))
         if scope and preference["enabled"]:
-            for row in self.daily_memory.organized(scope, limit=100):
-                if row["status"] != "active" or "dynamic" not in row["channels"]:
+            recall = ("dynamic", list(query.terms), query.resource, query.root) if query.terms or query.resource else None
+            rows = self.daily_memory.organized(scope, recall=recall, limit=100)
+            for identity in bound_ids:
+                if identity.startswith("organized:") and identity[10:].isdecimal():
+                    rows.extend(self.daily_memory.organized(scope, item_id=int(identity[10:])))
+            for row in {row["id"]: row for row in rows}.values():
+                if row["status"] != "active" or "dynamic" not in row["channels"] or not row["public_memory"]:
                     continue
                 anchor = row["source"].get("thread") or {}
                 public = row["public_memory"]
                 references = public["references"]
+                if not references:
+                    continue
                 result.append({"id": f"organized:{row['id']}", "type": "public_incident", "fictional": False,
                                "text": public["text"], "memory_version": row["updated_at"],
+                               "observed_at": row["created_at"],
                                "source_url": references[0]["href"], "public_sources": [
                                    {"bvid": anchor["resource"], "thread_id": anchor["root_id"],
                                     "comment_id": ref["comment_id"], "quote": ref["text"]} for ref in references
@@ -431,15 +462,23 @@ class Dynamics:
         if preference["revision"]:
             for source in result:
                 source["memory_preference_revision"] = preference["revision"]
-        scoped = account_id and any(row[1] == "account_id" for row in self.store.db.execute("PRAGMA table_info(drafts)"))
+        has_account = any(row[1] == "account_id" for row in self.store.db.execute("PRAGMA table_info(drafts)"))
+        scoped = bool(account_id and has_account)
+        legacy_time = "d.updated_at"
+        legacy_filter, legacy_args = query.sql("d.text||' '||c.content", legacy_time, "c.video_id")
         rows = self.store.all(
-            "SELECT d.id,d.text,d.receipt,c.video_id,c.comment_id,c.content FROM drafts d "
+            "SELECT d.id,d.text,d.receipt,d.updated_at,c.video_id,c.comment_id,c.content FROM drafts d "
             "JOIN comments c ON c.id=d.comment_id WHERE d.status='published' AND c.platform='bilibili' "
             "AND json_extract(d.answer_check,'$.organized_memory') IS NULL "
             "AND d.character_id=? AND d.character_version=? " + (
                 "AND (d.account_id=? OR d.account_id='' AND json_extract(d.receipt,'$.account_id')=?) " if scoped else ""
-            ) + "ORDER BY d.id DESC LIMIT 100",
-            (char["id"], char["version"], *((account_id, account_id) if scoped else ())),
+            ) + ("AND d.account_id='' " if browsing and has_account and not scoped else "")
+            + "AND ('reply:'||d.id IN (SELECT value FROM json_each(?)) "
+            "OR 'reply:'||json_extract(d.receipt,'$.rpid') IN (SELECT value FROM json_each(?)) OR (1" + legacy_filter
+            + ")) ORDER BY ('reply:'||d.id IN (SELECT value FROM json_each(?)) "
+            "OR 'reply:'||json_extract(d.receipt,'$.rpid') IN (SELECT value FROM json_each(?))) DESC,d.id DESC LIMIT 100",
+            (char["id"], char["version"], *((account_id, account_id) if scoped else ()),
+             _json(bound_ids), _json(bound_ids), *legacy_args, _json(bound_ids), _json(bound_ids)),
         )
         for row in rows:
             try:
@@ -460,17 +499,28 @@ class Dynamics:
                     "source_url": f"https://www.bilibili.com/video/{row['video_id']}",
                     "original_comment": {"id": row["comment_id"], "text": row["content"]},
                     "receipt_id": str(receipt["rpid"]),
+                    "observed_at": row["updated_at"],
                 }
             )
         material = list(reflections(self.store, account_id, char["id"], char["version"], bound_ids)) if account_id else []
         if browsing:
             if account_id:
-                material.extend(public_reads(self.store, account_id, char["id"], bound_ids))
+                material.extend(public_reads(self.store, account_id, char["id"], bound_ids, query))
+                reply_filter, reply_args = query.sql(
+                    "text||' '||COALESCE(json_extract(target,'$.source_text'),'')", "updated_at",
+                    "COALESCE(json_extract(target,'$.resource'),json_extract(target,'$.bvid'))",
+                    "COALESCE(json_extract(target,'$.root'),json_extract(target,'$.root_id'))",
+                )
                 for row in self.store.all(
-                    "SELECT id,text,target,receipt FROM browsing_intents WHERE kind='reply_public' AND status='published' "
+                    "SELECT id,text,target,receipt,updated_at FROM browsing_intents WHERE kind='reply_public' AND status='published' "
                     "AND json_extract(target,'$.memory_audit') IS NULL "
-                    "AND account_id=? AND character_id=? AND character_version=? ORDER BY updated_at DESC LIMIT 100",
-                    (account_id, char["id"], char["version"]),
+                    "AND account_id=? AND character_id=? AND character_version=? "
+                    "AND ('reply:browsing:'||id IN (SELECT value FROM json_each(?)) "
+                    "OR 'reply:'||json_extract(receipt,'$.rpid') IN (SELECT value FROM json_each(?)) OR (1" + reply_filter
+                    + ")) ORDER BY ('reply:browsing:'||id IN (SELECT value FROM json_each(?)) "
+                    "OR 'reply:'||json_extract(receipt,'$.rpid') IN (SELECT value FROM json_each(?))) DESC,updated_at DESC LIMIT 100",
+                    (account_id, char["id"], char["version"], _json(bound_ids), _json(bound_ids), *reply_args,
+                     _json(bound_ids), _json(bound_ids)),
                 ):
                     target, receipt = json.loads(row["target"]), json.loads(row["receipt"] or "null")
                     if not isinstance(receipt, dict) or not re.fullmatch(r"[1-9][0-9]{0,19}", str(receipt.get("rpid"))) or not (
@@ -482,8 +532,10 @@ class Dynamics:
                         "fictional": False, "source_url": f"https://www.bilibili.com/video/{target['bvid']}",
                         "original_comment": {"id": target.get("parent"), "text": target["source_text"]},
                         "receipt_id": str(receipt["rpid"]),
+                        "observed_at": row["updated_at"],
+                        "reference": {"resource": target["bvid"], "thread_id": target.get("root") or target.get("root_id")},
                     })
-        for row in self._memory_rows() if preference["enabled"] else ():
+        for row in self._memory_rows(query=query, bound_ids=bound_ids, authorized_only=True) if preference["enabled"] else ():
             mark = self.store.one(
                 "SELECT fingerprint FROM dynamic_memory_public WHERE memory_id=?", (row["id"],)
             )
@@ -496,6 +548,7 @@ class Dynamics:
                         "fictional": True,
                         "scope": row["scope"],
                         "event_id": row["event_id"],
+                        "observed_at": row.get("created_at"),
                         **({"memory_preference_revision": preference["revision"]} if preference["revision"] else {}),
                     }
                 )
@@ -552,6 +605,23 @@ class Dynamics:
                 )
         return [self._decode(r) for r in rows]
 
+    def latest_materials(self):
+        char = self._character()
+        row = self.store.one(
+            "SELECT id,created_at,character_id,character_version,sources FROM dynamic_decisions "
+            "WHERE evaluation_account_id=? AND character_id=? AND character_version=? ORDER BY id DESC LIMIT 1",
+            (self._source_account(), char["id"], char["version"]),
+        )
+        if not row:
+            return {"decision_id": None, "sources": []}
+        sources = json.loads(row["sources"] or "[]")
+        visible = sources if self._valid_sources(row | {"sources": sources}) else [
+            source for source in sources if self._valid_sources(row | {"sources": [source]})
+        ]
+        quotes = recall_memory.originals(visible)
+        return {"decision_id": row["id"], "created_at": row["created_at"],
+                "sources": [recall_memory.model_material(source, comment_texts=quotes) for source in visible]}
+
     def _post(self, post_id):
         return self._post_view(self.store.one("SELECT * FROM dynamic_posts WHERE id=?", (post_id,)))
 
@@ -604,21 +674,24 @@ class Dynamics:
                 and decision is not None
                 and json.loads(decision["sources"]) == sources
             )
-        bound_ids = [s["id"] for s in sources]
-        current_sources = self._sources(bound_ids=bound_ids) if any(
-            s["type"] in {"watched_video", "public_comment", "own_reflection"} for s in sources
-        ) else self._sources()
-        current = {s["id"]: s for s in current_sources}
         dependencies = [item for source in sources for item in source.get("memory_dependencies", [])]
         dependencies.extend(json.loads(row.get("context_sources") or "[]"))
         originals = [{key: value for key, value in source.items() if key != "memory_dependencies"} for source in sources]
+        bound_ids = [s["id"] for s in originals + dependencies]
+        current = {s["id"]: s for s in self._sources(bound_ids=bound_ids)}
+
+        def unchanged(source):
+            fresh = current.get(source["id"])
+            if not fresh:
+                return False
+            if source["type"] == "watched_video" and source.get("material_version"):
+                return fresh.get("material_version") == source["material_version"]
+            return all(fresh.get(key) == value for key, value in source.items() if key != "observed_at")
+
         return (
             row["character_id"] == char["id"]
             and row["character_version"] == char["version"]
-            and all(current.get(s["id"]) == s or (
-                s.get("type") == "watched_video" and "participants" not in s
-                and {k: v for k, v in current.get(s["id"], {}).items() if k != "participants"} == s
-            ) for s in originals + dependencies)
+            and all(unchanged(source) for source in originals + dependencies)
         )
 
     def review(self, post_id, action, text=None, **options):
@@ -1648,6 +1721,9 @@ class Dynamics:
                     _json(presentation["points"]) if presentation is not None and "points" in presentation else None,
                 ),
             ).lastrowid
+            if "evaluation_account_id" in data:
+                self.store.db.execute("UPDATE dynamic_decisions SET evaluation_account_id=? WHERE id=?",
+                                      (data["evaluation_account_id"], decision_id))
             if data["action"] == "post":
                 post_id = self.store.db.execute(
                     "INSERT INTO dynamic_posts(decision_id,character_id,character_version,model,content,reason,"
@@ -1901,7 +1977,7 @@ class Dynamics:
                     )
             return self.dynamic_edit(request_id, account, character["id"])
 
-    async def evaluate(self, manual=False):
+    async def evaluate(self, manual=False, *, topic=""):
         async with self.evaluation_lock, AsyncExitStack() as reservations:
             policy = self.policy()
             if not manual and (
@@ -1911,12 +1987,16 @@ class Dynamics:
                 return {"status": "skipped", "reason": "运营已关闭或尚未到评估时间"}
             char = self._character()
             generation_identity = runtime_identity(self.runtime, char)
+            evaluation_account = self._source_account()
+            tasks = getattr(self.runtime, "tasks", None)
+            evaluation_scope = tasks.scope() if tasks else None
             base = {
                 "action": "wait",
                 "reason": "暂缓动态评估",
                 "content": "",
                 "source_ids": [],
                 "next_evaluation_seconds": policy["evaluate_interval_seconds"],
+                "evaluation_account_id": evaluation_account,
             }
             if not manual and self._live_busy():
                 base["reason"] = "直播队列繁忙，延后动态评估"
@@ -1951,7 +2031,7 @@ class Dynamics:
             messages = identity_messages(messages, generation_identity)
             selected, selection_failed = None, False
             try:
-                sources = self._summary_sources()
+                sources = recall_memory.search(self, recall_memory.RecallQuery())["items"]
                 async with self.runtime.offline_generation("background"):
                     if not manual and self._live_busy():
                         base["reason"] = "直播队列繁忙，延后动态评估"
@@ -1965,29 +2045,43 @@ class Dynamics:
                         base["reason"] = "人物版本或公开来源已变化，取消动态评估"
                         return self._save_decision(char, manual, base, [])
                     model_identity = self._summary_model()
-                    budget = policy["memory_summary_max_tokens"]
+
+                    recall = None
 
                     def authorized(*, include_enabled=True):
                         return (
                             self._character()["id"] == char["id"]
                             and self._character()["version"] == char["version"]
+                            and self._source_account() == evaluation_account
+                            and (not tasks or tasks.scope() == evaluation_scope)
                             and self._valid_sources({"character_id": char["id"], "character_version": char["version"],
-                                                     "sources": sources})
+                                                     "sources": list(recall.sources.values()) if recall else sources})
                             and self._memory_preference() == memory_preference
                             and self._summary_model() == model_identity
                             and runtime_identity(self.runtime, self._character())["identity_version"]
                             == generation_identity["identity_version"]
-                            and self.policy()["memory_summary_max_tokens"] == budget
                             and (not include_enabled or manual or self.policy()["enabled"])
                         )
 
-                    public_sources = [source for source in sources if source["type"] != "public_memory"]
-                    stories = [source for source in sources if source["type"] == "public_memory"]
-                    if stories:
-                        summary = await self.memory_summary.build(
-                            self.runtime.operation_llm, char, stories, budget, model_identity, authorized=authorized,
-                        )
-                        public_sources.extend(self.memory_summary.public_sources(summary))
+                    def guard():
+                        if not authorized(include_enabled=False):
+                            raise ValueError("动态取材来源或授权已变化")
+
+                    client = tasks.responses_client() if tasks else None
+                    if client and sources:
+                        browsing = self.runtime.browsing
+                        recall = recall_memory.RecallSession(self, private=False)
+                        recent = recall_memory.recent_query(browsing)
+                        sources = await recall.collect(client, {
+                            "目标": "按近期经历找适合公开分享的素材，按相关话题补查旧记录。"
+                                    "选择可以交给本轮动态评估的记录，日常随想可以零引用。",
+                            "近期日期": recent.model_dump(mode="json"),
+                            **({"本次话题": topic} if topic else {}),
+                        }, seed=recent if not topic else None, guard=guard)
+                    elif topic:
+                        sources = recall_memory.search(self, recall_memory.RecallQuery(topic=topic))["items"]
+                    originals = recall_memory.originals(sources)
+                    public_sources = [recall_memory.model_material(source, comment_texts=originals) for source in sources]
                     if not manual and self._live_busy():
                         base["reason"] = "直播队列繁忙，延后动态评估"
                         return self._save_decision(char, manual, base, [])
@@ -1996,7 +2090,11 @@ class Dynamics:
                     payload = json.loads(messages[1]["content"])
                     payload["public_sources"] = public_sources
                     account = getattr(self.comments, "display_account_id", lambda: "")()
-                    payload["related_posts"] = self._related_posts(char, account, public_sources)
+                    payload["related_posts"] = self._related_posts(char, account, sources)
+                    for post in payload["related_posts"] + payload["recent_public_posts"]:
+                        post["content"] = recall_memory.trim_repeated_quotes(post["content"], originals)
+                        for point in post.get("points", []):
+                            point["text"] = recall_memory.trim_repeated_quotes(point["text"], originals)
                     messages[1]["content"] = _json(payload)
                     maximum = self.settings.data["omni"].get("operations_max_tokens", 8192)
                     binding = {
@@ -2016,10 +2114,6 @@ class Dynamics:
                         if web_fetch is not None:
                             return await web_fetch.complete(packet, schema, invoke_model)
                         return await invoke_model(packet, schema)
-
-                    def guard():
-                        if not authorized(include_enabled=False):
-                            raise ValueError("运营记忆来源或授权已变化")
 
                     def diagnose(value):
                         return (
@@ -2041,7 +2135,7 @@ class Dynamics:
                         max_tokens=maximum,
                         guard=guard,
                         diagnose=diagnose,
-                        context_data={"public_sources": public_sources},
+                        context_data={"public_sources": sources},
                         allow_web_fetch=True,
                     )
                     data["presentation"] = await self._presentation(data, public_sources)
@@ -2069,6 +2163,7 @@ class Dynamics:
                 data["next_evaluation_seconds"] = max(
                     data["next_evaluation_seconds"], policy["evaluate_interval_seconds"]
                 )
+                data["evaluation_account_id"] = evaluation_account
                 if self._character()["id"] != char["id"] or self._character()["version"] != char["version"]:
                     raise ValueError("人物版本已变化")
                 output_review = (

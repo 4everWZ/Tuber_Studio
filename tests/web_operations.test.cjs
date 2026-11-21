@@ -531,7 +531,7 @@ test("dynamic text edits survive refresh, save the submitted text and clear only
     }
     if (url === "/api/dynamics/policy") return { credentials_configured: true };
     if (url === "/api/dynamics/posts") return [{ ...post }];
-    if (url === "/api/dynamics/memory-summary") return { entries: [] };
+    if (url === "/api/dynamics/materials") return { sources: [] };
     return [];
   }), publicSettings: value => value, safeMessage: String, display: String, tokenCount: String });
   byId("dynamic-post-text").value = "修改后的动态";
@@ -562,7 +562,7 @@ test("dynamic publish errors refresh the selected draft to its real state", asyn
     }
     if (url === "/api/dynamics/policy") return { credentials_configured: true };
     if (url === "/api/dynamics/posts") return [{ ...post }];
-    if (url === "/api/dynamics/memory-summary") return { entries: [] };
+    if (url === "/api/dynamics/materials") return { sources: [] };
     return [];
   }), publicSettings: value => value, safeMessage: String, display: String, tokenCount: String });
   await assert.rejects(byId("publish-dynamic").listeners.click(), /动态发布结果待核对/);
@@ -585,7 +585,7 @@ test("dynamic background refresh reconciles external terminal states and preserv
       calls.push(url);
       if (url === "/api/dynamics/policy") return { credentials_configured: true };
       if (url === "/api/dynamics/posts") return [{ ...serverPost }];
-      if (url === "/api/dynamics/memory-summary") return { entries: [] };
+      if (url === "/api/dynamics/materials") return { sources: [] };
       return [];
     }), publicSettings: value => value, safeMessage: String, display: String, tokenCount: String });
     await module.refreshDynamics({ background: true });

@@ -264,7 +264,7 @@ async def test_chat_lifecycle_separates_live_status_from_persistent_work(setting
                 assert any("读取回执" in row["content"] for row in messages)
                 return {"action": "chat", "reply_markdown": "我已经读到直播状态了。"}
             assert set(menu) == {"chat", "identity_read", "direct_tool", "agent_task", "clarify",
-                             "prepare_publication", "task_status", "workshop_lookup", "watch_totals"}
+                             "prepare_publication", "task_status", "workshop_lookup", "watch_totals", "recall_memory"}
             return direct_request(messages[-1]["content"]) if lifecycle == "direct_tool" else {"action": lifecycle}
         assert "live_status" in menu and not {"direct_tool", "agent_task", "steer_task", "chat"}.intersection(menu)
         assert options["on_content"] is None
@@ -840,7 +840,7 @@ def test_chat_corrects_original_dynamic_without_reposting(settings, monkeypatch,
     studio = app.state.dynamics
     identifier = "1270460143781281810"
     source = {"id": "reply:example", "type": "published_reply", "text": "有人提到了赛博保险。"}
-    monkeypatch.setattr(studio, "_sources", lambda: [source])
+    monkeypatch.setattr(studio, "_sources", lambda **_: [source])
     old = "我在评论区连着认错对象。第三次才翻回原楼找人把话接对。"
     new = "评论区有人说要卖我赛博保险。"
     picture = {"img_src": "https://i0.hdslb.com/bfs/new_dyn/1.png", "img_width": 960, "img_height": 512}

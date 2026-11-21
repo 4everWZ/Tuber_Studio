@@ -58,7 +58,6 @@ export function dynamicPolicyFromServer(policy, model, describe, display) {
     if ($("dynamic-evaluate-interval")) $("dynamic-evaluate-interval").value = saved.evaluate_interval_seconds;
     if ($("dynamic-min-post-interval")) $("dynamic-min-post-interval").value = saved.min_post_interval_seconds;
     if ($("dynamic-max-posts")) $("dynamic-max-posts").value = saved.max_posts_per_day;
-    if ($("dynamic-memory-summary-max")) $("dynamic-memory-summary-max").value = saved.memory_summary_max_tokens;
   }
   renderDynamicPolicy(model, describe, display);
 }
@@ -125,12 +124,17 @@ export function appendDynamicSources(container, sources, { node, display, commen
     const author = source.participants?.[0]?.name;
     entry.append(node("summary", [names[source.type] || "素材", author].filter(Boolean).join(" · ")));
     entry.append(node("p", source.text || "未返回来源文字。"));
-    if (source.original_comment) entry.append(node("p", `原评论：${display(source.original_comment)}`, "hint"));
-    if (source.source_url) {
+    if (source.original_comment?.text) entry.append(node("p", `原评论：${display(source.original_comment)}`, "hint"));
+    const links = source.coordinates?.length
+      ? source.coordinates.map(point => [point.href, `P${point.part} · ${point.start} 秒`])
+      : [[source.source_url, "打开来源"]];
+    for (const [href, caption] of links) {
+      if (!href) continue;
       try {
-        const url = new URL(source.source_url);
-        if (url.protocol === "https:" && (source.type === "public_comment" || !commentLinks.has(videoId(url)))) {
-          const link = node("a", "打开来源");
+        const url = new URL(href);
+        if (url.protocol === "https:" && !url.username && !url.password &&
+            (source.type === "public_comment" || !commentLinks.has(videoId(url)))) {
+          const link = node("a", caption);
           link.href = url.href;
           link.target = "_blank";
           link.rel = "noopener noreferrer";
@@ -454,47 +458,17 @@ export function renderDynamicMemories(model, {
   });
 }
 
-export function renderDynamicMemorySummary(summary, {
-  describe,
-  tokenCount,
-  display,
-  empty,
-  node,
-  cell,
-  list,
-}) {
-  const state = $("dynamic-summary-valid");
-  if (state) {
-    state.textContent = summary.valid ? "有效" : "待更新";
-    state.className = `badge ${summary.valid ? "good" : ""}`;
-  }
-  if ($("dynamic-summary-meta")) {
-    describe($("dynamic-summary-meta"), [
-      ["角色", summary.character_id ? summary.character_id : "未报告"],
-      ["实际用量 / 摘要上限", `${tokenCount(summary.token_count)} / ${tokenCount(summary.max_tokens)}`],
-      ["最近更新（当地时间）", localDateTime(summary.updated_at, display)]
-    ]);
-  }
-  if ($("dynamic-summary-state")) {
-    $("dynamic-summary-state").textContent = summary.valid ?
-      "当前有效摘要供运营评估使用；原文保留在来源核对中。" :
-      "尚无有效摘要或来源／策略已变化；下次评估将更新摘要。";
-  }
-  const body = $("dynamic-summary-entries");
+export function renderDynamicMaterials(materials, { display, node }) {
+  const body = $("dynamic-materials");
   if (!body) return;
-  const entries = list(summary.entries);
+  const timestamp = $("dynamic-material-time");
+  if (timestamp) timestamp.textContent = materials.created_at ? localDateTime(materials.created_at, display) : "";
+  const entries = Array.isArray(materials.sources) ? materials.sources : [];
   if (!entries.length) {
-    empty(body, 3, "暂无运营记忆摘要摘录。公开来源就绪后评估生成。");
+    body.replaceChildren(node("p", "暂无素材", "hint"));
     return;
   }
-  body.replaceChildren();
-  entries.forEach(entry => {
-    const row = node("tr");
-    cell(row, entry.source_id || "未返回来源ID");
-    cell(row, entry.quote || "未返回摘录");
-    cell(row, entry.fictional ? "虚构角色故事" : "公开互动摘录");
-    body.append(row);
-  });
+  appendDynamicSources(body, entries, { node, display });
 }
 
 export function initDynamicsModule(model, {
@@ -510,7 +484,6 @@ export function initDynamicsModule(model, {
   describe,
   display,
   setBadge,
-  tokenCount,
   safeMessage,
   publicSettings,
   memePreview,
@@ -567,15 +540,7 @@ export function initDynamicsModule(model, {
     safeMessage,
   });
 
-  const doRenderSummary = (summary) => renderDynamicMemorySummary(summary, {
-    describe,
-    tokenCount,
-    display,
-    empty,
-    node,
-    cell,
-    list,
-  });
+  const doRenderMaterials = (value) => renderDynamicMaterials(value, { display, node });
 
   async function doRefreshDynamicMemeInfo(post) {
     if (!post?.meme_id) return;
@@ -602,16 +567,16 @@ export function initDynamicsModule(model, {
     const request = ++refreshRequest;
     try {
       const lightweight = background && model.dynamicListsLoaded;
-      let [policy, posts, decisions, memories, summary] = await Promise.all([
+      let [policy, posts, decisions, memories, materials] = await Promise.all([
         api("/api/dynamics/policy"),
         api("/api/dynamics/posts"),
         api("/api/dynamics/decisions"),
         lightweight ? model.dynamicMemories : api("/api/dynamics/memories?limit=100"),
-        lightweight ? model.dynamicMemorySummary : api("/api/dynamics/memory-summary")
+        api("/api/dynamics/materials")
       ]);
       if (request !== refreshRequest) return;
       if (lightweight && (JSON.stringify(model.dynamicPosts) !== JSON.stringify(list(posts)) || JSON.stringify(model.dynamicDecisions) !== JSON.stringify(list(decisions)))) {
-        [memories, summary] = await Promise.all([api("/api/dynamics/memories?limit=100"), api("/api/dynamics/memory-summary")]);
+        memories = await api("/api/dynamics/memories?limit=100");
         if (request !== refreshRequest) return;
       }
       const first = !model.dynamicListsLoaded;
@@ -641,9 +606,9 @@ export function initDynamicsModule(model, {
         doRenderMemories();
       }
 
-      if (JSON.stringify(model.dynamicMemorySummary) !== JSON.stringify(summary)) {
-        model.dynamicMemorySummary = summary;
-        doRenderSummary(summary);
+      if (JSON.stringify(model.dynamicMaterials) !== JSON.stringify(materials)) {
+        model.dynamicMaterials = materials;
+        doRenderMaterials(materials);
       }
       model.dynamicListsLoaded = true;
       await doRefreshDynamicMemeInfo(model.dynamicPosts.find(item => item.id === model.dynamicPostId));
@@ -660,7 +625,6 @@ export function initDynamicsModule(model, {
       evaluate_interval_seconds: policyInteger("dynamic-evaluate-interval", "动态评估间隔"),
       min_post_interval_seconds: policyInteger("dynamic-min-post-interval", "最短发布间隔"),
       max_posts_per_day: policyInteger("dynamic-max-posts", "每日动态数"),
-      memory_summary_max_tokens: policyInteger("dynamic-memory-summary-max", "运营记忆摘要长度"),
     };
     model.dynamicSaving = true;
     doRenderPolicy();

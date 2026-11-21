@@ -123,7 +123,8 @@ async def test_processed_private_message_shares_only_role_reflection(messages, m
     dynamics = Dynamics(messages.settings, messages.store, messages.runtime, messages.comments)
     reflection, = [source for source in dynamics._sources() if source["type"] == "own_reflection"]
     assert secret not in json.dumps(reflection, ensure_ascii=False) and "鱼宝" not in str(reflection)
-    assert "感动" in reflection["text"] and set(reflection) == {"id", "type", "text", "fictional"}
+    assert "感动" in reflection["text"] and set(reflection) == {"id", "type", "text", "fictional", "observed_at"}
+    assert reflection["observed_at"] > 0
     assert not messages.adapter.sent
 
 

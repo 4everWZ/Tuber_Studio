@@ -141,6 +141,7 @@ class TaskRuntime:
         self.edit_delivery = None
         self.record_chat_delivery = None
         self.validate_private_read = None
+        self.validate_recall_read = None
         self.read_parallelism = lambda: 2
         self.tools: dict[str, Tool] = {}
         self.wake = asyncio.Event()
@@ -546,6 +547,10 @@ class TaskRuntime:
         return [source["memory_use"] for source in sources if source.get("memory_use")]
 
     def edition_recallable(self, task_id, revision):
+        return (self._edition_memory_available(task_id, revision)
+                and self._edition_sources_available(task_id, revision))
+
+    def _edition_memory_available(self, task_id, revision):
         uses = self.store.get(f"private_edition_memory:{task_id}:{revision}", [])
         if uses and not self.validate_private_read:
             return False
@@ -556,7 +561,28 @@ class TaskRuntime:
             return False
         return True
 
+    def recall_edition_available(self, task_id, revision):
+        if not self.store.get(f"edition_recall_sources:{task_id}:{revision}"):
+            return True
+        return self.edition_recallable(task_id, revision)
+
+    def _edition_sources_available(self, task_id, revision):
+        recall = self.store.get(f"edition_recall_sources:{task_id}:{revision}")
+        if not recall:
+            return True
+        if not self.validate_recall_read:
+            return False
+        try:
+            self.validate_recall_read(recall)
+        except ValueError:
+            return False
+        return True
+
     def _validate_reads(self, steps, plan):
+        if self.validate_recall_read:
+            for step in steps:
+                if step["tool"] == "recall_memory" and (result := step.get("result")) and result.get("recall_scope"):
+                    self.validate_recall_read(result)
         if self.validate_private_read:
             for use in self._memory_uses(steps, plan):
                 if any(s["tool"].startswith("owner_") and s["tool"].endswith("_grant") for s in steps):
@@ -589,6 +615,12 @@ class TaskRuntime:
                 if uses:
                     database.execute("INSERT OR IGNORE INTO kv VALUES(?,?)",
                                      (f"private_edition_memory:{task['id']}:{task['revision']}", dump(uses)))
+                recalled = [s["result"] for s in steps if s["tool"] == "recall_memory"
+                            and (s.get("result") or {}).get("recall_scope")]
+                if recalled:
+                    refs = recalled[-1] | {"items": [item for result in recalled for item in result["items"]]}
+                    database.execute("INSERT OR IGNORE INTO kv VALUES(?,?)",
+                                     (f"edition_recall_sources:{task['id']}:{task['revision']}", dump(refs)))
             status = changes.get("status")
             notify_waiting = status == "waiting" and waiting_delivery(steps)
             fixed_cancelled = status == "cancelled" and (task["plan"] == {"backend": "fixed"} or any(

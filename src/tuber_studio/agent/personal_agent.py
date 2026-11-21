@@ -55,7 +55,7 @@ CAPABILITIES = {
 
 class ConversationObject(StrictModel):
     kind: Literal["owner", "account", "setting", "operations", "event", "video", "watch_history", "watched_video", "public_comment",
-                  "dynamic_post", "live", "game", "memory", "task", "artifact", "web", "outgoing"]
+                  "dynamic_post", "live", "game", "memory", "task", "artifact", "web", "outgoing", "recalled_source"]
     identity: str = Field(min_length=1, max_length=2048)
     label: str = Field(max_length=200)
     revision: str | int | None = None

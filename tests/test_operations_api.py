@@ -57,7 +57,7 @@ def test_dynamic_routes_require_admin_and_overlay_does_not_grant_access(settings
 
     monkeypatch.setattr(app.state.runtime.operation_llm, "generate_json", wait_decision)
     with TestClient(app) as client:
-        for path in ("policy", "posts", "decisions", "memories", "memory-summary"):
+        for path in ("policy", "posts", "decisions", "memories", "memory-summary", "materials"):
             assert client.get(f"/api/dynamics/{path}").status_code == 401
         assert client.post("/api/dynamics/evaluate").status_code == 401
         assert client.put("/api/dynamics/policy", json={"enabled": True}).status_code == 401

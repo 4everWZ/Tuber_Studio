@@ -28,7 +28,7 @@ from ..responses_provider import ResponsesClient
 from ..store import dump
 from ..web_fetch import WebFetchRequest, fetch_excerpt, programme_credit_text, source_url
 from ..web_search import search_broadcast_programmes, search_public_web
-from . import operator_facts, workshop_lookup
+from . import operator_facts, recall_memory, workshop_lookup
 from .archived_video import MountedArchive
 from .clip_refinement import positive_subwindows, subwindow_brief
 from .clip_review import review_clip_window, unreviewed_preview
@@ -1040,6 +1040,7 @@ def create_task_runtime(runtime, store, browsing):
             return TaskDecision.model_validate(await request_json(messages, schema))
 
     tasks = TaskRuntime(store, scope, decide, make_plan)
+    tasks.validate_recall_read = lambda receipt: recall_memory.validate_read(browsing.dynamics, receipt)
     tasks.model_context = model_context
     tasks.unread_web_addresses = available_web_addresses
     tasks.read_parallelism = lambda: runtime.settings.responses_config.get("parallel_reads", 2)
@@ -2086,6 +2087,13 @@ def create_task_runtime(runtime, store, browsing):
     async def lookup_workshop(request, args):
         return workshop_lookup.lookup(browsing, request.scope, args)
 
+    async def recall_workshop(request, args):
+        result = recall_memory.search(browsing.dynamics, args, private=True)
+        seen = {recall_memory.canonical_id(item) for step in request.receipts if step["tool"] == recall_memory.NAME
+                for item in step.get("result", {}).get("items", [])}
+        result["items"] = [item for item in result["items"] if recall_memory.canonical_id(item) not in seen]
+        return result | recall_memory.read_authority(runtime, request.scope)
+
     async def live(request, args):
         return await observed_live_status(runtime)
 
@@ -2253,6 +2261,8 @@ def create_task_runtime(runtime, store, browsing):
             workshop_lookup.LOOKUP_DESCRIPTION, workshop_lookup.WorkshopLookup, lookup_workshop, foreground_read=True,
             reusable=True,
         ),
+        recall_memory.NAME: Tool(recall_memory.DESCRIPTION, recall_memory.RecallQuery, recall_workshop,
+                                 foreground_read=True, reusable=True, responses_only=True),
         "inspect_video": Tool("读取指定BV和分P，返回该部分时长及真实采样时码。可自行勘察候选位置。"
                               "需要可播放选段时，分别指定不超过10秒的[start,end)读取连续纯画面，按回执核对。",
                               Video, video, stop_video, parallel_read=True, reusable=True, own_deadline=True),

@@ -447,6 +447,13 @@ def evidence_index(steps):
             continue
         if tool in {"web_search", "delegate_text", "owner_code_grant"}:
             continue
+        if tool == "recall_memory":
+            for index, item in enumerate(result.get("items", []), 1):
+                link = next((point["href"] for point in item.get("coordinates", [])), item.get("source_url"))
+                evidence[f"{step['id']}:{index}"] = " · ".join(filter(None, (
+                    _text(item["id"]), _text(item["text"][:1200]), _source(link),
+                )))
+            continue
         if tool == "inspect_video" and result.get("status") in {"completed", "partial"}:
             samples = []
             for index, item in enumerate(result.get("findings", []), 1):

@@ -370,6 +370,8 @@ async def advance(runtime, task):
     read_tools = (task["plan"].get("delegation_brief") or {}).get("read_tools")
     if read_tools is not None:
         allowed = {name: allowed[name] for name in read_tools if name in allowed}
+    if read_tools != ["recall_memory"]:
+        allowed.pop("recall_memory", None)
     if browser:
         allowed = browser.menu(task, allowed)
     tools = [function(name, tool.description, tool.arguments) for name, tool in allowed.items()]

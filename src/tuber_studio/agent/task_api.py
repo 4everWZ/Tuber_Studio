@@ -104,6 +104,8 @@ def register_task_api(app, tasks, require_admin):
             project["runs"] = [{key: run[key] for key in ("id", "goal", "status", "revision")} for run in runs]
         notice = tasks.store.one("SELECT updated FROM creative_attention WHERE task_id=?", (task["id"],))
         artifact = tasks.workspace.edition_view(task, tasks.workspace.latest(task["id"]))
+        if artifact and not tasks.recall_edition_available(task["id"], artifact["task_revision"]):
+            artifact = None
         return tasks.view(task) | {"creative_goal": project, "artifact": artifact,
                                    "can_control": tasks.can_control(task) and not bool(project and project["closed"]),
                                    "attention": notice["updated"] if notice else None}
@@ -201,7 +203,7 @@ def register_task_api(app, tasks, require_admin):
         task = visible(identity)
         result = tasks.store.one("SELECT * FROM creative_editions WHERE task_id=? AND task_revision=? AND edition=?",
                                  (task["id"], revision, edition))
-        if result is None:
+        if result is None or not tasks.recall_edition_available(task["id"], revision):
             raise HTTPException(404, "找不到这个成果版本")
         if download:
             if not tasks.edition_recallable(task["id"], revision):

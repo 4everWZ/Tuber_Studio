@@ -247,7 +247,7 @@ class DailyMemoryService:
         return re.sub(r"\W", "", title).casefold()
 
     def organized(self, scope, *, limit=100, item_id=None, unclassified=False, recall=None, exact_title=None,
-                  candidate_for=None, memory_kind=None):
+                  candidate_for=None, memory_kind=None, material_query=None):
         private_unclassified = (
             "COALESCE(json_extract(source_evidence,'$.memory_kind'),'')='private' "
             "AND json_extract(source_evidence,'$.scene') IS NULL "
@@ -265,6 +265,14 @@ class DailyMemoryService:
         if memory_kind is not None:
             query += "AND json_extract(source_evidence,'$.memory_kind')=? "
             parameters.append(memory_kind)
+        if material_query is not None:
+            clause, values = material_query.sql(
+                "headline || ' ' || quote || ' ' || anecdote || ' ' || tags", "created_at",
+                "json_extract(source_evidence,'$.memory_source.thread.resource')",
+                "json_extract(source_evidence,'$.memory_source.thread.root_id')",
+            )
+            query += "AND status='active' " + clause + " "
+            parameters.extend(values)
         if recall is not None:
             channel, keywords, resource, thread = recall
             document = ("lower(headline || ' ' || quote || ' ' || anecdote || ' ' || tags)" if channel == "operator"
@@ -930,16 +938,18 @@ class DailyMemoryService:
                 result.append(source)
         return result[:2]
 
-    def public_experience_sources(self, character_id, character_version):
+    def public_experience_sources(self, character_id, character_version, *, material_query=None, bound_ids=()):
+        where, args = material_query.sql("headline||' '||quote", "created_at", None) if material_query else ("", ())
         rows = self.store.all(
             "SELECT * FROM daily_highlights WHERE character_id=? AND character_version=? AND status='active' "
             "AND (source_ref LIKE 'system:downtime:%' OR source_ref LIKE 'operator-public:%') "
-            "ORDER BY highlight_date DESC,id DESC LIMIT 10",
-            (character_id, character_version),
+            "AND ('experience:'||id IN (SELECT value FROM json_each(?)) OR (1" + where + ")) "
+            "ORDER BY ('experience:'||id IN (SELECT value FROM json_each(?))) DESC,highlight_date DESC,id DESC LIMIT 10",
+            (character_id, character_version, dump_memory(bound_ids), *args, dump_memory(bound_ids)),
         )
         return [
             {"id": f"experience:{row['id']}", "type": proof["kind"], "fictional": False,
-             "text": row["quote"], "public_sources": []}
+             "text": row["quote"], "public_sources": [], "observed_at": row["created_at"]}
             for row in rows if (proof := self._source_evidence(row))
             and proof["kind"] in {"runtime_event", "operator_note"}
             and not proof.get("operation_sources")
@@ -949,12 +959,17 @@ class DailyMemoryService:
         zone = self.store.get("browsing_policy", {}).get("business_timezone", "Asia/Taipei")
         return datetime.datetime.fromtimestamp(now, ZoneInfo(zone)).date().isoformat()
 
-    def public_incident_sources(self, character_id, character_version):
+    def public_incident_sources(self, character_id, character_version, *, material_query=None, bound_ids=()):
+        where, args = material_query.sql(
+            "headline||' '||COALESCE(public_sources,'')", "created_at",
+            "json_extract(public_sources,'$[0].bvid')", "json_extract(public_sources,'$[0].thread_id')",
+        ) if material_query else ("", ())
         rows = self.store.all(
-            "SELECT id,incident_key,public_sources,updated_at FROM daily_highlights "
+            "SELECT id,incident_key,public_sources,created_at,updated_at FROM daily_highlights "
             "WHERE character_id=? AND character_version=? AND category='public_incident' AND status='active' "
-            "ORDER BY highlight_date DESC,id DESC LIMIT 20",
-            (character_id, character_version),
+            "AND ('incident:'||id IN (SELECT value FROM json_each(?)) OR (1" + where + ")) "
+            "ORDER BY ('incident:'||id IN (SELECT value FROM json_each(?))) DESC,highlight_date DESC,id DESC LIMIT 20",
+            (character_id, character_version, dump_memory(bound_ids), *args, dump_memory(bound_ids)),
         )
         result = []
         for row in rows:
@@ -971,6 +986,7 @@ class DailyMemoryService:
                 "incident_key": row["incident_key"],
                 "public_sources": sources,
                 "memory_version": row["updated_at"],
+                "observed_at": row["created_at"],
             })
         return result
 
