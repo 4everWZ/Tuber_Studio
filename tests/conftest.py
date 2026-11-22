@@ -44,6 +44,9 @@ def settings(tmp_path, monkeypatch):
 
     create_chat = runtime_module.create_llm
     monkeypatch.setattr(runtime_module, "create_llm", lambda current: OfflineChat() if current is config else create_chat(current))
+    create_chat_text = runtime_module.create_chat_llm
+    monkeypatch.setattr(runtime_module, "create_chat_llm",
+                        lambda current: OfflineChat() if current is config else create_chat_text(current))
     create_operations = runtime_module.create_operation_llm
     monkeypatch.setattr(runtime_module, "create_operation_llm",
                         lambda current: OfflineChat() if current is config else create_operations(current))

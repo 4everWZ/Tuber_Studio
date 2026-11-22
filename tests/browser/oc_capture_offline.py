@@ -4,8 +4,8 @@ import os
 
 from playwright.sync_api import sync_playwright
 
-from evaluations.oc_call_window import INIT
-from evaluations.workstation_whep import SAMPLE
+from evaluations.live.oc_call_window import INIT
+from evaluations.live.workstation_whep import SAMPLE
 
 
 def main():

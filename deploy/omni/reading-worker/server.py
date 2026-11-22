@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 
-from tuber_studio.agent.browser_chromium import ChromiumReaders
+from tuber_studio.agent.creative.browser_chromium import ChromiumReaders
 
 SOCKET = Path("/run/tuber-reading/reader.sock")
 

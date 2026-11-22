@@ -15,7 +15,7 @@ from uuid import uuid4
 import httpx
 import uvicorn
 
-from tuber_studio.agent.task_delivery import PrivateDelivery
+from tuber_studio.agent.tasks.delivery import PrivateDelivery
 from tuber_studio.app import create_app
 from tuber_studio.core.config import ROOT, Settings
 from tuber_studio.infra.inference.responses_provider import FunctionCall, ResponseTurn

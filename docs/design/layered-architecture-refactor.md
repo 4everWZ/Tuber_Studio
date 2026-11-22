@@ -245,7 +245,7 @@ src/tuber_studio/
 │   ├── chat/                          # 双脑对话主链路（延续 Batch 1 分层并拆细）
 │   │   ├── models.py                  # ChatTurn、DeliveryPacket、RoutingDecision 等 L0 模型
 │   │   ├── context.py                 # 瘦身对话历史、活跃任务卡与记忆投影
-│   │   ├── front_dialogue.py          # 前台表达脑（omni-default 纯文字流式接话与转述）
+│   │   ├── front_dialogue.py          # 前台表达脑（`chat_llm` / `llm-default`，`enable_thinking=False`，纯文字流式接话、受理承接语与转述；Omni 仅用于 `voice/` 语音通话）
 │   │   ├── router/                    # [拆自 turn_router.py (1,120)]
 │   │   │   ├── schemas.py             # 平坦 7 路工具与压缩 Arrangement Schema
 │   │   │   ├── prompt_builder.py      # 原生多轮消息与条件化澄清状态拼装
@@ -380,7 +380,7 @@ flowchart LR
    - 继承 `OperationSends` 的同楼串行排序与 `direct=1` 优先调度（直接消息与定向回复优先于主动探索主评与常规动态）；
    - 新增配置项 **`direct_quota_reserve`**（整数，允许 `>= 0`）：在账号小时与滚动 24 小时发送上限下，为 `direct=1`（私信、定向回复、被 @ 与自有内容回复）预留受保护的最小剩余配额；当账号剩余可用发送次数 `<= direct_quota_reserve` 时，非紧急主动探索（`direct=0`）主动推迟拟稿与出队，确保探索行为不挤占消息响应配额；**填 `0` 表示不预留**，回退至完全共享额度。
 4. **`turns.py`（推理车道调度）：**
-   - 收敛 `OperationTurns` 四车道：`chat`（号主前台路由最高优，不抢占长生成锁，仅包裹路由调用并在进入前台表达式前释放） > `direct` / `priority` / `background`；
+   - 收敛 `OperationTurns` 四车道：`chat`（号主前台路由与文字对话最高优，`OperationTurns._next()` 对排队的 `chat` 严格无条件抢占 `direct` / `priority` / `background` 队列；`chat_routing_generation` 仅包裹路由调用并在进入前台表达式前释放，长后台任务在步骤间隙让出以便实时响应前台） > `direct` / `priority` / `background`；
    - 运营侧保持 **`direct:background = 2:1` 公平防饿死比**（连续两次 `direct` 推理后允许一条可执行 `priority`/`background` 探索推进），两侧空闲时自由借用。
 5. **`read_gate.py` 与 `evidence.py`（分级风控退避与单飞证据池）：**
    - `read_gate.py` 集中执行 B 站请求最小间隔、轮次读预算预占与 `412`/`429`/`-352`/`-412`/`-509` 退避状态机；当触发平台风控限流时，**优先暂停或延长 Discovery 主动探索的冷却窗口，优先保障 Inbox 通知/私信收取及未知回执只读核对的存活能力**；

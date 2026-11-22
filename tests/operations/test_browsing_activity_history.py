@@ -141,7 +141,7 @@ def test_comment_timeline_merges_discovery_and_distinguishes_round_outcomes(serv
 
 
 def test_recent_events_keep_thread_identity_when_receipt_is_confirmed(service, monkeypatch):
-    from tuber_studio.agent import operator_facts
+    from tuber_studio.agent.chat.lookup import operator_facts
 
     row = round_row(service)
     at = stamp("2026-11-08T10:05:00+08:00")

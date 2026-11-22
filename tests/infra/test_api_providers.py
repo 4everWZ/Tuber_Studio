@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from tuber_studio.agent.operator_chat import OperatorChat
+from tuber_studio.agent.chat import OperatorChat
 from tuber_studio.core.errors import ContextWindowExceeded, IncompleteCompaction
 from tuber_studio.core.meter import GenerationMeter
 from tuber_studio.core.turns import operation_ticket

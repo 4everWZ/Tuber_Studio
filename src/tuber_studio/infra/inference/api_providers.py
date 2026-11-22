@@ -6,7 +6,7 @@ import json
 import time
 from collections import OrderedDict
 
-from ...core.config import operation_profile
+from ...core.config import chat_profile, operation_profile
 from ...core.errors import ContextWindowExceeded, IncompleteCompaction
 from ...core.identity import provider_identity_messages
 from ...core.meter import reserve_generation, settle_generation
@@ -35,6 +35,10 @@ from .responses_provider import generate_image_json, thinking_budget
 
 def create_llm(settings):
     return APIProvider(settings.data["omni"], settings.provider_key("omni"))
+
+
+def create_chat_llm(settings):
+    return APIProvider(chat_profile(settings.data["omni"]), settings.provider_key("omni"))
 
 
 def create_operation_llm(settings):

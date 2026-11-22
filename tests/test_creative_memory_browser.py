@@ -12,10 +12,10 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from evaluations import creative_memory_browser as runner
-from evaluations import creative_memory_receipt as evidence
-from evaluations.creative_browser_receipt import Mismatch, load
-from evaluations.creative_memory_receipt import check_citations, title_changes
+from evaluations.agent.creative_browser_receipt import Mismatch, load
+from evaluations.memory import creative_memory_browser as runner
+from evaluations.memory import creative_memory_receipt as evidence
+from evaluations.memory.creative_memory_receipt import check_citations, title_changes
 
 
 @pytest.mark.parametrize(
@@ -338,7 +338,8 @@ async def test_chat_memory_migration_in_chromium(settings, monkeypatch):
     import uvicorn
     from playwright.async_api import async_playwright, expect
 
-    from tuber_studio.agent import private_call, voice_origin
+    from tuber_studio.agent.voice import origin as voice_origin
+    from tuber_studio.agent.voice import private_call
     from tuber_studio.app import create_app
 
     app = create_app(settings)

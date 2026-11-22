@@ -283,6 +283,123 @@ def decode_target_json(raw) -> dict:
     return {}
 
 
+def _raw_browsing(target):
+    return getattr(target, "browsing", target)
+
+
+def _raw_dynamics(target):
+    return getattr(target, "dynamics", target)
+
+
+def _raw_comments(target):
+    return getattr(target, "comments", target)
+
+
+async def restore_history_scope(browsing) -> tuple:
+    raw = _raw_browsing(browsing)
+    return await raw.discovery.restore_history_scope()
+
+
+def browsing_policy(browsing) -> dict:
+    return _raw_browsing(browsing).policy()
+
+
+def browsing_status(browsing) -> dict:
+    return _raw_browsing(browsing).status()
+
+
+def browsing_round(browsing, round_id: str):
+    return _raw_browsing(browsing).repo.round(round_id)
+
+
+def requested_preview_row(browsing, request_id: str, character: dict, selection: dict, account_id: str | None):
+    return _raw_browsing(browsing).repo.requested_preview(request_id, character, selection, account_id)
+
+
+async def queue_full_video(browsing, request_id: str, character: dict, selection: dict):
+    return await _raw_browsing(browsing).queue_full_video(request_id, character, selection)
+
+
+async def update_full_video(browsing, request_id: str, *, resume: bool):
+    return await _raw_browsing(browsing).update_full_video(request_id, resume=resume)
+
+
+def full_video_status(browsing, row):
+    return _raw_browsing(browsing).full_video_status(row)
+
+
+async def run_preview_browse(browsing, **kwargs):
+    return await _raw_browsing(browsing).run(**kwargs)
+
+
+async def read_video_metadata(browsing, bvid: str):
+    raw = _raw_browsing(browsing)
+    return await raw._read(raw.adapter.video_metadata, bvid)
+
+
+def video_clip_adapter(browsing):
+    adapter = getattr(_raw_browsing(browsing), "adapter", None)
+    return adapter if adapter is not None and hasattr(adapter, "video_stream_clip") else None
+
+
+def browsing_visual_provider(browsing, runtime=None):
+    raw = _raw_browsing(browsing)
+    evidence = getattr(raw, "evidence", None)
+    if evidence is not None and getattr(evidence, "visual", None) is not None:
+        return evidence.visual
+    return getattr(runtime, "visual_provider", None) if runtime is not None else None
+
+
+async def configure_browsing(browsing, patch: dict):
+    return await _raw_browsing(browsing).configure(patch)
+
+
+async def configure_messages(browsing, patch: dict):
+    return await _raw_browsing(browsing).messages.configure(patch)
+
+
+async def set_browsing_enabled(browsing, enabled: bool, *, guard=None):
+    return await _raw_browsing(browsing).set_enabled(enabled, guard=guard)
+
+
+async def stop_browsing(browsing):
+    return await _raw_browsing(browsing).stop()
+
+
+def dynamic_sources(dynamics, *, bound_ids=(), query=None) -> list:
+    return _raw_dynamics(dynamics)._sources(bound_ids=bound_ids, query=query)
+
+
+async def create_operator_dynamic_draft(dynamics, character, request_id: str, topic: str, *, account=None):
+    return await _raw_dynamics(dynamics).create_operator_draft(character, request_id, topic, account=account)
+
+
+async def propose_dynamic_edit(dynamics, character, request_id: str, post_id: str, message: str):
+    return await _raw_dynamics(dynamics).propose_dynamic_edit(character, request_id, post_id, message)
+
+
+def get_dynamic_edit(dynamics, request_id: str, account: str | None, character_id: str):
+    return _raw_dynamics(dynamics).dynamic_edit(request_id, account, character_id)
+
+
+async def set_dynamics_policy(dynamics, patch: dict):
+    return await _raw_dynamics(dynamics).set_policy(patch)
+
+
+def comment_context_scope(comments, video_id: str, thread_id: str) -> str:
+    return _raw_comments(comments).account_context_scope(video_id, thread_id)
+
+
+async def rebuild_comment_context(comments, video_id: str, thread_id: str):
+    return await _raw_comments(comments).rebuild_context(video_id, thread_id)
+
+
+def comments_display_account_id(comments) -> str | None:
+    raw = _raw_comments(comments)
+    messages = getattr(raw, "direct_messages", None)
+    return messages.display_account_id() if messages else raw.account.display_account_id()
+
+
 __all__ = [
     "BrowsingPolicy",
     "COMMENT_ID",
@@ -293,17 +410,26 @@ __all__ = [
     "VIDEO_ID",
     "acknowledge_issues",
     "activity",
+    "browsing_policy",
+    "browsing_round",
+    "browsing_status",
+    "browsing_visual_provider",
     "business_timezone",
     "clear_issues",
+    "comment_context_scope",
     "comment_draft_source",
     "comment_href",
     "comment_payload",
     "comment_publication_binding",
     "comment_thread",
+    "comments_display_account_id",
+    "configure_browsing",
+    "configure_messages",
     "control_policy",
     "control_starting",
     "corrected_caption",
     "create_feedback_publication",
+    "create_operator_dynamic_draft",
     "day_window",
     "decode_target_json",
     "dm_draft_source",
@@ -315,10 +441,13 @@ __all__ = [
     "dynamic_outgoing_payload",
     "dynamic_publication_binding",
     "dynamic_publication_images",
+    "dynamic_sources",
     "dynamic_valid_sources",
     "ensure_comment_timeline",
     "find_dynamic_edit",
+    "full_video_status",
     "get_attempt",
+    "get_dynamic_edit",
     "get_dynamic_post",
     "history",
     "history_scope",
@@ -326,8 +455,20 @@ __all__ = [
     "issue_history",
     "material_excerpt_state",
     "operation_status_snapshot",
+    "propose_dynamic_edit",
+    "queue_full_video",
+    "read_video_metadata",
+    "rebuild_comment_context",
     "reconcile_attempt",
     "reconcile_channel_draft",
     "reconcile_dynamic_post",
+    "requested_preview_row",
     "resource_key",
+    "restore_history_scope",
+    "run_preview_browse",
+    "set_browsing_enabled",
+    "set_dynamics_policy",
+    "stop_browsing",
+    "update_full_video",
+    "video_clip_adapter",
 ]

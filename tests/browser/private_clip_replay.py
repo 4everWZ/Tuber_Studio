@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import uvicorn
 
-from tuber_studio.agent.public_video import clip_path
+from tuber_studio.agent.tasks.public_video import clip_path
 from tuber_studio.app import create_app
 from tuber_studio.core.config import ROOT, Settings
 

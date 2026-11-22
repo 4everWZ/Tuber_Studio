@@ -10,7 +10,7 @@ from pathlib import Path
 import uvicorn
 
 from tests.support.operations_helpers import ControlledPlatform
-from tuber_studio.agent.task_runtime import TaskDecision
+from tuber_studio.agent.tasks.runtime import TaskDecision
 from tuber_studio.app import create_app
 from tuber_studio.core.models import Reply
 

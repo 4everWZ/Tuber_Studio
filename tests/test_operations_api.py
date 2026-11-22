@@ -17,7 +17,7 @@ class ReadOnlyPlatform:
 async def test_dynamic_frequency_and_channel_image_permissions_in_browser(settings):
     from playwright.async_api import async_playwright, expect
 
-    from evaluations.creative_browser import server
+    from evaluations.agent.creative_browser import server
 
     app = create_app(settings, ReadOnlyPlatform())
     async with server(app) as origin, async_playwright() as pw:

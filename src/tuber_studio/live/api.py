@@ -9,19 +9,18 @@ import time
 from pathlib import Path
 
 from fastapi import Body, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import Field
 
 from ..core.models import Event, StrictModel
 from ..infra.media.cache import CachePolicy
 from ..persona.characters.performance import performance
-from ..web_entry import web_page
 from .activity_filter import LivePoll
 from .avatar import LiveAvatar
+from .games.stardew_device import register_stardew_device
 from .media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
-from .online_songs import SongRequestSettings
+from .music.online_songs import SongRequestSettings
 from .options import LiveOptions
-from .stardew_device import register_stardew_device
 from .studio import room_feed
 
 
@@ -30,8 +29,21 @@ class ConfirmSong(StrictModel):
     number: int = Field(ge=1, le=20, strict=True)
 
 
-def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok, same_origin):
-    register_stardew_device(app, require_admin, runtime.tasks)
+def register_live_api(
+    app,
+    settings,
+    runtime,
+    require_admin,
+    admin_ok,
+    overlay_ok,
+    same_origin,
+    *,
+    web_page_renderer=None,
+    on_stardew_device=None,
+):
+    device = register_stardew_device(app, require_admin, on_device=on_stardew_device)
+    if getattr(runtime, "live_facade", None) is not None:
+        runtime.live_facade.attach_stardew_device(device)
     media, store = runtime.live.media, runtime.store
     avatar = LiveAvatar(settings)
 
@@ -98,7 +110,8 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
 
     @app.get("/live")
     async def workbench(request: Request):
-        return web_page(request, (Path(__file__).parents[1] / "web/live.html").read_text(encoding="utf-8"))
+        html = (Path(__file__).parents[1] / "web/live.html").read_text(encoding="utf-8")
+        return web_page_renderer(request, html) if web_page_renderer else HTMLResponse(html)
 
     @app.get("/api/live/view", dependencies=[Depends(require_view)])
     async def live_view(request: Request):

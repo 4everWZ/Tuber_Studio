@@ -10,8 +10,8 @@ import pytest
 from pydantic import ValidationError
 
 from tuber_studio.agent.memory_organizer import MemorySuggestion, OwnerUtterance
-from tuber_studio.agent.owner_memory import private_rows, read_stamp
-from tuber_studio.agent.private_editor_memory import connect_private_editor
+from tuber_studio.agent.memory_organizer.owner_memory import private_rows, read_stamp
+from tuber_studio.agent.memory_organizer.private_editor_memory import connect_private_editor
 from tuber_studio.app import create_app
 from tuber_studio.persona.memory.cooperation import (
     RoutineProposal,

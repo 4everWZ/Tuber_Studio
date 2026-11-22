@@ -4,7 +4,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from tuber_studio.agent.operator_chat import OperatorChat
+from tuber_studio.agent.chat import OperatorChat
 from tuber_studio.app import create_app
 from tuber_studio.core.identity import provider_identity_messages
 from tuber_studio.core.models import Reply, resident_character_profile

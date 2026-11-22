@@ -89,7 +89,7 @@ if __name__ == "__main__":
         stage_omni()
     else:
         log_config = deepcopy(LOGGING_CONFIG)
-        log_config["loggers"]["tuber_studio.agent.operator_chat"] = {
+        log_config["loggers"]["tuber_studio.agent.chat.service"] = {
             "handlers": ["default"], "level": "INFO", "propagate": False,
         }
         uvicorn.run(build_app, factory=True, host="0.0.0.0", port=9020, ws="wsproto", log_config=log_config)

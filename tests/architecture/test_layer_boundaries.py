@@ -107,35 +107,12 @@ LEGACY_ROOT_PENDING_M1 = frozenset(
 )
 
 # Explicit finite allowlist for pre-M3 un-migrated live/agent internals ONLY.
-# ZERO entries are allowed for core/, infra/, persona/, operations/, or agent -> operations.
-LEGACY_CROSS_ALLOWLIST = frozenset(
-    {
-        # M3 live -> agent / app_legacy
-        ("tuber_studio.live.api", "tuber_studio.web_entry"),
-        ("tuber_studio.live.stardew_tools", "tuber_studio.agent.task_runtime"),
-        # M3 agent -> live / app_legacy (pending live.facade / app M3 wiring)
-        ("tuber_studio.agent.private_call_guard", "tuber_studio.web_entry"),
-        ("tuber_studio.agent.task_tools", "tuber_studio.live.game_livestream"),
-        ("tuber_studio.agent.workshop_settings", "tuber_studio.live.media"),
-        ("tuber_studio.agent.workshop_settings", "tuber_studio.live.options"),
-    }
-)
+# Emptied in M3-A: ZERO exceptions remain across live/, agent/, or M1/M2.
+LEGACY_CROSS_ALLOWLIST: frozenset[tuple[str, str]] = frozenset()
 
 # Pre-M3 module-level cycles inside un-split live/agent internals only.
-LEGACY_L3_MODULE_CYCLE_ALLOWLIST = frozenset(
-    {
-        frozenset(
-            {
-                "tuber_studio.agent.clip_refinement",
-                "tuber_studio.agent.recall_memory",
-                "tuber_studio.agent.task_delegation",
-                "tuber_studio.agent.task_delivery",
-            }
-        ),
-        frozenset({"tuber_studio.live.media", "tuber_studio.live.singing"}),
-        frozenset({"tuber_studio.live.stardew_device", "tuber_studio.live.stardew_tools"}),
-    }
-)
+# Emptied in M3-A: all live/ and agent/ modules are strictly acyclic.
+LEGACY_L3_MODULE_CYCLE_ALLOWLIST: frozenset[frozenset[str]] = frozenset()
 
 PRE_M3_SUBPACKAGE_CYCLE_NODES = frozenset(
     {
@@ -633,6 +610,8 @@ def _subpackage_node(module: str, known_dirs: set[str], *, allow_m1_pending: boo
     if layer in {"infra", "persona"}:
         return ".".join(parts[:3]) if len(parts) >= 3 else f"{PACKAGE_NAME}.{layer}"
     if layer in {"operations", "live", "agent"}:
+        if module == f"{PACKAGE_NAME}.live.facade":
+            return module
         if len(parts) >= 3 and ".".join(parts[:3]) in known_dirs:
             return ".".join(parts[:3])
         return f"{PACKAGE_NAME}.{layer}"
@@ -800,15 +779,30 @@ def test_allowlists_are_strictly_bounded_to_m2_m3():
     assert not (LEGACY_ROOT_PENDING_M2_M3 & LEGACY_ROOT_PENDING_M1)
     assert not (LEGACY_ROOT_PENDING_M2_M3 & ROOT_ENTRYPOINT_FILES)
 
-    for src, dst in LEGACY_CROSS_ALLOWLIST:
-        src_top = src.split(".")[1]
-        assert src_top not in _M1_TARGET_SUBLAYERS, f"Forbidden M1 entry in LEGACY_CROSS_ALLOWLIST: {src}"
-        assert not src.startswith(f"{PACKAGE_NAME}.operations"), f"Forbidden M2 entry: {src}"
-        assert not dst.startswith(f"{PACKAGE_NAME}.operations"), f"Forbidden M2 target: {dst}"
+    assert len(LEGACY_CROSS_ALLOWLIST) == 0
+    assert len(LEGACY_L3_MODULE_CYCLE_ALLOWLIST) == 0
 
-    for comp in LEGACY_L3_MODULE_CYCLE_ALLOWLIST:
-        for mod in comp:
-            assert mod.split(".")[1] in {"live", "agent"}
+
+def check_l3_module_line_limits(src_pkg: Path, max_lines: int = 1000) -> list[str]:
+    """Verify every Python module under live/ and agent/ stays strictly below max_lines."""
+    violations: list[str] = []
+    for sub in ("live", "agent"):
+        root = src_pkg / sub
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            count = len(path.read_text(encoding="utf-8").splitlines())
+            if count >= max_lines:
+                rel_path = path.relative_to(src_pkg).as_posix()
+                violations.append(f"{rel_path}: {count} lines (must be < {max_lines})")
+    return violations
+
+
+def test_real_repo_live_and_agent_line_limits():
+    violations = check_l3_module_line_limits(SRC_ROOT)
+    assert not violations, "L3 line-count violations:\n" + "\n".join(violations)
 
 
 def test_real_repo_root_cleanliness():

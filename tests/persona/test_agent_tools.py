@@ -1,7 +1,7 @@
 import datetime
 
-from tuber_studio.live.draw_and_guess import DrawAndGuessService
-from tuber_studio.live.game_livestream import GameLivestreamService
+from tuber_studio.live.games.draw_and_guess import DrawAndGuessService
+from tuber_studio.live.games.game_livestream import GameLivestreamService
 from tuber_studio.persona.context.tools import (
     DrawAndGuessContextTool,
     HistoricalRecallTool,

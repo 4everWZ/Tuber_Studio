@@ -21,7 +21,7 @@ class OperationTurns:
     def __init__(self, lock, blocked):
         self.lock, self.blocked = lock, blocked
         self.queues = {lane: deque() for lane in ("direct", "priority", "background", "chat")}
-        self.last_was_chat = self.last_was_priority = False
+        self.last_was_priority = False
         self.direct_streak = 0
         self.changed = asyncio.Event()
         self.stats = {lane: {"calls": 0, "queue_seconds": 0.0, "max_queue_seconds": 0.0}
@@ -32,7 +32,7 @@ class OperationTurns:
         direct = self.queues["direct"]
         priority = self.queues["priority"]
         background = self.queues["background"]
-        if chat and not self.last_was_chat:
+        if chat:
             return chat[0]
         if direct and (self.direct_streak < 2 or not (priority or background)):
             return min(direct, key=lambda ticket: ticket.ready_at)
@@ -40,14 +40,12 @@ class OperationTurns:
             return priority[0]
         if background:
             return min(background, key=lambda ticket: ticket.ready_at)
-        return chat[0] if chat else None
+        return None
 
     async def acquire(self, lane, ready_at=None):
         now = monotonic()
         ticket = Ticket(lane, now if ready_at is None else ready_at, now)
         await self._acquire(ticket)
-        if lane == "chat":
-            self.last_was_chat = True
         return ticket
 
     async def _acquire(self, ticket):
@@ -103,7 +101,6 @@ class OperationTurns:
         sample["queue_seconds"] += elapsed
         sample["max_queue_seconds"] = max(sample["max_queue_seconds"], elapsed)
         if ticket.lane != "chat":
-            self.last_was_chat = False
             if ticket.lane == "direct":
                 self.direct_streak = min(self.direct_streak + 1, 2)
             else:

@@ -18,14 +18,12 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps
 
-from .agent.api import register_agent_api
-from .agent.operator_chat import register_operator_chat
-from .agent.private_avatar import register_private_avatar
-from .agent.private_call import register_private_call
-from .agent.private_call_work import register_call_work
-from .agent.reply_operations import register_reply_operations
-from .agent.task_api import register_task_api
-from .agent.task_tools import create_task_runtime
+from .agent.api import create_workbench_task_runtime as create_task_runtime
+from .agent.api import register_agent_api, register_owner_memory, register_task_api
+from .agent.chat import register_operator_chat
+from .agent.chat.lookup.reply_operations import register_reply_operations
+from .agent.tasks.tools import register_device_tools
+from .agent.voice import register_call_work, register_private_avatar, register_private_call
 from .core.auth import (
     COOKIE_MAX_AGE,
     COOKIE_NAME,
@@ -41,7 +39,7 @@ from .infra.inference.providers import public_error
 from .infra.inference.video_vision_service import configured_video_provider
 from .infra.platforms.bilibili.account import BilibiliAccount
 from .live.api import register_live_api
-from .live.media import MAX_UPLOAD
+from .live.facade import MAX_UPLOAD
 from .meme_api import MAX_REQUEST as MAX_MEME_REQUEST
 from .meme_api import register_meme_api
 from .message_api import register_message_api
@@ -246,6 +244,7 @@ def create_app(
         settings, store, runtime, comments, messages, dynamics, visual=visual, bilibili_account=account
     )
     runtime.browsing = browsing
+    runtime.visual_provider = visual
     runtime.tasks = create_task_runtime(runtime, store, browsing)
     login_attempts = {}
 
@@ -391,12 +390,28 @@ def create_app(
     web = Path(__file__).parent / "web"
     app.mount("/static", StaticFiles(directory=web), name="static")
     app.mount("/assets", StaticFiles(directory=settings.root / "assets"), name="assets")
-    register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok, same_origin)
+    register_live_api(
+        app,
+        settings,
+        runtime,
+        require_admin,
+        admin_ok,
+        overlay_ok,
+        same_origin,
+        web_page_renderer=web_page,
+        on_stardew_device=lambda device: (
+            runtime.live_facade.attach_stardew_device(device),
+            register_device_tools(runtime.tasks, runtime.live_facade),
+        ),
+    )
     register_agent_api(app, settings, runtime, store, comments, require_admin)
     operator_chat = register_operator_chat(app, runtime, store, browsing, dynamics, require_admin)
+    register_owner_memory(app, runtime, operator_chat, require_admin)
     register_private_call(app, runtime, require_admin, operator_chat=operator_chat)
     register_call_work(app, runtime, require_admin, operator_chat)
-    register_private_avatar(app, runtime, require_admin, operator_chat=operator_chat)
+    register_private_avatar(
+        app, runtime, require_admin, operator_chat=operator_chat, route_path_fn=route_path
+    )
     register_performance(app, runtime, require_admin)
     register_task_api(app, runtime.tasks, require_admin)
     register_reply_operations(app, runtime.tasks, comments, messages, require_admin)

@@ -4,7 +4,7 @@ import time
 import pytest
 
 from tuber_studio.agent.memory_organizer import MemorySuggestion
-from tuber_studio.agent.owner_memory import private_rows
+from tuber_studio.agent.memory_organizer.owner_memory import private_rows
 from tuber_studio.app import create_app
 from tuber_studio.core.config import ROOT
 from tuber_studio.persona.characters.background import front_background

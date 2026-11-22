@@ -16,13 +16,13 @@ from .core.retention import INTERVAL_SECONDS, RetentionManager
 from .core.store import character_card, dump
 from .core.text import operation_output_diagnostics
 from .core.turns import operation_lane, operation_ready_at, operation_ticket
-from .infra.inference.api_providers import create_llm, create_operation_llm
+from .infra.inference.api_providers import APIProvider, create_chat_llm, create_llm, create_operation_llm
 from .infra.inference.providers import VoiceService, public_error
 from .infra.inference.video_vision_service import restore_admission
 from .infra.media.cache import MediaCache
-from .live.scene import LiveScene
-from .live.session import HANDOFF_PLATFORM, LiveSession
+from .live.facade import HANDOFF_PLATFORM, LiveScene, LiveSession, create_live_facade
 from .operations.channels.attachments.images import OperationImages
+from .operations.facade import browsing_visual_provider, business_timezone
 from .operations.kernel.continuations import ContinuationCoordinator
 from .operations.kernel.control import OperationsControl
 from .operations.kernel.generation import generate_with_recovery, hold_comment_body, reply_generation_binding
@@ -64,8 +64,14 @@ class Runtime:
             store, self.operations, parent_repository=self.browsing_repository
         )
         self.relationships = Relationships(store)
+        self._chat_llm_explicit = False
+        self._default_chat_llm_tracking = False
         self.llm = create_llm(settings)
+        self.chat_llm = create_chat_llm(settings)
         self.operation_llm = create_operation_llm(settings)
+        self._default_llm = self.llm
+        self._default_chat_llm = self.chat_llm
+        self._default_chat_llm_tracking = True
         self.voices = VoiceService(settings)
         self.daily_memory = DailyMemoryService(store)
         self.memory_organizer = MemoryOrganizer(self)
@@ -73,12 +79,10 @@ class Runtime:
             self,
             singing_provider=singing_provider,
             live_scene=live_scene,
-            timezone_provider=lambda: (
-                getattr(self, "browsing", None).policy()["business_timezone"]
-                if getattr(self, "browsing", None)
-                else "Asia/Taipei"
-            ),
+            timezone_provider=lambda: business_timezone(getattr(self, "browsing", None)),
         )
+        self.live_facade = create_live_facade(self.live)
+        self.visual_provider = None
         self.tool_registry = build_default_tool_registry(
             daily_memory=self.daily_memory,
             game_livestream=self.live.game_livestream,
@@ -134,6 +138,58 @@ class Runtime:
     def llm(self, provider):
         self._llm = provider
         provider.identity_resolver = self.identity_snapshot
+
+    @property
+    def chat_llm(self):
+        return self._chat_llm
+
+    @chat_llm.setter
+    def chat_llm(self, provider):
+        self._chat_llm = provider
+        provider.identity_resolver = self.identity_snapshot
+        if getattr(self, "_default_chat_llm_tracking", True):
+            self._chat_llm_explicit = True
+
+    def replace_providers(self, *, llm=None, chat_llm=None, operation_llm=None):
+        self._default_chat_llm_tracking = False
+        try:
+            if llm is not None:
+                self.llm = llm
+                self._default_llm = llm
+            if chat_llm is not None:
+                self.chat_llm = chat_llm
+                self._default_chat_llm = chat_llm
+                self._chat_llm_explicit = False
+            if operation_llm is not None:
+                self.operation_llm = operation_llm
+        finally:
+            self._default_chat_llm_tracking = True
+
+    def foreground_chat_llm(self):
+        patched = (
+            "generate",
+            "generate_json",
+            "generate_assistant_json",
+            "generate_operator_json",
+            "generate_text_stream",
+            "uses_model_card",
+            "capacity_window",
+        )
+        chat_dict = getattr(self.chat_llm, "__dict__", {})
+        if (
+            self._chat_llm_explicit
+            or self.chat_llm is not self._default_chat_llm
+            or any(key in chat_dict for key in ("client", *patched))
+        ):
+            return self.chat_llm
+        llm_dict = getattr(self.llm, "__dict__", {})
+        if (
+            not isinstance(self.llm, APIProvider)
+            or self.llm is not self._default_llm
+            or any(key in llm_dict for key in patched)
+        ):
+            return self.llm
+        return self.chat_llm
 
     @property
     def operation_llm(self):
@@ -262,6 +318,17 @@ class Runtime:
             operation_ticket.reset(token)
             self.operation_turns.release(ticket)
 
+    @asynccontextmanager
+    async def chat_text_generation(self):
+        ticket = await self.operation_turns.acquire("chat")
+        token = operation_ticket.set((self.operation_turns, ticket))
+        try:
+            async with self.operator_generation():
+                yield
+        finally:
+            operation_ticket.reset(token)
+            self.operation_turns.release(ticket)
+
     def operator_generation(self):
         return self.generation_lock
 
@@ -329,6 +396,7 @@ class Runtime:
         await self.live.online_songs.close()
         await self.live.stop_worker()
         await self.llm.close()
+        await self.chat_llm.close()
         await self.operation_llm.close()
         await self.live.media.singing.close()
         await self.voices.close()
@@ -540,7 +608,7 @@ class Runtime:
             )
             reply = None
             if isinstance(scene, LiveScene) and scene.current(self.live.session_id):
-                visual = self.browsing.visual_provider
+                visual = browsing_visual_provider(getattr(self, "browsing", None), self)
                 scene_reply = getattr(visual, "generate_live_reply", None)
                 if scene.image and scene_reply:
                     reply = await scene_reply(scene, messages, self.settings.data["omni"], event["event_id"])

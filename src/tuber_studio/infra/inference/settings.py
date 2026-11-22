@@ -5,7 +5,7 @@ import copy
 
 from ...core.config import omni_base
 from ...core.validation import validate_api_key
-from .api_providers import create_llm, create_operation_llm
+from .api_providers import create_chat_llm, create_llm, create_operation_llm
 from .providers import VoiceService
 from .video_vision import ApiVideoEvidenceProvider
 
@@ -110,6 +110,8 @@ async def apply_settings(runtime, body):
         try:
             llm = create_llm(staged)
             created.append(llm)
+            chat_llm = create_chat_llm(staged)
+            created.append(chat_llm)
             operation_llm = create_operation_llm(staged)
             created.append(operation_llm)
             voices = VoiceService(staged)
@@ -127,11 +129,16 @@ async def apply_settings(runtime, body):
             await _settle_cleanup(_close_clients(created))
             raise
         old_clients = [runtime.llm, runtime.operation_llm, runtime.voices]
+        if getattr(runtime, "chat_llm", None) is not None:
+            old_clients.append(runtime.chat_llm)
         settings.data, settings.provider_keys = data, staged.provider_keys
-        runtime.llm, runtime.voices = llm, voices
+        if callable(getattr(runtime, "replace_providers", None)):
+            runtime.replace_providers(llm=llm, chat_llm=chat_llm, operation_llm=operation_llm)
+        else:
+            runtime.llm, runtime.chat_llm, runtime.operation_llm = llm, chat_llm, operation_llm
+        runtime.voices = voices
         runtime.context.provider = llm
         runtime.schedule_connection_probe()
-        runtime.operation_llm = operation_llm
         runtime.error = None
         if video is not None:
             old_clients.append(runtime.browsing.replace_visual_provider(video))

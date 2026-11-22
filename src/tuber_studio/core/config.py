@@ -31,6 +31,16 @@ def responses_profile(omni):
             "model": omni["responses_model"]}
 
 
+def chat_profile(omni):
+    """Foreground text chat shares the fast 9B model on /llm/v1 with thinking disabled."""
+    profile = responses_profile(omni)
+    return omni | {
+        "base_url": profile["base_url"],
+        "model": profile["model"],
+        "enable_thinking": False,
+    }
+
+
 def operation_profile(omni):
     """Operational decisions share the background text engine and gateway credential."""
     profile = responses_profile(omni)

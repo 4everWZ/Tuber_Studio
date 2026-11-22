@@ -7,7 +7,7 @@ import httpx
 import pytest
 from playwright.async_api import async_playwright
 
-from tuber_studio.agent import private_browser
+from tuber_studio.agent.creative import private_browser
 from tuber_studio.app import create_app
 from tuber_studio.infra.inference.responses_provider import FunctionCall, ResponseTurn
 

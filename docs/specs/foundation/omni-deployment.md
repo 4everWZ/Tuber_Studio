@@ -7,9 +7,9 @@ Core 使用一个外部 Omni 网关和按该地址授权的普通应用凭据。
 | 能力 | Tuber Studio 用法 |
 | --- | --- |
 | 健康与模型发现 | 通过 `GET /healthz` 和 `GET /v1/models` 核对健康与模型，使用配置的别名及模型卡实报的 `max_model_len`。实际模型、版本、窗口和可用模态在设置与诊断可查。 |
-| 前台交互 | 号主对话、电话和实时播报使用 Omni（8,192 窗口）及其对应接口。前台文字经 `/v1/chat/completions` 运行极薄对话与转述（流式生成关闭思考 `enable_thinking=False`，保留参数覆写能力；移除 `WorkLifecycle oneOf` 与复杂工具目录，仅注入角色卡、近期自然对话、极简任务摘要卡与就绪记忆；流式接话、异步受理承接语与 `DeliveryPacket` 角色化转述），计量与模型卡取自同一路径。 |
-| 运营文本生成 | 选片、已取材内容判断、评论／私信／动态的拟稿、校验修订及后台文本编辑使用后台别名，经 `/llm/v1/chat/completions` 生成。按该引擎的模型卡和 `/llm/v1/chat/prompt_tokens` 计量完整输入，预留本次输出。使用直接 JSON Schema 输出，字段校验和工具权限由业务端执行。 |
-| 后台任务 | 同网关的 `POST /llm/v1/responses` 承接两类工作：(1) `turn_router` 在 `OperationTurns` 最高优 `"chat"` 车道上以 `parallel_tool_calls=False`、`temperature=0.0`、`store=False` 统一执行 Chats 7 路分流与多轮指代消歧（`route_chat_turn` 原生多轮 `recent_dialogue`，有界思考 `max_output_tokens=640`、`thinking_budget_tokens=160`）以及 `omni.asr.v1` 语音指令分流（`route_voice_utterance` `thinking=False`、`max_output_tokens=256`），并在前台生成前释放车道；(2) 后台长文、带时码的图片输入与多步工具调用，工坊按 `call_id` 续交实际工具结果。 |
+| 前台文字与表达 | 号主 Chats、受理承接语与 `DeliveryPacket` 角色化转述使用与后台共用的文本模型 `chat_profile(omni)`（`llm-default` 别名，经 `/llm/v1/chat/completions` 流式运行，`enable_thinking=False` 并保留参数覆写能力），挂在 `OperationTurns` 最高优 `"chat"` 车道（`chat_text_generation()`）且与 Omni 解耦。 |
+| 后台任务 | 同网关的 `POST /llm/v1/responses` 承接两类工作：(1) `turn_router` 在 `OperationTurns` 最高优 `"chat"` 车道上以 `parallel_tool_calls=False`、`temperature=0.0`、`store=False` 统一执行 Chats 7 路分流与多轮指代消歧（`route_chat_turn` 原生多轮 `recent_dialogue`，有界思考 `max_output_tokens=640`、`thinking_budget_tokens=160`）以及 `omni.asr.v1` 语音指令分流（`route_voice_utterance` `thinking=False`、`max_output_tokens=256`），并在前台生成前释放车道；(2) 后台长文、带时码的图片输入与多步工具调用，工坊先持久化 `task_id` 再回发前台受理，按 `call_id` 续交实际工具结果。 |
+| 实时语音与播报 | Omni（`omni-default`，8,192 窗口）仅负责私有电话与实时音频/播报交互（Realtime 双工听、说、打断）及通过共享 `runtime.tasks`（`delegate`）转交后台，不与文字 Chats 共享原始通话转录历史。 |
 | 参考朗读 | `POST /v1/audio/speech` 接收指定台词、模型别名与授权参考音频。工坊核对原文和可播放的音频，记录实际播完。[声音与缓存](models-and-audio.md) |
 | 运营配图 | `POST /v1/images/jobs` 提交内联的角色参考与场景。按服务回包排队，完成后持久保存校验过的 PNG，渠道通过工件 ID 读取。[配图任务契约](../operations/generated-images.md) |
 | 原生双工 | Core 向 `POST /v1/browser-tickets` 换取限定路径的一次性票据。浏览器连接 `/v1/realtime?duplex=1`，按实际协商处理语音、打断和播放确认。应用凭据留在业务端。 |
@@ -18,7 +18,7 @@ Core 使用一个外部 Omni 网关和按该地址授权的普通应用凭据。
 
 后台读帧使用 `llm-default` 的 Responses 图片输入。工坊沿原样本分 P、时码和来源保存观察，后台以视频资料和可用字幕辅助理解。后台自动整理记忆使用同一后台模型，按已核验原话写入原有记忆库。前台和后台各自等待推理，网关分别控制实际容量。运营同楼、同会话和提交顺序继续由工坊控制。
 
-后台文本、视频读帧、`route_chat_turn` 路由及 Responses 委派均启用受控思考：一般后台任务思考额度最多为输出上限的四分之一且不超过 1024 tokens；`route_chat_turn` 对话路由（`640 / 160`）、视频取材逐帧观察（`128` tokens）使用各自有界预算，语音分流（`256`）与前台 `omni-default` 流式接话关闭思考，保留主输出额度给工具调用或可见交付。触发输出预算上限（`InferenceBudgetExceeded`）时，网关客户端仅记录脱敏预算诊断（`max_output_tokens`、`output_tokens`、`reasoning_tokens`，不落提示词或凭据），并保留既有检查点与用户可读提示。
+后台文本、视频读帧、`route_chat_turn` 路由及 Responses 委派均启用受控思考：一般后台任务思考额度最多为输出上限的四分之一且不超过 1024 tokens；`route_chat_turn` 对话路由（`640 / 160`）、视频取材逐帧观察（`128` tokens）使用各自有界预算，语音分流（`256`）与前台 `llm-default`（`chat_profile`）流式文字接话默认关闭思考（`enable_thinking=False`），保留主输出额度给工具调用或可见交付。触发输出预算上限（`InferenceBudgetExceeded`）时，网关客户端仅记录脱敏预算诊断（`max_output_tokens`、`output_tokens`、`reasoning_tokens`，不落提示词或凭据），并保留既有检查点与用户可读提示。
 
 ## 私有电话与直播回执
 

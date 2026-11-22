@@ -4,11 +4,11 @@
 
 ## Chats 的事实、工具与对象
 
-已认证号主可以用自然语言查询工坊事实、执行获准操作或交办。Chats 与 `omni.asr.v1` 签名的语音通话采用双脑协作与严格单向分层结构（`chat_models` L0 → `chat_context` L2 → `front_dialogue` L2a / `turn_router` L2b / `capability_dispatcher` L3 → `chat_transport` L1 → `operator_chat` 薄装配门面）：
+已认证号主可以用自然语言查询工坊事实、执行获准操作或交办。Chats 与 `omni.asr.v1` 签名的语音通话采用角色分工与严格单向分层结构（`chat/{models,context,front_dialogue,router/*,dispatcher/*,transport,service}`、`voice/*` 与 `tasks/*`）：
 
-- **后台路由脑（`llm-default / Responses`，`turn_router.py`）：** 在 `OperationTurns` 最高优 `"chat"` 车道上使用平坦 7 路工具（`chat` / `delegate_task` / `instant_read` / `direct_action` / `steer_task` / `prepare_publication` / `clarify`，配合 `temperature=0.0`、`parallel_tool_calls=False` 与原生多轮 `recent_dialogue`）统一承接文字分流、多轮指代消歧与语音指令分流；结合最近对话与编号候选清单，单数模糊指代（「那条」「那个」）跨越同类多候选且未唯一点名时返回 `clarify`（换题时自动忽略上轮 `clarification`），禁止猜选或全选；前文绑定视频或历史对象时不裁剪 `prepare_publication` 等核心路由工具；并在进入前台生成前释放 `"chat"` 车道。
-- **前台表达脑（`omni-default`，`front_dialogue.py`）：** 移除 `WorkLifecycle` 多路 `oneOf` Schema 与完整工具目录，仅注入角色卡、近期自然对话、极简活跃交办摘要卡与少量就绪记忆；专注纯文字流式接话、本地钟点读数承接、异步立项受理承接语，以及把后台产出的标准化 `DeliveryPacket` 用角色口吻转述（不阻塞前台继续闲聊）。
-- **执行与推流层（`capability_dispatcher.py`、`chat_transport.py`）：** 校验授权、作用域、记忆撤销与任务版本后执行即时读取／控制／立项，通过 `/api/chat/intelligent/stream` 流式返回当前轮次，并通过 `GET /api/chat/intelligent/events` 主动推送后台完成或待审批回执。钟点与日期取工坊本地时钟。即时工具按当前原话和可见对象执行；写入另核对目标、权限和当前版本。
+- **后台路由脑（`llm-default / Responses`，`agent/chat/router/`）：** 在 `OperationTurns` 最高优 `"chat"` 车道（对排队的 `"chat"` 严格抢占所有运营后台车道）上使用平坦 7 路工具（`chat` / `delegate_task` / `instant_read` / `direct_action` / `steer_task` / `prepare_publication` / `clarify`，配合 `temperature=0.0`、`parallel_tool_calls=False` 与原生多轮 `recent_dialogue`）统一承接文字分流、多轮指代消歧与语音指令分流；结合最近对话与编号候选清单，单数模糊指代（「那条」「那个」）跨越同类多候选且未唯一点名时返回 `clarify`（换题时自动忽略上轮 `clarification`），禁止猜选或全选；前文绑定视频或历史对象时不裁剪 `prepare_publication` 等核心路由工具；并在进入前台生成前释放 `"chat"` 路由车道。
+- **前台文字表达与 Omni 语音分工（`agent/chat/front_dialogue.py`、`agent/voice/`）：** Chats 前台文字接话、受理承接语与 `DeliveryPacket` 转述通过 `chat_profile(omni)` 运行在 `llm-default`（`/llm/v1/chat/completions`，`enable_thinking=False`）最高优 `"chat"` 车道（`chat_text_generation()`）上，彻底与 Omni 音频生成解耦；`omni-default` 仅用于 `agent/voice/` 私有语音通话（听、说、打断），通过同一套 `runtime.tasks` 交办与共享摘要协同工作，挂断后后台任务继续推进，但不向文字 Chats 泄露原始通话转录全文。
+- **执行与推流层（`agent/chat/dispatcher/`、`agent/chat/transport.py`）：** `delegate_task` 须先在 `runtime.tasks` 落盘并获得真实 `task_id` 后才发送前台「已开始」承接语；校验授权、作用域、记忆撤销与任务版本后执行即时读取／控制／立项，通过 `/api/chat/intelligent/stream` 流式返回当前轮次，并通过 `GET /api/chat/intelligent/events` 主动推送后台完成或待审批回执，后台中间工具日志不灌入文字聊天上下文。钟点与日期取工坊本地时钟。即时工具按当前原话和可见对象执行；写入另核对目标、权限和当前版本。
 
 观看统计、已读视频及片段、公开评论和动态记录通过 `workshop_lookup` 接入 Chats 与后台任务。业务日以工坊时区为准，观看数按 BV 去重，分别读回已取得内容、完整覆盖和正在读取。统计用观看账本与已保存结果，具体内容回到字幕、转写、采样画面或评论原文。标题相同时保留 BV 与作者供选，链接由真实 BV、分 P、时码或平台编号生成。动态草稿可以查阅，发布状态和链接来自已确认的提交记录。后台从聊天接手时，已关联的材料可按当前授权重新读取，并把这次读取作为任务证据保存。
 
@@ -37,9 +37,9 @@
 
 从普通私聊验收这些能力时，输入号主原话，核对本轮选中的工具和实际回执。换表情须由聊天页解码显示选中的素材；改日常设置须从业务工作区独立读回，并核对其余字段。继续后台交办时，核对同一任务 ID、新修订和实际工具回执。按任务、修订与版次读回交付正文，逐项比对最新要求和已查实的结果。任务状态与正文是否合格分别记录。
 
-未登录者自称号主、一次变更混入受限字段、后台委派提出目录外操作，都须核对受保护状态。混合变更整笔拒绝；答复须说明未完成的操作。回放使用空业务目录和普通网关应用凭据，平台写入为零。[浏览器回放](../../../evaluations/front_tool_acceptance.py) · [权限与回执测试](../../../tests/test_front_tool_boundaries.py)
+未登录者自称号主、一次变更混入受限字段、后台委派提出目录外操作，都须核对受保护状态。混合变更整笔拒绝；答复须说明未完成的操作。回放使用空业务目录和普通网关应用凭据，平台写入为零。[浏览器回放](../../../evaluations/agent/front_tool_acceptance.py) · [权限与回执测试](../../../tests/agent/test_front_tool_boundaries.py)
 
-工作站侧用 `OMNI_GATEWAY_URL` 和 `OMNI_CORE_TOKEN_FILE` 启动 `python -m evaluations.front_tool_acceptance serve`。它创建临时业务目录。浏览器侧把该实例的端口转发到回环地址，执行 `uv run --locked python -m evaluations.front_tool_acceptance check --port 9029 --browser msedge`。两端共用仅此次有效的 `REPLAY_LOGIN`；网关应用凭据只在服务端读取。各用例从独立的私聊历史开始，同一任务的交办与改口连续发送。离线权限回归执行 `uv run --locked pytest tests/test_front_tool_boundaries.py`。
+工作站侧用 `OMNI_GATEWAY_URL` 和 `OMNI_CORE_TOKEN_FILE` 启动 `python -m evaluations.agent.front_tool_acceptance serve`。它创建临时业务目录。浏览器侧把该实例的端口转发到回环地址，执行 `uv run --locked python -m evaluations.agent.front_tool_acceptance check --port 9029 --browser msedge`。两端共用仅此次有效的 `REPLAY_LOGIN`；网关应用凭据只在服务端读取。各用例从独立的私聊历史开始，同一任务的交办与改口连续发送。离线权限回归执行 `uv run --locked pytest tests/agent/test_front_tool_boundaries.py`。
 
 ## 用户体验
 
@@ -51,7 +51,7 @@
 
 号主在桌面和手机工作台接续同一个 Agent 的聊天或任务，可以闲聊、提问、交代一份工作、中途改要求、打开活动看进度或叫停。Agent 能接住当前话题、回忆相关信息、查资料、动用获准工具并交付结果。大肥鱼接入后沿用同一套交互。视频、直播和游戏各有自己的场景与控制入口，任务、可用经历和状态经业务主机接续。
 
-普通聊天由前台 `omni-default` 纯文字流式接话。需要事实时，`turn_router` 按当前对象与最近上下文路由到对应读取动作或后台任务，回复与转述均以 `DeliveryPacket` 中的实际回执为准。暂时读不到时指出具体对象，需要补充或消歧时由 `clarify` 问缺的那项。耗时工作先由 `delegate_task` 异步立项并返回自然承接语，号主可继续闲聊。聊天交办需要决定、完成或失败时，经 `/api/chat/intelligent/events` 与原对话同步，也可从私有活动打开。公开发声使用场景自身的权限、时限和交付回执。角色语气和日常表达沿用角色卡。
+普通聊天由 `chat_llm`（`llm-default`，`enable_thinking=False`）纯文字流式接话。需要事实时，`router` 按当前对象与最近上下文路由到对应读取动作或后台任务，回复与转述均以 `DeliveryPacket` 中的实际回执为准。暂时读不到时指出具体对象，需要补充或消歧时由 `clarify` 问缺的那项。耗时工作先由 `delegate_task` 持久化 `task_id` 后再返回自然承接语，号主可继续闲聊。聊天交办需要决定、完成或失败时，经 `/api/chat/intelligent/events` 与原对话同步，也可从私有活动打开。公开发声使用场景自身的权限、时限和交付回执。角色语气和日常表达沿用角色卡。
 
 普通私有通话使用网关以 `omni.asr.v1` 签名的最终来话转写，与文字 Chats 共用同一后台 `turn_router` 路由。明确语音交办使用 Chats 的任务入口，任务和原对话回执绑定通话及话轮。同一次来话重送返回原回执。语音改口和停止只绑定本次通话中能明确指向的任务。通话可以继续双工接话，分流器只决定交办动作。需要决定、待核对与最终结果通过新消息与推送事件回到原对话，挂断后可查看。同一任务修订和实质结果只显示对应的交付。清空私聊后，已有工作继续在活动区交付。通话内选朗读时，独立朗读使用当前角色音色，并在播放前复核任务版本和授权。临时通话保持只聊。
 
@@ -95,7 +95,7 @@ Dots 的持续运行和跨入口接续对应工坊同一份任务、活动和版
 | 工具调用 | 调用 ID、工具与参数、对应任务、授权及前置状态、尝试、结果或待核对状态。涉及外部动作时先持久化执行意图，再交给适配器，并以适配器的实际结果推进。 |
 | 计划与通知 | 一次／周期／事件触发条件、时区、可执行渠道、暂停／撤销、最近及下次触发、重复和失效处理。通知带任务或来源链接，去重后发给获准的受众。 |
 
-每轮交互先由后台 `turn_router` 判断直接聊天或执行动作，再分派给前台接话或领域执行器。自然接话由前台 `omni-default` 读取角色卡和获准私聊历史流式生成正文。号主问到当前钟点、日期或星期时，工坊按业务时区补上所问的准确值。旧钟点回复保留在聊天历史。工具路径才打开对应领域或已绑定的引用，领域工具在 `capability_dispatcher` 中验证授权后读取或执行，产出标准化 `DeliveryPacket` 后交由前台角色化转述（直接涉及作用域或设置确权的状态按执行回执原文展示）。长任务带入目标、相关材料、约束和交付标准。JSON、SSE 和通话文字共用路由、执行、推流与持久化入口。显式工具与快捷操作走同一执行边界。
+每轮交互先由后台 `router` 判断直接聊天或执行动作，再分派给前台文字接话或领域执行器。自然接话由 `chat_llm`（`llm-default`，`enable_thinking=False`）读取角色卡和获准私聊历史流式生成正文。号主问到当前钟点、日期或星期时，工坊按业务时区补上所问的准确值。旧钟点回复保留在聊天历史。工具路径才打开对应领域或已绑定的引用，领域工具在 `dispatcher` 中验证授权后读取或执行，产出标准化 `DeliveryPacket` 后交由前台角色化转述（直接涉及作用域或设置确权的状态按执行回执原文展示）。长任务带入目标、相关材料、约束和交付标准。JSON、SSE 和通话文字共用路由、执行、推流与持久化入口。显式工具与快捷操作走同一执行边界。
 
 已明确能力和动作而尚未指出单项对象时，支持选择的领域或 `turn_router` 消歧分支可先列出当前获准候选供选择。动态发布交办与原消息一起保存，锁定当前账号、角色版本及已有草稿。执行层在原对话展示可展开的正文、配图、目标账号和确认按钮。确认携带当前步骤、任务修订与所选草稿编号；窗口十五分钟后失效，已发生变更的稿件单独重新确认。评论和私信队列打开各自的审核入口。
 
@@ -138,8 +138,8 @@ Dots 的持续运行和跨入口接续对应工坊同一份任务、活动和版
 
 ### 任务怎样落到现有 API
 
-1. **入口和持久状态。** 沿用 Chats 的 `POST /api/chat/intelligent/stream`、`GET /api/chat/intelligent/events` 和 `POST /api/agent/tasks`。保留 `request_id`、自然语言 `goal`、现有一次预约 `run_at`，并在业务侧把本次修订解析成可检查的对象选择、操作约束及完成条件。先保存再执行，相同请求重发查询原任务。新结构作为兼容扩展，由旧 Chats、活动页、其他客户端共用。 [Chats 门面](../../../src/tuber_studio/agent/operator_chat.py) · [后台路由](../../../src/tuber_studio/agent/turn_router.py) · [推流传输](../../../src/tuber_studio/agent/chat_transport.py) · [任务接口](../../../src/tuber_studio/agent/task_api.py)
-2. **能力选择与授权。** 业务端从当前主体获准的连接、设备及领域服务构造工具目录，按此任务的读取、草稿、写入和受众缩小可见能力。模型从目录规划并提出结构化参数。选择集合、限额、顺序、条件与权限由业务程序验证。通用 Agent 通过适配器内部服务方法执行，沿用原账号围栏、调度和事务。`/v1/chat/completions` 或按能力协商的 Realtime 只负责推理。浏览器和代码执行在获准环境内使用，平台支持的受管发送由领域接口办理。 [现有工具注册](../../../src/tuber_studio/agent/task_tools.py) · [部署接口](omni-deployment.md#首版协议与-provider-边界)
+1. **入口和持久状态。** 沿用 Chats 的 `POST /api/chat/intelligent/stream`、`GET /api/chat/intelligent/events` 和 `POST /api/agent/tasks`。保留 `request_id`、自然语言 `goal`、现有一次预约 `run_at`，并在业务侧把本次修订解析成可检查的对象选择、操作约束及完成条件。先保存再执行，相同请求重发查询原任务。新结构作为兼容扩展，由旧 Chats、活动页、其他客户端共用。 [Chats 门面](../../../src/tuber_studio/agent/chat/service.py) · [后台路由](../../../src/tuber_studio/agent/chat/router/__init__.py) · [推流传输](../../../src/tuber_studio/agent/chat/transport.py) · [任务接口](../../../src/tuber_studio/agent/api/tasks.py)
+2. **能力选择与授权。** 业务端从当前主体获准的连接、设备及领域服务构造工具目录，按此任务的读取、草稿、写入和受众缩小可见能力。模型从目录规划并提出结构化参数。选择集合、限额、顺序、条件与权限由业务程序验证。通用 Agent 通过适配器内部服务方法执行，沿用原账号围栏、调度和事务。`/llm/v1/chat/completions`、`/llm/v1/responses` 或按能力协商的语音 Realtime 只负责推理。浏览器和代码执行在获准环境内使用，平台支持的受管发送由领域接口办理。 [现有工具注册](../../../src/tuber_studio/agent/tasks/tools/__init__.py) · [部署接口](omni-deployment.md#首版协议与-provider-边界)
 3. **准备与执行。** 查询返回带游标的候选、来源和覆盖。准备动作固定对象与正文或参数版本，返回草稿、可审阅的动作或等待状态。需要审批时沿用 `PATCH /api/agent/tasks/{identity}` 的 `revision`、`action` 和 `step_id` 控制，域内审批仍按既有规则提交。执行前重新读取身份、授权、对象状态和去重回执。提交意图先落盘，每一步有稳定幂等键。写入结果由领域服务确认，未知提交只核对原记录。 [任务与恢复](#常驻任务与恢复) · [运营事务与回执](../operations/operation-continuations.md)
 4. **中途控制与可见反馈。** 用同一个任务 ID 跟踪子步骤、委派、外部动作、产物和交付。用户可以缩小对象范围、停止待办、补材料、变更通知和接管需要人工完成的动作。区分等待输入、权限、执行资源、平台核对、部分完成和失败。活动页能展开原始回执，展示实际读取、选中、跳过、起草和成功的对象。回到另一台设备接同一进度。项目和单次任务过程材料按作用域保留，共享记忆只吸收有来源、获准且适合跨场景使用的内容。
 
