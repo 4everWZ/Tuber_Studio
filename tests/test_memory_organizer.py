@@ -255,7 +255,9 @@ class OrganizerModel:
 async def test_queued_private_chat_correction_preserves_both_turns_and_versions(settings):
     class ChatProvider(OrganizerModel):
         async def generate_assistant_json(self, messages, schema, **kwargs):
-            return {"action": "chat", "reply_markdown": "好，我们接着聊。"}
+            if schema.get("title") == "TurnRoute":
+                return {"route": "chat", "action": "chat"}
+            return {"reply_markdown": "好，我们接着聊。"}
 
     app = create_app(settings)
     runtime = app.state.runtime
@@ -406,7 +408,9 @@ async def test_shared_memory_keeps_owner_correction_after_two_client_restart(set
             return await super().generate_json(messages, schema, max_tokens=max_tokens)
 
         async def generate_assistant_json(self, messages, schema, *, max_tokens, on_content, on_stage):
-            return {"action": "chat", "reply_markdown": false_reply}
+            if schema.get("title") == "TurnRoute":
+                return {"route": "chat", "action": "chat"}
+            return {"reply_markdown": false_reply}
 
     def new_app():
         app = create_app(settings)
@@ -487,8 +491,10 @@ async def test_bound_collaboration_preference_can_be_corrected_across_bindings(s
     discovery.remember_account("100")
     initial_scope = organizer.scope()
 
-    async def chat(*args, **kwargs):
-        return {"action": "chat", "reply_markdown": "记下了。"}
+    async def chat(messages, schema, *args, **kwargs):
+        if schema.get("title") == "TurnRoute":
+            return {"route": "chat", "action": "chat"}
+        return {"reply_markdown": "记下了。"}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", chat, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:

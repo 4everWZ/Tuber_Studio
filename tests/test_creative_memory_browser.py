@@ -355,7 +355,9 @@ async def test_chat_memory_migration_in_chromium(settings, monkeypatch):
             return getattr(base, name)
 
         async def generate_assistant_json(self, messages, schema, **options):
-            return {"action": "chat", "reply_markdown": "好的，我会按这个格式写标题。"}
+            if schema.get("title") == "TurnRoute":
+                return {"route": "chat", "action": "chat"}
+            return {"reply_markdown": "好的，我会按这个格式写标题。"}
 
         async def generate_json(self, messages, schema, **options):
             title = schema["title"]

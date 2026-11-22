@@ -63,13 +63,17 @@ async def test_chat_and_dynamic_use_same_older_sources_after_scoped_search(studi
         return ResponseTurn("fixture", (tool,), "", {})
 
     async def omni(messages, schema, **kwargs):
-        frontend.append(dump(messages))
-        if schema["properties"]["action"]["enum"] == ["chat"]:
-            assert frontend[-1].count(ORIGINAL) == 1
-            return {"action": "chat", "reply_markdown": "当时确实有这条评论。"}
-        if messages[-1]["content"] == "今天好困":
-            return {"action": "chat", "reply_markdown": "歇一会吧。"}
-        return {"action": NAME, "recall": {"topic": "鲸鱼"}}
+        if schema.get("title") == "FrontDialogueReply":
+            frontend.append(dump(messages))
+            if "已经取得的读取回执" in dump(messages):
+                assert frontend[-1].count(ORIGINAL) == 1
+                return {"reply_markdown": "当时确实有这条评论。"}
+            return {"reply_markdown": "歇一会吧。"}
+        assert schema.get("title") == "TurnRoute"
+        payload = json.loads(messages[-1]["content"])
+        if payload["message"] == "今天好困":
+            return {"route": "chat", "action": "chat"}
+        return {"route": "instant_read", "action": NAME, "recall": {"topic": "鲸鱼"}}
 
     async def decide(messages, schema, **kwargs):
         packet = json.loads(messages[1]["content"])
@@ -115,9 +119,9 @@ async def test_private_preference_only_resolves_in_owner_chat_and_revokes(studio
         return ResponseTurn("fixture", (call,), "", {})
 
     async def omni(messages, schema, **kwargs):
-        if schema["properties"]["action"]["enum"] == ["chat"]:
-            return {"action": "chat", "reply_markdown": text}
-        return {"action": NAME, "recall": {"source_id": key}}
+        if schema.get("title") == "FrontDialogueReply":
+            return {"reply_markdown": text}
+        return {"route": "instant_read", "action": NAME, "recall": {"source_id": key}}
 
     monkeypatch.setattr(runtime.tasks, "responses_client", lambda: respond)
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", omni, raising=False)
@@ -149,7 +153,7 @@ async def test_slow_recall_continues_with_parallel_reads_and_delivers_once(studi
     seed_history(runtime)
 
     async def route(*args, **kwargs):
-        return {"action": NAME, "recall": {"topic": "鲸鱼"}}
+        return {"route": "instant_read", "action": NAME, "recall": {"topic": "鲸鱼"}}
 
     collect = RecallSession.collect
 

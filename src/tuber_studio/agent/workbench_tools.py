@@ -24,6 +24,7 @@ _CONTROL_OPERATION = re.compile(
     r"关[闭掉]?|打开|开启|启用|禁用|停用|切换|解绑|绑定|设置|调整|更换|更改|修改|改[为成到]?|"
     r"读取|查看|查询|显示|提供|设[为成]|开关|(?:enable|disable|set|read|grant)|[=:：]", re.I,
 )
+_CONTROL_NEGATION = re.compile(r"(?:先别|不(?:要|用)|别|勿)\s*" + _CONTROL_OPERATION.pattern, re.I)
 _QUERY = re.compile(r"查|核对|查看|看看|告诉我|列出|读一下|是什么|多少|几[秒首]|多[高宽大]")
 _CHANGE = re.compile(r"改[成为到]|调[成到整]|设置?为|换[成个]|收起|隐藏|显示|恢复默认|关闭|开启")
 _HYPOTHETICAL = re.compile(r"如果|假如|要是|先别|不用|不要|能不能举例|怎么(?:才能|把|换|改|调|设|关|开)")
@@ -36,8 +37,10 @@ _TASK_DELIVERY = re.compile(r"交给后台|稍后交付|持续(?:检查|跟进)|
 
 def requests_owner_control(source):
     text = unicodedata.normalize("NFKC", source)
-    return any(_CONTROL_NAME.search(clause) and _CONTROL_OPERATION.search(clause)
-               for clause in re.split(r"[。！？；\n]", text))
+    for clause in re.split(r"[。！？；\n]", text):
+        if _CONTROL_NAME.search(clause) and _CONTROL_OPERATION.search(_CONTROL_NEGATION.sub("", clause)):
+            return True
+    return False
 
 
 class SettingChoice(StrictModel):

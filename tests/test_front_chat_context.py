@@ -56,11 +56,13 @@ async def test_chat_model_packet_keeps_account_out_and_uses_current_question(
     question = "帮我数一下有几个字。"
     if semantic:
         async def generate(messages, schema, **kwargs):
+            if schema.get("title") == "TurnRoute":
+                return {"route": "chat", "action": "chat"}
             assert "reply_markdown" in schema["properties"]
             capture(messages)
             if len(calls) == 1:
                 raise ValueError("测试本轮重试")
-            return {"action": "chat", "reply_markdown": "好。"}
+            return {"reply_markdown": "好。"}
         monkeypatch.setattr(provider, "generate_assistant_json", generate, raising=False)
     else:
         async def generate(messages, character, event_id, source_text):

@@ -136,8 +136,8 @@ class APIProvider:
         return min(thinking_budget(output), self.config.get("thinking_token_limit", output))
 
     async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None,
-                        on_content=None, temperature=None):
-        payload = self.chat_payload(messages) | {"max_tokens": budget, "stream": False}
+                        on_content=None, temperature=None, enable_thinking=None):
+        payload = self.chat_payload(messages, enable_thinking=enable_thinking) | {"max_tokens": budget, "stream": False}
         if self.background and self.config.get("enable_thinking"):
             payload["thinking_token_budget"] = self._thinking_budget(budget)
         # Suppressing reasoning at the background engine also suppresses the
@@ -282,7 +282,8 @@ class APIProvider:
         settle_generation(reservation, self.last_usage)
         return reply
 
-    async def generate_text(self, messages, *, max_tokens):
+    async def generate_text(self, messages, *, max_tokens, on_content=None, on_stage=None,
+                            use_remaining_window=False, temperature=None, enable_thinking: bool | None = None):
         """Generate visible natural text with the same real API usage budget."""
         self.last_content = None
         self.last_finish_reason = None
@@ -291,16 +292,32 @@ class APIProvider:
         if type(max_tokens) is not int or max_tokens < 1:
             raise ValueError("文本输出预算须为正整数")
         count = await self.count_tokens(messages)
-        if count + max_tokens > self.capacity_window:
+        if use_remaining_window:
+            max_tokens = min(max_tokens, self.capacity_window - count)
+        if max_tokens < 1 or count + max_tokens > self.capacity_window:
             raise ContextWindowExceeded("文本输入超出API窗口预算；禁止静默丢弃数据")
+        if on_stage:
+            on_stage("generating")
         reservation = self._reserve_counted(count, max_tokens)
-        content, actual = await self._complete(messages, budget=max_tokens)
+        content, actual = await self._complete(
+            messages, budget=max_tokens, on_content=on_content, temperature=temperature,
+            enable_thinking=enable_thinking,
+        )
         if actual + max_tokens > self.capacity_window:
             raise ContextWindowExceeded("API文本实际计量超窗；未采用结果")
         settle_generation(reservation, self.last_usage)
         if not content.strip():
             raise ValueError("API未返回可见文本")
         return content
+
+    async def generate_text_stream(self, messages, *, max_tokens, on_content=None, on_stage=None,
+                                   temperature=None, enable_thinking: bool | None = False):
+        """Stream visible natural text honoring the provider window budget."""
+        return await self.generate_text(
+            messages, max_tokens=max_tokens, on_content=on_content, on_stage=on_stage,
+            use_remaining_window=self.uses_model_card, temperature=temperature,
+            enable_thinking=enable_thinking,
+        )
 
     async def generate_operation(self, messages, character, event_id, source_text=None, *, web_fetch=None):
         return await generate_operation_reply(self, messages, event_id, web_fetch=web_fetch)

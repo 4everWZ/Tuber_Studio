@@ -62,6 +62,23 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                       "output": [{"type": "message", "content": [
                           {"type": "output_text", "text": json.dumps({"color": color, "shape": shape})},
                       ]}]}
+        elif path == "/llm/v1/responses" and "delegate_task" in {tool["name"] for tool in body["tools"]}:
+            payload = json.loads(body["input"][-1]["content"])
+            if payload["message"] == replay.REQUEST:
+                calls = [function("delegate_task", {
+                    "goal": replay.REQUEST,
+                    "deliverable": "列出两个不同的不剧透镜头及放映说明",
+                })]
+            else:
+                assert payload["message"] == replay.CHANGE and edits == [2]
+                card, = payload["recent_task_cards"]
+                calls = [function("steer_task", {
+                    "task_id": card["id"],
+                    "task_effect": "revise",
+                    "change_quote": "改做三角形主题的开场",
+                    "brief": {"goal": "改做三角形主题的开场", "deliverable": "列出三角形主题不剧透镜头及放映说明"},
+                })]
+            result = {"status": "completed", "id": str(uuid4()), "output": calls}
         elif path == "/llm/v1/responses":
             brief = json.loads(body["input"][1]["content"])
             evidence = brief["saved_evidence"].copy()
@@ -90,25 +107,19 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
         elif path in {"/v1/chat/completions", "/llm/v1/chat/completions"}:
             content = body["messages"][-1]["content"]
             assert isinstance(content, str)
-            if path == "/v1/chat/completions" and content in (replay.REQUEST, replay.CHANGE):
-                schema = json.loads(body["structured_outputs"]["structural_tag"])["format"]["json_schema"]
-                if schema["title"] == "ReplyDelivery":
-                    assert "reply_markdown" not in schema["properties"]
-                    decision = {"action": "work", "clock_fields": []}
-                elif schema["title"] == "WorkLifecycle":
-                    assert "reply_markdown" not in schema["properties"]
-                    decision = {"action": "agent_task" if content == replay.REQUEST else "task_turn"}
-                else:
-                    assert schema["title"] == "CardTurnIntent" and content == replay.CHANGE and edits == [2]
-                    card, = json.loads(body["messages"][1]["content"])["recent_task_cards"]
-                    decision = {"intent": "实际修改同一任务或成果的部分或全部", "patch": {"field": "goal", "subject": "提纲",
-                                "requirement": "改做三角形主题的开场"}, "reference": card["id"]}
+            if path == "/v1/chat/completions" and "structured_outputs" not in body and "response_format" not in body:
+                result = {"choices": [{"finish_reason": "stop", "message": {"content": "好的，我先去看 P2 并核对说明，整理好回来交给你。"}}],
+                          "usage": {"prompt_tokens": 128}}
             elif "person_subject" in body["messages"][0]["content"]:
                 decision = {"person_subject": "地点、构图或物件"}
+                result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(decision)}}],
+                          "usage": {"prompt_tokens": 128}}
             elif content == replay.REQUEST:
                 assert "requested_count" in body["messages"][0]["content"]
                 decision = {"requested_count": 2, "usage": "列出形状、理由和时码", "playable": False,
                             "trace_origin": True, "clip_seconds": None}
+                result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(decision)}}],
+                          "usage": {"prompt_tokens": 128}}
             else:
                 packet = json.loads(content)
                 if "candidate" in packet:
@@ -128,8 +139,8 @@ async def test_two_real_client_paths_and_decoded_media_over_mock_transport(monke
                     decision = {"supported": True}
                 else:
                     pytest.fail("unexpected completion packet")
-            result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(decision)}}],
-                      "usage": {"prompt_tokens": 128}}
+                result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(decision)}}],
+                          "usage": {"prompt_tokens": 128}}
         else:
             pytest.fail(f"unexpected route: {path}")
         return httpx.Response(200, json=result)

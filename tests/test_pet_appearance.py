@@ -94,9 +94,9 @@ def test_pet_discovery_with_hidden_control_never_reaches_writer(settings, monkey
     attempts = []
 
     async def forged(messages, schema, **kwargs):
-        assert schema["title"] == "WorkLifecycle"
+        assert schema["title"] == "TurnRoute"
         attempts.append(schema["title"])
-        return direct_request("让宠物歇会儿吧", mode="change") | {"changes": {"pets_enabled": False, "history_enabled": True}}
+        return {"route": "direct_action", "action": "pet_settings", "changes": {"pets_enabled": False, "history_enabled": True}}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", forged, raising=False)
     with TestClient(app) as client:
@@ -117,10 +117,8 @@ async def test_two_chat_browsers_share_manual_and_tool_selection(settings, monke
     instruction = "把宠物换成鲸鱼思考"
 
     async def choose(messages, schema, **kwargs):
-        if schema["title"] == "WorkLifecycle":
-            return direct_request(instruction, mode="change")
-        if schema["title"] == "AssistantDecision":
-            return {"action": "pet_settings"}
+        if schema["title"] == "TurnRoute":
+            return {"route": "direct_action", "action": "pet_settings"}
         assert schema["title"] == "PetChoice" and messages[-1]["content"] == instruction
         packet = json.loads(messages[0]["content"].split("\n", 1)[1])
         match = next(row for row in packet["可选择的已有形象与表情"] if row["title"] == "鲸鱼思考")

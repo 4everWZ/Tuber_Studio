@@ -1051,6 +1051,7 @@ def create_task_runtime(runtime, store, browsing):
         async with ResponsesClient.from_settings(runtime.settings) as client:
             return await client.create(**(options | {"store": False}))
 
+    respond._requires_omni_key = True
     tasks.responses_client = lambda: respond
     tasks.requires_responses = lambda: True
 

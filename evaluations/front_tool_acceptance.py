@@ -96,6 +96,7 @@ def serve(args):
     denied = []
     model_calls = []
     front_json = APIProvider.generate_json
+    front_text = APIProvider.generate_text
     responses_turn = ResponsesClient.create
     advance = task_delegation.advance
     working_on = ContextVar("replay_task_revision", default=None)
@@ -124,8 +125,25 @@ def serve(args):
         ) if key in value}
         return value
 
+    async def observe_front_text(provider, messages, **options):
+        entry = {"endpoint": "chat/completions", "schema": "plain_text", "task": working_on.get()}
+        model_calls.append(entry)
+        try:
+            text = await front_text(provider, messages, **options)
+        except asyncio.CancelledError:
+            entry["cancelled"] = True
+            raise
+        except Exception as error:
+            entry["error"] = type(error).__name__
+            raise
+        entry["finish"] = getattr(provider, "last_finish_reason", None)
+        entry["usage"] = getattr(provider, "last_usage", {})
+        entry["chars"] = len(text)
+        return text
+
     async def observe_background(client, *args, **options):
-        entry = {"endpoint": "llm/v1/responses", "task": working_on.get()}
+        role = "routing" if options.get("tool_choice") == "required" and working_on.get() is None else "execution"
+        entry = {"endpoint": "llm/v1/responses", "role": role, "task": working_on.get()}
         for message in options.get("input", args[0] if args else ()):
             if not isinstance(message, dict) or message.get("role") != "user":
                 continue
@@ -193,6 +211,7 @@ def serve(args):
         ),
         patch.object(httpx.AsyncHTTPTransport, "handle_async_request", guarded),
         patch.object(APIProvider, "generate_json", observe_front),
+        patch.object(APIProvider, "generate_text", observe_front_text),
         patch.object(ResponsesClient, "create", observe_background),
         patch.object(task_delegation, "advance", observe_revision),
     ):

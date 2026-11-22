@@ -4,8 +4,10 @@ import json
 import re
 
 _ANSWER = re.compile(r'^\s*\{\s*"action"\s*:\s*"chat"\s*,\s*"reply_markdown"\s*:\s*"')
+_REPLY_ONLY_ANSWER = re.compile(r'^\s*\{\s*(?:"action"\s*:\s*"chat"\s*,\s*)?"reply_markdown"\s*:\s*"')
 _STRING_PREFIX = re.compile(r'(?:[^"\\\x00-\x1f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*')
 _ANALYSIS_MARKER = re.compile(r"<\s*/?\s*(?:t(?:h(?:i(?:n(?:k)?)?)?)?)?$|<\s*/?\s*think\b", re.I)
+_THINK_BLOCK_INLINE = re.compile(r"<\s*think\b[^>]*>[\s\S]*?<\s*/\s*think\s*>\s*", re.I)
 _WRAPPER_SUFFIX = re.compile(r'[\s"”}]+$')
 _MARKDOWN_CODE = re.compile(r"```[\s\S]*?```|`[^`\n]+`")
 _WORKBENCH_FIELD = re.compile(r"\{\{(local_date|local_time|local_weekday)\}\}")
@@ -74,10 +76,11 @@ def assistant_markdown(text):
 
 
 class AssistantTextStream:
-    def __init__(self, deliver, *, limit=48_000, plain=False):
+    def __init__(self, deliver, *, limit=48_000, plain=False, allow_reply_only=False):
         self.deliver = deliver
         self.limit = limit
         self.plain = plain
+        self.allow_reply_only = allow_reply_only
         self.buffer = ""
         self.emitted = ""
 
@@ -86,13 +89,14 @@ class AssistantTextStream:
         if len(self.buffer) > self.limit:
             raise ValueError("回复内容超出资源限制")
         if self.plain:
-            decoded = self.buffer.lstrip()
+            decoded = _THINK_BLOCK_INLINE.sub("", self.buffer.lstrip())
             # Let the final decoder handle an unsolicited JSON wrapper.
             if decoded.startswith("{"):
                 return
             closed = False
         else:
-            start = _ANSWER.match(self.buffer)
+            pattern = _REPLY_ONLY_ANSWER if self.allow_reply_only else _ANSWER
+            start = pattern.match(self.buffer)
             if not start:
                 return
             encoded = _STRING_PREFIX.match(self.buffer, start.end())

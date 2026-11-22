@@ -8,7 +8,7 @@ import httpx
 import pytest
 from test_agent_task_recovery import wait_status
 
-from tuber_studio.agent import operator_facts, task_tools
+from tuber_studio.agent import operator_facts, task_tools, turn_router
 from tuber_studio.agent.operator_chat import ChatIntent, OperatorChat
 from tuber_studio.agent.owner_memory import history_preference
 from tuber_studio.agent.personal_agent import (
@@ -56,8 +56,8 @@ async def test_identity_reads_project_only_the_selected_account_and_fields(studi
     ])
 
     async def model(messages, schema, **kwargs):
-        assert schema["title"] == "WorkLifecycle"
-        return {"action": "identity_read", "identities": [next(lookups)]}
+        assert schema["title"] == "TurnRoute"
+        return {"route": "instant_read", "action": "identity_read", "identities": [next(lookups)]}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     owner = await turn(client, "绑给你的号主名字叫什么呀？")
@@ -81,25 +81,15 @@ async def test_bound_person_resolves_a_new_projection_and_expires_on_rebind(stud
 
     async def model(messages, schema, **kwargs):
         name = schema["title"]
-        message = messages[-1]["content"]
         chat.append(name)
-        actions = schema["properties"]["action"]["enum"]
-        if name == "AssistantDecision":
-            assert set(actions) == {"owner_binding", "owner_profile", "operating_account", "clarify"}
-            return {"action": "owner_binding"}
+        if name == "FrontDialogueReply":
+            return {"reply_markdown": "先确认你指的是哪位。"}
+        assert name == "TurnRoute"
+        message = json.loads(messages[-1]["content"])["message"]
         if message == "给我能点过去的地址和数字编号":
-            return {"action": "direct_tool", "operation": {
-                "mode": "read", "domain": "identity", "request": message, "target": "地址和数字编号",
-            }}
-        if message == "是谁养你的呀？":
-            assert any("号主甲" in row["content"] for row in messages)
-            return {"action": "chat", "reply_markdown": "我的主人是号主甲。"}
+            return {"route": "instant_read", "action": "owner_binding", "object_ref": "obj1"}
         assert all("obj1" not in row["content"] for row in messages)
-        if message == "现在你的主人是谁呀？":
-            assert any("号主乙" in row["content"] and "号主甲" not in row["content"]
-                       for row in messages if row["role"] == "system")
-            return {"action": "chat", "reply_markdown": "我的主人是号主乙。"}
-        return {"action": "chat", "reply_markdown": "先确认你指的是哪位。"}
+        return {"route": "chat", "action": "chat"}
 
     async def network(*args):
         pytest.fail("已核验的 UID 查询访问了外网")
@@ -110,13 +100,14 @@ async def test_bound_person_resolves_a_new_projection_and_expires_on_rebind(stud
     result = await turn(client, "给我能点过去的地址和数字编号")
     assert result["card"]["data"] == {"name": "号主甲", "uid": "123", "url": "https://space.bilibili.com/123"}
     assert "号主甲" in result["reply_text"] and "123" in result["reply_text"]
-    assert chat == ["WorkLifecycle", "WorkLifecycle", "AssistantDecision"]
+    assert chat == ["TurnRoute"]
     card["bilibili_owner"] = {"uid": "456", "name": "号主乙"}
     runtime.store.replace_character(card)
     assert not (await turn(client, "他还有其他地址吗？")).get("card")
     assert "号主乙" in (await turn(client, "现在你的主人是谁呀？"))["reply_text"]
     history_preference(runtime, enabled=False)
     assert not (await turn(client, "他还有其他地址吗？")).get("card")
+    assert chat == ["TurnRoute", "TurnRoute", "FrontDialogueReply", "TurnRoute", "FrontDialogueReply"]
 
 
 async def test_public_news_cites_opened_sources_from_the_current_local_day(studio, monkeypatch):
@@ -156,9 +147,9 @@ async def test_unavailable_research_keeps_its_readback_in_chat(studio, monkeypat
         raise OSError("search unavailable")
 
     async def select_tool(*args, **kwargs):
-        return ChatIntent(action="web_lookup"), None
+        return ChatIntent(action="web_lookup")
 
-    monkeypatch.setattr(OperatorChat, "_assistant", select_tool)
+    monkeypatch.setattr(turn_router, "route_chat_turn", select_tool)
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
     monkeypatch.setattr(task_tools, "search_public_web", unavailable)
     result = await turn(client, "联网查一下今儿有什么新闻", stream=True)
@@ -173,22 +164,15 @@ async def test_direct_read_binds_a_current_workshop_object_when_model_paraphrase
 
     async def model(messages, schema, **kwargs):
         calls.append(schema["title"])
-        if schema["title"] == "WorkLifecycle":
-            assert "owner_identity" not in schema["properties"]["action"]["enum"]
-            return {"action": "direct_tool", "operation": {
-                "mode": "read", "request": "查看当前账号信息", "target": "账号信息",
-            }}
-        assert "operating_account" in schema["properties"]["action"]["enum"]
-        assert "owner_binding" not in schema["properties"]["action"]["enum"]
-        assert "stop" not in schema["properties"]["action"]["enum"]
+        assert schema["title"] == "TurnRoute"
         assert any("请帮我查 Ｂ 站登录账号" in row["content"] for row in messages)
-        return {"action": "operating_account", "read_target": None}
+        return {"route": "instant_read", "action": "operating_account"}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     result = await turn(client, "请帮我查 Ｂ 站登录账号", stream=True)
     assert result["tool_receipt"] == {"action": "read", "group": "account", "values": {"state": "not_configured"}}
     assert result["reply_text"] == "工坊还没连接 B 站运营账号。"
-    assert calls == ["WorkLifecycle", "AssistantDecision"]
+    assert calls == ["TurnRoute"]
 
 
 async def test_work_plan_uses_capabilities_and_current_request_instead_of_repeated_answers(studio, monkeypatch):
@@ -205,32 +189,25 @@ async def test_work_plan_uses_capabilities_and_current_request_instead_of_repeat
     calls = []
 
     async def model(messages, schema, *, on_content, **kwargs):
-        actions = schema["properties"]["action"]["enum"]
-        text = messages[-1]["content"]
         assert all(old_reply not in row["content"] for row in messages)
-        if schema["title"] == "AssistantDecision":
-            calls.append("read")
-            assert set(actions) == {"game_status", "clarify"}
-            return {"action": "game_status"}
-        if "direct_tool" in actions:
-            calls.append("omni")
+        if schema.get("title") == "FrontDialogueReply":
+            calls.append("front")
             assert "reply_markdown" in schema["properties"]
-            packet = "\n".join(row["content"] for row in messages if row["role"] == "system")
-            assert all(word in packet for word in ("局面", "待发草稿", "公开网页", "角色"))
-            if text == "田里还有什么活？":
-                assert {"role": "assistant", "content": "聊会儿呀。"} in messages
-                return {"action": "direct_tool", "operation": {
-                    "mode": "read", "domain": "game", "request": text, "target": "田里",
-                }}
-            return {"action": "chat", "reply_markdown": "聊会儿呀。"}
-        raise AssertionError("游戏状态直接取执行回执")
+            return {"reply_markdown": "聊会儿呀。"}
+        assert schema["title"] == "TurnRoute"
+        calls.append("route")
+        text = json.loads(messages[-1]["content"])["message"]
+        if text == "田里还有什么活？":
+            assert "聊会儿呀。" in json.dumps(messages, ensure_ascii=False)
+            return {"route": "instant_read", "action": "game_status"}
+        return {"route": "chat", "action": "chat"}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     monkeypatch.setattr(runtime.live.game_livestream, "status",
                         lambda: {"active_status": {"summary": "还有 7 格没浇水。"}})
     assert (await turn(client, "陪我说会儿话", stream=True))["reply_text"] == "聊会儿呀。"
     assert (await turn(client, "田里还有什么活？"))["reply_text"] == "还有 7 格没浇水。"
-    assert calls == ["omni", "omni", "read"]
+    assert calls == ["route", "front", "route"]
     assert (await client.get(CHAT)).json()["turns"][0]["reply_text"] == old_reply
 
 
@@ -249,10 +226,8 @@ async def test_existing_outgoing_work_is_bound_to_account_and_shows_review_actio
         )
 
     async def model(messages, schema, **kwargs):
-        assert schema["title"] == "WorkLifecycle"
-        return {"action": "direct_tool", "operation": {
-            "mode": "change", "domain": "outgoing", "request": "检查待发内容然后确认发布", "target": "一组草稿",
-        }}
+        assert schema["title"] == "TurnRoute"
+        return {"route": "prepare_publication", "action": "prepare_publication", "publication_channel": "dynamics"}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     result = await turn(client, "把没发的帖子叫出来，我挑一条现在发", stream=True)

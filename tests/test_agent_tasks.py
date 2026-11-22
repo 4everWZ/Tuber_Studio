@@ -430,11 +430,8 @@ async def test_owner_lookup_routes_to_bound_uid(settings, monkeypatch):
         return binding
 
     async def decide(messages, schema, *, max_tokens, on_content, on_stage):
-        if schema["title"] == "WorkLifecycle":
-            assert "owner_profile" not in schema["properties"]["action"]["enum"]
-            return direct_request(messages[-1]["content"])
-        assert "owner_profile" in schema["properties"]["action"]["enum"]
-        return {"action": "owner_profile"}
+        assert schema["title"] == "TurnRoute"
+        return {"route": "instant_read", "action": "owner_profile"}
 
     monkeypatch.setattr(runtime.account, "owner_profile", profile)
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", decide, raising=False)

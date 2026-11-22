@@ -33,12 +33,8 @@ async def pet_studio(settings, monkeypatch):
     runtime.tasks.create(str(uuid4()), "待整理的话题")
 
     async def pet_decision(messages, schema, **kwargs):
-        if schema["title"] == "CardTurnIntent":
-            return {"intent": "当场调用工具", "reference": None, "patch": None}
-        if schema["title"] == "WorkLifecycle":
-            return direct_request(messages[-1]["content"], mode="change")
-        if schema["title"] == "AssistantDecision":
-            return {"action": "pet_settings"}
+        if schema["title"] == "TurnRoute":
+            return {"route": "direct_action", "action": "pet_settings"}
         assert schema["title"] == "PetChoice"
         instruction = messages[-1]["content"]
         if instruction == "给宠物换个开心的表情":

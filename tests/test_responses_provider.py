@@ -132,6 +132,21 @@ def test_explicit_internal_service_name_does_not_allow_unrelated_http(monkeypatc
             endpoint(url)
 
 
+async def test_responses_client_forwards_explicit_temperature_only(monkeypatch):
+    payloads = []
+
+    async def transport(client, method, path, *, payload=None):
+        payloads.append(payload)
+        return completed([call_item("t1", "A")])
+
+    monkeypatch.setattr("tuber_studio.responses_provider.response_json", transport)
+    async with ResponsesClient({"base_url": "https://api.example/llm/v1", "model": "worker"}) as client:
+        await client.create("default temp", tools=[TOOL])
+        await client.create("zero temp", tools=[TOOL], temperature=0.0)
+    assert "temperature" not in payloads[0]
+    assert payloads[1]["temperature"] == 0.0
+
+
 @pytest.mark.skipif(os.getenv("TUBER_TEST_LIVE_RESPONSES") != "1", reason="explicit workstation test only")
 async def test_workstation_function_roundtrip():
     config = {"base_url": os.environ["OMNI_GATEWAY_URL"].rstrip("/") + "/llm/v1",

@@ -58,14 +58,15 @@ async def test_old_edition_from_private_chat_is_openable_and_read_only(studio, m
     routed = "查当初为何作出某个选择的原文"
 
     async def generate(messages, schema, **kwargs):
-        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
-            return {"action": "task_turn"}
-        packet = json.loads(messages[1 if schema["title"] == "CardTurnIntent" else -1]["content"])
-        if schema["title"] == "CardTurnIntent":
+        if schema["title"] == "TurnRoute":
+            packet = json.loads(messages[-1]["content"])
             candidate, = [c for c in packet["history_task_cards"] if c["id"] == task]
             assert candidate["artifact"] == {"task_revision": 1, "edition": 1}
             assert REASON not in str(messages)
-            return {"intent": routed, "reference": task, "patch": None}
+            if routed != "查当初为何作出某个选择的原文":
+                return {"route": "steer_task", "task_id": task, "task_effect": "revise", "change_quote": "修改"}
+            return {"route": "steer_task", "task_id": task, "task_effect": "discuss", "recall_reason": True}
+        packet = json.loads(messages[-1]["content"])
         assert schema["title"] == "ReasonSelection"
         assert packet["versions"][0]["source"][1] == {"line": 2, "text": "选材理由：" + REASON}
         assert schema["properties"]["lines"]["items"]["enum"] == [2]
@@ -115,16 +116,18 @@ async def test_history_boundaries_on_model_input_and_stream_delivery(studio, mon
 
     async def generate(messages, schema, **kw):
         seen.append(messages)
-        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
-            return {"action": "task_turn"}
-        if schema["title"] == "CardTurnIntent":
-            return {"intent": "查当初为何作出某个选择的原文", "reference": task}
+        if schema["title"] == "TurnRoute":
+            if revoke:
+                return {"route": "steer_task", "task_id": task, "task_effect": "discuss", "recall_reason": True}
+            return {"route": "chat", "action": "chat"}
+        if schema["title"] == "FrontDialogueReply":
+            return {"reply_markdown": "好呀"}
         if revoke:
             assert REASON in messages[-1]["content"] and schema["title"] == "ReasonSelection"
             history_preference(runtime, False)
             assert kw["on_content"] is None
             return {"edition": 1, "evidence": "recorded", "lines": [2]}
-        return {"action": "chat", "reply_markdown": "好呀"}
+        raise AssertionError(f"unexpected schema: {schema['title']}")
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
 
@@ -157,11 +160,10 @@ async def test_chromium_chat_opens_original_edition_and_source(studio, monkeypat
     runtime.store.replace_character(runtime.character | {"name": "编辑之后"})
 
     async def generate(messages, schema, **kwargs):
-        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
-            return {"action": "task_turn"}
-        if schema["title"] == "CardTurnIntent":
-            assert task in schema["properties"]["reference"]["anyOf"][0]["enum"]
-            return {"intent": "查当初为何作出某个选择的原文", "reference": task}
+        if schema["title"] == "TurnRoute":
+            packet = json.loads(messages[-1]["content"])
+            assert task in [c["id"] for c in packet["history_task_cards"]]
+            return {"route": "steer_task", "task_id": task, "task_effect": "discuss", "recall_reason": True}
         assert schema["title"] == "ReasonSelection"
         return {"edition": 1, "evidence": "recorded", "lines": [2]}
 
@@ -242,15 +244,13 @@ async def test_unfinished_card_remains_discussable_after_only_account_switch(stu
     runtime.browsing.discovery.remember_account("switched")
     assert runtime.tasks.current(task) and not runtime.tasks.executable(task)
     async def generate(messages, schema, **kwargs):
-        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
-            return {"action": "task_turn"}
-        packet = json.loads(messages[1 if schema["title"] == "CardTurnIntent" else -1]["content"])
-        if schema["title"] == "CardTurnIntent":
+        if schema["title"] == "TurnRoute":
+            packet = json.loads(messages[-1]["content"])
             assert "recent_task_cards" not in packet
             assert [c["id"] for c in packet["history_task_cards"]] == [task]
-            return {"intent": "只回答当前问题或假设", "reference": task}
-        assert packet["task"]["goal"] == "等待下次彩排"
-        return {"action": "chat", "reply_markdown": "还在等待。"}
+            return {"route": "steer_task", "task_id": task, "task_effect": "discuss"}
+        assert schema["title"] == "FrontDialogueReply"
+        return {"reply_markdown": "还在等待。"}
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
     response = await client.post(CHAT, json={"request_id": str(uuid4()), "message": "等待下次彩排那项进度呢？"})
     assert response.raise_for_status().json()["task_reference"] == task
@@ -262,17 +262,14 @@ async def test_reason_question_can_open_the_agent_original_after_an_owner_edit(s
     _, task = await seed(client, runtime)
 
     async def choose(messages, schema, **kwargs):
-        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
-            return {"action": "task_turn"}
-        packet = json.loads(messages[1 if schema["title"] == "CardTurnIntent" else -1]["content"])
-        if schema["title"] == "CardTurnIntent":
+        packet = json.loads(messages[-1]["content"])
+        if schema["title"] == "TurnRoute":
             card, = packet["history_task_cards"]
             assert card["artifact"]["edition"] == 2 and card["original_edition"]["author"] == "agent"
-            assert "read_original" in schema["required"]
             assert card["matched_edition"]["author"] == "owner"
             assert not card["matched_edition"]["has_rationale"] and card["original_edition"]["has_rationale"]
             assert REASON not in str(packet)
-            return {"intent": "查当初为何作出某个选择的原文", "reference": task, "read_original": False}
+            return {"route": "steer_task", "task_id": task, "task_effect": "discuss", "recall_reason": True, "read_original": False}
         assert {v["edition"] for v in packet["versions"]} == {1, 2}
         return {"edition": 1, "evidence": "recorded", "lines": [2]}
 
@@ -296,11 +293,9 @@ async def test_only_verified_reason_lines_from_the_selected_version(studio, monk
                         "body": "我选择尾声，因为台词在这里才说完。"})).raise_for_status()
 
     async def select(messages, schema, **options):
-        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
-            return {"action": "task_turn"}
+        if schema["title"] == "TurnRoute":
+            return {"route": "steer_task", "task_id": task_id, "task_effect": "discuss", "recall_reason": True}
         assert options["on_content"] is None
-        if schema["title"] == "CardTurnIntent":
-            return {"intent": "查当初为何作出某个选择的原文", "reference": task_id}
         assert schema["title"] == "ReasonSelection"
         assert schema["properties"]["edition"]["enum"] == [edition]
         return {"edition": edition, "evidence": state, "lines": numbers}
@@ -324,12 +319,13 @@ async def test_chat_opened_edition_read_and_stale_write(studio, monkeypatch):
     change = "把这份的尾声缩短。"
 
     async def generate(messages, schema, **kwargs):
-        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
-            return {"action": "task_turn"}
-        if schema["title"] == "CardTurnIntent":
-            editing = messages[-1]["content"] == change
-            return {"intent": "实际修改同一任务或成果的部分或全部" if editing else "查当初为何作出某个选择的原文",
-                    "patch": {"field": "goal", "subject": "这份", "requirement": "缩短"} if editing else None, "reference": identity, "read_original": False}
+        if schema["title"] == "TurnRoute":
+            editing = json.loads(messages[-1]["content"])["message"] == change
+            if editing:
+                return {"route": "steer_task", "task_id": identity, "task_effect": "revise",
+                        "change_quote": "缩短", "read_original": False}
+            return {"route": "steer_task", "task_id": identity, "task_effect": "discuss",
+                    "recall_reason": True, "read_original": False}
         versions = json.loads(messages[-1]["content"])["versions"]
         assert [v["edition"] for v in versions] == [1]
         return {"edition": 1, "evidence": "recorded", "lines": [2]}

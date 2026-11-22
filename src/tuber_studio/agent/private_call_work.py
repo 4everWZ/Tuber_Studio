@@ -17,7 +17,8 @@ from ..models import StrictModel
 from ..omni_speech import sentences
 from ..operation_continuations import content_hash
 from ..store import dump
-from .operator_chat import ChatIntent, ChatTurn
+from . import turn_router
+from .chat_models import ChatIntent, ChatTurn
 from .task_delegation import function
 from .voice_origin import CallOrigin, VoiceOrigin, verify_call, verify_origin
 
@@ -51,32 +52,8 @@ log = logging.getLogger("uvicorn.error").getChild("private_call")
 
 
 async def classify(chat, words, tasks):
-    packet = {"utterance": words, "call_tasks": tasks}
-    client = chat._planning_client(chat.runtime.llm)
-    if client is None:
-        return await chat._model(VOICE_ROUTING, packet, VoicePlan, max_tokens=192)
-    quote = {"type": "string", "minLength": 2, "maxLength": 2000}
-    def route(name, description, properties):
-        schema = {"type": "object", "properties": properties, "required": list(properties), "additionalProperties": False}
-        return function(name, description, schema)
-
-    menu = [route("conversation", "继续当前语音对话。", {}),
-            route("delegate", "号主明确交办新工作并说明目标。", {"quote": quote})]
-    if tasks:
-        target = {"quote": quote, "task_id": {"type": "string", "enum": [item["id"] for item in tasks]}}
-        menu.extend([route("revise", "号主明确修改指定交办的要求。", target),
-                     route("cancel", "号主明确停止指定交办。", target)])
-    async with chat._generation_slot():
-        reply = await client(
-            input=[{"role": "system", "content": VOICE_ROUTING}, {"role": "user", "content": dump(packet)}],
-            tools=menu, tool_choice="required", max_output_tokens=512, store=False, thinking=False,
-        )
-    if len(reply.calls) != 1:
-        raise ValueError("expected one voice route")
-    call, = reply.calls
-    if call.name not in {item["name"] for item in menu}:
-        raise ValueError("unknown voice route")
-    return VoicePlan.model_validate(call.arguments | {"action": call.name})
+    routed = await turn_router.route_voice_utterance(chat, words, tasks)
+    return VoicePlan.model_validate(routed.model_dump())
 
 
 def register_call_work(app, runtime, require_admin, chat):

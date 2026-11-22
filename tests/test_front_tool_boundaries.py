@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from test_agent_creative_delegation import call, gateway
 
-from tuber_studio.agent.operator_chat import AssistantDecision
+from tuber_studio.agent import turn_router
 from tuber_studio.agent.workshop_settings import read_settings, settings_catalog, update_settings
 from tuber_studio.app import create_app
 
@@ -94,8 +94,9 @@ def test_model_setting_catalog_is_an_explicit_projection(workbench):
         assert set(read_settings(runtime, group)["values"]) == set(entry["fields"])
     assert "pets_enabled" in catalog["pets"]["fields"]
     assert "cooldown_seconds" in catalog["music"]["fields"]
-    actions = AssistantDecision.direct_schema()["properties"]["action"]["enum"]
+    actions = turn_router.direct_tool_actions()
     assert {"workbench_capabilities", "pet_settings", "daily_settings", "forget_memory"} <= set(actions)
+    assert not {"operation_control", "start_operations"} & set(actions)
     assert "provider_credentials" not in json.dumps(catalog)
 
 

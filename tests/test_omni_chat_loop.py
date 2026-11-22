@@ -37,27 +37,10 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
             result = {"count": 128}
         elif path in {"/v1/chat/completions", "/llm/v1/chat/completions"}:
             content = body["messages"][-1]["content"]
-            if content in (replay.REQUEST, replay.CHANGE):
-                schema = json.loads(body["structured_outputs"]["structural_tag"])["format"]["json_schema"]
-                chat_stages.append(schema["title"])
-                if schema["title"] == "ReplyDelivery":
-                    assert path == "/v1/chat/completions" and body["temperature"] == 0
-                    decision = {"action": "tool" if behavior == "public_action" else "work", "clock_fields": []}
-                elif schema["title"] == "WorkLifecycle":
-                    assert "reply_markdown" not in schema["properties"] and path == "/v1/chat/completions"
-                    if behavior == "public_action":
-                        decision = direct_request(content, mode="change", target="演播间")
-                    else:
-                        decision = {"action": "agent_task" if content == replay.REQUEST else "task_turn"}
-                elif schema["title"] == "AssistantDecision":
-                    assert behavior == "public_action" and "start_live" in schema["properties"]["action"]["enum"]
-                    decision = {"action": "start_live"}
-                else:
-                    assert schema["title"] == "CardTurnIntent" and content == replay.CHANGE
-                    chat_stages[-1] = "card_steering"
-                    card, = json.loads(body["messages"][1]["content"])["recent_task_cards"]
-                    decision = {"intent": "实际修改同一任务或成果的部分或全部", "patch": {"field": "goal", "subject": "便笺",
-                                "requirement": "只核对自主运营有没有启动"}, "reference": card["id"]}
+            if path == "/v1/chat/completions" and "structured_outputs" not in body and "response_format" not in body:
+                chat_stages.append("front_ack")
+                result = {"choices": [{"finish_reason": "stop", "message": {"content": "好的，已经交给后台处理，结果会回到这里。"}}],
+                          "usage": {"prompt_tokens": 128}}
             else:
                 packet = json.loads(content)
                 if "candidate" in packet:
@@ -73,10 +56,37 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
                     decision = {"items": [{"title": "私有交接便笺", "rationale": "根据本轮状态回执选材",
                                            "sources": list(evidence) if behavior != "invented_editor_source"
                                            else ["unverified"]}], "gaps": []}
+                    result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(decision)}}],
+                              "usage": {"prompt_tokens": 128}}
                 else:
                     pytest.fail("unexpected completion packet")
-            result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(decision)}}],
-                      "usage": {"prompt_tokens": 128}}
+        elif path == "/llm/v1/responses" and "delegate_task" in {tool["name"] for tool in body["tools"]}:
+            assert body["tool_choice"] == "required" and body["parallel_tool_calls"] is False
+            assert body["max_output_tokens"] == 640 and body["thinking_token_budget"] == 160
+            assert body["temperature"] == 0.0
+            assert body["chat_template_kwargs"]["enable_thinking"] is True
+            payload = json.loads(body["input"][-1]["content"])
+            if payload["message"] == replay.REQUEST:
+                chat_stages.append("turn_router")
+                if behavior == "public_action":
+                    name, args = "direct_action", {"action": "start_live"}
+                else:
+                    name, args = "delegate_task", {
+                        "goal": replay.REQUEST,
+                        "deliverable": "写一份私有交接便笺并附操作状态回执",
+                    }
+            else:
+                assert payload["message"] == replay.CHANGE
+                chat_stages.append("card_steering")
+                card, = payload["recent_task_cards"]
+                name, args = "steer_task", {
+                    "task_id": card["id"],
+                    "task_effect": "revise",
+                    "change_quote": "只核对自主运营有没有启动",
+                    "brief": {"goal": "只核对自主运营有没有启动", "deliverable": "写一份私有交接便笺并附操作状态回执"},
+                }
+            result = {"id": uuid4().hex, "status": "completed", "output": [
+                {"type": "function_call", "call_id": uuid4().hex, "name": name, "arguments": json.dumps(args)}]}
         elif path == "/llm/v1/responses":
             schemas = {tool["name"]: tool["parameters"] for tool in body["tools"]}
             assert all(tool["strict"] for tool in body["tools"])
@@ -121,16 +131,18 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
             async with asyncio.timeout(5):
                 await replay.run(config)
         if behavior == "public_action":
-            assert calls.count("/llm/v1/responses") == 0
-            assert chat_stages == ["ReplyDelivery", "WorkLifecycle", "AssistantDecision"]
+            assert calls.count("/llm/v1/responses") == 1
+            assert chat_stages == ["turn_router"]
         else:
-            assert calls.count("/llm/v1/responses") == (3 if behavior == "invented_source" else 2)
-            expected = ["ReplyDelivery", "WorkLifecycle", "ReplyDelivery", "WorkLifecycle", "card_steering"]
+            assert calls.count("/llm/v1/responses") == (5 if behavior == "invented_source" else 4)
+            expected = ["turn_router", "front_ack", "card_steering"]
             assert chat_stages == (expected + ["evidence_editor"] if behavior == "invented_editor_source" else expected)
         return
     async with asyncio.timeout(5):
         result = await replay.run(config)
     assert result == {"status": "passed", "task_revision": 2, "local_reads": ["operation_status"], "platform_writes": 0}
-    assert chat_stages == ["ReplyDelivery", "WorkLifecycle", "ReplyDelivery", "WorkLifecycle", "card_steering", "evidence_editor"]
+    assert chat_stages == ["turn_router", "front_ack", "card_steering", "evidence_editor"]
     assert [path for path in calls if path.endswith(("chat/completions", "responses"))] == [
-        *(["/v1/chat/completions"] * 5), "/llm/v1/responses", "/llm/v1/responses", "/llm/v1/chat/completions"]
+        "/llm/v1/responses", "/v1/chat/completions", "/llm/v1/responses",
+        "/llm/v1/responses", "/llm/v1/responses", "/llm/v1/chat/completions",
+    ]

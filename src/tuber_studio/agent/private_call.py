@@ -24,6 +24,7 @@ from ..operation_continuations import content_hash
 from ..operation_identity import operating_account_facts, private_participant_instructions
 from ..performance import performance
 from ..store import dump
+from . import front_dialogue
 from .memory_organizer import is_chat_turn
 from .owner_memory import citation, correctable_preference, history_preference, private_rows, read_stamp
 from .voice_origin import ticket_context
@@ -40,13 +41,8 @@ def shared_call_facts(runtime, operator_chat, turn_id):
         return []
     character = runtime.character
     account = str(runtime.tasks.scope()[0] or "")
-    shared = []
-    for subject in operator_chat.conversation_objects(character, account, turn_id).values():
-        if subject.kind in {"task", "artifact"} and not contains_memory_credential(subject.label):
-            if task := runtime.tasks.current(subject.identity):
-                shared.append({"kind": "交办", "goal": subject.label, "revision": task["revision"],
-                               "status": runtime.tasks.view(task)["status"]})
-    return shared
+    context = getattr(operator_chat, "context", operator_chat)
+    return front_dialogue.build_shared_task_summary(runtime, context, character, account, turn_id)
 
 
 def inherited_topic(runtime, turn_id):

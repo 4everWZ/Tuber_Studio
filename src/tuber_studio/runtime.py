@@ -186,6 +186,16 @@ class Runtime:
             operation_ticket.reset(token)
             self.operation_turns.release(ticket)
 
+    @asynccontextmanager
+    async def chat_routing_generation(self):
+        ticket = await self.operation_turns.acquire("chat")
+        token = operation_ticket.set((self.operation_turns, ticket))
+        try:
+            yield
+        finally:
+            operation_ticket.reset(token)
+            self.operation_turns.release(ticket)
+
     def operator_generation(self):
         return self.generation_lock
 

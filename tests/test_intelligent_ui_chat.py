@@ -34,20 +34,22 @@ async def test_chat_delegation_survives_interleaved_conversation_and_delivers_la
     result_text = "演播间待命。检查时间 09:30。"
 
     async def generate(messages, schema, **options):
-        message = messages[-1]["content"]
-        if schema["title"] == "CardTurnIntent":
-            return {"intent": "实际修改同一任务或成果的部分或全部", "reference": task_id,
-                    "patch": {"field": "goal", "subject": "交接", "requirement": "刚才那份", "replacement_goal": "刚才那份"},
-                    "brief": {"goal": "核对演播间状态", "deliverable": "附检查时间的交接记录", "read_tools": ["live_status"]}}
-        assert schema["title"] == "WorkLifecycle"
+        if schema["title"] == "FrontDialogueReply":
+            assert messages[-1]["content"] == casual
+            return {"reply_markdown": "窗朝东，早上可以晒到太阳。"}
+        assert schema["title"] == "TurnRoute"
+        packet = json.loads(messages[-1]["content"])
+        message = packet["message"]
         if message == goal:
-            return {"action": "agent_task", "brief": {"goal": "核对演播间状态",
-                                                      "deliverable": "一份私有交接记录"}}
+            return {"route": "delegate_task", "action": "agent_task",
+                    "brief": {"goal": "核对演播间状态", "deliverable": "一份私有交接记录"}}
         if message == change:
-            assert task_id in "\n".join(row["content"] for row in messages)
-            return {"action": "task_turn"}
+            assert task_id in json.dumps(packet.get("recent_task_cards", []))
+            return {"route": "steer_task", "action": "steer_task", "task_id": task_id,
+                    "task_effect": "revise", "change_quote": "只留状态和检查时间", "replacement_goal": "",
+                    "brief": {"goal": "核对演播间状态", "deliverable": "附检查时间的交接记录", "read_tools": ["live_status"]}}
         assert message == casual
-        return {"action": "chat", "reply_markdown": "窗朝东，早上可以晒到太阳。"}
+        return {"route": "chat", "action": "chat"}
 
     async def step(task):
         if task["id"] == separate_id:
@@ -132,13 +134,18 @@ async def test_omni_uses_workbench_fields_without_changing_conversational_routin
     calls = []
 
     async def model(messages, schema, **options):
+        if schema["title"] == "TurnRoute":
+            calls.append(schema["properties"]["route"]["enum"])
+            message = json.loads(messages[-1]["content"])["message"]
+            if message == "今天过得好吗？":
+                return {"route": "chat", "action": "chat"}
+            return {"route": "chat", "action": "chat", "clock_fields": ["local_date"]}
+        assert schema["title"] == "FrontDialogueReply"
         current = messages[-1]["content"]
-        menu = schema["properties"]["action"]["enum"]
-        calls.append(menu)
         if current == "今天过得好吗？":
-            return {"action": "chat", "reply_markdown": "蛮好，刚想去看海。"}
-        assert any("{{local_date}}" in row["content"] for row in messages)
-        return {"action": "chat", "reply_markdown": "今天是 {{local_date}}。"}
+            return {"reply_markdown": "蛮好，刚想去看海。"}
+        assert any("本轮查询的工坊日历值：" in row["content"] for row in messages)
+        return {"reply_markdown": "今天是 {{local_date}}。"}
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", model, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
@@ -197,17 +204,20 @@ def test_assistant_stream_persists_only_final_text_and_retries_under_same_id(set
     calls = []
 
     async def generate(messages, schema, *, max_tokens, on_content, on_stage):
-        calls.append(messages)
-        assert "activity" not in schema["properties"]["action"]["enum"]
-        assert messages[-1] == {"role": "user", "content": "鱼鱼今天吃了几碗饭"}
         assert all("旧报告的第三件" not in message["content"] and "旧模型刚才的错答" not in message["content"]
                    for message in messages)
+        if schema["title"] == "TurnRoute":
+            assert on_content is None
+            return {"route": "chat", "action": "chat"}
+        assert schema["title"] == "FrontDialogueReply"
+        calls.append(messages)
+        assert messages[-1] == {"role": "user", "content": "鱼鱼今天吃了几碗饭"}
         assert "reply_markdown" in schema["properties"]
-        assert any("可用能力" in row["content"] for row in messages)
+        assert not any("可用能力" in row["content"] or "WorkLifecycle" in row["content"] for row in messages)
         on_stage("generating")
-        on_content('{"action":"chat","reply_markdown":"**白饭')
+        on_content('{"reply_markdown":"**白饭')
         on_content('**，分你半碗。"}')
-        return {"action": "chat", "reply_markdown": "**白饭**，分你半碗。"}
+        return {"reply_markdown": "**白饭**，分你半碗。"}
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
     with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 52000)) as client:
@@ -238,9 +248,8 @@ def test_assistant_rejects_invalid_tool_payload_before_dispatch(settings, monkey
     app = create_app(settings, adapter=ControlledPlatform())
 
     async def generate(messages, schema, *, max_tokens, on_content, on_stage):
-        if schema["title"] == "WorkLifecycle":
-            return direct_request(messages[-1]["content"])
-        return {"action": "inspect_video_frame", "part": 0, "seconds": 1}
+        assert schema["title"] == "TurnRoute"
+        return {"route": "direct_action", "action": "inspect_video_frame", "part": 0, "seconds": 1}
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
     with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 52000)) as client:
@@ -253,8 +262,8 @@ def test_assistant_rejects_invalid_tool_payload_before_dispatch(settings, monkey
 
 
 @pytest.mark.parametrize(("lifecycle", "tool", "expected_card"), [
-    ("agent_task", None, "agent_task"), ("direct_tool", "live_status", "live_studio_hud"),
-    ("live_status", None, None), ("direct_tool", "agent_task", None),
+    ("delegate_task", None, "agent_task"), ("instant_read", "live_status", "live_studio_hud"),
+    ("live_status", None, None), ("direct_action", "agent_task", None),
 ])
 async def test_chat_lifecycle_separates_live_status_from_persistent_work(settings, monkeypatch, lifecycle, tool, expected_card):
     app = create_app(settings, adapter=ControlledPlatform())
@@ -262,29 +271,25 @@ async def test_chat_lifecycle_separates_live_status_from_persistent_work(setting
 
     async def generate(messages, schema, **options):
         calls.append(schema["title"])
-        menu = schema["properties"]["action"]["enum"]
-        if schema["title"] == "WorkLifecycle":
-            if menu == ["chat"]:
-                assert any("读取回执" in row["content"] for row in messages)
-                return {"action": "chat", "reply_markdown": "我已经读到直播状态了。"}
-            assert set(menu) == {"chat", "identity_read", "direct_tool", "agent_task", "clarify",
-                             "prepare_publication", "task_status", "workshop_lookup", "watch_totals", "recall_memory"}
-            return direct_request(messages[-1]["content"]) if lifecycle == "direct_tool" else {"action": lifecycle}
-        assert "live_status" in menu and not {"direct_tool", "agent_task", "steer_task", "chat"}.intersection(menu)
+        assert schema["title"] == "TurnRoute"
         assert options["on_content"] is None
-        return {"action": tool}
+        if lifecycle == "delegate_task":
+            return {"route": "delegate_task", "action": "agent_task",
+                    "brief": {"goal": "核对直播状态", "deliverable": "交接记录"}}
+        if lifecycle == "instant_read":
+            return {"route": "instant_read", "action": tool}
+        if tool is None:
+            return {"route": lifecycle}
+        return {"route": lifecycle, "action": tool}
 
     monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS_URL", raising=False)
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
         identity = str(uuid4())
         response = await client.post("/api/chat/intelligent", json={
-            "request_id": identity, "message": "核对一下直播状态" + ("，给我留份交接记录" if lifecycle == "agent_task" else ""),
+            "request_id": identity, "message": "核对一下直播状态" + ("，给我留份交接记录" if lifecycle == "delegate_task" else ""),
         })
-        expected = ["WorkLifecycle"]
-        if lifecycle == "direct_tool":
-            expected.append("AssistantDecision")
-        assert calls == expected
+        assert calls == ["TurnRoute"]
         if expected_card:
             result = response.raise_for_status().json()
             assert result["card"]["type"] == expected_card
@@ -298,8 +303,8 @@ async def test_chat_lifecycle_separates_live_status_from_persistent_work(setting
 
 
 @pytest.mark.parametrize(("route", "card_type"), [
-    ("agent_task", "agent_task"), ("steer_task", "agent_task"),
-    ("direct_tool", "live_studio_hud"), ("clarify", None),
+    ("delegate_task", "agent_task"), ("steer_task", "agent_task"),
+    ("instant_read", "live_studio_hud"), ("clarify", None),
 ])
 async def test_nonchat_acknowledgement_is_neither_streamed_nor_saved(settings, monkeypatch, route, card_type):
     app = create_app(settings, adapter=ControlledPlatform())
@@ -307,23 +312,16 @@ async def test_nonchat_acknowledgement_is_neither_streamed_nor_saved(settings, m
     previous = str(uuid4())
 
     async def generate(messages, schema, *, on_content, **options):
-        if schema["title"] == "CardTurnIntent":
-            assert on_content is None and "reply_markdown" not in schema["properties"]
-            return {"intent": "实际修改同一任务或成果的部分或全部", "patch": {"field": "goal", "subject": "素材", "requirement": "核对 P2"}, "reference": previous}
-        if schema["title"] != "WorkLifecycle":
-            assert on_content is None
-            return {"action": "live_status", "reply_markdown": hidden}
-        if schema["properties"]["action"]["enum"] == ["chat"]:
-            assert any("读取回执" in row["content"] for row in messages)
-            return {"action": "chat", "reply_markdown": "这是当前直播状态。"}
-        decision = {"action": "task_turn" if route == "steer_task" else route, "reply_markdown": hidden}
-        if route == "direct_tool":
-            decision.update(direct_request(messages[-1]["content"]))
-        if route == "clarify":
-            decision["topic"] = "你指的是哪段素材？"
-        assert on_content is not None and "reply_markdown" in schema["properties"]
-        on_content(json.dumps(decision))
-        return decision
+        assert schema["title"] == "TurnRoute" and on_content is None
+        if route == "delegate_task":
+            return {"route": "delegate_task", "action": "agent_task",
+                    "brief": {"goal": "核对 P2 的直播素材", "deliverable": "素材核对记录"}}
+        if route == "steer_task":
+            return {"route": "steer_task", "action": "steer_task", "task_id": previous,
+                    "task_effect": "revise", "change_quote": "核对 P2"}
+        if route == "instant_read":
+            return {"route": "instant_read", "action": "live_status"}
+        return {"route": "clarify", "action": "clarify", "question": "你指的是哪段素材？"}
 
     monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS_URL", raising=False)
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
@@ -355,15 +353,15 @@ async def test_chat_projects_only_active_goal_and_evidence_after_steer(settings,
     message = f"继续刚才的那份便笺，{latest}。"
 
     async def decide(messages, schema, **options):
-        if schema["title"] == "WorkLifecycle":
-            return {"action": "task_turn"}
-        choices = schema["$defs"]["TaskPatch"]["anyOf"]
-        choice = next(p["properties"] for p in choices if p["properties"]["field"]["enum"] == ["goal"]
-                      and latest in p["properties"]["requirement"]["enum"])
-        assert "replacement_goal" in choice
-        return {"intent": "实际修改同一任务或成果的部分或全部", "reference": identity, "patch": {
-            "field": "goal", "subject": choice["subject"]["enum"][0], "requirement": latest,
-            "replacement_goal": latest if replace else ""}}
+        assert schema["title"] == "TurnRoute"
+        return {
+            "route": "steer_task",
+            "action": "steer_task",
+            "task_id": identity,
+            "task_effect": "revise",
+            "change_quote": latest,
+            "replacement_goal": latest if replace else "",
+        }
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", decide, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
@@ -404,29 +402,25 @@ async def test_semantic_task_cards_bind_clarified_steering_without_approval(sett
     texts = ["给下场暖场留两段可选的，别发", "这周的选题也备一份", "第二段换成轻松点的", "我是指暖场那份"]
 
     async def decide(messages, schema, **options):
-        content = messages[-1]["content"]
-        packet = json.loads(content) if content.startswith("{") else {"message": content}
-        if schema["title"] == "CardTurnIntent":
-            packet = json.loads(messages[1]["content"]) | {"message": content}
+        assert schema["title"] == "TurnRoute" and options["on_content"] is None
+        packet = json.loads(messages[-1]["content"])
         index = texts.index(packet["message"])
-        reference = schema["properties"]["reference"]
         if index == 0:
-            assert reference == {"type": "null"}
-            return {"action": "agent_task"}
-        else:
-            if schema["title"] == "WorkLifecycle":
-                return {"action": "task_turn"}
-            assert schema["title"] == "CardTurnIntent" and options["on_content"] is None
-            expected = [ids[0]] if index == 1 else [ids[1], ids[0]]
-            assert reference == {"anyOf": [{"type": "string", "enum": expected}, {"type": "null"}]}
-            assert "reference" in schema["required"]
-        if index < 2:
-            return {"intent": "另立交办", "reference": None}
-        assert [card["id"] for card in packet["recent_task_cards"]] == [ids[1], ids[0]]
+            assert not packet.get("recent_task_cards")
+            return {"route": "delegate_task", "action": "agent_task",
+                    "brief": {"goal": texts[0], "deliverable": "暖场两段可选内容"}}
+        expected = [ids[0]] if index == 1 else [ids[1], ids[0]]
+        assert [card["id"] for card in packet["recent_task_cards"]] == expected
+        if index == 1:
+            return {"route": "delegate_task", "action": "agent_task",
+                    "brief": {"goal": texts[1], "deliverable": "本周选题"}}
         if index == 2:
-            return {"intent": "实际修改同一任务或成果的部分或全部", "patch": None, "reference": None}
+            return {"route": "steer_task", "action": "steer_task", "task_id": None,
+                    "task_effect": "revise", "change_quote": "换成轻松点的"}
         assert packet["clarification"]["request"] == texts[2]
-        return {"intent": "实际修改同一任务或成果的部分或全部", "patch": {"field": "goal", "subject": "暖场", "requirement": "换成轻松点的"}, "reference": ids[0], "clarification_id": packet["clarification"]["id"]}
+        return {"route": "steer_task", "action": "steer_task", "task_id": ids[0],
+                "task_effect": "revise", "change_quote": "换成轻松点的",
+                "clarification_id": packet["clarification"]["id"]}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", decide, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
@@ -459,13 +453,14 @@ async def test_unverified_card_revision_finishes_without_a_chat_success_claim(se
 
     async def frozen(messages, schema, **options):
         stages.append(schema["title"])
-        if schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
-            return {"action": "task_turn"}
-        if schema["title"] == "CardTurnIntent":
-            effect = "实际修改同一任务或成果的部分或全部"
-            assert effect in schema["properties"]["intent"]["enum"]
-            return {"intent": effect, "reference": identity, "patch": patch}
-        return {"action": "chat", "reply_markdown": "明白啦，改好了：  - [ ] 自主运营账号是否已启动"}
+        assert schema["title"] == "TurnRoute"
+        return {
+            "route": "steer_task",
+            "action": "steer_task",
+            "task_id": identity,
+            "task_effect": "revise",
+            "change_quote": "" if patch is None else patch["requirement"],
+        }
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", frozen, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
@@ -473,10 +468,10 @@ async def test_unverified_card_revision_finishes_without_a_chat_success_claim(se
                                        "intent": {"action": "agent_task"}})).raise_for_status()
         tasks._save(tasks.current(identity), status="running")
         reply = (await client.post(path, json=request)).raise_for_status().json()
-        assert stages == ["WorkLifecycle", "CardTurnIntent"]
+        assert stages == ["TurnRoute"]
         assert reply["card"] is None and "没有修改" in reply["reply_text"] and "请" in reply["reply_text"]
         assert (await client.post(path, json=request)).raise_for_status().json() == reply
-        assert stages == ["WorkLifecycle", "CardTurnIntent"]
+        assert stages == ["TurnRoute"]
     task = tasks.current(identity)
     assert (task["goal"], task["status"], task["revision"], task["steps"]) == (original, "running", 1, [])
     assert tasks.workspace.latest(identity) is None
@@ -490,20 +485,18 @@ async def test_discussing_a_card_or_chatting_without_material_does_not_steer(set
 
     async def generate(messages, schema, *, on_content, **options):
         stages.append(schema["title"])
-        if ask_about_card and schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
-            return {"action": "task_turn"}
-        if schema["title"] == "CardTurnIntent":
-            assert on_content is None and "reply_markdown" not in schema["properties"]
-            return {"intent": "只回答当前问题或假设", "reference": identity if ask_about_card else None}
+        if schema["title"] == "TurnRoute":
+            assert on_content is None
+            if ask_about_card:
+                return {"route": "steer_task", "action": "chat", "task_id": identity, "task_effect": "discuss"}
+            return {"route": "chat", "action": "chat"}
+        assert schema["title"] == "FrontDialogueReply"
         current = messages[-1]["content"]
         if ask_about_card:
             assert json.loads(current)["task"]["goal"] == "准备一份提纲"
         else:
             assert current == "陪我聊会儿"
-        if "reply_markdown" not in schema["properties"]:
-            assert on_content is None
-            return {"action": "chat"}
-        reply = {"action": "chat", "reply_markdown": "我在呢。"}
+        reply = {"reply_markdown": "我在呢。"}
         on_content(json.dumps(reply))
         return reply
 
@@ -514,8 +507,7 @@ async def test_discussing_a_card_or_chatting_without_material_does_not_steer(set
         result = await client.post(path + "/stream", json={"request_id": str(uuid4()),
                                    "message": "那份提纲现在怎样了？" if ask_about_card else "陪我聊会儿"})
         assert "event: delta" in result.text and "event: done" in result.text
-        assert stages == (["WorkLifecycle", "CardTurnIntent", "WorkLifecycle"] if ask_about_card
-                          else ["WorkLifecycle"])
+        assert stages == ["TurnRoute", "FrontDialogueReply"]
         assert app.state.runtime.tasks.current(identity)["revision"] == 1
 
 
@@ -527,11 +519,12 @@ async def test_typed_video_selection_is_input_not_dispatch(settings, monkeypatch
 
     async def generate(messages, schema, **options):
         stages.append(schema["title"])
+        assert schema["title"] == "TurnRoute"
         assert json.loads(messages[-1]["content"])["video_selection"] == selection
-        if schema["title"] == "WorkLifecycle":
-            return {"action": route}
-        assert schema["properties"]["action"]["enum"] == ["full_video", "clarify"]
-        return {"action": "full_video"}
+        if route == "agent_task":
+            return {"route": "delegate_task", "action": "agent_task",
+                    "brief": {"goal": "准备一份提纲", "deliverable": "提纲"}}
+        return {"route": "direct_action", "action": "full_video"}
 
     async def queue(identity, character, selected):
         reads.append(selected)
@@ -546,11 +539,11 @@ async def test_typed_video_selection_is_input_not_dispatch(settings, monkeypatch
                 {"intent": {"action": "full_video"}} if route == "shortcut" else {})})
         card = result.raise_for_status().json()["card"]
         if route == "agent_task":
-            assert card["type"] == "agent_task" and not reads and stages == ["WorkLifecycle"]
+            assert card["type"] == "agent_task" and not reads and stages == ["TurnRoute"]
             assert app.state.runtime.tasks.current(identity)["plan"]["video_selection"] == selection
         else:
             assert card["type"] == "video_browsing" and reads == [selection]
-            assert stages == ([] if route == "shortcut" else ["WorkLifecycle", "AssistantDecision"])
+            assert stages == ([] if route == "shortcut" else ["TurnRoute"])
 
 
 async def test_chat_steer_rejects_concurrent_revision_and_non_card_tasks(settings, monkeypatch):
@@ -561,10 +554,10 @@ async def test_chat_steer_rejects_concurrent_revision_and_non_card_tasks(setting
 
     async def decide(messages, schema, **options):
         assert hidden not in str(messages)
-        if schema["title"] == "WorkLifecycle":
-            return {"action": "task_turn"}
+        assert schema["title"] == "TurnRoute"
         await tasks.control(identity, 1, "steer", goal="另一端的新要求")
-        return {"intent": "实际修改同一任务或成果的部分或全部", "patch": None, "reference": identity}
+        return {"route": "steer_task", "action": "steer_task", "task_id": identity,
+                "task_effect": "revise", "change_quote": "留一段就好"}
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", decide, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
@@ -587,8 +580,11 @@ async def test_bound_private_chat_survives_version_and_account_but_not_role_swit
     prompts = []
 
     async def decide(messages, schema, **options):
+        if schema["title"] == "TurnRoute":
+            return {"route": "chat", "action": "chat"}
+        assert schema["title"] == "FrontDialogueReply"
         prompts.append(messages)
-        return {"action": "chat", "reply_markdown": "后来它游回来了。"}
+        return {"reply_markdown": "后来它游回来了。"}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", decide, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
@@ -637,6 +633,9 @@ def test_assistant_rechecks_private_scope_before_delivery(settings, monkeypatch,
     memory = runtime.daily_memory
 
     async def generate(messages, schema, *, max_tokens, on_content, on_stage):
+        if schema["title"] == "TurnRoute":
+            return {"route": "chat", "action": "chat"}
+        assert schema["title"] == "FrontDialogueReply"
         on_stage("generating")
         if change == "account":
             browsing.discovery.remember_account("200")
@@ -647,8 +646,8 @@ def test_assistant_rechecks_private_scope_before_delivery(settings, monkeypatch,
             assert on_content is None
             memory.set_preference(runtime.memory_organizer.scope(), False)
         if on_content:
-            on_content('{"action":"chat","reply_markdown":"旧作用域的文字')
-        return {"action": "chat", "reply_markdown": "旧作用域的文字"}
+            on_content('{"reply_markdown":"旧作用域的文字')
+        return {"reply_markdown": "旧作用域的文字"}
 
     if change == "memory":
         monkeypatch.setattr(memory, "recall_organized", lambda *args, **kwargs: [{"headline": "私有", "anecdote": "私有文字"}])
@@ -941,21 +940,28 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
         return {"items": [2, 1]}
 
     async def assistant(messages, schema, **options):
-        message = messages[-1]["content"]
+        if schema["title"] == "FrontDialogueReply":
+            sys_msg = messages[-2]["content"]
+            marker = "以下是本轮已经取得的读取回执："
+            if marker in sys_msg:
+                summary = json.loads(sys_msg.split(marker, 1)[1])["summary"]
+                return {"reply_markdown": summary}
+            return {"reply_markdown": "这就来。"}
+        assert schema["title"] == "TurnRoute"
+        message = json.loads(messages[-1]["content"])["message"]
         action = {"今天有什么趣事": "activity", "第二件是谁讲的": "event_author", "后来回了没": "event_reply",
                   "把它记成公开经历": "remember_event", "那件公开经历": "recall_experience",
                   "查看公开经历": "public_experiences", "你记得我什么": "memory_summary",
                   "现在去吃饭吧": "chat", "再查第一句是谁说的": "event_author"}[message]
-        if schema["title"] == "WorkLifecycle":
-            if action == "chat":
-                return {"action": "chat", "reply_markdown": "这就来。"}
-            assert action not in schema["properties"]["action"]["enum"]
-            return direct_request(message, mode="change" if action == "remember_event" else "read")
-        assert schema["title"] == "AssistantDecision"
-        assert action in schema["properties"]["action"]["enum"]
-        return {"action": action, "position": 2 if message.startswith("第二件") else None,
-                "topic": "第一句" if action == "recall_experience" or message.startswith("再查") else "",
-                "reply_markdown": "这就来。" if action == "chat" else ""}
+        if action == "chat":
+            return {"route": "chat", "action": "chat"}
+        route_name = "direct_action" if action == "remember_event" else "instant_read"
+        return {
+            "route": route_name,
+            "action": action,
+            "position": 2 if message.startswith("第二件") else None,
+            "topic": "第一句" if action == "recall_experience" or message.startswith("再查") else "",
+        }
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", model)
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", assistant, raising=False)
@@ -1187,7 +1193,10 @@ def test_operator_discussion_to_dynamic_uses_only_sanitized_material(settings, m
     safe = "用两盏小灯试出画面层次。"
 
     async def assistant(messages, schema, **options):
-        return {"action": "chat", "reply_markdown": "可以先开一盏暖光，再用冷光补轮廓。"}
+        if schema["title"] == "TurnRoute":
+            return {"route": "chat", "action": "chat"}
+        assert schema["title"] == "FrontDialogueReply"
+        return {"reply_markdown": "可以先开一盏暖光，再用冷光补轮廓。"}
 
     async def sanitize(messages, schema, *, max_tokens):
         packet = json.loads(messages[-1]["content"])
@@ -1444,16 +1453,19 @@ async def test_opened_edition_routes_once_with_current_instruction(settings, mon
             runtime.tasks.workspace.record_delivery(db, runtime.tasks.current(identity), "这是首版。")
 
         async def route(messages, schema, **options):
-            if schema["title"] == "WorkLifecycle":
-                return {"action": "task_turn"}
-            packet = json.loads(messages[1]["content"])
-            assert messages[-1]["content"] == message
+            assert schema["title"] == "TurnRoute" and options["on_content"] is None
+            packet = json.loads(messages[-1]["content"])
+            assert packet["message"] == message
             assert packet["opened_artifact"] == {"id": identity, **coord}
             assert [card["id"] for card in packet["recent_task_cards"]] == [identity]
-            assert not packet["history_task_cards"]
-            effect = "现在停止执行整个任务" if operation == "cancel" else "实际修改同一任务或成果的部分或全部"
-            return {"intent": effect, "reference": identity, "patch": {"field": "goal", "requirement": quote,
-                                                                    "subject": "这项" if operation == "cancel" else "素材"}}
+            assert not packet.get("history_task_cards")
+            return {
+                "route": "steer_task",
+                "action": "cancel_task" if operation == "cancel" else "steer_task",
+                "task_id": identity,
+                "task_effect": operation,
+                "change_quote": quote,
+            }
 
         monkeypatch.setattr(runtime.llm, "generate_assistant_json", route, raising=False)
         payload = {"request_id": str(uuid4()), "message": message, "opened_artifact": {"task_id": identity, **coord}}
@@ -1478,16 +1490,18 @@ async def test_unopened_running_task_cannot_absorb_unrelated_conversation(settin
     conversation = "辛苦啦，跟我聊两句吧。"
 
     async def generate(messages, schema, **options):
-        if bad_route and schema["title"] == "WorkLifecycle" and "task_turn" in schema["properties"]["action"]["enum"]:
-            return {"action": "task_turn"}
-        if schema["title"] == "CardTurnIntent":
-            assert schema["properties"]["patch"] == {"type": "null"}
-            assert "实际修改同一任务或成果的部分或全部" not in schema["properties"]["intent"]["enum"]
-            if bad_route:
-                return {"intent": "实际修改同一任务或成果的部分或全部", "reference": identity,
-                        "patch": {"field": "goal", "subject": "我", "requirement": "两句"}}
-            return {"intent": "只回答当前问题或假设", "reference": None, "patch": None}
-        return {"action": "chat", "reply_markdown": "我在呢，今天聊点什么好？"}
+        if schema["title"] == "FrontDialogueReply":
+            return {"reply_markdown": "我在呢，今天聊点什么好？"}
+        assert schema["title"] == "TurnRoute"
+        if bad_route:
+            return {
+                "route": "steer_task",
+                "action": "steer_task",
+                "task_id": identity,
+                "task_effect": "revise",
+                "change_quote": "两句",
+            }
+        return {"route": "chat", "action": "chat"}
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
         (await client.post(path, json={"request_id": identity, "message": goal, "intent": {"action": "agent_task"}})).raise_for_status()

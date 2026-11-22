@@ -72,23 +72,18 @@ async def configure_publication(runtime, monkeypatch, *, disconnect=False, mixed
     monkeypatch.setattr(comments.adapter, "reconcile_dynamic_publication", read)
 
     async def model(messages, schema, **kwargs):
-        if schema["title"] == "CardTurnIntent":
-            effect = next(item for item in schema["properties"]["intent"]["enum"] if "实际进度" in item)
-            return {"intent": effect, "patch": None, "reference": None}
-        if schema["title"] == "AssistantDecision":
-            if "prepare_publication" in schema["properties"]["action"]["enum"]:
-                return {"action": "prepare_publication", "publication_channel": "dynamics"}
-            return {"action": "task_status", "read_target": PROGRESS}
-        message = messages[-1]["content"]
+        if schema["title"] == "FrontDialogueReply":
+            return {"reply_markdown": "辛苦啦，要不要先歇一小会儿？"}
+        assert schema["title"] == "TurnRoute"
+        payload = json.loads(messages[-1]["content"])
+        message = payload["message"]
         if message == SMALLTALK:
-            return {"action": "chat", "reply_markdown": "辛苦啦，要不要先歇一小会儿？"}
-        if message == PROGRESS and "task_turn" in schema["properties"]["action"]["enum"]:
-            return {"action": "task_turn"}
-        return {"action": "direct_tool", "operation": {
-            "mode": "change" if message == REQUEST else "read",
-            "domain": "outgoing", "request": message,
-            "target": "积压的站动态" if message == REQUEST else PROGRESS,
-        }}
+            return {"route": "chat", "action": "chat"}
+        if message == PROGRESS:
+            return {"route": "instant_read", "action": "task_status"}
+        if message == REQUEST:
+            return {"route": "prepare_publication", "action": "prepare_publication", "publication_channel": "dynamics"}
+        return {"route": "instant_read", "action": "outgoing_queue", "publication_channel": "dynamics"}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     char = runtime.character

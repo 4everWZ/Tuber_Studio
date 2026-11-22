@@ -236,7 +236,7 @@ async def exercise(store, omni, operations, responses, archive, transport, *, to
     seeds = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
     character = next(seed for seed in seeds if seed["id"] == "whale") | {"version": 1}
     runtime = SimpleNamespace(store=store, character=character, llm=omni, operation_llm=operations, operator_generation=nullcontext,
-                              offline_generation=nullcontext,
+                              offline_generation=nullcontext, chat_routing_generation=nullcontext,
                               settings=SimpleNamespace(data={"omni": omni.config}, responses_config=responses.config.model_dump(),
                                                       provider_key=lambda name: token if name == "omni" else None),
                               daily_memory=SimpleNamespace(preference=lambda scope: {"enabled": False}),

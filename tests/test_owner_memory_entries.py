@@ -108,8 +108,10 @@ async def test_owner_citations_voice_and_temporary_window(owner, monkeypatch):
     prompts = []
 
     async def generate(messages, schema, **kwargs):
+        if schema["title"] == "TurnRoute":
+            return {"route": "chat", "action": "chat"}
         prompts.append(json.dumps(messages, ensure_ascii=False))
-        return {"action": "chat", "reply_markdown": "我记下了。"}
+        return {"reply_markdown": "我记下了。"}
 
     monkeypatch.setattr(state.runtime.llm, "generate_assistant_json", generate, raising=False)
     reply = await client.post(CHAT, json=given | {"request_id": str(uuid4()), "message": source_key})
@@ -502,8 +504,10 @@ async def test_correction_excludes_old_turn_pair_from_chat_input_but_preserves_t
     packets = []
 
     async def assistant(messages, schema, **options):
+        if schema.get("title") == "TurnRoute":
+            return {"route": "chat", "action": "chat"}
         packets.append(messages)
-        return {"action": "chat", "reply_markdown": "听到了。"}
+        return {"reply_markdown": "听到了。"}
 
     monkeypatch.setattr(state.runtime.llm, "generate_assistant_json", assistant, raising=False)
     async def tell(text):

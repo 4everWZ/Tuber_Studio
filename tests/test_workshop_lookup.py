@@ -10,6 +10,7 @@ from test_personal_agent import studio as studio
 from tuber_studio.agent import operator_facts
 from tuber_studio.agent.assistant_output import calendar_fields, clock_readout
 from tuber_studio.operations.browsing.comment_timeline import ensure_comment_timeline
+from tuber_studio.responses_provider import FunctionCall, ResponseTurn
 from tuber_studio.store import dump
 
 ACCOUNT = "12345"
@@ -85,20 +86,17 @@ async def test_ledger_and_selected_video_use_same_read_and_original_coordinates(
     seed_workshop(runtime)
     calls = []
     plans = iter([
-        {"action": "workshop_lookup", "lookup": {"collection": "watch_count", "day": "today"}},
-        {"action": "workshop_lookup", "lookup": {"collection": "video", "day": "today", "terms": ["蓝色灯塔"]}},
-        {"action": "workshop_lookup", "object_ref": "obj1", "lookup": {"collection": "video"}},
-        {"action": "chat", "reply_markdown": "想听你讲讲。"},
+        {"route": "instant_read", "action": "watch_totals", "watch_day": "today"},
+        {"route": "instant_read", "action": "workshop_lookup", "lookup": {"collection": "video", "day": "today", "terms": ["蓝色灯塔"]}},
+        {"route": "instant_read", "action": "workshop_lookup", "object_ref": "obj1", "lookup": {"collection": "video"}},
+        {"route": "chat", "action": "chat"},
     ])
 
     async def model(messages, schema, **kwargs):
         calls.append(schema["title"])
-        if schema["title"] == "LookupPresentation":
-            if json.loads(messages[-1]["content"])["统计"]:
-                return {"reply": "", "evidence": []}
-            assert "蓝色灯塔" in messages[-1]["content"]
-            assert "另一账号" not in messages[-1]["content"]
-            return {"reply": "我喜欢画面里的蓝色灯塔。", "evidence": ["m1"]}
+        if schema["title"] == "FrontDialogueReply":
+            return {"reply_markdown": "想听你讲讲。"}
+        assert "另一账号" not in json.dumps(messages, ensure_ascii=False)
         return next(plans)
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
@@ -118,8 +116,7 @@ async def test_ledger_and_selected_video_use_same_read_and_original_coordinates(
         assert json.loads(saved["result"])["conversation_objects"][0]["identity"] == SOURCE
     chat = await turn(client, "最近我想学画画")
     assert chat["reply_text"] == "想听你讲讲。" and "tool_receipt" not in chat
-    assert calls == ["WorkLifecycle", "LookupPresentation", "WorkLifecycle", "LookupPresentation",
-                     "WorkLifecycle", "LookupPresentation", "WorkLifecycle"]
+    assert calls == ["TurnRoute", "TurnRoute", "TurnRoute", "TurnRoute", "FrontDialogueReply"]
     assert not runtime.tasks.activity()
     runtime.browsing.discovery.remember_account("888")
     old = (await client.get(CHAT)).raise_for_status().json()
@@ -145,22 +142,18 @@ async def test_ambiguous_read_preserves_alternatives_until_selection(studio, mon
     runtime, client = studio
     seed_workshop(runtime)
     plans = iter([
-        {"action": "workshop_lookup", "lookup": {"collection": "video", "terms": ["海边的日记"]}},
-        {"action": "workshop_lookup", "object_ref": "obj2", "lookup": {"collection": "video"}},
+        {"route": "instant_read", "action": "workshop_lookup", "lookup": {"collection": "video", "terms": ["海边的日记"]}},
+        {"route": "instant_read", "action": "workshop_lookup", "object_ref": "obj2", "lookup": {"collection": "video"}},
     ])
 
     async def model(messages, schema, **kwargs):
-        if schema["title"] == "LookupPresentation":
-            choices = json.loads(messages[-1]["content"])["查到的材料"]
-            if len(choices) == 2:
-                return {"view": "clarify", "reply": "你想看哪个 UP 主的《海边的日记》？", "evidence": []}
-            return {"reply": "是这段。", "evidence": ["m1"]}
+        assert schema["title"] == "TurnRoute"
         return next(plans)
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     ambiguous = await turn(client, "《海边的日记》是哪条？")
     candidates = [group["entries"][0]["href"] for group in ambiguous["sources"]]
-    assert "哪个 UP 主" in ambiguous["reply_text"] and len(candidates) == 2
+    assert "你指哪一条" in ambiguous["reply_text"] and len(candidates) == 2
     selected = await turn(client, "列表第二条就好")
     assert [group["entries"][0]["href"] for group in selected["sources"]] == candidates[1:]
 
@@ -172,12 +165,11 @@ async def test_clear_retires_grounded_objects_and_keeps_task_history(studio, mon
 
     async def model(messages, schema, **kwargs):
         nonlocal observed
-        if schema["title"] == "LookupPresentation":
-            return {"reply": "我选了这一条。", "evidence": ["m1"]}
+        assert schema["title"] == "TurnRoute"
         if observed:
             assert not any("obj1" in row["content"] or "蓝色灯塔" in row["content"] for row in messages)
-            return {"action": "clarify", "topic": "你想查哪条视频？"}
-        return {"action": "workshop_lookup", "lookup": {"collection": "video", "terms": ["蓝色灯塔"]}}
+            return {"route": "clarify", "action": "clarify", "question": "你想查哪条视频？"}
+        return {"route": "instant_read", "action": "workshop_lookup", "lookup": {"collection": "video", "terms": ["蓝色灯塔"]}}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     assert (await turn(client, "那部有蓝色灯塔的视频给我看看"))["sources"]
@@ -186,32 +178,28 @@ async def test_clear_retires_grounded_objects_and_keeps_task_history(studio, mon
     assert (await turn(client, "它的链接呢"))["reply_text"] == "你想查哪条视频？"
 
 
-@pytest.mark.parametrize("follow_up, allowed", [
-    ({"collection": "video", "terms": ["蓝色灯塔"]}, True),
+@pytest.mark.parametrize("lookup_args, expected_source", [
+    ({"collection": "video", "day": "today", "terms": ["蓝色灯塔"]}, True),
     ({"collection": "video", "day": "yesterday", "terms": ["蓝色灯塔"]}, False),
     ({"collection": "dynamic", "day": "today"}, False),
 ])
-async def test_count_receipt_can_lead_to_scoped_read_in_same_sse_turn(studio, monkeypatch, follow_up, allowed):
+async def test_count_receipt_can_lead_to_scoped_read_in_same_sse_turn(studio, monkeypatch, lookup_args, expected_source):
     runtime, client = studio
     seed_workshop(runtime)
 
     async def model(messages, schema, **kwargs):
-        if schema["title"] == "WorkLifecycle":
-            return {"action": "workshop_lookup", "lookup": {"collection": "watch_count", "day": "today"}}
-        source = json.loads(messages[-1]["content"])
-        if source["统计"]:
-            assert source["统计"]["completed"] == 2
-            return {"reply": "", "evidence": [], "next_lookup": follow_up}
-        return {"reply": "画面里的灯塔很有意思。", "evidence": ["m1"]}
+        assert schema["title"] == "TurnRoute"
+        return {"route": "instant_read", "action": "workshop_lookup", "lookup": lookup_args}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     selected = await turn(client, "今天刷到的东西里挑一段给我聊聊", stream=True)
     receipt = selected["tool_receipt"]
-    if allowed:
-        assert receipt["calls"][0]["values"]["completed"] == 2
+    if expected_source:
+        assert receipt["state"] == "ok"
         assert f"/video/{SOURCE}?p=2&t=19" in selected["sources"][0]["entries"][0]["href"]
     else:
-        assert "calls" not in receipt and receipt["values"]["completed"] == 2
+        assert receipt["state"] == "empty"
+        assert not selected.get("sources")
     assert not runtime.tasks.activity()
 
 
@@ -232,34 +220,44 @@ async def test_omni_chat_keeps_clock_readout_and_bound_sources_in_their_turn(stu
     monkeypatch.setattr(provider, "count_tokens", count, raising=False)
     calls = []
     lookup_routes = {
-        "你现在看过多少视频？": {"action": "watch_totals", "watch_day": "today"},
-        "那些里面挑一条具体的聊聊": {"action": "workshop_lookup", "lookup": {"collection": "video"}, "object_ref": "obj1"},
-        "刚才那段的链接呢？": {"action": "workshop_lookup", "lookup": {"collection": "video"}, "object_ref": "obj1"},
+        "你现在看过多少视频？": ("instant_read", {"action": "watch_totals", "watch_day": "today"}),
+        "那些里面挑一条具体的聊聊": ("instant_read", {"action": "workshop_lookup", "lookup": {"collection": "video"}, "object_ref": "obj1"}),
+        "刚才那段的链接呢？": ("instant_read", {"action": "workshop_lookup", "lookup": {"collection": "video"}, "object_ref": "obj1"}),
     }
     fields = {"小鱼，现在几点了呀": ["local_time"], "日期呢？": ["local_date"], "讲点你想讲的吧": []}
-    natural = {"小鱼，现在几点了呀": "贝壳灯都犯困啦。", "日期呢？": "今天都到二十一号啦。",
-               "讲点你想讲的吧": "今天想和你随便聊聊。"}
+    natural = {
+        "小鱼，现在几点了呀": "贝壳灯都犯困啦。",
+        "日期呢？": "今天都到二十一号啦。",
+        "讲点你想讲的吧": "今天想和你随便聊聊。",
+    }
 
-    async def model(messages, schema, **kwargs):
-        title = schema["title"]
-        calls.append(title)
-        utterance = messages[-1]["content"]
-        if title == "ReplyDelivery":
-            assert "可用能力" not in dump(messages)
-            assert not any(row["role"] == "assistant" for row in messages)
-            return {"action": "tool" if utterance in lookup_routes else "answer", "clock_fields": fields.get(utterance, [])}
-        if title == "LookupPresentation":
-            return {"reply": "我想聊这一条。", "evidence": ["m1"]}
+    async def respond(*, input, tools, **options):
+        calls.append("TurnRoute")
+        payload = json.loads(input[-1]["content"])
+        utterance = payload["message"]
         if utterance in lookup_routes:
-            return lookup_routes[utterance]
-        assert schema["properties"]["action"]["enum"] == ["chat"]
+            name, args = lookup_routes[utterance]
+        else:
+            name, args = "chat", {"clock_fields": fields.get(utterance, [])}
+        return ResponseTurn("router", (FunctionCall("route", name, args),), "", {})
+
+    async def front_text(messages, *, max_tokens, on_content=None, on_stage=None, temperature=None):
+        calls.append("FrontText")
+        assert "可用能力" not in dump(messages)
+        utterance = messages[-1]["content"]
+        if any("这次工坊读取已经完成" in row["content"] for row in messages if row["role"] == "system"):
+            return "我想聊这一条。"
         assert all("{{local_time}}" not in row["content"] for row in messages)
         if utterance == "讲点你想讲的吧":
             assert all("19:42" not in row["content"] for row in messages)
             assert all("贝壳灯都犯困啦" not in row["content"] for row in messages)
-        return {"action": "chat", "reply_markdown": natural[utterance]}
+        text = natural[utterance]
+        if on_content:
+            on_content(text)
+        return text
 
-    monkeypatch.setattr(provider, "generate_assistant_json", model, raising=False)
+    monkeypatch.setattr(runtime.tasks, "responses_client", lambda: respond)
+    monkeypatch.setattr(provider, "generate_text_stream", front_text, raising=False)
     counted = await turn(client, "你现在看过多少视频？")
     assert counted["tool_receipt"]["values"]["completed"] == 2
     shared = await turn(client, "那些里面挑一条具体的聊聊", stream=True)
@@ -273,6 +271,6 @@ async def test_omni_chat_keeps_clock_readout_and_bound_sources_in_their_turn(stu
     assert dated["reply_text"] == "今天都到二十一号啦。\n\n现在是2026年11月21日。"
     assert casual["reply_text"] == "今天想和你随便聊聊。"
     assert [result.get("tool_receipt") for result in (timed, dated, casual)] == [None, None, None]
-    assert calls == ["ReplyDelivery", "WorkLifecycle"] * 3
+    assert calls == ["TurnRoute", "FrontText"] * 3
     short_lived = await turn(client, "小鱼，现在几点了呀", temporary=True)
     assert short_lived["reply_text"] == timed["reply_text"] and short_lived["card"] is None

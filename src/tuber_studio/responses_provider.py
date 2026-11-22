@@ -1,6 +1,7 @@
 """Background language-model turns. The caller owns tools, history and side effects."""
 
 import json
+import logging
 from dataclasses import dataclass
 
 from pydantic import Field, field_validator
@@ -62,6 +63,14 @@ def _turn(data, allowed, output_budget):
     incomplete = data.get("incomplete_details")
     if (data.get("status") == "incomplete" and isinstance(incomplete, dict)
             and incomplete.get("reason") == "max_output_tokens"):
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        details = usage.get("output_tokens_details") if isinstance(usage.get("output_tokens_details"), dict) else {}
+        logging.getLogger(__name__).warning(
+            "后台 Responses 触发输出预算上限: max_output_tokens=%s output_tokens=%s reasoning_tokens=%s",
+            output_budget,
+            usage.get("output_tokens"),
+            details.get("reasoning_tokens"),
+        )
         raise InferenceBudgetExceeded(f"后台 Responses 已用完本轮思考和输出的 {output_budget} token 额度。")
     if data.get("status") != "completed" or data.get("error"):
         raise ValueError("Responses 未完整结束；不得执行工具或交付结果")
@@ -169,7 +178,8 @@ class ResponsesClient:
         return (await self.create(**options)).raw
 
     async def create(self, input, *, tools=(), previous_response_id=None, instructions=None, max_output_tokens=None,
-                     tool_choice=None, store=True, thinking=True):
+                     tool_choice=None, parallel_tool_calls: bool | None = None, store=True, thinking=True,
+                     thinking_budget_tokens=None, temperature: float | None = None):
         budget = self.config.max_output_tokens if max_output_tokens is None else max_output_tokens
         if type(budget) is not int or budget <= 0:
             raise ValueError("Responses 输出额度须为正整数")
@@ -185,13 +195,22 @@ class ResponsesClient:
                    "max_output_tokens": budget, "store": store,
                    "chat_template_kwargs": {"enable_thinking": thinking}}
         if thinking:
-            payload["thinking_token_budget"] = thinking_budget(budget)
+            default_thinking = thinking_budget(budget)
+            payload["thinking_token_budget"] = (
+                min(thinking_budget_tokens, default_thinking)
+                if type(thinking_budget_tokens) is int and thinking_budget_tokens > 0
+                else default_thinking
+            )
         if previous_response_id is not None:
             payload["previous_response_id"] = previous_response_id
         if instructions is not None:
             payload["instructions"] = instructions
         if tool_choice is not None:
             payload["tool_choice"] = tool_choice
+        if parallel_tool_calls is not None:
+            payload["parallel_tool_calls"] = parallel_tool_calls
+        if temperature is not None:
+            payload["temperature"] = temperature
         return _turn(await response_json(self.client, "POST", "responses", payload=payload), names, budget)
 
     async def submit_results(self, turn, outputs, **options):
