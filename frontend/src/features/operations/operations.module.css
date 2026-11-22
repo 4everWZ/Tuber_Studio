@@ -1,0 +1,790 @@
+/* Stage 2 Dual-Pipeline Dashboard & Shared Operations Styles */
+
+.topControlBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 12px 16px;
+  background: var(--win-panel-header);
+  border: 1px solid var(--win-border-light);
+  border-radius: 12px;
+  margin-bottom: 14px;
+}
+
+.topBarAccount {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.topBarEmergency {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pipelineGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.pipelineCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--win-border-light);
+  border-radius: 14px;
+}
+
+.pipelineCardActive {
+  border-color: var(--win-green-border);
+}
+
+.pipelineCardFrozen {
+  border-color: var(--win-danger-border);
+  background: #fffafa;
+}
+
+.pipelineHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.pipelineTitleWrap {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pipelineTitleWrap h2 {
+  margin: 0;
+  font-size: 1.08rem;
+}
+
+.lampRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.countsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.countCell {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f7f9fc;
+  border: 1px solid var(--win-border-light);
+}
+
+.countCell dt {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.countCell dd {
+  margin: 2px 0 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.switchBtn {
+  min-width: 96px;
+}
+
+.switchBtn[aria-checked="true"] {
+  background: var(--win-green);
+  border-color: var(--win-green);
+  color: #fff;
+}
+
+.switchBtn[aria-checked="true"]:hover:not(:disabled) {
+  background: #17573d;
+  border-color: #17573d;
+  color: #fff;
+}
+
+.quotaControlPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.quotaFormRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 14px;
+}
+
+.quotaFormRow label {
+  margin: 0;
+  min-width: 210px;
+}
+
+.claimsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.claimChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--win-border-light);
+  background: #f8fafc;
+  font-size: 0.84rem;
+}
+
+/* Activity Feed */
+.activitySection {
+  margin-top: 16px;
+}
+
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-block: 10px;
+}
+
+.filterGroup {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.filterGroup button {
+  background: transparent;
+  border-color: transparent;
+  padding: 5px 12px;
+}
+
+.filterGroup button[aria-pressed="true"] {
+  background: var(--soft);
+  border-color: var(--line);
+}
+
+.dayLabel {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+}
+
+.dayLabel input,
+.dayLabel select {
+  width: auto;
+}
+
+.activityRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: 5px 20px;
+  padding-block: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.activityHeading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: start;
+}
+
+.activityHeading > a,
+.activityHeading > strong {
+  flex: 1;
+  color: var(--ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.activityBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+  max-width: 60%;
+}
+
+.activityReason {
+  grid-column: 1;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.activityReplies {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.activityReplies > p {
+  margin: 0;
+}
+
+.replyRow + .replyRow {
+  margin-top: 12px;
+}
+
+.replyRow p {
+  margin: 3px 0 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.activityDetails {
+  grid-column: 1 / -1;
+  font-size: 0.85rem;
+}
+
+.activityDetails > summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.historyPagination {
+  justify-content: center;
+  margin-top: 18px;
+}
+
+/* Discovery compact & form */
+.discoveryStatusCompact {
+  border-top: 1px solid var(--line);
+  padding-block: 10px;
+}
+
+.discoveryStatusCompact > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.discoveryStatusCompact p {
+  margin: 5px 0;
+}
+
+.discoverySourceForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+}
+
+.discoverySourceForm label {
+  margin: 0;
+  min-width: 0;
+}
+
+.formRowUnified {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+/* QuickBar & Overview */
+.operationOverview {
+  padding-block: 4px 12px;
+}
+
+.operationOverview p {
+  margin: 4px 0;
+}
+
+/* Settings & Permission Matrix */
+.settingsStack > .panel + .panel,
+.settingsStack > .win-group-box + .win-group-box {
+  margin-top: 16px;
+}
+
+.settingsFormGroup {
+  padding: 0;
+  border: 0;
+  margin: 0;
+}
+
+.settingsFormGroup + .settingsFormGroup {
+  border-top: 1px solid var(--win-border-light);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+
+.settingsFormGroup legend {
+  font-weight: 650;
+  padding: 0 10px 0 0;
+}
+
+.settingsGrid3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.operationStopControls {
+  border-top: 1px solid var(--win-border-light);
+  padding-top: 14px;
+  margin-top: 16px;
+}
+
+.operationStopControls p {
+  margin-bottom: 0;
+}
+
+.matrixGroup {
+  border: 1px solid var(--win-border-light);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 10px 0;
+}
+
+.matrixGroup legend {
+  font-weight: 650;
+  padding-inline: 6px;
+}
+
+.matrixActionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.matrixActionCard {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.matrixActionCard legend {
+  padding-inline: 0.3rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.matrixRadioGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.matrixRadioGroup label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+  min-height: 2rem;
+  font-weight: normal;
+  margin: 0;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+.matrixRadioGroup label:has(input:checked) {
+  background: #e1eaf6;
+  border-radius: 0.35rem;
+}
+
+/* Workbench (AutomationRecordsPage) */
+.workbenchNav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  margin-bottom: 14px;
+}
+
+.segmentedControl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.navBtnActive,
+.pillActive {
+  background: #eeeeee;
+  border-color: #c7c7c7;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.badgeCounter {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f2f2f2;
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+
+.splitWorkspace {
+  display: grid;
+  grid-template-columns: minmax(225px, 0.8fr) minmax(0, 1.2fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.masterPane,
+.detailPane {
+  min-width: 0;
+  border: 1px solid var(--win-border-light);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.masterList {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.candidateCard,
+.inboxItem {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--win-border-light);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+
+.candidateCard {
+  cursor: pointer;
+}
+
+.candidateCard:hover {
+  background: #f8f8f8;
+}
+
+.candidateCardSelected {
+  border-color: #93b2d1;
+  background: var(--soft);
+}
+
+.roundCard {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--win-border-light);
+  border-radius: 10px;
+}
+
+.roundHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+
+.roundMetricsGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.metricChip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f2f2f2;
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+
+.videoContextCard,
+.aiReasonCard {
+  background: #f7f7f7;
+  border-radius: 10px;
+  padding: 12px;
+  margin: 12px 0;
+}
+
+/* Comments & Queue */
+.fetchRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(6rem, auto) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.fetchRow > label {
+  margin-top: 0;
+}
+
+.videoList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.videoList button {
+  text-align: start;
+  display: block;
+}
+
+.videoList small {
+  display: block;
+  color: var(--muted);
+}
+
+.queueToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.queueStatusOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.queueStatusOptions legend {
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding: 0;
+}
+
+.queueStatusOptions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  margin: 0;
+}
+
+.queueStatusOptions input[type="radio"] {
+  width: auto;
+  margin: 0;
+}
+
+.queueStatusOptions input:checked + span {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.reviewLayout {
+  display: grid;
+  grid-template-columns: minmax(215px, 0.8fr) minmax(0, 1.35fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.queueRow {
+  display: grid;
+  gap: 3px;
+  color: var(--ink);
+  text-decoration: none;
+  border-top: 1px solid var(--line);
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+}
+
+.queueRow[aria-current],
+.queueRow:hover {
+  background: var(--soft);
+}
+
+.queueRow[aria-current] {
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+.queueRow strong {
+  font-size: 0.93rem;
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+.queueCheckRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  border-top: 1px solid var(--line);
+}
+
+.queueCheckRow:first-child,
+.queueCheckRow > .queueRow {
+  border-top: 0;
+}
+
+.queueCheckRow > label {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  min-height: 36px;
+  margin: 0;
+}
+
+.queueCheckRow input {
+  margin: 0;
+}
+
+.commentLink {
+  display: block;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: start;
+  font-weight: 500;
+}
+
+.cellSub {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.categorySelect {
+  padding: 4px;
+  min-height: 30px;
+  font-size: 0.82rem;
+}
+
+/* Messages */
+.messageLayout {
+  display: grid;
+  grid-template-columns: minmax(215px, 0.85fr) minmax(0, 1.15fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.messageDrafts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.messageDrafts button[aria-pressed="true"] {
+  border-color: #7e9fc6;
+  background: var(--soft);
+}
+
+.messageIncoming {
+  padding-block: 12px;
+  border-top: 1px solid var(--win-border-light);
+}
+
+.messageIncoming small {
+  color: var(--muted);
+}
+
+.messageIncoming p {
+  width: fit-content;
+  max-width: 94%;
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-radius: 15px 15px 15px 5px;
+  background: #f0f0f0;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.policyFieldsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(155px, 100%), 1fr));
+  gap: 10px;
+}
+
+.memeAttachmentPreview {
+  margin-block: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--win-border-light);
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.memeAttachmentPreview img,
+.commentCardImage {
+  max-width: min(100%, 340px);
+  max-height: 280px;
+  border-radius: 6px;
+  display: block;
+  margin-block: 6px;
+}
+
+/* Issues */
+.issueRow {
+  padding-block: 10px;
+}
+
+.issueRow + .issueRow {
+  border-top: 1px solid var(--line);
+}
+
+.issueRow p {
+  overflow-wrap: anywhere;
+  margin: 0 0 5px;
+}
+
+.issueRow a {
+  margin-inline-start: 10px;
+}
+
+@media (max-width: 950px) {
+  .pipelineGrid,
+  .reviewLayout,
+  .messageLayout,
+  .splitWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .activityRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .activityReplies {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .countsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .settingsGrid3,
+  .fetchRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
