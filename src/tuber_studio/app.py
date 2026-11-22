@@ -47,12 +47,11 @@ from .meme_api import register_meme_api
 from .message_api import register_message_api
 from .model_runtime.api import register_model_api
 from .operation_recovery_api import register_operation_recovery_api
-from .operations.api import register_operations_api
-from .operations.browsing.api import register_browsing_api
-from .operations.browsing.service import BrowsingService
+from .operations.api import register_browsing_api, register_operations_api
 from .operations.channels.comments import Comments
 from .operations.channels.direct_messages import DirectMessages
 from .operations.channels.dynamics import Dynamics
+from .operations.service import BrowsingService
 from .persona.assets.illustration_policy import (
     IllustrationPolicy,
     illustration_policy,

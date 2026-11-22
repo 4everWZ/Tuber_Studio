@@ -2,11 +2,13 @@
 
 import json
 import re
+import time
 from typing import Literal
 
 from pydantic import Field
 
 from ....core.models import StrictModel, content_hash
+from ....core.store import dump
 
 
 class OutreachAssessment(StrictModel):
@@ -221,3 +223,83 @@ def contact_state(draft):
     check = draft.get("outreach_check") or {}
     check = json.loads(check) if isinstance(check, str) else check
     return check.get("state") or "waiting"
+
+
+async def handoff_comment(browsing, row, reply, target, thread, material, keys, *, event=None, created_at=""):
+    """Unidirectional comment-to-DM handoff preserving strict private context isolation."""
+    policy = browsing.messages.policy()
+    if not (row["config"]["comment_handoff_enabled"] and policy["enabled"] and policy["allow_comment_handoff"]):
+        raise ValueError("评论转私信未授权")
+    source = thread["source"]
+    resource = target.get("bvid") or "dynamic:" + str(target["oid"])
+    if str(source["comment_id"]) != str(target["parent"]) or str(source["author_uid"]) != str(target["recipient"]):
+        raise ValueError("私信移交的评论与收件人不一致")
+    invitation = confirmed_invitation(thread, row["account_id"], target["recipient"])
+    if not invitation:
+        return None
+    with browsing.store.db:
+        browsing.store.db.execute("BEGIN IMMEDIATE")
+        intent = browsing.publication._intent(
+            row, "private_handoff", target, reply, keys, reply.evidence_ids, transaction_owned=True
+        )
+        if not intent or intent["kind"] != "private_handoff":
+            return None
+        browsing.store.db.execute(
+            "INSERT OR IGNORE INTO comments(platform,video_id,comment_id,thread_id,parent_comment_id,"
+            "platform_user_id,display_name,content,category,created_at,imported_at) "
+            "VALUES('bilibili',?,?,?,?,?,?,?,'interaction',?,?)",
+            (
+                resource,
+                str(source["comment_id"]),
+                str(target["root"]),
+                (thread.get("addressing") or {}).get("source_parent_comment_id"),
+                str(source["author_uid"]),
+                source.get("author_name") or source.get("display_name") or (event or {}).get("sender_name", ""),
+                source["text"],
+                str((event or {}).get("timestamp", created_at) or ""),
+                time.time(),
+            ),
+        )
+        comment = browsing.store.one(
+            "SELECT * FROM comments WHERE platform='bilibili' AND video_id=? AND comment_id=?",
+            (resource, str(source["comment_id"])),
+        )
+        if comment["content"] != source["text"] or str(comment["platform_user_id"]) != str(source["author_uid"]):
+            raise ValueError("已导入评论的原文或作者与当前来源不一致")
+        evidence = browsing.evidence_payload(keys, browsing._segments(material) if material else [])
+        public_thread = thread | {"target": target}
+        if event is None:
+            public_thread["public_text"] = thread.get("public_text") or source["text"]
+        evidence.update(public_source_thread=public_thread, origin_round_id=row["id"])
+        if event is not None:
+            evidence["source_event"] = event
+        automatic = bool(intent["auto_authorized"] and policy["auto_send"])
+        dm_id = browsing.messages.enqueue(
+            "comment",
+            comment["id"],
+            automatic=automatic,
+            reason=reply.reason,
+            character=browsing.store.character(row["character_id"], row["character_version"]),
+            account_id=row["account_id"],
+            video_evidence=evidence,
+            schedule=False,
+            purpose=invitation["quote"],
+            contact_trigger=invitation["kind"],
+            managed_handoff=not row["preview"],
+            transaction_owned=True,
+        )
+        private = browsing.store.one("SELECT status FROM dm_drafts WHERE id=?", (dm_id,))
+        target = target | {"private_draft_id": dm_id, "contact_state": private["status"]}
+        browsing.store.db.execute(
+            "UPDATE browsing_intents SET target=? WHERE id=?",
+            (dump(target), intent["id"]),
+        )
+    if row["preview"]:
+        await browsing.messages._generate(dm_id, automatic=False)
+        browsing.store.execute(
+            "UPDATE browsing_intents SET target=json_set(target,'$.contact_state',?) WHERE id=?",
+            (browsing.store.one("SELECT status FROM dm_drafts WHERE id=?", (dm_id,))["status"], intent["id"]),
+        )
+    else:
+        browsing.messages.changed.set()
+    return browsing.repo.decode(browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (intent["id"],)))

@@ -8,7 +8,7 @@ from pydantic import Field
 
 from ..core.models import StrictModel
 from ..core.store import dump
-from ..operations.channels.comments.timeline import comment_href, ensure_comment_timeline
+from ..operations.facade import comment_href, ensure_comment_timeline
 
 
 class CommentWatch(StrictModel):

@@ -7,12 +7,12 @@ from uuid import uuid4
 
 import pytest
 from test_archived_video_source import package as package
-from test_browsing_evidence import BV, PublicAdapter
-from test_browsing_evidence import config as config
-from test_browsing_evidence import evidence_factory as evidence_factory
 
 from tests.support.fake_providers import FRAMES, generations
 from tests.support.fake_providers import provider as provider
+from tests.support.operations_helpers import BV, PublicAdapter
+from tests.support.operations_helpers import config as config
+from tests.support.operations_helpers import evidence_factory as evidence_factory
 from tuber_studio.agent.public_video import read_public_part
 from tuber_studio.agent.task_tools import Video
 from tuber_studio.infra.inference.video_vision import VideoPartText, frame_reading_context

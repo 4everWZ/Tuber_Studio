@@ -5,9 +5,9 @@ from uuid import uuid4
 
 import pytest
 from PIL import ImageFont
-from test_dynamics import published_reply
-from test_dynamics import service as service
 
+from tests.support.operations_helpers import published_reply
+from tests.support.operations_helpers import service as service
 from tuber_studio.agent.dynamic_publication import ExistingDraft, named_in_goal, register_dynamic_publication
 from tuber_studio.agent.task_runtime import TaskRuntime
 from tuber_studio.infra.platforms.bilibili.client import PublishUncertain

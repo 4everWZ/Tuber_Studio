@@ -13,8 +13,8 @@ from PIL import Image
 from tuber_studio.app import create_app
 from tuber_studio.core.meter import GenerationMeter
 from tuber_studio.infra.inference.api_providers import APIProvider
-from tuber_studio.operations.browsing.repository import BrowsingRepository
 from tuber_studio.operations.kernel.models import BrowsingPolicy
+from tuber_studio.operations.kernel.repository import BrowsingRepository
 from tuber_studio.persona.assets.meme_selection import select_meme
 from tuber_studio.persona.assets.memes import MAX_BYTES, ImageInspector, MemeCatalog
 

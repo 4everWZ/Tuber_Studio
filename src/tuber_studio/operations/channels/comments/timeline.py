@@ -20,11 +20,13 @@ __all__ = [
     "comment_thread",
     "comment_thread_context",
     "ensure_comment_timeline",
+    "merge_continuous_comments",
     "observe_thread",
     "operator_reply",
     "public_discussion_url",
     "read_scoped_thread",
     "resource_key",
+    "source_discussion",
 ]
 
 
@@ -370,3 +372,69 @@ def _reply(row, target, account):
         return {"comment_id": observed["comment_id"], "parent_comment_id": _id(target.get("parent")),
                 "author_uid": str(account), "author_name": observed.get("author_name"), "text": observed.get("text"),
                 "created_at": _timestamp(observed.get("created_at")), "publication": "same_account"}
+
+
+def _extract_timestamp(item):
+    """Extract numeric Unix timestamp from common comment item keys."""
+    for key in ("created_at", "ctime", "pubdate", "time", "timestamp"):
+        val = item.get(key)
+        if isinstance(val, (int, float)) and val > 0:
+            return float(val)
+        if isinstance(val, str):
+            try:
+                return float(val)
+            except ValueError:
+                pass
+    return None
+
+
+def source_discussion(source_row, context, items):
+    """Build compact source and parent discussion snapshot for a comment intent."""
+    def snapshot(row, parent):
+        return comment_source(row) | {"created_at": row.get("created_at"), "parent_comment_id": parent}
+
+    verified = context.get("parent") or {}
+    parent_id = verified.get("comment_id")
+    parent = next(
+        (item for item in items if verified.get("available") and str(item["comment_id"]) == str(parent_id)),
+        None,
+    )
+    source = snapshot(source_row, context.get("addressing", {}).get("source_parent_comment_id"))
+    if parent is None:
+        return {"source": source}
+    return {"source": source, "parent": snapshot(parent, verified.get("parent_comment_id"))}
+
+
+def merge_continuous_comments(items, time_window_seconds=600):
+    """Group adjacent sources from the same author/thread without synthesizing a platform comment."""
+    def addressing(item):
+        mentions = item.get("mentions") or []
+        uid = item.get("user_id") or item.get("platform_user_id")
+        if not uid or item.get("parent_verified") is False or any(not mention.get("uid") for mention in mentions):
+            return None
+        return (
+            str(uid),
+            str(item.get("thread_id") or item["comment_id"]),
+            str(item.get("parent_comment_id") or "0"),
+            frozenset(str(mention["uid"]) for mention in mentions),
+        )
+
+    groups = []
+    for item in items:
+        timestamp = _extract_timestamp(item)
+        group = groups[-1] if groups else []
+        signature = addressing(item)
+        if group and len(group) < 8 and timestamp is not None and signature and signature == addressing(group[-1]):
+            times = [_extract_timestamp(previous) for previous in group]
+            if all(value is not None and abs(timestamp - value) <= time_window_seconds for value in times):
+                group.append(item)
+                continue
+        groups.append([item])
+    result = []
+    for group in groups:
+        if len(group) == 1:
+            result.append(dict(group[0]))
+        else:
+            group.sort(key=_extract_timestamp)
+            result.append(dict(group[-1], grouped_comments=group))
+    return result

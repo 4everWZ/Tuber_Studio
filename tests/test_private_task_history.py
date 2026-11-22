@@ -5,8 +5,8 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from test_browsing import ControlledPlatform
 
+from tests.support.operations_helpers import ControlledPlatform
 from tuber_studio.agent.owner_memory import history_preference
 from tuber_studio.app import create_app
 

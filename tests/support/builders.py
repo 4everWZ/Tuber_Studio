@@ -8,12 +8,12 @@ from uuid import uuid4
 import pytest
 
 from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
-from tuber_studio.operations.browsing.service import BrowsingService
 from tuber_studio.operations.channels.comments import Comments
 from tuber_studio.operations.channels.direct_messages import DirectMessages
 from tuber_studio.operations.channels.dynamics import Dynamics
 from tuber_studio.operations.channels.dynamics import publisher as dynamics_module
 from tuber_studio.operations.kernel.models import BrowsingPolicy
+from tuber_studio.operations.service import BrowsingService
 from tuber_studio.persona.memory.core_memory import GroundedMemory
 
 from .fake_bilibili import BV, CommentPlatform, ControlledPlatform, DMDelivery

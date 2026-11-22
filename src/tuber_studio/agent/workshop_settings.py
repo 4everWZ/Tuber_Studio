@@ -5,7 +5,7 @@ from pydantic import TypeAdapter, ValidationError
 from ..core.models import content_hash
 from ..live.media import MusicSettings, Scene
 from ..live.options import LiveOptions
-from ..operations.kernel.models import BrowsingPolicy
+from ..operations.facade import BrowsingPolicy
 from ..persona.assets.illustration_policy import (
     IllustrationPolicy,
     illustration_policy,

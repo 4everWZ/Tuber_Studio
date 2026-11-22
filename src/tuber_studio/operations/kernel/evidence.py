@@ -212,6 +212,17 @@ class BrowsingEvidence:
                     for cid in {str(part["cid"]) for part in parts}}
         return all(part.get("visual_text_version") == versions[str(part["cid"])] for part in parts)
 
+    def has_inflight(self, video: str) -> bool:
+        """Return True when any same-video preparation flight is currently pending."""
+        return any(
+            isinstance(key, tuple)
+            and len(key) >= 2
+            and isinstance(key[1], tuple)
+            and len(key[1]) >= 2
+            and key[1][1] == video
+            for key in self.pending
+        )
+
     def has_visual_provider(self):
         return bool(self.visual.capabilities().get("images"))
 
@@ -389,6 +400,25 @@ class BrowsingEvidence:
             kind = getattr(visual_failure, "kind", None) or (missing[0]["reason"] if missing else "no_subtitles")
             raise EvidenceUnavailable(kind, f"取材失败 · 字幕：{subtitle} · 画面：{visual}", missing_material=True)
         return await self._store(material)
+
+    def cached_material(self, video, languages=None):
+        """Return non-expired cached public video material without triggering platform reads."""
+        for row in self.store.all(
+            "SELECT id FROM browsing_materials WHERE bvid=? AND expires_at>? ORDER BY created_at DESC, rowid DESC LIMIT 4",
+            (video, time.time()),
+        ):
+            try:
+                material = self.load(row["id"])
+            except EvidenceUnavailable:
+                continue
+            if languages is None or material.get("languages") == list(languages):
+                self.hits += 1
+                return row["id"], material
+        return None
+
+    async def prepare_light(self, video, config, *, task=None, deadline=None):
+        """Share same-BV single-flight metadata/subtitle preparation without watch metering."""
+        return await self.prepare(video, config, force=False, task=task, deadline=deadline, visual_source_ids=())
 
     async def subtitle_part(self, metadata, part, languages):
         evidence = await self.reader(self.adapter.subtitles, metadata["bvid"], part["cid"], languages)

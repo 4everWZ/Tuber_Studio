@@ -9,6 +9,7 @@ from .models import (
     MessageInputChanged,
     MessagePolicy,
 )
+from .outreach import handoff_comment
 from .settlement import DirectMessages
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "MessageIdentityChanged",
     "MessageInputChanged",
     "MessagePolicy",
+    "handoff_comment",
 ]

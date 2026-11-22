@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from ..core.identity import operating_account_facts
 from ..core.models import content_hash
 from ..core.store import dump
+from ..operations.facade import control_policy, get_dynamic_post
 from ..persona.characters.front_persona import character_names
 from ..persona.memory.daily import HIGHLIGHT_ACCOUNT_FILTER
 from . import operator_facts, outgoing_queue, recall_memory, workbench_tools, workshop_lookup
@@ -650,7 +651,7 @@ class ChatContext:
             return result | {"card": card | {"data": data}}
         if card["type"] == "dynamic_draft":
             identifier = card["data"]["id"]
-            row = self.dynamics._post(identifier) if self.store.one(
+            row = get_dynamic_post(self.dynamics, identifier) if self.store.one(
                 "SELECT 1 FROM dynamic_posts WHERE id=?", (identifier,)
             ) else None
             return result | {"card": card | {"data": self.draft_view(row)}}
@@ -846,7 +847,7 @@ class ChatContext:
         }
 
     def control_binding(self, char):
-        control = self.browsing.operations.policy()
+        control = control_policy(self.browsing)
         return {
             "scope": self.binding(char),
             "policy": self.browsing.policy(),

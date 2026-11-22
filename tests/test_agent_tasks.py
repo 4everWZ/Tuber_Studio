@@ -5,8 +5,8 @@ from uuid import uuid4
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from test_browsing import BV, ControlledPlatform
 
+from tests.support.operations_helpers import BV, ControlledPlatform
 from tuber_studio.agent import task_tools
 from tuber_studio.agent.task_runtime import TaskDecision, TaskRuntime, Tool, ToolRequest, ToolWait
 from tuber_studio.app import create_app

@@ -5,8 +5,8 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
-from test_browsing import ControlledModel, ControlledPlatform
 
+from tests.support.operations_helpers import ControlledModel, ControlledPlatform
 from tuber_studio.app import create_app
 
 

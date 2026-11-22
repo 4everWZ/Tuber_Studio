@@ -1,6 +1,7 @@
 """Scoped view of existing publications and their current review state."""
 
 from ..core.store import dump
+from ..operations.facade import get_dynamic_post
 
 CHANNELS = {
     "dynamics": ("动态", "dynamic_posts", "content"),
@@ -56,7 +57,7 @@ def queue_view(store, scope, snapshot, dynamics, draft_view):
                             (identity, account, role, version))
             if row:
                 if key == "dynamics":
-                    row["draft"] = draft_view(dynamics._post(identity))
+                    row["draft"] = draft_view(get_dynamic_post(dynamics, identity))
                 items.append(row)
         groups.append({k: v for k, v in group.items() if k != "ids"} | {"items": items})
     return {"groups": groups, "prepare": snapshot["prepare"]}

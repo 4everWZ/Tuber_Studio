@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from ..core.identity import operating_account_facts
 from ..core.store import dump
-from ..operations.kernel.quotas import day_window
+from ..operations.facade import control_policy, control_starting, day_window, history_scope
 from . import operator_facts, outgoing_queue, recall_memory, workbench_tools, workshop_lookup
 from .chat_context import ChatContext
 from .chat_models import (
@@ -893,7 +893,7 @@ class CapabilityDispatcher:
             item = found[0]
             return {"reply_text": item["anecdote"], "card": None, "memory": {"id": item["id"], "updated_at": item["updated_at"]}}
         if kind == "video_activity":
-            account, _, _ = ctx.browsing.discovery.history_scope()
+            account, _, _ = history_scope(ctx.browsing)
             timezone = ctx.browsing.policy()["business_timezone"]
             window = {"account_id": account, "timezone": timezone, **day_window(timezone)}
             stats = ctx.video_activity(window)
@@ -1229,7 +1229,7 @@ class CapabilityDispatcher:
     async def stop(self, reference, tasks):
         ctx = self.ctx
         active = [key for key, task in tasks.items() if task["status"] in _ACTIVE_VIDEO_STATES]
-        if ctx.browsing.operations.policy()["enabled"] or ctx.browsing.operations.starting:
+        if control_policy(ctx.browsing)["enabled"] or control_starting(ctx.browsing):
             active.append("operations")
         if ctx.runtime.live.state != "stopped":
             active.append("live")

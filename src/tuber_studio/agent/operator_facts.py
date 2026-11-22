@@ -4,9 +4,15 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from ..operations.browsing.activity_history import activity
-from ..operations.channels.comments.timeline import comment_href, comment_thread
-from ..operations.kernel.caption_corrections import CORRECTED_VIDEOS, corrected_caption
+from ..operations.facade import (
+    CORRECTED_VIDEOS,
+    activity,
+    comment_href,
+    comment_thread,
+    corrected_caption,
+    history_scope,
+    material_excerpt_state,
+)
 
 
 def now(browsing):
@@ -14,9 +20,7 @@ def now(browsing):
 
 
 def _excerpt(browsing, account, character, bvid, *, match=None, related_text=None):
-    scope = {"account_id": account, "character_id": character}
-    progress = browsing.repo.content_progress(scope, bvid)
-    priority = browsing.repo.watch_evidence(scope, bvid)
+    progress, priority = material_excerpt_state(browsing, account, character, bvid)
     material = (priority or {}).get("material") or (progress or {}).get("material") or {}
     pages = {str(part["cid"]): part.get("page", index)
              for index, part in enumerate(material.get("metadata", {}).get("parts", []), 1)}
@@ -47,7 +51,7 @@ def refresh_reply(browsing, event, timeline=None):
     anchor = event.get("thread")
     if not anchor:
         return event
-    account, character, _ = browsing.discovery.history_scope()
+    account, character, _ = history_scope(browsing)
     thread = timeline if timeline is not None else comment_thread(
         browsing.store, anchor["resource"], anchor["root_id"], account_id=account, character_id=character,
     )
@@ -62,7 +66,7 @@ def refresh_reply(browsing, event, timeline=None):
 
 
 def daily_events(browsing, day):
-    account, character, _ = browsing.discovery.history_scope()
+    account, character, _ = history_scope(browsing)
     if not account:
         return []
     # Public browsing/comment sources only. Exclude drafts and outgoing/private material.
@@ -132,7 +136,7 @@ def daily_events(browsing, day):
 def recent_events(browsing, *, limit=6):
     current = now(browsing)
     items = {}
-    if browsing.discovery.history_scope()[0]:
+    if history_scope(browsing)[0]:
         for offset in range(3):
             day = (current.date() - timedelta(days=offset)).isoformat()
             for event in daily_events(browsing, day):
@@ -161,10 +165,10 @@ def event_sources(browsing, event, *, include_saved_material=False):
     if include_saved_material and event.get("bvid"):
         material = event.get("material")
         if material is None and event["source"]["kind"] == "comment" and event["bvid"] in CORRECTED_VIDEOS:
-            account, character, _ = browsing.discovery.history_scope()
+            account, character, _ = history_scope(browsing)
             material = _excerpt(browsing, account, character, event["bvid"], related_text=event["source"]["text"])
         elif material and material["kind"] == "subtitle":
-            account, character, _ = browsing.discovery.history_scope()
+            account, character, _ = history_scope(browsing)
             current = _excerpt(browsing, account, character, event["bvid"], match=material)
             if current and current.get("original_text") == material["text"]:
                 material = current

@@ -106,34 +106,22 @@ LEGACY_ROOT_PENDING_M1 = frozenset(
     }
 )
 
-# Explicit finite allowlist for pre-M2-B/M3 un-migrated operations/live/agent internals ONLY.
-# ZERO entries are allowed for core/, infra/, persona/, or operations -> agent/live.
+# Explicit finite allowlist for pre-M3 un-migrated live/agent internals ONLY.
+# ZERO entries are allowed for core/, infra/, persona/, operations/, or agent -> operations.
 LEGACY_CROSS_ALLOWLIST = frozenset(
     {
-        # M2-B/M3 live -> agent / app_legacy
+        # M3 live -> agent / app_legacy
         ("tuber_studio.live.api", "tuber_studio.web_entry"),
         ("tuber_studio.live.stardew_tools", "tuber_studio.agent.task_runtime"),
-        # M2-B/M3 agent -> operations / live / app_legacy (pending facade wiring in M2-B / M3)
-        ("tuber_studio.agent.capability_dispatcher", "tuber_studio.operations.kernel.quotas"),
-        ("tuber_studio.agent.goal_comment_events", "tuber_studio.operations.channels.comments.timeline"),
-        ("tuber_studio.agent.memory_organizer", "tuber_studio.operations.channels.comments.timeline"),
-        ("tuber_studio.agent.operator_facts", "tuber_studio.operations.browsing.activity_history"),
-        ("tuber_studio.agent.operator_facts", "tuber_studio.operations.kernel.caption_corrections"),
-        ("tuber_studio.agent.operator_facts", "tuber_studio.operations.channels.comments.timeline"),
+        # M3 agent -> live / app_legacy (pending live.facade / app M3 wiring)
         ("tuber_studio.agent.private_call_guard", "tuber_studio.web_entry"),
-        ("tuber_studio.agent.reply_operations", "tuber_studio.operations.channels.attachments.attachments"),
-        ("tuber_studio.agent.reply_operations", "tuber_studio.operations.kernel.feedback"),
-        ("tuber_studio.agent.reply_operations", "tuber_studio.operations.channels.comments.timeline"),
         ("tuber_studio.agent.task_tools", "tuber_studio.live.game_livestream"),
-        ("tuber_studio.agent.workshop_lookup", "tuber_studio.operations.channels.comments.timeline"),
-        ("tuber_studio.agent.workshop_lookup", "tuber_studio.operations.kernel.quotas"),
         ("tuber_studio.agent.workshop_settings", "tuber_studio.live.media"),
         ("tuber_studio.agent.workshop_settings", "tuber_studio.live.options"),
-        ("tuber_studio.agent.workshop_settings", "tuber_studio.operations.kernel.models"),
     }
 )
 
-# Pre-M2 module-level cycles inside un-split live/agent internals only.
+# Pre-M3 module-level cycles inside un-split live/agent internals only.
 LEGACY_L3_MODULE_CYCLE_ALLOWLIST = frozenset(
     {
         frozenset(
@@ -149,13 +137,11 @@ LEGACY_L3_MODULE_CYCLE_ALLOWLIST = frozenset(
     }
 )
 
-# Pre-M1 lazy cycle broken when providers.build_messages moves to persona/context in M1.
-PRE_M1_MODULE_CYCLE = frozenset(
+PRE_M3_SUBPACKAGE_CYCLE_NODES = frozenset(
     {
-        "tuber_studio.operation_feedback",
-        "tuber_studio.operation_generation",
-        "tuber_studio.operations.browsing.inputs",
-        "tuber_studio.providers",
+        f"{PACKAGE_NAME}.live",
+        f"{PACKAGE_NAME}.agent",
+        f"{PACKAGE_NAME}.app_legacy",
     }
 )
 
@@ -659,17 +645,21 @@ def _subpackage_node(module: str, known_dirs: set[str], *, allow_m1_pending: boo
     return module
 
 
+def _is_m3_pending(src_pkg: Path) -> bool:
+    return any((src_pkg / fname).exists() for fname in LEGACY_ROOT_PENDING_M3)
+
+
 def check_cycles(
     src_pkg: Path,
     *,
     allow_m1_pending: bool | None = None,
-    m2_pending: bool | None = None,
+    m3_pending: bool | None = None,
 ) -> list[str]:
     """Run Tarjan SCC cycle detection at top-level, module, and subpackage levels."""
     if allow_m1_pending is None:
         allow_m1_pending = not _is_m1_started(src_pkg)
-    if m2_pending is None:
-        m2_pending = _is_m2_pending(src_pkg)
+    if m3_pending is None:
+        m3_pending = _is_m3_pending(src_pkg)
 
     modules, dirs, imports, parse_errors = extract_module_imports(src_pkg)
     violations: list[str] = list(parse_errors)
@@ -702,9 +692,7 @@ def check_cycles(
         all_mod_graph[imp.source_module].add(imp.target_module)
 
     allowed_mod_cycles: set[frozenset[str]] = set()
-    if allow_m1_pending:
-        allowed_mod_cycles.add(PRE_M1_MODULE_CYCLE)
-    if m2_pending:
+    if m3_pending:
         allowed_mod_cycles |= LEGACY_L3_MODULE_CYCLE_ALLOWLIST
 
     for scc in _tarjan_sccs(all_mod_graph):
@@ -723,19 +711,8 @@ def check_cycles(
         if src_sp != dst_sp:
             subpkg_graph.setdefault(src_sp, set()).add(dst_sp)
 
-    pre_m2_cycle_nodes = {
-        f"{PACKAGE_NAME}.operations",
-        f"{PACKAGE_NAME}.operations.browsing",
-        f"{PACKAGE_NAME}.operations_legacy",
-        f"{PACKAGE_NAME}.live",
-        f"{PACKAGE_NAME}.agent",
-        f"{PACKAGE_NAME}.app_legacy",
-    }
-    if allow_m1_pending:
-        pre_m2_cycle_nodes.add(f"{PACKAGE_NAME}.m1_pending")
-
     for scc in _tarjan_sccs(subpkg_graph):
-        if m2_pending and scc <= pre_m2_cycle_nodes:
+        if m3_pending and scc <= PRE_M3_SUBPACKAGE_CYCLE_NODES:
             continue
         violations.append(f"Subpackage dependency cycle detected: {sorted(scc)}")
 
@@ -814,6 +791,8 @@ def check_test_isolation(tests_root: Path) -> list[str]:
 
 
 def test_allowlists_are_strictly_bounded_to_m2_m3():
+    assert not _is_m2_pending(SRC_ROOT)
+    assert not (SRC_ROOT / "operations" / "browsing").exists()
     assert len(LEGACY_ROOT_PENDING_M2) == 0
     assert len(LEGACY_ROOT_PENDING_M3) == 6
     assert LEGACY_ROOT_PENDING_M2_M3 == (LEGACY_ROOT_PENDING_M2 | LEGACY_ROOT_PENDING_M3)
@@ -824,14 +803,8 @@ def test_allowlists_are_strictly_bounded_to_m2_m3():
     for src, dst in LEGACY_CROSS_ALLOWLIST:
         src_top = src.split(".")[1]
         assert src_top not in _M1_TARGET_SUBLAYERS, f"Forbidden M1 entry in LEGACY_CROSS_ALLOWLIST: {src}"
-        assert not (
-            src.startswith(f"{PACKAGE_NAME}.operations.discovery")
-            and dst.startswith(f"{PACKAGE_NAME}.operations.inbox")
-        )
-        assert not (
-            src.startswith(f"{PACKAGE_NAME}.operations.inbox")
-            and dst.startswith(f"{PACKAGE_NAME}.operations.discovery")
-        )
+        assert not src.startswith(f"{PACKAGE_NAME}.operations"), f"Forbidden M2 entry: {src}"
+        assert not dst.startswith(f"{PACKAGE_NAME}.operations"), f"Forbidden M2 target: {dst}"
 
     for comp in LEGACY_L3_MODULE_CYCLE_ALLOWLIST:
         for mod in comp:

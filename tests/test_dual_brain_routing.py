@@ -10,8 +10,8 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from test_browsing import BV, ControlledPlatform
 
+from tests.support.operations_helpers import BV, ControlledPlatform
 from tuber_studio.agent import private_call_work, turn_router, workshop_lookup
 from tuber_studio.agent.chat_models import DeliveryPacket
 from tuber_studio.agent.front_dialogue import paraphrase_task_delivery

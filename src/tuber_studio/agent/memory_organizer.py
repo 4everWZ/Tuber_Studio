@@ -16,7 +16,7 @@ from ..core.meter import budgeted_call
 from ..core.models import StrictModel, content_hash
 from ..core.store import dump
 from ..infra.inference.providers import public_error
-from ..operations.channels.comments.timeline import comment_thread, resource_key
+from ..operations.facade import comment_thread, resource_key
 from ..persona.memory.cooperation import RoutineReview, corroborates, locate_rule, with_scope_context
 from ..persona.memory.daily import contains_memory_credential
 from ..persona.memory.sources import install_chat_cleanup, memory_transaction

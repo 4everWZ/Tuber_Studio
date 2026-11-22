@@ -5,6 +5,7 @@ import json
 import secrets
 import time
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -31,8 +32,16 @@ LIVE_OUTCOMES = ("draw_guess_won", "draw_guess_start", "game_switch", "game_acti
 
 
 class LiveSession:
-    def __init__(self, runtime, *, singing_provider=None, live_scene=None):
+    def __init__(
+        self,
+        runtime,
+        *,
+        singing_provider=None,
+        live_scene=None,
+        timezone_provider: Callable[[], str] | None = None,
+    ):
         self.runtime = runtime
+        self._timezone_provider = timezone_provider
         self.settings, self.store = runtime.settings, runtime.store
         self.interactive_rules = InteractiveRulesService(self.store)
         self.draw_and_guess = DrawAndGuessService(daily_memory=runtime.daily_memory)
@@ -535,7 +544,11 @@ class LiveSession:
         return options
 
     def timezone(self):
-        return self.options().timezone or self.runtime.browsing.policy().get("business_timezone", "Asia/Taipei")
+        return (
+            self.options().timezone
+            or (self._timezone_provider() if self._timezone_provider else None)
+            or self.runtime.browsing.policy().get("business_timezone", "Asia/Taipei")
+        )
 
     def room_context(self, event):
         room = (event.get("platform"), event.get("room_id"))

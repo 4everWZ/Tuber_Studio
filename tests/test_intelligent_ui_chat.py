@@ -7,9 +7,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from test_agent_task_recovery import wait_status
-from test_browsing import BV, ControlledPlatform
-from test_browsing_evidence import PNG, TestVisual
 
+from tests.support.operations_helpers import BV, PNG, ControlledPlatform, TestVisual
 from tuber_studio.agent import operator_facts, task_delegation
 from tuber_studio.agent.assistant_output import AssistantTextStream, assistant_markdown
 from tuber_studio.agent.operator_task_patch import TaskPatch, grounded_patch, patch_vocabulary
@@ -18,8 +17,8 @@ from tuber_studio.core.identity import provider_identity_messages
 from tuber_studio.core.models import Reply
 from tuber_studio.infra.inference.providers import Audio
 from tuber_studio.live.game_livestream import GameLivestreamService
-from tuber_studio.operations.browsing.repository import BrowsingRepository
 from tuber_studio.operations.kernel.models import BrowsingPolicy
+from tuber_studio.operations.kernel.repository import BrowsingRepository
 
 
 async def test_chat_delegation_survives_interleaved_conversation_and_delivers_latest_revision(settings, monkeypatch):

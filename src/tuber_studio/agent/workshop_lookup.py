@@ -9,8 +9,7 @@ from pydantic import Field, StringConstraints
 
 from ..core.models import StrictModel, content_hash
 from ..core.store import dump
-from ..operations.channels.comments.timeline import comment_href
-from ..operations.kernel.quotas import day_window
+from ..operations.facade import comment_href, day_window
 from . import operator_facts
 
 LOOKUP_TOOL = "workshop_lookup"

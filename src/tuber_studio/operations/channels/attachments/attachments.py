@@ -7,10 +7,10 @@ import json
 from ....core.models import content_hash
 from ....infra.platforms.bilibili.urls import COMMENT_ID, VIDEO_ID
 from ....persona.assets.workstation_images import gateway_base
+from ...kernel.models import PENDING_IMAGE_STATES
 from .capabilities import video_top_level_images
 from .images import image_permissions
 
-PENDING_IMAGE_STATES = ("queued", "deciding", "submitting", "running")
 TEXT_ONLY_IMAGE = {"text_only": True}
 
 

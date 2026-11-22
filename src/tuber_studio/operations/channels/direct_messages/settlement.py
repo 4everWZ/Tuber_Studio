@@ -883,13 +883,12 @@ class DirectMessages(
                             "rejected" if isinstance(error, PlatformRejected) else "uncertain")
                         step("text", {"status": state})
                         raise PublishUncertain("图片已送达，正文发送结果待核对") from error
-                    receipt = receipt | {"message_kind": "text_image", "image_ref": ref,
-                                         "image_msg_key": image_receipt["msg_key"]}
+                    receipt = receipt | {
+                        "message_kind": "text_image", "image_ref": ref, "image_msg_key": image_receipt["msg_key"],
+                    }
                 elif image:
                     receipt = receipt | {
-                        "message_kind": "image",
-                        "meme_id": row["meme_id"],
-                        "asset_sha256": image["asset"]["sha256"],
+                        "message_kind": "image", "meme_id": row["meme_id"], "asset_sha256": image["asset"]["sha256"],
                     }
             except MessageInputChanged as error:
                 if token:
@@ -913,10 +912,7 @@ class DirectMessages(
                     "UPDATE dm_drafts SET status=?,error=?,updated_at=? WHERE id=?",
                     (previous, "图片或消息准备已取消，未提交私信", time.time(), identity),
                 )
-                self.store.execute(
-                    "UPDATE dm_attempts SET status='failed',error='准备已取消，未提交私信' WHERE id=?",
-                    (attempt,),
-                )
+                self.store.execute("UPDATE dm_attempts SET status='failed',error='准备已取消，未提交私信' WHERE id=?", (attempt,))
                 raise
             except (PublishUncertain, asyncio.CancelledError) as error:
                 if token:
@@ -935,10 +931,7 @@ class DirectMessages(
                     "UPDATE dm_drafts SET status=?,error=?,updated_at=? WHERE id=?",
                     (previous, public_error(error), time.time(), identity),
                 )
-                self.store.execute(
-                    "UPDATE dm_attempts SET status='failed',error=? WHERE id=?",
-                    (public_error(error), attempt),
-                )
+                self.store.execute("UPDATE dm_attempts SET status='failed',error=? WHERE id=?", (public_error(error), attempt))
                 if isinstance(error, PlatformRejected):
                     error.write_token = token
                     error.body_hash = content_hash(payload)

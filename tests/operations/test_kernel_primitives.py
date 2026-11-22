@@ -12,7 +12,6 @@ from tuber_studio.core.retention import RetentionManager
 from tuber_studio.core.store import Store
 from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
 from tuber_studio.infra.platforms.bilibili.client import PlatformReadError
-from tuber_studio.operations.browsing.repository import BrowsingRepository
 from tuber_studio.operations.channels.comments import Comments
 from tuber_studio.operations.channels.direct_messages import DirectMessages
 from tuber_studio.operations.channels.dynamics import Dynamics
@@ -26,6 +25,7 @@ from tuber_studio.operations.kernel.control import (
 )
 from tuber_studio.operations.kernel.models import BrowsingPolicy
 from tuber_studio.operations.kernel.read_gate import PlatformReadGate
+from tuber_studio.operations.kernel.repository import BrowsingRepository
 from tuber_studio.operations.kernel.sends import OperationSends
 
 

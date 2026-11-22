@@ -22,11 +22,11 @@ from .infra.inference.video_vision_service import restore_admission
 from .infra.media.cache import MediaCache
 from .live.scene import LiveScene
 from .live.session import HANDOFF_PLATFORM, LiveSession
-from .operations.browsing.repository import BrowsingRepository
 from .operations.channels.attachments.images import OperationImages
 from .operations.kernel.continuations import ContinuationCoordinator
 from .operations.kernel.control import OperationsControl
 from .operations.kernel.generation import generate_with_recovery, hold_comment_body, reply_generation_binding
+from .operations.kernel.repository import BrowsingRepository
 from .operations.kernel.turns import OperationTurns
 from .persona.characters.front_persona import front_identity
 from .persona.characters.pets import PetAppearances
@@ -39,7 +39,7 @@ from .persona.memory.relationships import Relationships
 
 
 def _comment_actor_formatter(event):
-    from .operations.browsing.inputs import (
+    from .operations.kernel.inputs import (
         RESPONSE_ACTOR_INSTRUCTION,
         bind_response_actors,
         compact_actor_context,
@@ -69,7 +69,16 @@ class Runtime:
         self.voices = VoiceService(settings)
         self.daily_memory = DailyMemoryService(store)
         self.memory_organizer = MemoryOrganizer(self)
-        self.live = LiveSession(self, singing_provider=singing_provider, live_scene=live_scene)
+        self.live = LiveSession(
+            self,
+            singing_provider=singing_provider,
+            live_scene=live_scene,
+            timezone_provider=lambda: (
+                getattr(self, "browsing", None).policy()["business_timezone"]
+                if getattr(self, "browsing", None)
+                else "Asia/Taipei"
+            ),
+        )
         self.tool_registry = build_default_tool_registry(
             daily_memory=self.daily_memory,
             game_livestream=self.live.game_livestream,

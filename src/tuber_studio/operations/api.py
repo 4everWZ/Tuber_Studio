@@ -1,4 +1,4 @@
-"""Bilibili account, comments, and dynamics routes."""
+"""Bilibili account, comments, dynamics, and autonomous operations API routes."""
 
 import asyncio
 from contextlib import aclosing
@@ -8,10 +8,13 @@ from uuid import UUID
 import httpx
 from fastapi import Body, Depends, Header, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
+from pydantic import Field
 
+from ..core.models import StrictModel
 from ..core.sse import encode_event
 from ..infra.inference.providers import public_error
-from ..operations.channels.comments.workbench import (
+from .activity import acknowledge_issues, activity, clear_issues, history
+from .channels.comments.workbench import (
     generation_task,
     list_queue,
     prepare_queue_selection,
@@ -20,6 +23,189 @@ from ..operations.channels.comments.workbench import (
     queue_selection,
     review_queue_selection,
 )
+from .facade import illustration_for_row
+
+
+class IssueObservation(StrictModel):
+    id: str = Field(min_length=1, max_length=200)
+    updated_at: float = Field(ge=0, allow_inf_nan=False)
+    occurrences: int = Field(ge=1, strict=True)
+
+
+def register_browsing_api(app, browsing, require_admin):
+    """Register `/api/automation*` routes for status, pipeline controls, activity, and intents."""
+    dependencies = [Depends(require_admin)]
+
+    @app.get("/api/automation", dependencies=dependencies)
+    async def automation_status():
+        return browsing.status()
+
+    @app.get("/api/automation/discovery", dependencies=dependencies)
+    async def automation_discovery():
+        await browsing.discovery.restore_history_scope()
+        return browsing.discovery.status()
+
+    @app.get("/api/automation/discovery/records", dependencies=dependencies)
+    async def automation_discovery_records(recent: bool = False):
+        return browsing.discovery.records(recent=recent)
+
+    @app.post("/api/automation/issues/clear", dependencies=dependencies)
+    async def automation_issues_clear():
+        return clear_issues(browsing)
+
+    @app.post("/api/automation/issues/acknowledge", dependencies=dependencies)
+    async def automation_issues_acknowledge(observations: list[IssueObservation] = Body(min_length=1, max_length=100)):
+        return acknowledge_issues(browsing, [item.model_dump() for item in observations])
+
+    @app.get("/api/automation/discovery/history", dependencies=dependencies)
+    async def automation_discovery_history(
+        day: str | None = None,
+        page: int = Query(1, ge=1),
+        page_size: int = Query(10, ge=1, le=50),
+    ):
+        await browsing.discovery.restore_history_scope()
+        return history(
+            browsing,
+            day=day,
+            page=page,
+            page_size=page_size,
+            visible_since=browsing.store.get("browsing_history_visible_since", 0),
+        )
+
+    @app.get("/api/automation/activity", dependencies=dependencies)
+    async def automation_activity(
+        day: str | None = None,
+        kind: str = "all",
+        comment_filter: Literal["all", "read", "replied", "pending_review"] = "all",
+        source: Literal["all", "discovery", "inbox", "manual"] = "all",
+        page: int = Query(1, ge=1),
+        page_size: int = Query(10, ge=1, le=50),
+        round_id: str | None = Query(None, max_length=128),
+    ):
+        await browsing.discovery.restore_history_scope()
+        return activity(
+            browsing,
+            day=day,
+            kind=kind,
+            comment_filter=comment_filter,
+            source=source,
+            page=page,
+            page_size=page_size,
+            round_id=round_id,
+            visible_since=browsing.store.get("browsing_history_visible_since", 0),
+        )
+
+    @app.put("/api/automation/settings", dependencies=dependencies)
+    async def automation_settings(data: dict = Body(...)):
+        if set(data) == {"discovery_source"}:
+            return await browsing.discovery.configure_source(data["discovery_source"])
+        if "mode" in data:
+            return await browsing.discovery.configure_source(data)
+        return await browsing.configure(data)
+
+    @app.post("/api/automation/preflight", dependencies=dependencies)
+    async def automation_preflight(data: dict = Body(default={})):
+        return await browsing.preflight(for_automation=bool(data.get("for_automation", True)))
+
+    @app.post("/api/automation/enable", dependencies=dependencies)
+    async def automation_enable(data: dict = Body(...)):
+        if set(data) != {"enabled"}:
+            raise ValueError("只接受enabled字段")
+        return await browsing.set_enabled(data["enabled"])
+
+    @app.post("/api/automation/discovery/enable", dependencies=dependencies)
+    async def automation_discovery_enable(data: dict = Body(...)):
+        if "enabled" not in data or set(data) - {"enabled"} or type(data["enabled"]) is not bool:
+            raise ValueError("enabled须为布尔值且不允许额外字段")
+        return await browsing.set_discovery_enabled(data["enabled"])
+
+    @app.post("/api/automation/inbox/enable", dependencies=dependencies)
+    async def automation_inbox_enable(data: dict = Body(...)):
+        if "enabled" not in data or set(data) - {"enabled"} or type(data["enabled"]) is not bool:
+            raise ValueError("enabled须为布尔值且不允许额外字段")
+        return await browsing.set_inbox_enabled(data["enabled"])
+
+    @app.post("/api/automation/review", dependencies=dependencies)
+    async def automation_review(data: dict = Body(default={})):
+        if set(data) - {"resume_session_id"}:
+            raise ValueError("未知review字段")
+        if "resume_session_id" in data and (
+            not isinstance(data["resume_session_id"], str) or not 1 <= len(data["resume_session_id"]) <= 100
+        ):
+            raise ValueError("需要原review会话ID")
+        return await browsing.start_review_session(**data)
+
+    @app.post("/api/automation/round", dependencies=dependencies)
+    async def automation_round(data: dict = Body(default={})):
+        if set(data) - {"preview", "video"} or data.get("preview", True) is not True:
+            raise ValueError("手工入口只允许只读预览")
+        return await browsing.run(preview=True, video=data.get("video"))
+
+    @app.post("/api/automation/stop", dependencies=dependencies)
+    async def automation_stop(data: dict = Body(default={})):
+        if set(data) - {"emergency"} or type(data.get("emergency", False)) is not bool:
+            raise ValueError("emergency须为布尔值")
+        return await browsing.stop(emergency=data.get("emergency", False))
+
+    @app.post("/api/automation/reset-stop", dependencies=dependencies)
+    async def automation_reset_stop():
+        if browsing.operations.draining:
+            raise ValueError("当前停运尚未收齐任务")
+        browsing.operations.configure({"emergency": False})
+        return browsing.status()
+
+    @app.get("/api/automation/tasks", dependencies=dependencies)
+    async def automation_tasks(
+        status: str | None = None,
+        round_id: str | None = None,
+        task_id: str | None = None,
+    ):
+        return browsing.tasks(status, round_id=round_id, task_id=task_id)
+
+    @app.get("/api/automation/rounds", dependencies=dependencies)
+    async def automation_rounds():
+        return browsing.rounds()
+
+    @app.get("/api/automation/inbox", dependencies=dependencies)
+    async def automation_inbox():
+        return browsing.inbox()
+
+    @app.get("/api/automation/claims", dependencies=dependencies)
+    async def automation_claims():
+        return {"items": browsing.operations.claims.list_claims()}
+
+    @app.get("/api/automation/intents", dependencies=dependencies)
+    async def automation_intents():
+        return browsing.intents()
+
+    @app.post("/api/automation/intents/{identity}/review", dependencies=dependencies)
+    async def automation_intent_review(identity: str, data: dict = Body(...)):
+        if set(data) - {"action", "text", "image_ref", "updated_at", "expected_image", "mentions"}:
+            raise ValueError("未知审核字段")
+        options = {key: data[key] for key in ("image_ref", "updated_at", "expected_image") if key in data}
+        if "mentions" in data:
+            from .channels.mentions import bind_mentions
+
+            row = browsing.repo.decode(browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
+            if not row or data.get("updated_at") != row["updated_at"]:
+                raise ValueError("候选已变化，请刷新正文和提及")
+            target = row["target"]
+            mentions, pending = await bind_mentions(
+                browsing.adapter,
+                data.get("text", row["text"]),
+                data["mentions"],
+                [{"uid": target.get("recipient"), "name": target.get("recipient_name")}],
+            )
+            options["mention_selection"] = {"mentions": mentions, "pending_mentions": pending}
+        return browsing.review(identity, data.get("action"), data.get("text"), **options)
+
+    @app.post("/api/automation/intents/{identity}/publish", dependencies=dependencies)
+    async def automation_intent_publish(identity: str):
+        return await browsing.publish(identity)
+
+    @app.post("/api/automation/tasks/{identity}/reread", dependencies=dependencies)
+    async def automation_task_reread(identity: str):
+        return await browsing.reread(identity)
 
 
 def register_operations_api(app, store, account, comments, browsing, dynamics, require_admin):
@@ -27,13 +213,6 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
 
     @app.get("/api/operations/illustrations/{channel}/{identity}/{artifact_id}", dependencies=[Depends(require_admin)])
     async def illustration(channel: Literal["comments", "browsing", "dynamics", "messages"], identity: str, artifact_id: str):
-        from ..operations.channels.attachments.attachments import (
-            checked_image,
-            decision,
-            image_scope,
-            row_ref,
-        )
-
         if channel == "comments":
             row = comments._draft_source(identity)
         elif channel == "browsing":
@@ -44,12 +223,10 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
             row = store.one("SELECT * FROM dynamic_posts WHERE id=?", (identity,))
         if not row or row["account_id"] != account.display_account_id():
             raise HTTPException(404)
-        ref = decision(comments.runtime, channel, row, row_ref(row))
-        if not ref or ref.get("artifact_id") != artifact_id:
+        image = illustration_for_row(comments.runtime, comments.memes, channel, row, artifact_id=artifact_id)
+        if not image:
             raise HTTPException(404)
-        image = checked_image(comments.memes, ref, row["character_id"], runtime=comments.runtime,
-                              scope=image_scope(channel, row))
-        return Response(image["content"], media_type=image["mime_type"], headers={"Cache-Control":"private, no-store"})
+        return Response(image["content"], media_type=image["mime_type"], headers={"Cache-Control": "private, no-store"})
 
     def can_write_comments():
         return account.credentials_configured

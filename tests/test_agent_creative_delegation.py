@@ -7,8 +7,8 @@ from uuid import uuid4
 import httpx
 import pytest
 from test_agent_tasks import until
-from test_browsing import BV, ControlledPlatform
 
+from tests.support.operations_helpers import BV, ControlledPlatform
 from tuber_studio.agent import task_tools
 from tuber_studio.agent.task_delivery import (
     CreativeItem,

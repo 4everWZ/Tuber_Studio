@@ -8,6 +8,8 @@ from pydantic import Field, PrivateAttr, field_validator, model_validator
 from ...core.models import PublicMentionRequest, StrictModel
 from ...core.text import validate_operation_text
 
+PENDING_IMAGE_STATES = ("queued", "deciding", "submitting", "running")
+
 MENTION_REQUESTS = {
     "type": "array",
     "items": {

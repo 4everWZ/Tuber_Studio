@@ -14,7 +14,7 @@ from .context import agent_depth, proactive_read, read_round
 
 RATE_LIMIT_HTTP_CODES = frozenset({412, 429})
 RATE_LIMIT_API_CODES = frozenset({-352, -412, -509})
-RATE_LIMIT_KINDS = frozenset({"restricted", "rate_limited"})
+RATE_LIMIT_KINDS = frozenset({"rate_limited"})
 PIPELINE_READ = contextvars.ContextVar("operations_read_pipeline", default=None)
 
 

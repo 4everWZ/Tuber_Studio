@@ -14,6 +14,17 @@ from ..core.errors import PlatformRejected, SendLimitReached
 from ..core.identity import runtime_identity
 from ..core.models import StrictModel, content_hash
 from ..infra.platforms.bilibili.client import BilibiliAccountExpired, _positive_id
+from ..operations.facade import (
+    control_policy,
+    dynamic_character,
+    dynamic_outgoing_payload,
+    dynamic_publication_binding,
+    dynamic_publication_images,
+    dynamic_valid_sources,
+    get_attempt,
+    get_dynamic_post,
+    reconcile_dynamic_post,
+)
 from .task_runtime import ReviewBlocked, Tool, ToolWait
 
 PUBLICATION_TOOL = "publish_dynamic_batch"
@@ -64,7 +75,7 @@ def register_dynamic_publication(tasks, dynamics):
     def snapshot(row, *, allow_manual=False):
         bound(row)
         if (row["status"] not in {"pending_review", "approved"} or row["attempted_at"] is not None
-                or row.get("continuation") or not dynamics._valid_sources(row)):
+                or row.get("continuation") or not dynamic_valid_sources(dynamics, row)):
             raise ValueError("草稿已有尝试、来源失效或不在可审核状态")
         decision = dynamics.store.one("SELECT sources FROM dynamic_decisions WHERE id=? AND post_id=? AND action='post'",
                                       (row["decision_id"], row["id"]))
@@ -85,20 +96,20 @@ def register_dynamic_publication(tasks, dynamics):
             if kind == "public_memory":
                 item["fictional"] = source["fictional"]
             sources.append(item)
-        character = dynamics._character()
-        binding = dynamics._publication_binding(row, row["account_id"], character)
-        payload = dynamics._outgoing(row, character)
+        character = dynamic_character(dynamics)
+        binding = dynamic_publication_binding(dynamics, row, row["account_id"], character)
+        payload = dynamic_outgoing_payload(dynamics, row, character)
         attachment = " · 含配图" if "asset_sha256" in payload or "comment_card_sha256" in payload else ""
         return {"target": f"B站 UID {row['account_id']} 的公开动态 · 草稿 #{row['id']} · "
                           f"{character['name']} v{row['character_version']}{attachment}",
                 "post_id": row["id"], "revision": row["updated_at"], "status": row["status"],
                 "scope": tasks.scope(), "binding": binding, "sources": sources,
-                "policy_epoch": dynamics.operations.policy()["epoch"],
+                "policy_epoch": control_policy(dynamics)["epoch"],
                 "source_version": content_hash(row["sources"]), "payload": payload,
                 "draft_text": row["content"], "text": payload["text"]}
 
     def review(args):
-        return snapshot(dynamics._post(args.post_id))
+        return snapshot(get_dynamic_post(dynamics, args.post_id))
 
     async def inspect(request, args):
         approval = review(args)
@@ -117,11 +128,11 @@ def register_dynamic_publication(tasks, dynamics):
                 or {key: value for key, value in saved["payload"].items() if key != "prepared_images"} != approval["payload"]):
             return pending("没有与本次审批唯一匹配的原提交")
         token = saved["token"]
-        attempt = dynamics.operations.get_attempt(token)
+        attempt = get_attempt(dynamics, token)
         if not attempt or attempt["binding"] != approval["binding"]:
             return pending("原发送账本绑定无法核实")
         state = attempt["resolved_status"]
-        post = dynamics._post(post_id)
+        post = get_dynamic_post(dynamics, post_id)
         bound(post)
         receipt = attempt["resolution_receipt"] or attempt["receipt"]
         if state == "published" and receipt and post["status"] == "published" and receipt == post["receipt"]:
@@ -141,12 +152,12 @@ def register_dynamic_publication(tasks, dynamics):
                         or dynamics.store.one("SELECT send_payload FROM dynamic_posts WHERE id=?", (post_id,)) != row):
                     raise ValueError("对账期间原提交或授权已变化")
 
-            await dynamics._reconcile(post_id, guard=guard)
+            await reconcile_dynamic_post(dynamics, post_id, guard=guard)
             return await reconcile(step_id, approval, allow_read=False)
         return pending("原回执尚未核实，不再发送")
 
     async def reused_delivery(approval, *, allow_read):
-        post = dynamics._post(approval["post_id"])
+        post = get_dynamic_post(dynamics, approval["post_id"])
         if not post.get("duplicate_of"):
             return None
         bound(post)
@@ -155,8 +166,8 @@ def register_dynamic_publication(tasks, dynamics):
             return pending("原授权范围已变化")
         original_id = post["duplicate_of"]
         if post["status"] != "published" and allow_read:
-            await dynamics._reconcile(original_id)
-            post = dynamics._post(post["id"])
+            await reconcile_dynamic_post(dynamics, original_id)
+            post = get_dynamic_post(dynamics, post["id"])
         if post["status"] == "published" and post["receipt"]:
             return {"status": "published", "post_id": post["id"], "receipt": post["receipt"],
                     "duplicate_of": original_id, "target": approval["target"], "text": approval["text"]}
@@ -174,7 +185,7 @@ def register_dynamic_publication(tasks, dynamics):
         for key in args.post_ids:
             item = {"post_id": key, "text": ""}
             try:
-                row = dynamics._post(key)
+                row = get_dynamic_post(dynamics, key)
                 bound(row)
                 item["text"] = row["content"]
                 posts.append(approval_post(row))
@@ -197,7 +208,7 @@ def register_dynamic_publication(tasks, dynamics):
         for key in selected:
             prior = available[key]
             try:
-                current = approval_post(dynamics._post(key))
+                current = approval_post(get_dynamic_post(dynamics, key))
             except ValueError as error:
                 blocked.append(batch_item_result(prior, "not_sent", str(error)))
                 continue
@@ -245,14 +256,14 @@ def register_dynamic_publication(tasks, dynamics):
             try:
                 def check(fresh, *, publishing=False):
                     bound(fresh)
-                    character = dynamics._character()
-                    policy = dynamics.operations.policy()
+                    character = dynamic_character(dynamics)
+                    policy = control_policy(dynamics)
                     if (request.scope != tasks.scope() or policy["emergency"]
                             or policy["epoch"] != item["policy_epoch"]
                             or fresh["attempted_at"] is not None or fresh.get("continuation")
                             or fresh["content"] != item["draft_text"]
                             or content_hash(fresh["sources"]) != item["source_version"]
-                            or dynamics._outgoing(fresh, character) != item["payload"]
+                            or dynamic_outgoing_payload(dynamics, fresh, character) != item["payload"]
                             or not current_identity(fresh, character, item["binding"]["account_id"])
                             or (fresh["status"] != "publishing" if publishing else
                                 (fresh["status"], fresh["updated_at"]) != (item["status"], item["revision"]))):
@@ -382,12 +393,12 @@ def register_dynamic_publication(tasks, dynamics):
             if not request.checkpoint:
                 def check(row, *, publishing=False):
                     bound(row)
-                    policy = dynamics.operations.policy()
+                    policy = control_policy(dynamics)
                     if (tasks.scope() != request.scope or policy["emergency"] or policy["epoch"] != approval["policy_epoch"]
                             or dynamics.account.display_account_id() != approval["binding"]["account_id"]
                             or row.get("continuation")
                             or row["id"] != args.post_id or row["content"] != approval["draft_text"]
-                            or not current_identity(row, dynamics._character(), approval["binding"]["account_id"])
+                            or not current_identity(row, dynamic_character(dynamics), approval["binding"]["account_id"])
                             or row["attempted_at"] is not None or content_hash(row["sources"]) != approval["source_version"]
                             or (row["status"] != "publishing" if publishing else
                                 row["status"] != approval["status"] or row["updated_at"] != approval["revision"])):
@@ -398,8 +409,8 @@ def register_dynamic_publication(tasks, dynamics):
                 if str(await dynamics.account.account_id()) != approval["binding"]["account_id"]:
                     return pending("无法核验原账号")
                 if refresh := getattr(dynamics.runtime, "refresh_identity", None):
-                    identity = await refresh(dynamics._character(), approval["binding"]["account_id"])
-                    original = json.loads(dynamics._post(args.post_id)["generation_identity"] or "{}")
+                    identity = await refresh(dynamic_character(dynamics), approval["binding"]["account_id"])
+                    original = json.loads(get_dynamic_post(dynamics, args.post_id)["generation_identity"] or "{}")
                     if not original.get("identity_version") or original["identity_version"] != identity["identity_version"]:
                         return pending("生成时的账号身份已变化，须重新审核草稿")
                 submission = ScopedSubmission(request.id, approval["binding"], approval["payload"], check)
@@ -454,10 +465,10 @@ def approval_image(dynamics, task, step_id, post_id, index):
     item = next((item for item in approval["posts"] if item["post_id"] == post_id), None)
     if item is None or not 0 <= index < len(item["image_hashes"]):
         raise LookupError(post_id)
-    row = dynamics._post(post_id)
+    row = get_dynamic_post(dynamics, post_id)
     if [row["account_id"], row["character_id"], row["character_version"]] != task["scope"][:3]:
         raise LookupError(post_id)
-    images = dynamics._publication_images(row)
+    images = dynamic_publication_images(dynamics, row)
     if index >= len(images) or hashlib.sha256(images[index]["content"]).hexdigest() != item["image_hashes"][index]:
         raise LookupError(post_id)
     return images[index]
