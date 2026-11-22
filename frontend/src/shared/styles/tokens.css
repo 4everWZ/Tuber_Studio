@@ -1,0 +1,64 @@
+:root {
+  color-scheme: light;
+
+  /* Desktop Workbench Palette */
+  --win-bg: #f8f8f8;
+  --win-surface: #ffffff;
+  --win-panel-header: #fafafa;
+  --win-border: #d9d9d9;
+  --win-border-light: #e9e9e9;
+  --win-border-focus: #1760bb;
+  --win-ink: #171717;
+  --win-ink-secondary: #363636;
+  --win-muted: #595959;
+  --win-subtle: #676767;
+  --win-accent: #195fac;
+  --win-accent-hover: #134d8d;
+  --win-accent-active: #113e71;
+  --win-accent-soft: #eef5fc;
+  --win-green: #1d6b4c;
+  --win-green-bg: #eef8f2;
+  --win-green-border: #b4d9c4;
+  --win-danger: #a92323;
+  --win-danger-bg: #fff1f0;
+  --win-danger-border: #e9b4b1;
+  --win-warning: #884709;
+  --win-warning-bg: #fff7e8;
+  --win-warning-border: #e9ce95;
+
+  /* Oceanic Live Studio Tokens */
+  --ocean-bg: #f5f8f5;
+  --ocean-surface: #fffefb;
+  --ocean-topbar: #fffdf9;
+  --ocean-ink: #264c5a;
+  --ocean-muted: #738d96;
+  --ocean-line: #dae9e8;
+  --ocean-accent: #287f88;
+  --ocean-accent-strong: #2e858a;
+  --ocean-soft: #edf6f3;
+  --ocean-pink: #f0bcb9;
+  --ocean-canvas-deep: #083d64;
+  --ocean-canvas-mid: #174d69;
+  --ocean-canvas-glow: #087fa1;
+
+  /* Semantic Aliases */
+  --bg: var(--win-bg);
+  --panel: var(--win-surface);
+  --surface: #f3f6fb;
+  --line: var(--win-border);
+  --ink: var(--win-ink);
+  --muted: var(--win-muted);
+  --accent: var(--win-accent);
+  --soft: var(--win-accent-soft);
+  --danger: var(--win-danger);
+  --danger-bg: var(--win-danger-bg);
+  --green: var(--win-green);
+  --ok: var(--win-green);
+
+  /* Typography */
+  --font-sans: system-ui, "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  --font-mono: Consolas, "Cascadia Code", "Courier New", monospace;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.62;
+}
