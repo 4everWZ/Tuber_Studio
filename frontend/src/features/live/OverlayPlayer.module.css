@@ -1,0 +1,60 @@
+.overlayRoot {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  background: transparent;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+.sceneBox {
+  width: 100%;
+  max-height: 100vh;
+}
+
+.connection {
+  position: fixed;
+  right: 15px;
+  top: 12px;
+  font-size: 11px;
+  color: #e1f9f5;
+  background: #06324bd9;
+  border-radius: 6px;
+  padding: 5px 10px;
+  z-index: 200;
+}
+
+.connection:empty {
+  display: none;
+}
+
+.connectionError {
+  color: #ffe1d7;
+  background: #6d3542ed;
+}
+
+.enableAudio {
+  position: fixed;
+  left: 50%;
+  top: 45%;
+  transform: translate(-50%, -50%);
+  padding: 17px 25px;
+  border: 1px solid #91b8bd;
+  background: #fffffb;
+  color: #27556a;
+  border-radius: 10px;
+  font-size: 15px;
+  cursor: pointer;
+  z-index: 201;
+}
+
+.enableAudio small {
+  display: block;
+  font-size: 11px;
+  color: #718e94;
+  margin-top: 6px;
+}

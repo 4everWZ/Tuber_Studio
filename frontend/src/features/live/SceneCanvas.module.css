@@ -1,0 +1,358 @@
+.viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: transparent;
+  border-radius: inherit;
+  isolation: isolate;
+}
+
+.canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: top left;
+  overflow: hidden;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  color: #eefbff;
+}
+
+.ocean {
+  background:
+    radial-gradient(ellipse at 80% 10%, #77e7eaa6, transparent 47%),
+    radial-gradient(ellipse at 72% 95%, #795cc799, transparent 37%),
+    linear-gradient(115deg, #523d57, #174d69 32%, #087fa1 67%, #083d64);
+}
+
+.ocean::before {
+  content: "";
+  position: absolute;
+  inset: 80px 95px 70px 320px;
+  border: 18px solid #b8e8d063;
+  border-bottom: 27px solid #d6cba671;
+  border-radius: 48% 48% 20px 20px;
+  box-shadow: 0 0 80px #89f8f24d, inset 0 0 120px #91f7ff44;
+  background: repeating-linear-gradient(
+    112deg,
+    transparent 0 100px,
+    #bcfffc12 120px 145px,
+    transparent 200px 340px
+  );
+  pointer-events: none;
+}
+
+.ocean::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 95px;
+  z-index: -1;
+  background: linear-gradient(#deb98744, #b0889766);
+  border-top: 6px solid #b7efe846;
+  pointer-events: none;
+}
+
+.bubbles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 62% 18%, #c5fff888 0 6px, transparent 8px),
+    radial-gradient(circle at 73% 40%, #d4ffff66 0 10px, transparent 13px),
+    radial-gradient(circle at 44% 64%, #b9fdfc55 0 5px, transparent 7px),
+    radial-gradient(circle at 50% 24%, #ffffff44 0 3px, transparent 5px),
+    radial-gradient(circle at 86% 75%, #b2fcff66 0 6px, transparent 9px);
+}
+
+.canvas:not(.ocean) > .bubbles {
+  display: none;
+}
+
+.item {
+  position: absolute;
+  box-sizing: border-box;
+  touch-action: none;
+  overflow: hidden;
+}
+
+.itemAvatar,
+.itemDecoration {
+  overflow: visible;
+}
+
+.body {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.card {
+  background: linear-gradient(120deg, #073d57e8, #092f50d9);
+  border: 2px solid #a2e9ee8f;
+  border-radius: 32px;
+  box-shadow: 0 12px 40px #001f4138, inset 0 1px #ffffff35;
+  padding: 30px 34px;
+}
+
+.item h3 {
+  font-size: 31px;
+  letter-spacing: 2px;
+  margin: 0 0 24px;
+  font-weight: 650;
+  color: #cceff0;
+}
+
+.item p {
+  margin: 12px 0;
+  font-size: 28px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.itemTitle .body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.itemTitle strong {
+  font-size: 65px;
+  font-weight: 800;
+  letter-spacing: 5px;
+  text-shadow: 0 3px 12px #00284288;
+}
+
+.itemTitle small {
+  font-size: 25px;
+  color: #d8f7ed;
+  letter-spacing: 5px;
+  margin-top: 12px;
+}
+
+.itemAvatar .body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.itemAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 14px 14px #002e4a55);
+}
+
+.avatarEmpty {
+  font-size: 28px;
+}
+
+.itemNow h3 {
+  margin-bottom: 12px;
+  font-size: 30px;
+  line-height: 1.4;
+}
+
+.record {
+  float: left;
+  width: 95px;
+  height: 95px;
+  border-radius: 50%;
+  margin: 2px 21px 14px 0;
+  display: grid;
+  place-items: center;
+  background: repeating-radial-gradient(circle, #143b55 0 3px, #10283e 4px 6px);
+  border: 5px solid #6bd5e0;
+  box-shadow: 0 0 25px #69eff82e;
+}
+
+.record::before {
+  content: "🐋";
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  font-size: 30px;
+  background: #6bd5e0;
+}
+
+.recordImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.songName {
+  font-size: 32px;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 5px 0 7px;
+}
+
+.songDetail {
+  font-size: 20px;
+  color: #b2dbe8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.progress {
+  clear: both;
+  height: 5px;
+  border-radius: 9px;
+  background: #7cb5cc55;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  background: #f4da9b;
+  width: 0;
+}
+
+.itemLyrics .body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 10px 30px;
+  font-size: 37px;
+  font-weight: 650;
+  background: #073d57de;
+  border: 2px solid #a2e9ee8f;
+  border-radius: 27px;
+  text-shadow: 0 2px 3px #002f4e;
+}
+
+.itemQueue ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.itemQueue li {
+  border-top: 1px solid #9fd3e733;
+  padding: 17px 0;
+  display: flex;
+  gap: 16px;
+  font-size: 26px;
+}
+
+.itemQueue li b {
+  color: #89d8dc;
+  font-weight: 500;
+}
+
+.itemQueue li small {
+  display: block;
+  font-size: 20px;
+  color: #97bfce;
+  margin-top: 5px;
+}
+
+.itemChat p {
+  font-size: 25px;
+  margin: 10px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.itemChat b {
+  color: #92d8e8;
+  margin-right: 16px;
+  font-weight: 550;
+}
+
+.itemGifts .body {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 12px 23px;
+  border-radius: 60px;
+  background: #226580de;
+  border: 2px solid #b9eef399;
+  font-size: 25px;
+  color: #e2f6f6;
+  white-space: nowrap;
+}
+
+.itemGifts .body::before {
+  content: "♡";
+  color: #ffe0ac;
+  font-size: 40px;
+}
+
+.itemDecoration .body {
+  display: grid;
+  place-items: center;
+  font-size: 90px;
+  filter: drop-shadow(0 5px 7px #002f4c55);
+}
+
+.aiLabel {
+  position: absolute;
+  bottom: 13px;
+  right: 25px;
+  font-size: 18px;
+  color: #d4f4eea8;
+  pointer-events: none;
+  z-index: 102;
+}
+
+.editing .item {
+  cursor: grab;
+  outline: 1px dashed #a8e9ed55;
+  outline-offset: -1px;
+}
+
+.editing .item.selected {
+  outline: 3px solid #ffe5b1;
+  outline-offset: -2px;
+}
+
+.editing .item[data-locked="true"] {
+  cursor: default;
+}
+
+.resize {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 25px;
+  height: 25px;
+  border-radius: 5px 0;
+  background: #ffe5b1;
+  cursor: nwse-resize;
+  display: none;
+}
+
+.editing .selected:not([data-locked="true"]) .resize {
+  display: block;
+}
+
+.editing .item[data-visible="false"] {
+  opacity: 0.3;
+}
+
+.canvas:not(.editing) .item[data-visible="false"] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item * {
+    animation: none !important;
+  }
+}

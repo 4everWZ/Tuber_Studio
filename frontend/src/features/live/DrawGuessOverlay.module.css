@@ -1,0 +1,149 @@
+.root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  background: transparent;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif;
+}
+
+.container {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  width: 440px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 16px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+  color: #f8fafc;
+  padding: 16px;
+  transition: all 0.3s ease;
+  opacity: 1;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.titleRow h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #38bdf8;
+  letter-spacing: 0.5px;
+}
+
+.badge {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.timerBadge {
+  background: rgba(244, 63, 94, 0.2);
+  color: #f43f5e;
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 42px;
+  text-align: center;
+}
+
+.canvasWrap {
+  width: 100%;
+  height: 280px;
+  background: #090d16;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drawingBoard {
+  width: 100%;
+  height: 100%;
+}
+
+.hintBar {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #94a3b8;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.clue {
+  color: #fde047;
+  font-weight: 500;
+}
+
+.winnerBanner {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  text-align: center;
+  padding: 20px;
+  animation: popIn 0.3s ease;
+}
+
+.winnerBannerHidden {
+  display: none;
+}
+
+.winnerBanner h4 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  color: #34d399;
+}
+
+.winnerBanner p {
+  margin: 4px 0;
+  font-size: 14px;
+  color: #f8fafc;
+}
+
+.answerTag {
+  font-size: 18px;
+  font-weight: 700;
+  color: #38bdf8;
+  margin-top: 6px;
+}
+
+@keyframes popIn {
+  from {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
