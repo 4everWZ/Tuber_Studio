@@ -10,7 +10,7 @@ from PIL import Image
 
 Variant = Literal["q", "mature"]
 MAX_BYTES = 4 * 1024 * 1024
-PREFIX = "/api/settings/artwork-references"
+PREFIX = "/api/v1/persona/artwork-references"
 DEFAULTS = {
     "q": ("Q_original.png", "19657099d648fa6ebef207f0b0b091039a53361ddaa0624602d91416c8ca1e31"),
     "mature": ("original.png", "7a76009ff5cf8afabe5d9bdc3136ab7e59ae248c8a8cb9eed6529632e5af35b3"),

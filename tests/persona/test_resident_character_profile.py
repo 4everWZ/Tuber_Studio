@@ -39,8 +39,8 @@ def test_legacy_profile_uses_only_bounded_declarations(identity, style, extra):
 def test_editor_api_persists_validated_short_fields_and_keeps_the_long_card(settings):
     app = create_app(settings)
     with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
-        card = client.post("/api/characters", json={"name": "旧卡"}).raise_for_status().json()
-        path = f"/api/characters/{card['id']}"
+        card = client.post("/api/v1/persona/characters", json={"name": "旧卡"}).raise_for_status().json()
+        path = f"/api/v1/persona/characters/{card['id']}"
         card.update(core={"identity": "详细身份" * 100, "background": "我的来历"}, style={"instructions": ["完整旧指导"]})
         client.put(path, json=card).raise_for_status()
         updated = card | {"self_description": "鲸" * 120, "speaking_style": "语气平和。"}
@@ -48,7 +48,7 @@ def test_editor_api_persists_validated_short_fields_and_keeps_the_long_card(sett
         for key in ("self_description", "speaking_style"):
             for invalid in ("鲸" * 121, "第一行\n第二行", ["旧式列表"]):
                 response = client.put(path, json=updated | {key: invalid})
-                assert response.status_code == 422 and response.json()["detail"][0]["field"] == key
+                assert response.status_code == 422 and response.json()["details"]["errors"][0]["field"] == key
         assert client.get(path).raise_for_status().json() == updated
         assert client.put(path, json=updated | {"self_description": "", "speaking_style": " "}).json() == card
 

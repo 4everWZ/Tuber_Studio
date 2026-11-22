@@ -85,8 +85,8 @@ def test_raw_file_detection_upload_and_range_serving(settings, fmt, mime):
     if fmt == "mp3":
         assert info["bitrate"] == 320000
     with TestClient(create_app(settings)) as client:
-        client.post("/api/auth", json={"token": settings.admin_token})
-        result = client.post("/api/live/uploads", content=data).json()
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
+        result = client.post("/api/v1/live/uploads", content=data).json()
         assert result["format"] == fmt
         response = client.get("/media/music/" + result["id"])
         assert response.content == data and response.headers["content-type"] == mime
@@ -368,12 +368,12 @@ def test_optional_environment_dependencies_can_be_separate_from_readonly_helper(
 
 def test_optional_api_is_admin_only_and_disabled_by_default(settings):
     with TestClient(create_app(settings)) as client:
-        assert client.get("/api/live/online").status_code == 401
-        client.post("/api/overlay/auth", json={"token": settings.overlay_token})
-        assert client.get("/api/live/online").status_code == 401
-        client.post("/api/auth", json={"token": settings.admin_token})
-        value = client.get("/api/live/online").json()
+        assert client.get("/api/v1/live/online").status_code == 401
+        client.post("/api/v1/system/auth/overlay", json={"token": settings.overlay_token})
+        assert client.get("/api/v1/live/online").status_code == 401
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
+        value = client.get("/api/v1/live/online").json()
         assert not value["settings"]["enabled"] and not value["component"]["running"]
-        assert client.get("/api/live/online/search?q=test").status_code == 400
-        assert client.post("/api/live/online/confirm", json={"token": [], "number": True}).status_code == 422
-        assert client.put("/api/live/online", json={"sources": ["bodian", "bodian"]}).status_code == 422
+        assert client.get("/api/v1/live/online/search?q=test").status_code == 400
+        assert client.post("/api/v1/live/online/confirm", json={"token": [], "number": True}).status_code == 422
+        assert client.put("/api/v1/live/online", json={"sources": ["bodian", "bodian"]}).status_code == 422

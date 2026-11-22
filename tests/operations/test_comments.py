@@ -5,12 +5,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
+from tuber_studio.app.runtime import Runtime
 from tuber_studio.core.models import Reply
 from tuber_studio.core.store import Store
 from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
 from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
 from tuber_studio.operations.channels.comments import Comments
-from tuber_studio.runtime import Runtime
 
 
 class Platform:
@@ -652,7 +652,7 @@ def test_job_answer_check_accepts_runtime_audit_as_json(store):
 def test_thread_http_filter_and_compaction_address_exact_scope_without_creating_empty_window(settings):
     app = create_app(settings, Platform())
     with TestClient(app) as client:
-        client.post("/api/auth", json={"token": settings.admin_token})
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
         payload = {
             "video_id": "import-api-thread",
             "items": [
@@ -660,15 +660,15 @@ def test_thread_http_filter_and_compaction_address_exact_scope_without_creating_
                 {"comment_id": "b", "thread_id": "root-b", "content": "第二楼的问题怎么处理？"},
             ],
         }
-        preview = client.post("/api/comments/import/preview", json=payload)
+        preview = client.post("/api/v1/operations/comments/import/preview", json=payload)
         assert preview.status_code == 200
         assert preview.json()["items"][0]["thread_id"] == "root-a"
-        assert client.post("/api/comments/import", json=payload).json()["imported"] == 2
-        rows = client.get("/api/comments", params={"video_id": payload["video_id"], "thread_id": "root-b"})
+        assert client.post("/api/v1/operations/comments/import", json=payload).json()["imported"] == 2
+        rows = client.get("/api/v1/operations/comments", params={"video_id": payload["video_id"], "thread_id": "root-b"})
         assert [item["comment_id"] for item in rows.json()] == ["b"]
         before = app.state.store.one("SELECT COUNT(*) AS n FROM context_windows")["n"]
         response = client.get(
-            "/api/context/status", params={"video_id": payload["video_id"], "thread_id": "root-a"}
+            "/api/v1/persona/context/status", params={"video_id": payload["video_id"], "thread_id": "root-a"}
         )
         assert response.status_code == 200 and response.json()["active_tokens"] == 0
         assert app.state.store.one("SELECT COUNT(*) AS n FROM context_windows")["n"] == before
@@ -681,12 +681,12 @@ def test_thread_http_filter_and_compaction_address_exact_scope_without_creating_
         app.state.runtime.operation_context.compact = compact
         assert (
             client.post(
-                "/api/context/compact", json={"scope": "comments", "video_id": payload["video_id"]}
+                "/api/v1/persona/context/compact", json={"scope": "comments", "video_id": payload["video_id"]}
             ).status_code
             == 400
         )
         response = client.post(
-            "/api/context/compact",
+            "/api/v1/persona/context/compact",
             json={"scope": "comments", "video_id": payload["video_id"], "thread_id": "root-a"},
         )
         assert response.status_code == 200

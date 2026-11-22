@@ -24,16 +24,19 @@ def test_workbench_serves_page_fragments_in_the_shell(settings):
         assert page.count(f'id="{identity}"') == 1
 
 
+TESTS_ROOT = Path(__file__).resolve().parents[1]
+
+
 @pytest.mark.parametrize(
     "script",
-    sorted(path.name for path in Path(__file__).parent.glob("*.test.cjs")),
+    sorted(path.name for path in TESTS_ROOT.glob("*.test.cjs")),
 )
 def test_shared_web_clients(script):
     node = shutil.which("node")
     if not node:
         pytest.skip("Node is not installed")
     result = subprocess.run(
-        [node, "--test", str(Path(__file__).with_name(script))],
+        [node, "--test", str(TESTS_ROOT / script)],
         capture_output=True,
         text=True,
         encoding="utf-8",

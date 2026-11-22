@@ -18,6 +18,7 @@ from tests.support.operations_helpers import (
 from tests.support.operations_helpers import (
     browsing as browsing,
 )
+from tuber_studio.app.routes.operations import register_browsing_routes
 from tuber_studio.core.errors import UnknownPublication
 from tuber_studio.core.store import dump
 from tuber_studio.infra.platforms.bilibili.client import (
@@ -26,7 +27,6 @@ from tuber_studio.infra.platforms.bilibili.client import (
     PublishUncertain,
 )
 from tuber_studio.operations.activity import activity
-from tuber_studio.operations.api import register_browsing_api
 from tuber_studio.operations.inbox.comment_events import reuse_or_prepare_light_evidence
 from tuber_studio.operations.kernel.control import OperationsControl
 from tuber_studio.operations.kernel.repository import BrowsingRepository
@@ -761,16 +761,16 @@ async def test_lossless_legacy_v2_upgrade_and_stage2_api_controls(store, setting
     # Verify Stage 2 FastAPI endpoints cleanly.
     svc.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     app = FastAPI()
-    register_browsing_api(app, svc, lambda: True)
+    register_browsing_routes(app, svc, lambda: True)
     client = TestClient(app)
 
-    res = client.put("/api/automation/settings", json={"direct_quota_reserve": 4}).raise_for_status().json()
+    res = client.put("/api/v1/operations/automation/settings", json={"direct_quota_reserve": 4}).raise_for_status().json()
     assert res["policy"]["direct_quota_reserve"] == 4
 
-    claims_res = client.get("/api/automation/claims").raise_for_status().json()
+    claims_res = client.get("/api/v1/operations/claims").raise_for_status().json()
     assert claims_res == {"items": []}
 
-    act_inbox = client.get("/api/automation/activity", params={"source": "inbox"}).raise_for_status().json()
+    act_inbox = client.get("/api/v1/operations/activity", params={"source": "inbox"}).raise_for_status().json()
     assert "items" in act_inbox and act_inbox["source"] == "inbox"
 
     repo.close() if hasattr(repo, "close") else None

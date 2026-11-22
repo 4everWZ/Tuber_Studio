@@ -33,13 +33,13 @@ const {randomUUID} = require("node:crypto");
       }
       throw Error("Expected handoff transition timed out");
     }
-    await page.goto((await api("GET", "/api/settings")).overlay_url);
-    await api("POST", "/api/live/start");
+    await page.goto((await api("GET", "/api/v1/system/settings")).overlay_url);
+    await api("POST", "/api/v1/live/start");
     const tasks = [];
     for (let i = 0; i < 2; i++) {
-      const id = randomUUID(), path = "/api/agent/tasks/" + id;
+      const id = randomUUID(), path = "/api/v1/agent/tasks/" + id;
       tasks.push(id);
-      await api("POST", "/api/agent/tasks", {request_id: id, goal: "把一段公开问候交给本场节目"});
+      await api("POST", "/api/v1/agent/tasks", {request_id: id, goal: "把一段公开问候交给本场节目"});
       const waiting = await until(async () => {
         const t = await api("GET", path);
         return t.status === "awaiting_approval" && t;
@@ -48,7 +48,7 @@ const {randomUUID} = require("node:crypto");
       await page.waitForFunction(n => window.mediaEvents.filter(e => e.kind === "playing").length >= n, i+1);
       const playing = await api("GET", path);
       if (playing.steps.at(-1).result || playing.status === "completed") throw Error("Premature delivery");
-      if (i) await api("POST", "/api/live/skip");
+      if (i) await api("POST", "/api/v1/live/skip");
       await until(async () => (await api("GET", path)).steps.at(-1).result);
     }
     const media = await page.evaluate(() => window.mediaEvents);

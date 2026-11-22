@@ -8,38 +8,38 @@ from contextlib import asynccontextmanager
 
 import psutil
 
-from .agent.memory_organizer import MemoryOrganizer
-from .core.identity import identity_messages, identity_snapshot, operating_account_facts
-from .core.meter import budgeted_call
-from .core.models import OperationReply, Reply, canonical_voice_id, content_hash
-from .core.retention import INTERVAL_SECONDS, RetentionManager
-from .core.store import character_card, dump
-from .core.text import operation_output_diagnostics
-from .core.turns import operation_lane, operation_ready_at, operation_ticket
-from .infra.inference.api_providers import APIProvider, create_chat_llm, create_llm, create_operation_llm
-from .infra.inference.providers import VoiceService, public_error
-from .infra.inference.video_vision_service import restore_admission
-from .infra.media.cache import MediaCache
-from .live.facade import HANDOFF_PLATFORM, LiveScene, LiveSession, create_live_facade
-from .operations.channels.attachments.images import OperationImages
-from .operations.facade import browsing_visual_provider, business_timezone
-from .operations.kernel.continuations import ContinuationCoordinator
-from .operations.kernel.control import OperationsControl
-from .operations.kernel.generation import generate_with_recovery, hold_comment_body, reply_generation_binding
-from .operations.kernel.repository import BrowsingRepository
-from .operations.kernel.turns import OperationTurns
-from .persona.characters.front_persona import front_identity
-from .persona.characters.pets import PetAppearances
-from .persona.context.delivery import comment_scope
-from .persona.context.manager import ContextManager
-from .persona.context.tools import build_default_tool_registry
-from .persona.memory.core_memory import missing_slots
-from .persona.memory.daily import DailyMemoryService, MemoryChanged
-from .persona.memory.relationships import Relationships
+from ..agent.memory_organizer import MemoryOrganizer
+from ..core.identity import identity_messages, identity_snapshot, operating_account_facts
+from ..core.meter import budgeted_call
+from ..core.models import OperationReply, Reply, canonical_voice_id, content_hash
+from ..core.retention import INTERVAL_SECONDS, RetentionManager
+from ..core.store import character_card, dump
+from ..core.text import operation_output_diagnostics
+from ..core.turns import operation_lane, operation_ready_at, operation_ticket
+from ..infra.inference.api_providers import APIProvider, create_chat_llm, create_llm, create_operation_llm
+from ..infra.inference.providers import VoiceService, public_error
+from ..infra.inference.video_vision_service import restore_admission
+from ..infra.media.cache import MediaCache
+from ..live.facade import HANDOFF_PLATFORM, LiveScene, LiveSession, create_live_facade
+from ..operations.channels.attachments.images import OperationImages
+from ..operations.facade import browsing_visual_provider, business_timezone
+from ..operations.kernel.continuations import ContinuationCoordinator
+from ..operations.kernel.control import OperationsControl
+from ..operations.kernel.generation import generate_with_recovery, hold_comment_body, reply_generation_binding
+from ..operations.kernel.repository import BrowsingRepository
+from ..operations.kernel.turns import OperationTurns
+from ..persona.characters.front_persona import front_identity
+from ..persona.characters.pets import PetAppearances
+from ..persona.context.delivery import comment_scope
+from ..persona.context.manager import ContextManager
+from ..persona.context.tools import build_default_tool_registry
+from ..persona.memory.core_memory import missing_slots
+from ..persona.memory.daily import DailyMemoryService, MemoryChanged
+from ..persona.memory.relationships import Relationships
 
 
 def _comment_actor_formatter(event):
-    from .operations.kernel.inputs import (
+    from ..operations.kernel.inputs import (
         RESPONSE_ACTOR_INSTRUCTION,
         bind_response_actors,
         compact_actor_context,
@@ -234,7 +234,7 @@ class Runtime:
         return speech
 
     def identity_snapshot(self, character=None, account_id=None):
-        from .infra.platforms.bilibili.account import cached_account_actor
+        from ..infra.platforms.bilibili.account import cached_account_actor
 
         account = getattr(self, "account", None) or getattr(
             getattr(self, "browsing", None), "bilibili_account", None
@@ -254,7 +254,7 @@ class Runtime:
         account = getattr(self, "account", None)
         if account is None or not hasattr(getattr(account, "adapter", None), "account_profile"):
             return self.identity_snapshot(character, account_id)
-        from .infra.platforms.bilibili.account import signature
+        from ..infra.platforms.bilibili.account import signature
 
         credential = signature(account.credentials)
         pending = getattr(self, "_identity_refresh", None)
@@ -517,11 +517,11 @@ class Runtime:
             operating_account=operating_account_facts(self.account.status()) if mode == "operator_chat" and hasattr(self, "account") else None,
         )
         if mode == "comment_draft":
-            from .operations.channels.mentions import MENTION_INSTRUCTION
+            from ..operations.channels.mentions import MENTION_INSTRUCTION
 
             messages.append({"role": "system", "content": MENTION_INSTRUCTION})
         elif mode == "direct_message" and event.get("share_reflection"):
-            from .operations.channels.dynamics.materials import REFLECTION_INSTRUCTION
+            from ..operations.channels.dynamics.materials import REFLECTION_INSTRUCTION
 
             messages.append({"role": "system", "content": REFLECTION_INSTRUCTION})
         generation_identity = self.identity_snapshot(character, event.get("account_id"))

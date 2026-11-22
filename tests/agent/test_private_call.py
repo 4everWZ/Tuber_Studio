@@ -34,15 +34,15 @@ def test_public_mount_keeps_the_shell_assets_auth_and_call_tickets_together(sett
         assert browser.get("/dafeiyu/static/studio-path.js").status_code == 200
         assert browser.get("/dafeiyu/assets/whale/idle.gif").status_code == 200
         assert browser.get("/dafeiyu/settings", follow_redirects=False).headers["location"] == "/dafeiyu/#settings"
-        login = browser.post("/dafeiyu/api/auth", json={"token": settings.admin_token},
+        login = browser.post("/dafeiyu/api/v1/system/auth/login", json={"token": settings.admin_token},
                              headers={"Origin": "https://studio.example"})
         assert login.status_code == 200
-        assert browser.get("/dafeiyu/api/settings").json()["overlay_url"].startswith(
+        assert browser.get("/dafeiyu/api/v1/system/settings").json()["overlay_url"].startswith(
             "https://studio.example/dafeiyu/overlay#")
-        ticket = browser.post("/dafeiyu/api/chat/private-call/ticket", json={"temporary": True})
+        ticket = browser.post("/dafeiyu/api/v1/agent/private-call/ticket", json={"temporary": True})
         assert ticket.status_code == 200 and ticket.headers["cache-control"] == "no-store"
         assert ticket.json()["socket"] == "wss://studio.example/dafeiyu/v1/realtime"
-        assert browser.post("/api/chat/private-call/ticket", json={"temporary": True}).json()["socket"] == (
+        assert browser.post("/api/v1/agent/private-call/ticket", json={"temporary": True}).json()["socket"] == (
             "wss://studio.example/v1/realtime")
         with browser.websocket_connect("wss://studio.example/dafeiyu/ws/admin",
                                        headers={"Origin": "https://studio.example"}) as socket:
@@ -55,7 +55,7 @@ async def test_signed_voice_work_stays_in_the_original_chat(settings, monkeypatc
     runtime = app.state.runtime
     configured_key = settings.provider_key
     monkeypatch.setattr(settings, "provider_key", lambda name: key if name == "omni" else configured_key(name))
-    path = "/api/chat/private-call"
+    path = "/api/v1/agent/private-call"
     completed = "演播间当前待命。"
     goal = "帮我核对演播间状态，留份私下的交接便笺。"
     casual = "这一阵风吹得真舒服。"
@@ -105,7 +105,7 @@ async def test_signed_voice_work_stays_in_the_original_chat(settings, monkeypatc
         # Responses completion uses the same persistence path as the worker.
         assert runtime.tasks._save(active, status="completed", message=completed,
                                    plan={"backend": "responses", "prior_goals": []})
-        history_path = "/api/chat/intelligent"
+        history_path = "/api/v1/agent/chat"
         turns = (await browser.get(history_path)).json()["turns"]
         assert len(turns) == 2
         assert turns[0]["card"]["data"]["delivered_in_chat"]
@@ -145,13 +145,13 @@ def test_ticket_instructions_follow_current_character_owner(settings, monkeypatc
         for owner, voice_id in (({"uid": "123", "name": "示例号主"}, "whale_reference"), (None, "neutral_reference")):
             runtime.store.replace_character(editable_character(runtime.character) |
                                             {"bilibili_owner": owner, "voice_profile": voice_id})
-            ticket = browser.post("/api/chat/private-call/ticket", headers=auth, json={
+            ticket = browser.post("/api/v1/agent/private-call/ticket", headers=auth, json={
                 "temporary": temporary, "topic": "来聊聊吧",
             }).raise_for_status().json()
             instructions = ticket["instructions"]
             voice = settings.voice(runtime.character["voice_profile"])
             assert ticket["voice"]["id"] == voice["id"]
-            reference = browser.get("/api/chat/private-call/reference", headers=auth).raise_for_status()
+            reference = browser.get("/api/v1/agent/private-call/reference", headers=auth).raise_for_status()
             assert reference.content == settings.voice_reference_path(voice).read_bytes()
             assert ticket["voice"]["reference_sha256"] == hashlib.sha256(reference.content).hexdigest()
             assert reference.headers["cache-control"] == "no-store"
@@ -166,7 +166,7 @@ def test_ticket_instructions_follow_current_character_owner(settings, monkeypatc
 async def test_ticket_uses_only_the_eligible_chat_topic_and_revalidates_it(settings, monkeypatch):
     app = create_app(settings)
     runtime = app.state.runtime
-    path = "/api/chat/private-call"
+    path = "/api/v1/agent/private-call"
     question = "咱们电话聊一下明天开场提纲。"
     related = "写开场提纲时，先介绍海底厨房。"
     unrelated = "只有整理账单时，才按金额倒序排列。"
@@ -182,10 +182,10 @@ async def test_ticket_uses_only_the_eligible_chat_topic_and_revalidates_it(setti
 
         for note in (related, unrelated):
             body = {"source": "settings", "text": note}
-            preview = (await client.post("/api/agent/memory.propose", json=body)).raise_for_status().json()
-            (await client.post("/api/agent/memory/confirm", json=body | {"stamp": preview["stamp"]})).raise_for_status()
+            preview = (await client.post("/api/v1/agent/memory/propose", json=body)).raise_for_status().json()
+            (await client.post("/api/v1/agent/memory/confirm", json=body | {"stamp": preview["stamp"]})).raise_for_status()
         turn = str(uuid4())
-        (await client.post("/api/chat/intelligent", json={
+        (await client.post("/api/v1/agent/chat", json={
             "request_id": turn, "message": question, "intent": {"action": "chat"},
         })).raise_for_status()
         inherited = await ticket(topic_turn=turn)
@@ -195,16 +195,16 @@ async def test_ticket_uses_only_the_eligible_chat_topic_and_revalidates_it(setti
         assert (await client.post(path + "/memory-validate", json=use)).status_code == 200
         assert (await ticket())["memory_use"] is None
         off_topic = str(uuid4())
-        (await client.post("/api/chat/intelligent", json={
+        (await client.post("/api/v1/agent/chat", json={
             "request_id": off_topic, "message": "我们去看月亮吧。", "intent": {"action": "chat"},
         })).raise_for_status()
         assert (await ticket(topic_turn=off_topic))["memory_use"] is None
         assert (await ticket(topic_turn=turn, topic="月亮的背面"))["memory_use"] is None
         temporary = await ticket(topic_turn=turn, topic=related, temporary=True)
         assert temporary["memory_use"] is None and related not in temporary["instructions"]
-        prefs = (await client.get("/api/daily-memory/preferences")).json()
+        prefs = (await client.get("/api/v1/persona/daily-memory/preferences")).json()
         for enabled in (False, True):
-            (await client.put("/api/daily-memory/preferences", json={
+            (await client.put("/api/v1/persona/daily-memory/preferences", json={
                 "scope": prefs["scope"], "enabled": True, "history_enabled": enabled,
             })).raise_for_status()
             assert (await client.post(path + "/memory-validate", json=use)).status_code == 409
@@ -252,7 +252,7 @@ async def test_call_uses_the_same_complete_role_card_across_topics(settings, mon
         return "test-ticket"
 
     monkeypatch.setattr(private_call, "mint_ticket", mint)
-    path = "/api/chat/private-call"
+    path = "/api/v1/agent/private-call"
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
         async def ticket(**body):
             return (await client.post(path + "/ticket", json=body)).raise_for_status().json()
@@ -265,7 +265,7 @@ async def test_call_uses_the_same_complete_role_card_across_topics(settings, mon
         assert explicit["instructions"] == base
         assert all(base.count(text) == 1 for text in (passage, unrelated, "码头看守", card["core"]["identity"]))
         turn = str(uuid4())
-        (await client.post("/api/chat/intelligent", json={
+        (await client.post("/api/v1/agent/chat", json={
             "request_id": turn, "message": query, "intent": {"action": "chat"},
         })).raise_for_status()
         inherited = await ticket(topic_turn=turn)
@@ -299,12 +299,12 @@ def test_ticket_is_admin_only_fixed_upstream_and_contains_no_service_credential(
     app = create_app(settings)
     with TestClient(app) as browser:
         monkeypatch.setattr(httpx.AsyncClient, "send", issue)
-        path = "/api/chat/private-call/ticket"
+        path = "/api/v1/agent/private-call/ticket"
         auth = {"Authorization": "Bearer " + settings.admin_token}
         assert browser.post(path).status_code == 401
-        assert browser.get("/api/chat/private-call/reference").status_code == 401
+        assert browser.get("/api/v1/agent/private-call/reference").status_code == 401
         assert browser.post(path, headers=auth | {"Origin": "https://elsewhere.example"}).status_code == 403
-        assert browser.get("/api/chat/private-call", headers=auth).json() == {"configured": True, "character": "大肥鱼"}
+        assert browser.get("/api/v1/agent/private-call", headers=auth).json() == {"configured": True, "character": "大肥鱼"}
         assert not issued
         reply = browser.post(path, headers=auth, json={"path": "/api/mode", "origin": "https://elsewhere.example"})
         assert reply.status_code == 200
@@ -340,7 +340,7 @@ def test_review_recordings_are_owner_only_and_role_bound(settings):
     (root / "mature.mp4").write_bytes(b"private clip")
     with TestClient(app) as browser:
         auth = {"Authorization": "Bearer " + settings.admin_token}
-        listed = browser.get("/api/chat/private-call", headers=auth).json()["recordings"]
+        listed = browser.get("/api/v1/agent/private-call", headers=auth).json()["recordings"]
         assert set(listed) == {"mature"}
         path = listed["mature"]
         assert browser.get(path).status_code == 401

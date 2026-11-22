@@ -52,11 +52,11 @@ async def forget_current(client, port, device, login, sources):
         if row is None or source["revision"] > row["revision"]:
             latest[source["id"]] = source
     for identity, expected in latest.items():
-        current = (await client.post("/api/agent/memory.get", json={"id":identity})).raise_for_status().json()
+        current = (await client.post("/api/v1/agent/memory/get", json={"id":identity})).raise_for_status().json()
         if current["revision"] != expected["revision"]:
             raise RuntimeError("偏好在本次已核实的修订之外发生变化；未执行撤回")
         await device_call(device, port, login, "DELETE",
-                          f"/api/daily-memory/organized/{identity}?expected_revision={current['revision']}")
+                          f"/api/v1/persona/daily-memory/organized/{identity}?expected_revision={current['revision']}")
     return {identity:row["revision"] for identity,row in latest.items()}
 
 
@@ -88,7 +88,7 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
     # Reproduce a standing instruction supplied by the owner, with its original scope.
     identity = str(uuid4())
     original = AUTO
-    (await client.post("/api/chat/intelligent", json={"request_id": identity, "message": original,
+    (await client.post("/api/v1/agent/chat", json={"request_id": identity, "message": original,
                                                      "intent": {"action": "chat"}})).raise_for_status()
     record("saved_owner_turn", {"source_key":"turn:"+identity, "quote":original})
     record("stage", "organizing_owner_chat_turn")
@@ -96,7 +96,7 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
     found = (await device_call(device, port, login, "POST", SEARCH, {"query": "turn:" + identity}))["value"]["items"]
     record("automatic_lookup", {"source_key":"turn:"+identity, "items":found, "state":runtime.memory_organizer.state()})
     auto, = [row for row in found if row["source_key"] == "turn:" + identity and AUTO in row["quote"]]
-    preserved = (await client.post("/api/agent/memory.get", json={"id":confirmed["id"]})).raise_for_status().json()
+    preserved = (await client.post("/api/v1/agent/memory/get", json={"id":confirmed["id"]})).raise_for_status().json()
     record("independent_preferences", {"manual": preserved, "automatic": auto})
     assert auto["id"] != confirmed["id"] and preserved == confirmed
     tasks = runtime.tasks
@@ -129,13 +129,13 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
     async def edition(phase):
         task_id = str(uuid4())
         phase_for_task[task_id] = phase
-        result = await client.post("/api/agent/tasks", json={"request_id":task_id, "goal": GOAL, "video_selection": SELECTION})
+        result = await client.post("/api/v1/agent/tasks", json={"request_id":task_id, "goal": GOAL, "video_selection": SELECTION})
         result.raise_for_status()
         record("stage", "generating_" + phase)
         try:
             async with asyncio.timeout(480):
                 while True:
-                    response = (await client.get("/api/agent/tasks/"+task_id)).raise_for_status().json()
+                    response = (await client.get("/api/v1/agent/tasks/"+task_id)).raise_for_status().json()
                     if response["status"] not in {"queued", "scheduled", "running", "waiting"}:
                         break
                     await asyncio.sleep(.5)
@@ -152,7 +152,7 @@ async def compare(client, runtime, port, device, login, confirmed, record, corre
             return {"status":response["status"], "body":None, "items":[], "citations":[],
                     "measurement":{"passed":False, "items":[]}, "message":response["message"]}
         assert any(s["tool"] == "inspect_video" and s["result"].get("findings") for s in response["steps"])
-        other = (await device_call(device, port, login, "GET", "/api/agent/tasks/"+task_id))["value"]
+        other = (await device_call(device, port, login, "GET", "/api/v1/agent/tasks/"+task_id))["value"]
         assert other["artifact"]["body"] == response["artifact"]["body"]
         plan = tasks.current(task_id)["plan"]
         body = other["artifact"]["body"]

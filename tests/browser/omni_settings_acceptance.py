@@ -75,8 +75,8 @@ async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):
                 await page.goto(f"http://127.0.0.1:{listener.getsockname()[1]}/settings")
                 assert page.url.endswith("/#settings")
                 await page.locator("#token").fill(token)
-                async with (page.expect_response("**/api/account/bilibili") as account,
-                            page.expect_response("**/api/automation") as permissions):
+                async with (page.expect_response("**/api/v1/operations/account/bilibili") as account,
+                            page.expect_response("**/api/v1/operations/automation") as permissions):
                     await page.locator("#login-form button").click()
                 assert (await account.value).request.method == (await permissions.value).request.method == "GET"
                 assert (await account.value).ok and (await permissions.value).ok
@@ -108,7 +108,7 @@ async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):
                 await expect(page.locator("#llm-operations-tokens")).to_have_value("2300")
                 await expect(background.locator("#background-budget")).to_have_value(original_agent_budget)
                 await background.locator("#background-budget").fill("3072")
-                async with page.expect_request("**/api/settings/providers") as saved:
+                async with page.expect_request("**/api/v1/system/settings/providers") as saved:
                     await page.get_by_role("button", name="保存推理设置").click()
                 body = (await saved.value).post_data_json
                 assert set(body) == {"omni"} and body["omni"]["operations_max_tokens"] == 2300
@@ -120,7 +120,7 @@ async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):
                 await expect(background.locator("#background-budget")).to_have_value("3072")
                 await expect(page.locator("#video-max-frames")).to_have_value("24")
                 await page.get_by_text("共用连接与凭据", exact=True).click()
-                await page.route("**/api/providers/models", lambda route: route.fulfill(json={"models": ["fixture-alias"]}))
+                await page.route("**/api/v1/system/providers/models", lambda route: route.fulfill(json={"models": ["fixture-alias"]}))
                 await page.get_by_role("button", name="读取已保存的前台模型别名").click()
                 await expect(page.locator("#omni-model-options option")).to_have_attribute("value", "fixture-alias")
                 foreground_available = False
@@ -164,8 +164,8 @@ async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):
                     await expect(page.locator("#preview-state")).to_contain_text("合成完成")
                     assert speech_inputs[-1] == ("角色试听。", reference)
                 await page.get_by_label("试听文本").fill("瑶瑶的试听。")
-                await page.route("**/api/tts/preview", lambda route: route.fulfill(status=503, json={"detail":"参考服务不可用"}))
-                async with page.expect_request("**/api/tts/preview") as preview:
+                await page.route("**/api/v1/persona/voices/preview", lambda route: route.fulfill(status=503, json={"code":"SERVICE_UNAVAILABLE","message":"参考服务不可用"}))
+                async with page.expect_request("**/api/v1/persona/voices/preview") as preview:
                     await page.get_by_role("button", name="生成试听音频").click()
                 assert (await preview.value).post_data_json == {"voice_id": "yaoyao_reference", "text": "瑶瑶的试听。"}
                 await expect(page.locator("#preview-state")).to_contain_text("合成失败")

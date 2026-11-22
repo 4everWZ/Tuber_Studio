@@ -183,21 +183,21 @@ def test_old_session_summary_is_cleared_even_with_recent_conversations(settings,
 
 def test_retention_api_is_authenticated_confirmed_and_keeps_disabled_manual_boundary(settings):
     with TestClient(create_app(settings)) as client:
-        assert client.get("/api/retention").status_code == 401
-        assert client.put("/api/retention", json={"days": None}).status_code == 401
-        client.post("/api/auth", json={"token": settings.admin_token})
-        assert client.get("/api/retention").json()["days"] == 30
-        assert client.put("/api/retention", json={"days": None}).json()["enabled"] is False
-        assert client.post("/api/retention/preview", json={}).status_code == 400
+        assert client.get("/api/v1/system/retention").status_code == 401
+        assert client.put("/api/v1/system/retention", json={"days": None}).status_code == 401
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
+        assert client.get("/api/v1/system/retention").json()["days"] == 30
+        assert client.put("/api/v1/system/retention", json={"days": None}).json()["enabled"] is False
+        assert client.post("/api/v1/system/retention/preview", json={}).status_code == 400
         before = "2020-01-01T00:00:00Z"
-        assert client.post("/api/retention/preview", json={"before": before}).status_code == 200
-        assert client.post("/api/retention/cleanup", json={"before": before}).status_code == 400
-        result = client.post("/api/retention/cleanup", json={"before": before, "confirm": True})
+        assert client.post("/api/v1/system/retention/preview", json={"before": before}).status_code == 200
+        assert client.post("/api/v1/system/retention/cleanup", json={"before": before}).status_code == 400
+        result = client.post("/api/v1/system/retention/cleanup", json={"before": before, "confirm": True})
         assert result.status_code == 200 and result.json()["cutoff"] == before
         assert (
-            client.post("/api/retention/preview", json={"before": "2099-01-01T00:00:00Z"}).status_code == 400
+            client.post("/api/v1/system/retention/preview", json={"before": "2099-01-01T00:00:00Z"}).status_code == 400
         )
-        assert client.post("/api/retention/preview", json={"before": "2020-01-01"}).status_code == 400
+        assert client.post("/api/v1/system/retention/preview", json={"before": "2020-01-01"}).status_code == 400
 
 
 async def test_disabled_automatic_cleanup_and_busy_manual_guard(runtime):

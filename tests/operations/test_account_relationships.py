@@ -79,11 +79,11 @@ def test_relationship_preserves_legacy_range_and_isolates_accounts_and_ocs(store
 def test_confirm_edit_opt_out_and_clear_user_memory(settings):
     app = create_app(settings, Delivery())
     with TestClient(app) as client:
-        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
         account = app.state.bilibili_account
         account.verified_account_id, account.verified_credential = "900", dict(account.credentials)
         relations, character = app.state.runtime.relationships, app.state.runtime.character["id"]
-        url = "/api/user-memory/bilibili/123"
+        url = "/api/v1/persona/user-memory/bilibili/123"
         scope = {"account_id": "900", "character_id": character}
         args = (character, "bilibili", "123", "鱼宝")
         values = {

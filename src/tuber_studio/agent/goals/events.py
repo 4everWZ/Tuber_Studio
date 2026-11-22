@@ -7,13 +7,13 @@ import time
 from typing import Literal
 from uuid import UUID, uuid5
 
-from fastapi import Depends, HTTPException, Query
+from fastapi import HTTPException
 from pydantic import Field
 
 from ...core.models import StrictModel
 from ...core.store import dump
 from ..tasks.delivery import deliver_from_receipts
-from .comment_events import GoalCommentEvents, register_comment_events
+from .comment_events import GoalCommentEvents
 
 log = logging.getLogger(__name__)
 BATCH = 16
@@ -170,20 +170,7 @@ class GoalEvents:
                 }, "completed", steps, now)
 
 
-def register_goal_events(app, tasks, require_admin):
+def attach_goal_events(tasks):
+    """Attach persistent goal and comment event watchers onto tasks."""
     events = tasks.goal_events = GoalEvents(tasks)
-    register_comment_events(app, events.comments, require_admin)
-    path = "/api/agent/tasks/{identity}/goal/events"
-    deps = [Depends(require_admin)]
-
-    @app.get(path, dependencies=deps)
-    async def event_watch(identity: UUID):
-        return events.get(str(identity))
-
-    @app.put(path, dependencies=deps)
-    async def configure_events(identity: UUID, body: EventGrant):
-        return events.configure(str(identity), body)
-
-    @app.delete(path, dependencies=deps)
-    async def disable_events(identity: UUID, revision: int = Query(ge=0)):
-        return events.disable(str(identity), revision)
+    return events

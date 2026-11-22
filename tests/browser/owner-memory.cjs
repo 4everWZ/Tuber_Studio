@@ -107,7 +107,7 @@ async function test(browser, origin, mode) {
     const input = document.getElementById("memory-history-enabled");
     return input && !input.disabled && !input.checked;
   });
-  const restored = await context.request.get(origin + "/api/daily-memory/preferences");
+  const restored = await context.request.get(origin + "/api/v1/persona/daily-memory/preferences");
   assert.equal(restored.ok(), true);
   assert.equal((await restored.json()).history_enabled, false);
   await page.locator('a[data-page="chat"]').click();
@@ -131,7 +131,7 @@ async function test(browser, origin, mode) {
   await page.locator("#private-call-open").click();
   assert.equal(await page.locator("#private-call-finish-utterance,#private-call-transcribe").count(), 0);
   const other = await browser.newContext();
-  const original = await other.request.post(origin + "/api/agent/memory.search", {data: {query: statement}});
+  const original = await other.request.post(origin + "/api/v1/agent/memory/search", {data: {query: statement}});
   const originalRow = (await original.json()).items[0];
   const memoryWrites = [];
   page.on("request", request => {
@@ -140,15 +140,15 @@ async function test(browser, origin, mode) {
   assert.equal(await page.locator("#private-call-citations").count(), 0);
   assert.equal(await page.locator("#private-call-topic").isVisible(), false);
   if (selected) {
-    const prefs = await (await other.request.get(origin + "/api/daily-memory/preferences")).json();
-    const enabled = await other.request.put(origin + "/api/daily-memory/preferences",
+    const prefs = await (await other.request.get(origin + "/api/v1/persona/daily-memory/preferences")).json();
+    const enabled = await other.request.put(origin + "/api/v1/persona/daily-memory/preferences",
       {data:{scope: prefs.scope, enabled:prefs.enabled, history_enabled:true}});
     assert.equal(enabled.ok(), true);
   } else {
     await page.getByText("指定通话话题", {exact:true}).click();
     await page.getByLabel("话题（可选）").fill(correction ? originalRow.source_key : statement);
   }
-  const ticket = page.waitForRequest(r => r.url().endsWith("/api/chat/private-call/ticket"));
+  const ticket = page.waitForRequest(r => r.url().endsWith("/api/v1/agent/private-call/ticket"));
   await page.locator("#private-call-start").click();
   const body = (await ticket).postDataJSON();
   if (selected) assert.deepEqual(body, {temporary:false, topic_turn:await turn.getAttribute("data-request-id")});
@@ -169,14 +169,14 @@ async function test(browser, origin, mode) {
     } else {
       await selector.selectOption({label: originalRow.note});
     }
-    const updated = page.waitForResponse(r => r.url().endsWith("/api/agent/memory/confirm") && r.ok());
+    const updated = page.waitForResponse(r => r.url().endsWith("/api/v1/agent/memory/confirm") && r.ok());
     await page.getByRole("button", {name: "确认用这句话更正"}).click();
     assert.deepEqual(await (await updated).json(), {id:originalRow.id, revision:originalRow.revision+1});
     await resumed;
-    const current = await other.request.post(origin+"/api/agent/memory.get", {data:{id:originalRow.id}});
+    const current = await other.request.post(origin+"/api/v1/agent/memory/get", {data:{id:originalRow.id}});
     const stored = await current.json();
     assert.equal(stored.quote, voiceNote);
-    const list = await other.request.get(origin+"/api/daily-memory");
+    const list = await other.request.get(origin+"/api/v1/persona/daily-memory");
     assert.equal((await list.json()).organized.filter(row => row.status === "active").length, 1);
     await other.close();
     return;
@@ -188,17 +188,17 @@ async function test(browser, origin, mode) {
     throw error;
   }
   await page.locator("#private-call-utterances").getByText("已保存").waitFor();
-  const recalled = await other.request.post(origin + "/api/agent/memory.search", {data: {query: voiceNote}});
+  const recalled = await other.request.post(origin + "/api/v1/agent/memory/search", {data: {query: voiceNote}});
   assert.equal((await recalled.json()).items[0].quote, voiceNote);
   const {id} = originalRow;
   let entered, resume;
   const validating = new Promise(resolve => { entered = resolve; });
   const release = new Promise(resolve => { resume = resolve; });
-  await page.route("**/api/agent/memory/validate", async route => { entered(); await release; await route.continue(); });
+  await page.route("**/api/v1/agent/memory/validate", async route => { entered(); await release; await route.continue(); });
   send({type: "response.output_audio.delta", response_id: "revoked", item_id: "out",
     format: "pcm16", sample_rate_hz: 16000, delta: Buffer.alloc(32000, 1).toString("base64")});
   await validating;
-  const deleted = await other.request.delete(origin + "/api/daily-memory/organized/" + id);
+  const deleted = await other.request.delete(origin + "/api/v1/persona/daily-memory/organized/" + id);
   assert.equal(deleted.status(), 200);
   resume();
   await resumed;

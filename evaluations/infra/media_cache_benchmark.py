@@ -33,9 +33,9 @@ from pathlib import Path
 
 import psutil
 
+from tuber_studio.app.runtime import Runtime
 from tuber_studio.core.config import ROOT, Settings
 from tuber_studio.core.store import Store
-from tuber_studio.runtime import Runtime
 
 HERE = None
 REPEATS = 25
@@ -224,7 +224,7 @@ def parent(counts):
         "memory_bytes": psutil.virtual_memory().total,
         "source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "cache_source_blob": subprocess.check_output(
-            ["git", "hash-object", "src/tuber_studio/media_cache.py"], cwd=ROOT, text=True
+            ["git", "hash-object", "src/tuber_studio/infra/media/cache.py"], cwd=ROOT, text=True
         ).strip(),
         "source_root": str(ROOT),
         "samples": REPEATS,

@@ -24,7 +24,7 @@ from tuber_studio.core.models import StrictModel
 from tuber_studio.core.store import Store
 from tuber_studio.infra.web_client.fetch import read_excerpt
 
-CHAT = "/api/chat/intelligent"
+CHAT = "/api/v1/agent/chat"
 
 
 @pytest.fixture
@@ -313,7 +313,7 @@ async def test_call_text_uses_same_task_receipt_and_scope(studio):
     scope = object_scope(runtime)
     result = await turn(client, "整理两行私有工作笔记", call_scope=scope, intent={"action": "agent_task"})
     identity = result["card"]["data"]["id"]
-    assert (await client.get(f"/api/agent/tasks/{identity}")).raise_for_status().json()["id"] == identity
+    assert (await client.get(f"/api/v1/agent/tasks/{identity}")).raise_for_status().json()["id"] == identity
     response = await client.post(CHAT, json={
         "request_id": str(uuid4()), "message": "创建任务", "call_scope": "0" * 64, "intent": {"action": "agent_task"},
     })

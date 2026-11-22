@@ -109,11 +109,11 @@ async def test_model_preparation_timeout_cancels_provider(settings, store):
 def test_default_app_keeps_singing_unavailable_and_rejects_singing_default(settings):
     app = create_app(settings)
     with TestClient(app) as client:
-        client.post("/api/auth", json={"token": settings.admin_token})
-        music = client.get("/api/live/music").json()
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
+        music = client.get("/api/v1/live/music").json()
         assert music["settings"]["default_mode"] == "direct"
         assert music["singing"]["available"] is False
         assert "模型待接入" in music["singing"]["reason"]
-        response = client.put("/api/live/music", json=music["settings"] | {"default_mode": "sing"})
+        response = client.put("/api/v1/live/music", json=music["settings"] | {"default_mode": "sing"})
         assert response.status_code == 400
-        assert client.get("/api/live/music").json()["settings"]["default_mode"] == "direct"
+        assert client.get("/api/v1/live/music").json()["settings"]["default_mode"] == "direct"

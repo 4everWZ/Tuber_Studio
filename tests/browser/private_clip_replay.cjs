@@ -6,7 +6,7 @@ const { chromium } = require(require.resolve("playwright", {
 }));
 
 const [origin, task, other, reference] = process.argv.slice(2);
-const base = "/api/agent/tasks/";
+const base = "/api/v1/agent/tasks/";
 assert.equal(new URL(origin).hostname, "127.0.0.1");
 
 function anchor(page) {
@@ -129,10 +129,10 @@ async function run(browser) {
   await entry.click();
   const previews = panel.locator("video");
   await previews.first().waitFor({state: "attached"});
-  const role = await page.request.post(origin + "/api/characters", {data: {name: "隔离对照角色"}});
+  const role = await page.request.post(origin + "/api/v1/persona/characters", {data: {name: "隔离对照角色"}});
   assert.equal(role.status(), 200);
   const id = (await role.json()).id;
-  assert.equal((await page.request.post(origin + "/api/characters/" + id + "/activate")).status(), 200);
+  assert.equal((await page.request.post(origin + "/api/v1/persona/characters/" + id + "/activate")).status(), 200);
   assert.equal((await page.request.get(origin + base + task)).status(), 404);
   await previews.first().waitFor({state: "detached"});
   for (const step of steps) {

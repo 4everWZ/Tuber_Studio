@@ -61,7 +61,7 @@ async def test_412_survives_tool_runtime_and_owner_task_detail(settings, monkeyp
             base_url="http://test",
             headers={"Authorization": "Bearer fixture"},
         ) as owner:
-            response = await owner.get("/api/agent/tasks/" + task["id"])
+            response = await owner.get("/api/v1/agent/tasks/" + task["id"])
         assert response.is_success
         view = response.json()
         assert view["steps"][0] == previous and previous["id"] in evidence_index(view["steps"])

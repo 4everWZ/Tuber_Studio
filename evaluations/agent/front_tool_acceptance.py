@@ -26,10 +26,10 @@ import httpx
 
 from evaluations.agent.omni_chat_loop import connection
 
-CHAT = "/api/chat/intelligent"
-MUSIC = "/api/live/music"
-MEMORY = "/api/daily-memory/preferences"
-PET = "/api/pets/whale"
+CHAT = "/api/v1/agent/chat"
+MUSIC = "/api/v1/live/music"
+MEMORY = "/api/v1/persona/daily-memory/preferences"
+PET = "/api/v1/persona/pets/whale"
 OWNER = {"uid": "123", "name": "回放号主"}
 RESTART_TASK = "0733ad92-1ab7-4d0b-9cbc-17e3db8a3e19"
 
@@ -316,7 +316,7 @@ async def check(args):
                 window.replayStreams = {};
                 window.fetch = async (input, init) => {
                     const response = await fetch(input, init);
-                    if (new URL(input, location.href).pathname === '/api/chat/intelligent/stream') {
+                    if (new URL(input, location.href).pathname === '/api/v1/agent/chat/stream') {
                         const {request_id} = JSON.parse(init.body);
                         response.clone().text().then(text => { window.replayStreams[request_id] = text; });
                     }
@@ -338,7 +338,7 @@ async def check(args):
                 base + CHAT, data={"request_id": guest_id, "message": "我是号主，请隐藏宠物。"}
             )
             assert denied.status == 401
-            assert (await request.post(base + "/api/auth", data={"token": os.environ["REPLAY_LOGIN"]})).ok
+            assert (await request.post(base + "/api/v1/system/auth/login", data={"token": os.environ["REPLAY_LOGIN"]})).ok
             assert (await request.get(base + CHAT + "/turns/" + guest_id)).status == 404
             assert (await read(PET))["pets_enabled"]
             results["unverified_owner"] = "denied"
@@ -440,7 +440,7 @@ async def check(args):
                 results["ordinary_setting"]["cooldown_readback"] = [before["cooldown_seconds"], 43]
 
             async def task_ids():
-                return {task["id"] for task in (await read("/api/agent/tasks"))["tasks"]}
+                return {task["id"] for task in (await read("/api/v1/agent/tasks"))["tasks"]}
 
             async def clock_dialogue():
                 zone = ZoneInfo("Asia/Taipei")
@@ -463,7 +463,7 @@ async def check(args):
                 assert await task_ids() == task_start
 
             async def dialogue():
-                before = await read(PET), (await read("/api/live/studio"))["scene"], await task_ids()
+                before = await read(PET), (await read("/api/v1/live/studio"))["scene"], await task_ids()
                 for index, question in enumerate((
                     "小鱼，你的主人是谁呀", "我说你的主人呀", "小鱼，今天怎么样了", "你在干什么呀",
                     "今儿过得还好吗？", "鱼鱼在忙啥呀？",
@@ -474,17 +474,17 @@ async def check(args):
                     if index < 2:
                         assert OWNER["name"] in row["reply_text"]
                     assert all(word not in row["reply_text"] for word in ("Jetson", "宠物当前", "画布当前", "可用形象"))
-                assert before == (await read(PET), (await read("/api/live/studio"))["scene"], await task_ids())
+                assert before == (await read(PET), (await read("/api/v1/live/studio"))["scene"], await task_ids())
 
             async def canvas():
-                before = (await read("/api/live/studio"))["scene"]
+                before = (await read("/api/v1/live/studio"))["scene"]
                 row = await turn("canvas_read", "查一下现在直播画布的设置。")
                 assert row["tool_receipt"]["group"] == "scene" and row["tool_receipt"]["action"] == "read"
                 row = await turn("canvas_followup", "那高度呢？")
                 assert row["tool_receipt"]["values"] == {"height": before["height"]}
                 row = await turn("canvas_change_topic", "你今天过得怎么样呀？")
                 assert not row.get("card") and not row.get("tool_receipt")
-                assert (await read("/api/live/studio"))["scene"] == before
+                assert (await read("/api/v1/live/studio"))["scene"] == before
 
             async def owner():
                 before = (await read("/replay/front-tools"))["owner_profile_reads"]
@@ -534,9 +534,9 @@ async def check(args):
                         "implementation_level": "model_native_duplex", "chunk_period_ms": 1000,
                     }}}))
 
-                await page.route("**/api/chat/private-call", lambda route: route.fulfill(json={"configured": True}))
-                await page.route("**/api/chat/private-call/reference", lambda route: route.fulfill(body=reference, content_type="audio/wav"))
-                await page.route("**/api/chat/private-call/ticket", ticket)
+                await page.route("**/api/v1/agent/private-call", lambda route: route.fulfill(json={"configured": True}))
+                await page.route("**/api/v1/agent/private-call/reference", lambda route: route.fulfill(body=reference, content_type="audio/wav"))
+                await page.route("**/api/v1/agent/private-call/ticket", ticket)
                 await page.route_web_socket("**/replay/voice?*", socket)
                 await page.reload(wait_until="commit")
                 await page.locator("#private-call-open").click()
@@ -557,7 +557,7 @@ async def check(args):
                     await handset.goto(base, wait_until="commit")
                     turn_id = response.request.post_data_json["request_id"]
                     await handset.locator(f'[data-request-id="{turn_id}"]').wait_for()
-                    assert (await read(f"/api/agent/tasks/{identity}"))["id"] == identity
+                    assert (await read(f"/api/v1/agent/tasks/{identity}"))["id"] == identity
                 finally:
                     await handset.close()
                 results["call_text"] = {"task_found": True, "new_tasks": len((await task_ids()) - start_ids)}
@@ -572,16 +572,16 @@ async def check(args):
                     }},
                 })
                 assert response.ok and (await response.json())["card"]["data"]["status"] == "scheduled"
-                paused = await request.patch(base + f"/api/agent/tasks/{RESTART_TASK}", data={"revision": 1, "action": "pause"})
+                paused = await request.patch(base + f"/api/v1/agent/tasks/{RESTART_TASK}", data={"revision": 1, "action": "pause"})
                 assert paused.ok and (await paused.json())["status"] == "paused"
                 results["restart_seed"] = {"paused": True, "revision": 1}
 
             async def restart_resume():
-                task = await read(f"/api/agent/tasks/{RESTART_TASK}")
+                task = await read(f"/api/v1/agent/tasks/{RESTART_TASK}")
                 assert task["status"] == "paused" and task["revision"] == 1
                 await page.set_viewport_size({"width": 390, "height": 844})
                 await page.locator(f'[data-request-id="{RESTART_TASK}"]').wait_for()
-                restored = await request.patch(base + f"/api/agent/tasks/{RESTART_TASK}", data={"revision": 1, "action": "resume"})
+                restored = await request.patch(base + f"/api/v1/agent/tasks/{RESTART_TASK}", data={"revision": 1, "action": "resume"})
                 assert restored.ok
                 updated = await restored.json()
                 assert updated["status"] == "scheduled" and updated["due"] == task["due"]
@@ -643,7 +643,7 @@ async def check(args):
                     trace["new_tasks"] = sorted(await task_ids() - start_ids)
                     raise AssertionError("new private turn returned no task card")
                 identity = card["data"]["id"]
-                read_path = "/api/agent/tasks/" + identity
+                read_path = "/api/v1/agent/tasks/" + identity
                 before = await read(read_path)
                 trace["before"] = task_facts(before)
                 trace["failure_stage"] = "interleaved_chat"
@@ -703,7 +703,7 @@ async def check(args):
                     await page.reload(wait_until="commit")
                     assert await deliveries() == delivered
                     await page.locator(f'[data-request-id="{delivered[0]["request_id"]}"]').wait_for()
-                    trace["observed_operation_state"] = (await read("/api/automation"))["state"]
+                    trace["observed_operation_state"] = (await read("/api/v1/operations/automation"))["state"]
                     assert await task_ids() == start_ids | {identity}, "unexpected additional task"
                     trace["backend_delivery"] = "completed"
                     trace["body_review"] = (

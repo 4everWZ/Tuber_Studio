@@ -7,10 +7,10 @@ import time
 import pytest
 
 from tests.support.operations_helpers import comments as comments
+from tuber_studio.app.runtime import Runtime
 from tuber_studio.core.identity import identity_snapshot
 from tuber_studio.core.models import Reply
 from tuber_studio.infra.platforms.bilibili.account import PROFILE_CACHE_KEY, signature
-from tuber_studio.runtime import Runtime
 
 
 async def test_comment_account_switch_does_not_inherit_other_account_or_unbound_assistant_history(comments, store, monkeypatch):

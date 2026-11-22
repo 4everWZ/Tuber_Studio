@@ -64,11 +64,11 @@ def browse(origin, token):
             expect(gallery).to_be_checked()
             expect(generate).to_be_checked()
             for checkbox in (generate, gallery, generate, gallery):
-                with page.expect_response(lambda r: r.url.endswith("/api/settings/illustrations") and r.request.method == "PATCH") as change:
+                with page.expect_response(lambda r: r.url.endswith("/api/v1/persona/illustrations/policy") and r.request.method == "PATCH") as change:
                     checkbox.click()
                 assert change.value.ok
                 saved = change.value.json()
-                with page.expect_response(lambda r: r.url.endswith("/api/settings/illustrations") and r.request.method == "GET") as reload:
+                with page.expect_response(lambda r: r.url.endswith("/api/v1/persona/illustrations/policy") and r.request.method == "GET") as reload:
                     page.reload()
                 assert reload.value.json() == saved
                 expect(gallery).to_be_enabled()
@@ -116,7 +116,7 @@ def browse(origin, token):
             expect(page.locator("#dynamic-post-text")).to_have_value(BODY)
             expect(page.locator("#dynamic-meme-image img")).to_be_visible()
             preview = page.locator("#dynamic-meme-image img")
-            expect(preview).to_have_attribute("src", re.compile("/api/operations/illustrations/dynamics/"))
+            expect(preview).to_have_attribute("src", re.compile("/api/v1/operations/illustrations/dynamics/"))
             assert preview.evaluate("(img) => img.complete && img.naturalWidth === 1024")
             page.locator("#approve-dynamic").click()
             page.locator("#publish-dynamic").click()

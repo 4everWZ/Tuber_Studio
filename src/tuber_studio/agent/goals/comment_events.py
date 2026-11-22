@@ -1,9 +1,8 @@
 """Private goal notifications for new verified rows in a selected public thread."""
 
 import time
-from uuid import UUID
 
-from fastapi import Depends, HTTPException, Query
+from fastapi import HTTPException
 from pydantic import Field
 
 from ...core.models import StrictModel
@@ -109,20 +108,3 @@ class GoalCommentEvents:
                 result["message"] = title
                 record(db, row["goal_id"], scope, event_key, "comment_received", result, title, now)
                 db.execute("DELETE FROM goal_pending_comments WHERE id=?", (row["id"],))
-
-
-def register_comment_events(app, events, require_admin):
-    path = "/api/agent/tasks/{identity}/goal/comment-events"
-    deps = [Depends(require_admin)]
-
-    @app.get(path, dependencies=deps)
-    async def watch(identity: UUID):
-        return events.get(str(identity))
-
-    @app.put(path, dependencies=deps)
-    async def configure(identity: UUID, body: CommentWatch):
-        return events.configure(str(identity), body)
-
-    @app.delete(path, dependencies=deps)
-    async def disable(identity: UUID, revision: int = Query(ge=0)):
-        return events.disable(str(identity), revision)

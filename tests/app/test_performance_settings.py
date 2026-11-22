@@ -4,7 +4,7 @@ from tuber_studio.app import create_app
 
 
 def test_shared_preferences_survive_restart_and_drive_single_live_fallback(settings):
-    path = "/api/settings/performance"
+    path = "/api/v1/system/settings/performance"
     auth = {"Authorization": "Bearer " + settings.admin_token}
     with TestClient(create_app(settings)) as client:
         assert client.get(path).status_code == 401
@@ -16,7 +16,7 @@ def test_shared_preferences_survive_restart_and_drive_single_live_fallback(setti
             for key, value in (("pets_enabled", pets), ("avatar_enabled", avatar)):
                 client.put(path, headers=auth, json={key: value}).raise_for_status()
             expected = {"pets_enabled": pets, "avatar_enabled": avatar}
-            for view in ("/api/live/view", "/api/live/studio"):
+            for view in ("/api/v1/live/view", "/api/v1/live/studio"):
                 result = client.get(view, headers=auth).raise_for_status().json()
                 assert result["performance"] == expected
                 assert result["lip_sync"] == {"provider": "ditto", "status": "tbd" if avatar else "off",

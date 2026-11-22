@@ -26,7 +26,7 @@ from tuber_studio.core.store import dump
 from tuber_studio.infra.inference.http_api import InferenceBudgetExceeded
 from tuber_studio.infra.inference.responses_provider import FunctionCall, ResponsesClient, ResponseTurn
 
-CHAT = "/api/chat/intelligent"
+CHAT = "/api/v1/agent/chat"
 CHAT_DIR = ROOT / "src/tuber_studio/agent/chat"
 
 

@@ -31,7 +31,7 @@ from .models import (
     chat_model_provider,
     text_generation_slot,
 )
-from .transport import ChatTransport, register_chat_routes
+from .transport import ChatTransport
 
 __all__ = [
     "ChatContext",
@@ -52,7 +52,6 @@ __all__ = [
     "VideoRange",
     "VideoSelection",
     "VoiceRoute",
-    "register_operator_chat",
 ]
 
 
@@ -219,8 +218,3 @@ class OperatorChat:
 
     def video_activity(self, period):
         return self.context.video_activity(period)
-
-
-def register_operator_chat(app, runtime, store, browsing, dynamics, require_admin):
-    service = OperatorChat(runtime, store, browsing, dynamics)
-    return register_chat_routes(app, service, require_admin)

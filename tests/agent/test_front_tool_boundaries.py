@@ -13,9 +13,9 @@ from tuber_studio.agent.chat import router as turn_router
 from tuber_studio.agent.chat.lookup.workshop_settings import read_settings, settings_catalog, update_settings
 from tuber_studio.app import create_app
 
-CHAT = "/api/chat/intelligent"
-MEMORY = "/api/daily-memory/preferences"
-PETS = "/api/settings/performance"
+CHAT = "/api/v1/agent/chat"
+MEMORY = "/api/v1/persona/daily-memory/preferences"
+PETS = "/api/v1/system/settings/performance"
 
 
 @pytest.fixture
@@ -36,7 +36,7 @@ def test_claimed_owner_cannot_change_preferences(workbench):
     assert client.post(CHAT, json=message).status_code == 401
     assert client.put(PETS, json={"pets_enabled": False}).status_code == 401
     assert client.get(MEMORY).status_code == 401
-    client.post("/api/auth", json={"token": runtime.settings.admin_token}).raise_for_status()
+    client.post("/api/v1/system/auth/login", json={"token": runtime.settings.admin_token}).raise_for_status()
     assert client.get(PETS).json()["pets_enabled"] is True
     assert client.get(f"{CHAT}/turns/{message['request_id']}").status_code == 404
 
@@ -52,7 +52,7 @@ def test_claimed_owner_cannot_change_preferences(workbench):
 )
 async def test_mixed_settings_are_rejected_atomically(workbench, group, patch):
     runtime, client = workbench
-    client.post("/api/auth", json={"token": runtime.settings.admin_token}).raise_for_status()
+    client.post("/api/v1/system/auth/login", json={"token": runtime.settings.admin_token}).raise_for_status()
     memory_before = client.get(MEMORY).raise_for_status().json()
     policy_before = runtime.browsing.policy().copy()
     appearance_before = client.get(PETS).raise_for_status().json()
@@ -102,7 +102,7 @@ def test_model_setting_catalog_is_an_explicit_projection(workbench):
 
 def test_delegated_request_cannot_change_owner_memory(workbench, monkeypatch):
     runtime, client = workbench
-    client.post("/api/auth", json={"token": runtime.settings.admin_token}).raise_for_status()
+    client.post("/api/v1/system/auth/login", json={"token": runtime.settings.admin_token}).raise_for_status()
     before = client.get(MEMORY).raise_for_status().json()
     requested = "set_memory_preferences"
 
@@ -114,11 +114,11 @@ def test_delegated_request_cannot_change_owner_memory(workbench, monkeypatch):
     requests = gateway(runtime.settings, monkeypatch, delegate)
     identity = str(uuid4())
     client.post(
-        "/api/agent/tasks", json={"request_id": identity, "goal": "请后台打开历史引用。"}
+        "/api/v1/agent/tasks", json={"request_id": identity, "goal": "请后台打开历史引用。"}
     ).raise_for_status()
     deadline = time.monotonic() + 8
     while time.monotonic() < deadline:
-        task = client.get(f"/api/agent/tasks/{identity}").raise_for_status().json()
+        task = client.get(f"/api/v1/agent/tasks/{identity}").raise_for_status().json()
         if task["status"] in {"failed", "completed", "cancelled"}:
             break
         time.sleep(0.05)

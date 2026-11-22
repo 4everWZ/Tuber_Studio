@@ -70,8 +70,8 @@ async def test_original_character_has_only_its_manifest_images(settings, store, 
 def test_pet_endpoint_rejects_foreign_resources_and_mixed_control_writes(settings):
     app = create_app(settings)
     with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
-        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        path = "/api/pets/whale"
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
+        path = "/api/v1/persona/pets/whale"
         choices = client.get(path).raise_for_status().json()["items"]
         first = next(item for item in choices if item["title"] == "开心")
         valid = {"asset_id": first["asset_id"]}
@@ -83,7 +83,7 @@ def test_pet_endpoint_rejects_foreign_resources_and_mixed_control_writes(setting
         for asset_id in ("/assets/whale/sample1.wav", "https://example.org/portrait.png", {"value": "idle"}):
             assert client.put(path, json={"asset_id": asset_id}).status_code in (400, 422)
         assert runtime.pets.state("whale") == state
-        assert client.get("/api/chat/intelligent").raise_for_status().json()["pet"] == state
+        assert client.get("/api/v1/agent/chat").raise_for_status().json()["pet"] == state
         assert runtime.store.get("performance", {}) == {}
 
 
@@ -99,12 +99,12 @@ def test_pet_discovery_with_hidden_control_never_reaches_writer(settings, monkey
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", forged, raising=False)
     with TestClient(app) as client:
-        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        before = client.get("/api/daily-memory/preferences").raise_for_status().json()
-        response = client.post("/api/chat/intelligent", json={"request_id": str(uuid4()), "message": "让宠物歇会儿吧"})
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
+        before = client.get("/api/v1/persona/daily-memory/preferences").raise_for_status().json()
+        response = client.post("/api/v1/agent/chat", json={"request_id": str(uuid4()), "message": "让宠物歇会儿吧"})
         assert attempts and response.status_code == 503
         assert runtime.pets.state("whale")["pets_enabled"] is True
-        assert client.get("/api/daily-memory/preferences").raise_for_status().json() == before
+        assert client.get("/api/v1/persona/daily-memory/preferences").raise_for_status().json() == before
 
 
 @pytest.mark.skipif(not os.getenv("TUBER_TEST_CHROMIUM"), reason="requires local Chromium")

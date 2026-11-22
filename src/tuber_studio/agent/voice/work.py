@@ -8,8 +8,7 @@ from typing import Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import httpx
-from fastapi import Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import HTTPException
 from pydantic import Field
 
 from ...core.models import StrictModel, content_hash
@@ -54,119 +53,135 @@ async def classify(chat, words, tasks):
     return VoicePlan.model_validate(routed.model_dump())
 
 
-def register_call_work(app, runtime, require_admin, chat):
-    path = "/api/chat/private-call"
-    dependencies = [Depends(require_admin)]
+def _call_scope(runtime, call):
+    key = runtime.settings.provider_key("omni")
+    if not key:
+        raise HTTPException(409, "通话授权已变化，请重新开始通话")
+    grant = runtime.tasks.scope()
+    verify_call(call, key, grant)
+    return key, grant
 
-    def scope(call):
-        key = runtime.settings.provider_key("omni")
-        if not key:
-            raise HTTPException(409, "通话授权已变化，请重新开始通话")
-        grant = runtime.tasks.scope()
-        verify_call(call, key, grant)
-        return key, grant
 
-    def work(call, grant):
-        rows = runtime.store.all(
-            "SELECT request_id FROM operator_chat_turns WHERE character_id=? AND character_version=? "
-            "AND json_extract(result,'$.owner_source')=? AND json_extract(result,'$.call_origin.id')=? "
-            "AND json_extract(result,'$.execution_scope')=json(?) AND json_extract(result,'$.card.type')='agent_task' "
-            "ORDER BY created_at,request_id",
-            (grant[1], grant[2], chat.private_owner, call.ticket_hash, dump(grant)),
-        )
-        return [task for row in rows if (task := runtime.tasks.executable(row["request_id"]))]
+def _call_work_tasks(runtime, chat, call, grant):
+    rows = runtime.store.all(
+        "SELECT request_id FROM operator_chat_turns WHERE character_id=? AND character_version=? "
+        "AND json_extract(result,'$.owner_source')=? AND json_extract(result,'$.call_origin.id')=? "
+        "AND json_extract(result,'$.execution_scope')=json(?) AND json_extract(result,'$.card.type')='agent_task' "
+        "ORDER BY created_at,request_id",
+        (grant[1], grant[2], chat.private_owner, call.ticket_hash, dump(grant)),
+    )
+    return [task for row in rows if (task := runtime.tasks.executable(row["request_id"]))]
 
-    def receipt(request_id, origin, grant):
-        row = chat._turn(str(request_id))
-        if not row:
-            return None
-        saved = json.loads(row["result"])
-        if (saved.get("call_origin") != origin or saved.get("execution_scope") != grant
-                or saved.get("owner_source") != chat.private_owner):
-            raise HTTPException(409, "这句话已绑定其他通话")
-        card = saved.get("card") or {}
-        return {
-            "turn_id": request_id,
-            "task_id": card.get("data", {}).get("id") or saved.get("task_reference"),
-            "message": saved["reply_text"],
-        }
 
-    @app.post(path + "/utterances", dependencies=dependencies)
-    async def utterance(data: Utterance):
-        origin = data.origin
-        key, grant = scope(origin)
-        verify_origin(origin, key, grant, for_routing=data.confirmation is None)
-        request_id = uuid5(NAMESPACE_URL, f"studio.private-call/{origin.ticket_hash}/{origin.capture_id}")
-        source = {"id": origin.ticket_hash, "utterance": origin.capture_id}
-        if saved := receipt(request_id, source, grant):
-            return saved
-        words = origin.machine_text
-        task = None
-        if data.confirmation is None:
-            candidates = work(origin, grant)[-4:]
-            packet = [{key: item[key] for key in ("id", "goal", "status")} for item in candidates]
-            try:
-                async with asyncio.timeout(35):
-                    plan = await classify(chat, words, packet)
-            except (ValueError, TimeoutError, httpx.HTTPError, HTTPException, InferenceQueueBusy) as error:
-                log.info("Voice routing unavailable: %s", type(error).__name__)
-                raise HTTPException(503, "暂时无法识别语音交办，可在通话转写中交办。") from error
-            if scope(origin) != (key, grant):
-                raise HTTPException(409, "通话授权已变化，请重新开始通话")
-            if plan.action == "conversation" or not plan.quote.strip() or plan.quote not in words:
-                return {"turn_id": None}
-            if plan.action != "delegate":
-                task = next((item for item in candidates if item["id"] == str(plan.task_id)), None)
-                if task is None:
-                    return {"turn_id": None}
-            action = {"delegate": "agent_task", "revise": "steer_task", "cancel": "cancel_task"}[plan.action]
-        else:
-            words = data.confirmation.strip()
-            if not words:
-                raise HTTPException(422, "请填写要交办的原话。")
-            action = "agent_task"
-        if saved := receipt(request_id, source, grant):
-            return saved
-        await chat.send(ChatTurn(request_id=request_id, message=words, call_scope=content_hash(grant),
-                                 intent=ChatIntent(action=action, reference=task["id"] if task else None)),
-                        call_origin=source, call_task=task)
-        return receipt(request_id, source, grant)
+def _call_turn_receipt(chat, request_id, origin, grant):
+    row = chat._turn(str(request_id))
+    if not row:
+        return None
+    saved = json.loads(row["result"])
+    if (saved.get("call_origin") != origin or saved.get("execution_scope") != grant
+            or saved.get("owner_source") != chat.private_owner):
+        raise HTTPException(409, "这句话已绑定其他通话")
+    card = saved.get("card") or {}
+    return {
+        "turn_id": request_id,
+        "task_id": card.get("data", {}).get("id") or saved.get("task_reference"),
+        "message": saved["reply_text"],
+    }
 
-    @app.post(path + "/work/status", dependencies=dependencies)
-    async def work_status(call: CallOrigin):
-        _, grant = scope(call)
-        fields = ("id", "goal", "revision", "status", "message", "updated")
-        return {"tasks": [{key: view[key] for key in fields} for task in work(call, grant)
-                          if (view := runtime.tasks.view(task))]}
 
-    @app.post(path + "/work/{task_id}/read", dependencies=dependencies)
-    async def read_result(task_id: UUID, data: Readback):
-        def current():
-            _, grant = scope(data.call)
-            task = next((item for item in work(data.call, grant) if item["id"] == str(task_id)), None)
-            if task is None or task["revision"] != data.revision or task["status"] != "completed":
-                raise HTTPException(409, "交办结果已更新")
-            return runtime.tasks.view(task)
-
-        view = current()
-        if view["status"] != "completed" or not view["message"]:
-            raise HTTPException(409, "当前没有可朗读的结果")
-        # Read the first actionable paragraph while the full delivery stays in Chats.
-        block = view["message"].partition("\n\n")[0]
-        body = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)|https?://\S+", lambda match: match[1] or "", block)
-        bullet = next((line[2:].strip() for line in body.splitlines() if line.startswith("- ")), "")
-        plain = re.sub(r"(?m)^\s*(?:#{1,6}|[-*])\s+|[\\`*]", "", bullet or body).strip()
-        parts = [part.strip() for part in sentences(plain)]
-        text = next((part for part in parts if part.endswith(("。", "！", "？", ".", "!", "?"))), "")
-        text = text or (parts[0] if parts else "交办已完成，结果已经发到对话里。")
-        if len(text) > 120:
-            text = text[:120].rstrip() + "。"
+async def process_call_utterance(runtime, chat, data: Utterance):
+    """Route a verified private-call microphone turn into operator chat tasks."""
+    origin = data.origin
+    key, grant = _call_scope(runtime, origin)
+    verify_origin(origin, key, grant, for_routing=data.confirmation is None)
+    request_id = uuid5(NAMESPACE_URL, f"studio.private-call/{origin.ticket_hash}/{origin.capture_id}")
+    source = {"id": origin.ticket_hash, "utterance": origin.capture_id}
+    if saved := _call_turn_receipt(chat, request_id, source, grant):
+        return saved
+    words = origin.machine_text
+    task = None
+    if data.confirmation is None:
+        candidates = _call_work_tasks(runtime, chat, origin, grant)[-4:]
+        packet = [{key: item[key] for key in ("id", "goal", "status")} for item in candidates]
         try:
-            audio = await runtime.voices.synthesize_live(text, runtime.character["voice_profile"])
-        except (OSError, ValueError, TimeoutError, httpx.HTTPError, InferenceQueueBusy) as error:
-            log.info("Call readback unavailable: %s", type(error).__name__)
-            raise HTTPException(503, "结果暂时无法朗读") from error
-        latest = current()
-        if latest["status"] != view["status"] or latest["message"] != view["message"]:
+            async with asyncio.timeout(35):
+                plan = await classify(chat, words, packet)
+        except (ValueError, TimeoutError, httpx.HTTPError, HTTPException, InferenceQueueBusy) as error:
+            log.info("Voice routing unavailable: %s", type(error).__name__)
+            raise HTTPException(503, "暂时无法识别语音交办，可在通话转写中交办。") from error
+        if _call_scope(runtime, origin) != (key, grant):
+            raise HTTPException(409, "通话授权已变化，请重新开始通话")
+        if plan.action == "conversation" or not plan.quote.strip() or plan.quote not in words:
+            return {"turn_id": None}
+        if plan.action != "delegate":
+            task = next((item for item in candidates if item["id"] == str(plan.task_id)), None)
+            if task is None:
+                return {"turn_id": None}
+        action = {"delegate": "agent_task", "revise": "steer_task", "cancel": "cancel_task"}[plan.action]
+    else:
+        words = data.confirmation.strip()
+        if not words:
+            raise HTTPException(422, "请填写要交办的原话。")
+        action = "agent_task"
+    if saved := _call_turn_receipt(chat, request_id, source, grant):
+        return saved
+    await chat.send(
+        ChatTurn(
+            request_id=request_id,
+            message=words,
+            call_scope=content_hash(grant),
+            intent=ChatIntent(action=action, reference=task["id"] if task else None),
+        ),
+        call_origin=source,
+        call_task=task,
+    )
+    return _call_turn_receipt(chat, request_id, source, grant)
+
+
+def list_call_work_status(runtime, chat, call: CallOrigin):
+    """Return active task views created inside the verified call scope."""
+    _, grant = _call_scope(runtime, call)
+    fields = ("id", "goal", "revision", "status", "message", "updated")
+    return {
+        "tasks": [
+            {key: view[key] for key in fields}
+            for task in _call_work_tasks(runtime, chat, call, grant)
+            if (view := runtime.tasks.view(task))
+        ]
+    }
+
+
+async def synthesize_call_readback(runtime, chat, task_id: UUID, data: Readback):
+    """Synthesize a concise spoken summary for a completed call-scoped task."""
+    def current():
+        _, grant = _call_scope(runtime, data.call)
+        task = next(
+            (item for item in _call_work_tasks(runtime, chat, data.call, grant) if item["id"] == str(task_id)),
+            None,
+        )
+        if task is None or task["revision"] != data.revision or task["status"] != "completed":
             raise HTTPException(409, "交办结果已更新")
-        return FileResponse(audio.path, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+        return runtime.tasks.view(task)
+
+    view = current()
+    if view["status"] != "completed" or not view["message"]:
+        raise HTTPException(409, "当前没有可朗读的结果")
+    # Read the first actionable paragraph while the full delivery stays in Chats.
+    block = view["message"].partition("\n\n")[0]
+    body = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)|https?://\S+", lambda match: match[1] or "", block)
+    bullet = next((line[2:].strip() for line in body.splitlines() if line.startswith("- ")), "")
+    plain = re.sub(r"(?m)^\s*(?:#{1,6}|[-*])\s+|[\\`*]", "", bullet or body).strip()
+    parts = [part.strip() for part in sentences(plain)]
+    text = next((part for part in parts if part.endswith(("。", "！", "？", ".", "!", "?"))), "")
+    text = text or (parts[0] if parts else "交办已完成，结果已经发到对话里。")
+    if len(text) > 120:
+        text = text[:120].rstrip() + "。"
+    try:
+        audio = await runtime.voices.synthesize_live(text, runtime.character["voice_profile"])
+    except (OSError, ValueError, TimeoutError, httpx.HTTPError, InferenceQueueBusy) as error:
+        log.info("Call readback unavailable: %s", type(error).__name__)
+        raise HTTPException(503, "结果暂时无法朗读") from error
+    latest = current()
+    if latest["status"] != view["status"] or latest["message"] != view["message"]:
+        raise HTTPException(409, "交办结果已更新")
+    return audio.path

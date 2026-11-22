@@ -244,49 +244,49 @@ def test_live_api_scopes_streaming_upload_and_scene_persistence(settings):
     app = create_app(settings)
     with TestClient(app) as client:
         assert client.get("/live").status_code == 200
-        assert client.get("/api/live/view").status_code == 401
-        assert client.post("/api/live/uploads", content=pcm()).status_code == 401
-        client.post("/api/overlay/auth", json={"token": settings.overlay_token})
-        assert client.get("/api/live/view").status_code == 200
-        assert client.get("/api/live/studio").status_code == 401
-        assert client.put("/api/live/scene", json=default_scene()).status_code == 401
-        assert client.get("/api/live/music").status_code == 401
-        client.post("/api/auth", json={"token": settings.admin_token})
-        uploaded = client.post("/api/live/uploads", content=pcm()).json()
+        assert client.get("/api/v1/live/view").status_code == 401
+        assert client.post("/api/v1/live/uploads", content=pcm()).status_code == 401
+        client.post("/api/v1/system/auth/overlay", json={"token": settings.overlay_token})
+        assert client.get("/api/v1/live/view").status_code == 200
+        assert client.get("/api/v1/live/studio").status_code == 401
+        assert client.put("/api/v1/live/scene", json=default_scene()).status_code == 401
+        assert client.get("/api/v1/live/music").status_code == 401
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
+        uploaded = client.post("/api/v1/live/uploads", content=pcm()).json()
         assert uploaded["id"] == hashlib.sha256(pcm()).hexdigest()
         assert client.get("/media/music/" + uploaded["id"]).content == pcm()
-        assert client.post("/api/live/uploads", content=b"not a wave").status_code == 400
+        assert client.post("/api/v1/live/uploads", content=b"not a wave").status_code == 400
         assert not list(app.state.runtime.live.media.directory.glob(".upload-*"))
         scene = default_scene()
         scene["title"] = "保存后的标题"
-        assert client.put("/api/live/scene", json=scene).status_code == 200
-        assert client.get("/api/live/view").json()["scene"]["title"] == "保存后的标题"
+        assert client.put("/api/v1/live/scene", json=scene).status_code == 200
+        assert client.get("/api/v1/live/view").json()["scene"]["title"] == "保存后的标题"
         assert (
-            client.put("/api/live/scene", json=scene, headers={"Origin": "https://other.example"}).status_code
+            client.put("/api/v1/live/scene", json=scene, headers={"Origin": "https://other.example"}).status_code
             == 403
         )
-        assert client.put("/api/live/queue", json=["missing"]).status_code == 400
+        assert client.put("/api/v1/live/queue", json=["missing"]).status_code == 400
 
 
 def test_live_studio_limits_chat_and_dialogue_to_this_session(settings):
     with TestClient(create_app(settings)) as client:
-        client.post("/api/overlay/auth", json={"token": settings.overlay_token}).raise_for_status()
+        client.post("/api/v1/system/auth/overlay", json={"token": settings.overlay_token}).raise_for_status()
         client.headers["Authorization"] = f"Bearer {settings.admin_token}"
-        client.post("/api/live/start").raise_for_status()
-        client.post("/api/live/pause").raise_for_status()
-        client.post("/api/live/poll/start", json={"topic": "晚饭", "options": ["白饭", "海带"]}).raise_for_status()
+        client.post("/api/v1/live/start").raise_for_status()
+        client.post("/api/v1/live/pause").raise_for_status()
+        client.post("/api/v1/live/poll/start", json={"topic": "晚饭", "options": ["白饭", "海带"]}).raise_for_status()
         for text, uid in [("1", "first-viewer"), ("刚刚聊到哪了？", "second-viewer")]:
-            client.post("/api/live/mock-event", json={"text": text, "platform_user_id": uid}).raise_for_status()
-        desk = client.get("/api/live/studio").raise_for_status().json()
+            client.post("/api/v1/live/mock-event", json={"text": text, "platform_user_id": uid}).raise_for_status()
+        desk = client.get("/api/v1/live/studio").raise_for_status().json()
         assert [row["text"] for row in desk["chat"]] == ["刚刚聊到哪了？"]
         assert [row["status"] for row in desk["dialogue"]] == ["queued"]
         assert desk["dialogue"][0]["text"] is None and desk["last_spoken"] is None
-        output = client.get("/api/live/view", headers={"Authorization": ""}).raise_for_status().json()
+        output = client.get("/api/v1/live/view", headers={"Authorization": ""}).raise_for_status().json()
         assert output["queue"] == []
         assert set(output["events"][0]) == {"type", "display_name", "text"}
-        client.post("/api/live/stop").raise_for_status()
-        client.post("/api/live/start").raise_for_status()
-        next_desk = client.get("/api/live/studio").raise_for_status().json()
+        client.post("/api/v1/live/stop").raise_for_status()
+        client.post("/api/v1/live/start").raise_for_status()
+        next_desk = client.get("/api/v1/live/studio").raise_for_status().json()
         assert desk["session_id"] != next_desk["session_id"]
         assert not next_desk["chat"] and not next_desk["dialogue"]
 

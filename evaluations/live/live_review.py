@@ -114,18 +114,18 @@ def run(args):
     with httpx.Client(base_url=args.url.rstrip("/"), timeout=60, trust_env=False) as client:
         if args.resume:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            response = client.get("/api/automation")
+            response = client.get("/api/v1/operations/automation")
             response.raise_for_status()
             if not response.json()["policy"]["enabled"]:
-                response = client.post("/api/automation/review", json={"resume_session_id": manifest["session"]["id"]})
+                response = client.post("/api/v1/operations/automation/review", json={"resume_session_id": manifest["session"]["id"]})
                 response.raise_for_status()
         else:
-            response = client.get("/api/automation")
+            response = client.get("/api/v1/operations/automation")
             response.raise_for_status()
             current = response.json()
             if current["state"] != "off" or "auto" in current["permissions"].values():
                 raise SystemExit("Stop the parent and set every enabled channel to review before starting")
-            response = client.post("/api/automation/review")
+            response = client.post("/api/v1/operations/automation/review")
             response.raise_for_status()
             current = response.json()
             manifest = {"session": current["review_session"], "minimum_videos": args.minimum_videos,
@@ -137,7 +137,7 @@ def run(args):
         previous = None
         try:
             while True:
-                current = client.get("/api/automation")
+                current = client.get("/api/v1/operations/automation")
                 current.raise_for_status()
                 current = current.json()
                 if current["review_session"].get("id") != session["id"]:
@@ -151,11 +151,11 @@ def run(args):
                     previous = signature
                 if (progress["platform_write_attempts"] or "auto" in current["permissions"].values()
                         or current["review_session"].get("state") not in {"running", "starting"} and current["policy"]["enabled"]):
-                    client.post("/api/automation/stop").raise_for_status()
+                    client.post("/api/v1/operations/automation/stop").raise_for_status()
                     raise RuntimeError("Review write boundary changed; stopped without further work")
                 running = any(not row["interaction_only"] and row["status"] in {"queued", "running"} for row in progress["rounds"])
                 if progress["viewed"] >= manifest["minimum_videos"] and not running:
-                    client.post("/api/automation/stop").raise_for_status()
+                    client.post("/api/v1/operations/automation/stop").raise_for_status()
                     manifest["outcome"] = "cohort_collected_pending_semantic_review"
                     manifest["final"] = progress
                     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")

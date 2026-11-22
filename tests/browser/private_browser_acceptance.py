@@ -66,7 +66,7 @@ async def test_owner_and_agent_share_chromium_reading_state(settings, monkeypatc
                 return await route.abort()
             if url.path == "/":
                 return await route.fulfill(content_type="text/html; charset=utf-8", body=html)
-            if not url.path.startswith(("/static/", "/api/agent/")):
+            if not url.path.startswith(("/static/", "/api/v1/agent/")):
                 return await route.abort()
             response = await client.request(route.request.method, str(url), headers=await route.request.all_headers(),
                                             content=route.request.post_data_buffer)

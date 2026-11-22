@@ -39,7 +39,7 @@ def test_authenticated_single_connection_save_restart_and_clear(settings, monkey
     app = create_app(settings)
     with TestClient(app, raise_server_exceptions=True) as client:
         headers = {"Authorization": "Bearer " + settings.admin_token}
-        url = "/api/settings/providers"
+        url = "/api/v1/system/settings/providers"
         body = {"omni": {"base_url": "https://studio.test/proxy/v1", "model": "omni-a", "responses_model": "worker-a", "video_options": {"max_frames": 24}},
                 "credentials": {"omni": "unit-key"}}
         assert client.put(url, json=body).status_code == 401
@@ -73,7 +73,7 @@ def test_authenticated_single_connection_save_restart_and_clear(settings, monkey
         assert client.put(url, headers=headers, json={"omni": {"base_url": "https://new.test/v1"}}).status_code == 400
         assert client.put(url, headers=headers, json={"credentials": {"omni": ""}}).json()["provider_credentials"]["omni"]
         assert client.put(url, headers=headers, json={"clear_credentials": ["omni"]}).status_code == 200
-        assert not client.get("/api/settings", headers=headers).json()["provider_credentials"]["omni"]
+        assert not client.get("/api/v1/system/settings", headers=headers).json()["provider_credentials"]["omni"]
     assert not Settings(runtime=settings.runtime).provider_key("omni")
 
 

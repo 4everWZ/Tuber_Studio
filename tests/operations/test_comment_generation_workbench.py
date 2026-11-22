@@ -87,12 +87,12 @@ async def test_existing_draft_is_identified_without_claiming_it_was_regenerated(
 def test_comment_workbench_http_accepts_exact_generation_scope_and_fetch_video_alias(settings):
     app = create_app(settings, Platform())
     with TestClient(app) as client:
-        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        response = client.post("/api/comments/fetch", json={"video_id": "BV1d8pU6xEZX", "max_pages": 1})
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
+        response = client.post("/api/v1/operations/comments/fetch", json={"video_id": "BV1d8pU6xEZX", "max_pages": 1})
         assert response.status_code == 200, response.text
         fetched = response.json()
         assert fetched["video_id"] == "BV1d8pU6xEZX"
-        selected = client.get("/api/comments", params={"video_id": fetched["video_id"]}).json()[0]["id"]
+        selected = client.get("/api/v1/operations/comments", params={"video_id": fetched["video_id"]}).json()[0]["id"]
         now = time.time()
         app.state.store.execute(
             "INSERT INTO comment_tasks(id,status,total,character_id,created_at,updated_at,comment_ids) VALUES('this-task','running',1,'whale',?,?,?)",
@@ -104,7 +104,7 @@ def test_comment_workbench_http_accepts_exact_generation_scope_and_fetch_video_a
         )
         result = (
             client.get(
-                "/api/comments/workbench",
+                "/api/v1/operations/comments/workbench",
                 params={
                     "task_id": "this-task",
                     "comment_ids": str(selected),
@@ -116,10 +116,10 @@ def test_comment_workbench_http_accepts_exact_generation_scope_and_fetch_video_a
         )
         assert result["total"] == 1
         assert result["task"]["comment_ids"] == [selected]
-        assert client.get("/api/comment-tasks?task_id=this-task").json()[0]["id"] == "this-task"
-        assert client.get("/api/comments/workbench?comment_ids=1,bad").status_code == 400
-        assert client.get("/api/comments/workbench?comment_ids=0").status_code == 400
-        assert client.get("/api/comments/workbench?task_id=").status_code == 422
+        assert client.get("/api/v1/operations/comments/tasks?task_id=this-task").json()[0]["id"] == "this-task"
+        assert client.get("/api/v1/operations/comments/workbench?comment_ids=1,bad").status_code == 400
+        assert client.get("/api/v1/operations/comments/workbench?comment_ids=0").status_code == 400
+        assert client.get("/api/v1/operations/comments/workbench?task_id=").status_code == 422
 
 
 def test_batch_publish_orders_one_floor_and_keeps_partial_outcomes_and_original_attempt(settings):
@@ -134,7 +134,7 @@ def test_batch_publish_orders_one_floor_and_keeps_partial_outcomes_and_original_
     platform = BatchPlatform()
     app = create_app(settings, platform)
     with TestClient(app) as client:
-        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
         app.state.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
         store = app.state.store
         for parent in ("103", "102", "101"):
@@ -147,13 +147,13 @@ def test_batch_publish_orders_one_floor_and_keeps_partial_outcomes_and_original_
                 "VALUES(?,?,'pending_review','whale',1,?,?)",
                 (source["id"], f"本鱼回复第{parent}条", int(parent), int(parent)),
             )
-        review = client.get("/api/comments/workbench?limit=1").raise_for_status().json()
-        selection = client.get("/api/comments/workbench/selection?video_id=BV1d8pU6xEZX").raise_for_status().json()
+        review = client.get("/api/v1/operations/comments/workbench?limit=1").raise_for_status().json()
+        selection = client.get("/api/v1/operations/comments/workbench/selection?video_id=BV1d8pU6xEZX").raise_for_status().json()
         assert review["total"] == selection["total"] == 3 and review["items"][0]["can_publish"]
         items = [{key: item[key] for key in ("id", "channel", "updated_at")} for item in selection["items"]]
         items[0]["updated_at"] -= 1
         items[2]["text"] = " 本鱼认真答了这一条。\n"
-        endpoint = "/api/comments/workbench/batch-publish"
+        endpoint = "/api/v1/operations/comments/workbench/batch-publish"
         response = client.post(endpoint, json={"items": items}, headers={"Accept": "text/event-stream"}).raise_for_status()
         assert response.headers["content-type"].startswith("text/event-stream")
         events = [(event.removeprefix("event: "), json.loads(payload.removeprefix("data: ")))

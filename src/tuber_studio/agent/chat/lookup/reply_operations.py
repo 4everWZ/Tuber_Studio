@@ -4,7 +4,6 @@ import json
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from fastapi import Depends, HTTPException
 from pydantic import Field
 
 from ....core.models import StrictModel, content_hash
@@ -310,50 +309,34 @@ class ReviewedReply:
         )
 
 
-def register_reply_operations(app, tasks, comments, messages, require_admin):
+def attach_reply_operations(tasks, comments, messages) -> ReplyOperations:
+    """Attach ReplyOperations and register selection/submission tools on TaskRuntime."""
     operations = ReplyOperations(tasks, comments, messages)
+
     def named(goal, args):
         return str(args.selection_id) in goal
 
-    tasks.register("inspect_reply_selection", Tool("查看号主在目标中提供的回复选择编号和条目范围。",
-                   SelectionRef, operations.inspect, accepts_goal=named, responses_only=True))
-    tasks.register("submit_selected_reply", Tool("仅提交号主选择集合中的一条评论或私信，审批显示对象和实际正文。",
-                   SelectedReply, operations.run, operations.stop, operations.review, accepts_goal=named,
-                   responses_only=True, checkpoint_submission=True))
-    path = "/api/agent/reply-selections"
-    deps = [Depends(require_admin)]
-
-    @app.get(path, dependencies=deps)
-    async def current_scope():
-        account, character, version, _, _, epoch = tasks.scope()
-        return {"account": account, "character": character, "version": version, "epoch": epoch}
-
-    @app.post(path, dependencies=deps)
-    async def select(body: ReplySelection):
-        try:
-            return operations.select(body)
-        except ValueError as error:
-            raise HTTPException(409, str(error)) from None
-
-    @app.post(path + "/{selection_id}/delegate", dependencies=deps)
-    async def delegate(selection_id: UUID):
-        identity = str(selection_id)
-        row = tasks.store.one("SELECT items FROM agent_reply_selections WHERE id=? AND scope=?",
-                              (identity, dump(tasks.scope())))
-        if not row:
-            raise HTTPException(409, "选择已撤回或账号、角色授权已变化")
-        count = len(json.loads(row["items"]))
-        goal = f"处理我选定的 {count} 条回复（选择编号 {identity}）。只处理所选来源，逐条展示对象和正文，等我批准。"
-        try:
-            task = tasks.create(identity, goal, source_key=["reply_selection", identity])
-        except ValueError as error:
-            raise HTTPException(409, str(error)) from None
-        return {"task_id": task["id"]}
-
-    @app.delete(path + "/{selection_id}", dependencies=deps)
-    async def revoke(selection_id: UUID):
-        deleted = tasks.store.execute("DELETE FROM agent_reply_selections WHERE id=? AND scope=?",
-                                      (str(selection_id), dump(tasks.scope())))
-        if not deleted.rowcount:
-            raise HTTPException(404, "找不到这份选择")
-        return {"revoked": True}
+    tasks.register(
+        "inspect_reply_selection",
+        Tool(
+            "查看号主在目标中提供的回复选择编号和条目范围。",
+            SelectionRef,
+            operations.inspect,
+            accepts_goal=named,
+            responses_only=True,
+        ),
+    )
+    tasks.register(
+        "submit_selected_reply",
+        Tool(
+            "仅提交号主选择集合中的一条评论或私信，审批显示对象和实际正文。",
+            SelectedReply,
+            operations.run,
+            operations.stop,
+            operations.review,
+            accepts_goal=named,
+            responses_only=True,
+            checkpoint_submission=True,
+        ),
+    )
+    return operations

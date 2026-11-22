@@ -42,7 +42,7 @@ def check_citations(memory, phase, wire, editor):
                 Counter(tuple(sorted(row.items())) for row in expected), f"{phase} 设置中的当前内容或来源不符")
     elif memory.get("citation_surface") == "settings":
         expected_settings = [
-            {"quote": r["quote"], "history_path": f"/api/daily-memory/organized/{r['id']}/revisions",
+            {"quote": r["quote"], "history_path": f"/api/v1/persona/daily-memory/organized/{r['id']}/revisions",
              "source_key": r["source_key"], "revision": r["revision"],
              "visible_revision": f"v{r['revision']} · {r['note']}"}
             for r in wire

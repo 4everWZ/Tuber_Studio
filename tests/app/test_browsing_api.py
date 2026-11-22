@@ -42,18 +42,18 @@ def client(settings):
 
 @pytest.fixture
 def admin(client, settings):
-    assert client.post("/api/auth", json={"token": settings.admin_token}).status_code == 200
+    assert client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).status_code == 200
     return client
 
 
-READS = ["", "/tasks", "/rounds", "/intents", "/inbox", "/discovery", "/discovery/records"]
+READS = ["/automation", "/tasks", "/rounds", "/intents", "/inbox", "/discovery", "/discovery/records"]
 WRITES = [
-    ("PUT", "/settings", {}),
-    ("POST", "/preflight", {}),
-    ("POST", "/enable", {"enabled": False}),
-    ("POST", "/round", {"preview": True}),
-    ("POST", "/stop", {"emergency": True}),
-    ("POST", "/reset-stop", {}),
+    ("PUT", "/automation/settings", {}),
+    ("POST", "/automation/preflight", {}),
+    ("POST", "/automation/enable", {"enabled": False}),
+    ("POST", "/automation/round", {"preview": True}),
+    ("POST", "/automation/stop", {"emergency": True}),
+    ("POST", "/automation/reset-stop", {}),
     ("POST", "/intents/missing/review", {"action": "approve"}),
     ("POST", "/intents/missing/publish", {}),
     ("POST", "/tasks/missing/reread", {}),
@@ -95,8 +95,8 @@ def test_application_attaches_and_closes_owned_visual_provider(settings):
     )
     assert owned[0].runtime is app.state.runtime
     with TestClient(app) as client:
-        assert client.post("/api/auth", json={"token": settings.admin_token}).status_code == 200
-        response = client.get("/api/automation").json()
+        assert client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).status_code == 200
+        response = client.get("/api/v1/operations/automation").json()
         assert not response["vision"]["available"] and not response["vision"]["admitted"]
         assert app.state.browsing.evidence.visual is owned[0]
         assert not app.state.bilibili_account.adapter.sent
@@ -105,8 +105,8 @@ def test_application_attaches_and_closes_owned_visual_provider(settings):
 
 @pytest.mark.parametrize(("method", "suffix", "body"), [("GET", suffix, None) for suffix in READS] + WRITES)
 def test_every_automation_api_requires_admin_not_overlay(client, settings, method, suffix, body):
-    assert client.post("/api/overlay/auth", json={"token": settings.overlay_token}).status_code == 200
-    response = client.request(method, "/api/automation" + suffix, json=body)
+    assert client.post("/api/v1/system/auth/overlay", json={"token": settings.overlay_token}).status_code == 200
+    response = client.request(method, "/api/v1/operations" + suffix, json=body)
     assert response.status_code == 401
     assert client.app.state.bilibili_account.adapter.sent == []
     assert client.app.state.browsing.rounds() == []
@@ -115,21 +115,21 @@ def test_every_automation_api_requires_admin_not_overlay(client, settings, metho
 def test_all_automation_writes_enforce_same_origin(admin):
     for method, suffix, body in WRITES:
         response = admin.request(
-            method, "/api/automation" + suffix, json=body, headers={"Origin": "https://foreign.example"}
+            method, "/api/v1/operations" + suffix, json=body, headers={"Origin": "https://foreign.example"}
         )
         assert response.status_code == 403, suffix
     assert (
         admin.post(
-            "/api/automation/enable", json={"enabled": False}, headers={"Origin": "http://testserver"}
+            "/api/v1/operations/automation/enable", json={"enabled": False}, headers={"Origin": "http://testserver"}
         ).status_code
         == 200
     )
-    assert not admin.get("/api/automation").json()["policy"]["enabled"]
+    assert not admin.get("/api/v1/operations/automation").json()["policy"]["enabled"]
     assert admin.app.state.bilibili_account.adapter.sent == []
 
 
 def test_automation_defaults_to_off_with_configured_unprobed_omni_vision(admin):
-    status = admin.get("/api/automation").json()
+    status = admin.get("/api/v1/operations/automation").json()
     assert status["policy"]["enabled"] is False
     assert status["policy"]["emergency"] is False
     assert "visual_enabled" not in status["settings"] and "inspect_limit" not in status["settings"]
@@ -152,26 +152,26 @@ def test_startup_check_reports_failure_then_recovers(admin, monkeypatch):
         raise ValueError("测试端点不可用")
 
     monkeypatch.setattr(browsing, "check_browsing_model", failing_model)
-    failed = admin.post("/api/automation/preflight").raise_for_status().json()
+    failed = admin.post("/api/v1/operations/automation/preflight").raise_for_status().json()
     assert failed["startup_check"] == "failed"
     assert failed["blockers"] == ["模型不可用：测试端点不可用"]
     assert not failed["automatic_sending_ready"]
     monkeypatch.setattr(browsing, "check_browsing_model", check_model)
-    recovered = admin.post("/api/automation/preflight").raise_for_status().json()
+    recovered = admin.post("/api/v1/operations/automation/preflight").raise_for_status().json()
     assert recovered["startup_check"] == "ready" and recovered["blockers"] == []
 
 
 @pytest.mark.parametrize("patch", [{"enabled": False, "automatic": True}, {"enabled": "true"}, {}])
 def test_enable_rejects_unknown_fields_and_non_boolean_authority(admin, patch):
-    assert admin.post("/api/automation/enable", json=patch).status_code == 400
-    assert not admin.get("/api/automation").json()["policy"]["enabled"]
+    assert admin.post("/api/v1/operations/automation/enable", json=patch).status_code == 400
+    assert not admin.get("/api/v1/operations/automation").json()["policy"]["enabled"]
 
 
 def test_unknown_settings_cannot_install_an_unsafe_policy(admin):
-    settings = admin.get("/api/automation").json()["settings"]
-    response = admin.put("/api/automation/settings", json=settings | {"send_without_review": True})
+    settings = admin.get("/api/v1/operations/automation").json()["settings"]
+    response = admin.put("/api/v1/operations/automation/settings", json=settings | {"send_without_review": True})
     assert response.status_code == 400
-    assert admin.get("/api/automation").json()["settings"] == settings
+    assert admin.get("/api/v1/operations/automation").json()["settings"] == settings
 
 
 @pytest.mark.parametrize(
@@ -184,16 +184,16 @@ def test_unknown_settings_cannot_install_an_unsafe_policy(admin):
     ],
 )
 def test_manual_round_body_cannot_escalate_to_automatic_authority(admin, body):
-    assert admin.post("/api/automation/round", json=body).status_code == 400
-    assert admin.get("/api/automation/rounds").json() == []
-    assert admin.get("/api/automation/intents").json() == []
+    assert admin.post("/api/v1/operations/automation/round", json=body).status_code == 400
+    assert admin.get("/api/v1/operations/rounds").json() == []
+    assert admin.get("/api/v1/operations/intents").json() == []
     assert admin.app.state.bilibili_account.adapter.sent == []
 
 
 def wait_round(client, identity):
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline:
-        rows = client.get("/api/automation/rounds").json()
+        rows = client.get("/api/v1/operations/rounds").json()
         row = next(item for item in rows if item["id"] == identity)
         if row["status"] not in {"queued", "running"}:
             return row
@@ -202,34 +202,34 @@ def wait_round(client, identity):
 
 
 def test_real_api_preview_evidence_and_approval_do_not_implicitly_submit(admin):
-    config = admin.get("/api/automation").json()["settings"]
-    assert admin.put("/api/automation/settings", json=config | {"top_level_enabled": True}).status_code == 200
-    preflight = admin.post("/api/automation/preflight").json()
+    config = admin.get("/api/v1/operations/automation").json()["settings"]
+    assert admin.put("/api/v1/operations/automation/settings", json=config | {"top_level_enabled": True}).status_code == 200
+    preflight = admin.post("/api/v1/operations/automation/preflight").json()
     assert preflight["account_id"] == "100" and preflight["blockers"] == []
     assert preflight["startup_check"] == "ready"
-    response = admin.post("/api/automation/round", json={"preview": True})
+    response = admin.post("/api/v1/operations/automation/round", json={"preview": True})
     assert response.status_code == 200
     assert wait_round(admin, response.json()["id"])["status"] == "completed"
-    task = admin.get("/api/automation/tasks").json()[0]
+    task = admin.get("/api/v1/operations/tasks").json()[0]
     assert task["subtitle_tracks"][0]["is_ai"] is True
     assert task["subtitle_tracks"][0]["cid"] == "11"
     assert task["evidence"][0]["id"] == "11:0"
-    intent = admin.get("/api/automation/intents").json()[0]
+    intent = admin.get("/api/v1/operations/intents").json()[0]
     assert intent["status"] == "pending_review" and not intent["auto_authorized"]
-    assert admin.post(f"/api/automation/intents/{intent['id']}/publish").status_code == 400
+    assert admin.post(f"/api/v1/operations/intents/{intent['id']}/publish").status_code == 400
     assert (
         admin.post(
-            f"/api/automation/intents/{intent['id']}/review",
+            f"/api/v1/operations/intents/{intent['id']}/review",
             json={"action": "approve", "automatic": True},
         ).status_code
         == 400
     )
     response = admin.post(
-        f"/api/automation/intents/{intent['id']}/review", json={"action": "approve", "text": intent["text"]}
+        f"/api/v1/operations/intents/{intent['id']}/review", json={"action": "approve", "text": intent["text"]}
     )
     assert response.status_code == 200 and response.json()["status"] == "approved"
     assert admin.app.state.bilibili_account.adapter.sent == []
-    status = admin.get("/api/automation").json()
+    status = admin.get("/api/v1/operations/automation").json()
     assert status["automatic_sending_ready"] is True
     assert not status["semantic_validation"].get("passed", False)
 
@@ -246,10 +246,10 @@ def test_comment_workbench_combines_public_drafts_and_redacts_handoff(admin):
             "INSERT INTO drafts(id,comment_id,text,status,created_at,updated_at) VALUES(?,?,?,?,?,?)",
             (identity, identity, "PRIVATE" if status == "private_handoff" else "草稿", status, now, now),
         )
-    admin.put("/api/automation/settings", json={"top_level_enabled": True}).raise_for_status()
-    preview = admin.post("/api/automation/round", json={"preview": True}).raise_for_status().json()
+    admin.put("/api/v1/operations/automation/settings", json={"top_level_enabled": True}).raise_for_status()
+    preview = admin.post("/api/v1/operations/automation/round", json={"preview": True}).raise_for_status().json()
     assert wait_round(admin, preview["id"])["status"] == "completed"
-    queue = "/api/comments/workbench"
+    queue = "/api/v1/operations/comments/workbench"
     review = admin.get(queue).raise_for_status().json()
     assert review["total"] == 2
     assert {row["channel"] for row in review["items"]} == {"comments", "browsing"}
@@ -266,23 +266,23 @@ def test_comment_workbench_combines_public_drafts_and_redacts_handoff(admin):
 @pytest.mark.parametrize("clear_account_cache", [False, True])
 def test_unified_operations_requires_explicit_restart_activation(settings, clear_account_cache):
     with TestClient(make_app(settings)) as first:
-        first.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        path = "/api/automation/discovery"
-        first.put("/api/automation/settings", json={
+        first.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
+        path = "/api/v1/operations/discovery"
+        first.put("/api/v1/operations/automation/settings", json={
             "discovery_enabled": True,
             "top_level_enabled": True,
             "top_level_auto_publish": True,
         }).raise_for_status()
         assert first.put(path, json={"enabled": True}).status_code == 405
-        response = first.post("/api/automation/enable", json={"enabled": True}).raise_for_status().json()
+        response = first.post("/api/v1/operations/automation/enable", json={"enabled": True}).raise_for_status().json()
         assert response["policy"]["enabled"]
         for _ in range(100):
-            if any(row["status"] == "published" for row in first.get("/api/automation/intents").json()):
+            if any(row["status"] == "published" for row in first.get("/api/v1/operations/intents").json()):
                 break
             time.sleep(0.01)
-        intent = first.get("/api/automation/intents").json()[0]
+        intent = first.get("/api/v1/operations/intents").json()[0]
         assert intent["status"] == "published"
-        queue = "/api/comments/workbench"
+        queue = "/api/v1/operations/comments/workbench"
         assert first.get(f"{queue}?view=review").raise_for_status().json()["total"] == 0
         assert any(
             item["id"] == intent["id"]
@@ -293,14 +293,14 @@ def test_unified_operations_requires_explicit_restart_activation(settings, clear
         if clear_account_cache:
             first.app.state.browsing.store.set("browsing_discovery_account", None)
     with TestClient(make_app(settings)) as second:
-        second.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        second.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
         state = second.get(path).json()
         assert state["state"] == "off" and not state["enabled"]
         assert state["last_round"] and state["sent"] == 1
         activity = second.get(path + "/records?recent=true").json()["activity"]
         assert any(row["status"] == "published" and row["title"] == "盐水实验" for row in activity)
-        assert not second.get("/api/automation").json()["active_round"]
-        assert second.get("/api/automation/intents").json()[0]["status"] == "published"
+        assert not second.get("/api/v1/operations/automation").json()["active_round"]
+        assert second.get("/api/v1/operations/intents").json()[0]["status"] == "published"
         assert not second.app.state.bilibili_account.adapter.sent
         second.app.state.bilibili_account.credentials = {"sessdata": "another-session", "csrf": "another-csrf"}
         second.app.state.bilibili_account.adapter.account = "101"
@@ -309,7 +309,7 @@ def test_unified_operations_requires_explicit_restart_activation(settings, clear
 
 
 def test_discovery_source_api_validates_and_uses_explicit_selection(admin):
-    path = "/api/automation/settings"
+    path = "/api/v1/operations/automation/settings"
     admin.put(path, json={"autonomous_topics": True, "keywords": []}).raise_for_status()
     for selection in (
         {"mode": "search", "keywords": [], "watch_videos": []},
@@ -319,14 +319,14 @@ def test_discovery_source_api_validates_and_uses_explicit_selection(admin):
     selection = {"mode": "popular", "keywords": ["旧词"], "watch_videos": []}
     response = admin.put(path, json={"discovery_source": selection})
     assert response.raise_for_status().json()["source"]["mode"] == "popular"
-    settings = admin.get("/api/automation").json()["settings"]
+    settings = admin.get("/api/v1/operations/automation").json()["settings"]
     assert (
         settings["sources"] == ["popular"] and not settings["keywords"] and not settings["autonomous_topics"]
     )
 
 
 def test_public_inbox_only_links_to_private_area_without_private_body(admin):
-    assert admin.post("/api/automation/preflight").json()["account_id"] == "100"
+    assert admin.post("/api/v1/operations/automation/preflight").json()["account_id"] == "100"
     store = admin.app.state.store
     now = time.time()
     store.execute(
@@ -347,7 +347,7 @@ def test_public_inbox_only_links_to_private_area_without_private_body(admin):
         "INSERT INTO dm_inbox(platform,message_id,platform_user_id,display_name,content,sent_at,character_id,received_at,account_id) VALUES(?,?,?,?,?,?,?,?,?)",
         ("bilibili", "private-message", "300", "用户", "PRIVATE_INBOX_SENTINEL", now, "whale", now, "100"),
     )
-    inbox = admin.get("/api/automation/inbox").json()
+    inbox = admin.get("/api/v1/operations/inbox").json()
     assert inbox["items"][0]["kind"] == "mention"
     assert inbox["private_count"] == 1 and inbox["private_href"] == "#messages"
     assert "PRIVATE_INBOX_SENTINEL" not in json.dumps(inbox)
@@ -357,20 +357,20 @@ def test_public_inbox_only_links_to_private_area_without_private_body(admin):
 def test_parent_start_preserves_permissions_and_uses_latest_saved_settings(admin):
     assert (
         admin.put(
-            "/api/automation/settings",
+            "/api/v1/operations/automation/settings",
             json={"reply_enabled": False, "reply_auto_publish": False, "max_per_hour": 2},
         ).status_code
         == 200
     )
-    assert admin.post("/api/automation/enable", json={"enabled": True}).status_code == 200
-    during = admin.get("/api/automation").json()["effective"]["comments"]
+    assert admin.post("/api/v1/operations/automation/enable", json={"enabled": True}).status_code == 200
+    during = admin.get("/api/v1/operations/automation").json()["effective"]["comments"]
     assert during["auto_reply"] is False and during["base"]["auto_reply"] is False
     assert during["automation_override"] is True
-    assert admin.put("/api/automation/settings", json={"max_per_hour": 1}).status_code == 200
-    message_base = admin.get("/api/messages").json()["policy"]["base"]
-    assert admin.put("/api/messages/policy", json=message_base | {"max_per_hour": 3}).status_code == 200
-    assert admin.post("/api/automation/enable", json={"enabled": False}).status_code == 200
-    status = admin.get("/api/automation").json()
+    assert admin.put("/api/v1/operations/automation/settings", json={"max_per_hour": 1}).status_code == 200
+    message_base = admin.get("/api/v1/operations/messages").json()["policy"]["base"]
+    assert admin.put("/api/v1/operations/messages/policy", json=message_base | {"max_per_hour": 3}).status_code == 200
+    assert admin.post("/api/v1/operations/automation/enable", json={"enabled": False}).status_code == 200
+    status = admin.get("/api/v1/operations/automation").json()
     assert status["base"]["comments"]["max_replies_per_hour"] == 1
     assert status["effective"]["comments"]["auto_reply"] is False
     assert status["base"]["messages"]["max_per_hour"] == 3
@@ -380,22 +380,22 @@ def test_parent_start_preserves_permissions_and_uses_latest_saved_settings(admin
 
 def test_emergency_stop_survives_app_recreation_and_blocks_base_automatic_flags(settings):
     with TestClient(make_app(settings)) as first:
-        first.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        first.put("/api/automation/settings", json={"reply_enabled": True, "reply_auto_publish": True}).raise_for_status()
-        assert first.post("/api/automation/stop", json={"emergency": True}).status_code == 200
-        policy = first.get("/api/automation").json()["effective"]["comments"]
+        first.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
+        first.put("/api/v1/operations/automation/settings", json={"reply_enabled": True, "reply_auto_publish": True}).raise_for_status()
+        assert first.post("/api/v1/operations/automation/stop", json={"emergency": True}).status_code == 200
+        policy = first.get("/api/v1/operations/automation").json()["effective"]["comments"]
         assert policy["base"]["auto_reply"] is True and policy["auto_reply"] is False
     with TestClient(make_app(settings)) as second:
-        second.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        status = second.get("/api/automation").json()
+        second.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
+        status = second.get("/api/v1/operations/automation").json()
         assert status["policy"]["emergency"] is True and status["policy"]["enabled"] is False
         assert status["base"]["comments"]["auto_reply"] is True
         assert status["effective"]["comments"]["auto_reply"] is False
         assert status["effective"]["messages"]["auto_send"] is False
-        assert second.post("/api/automation/enable", json={"enabled": True}).status_code == 400
-        assert second.get("/api/automation/rounds").json() == []
-        assert second.post("/api/automation/reset-stop").status_code == 200
-        restored = second.get("/api/automation").json()
+        assert second.post("/api/v1/operations/automation/enable", json={"enabled": True}).status_code == 400
+        assert second.get("/api/v1/operations/rounds").json() == []
+        assert second.post("/api/v1/operations/automation/reset-stop").status_code == 200
+        restored = second.get("/api/v1/operations/automation").json()
         assert restored["policy"]["emergency"] is False and restored["policy"]["enabled"] is False
         assert restored["effective"]["comments"]["auto_reply"] is False
         assert restored["base"]["comments"]["auto_reply"] is True
@@ -417,7 +417,7 @@ def test_automation_settings_accepts_permission_matrix_with_extra_keys(admin):
         "max_replies_per_video": 3,
         "max_per_day": 25,
     }
-    response = admin.put("/api/automation/settings", json=payload)
+    response = admin.put("/api/v1/operations/automation/settings", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert data["settings"]["top_level_auto_publish"] is True
@@ -434,18 +434,18 @@ def test_configured_send_quotas_round_trip(admin, per_video, hourly, daily, mess
     account = {"max_per_hour": hourly, "max_per_day": daily}
     browsing = account | {"max_replies_per_video": per_video}
     messages = {"max_per_hour": message_hourly, "max_per_day": message_daily}
-    admin.put("/api/automation/settings", json=browsing).raise_for_status()
-    admin.put("/api/messages/policy", json=messages).raise_for_status()
+    admin.put("/api/v1/operations/automation/settings", json=browsing).raise_for_status()
+    admin.put("/api/v1/operations/messages/policy", json=messages).raise_for_status()
 
-    status = admin.get("/api/automation").json()
+    status = admin.get("/api/v1/operations/automation").json()
     assert {key: status["settings"][key] for key in browsing} == browsing
     assert {key: status["policy"][key] for key in account} == account
     assert {key: status["base"]["messages"][key] for key in messages} == messages
 
 
 def test_removed_comment_policy_routes_cannot_change_permissions_or_credentials(admin):
-    before = admin.get("/api/automation").json()["settings"]
+    before = admin.get("/api/v1/operations/automation").json()["settings"]
     for method in ("GET", "PUT"):
-        response = admin.request(method, "/api/comments/policy", json={"auto_reply": True})
+        response = admin.request(method, "/api/v1/operations/comments/policy", json={"auto_reply": True})
         assert response.status_code == 404
-    assert admin.get("/api/automation").json()["settings"] == before
+    assert admin.get("/api/v1/operations/automation").json()["settings"] == before

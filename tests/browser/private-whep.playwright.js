@@ -117,7 +117,7 @@ async page => {
   const ends = await page.evaluate(() => whepDiagnostics.filter(row => row.action === "call_end"));
   if (ends.length !== 2 || ends.some(row => row.cause !== "hangup_button" || row.peer !== "connected"))
     throw Error("missing pre-close hangup state");
-  await page.route("**/api/chat/private-call/avatars/*/whep", route => route.fulfill({status: 503}));
+  await page.route("**/api/v1/agent/private-call/avatars/*/whep", route => route.fulfill({status: 503}));
   await page.getByRole("button", {name: "私有语音通话"}).click();
   await page.getByRole("combobox", {name: "通话形象", exact: true}).selectOption("original");
   await page.getByRole("button", {name: "开始通话"}).click();
@@ -130,17 +130,17 @@ async page => {
   await until(s => s.played_by_response[continued] > 0 && s.avatars[2].state === "closed", "native fallback");
   await realtimeError("private-provider-detail", "other");
   await page.locator("#private-call-end").click();
-  await page.unroute("**/api/chat/private-call/avatars/*/whep");
+  await page.unroute("**/api/v1/agent/private-call/avatars/*/whep");
   const studio = await page.evaluate(() => location.origin);
   const request = async (method, path, data) => (await page.request.fetch(studio + path,
     {method, data, failOnStatusCode: true})).json();
   const old = "开场时我喜欢讲海底厨房。", updated = "开场时我喜欢讲蓝色灯塔。";
-  const pref = await request("GET", "/api/daily-memory/preferences");
-  await request("PUT", "/api/daily-memory/preferences", {enabled:true, scope: pref.scope});
+  const pref = await request("GET", "/api/v1/persona/daily-memory/preferences");
+  await request("PUT", "/api/v1/persona/daily-memory/preferences", {enabled:true, scope: pref.scope});
   const note = {source:"settings", text:old};
-  const {stamp} = await request("POST", "/api/agent/memory.propose", note);
-  const {id: memoryId} = await request("POST", "/api/agent/memory/confirm", {...note, stamp});
-  const hit = await request("POST", "/api/agent/memory.get", {id:memoryId});
+  const {stamp} = await request("POST", "/api/v1/agent/memory/propose", note);
+  const {id: memoryId} = await request("POST", "/api/v1/agent/memory/confirm", {...note, stamp});
+  const hit = await request("POST", "/api/v1/agent/memory/get", {id:memoryId});
   const prompts = [], controls = [];
   page.on("websocket", ws => {
     if (!ws.url().includes("/v1/realtime?")) return;
@@ -161,7 +161,7 @@ async page => {
   const first = await until(s => s.played_by_response[privateReply] > 0, "memory-aware playback");
   if (!prompts[0]?.includes(old)) throw Error("preference absent");
   await page.evaluate(() => { window.oldTracks = document.querySelector("#private-call-dialog video").srcObject.getTracks(); });
-  await request("PATCH", "/api/daily-memory/organized/" + memoryId + "?expected_revision=" + hit.revision, {note: updated});
+  await request("PATCH", "/api/v1/persona/daily-memory/organized/" + memoryId + "?expected_revision=" + hit.revision, {note: updated});
   const reopened = await until(s => s.avatars[3].state === "closed" && !s.avatars[3].peers &&
     s.avatars[4]?.ack.played_ms > 0, "reopened after revision");
   const revisionChecks = {newSource: first.avatars[3].source !== reopened.avatars[4].source,
@@ -171,7 +171,7 @@ async page => {
   if (!Object.values(revisionChecks).every(Boolean)) throw Error("correction: " + JSON.stringify(revisionChecks));
   const next = await speech();
   await until(s => s.played_by_response[next] > 0, "revised preference playback");
-  await request("DELETE", "/api/daily-memory/organized/" + memoryId + "?expected_revision=" + (hit.revision + 1));
+  await request("DELETE", "/api/v1/persona/daily-memory/organized/" + memoryId + "?expected_revision=" + (hit.revision + 1));
   await until(s => s.avatars[4].state === "closed" && !s.avatars[4].peers &&
     s.avatars[5]?.ack.played_ms > 0, "reopened after removal");
   if (prompts[2]?.includes(updated) || prompts[2]?.includes(old)) throw Error("removed memory survived");

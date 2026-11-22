@@ -124,7 +124,7 @@ async def test_text_chat_uses_chat_llm_only_and_never_calls_omni(tmp_path, monke
         reply = (
             (
                 await client.post(
-                    "/api/chat/intelligent", json={"request_id": str(uuid4()), "message": "海风怎么样？"}
+                    "/api/v1/agent/chat", json={"request_id": str(uuid4()), "message": "海风怎么样？"}
                 )
             )
             .raise_for_status()
@@ -317,7 +317,7 @@ async def test_delegate_persists_task_before_ack_and_isolates_raw_tool_logs(sett
     ):
         streamed = (
             await client.post(
-                "/api/chat/intelligent/stream",
+                "/api/v1/agent/chat/stream",
                 json={"request_id": str(uuid4()), "message": "帮我把今天的码头公开记录交给后台查一下"},
             )
         ).raise_for_status()
@@ -340,7 +340,7 @@ async def test_delegate_persists_task_before_ack_and_isolates_raw_tool_logs(sett
         follow = (
             (
                 await client.post(
-                    "/api/chat/intelligent", json={"request_id": str(uuid4()), "message": "继续聊聊今天"}
+                    "/api/v1/agent/chat", json={"request_id": str(uuid4()), "message": "继续聊聊今天"}
                 )
             )
             .raise_for_status()
@@ -440,7 +440,7 @@ async def test_voice_delegate_via_omni_survives_hangup_and_shares_task_without_r
         casual = (
             (
                 await client.post(
-                    "/api/chat/private-call/utterances",
+                    "/api/v1/agent/private-call/utterances",
                     json=signed_origin("utt-casual", raw_voice_casual_secret),
                 )
             )
@@ -474,7 +474,7 @@ async def test_voice_delegate_via_omni_survives_hangup_and_shares_task_without_r
         delegated = (
             (
                 await client.post(
-                    "/api/chat/private-call/utterances",
+                    "/api/v1/agent/private-call/utterances",
                     json=signed_origin("utt-del", voice_delegate_transcript),
                 )
             )
@@ -515,7 +515,7 @@ async def test_voice_delegate_via_omni_survives_hangup_and_shares_task_without_r
         reply = (
             (
                 await client.post(
-                    "/api/chat/intelligent", json={"request_id": str(uuid4()), "message": "现在聊点日常"}
+                    "/api/v1/agent/chat", json={"request_id": str(uuid4()), "message": "现在聊点日常"}
                 )
             )
             .raise_for_status()

@@ -88,7 +88,7 @@ async function run(browser) {
   async function patch(action, click, suffix = "") {
     const [response] = await Promise.all([
       page.waitForResponse(r => r.request().method() === "PATCH" &&
-        new URL(r.url()).pathname === "/api/agent/tasks/" + taskId + suffix),
+        new URL(r.url()).pathname === "/api/v1/agent/tasks/" + taskId + suffix),
       click(),
     ]);
     assert.equal(response.status(), 200);

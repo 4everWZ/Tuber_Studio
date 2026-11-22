@@ -478,20 +478,20 @@ async def test_generation_can_run_during_pending_live_work(messages):
 
 def test_message_routes_are_admin_only_and_do_not_offer_arbitrary_send(settings):
     with TestClient(create_app(settings, message_adapter=Delivery())) as client:
-        assert client.get("/api/messages").status_code == 401
-        client.post("/api/overlay/auth", json={"token": settings.overlay_token})
-        assert client.get("/api/messages").status_code == 401
-        client.post("/api/auth", json={"token": settings.admin_token})
-        policy = client.get("/api/messages").json()["policy"]
+        assert client.get("/api/v1/operations/messages").status_code == 401
+        client.post("/api/v1/system/auth/overlay", json={"token": settings.overlay_token})
+        assert client.get("/api/v1/operations/messages").status_code == 401
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
+        policy = client.get("/api/v1/operations/messages").json()["policy"]
         assert not policy["enabled"] and policy["channel_max_tokens"] == 2048
         assert (
-            client.put("/api/messages/policy", json={"channel_max_tokens": 4096}).json()["channel_max_tokens"]
+            client.put("/api/v1/operations/messages/policy", json={"channel_max_tokens": 4096}).json()["channel_max_tokens"]
             == 4096
         )
-        assert client.put("/api/messages/policy", json={"channel_max_tokens": 65537}).status_code == 422
-        assert client.post("/api/messages/inbox/999/reply").status_code == 400
+        assert client.put("/api/v1/operations/messages/policy", json={"channel_max_tokens": 65537}).status_code == 422
+        assert client.post("/api/v1/operations/messages/inbox/999/reply").status_code == 400
         assert client.post(
-            "/api/messages/send", json={"receiver_id": "999", "text": "arbitrary"}
+            "/api/v1/operations/messages/send", json={"receiver_id": "999", "text": "arbitrary"}
         ).status_code in {404, 405}
 
 
@@ -509,10 +509,10 @@ def test_inbox_link_resolves_an_old_message_in_its_original_account_and_role(set
             [(f"later-{index}", time.time() + index, character["id"]) for index in range(101)],
         )
     with TestClient(app) as client:
-        path = f"/api/messages/inbox/{identity}/conversation"
+        path = f"/api/v1/operations/messages/inbox/{identity}/conversation"
         assert client.get(path).status_code == 401
-        client.post("/api/auth", json={"token": settings.admin_token})
-        latest = client.get("/api/messages/conversation?platform=bilibili&user_id=123").json()
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
+        latest = client.get("/api/v1/operations/messages/conversation?platform=bilibili&user_id=123").json()
         assert len(latest["messages"]) == 100 and all(row["id"] != identity for row in latest["messages"])
         located = client.get(path).json()
         assert located["account_id"] == account and located["character_id"] == character["id"]

@@ -37,7 +37,7 @@ async page => {
         }
       };
     });
-    const settings = await (await page.request.get(origin + "/api/settings")).json();
+    const settings = await (await page.request.get(origin + "/api/v1/system/settings")).json();
     await overlay.goto(settings.overlay_url);
     const expectPet = async (p, selector, visible) => {
       await p.locator(selector).first().waitFor({state: visible ? "visible" : "hidden"});
@@ -45,7 +45,7 @@ async page => {
     };
     for (const [petsOn, savedAvatar] of [[true,false], [false,false], [true,true], [false,true]]) {
       // Older devices may already have persisted the preference before the pause.
-      assert.ok((await page.request.put(origin + "/api/settings/performance", {data:{avatar_enabled:savedAvatar}})).ok());
+      assert.ok((await page.request.put(origin + "/api/v1/system/settings/performance", {data:{avatar_enabled:savedAvatar}})).ok());
       if (await pets.isChecked() !== petsOn) {
         const saved = page.waitForResponse(r => r.url().endsWith("/settings/performance") && r.request().method() === "PUT");
         await pets.setChecked(petsOn);
@@ -62,7 +62,7 @@ async page => {
       assert.equal(await pets.isChecked(), petsOn);
       assert.equal(await avatar.isDisabled(), true);
       assert.equal(await avatar.isChecked(), false);
-      const stored = await (await page.request.get(origin + "/api/settings/performance")).json();
+      const stored = await (await page.request.get(origin + "/api/v1/system/settings/performance")).json();
       assert.equal(stored.avatar_enabled, savedAvatar);
     }
     await desk.locator("[data-desk-action=start]").click();

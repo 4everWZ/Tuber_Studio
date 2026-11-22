@@ -7,11 +7,11 @@ import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
 
-from tuber_studio.agent.api.tasks import register_task_api
 from tuber_studio.agent.goals import followups as goal_followups
 from tuber_studio.agent.goals.followups import FollowupGrant, GoalFollowups
 from tuber_studio.agent.tasks.identity import TaskIdentity
 from tuber_studio.agent.tasks.runtime import TaskRuntime, Tool
+from tuber_studio.app.routes.agent_tasks import register_task_routes
 from tuber_studio.core.models import StrictModel
 from tuber_studio.core.store import Store
 from tuber_studio.infra.web_client import fetch as web_fetch
@@ -138,8 +138,8 @@ async def test_only_explicit_authenticated_grant_can_start_a_followup(store):
         if not authorized:
             raise HTTPException(401)
 
-    register_task_api(app, tasks, admin)
-    path = f"/api/agent/tasks/{identity}/goal/followup"
+    register_task_routes(app, tasks, admin)
+    path = f"/api/v1/agent/tasks/{identity}/goal/followup"
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         grant = schedule(tasks).model_dump()
         assert (await client.put(path, json=grant)).status_code == 401
@@ -166,7 +166,7 @@ async def test_existing_worker_ticks_without_consulting_chat_or_planner(store):
         return {"simulated": True, "state": {"summary": "游戏进行中"}}
 
     tasks.register("game_status", Tool("模拟状态", StrictModel, game))
-    register_task_api(FastAPI(), tasks, lambda: None)
+    register_task_routes(FastAPI(), tasks, lambda: None)
     tasks.followups.configure(identity, schedule(tasks, pages=[], states=["game_status"]), 0)
     tasks.start()
     try:

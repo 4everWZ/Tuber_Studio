@@ -4,10 +4,10 @@ from uuid import uuid4
 import httpx
 from fastapi import FastAPI
 
-from tuber_studio.agent.api.tasks import register_task_api
 from tuber_studio.agent.tasks.delivery import PrivateDelivery
 from tuber_studio.agent.tasks.runtime import TaskRuntime
 from tuber_studio.app import create_app
+from tuber_studio.app.routes.agent_tasks import register_task_routes
 from tuber_studio.core.store import Store
 from tuber_studio.infra.inference.responses_provider import FunctionCall, ResponseTurn
 
@@ -31,7 +31,7 @@ async def test_attachment_task_has_no_public_tools_and_cites_private_input(setti
     tasks = app.state.runtime.tasks
     identity = str(uuid4())
     payload = {"request_id": identity, "goal": "提取开场依据", "attachments": [{"name": "开场.md", "text": "鲸鱼从左侧入场。"}]}
-    base = "/api/agent/tasks"
+    base = "/api/v1/agent/tasks"
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1") as client:
         assert (await client.post(base, json=payload)).status_code == 200
         assert (await client.post(base, json=payload)).status_code == 200
@@ -64,8 +64,8 @@ async def test_private_goal_and_editions_survive_control_restart_and_scope_switc
     root, child = str(uuid4()), str(uuid4())
     tasks.create(root, "准备直播")
     app = FastAPI()
-    register_task_api(app, tasks, lambda: None)
-    base = "/api/agent/tasks"
+    register_task_routes(app, tasks, lambda: None)
+    base = "/api/v1/agent/tasks"
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         assert (await client.put(f"{base}/{root}/goal")).json()["creative_goal"]["title"] == "准备直播"
         payload = {"request_id": child, "goal": "核对两处时码", "creative_goal_id": root}
@@ -74,12 +74,12 @@ async def test_private_goal_and_editions_survive_control_restart_and_scope_switc
         assert len(tasks.workspace.runs(root)) == 2
         assert (await client.post(f"{base}/{root}/goal/close")).status_code == 409
         assert tasks._save(tasks.current(child), status="completed", message="P2 · 01:20")
-        assert (await client.get("/api/agent/attention")).json()["count"] == 1
+        assert (await client.get("/api/v1/agent/attention")).json()["count"] == 1
         stamp = (await client.get(f"{base}/{child}")).json()["attention"]
         await client.delete(f"{base}/{child}/attention", params={"updated": stamp - 1})
-        assert (await client.get("/api/agent/attention")).json()["count"] == 1
+        assert (await client.get("/api/v1/agent/attention")).json()["count"] == 1
         await client.delete(f"{base}/{child}/attention", params={"updated": stamp})
-        assert (await client.get("/api/agent/attention")).json()["count"] == 0
+        assert (await client.get("/api/v1/agent/attention")).json()["count"] == 0
         edit = {"task_revision": 1, "edition": 1, "body": "开场：P2 · 01:20"}
         edited = await client.patch(f"{base}/{child}/artifact", json=edit)
         assert edited.json()["artifact"]["edition"] == 2

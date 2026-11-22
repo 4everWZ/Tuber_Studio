@@ -30,7 +30,7 @@ def test_model_discovery_uses_only_the_saved_gateway(settings, monkeypatch):
     with TestClient(app) as client:
         monkeypatch.setattr(httpx.AsyncClient, "send", send)
         headers = {"Authorization": "Bearer " + settings.admin_token}
-        url = "/api/providers/models"
+        url = "/api/v1/system/providers/models"
         assert client.get(url).status_code == 401
         assert client.post(url, headers=headers, json={"base_url": "https://another.test/v1"}).status_code == 405
         response = client.get(url, headers=headers)

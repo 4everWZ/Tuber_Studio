@@ -26,14 +26,14 @@ def test_voice_only_even_with_accepted_legacy_profiles_and_avatar_enabled(settin
 
     with TestClient(create_app(settings)) as client:
         monkeypatch.setattr(httpx.AsyncClient, "send", send)
-        path = "/api/chat/private-call/avatars"
+        path = "/api/v1/agent/private-call/avatars"
         assert client.get(path).status_code == 401
         for enabled in (False, True):
-            client.put("/api/settings/performance", headers=auth, json={"avatar_enabled": enabled}).raise_for_status()
+            client.put("/api/v1/system/settings/performance", headers=auth, json={"avatar_enabled": enabled}).raise_for_status()
             assert client.get(path, headers=auth).json() == {"profiles": []}
             assert client.post(path, headers=auth, json={"profile": "q"}).status_code == 405
             assert client.post(path + "/legacy/whep", headers=auth, content=b"offer").status_code == 404
-            ticket = client.post("/api/chat/private-call/ticket", headers=auth).raise_for_status().json()
+            ticket = client.post("/api/v1/agent/private-call/ticket", headers=auth).raise_for_status().json()
             assert ticket["socket"].endswith("/v1/realtime")
             assert ticket["avatar"]["speaking"] is None
         assert len(issued) == 2

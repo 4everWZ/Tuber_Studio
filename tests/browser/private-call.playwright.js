@@ -33,8 +33,8 @@ async page => {
   });
   const before = await (await page.request.get("http://127.0.0.1:18767/observations")).json();
   const note = {source:"settings", text:"仅在写视频提纲时，每个标题都要以问号结尾。"};
-  const preview = await page.request.post(base + "/api/agent/memory.propose", {data:note, failOnStatusCode:true});
-  await page.request.post(base + "/api/agent/memory/confirm", {
+  const preview = await page.request.post(base + "/api/v1/agent/memory/propose", {data:note, failOnStatusCode:true});
+  await page.request.post(base + "/api/v1/agent/memory/confirm", {
     data:{...note, stamp:(await preview.json()).stamp}, failOnStatusCode:true});
   const prompts = [];
   page.on("websocket", socket => {
@@ -56,7 +56,7 @@ async page => {
   await page.getByText("查看通话转写", {exact:true}).click();
   await page.getByLabel("选择要处理的转写").selectOption({label:"整理一份私有提纲"});
   await handoff.waitFor();
-  if (await handoff.count() !== 1 || mutations.join() !== "/api/chat/private-call/ticket") throw Error("unconfirmed handoff");
+  if (await handoff.count() !== 1 || mutations.join() !== "/api/v1/agent/private-call/ticket") throw Error("unconfirmed handoff");
   await page.locator("#private-call-utterances blockquote").filter({hasText:"整理一份私有提纲"}).waitFor();
   const prompted = page.waitForEvent("dialog");
   const remember = page.getByRole("button", {name:"确认并记住原话"});
@@ -89,7 +89,7 @@ async page => {
   };
   await heard("voice-1");
   const changeDisplay = async data => {
-    const reply = await page.request.put(base + "/api/settings/performance", {data});
+    const reply = await page.request.put(base + "/api/v1/system/settings/performance", {data});
     if (!reply.ok()) throw Error("display update failed");
   };
   await changeDisplay({pets_enabled:false, avatar_enabled:true});
@@ -105,7 +105,7 @@ async page => {
   await stimulate("speech");
   await page.waitForTimeout(500);
   await mute.click();
-  const posted = page.waitForResponse(response => response.url() === base + "/api/agent/tasks" && response.request().method() === "POST");
+  const posted = page.waitForResponse(response => response.url() === base + "/api/v1/agent/tasks" && response.request().method() === "POST");
   await handoff.click();
   const task = await (await posted).json();
   if (!task.id || task.goal !== "整理一份私有提纲") throw Error("incorrect handoff");
@@ -118,9 +118,9 @@ async page => {
   if (after.input <= before.input || !after.played || after.closed !== before.closed + 1) throw Error(JSON.stringify(after));
   if ((after.played_by_response["voice-2"] || 0) >= 3000 || (after.played_by_response["voice-3"] || 0) >= 3000 ||
       after.played_by_response["voice-4"]) throw Error("interrupted or muted audio was counted as played");
-  const expected = ["/api/chat/private-call/ticket", "/api/agent/memory.propose", "/api/agent/tasks"];
+  const expected = ["/api/v1/agent/private-call/ticket", "/api/v1/agent/memory/propose", "/api/v1/agent/tasks"];
   if (mutations.join() !== expected.join()) throw Error("Unexpected business writes: " + mutations);
-  const retained = await (await page.request.get(base + "/api/agent/tasks/" + task.id)).json();
+  const retained = await (await page.request.get(base + "/api/v1/agent/tasks/" + task.id)).json();
   if (retained.id !== task.id || retained.status === "cancelled") throw Error("hangup lost the task");
   await page.evaluate(() => { window.holdPermission = true; });
   await page.getByRole("button", {name:"私有语音通话"}).click();
@@ -131,7 +131,7 @@ async page => {
   await page.evaluate(() => window.releasePermission());
   await page.waitForFunction(() => window.testTracks.every(track => track.readyState === "ended") &&
     window.callContexts.every(context => context.state === "closed"));
-  if (mutations.join() !== [...expected, "/api/chat/private-call/ticket"].join())
+  if (mutations.join() !== [...expected, "/api/v1/agent/private-call/ticket"].join())
     throw Error("Late microphone permission triggered a business action");
   return after;
 }

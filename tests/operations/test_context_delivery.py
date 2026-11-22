@@ -6,9 +6,9 @@ import time
 import pytest
 
 from tests.support.operations_helpers import comments as comments
+from tuber_studio.app.runtime import Runtime
 from tuber_studio.persona.context.delivery import comment_delivery, memory_source_allowed
 from tuber_studio.persona.context.manager import ContextManager
-from tuber_studio.runtime import Runtime
 
 
 def original_and_draft(comments, *, status="published", receipt=None, suffix="1"):
@@ -57,7 +57,7 @@ def test_receipt_does_not_authorize_other_account_floor_source_or_changed_body(c
 
 
 async def test_runtime_retrieve_before_prepare_excludes_rejected_source(comments, monkeypatch):
-    import tuber_studio.runtime as runtime_module
+    import tuber_studio.app.runtime as runtime_module
 
     scope, source, _, text, _ = original_and_draft(comments, status="rejected", suffix="bad")
     runtime = comments.runtime

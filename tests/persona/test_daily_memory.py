@@ -36,18 +36,18 @@ def test_operator_public_incident_api_is_deduplicated_and_clearable(settings):
         "tags": ["接错话"],
     }
     with TestClient(app) as client:
-        assert client.post("/api/daily-memory/incidents", json=payload).status_code == 401
-        client.post("/api/auth", json={"token": settings.admin_token})
-        response = client.post("/api/daily-memory/incidents", json=payload)
+        assert client.post("/api/v1/persona/daily-memory/incidents", json=payload).status_code == 401
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
+        response = client.post("/api/v1/persona/daily-memory/incidents", json=payload)
         assert response.status_code == 200
         item = response.json()
         assert item["public_sources"][0]["thread_id"] == "323202459488"
-        assert client.post("/api/daily-memory/incidents", json=payload).json()["id"] == item["id"]
-        assert len(client.get("/api/daily-memory").json()["highlights"]) == 1
-        assert client.put(f"/api/daily-memory/{item['id']}", json={"status": "archived"}).status_code == 200
-        assert client.post("/api/daily-memory/incidents", json=payload).json()["status"] == "archived"
-        assert client.delete(f"/api/daily-memory/{item['id']}").status_code == 200
-        assert client.get("/api/daily-memory").json()["highlights"] == []
+        assert client.post("/api/v1/persona/daily-memory/incidents", json=payload).json()["id"] == item["id"]
+        assert len(client.get("/api/v1/persona/daily-memory").json()["highlights"]) == 1
+        assert client.put(f"/api/v1/persona/daily-memory/{item['id']}", json={"status": "archived"}).status_code == 200
+        assert client.post("/api/v1/persona/daily-memory/incidents", json=payload).json()["status"] == "archived"
+        assert client.delete(f"/api/v1/persona/daily-memory/{item['id']}").status_code == 200
+        assert client.get("/api/v1/persona/daily-memory").json()["highlights"] == []
 
 
 def test_daily_highlight_crud(store):
@@ -139,14 +139,14 @@ def test_daily_memory_api_endpoints(settings):
     app = create_app(settings, DummyPlatform())
     with TestClient(app) as client:
         # 1. Require admin auth
-        assert client.get("/api/daily-memory").status_code == 401
+        assert client.get("/api/v1/persona/daily-memory").status_code == 401
 
         # Login
-        login_res = client.post("/api/auth", json={"token": settings.admin_token})
+        login_res = client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
         assert login_res.status_code == 200
 
         # 2. Get list (initially empty)
-        res = client.get("/api/daily-memory")
+        res = client.get("/api/v1/persona/daily-memory")
         assert res.status_code == 200
         assert res.json()["highlights"] == []
 
@@ -164,12 +164,12 @@ def test_daily_memory_api_endpoints(settings):
         )
 
         # Update via PUT
-        put_res = client.put(f"/api/daily-memory/{item_id}", json={"headline": "更正后的标题", "anecdote": "更正后的内容"})
+        put_res = client.put(f"/api/v1/persona/daily-memory/{item_id}", json={"headline": "更正后的标题", "anecdote": "更正后的内容"})
         assert put_res.status_code == 200
         assert put_res.json()["headline"] == "更正后的标题"
         assert put_res.json()["quote"] == "测试原句"
 
         # Delete via DELETE
-        del_res = client.delete(f"/api/daily-memory/{item_id}")
+        del_res = client.delete(f"/api/v1/persona/daily-memory/{item_id}")
         assert del_res.status_code == 200
         assert del_res.json()["ok"] is True

@@ -33,18 +33,9 @@ TARGET_LAYER_PACKAGES = frozenset({"core", "infra", "persona", "operations", "li
 
 # Explicit finite set of root .py files slated for M2 (operations/) and M3 (app/) per #7.
 # No new .py file may ever be added to src/tuber_studio/ root.
-# All 21 M2-A operations kernel and channel root modules are now migrated.
+# Emptied in M2 and M3-B: ZERO legacy root modules or model_runtime/ remain.
 LEGACY_ROOT_PENDING_M2 = frozenset()
-LEGACY_ROOT_PENDING_M3 = frozenset(
-    {
-        "app.py",
-        "meme_api.py",
-        "message_api.py",
-        "operation_recovery_api.py",
-        "runtime.py",
-        "web_entry.py",
-    }
-)
+LEGACY_ROOT_PENDING_M3 = frozenset()
 LEGACY_ROOT_PENDING_M2_M3 = LEGACY_ROOT_PENDING_M2 | LEGACY_ROOT_PENDING_M3
 
 # M1 root files pending migration into core/, infra/, persona/.
@@ -703,22 +694,17 @@ def _is_test_module_segment(name: str) -> bool:
 
 
 def check_test_isolation(tests_root: Path) -> list[str]:
-    """Disallow test_*.py -> test_*.py cross-imports inside migrated test directories."""
+    """Enforce zero root `test_*.py` files and zero `test_*.py -> test_*.py` cross-imports across ALL `tests/`."""
     if not tests_root.is_dir():
         return [f"Missing tests directory: {tests_root}"]
 
-    fully_migrated = not any(tests_root.glob("test_*.py")) and not (tests_root / "browser").is_dir()
-    if fully_migrated:
-        target_files = sorted(p for p in tests_root.rglob("*.py") if "__pycache__" not in p.parts)
-    else:
-        target_files = []
-        for subdir in MIGRATED_TEST_DIRS:
-            subpath = tests_root / subdir
-            if subpath.is_dir():
-                target_files.extend(p for p in subpath.rglob("*.py") if "__pycache__" not in p.parts)
-        target_files = sorted(set(target_files))
-
     violations: list[str] = []
+    for root_test in sorted(tests_root.glob("test_*.py")):
+        violations.append(
+            f"{root_test.name}: root-level test module is forbidden after M3 migration; move into a subdir"
+        )
+
+    target_files = sorted(p for p in tests_root.rglob("*.py") if "__pycache__" not in p.parts)
     for path in target_files:
         rel_path = path.relative_to(tests_root).as_posix()
         rel_parts = path.relative_to(tests_root).with_suffix("").parts
@@ -771,10 +757,12 @@ def check_test_isolation(tests_root: Path) -> list[str]:
 
 def test_allowlists_are_strictly_bounded_to_m2_m3():
     assert not _is_m2_pending(SRC_ROOT)
+    assert not _is_m3_pending(SRC_ROOT)
     assert not (SRC_ROOT / "operations" / "browsing").exists()
+    assert not (SRC_ROOT / "model_runtime").exists()
     assert len(LEGACY_ROOT_PENDING_M2) == 0
-    assert len(LEGACY_ROOT_PENDING_M3) == 6
-    assert LEGACY_ROOT_PENDING_M2_M3 == (LEGACY_ROOT_PENDING_M2 | LEGACY_ROOT_PENDING_M3)
+    assert len(LEGACY_ROOT_PENDING_M3) == 0
+    assert LEGACY_ROOT_PENDING_M2_M3 == frozenset()
     assert len(LEGACY_ROOT_PENDING_M1) == 49
     assert not (LEGACY_ROOT_PENDING_M2_M3 & LEGACY_ROOT_PENDING_M1)
     assert not (LEGACY_ROOT_PENDING_M2_M3 & ROOT_ENTRYPOINT_FILES)
@@ -783,10 +771,67 @@ def test_allowlists_are_strictly_bounded_to_m2_m3():
     assert len(LEGACY_L3_MODULE_CYCLE_ALLOWLIST) == 0
 
 
-def check_l3_module_line_limits(src_pkg: Path, max_lines: int = 1000) -> list[str]:
-    """Verify every Python module under live/ and agent/ stays strictly below max_lines."""
+ROUTE_DECORATOR_ATTRS = frozenset(
+    {
+        "get",
+        "post",
+        "put",
+        "patch",
+        "delete",
+        "options",
+        "head",
+        "trace",
+        "websocket",
+        "api_route",
+        "route",
+        "middleware",
+        "exception_handler",
+        "on_event",
+    }
+)
+ROUTE_REGISTRATION_CALLS = frozenset({"add_api_route", "add_websocket_route", "add_route", "include_router"})
+FASTAPI_BOUNDARY_CONSTRUCTORS = frozenset({"FastAPI", "APIRouter", "Depends"})
+
+
+def check_fastapi_routes_confined_to_app(src_pkg: Path) -> list[str]:
+    """Enforce zero FastAPI/Starlette route definitions, routers, or Depends outside `app/`."""
     violations: list[str] = []
-    for sub in ("live", "agent"):
+    for path in sorted(src_pkg.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        rel = path.relative_to(src_pkg).as_posix()
+        if rel == "app.py" or rel.startswith("app/"):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(("fastapi", "starlette")):
+                for alias in node.names:
+                    if alias.name in FASTAPI_BOUNDARY_CONSTRUCTORS | {"Request", "WebSocket", "StreamingResponse"}:
+                        violations.append(
+                            f"{rel}:{node.lineno}: FastAPI route/transport symbol `{alias.name}` outside app/"
+                        )
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for dec in node.decorator_list:
+                    call = dec.func if isinstance(dec, ast.Call) else dec
+                    if isinstance(call, ast.Attribute) and call.attr in ROUTE_DECORATOR_ATTRS:
+                        violations.append(
+                            f"{rel}:{dec.lineno}: HTTP/WS route decorator `@{call.attr}` outside app/"
+                        )
+            elif isinstance(node, ast.Call):
+                fn = node.func
+                if isinstance(fn, ast.Name) and fn.id in {"FastAPI", "APIRouter", "Depends"}:
+                    violations.append(f"{rel}:{node.lineno}: FastAPI `{fn.id}(...)` forbidden outside app/")
+                elif isinstance(fn, ast.Attribute) and fn.attr in ROUTE_REGISTRATION_CALLS:
+                    violations.append(
+                        f"{rel}:{node.lineno}: route registration call `.{fn.attr}(...)` outside app/"
+                    )
+    return violations
+
+
+def check_l3_module_line_limits(src_pkg: Path, max_lines: int = 1000) -> list[str]:
+    """Verify every Python module under all L3 (operations, live, agent) and L4 (app) stays strictly below max_lines."""
+    violations: list[str] = []
+    for sub in ("operations", "live", "agent", "app"):
         root = src_pkg / sub
         if not root.is_dir():
             continue
@@ -800,9 +845,14 @@ def check_l3_module_line_limits(src_pkg: Path, max_lines: int = 1000) -> list[st
     return violations
 
 
-def test_real_repo_live_and_agent_line_limits():
+def test_real_repo_l3_and_l4_line_limits():
     violations = check_l3_module_line_limits(SRC_ROOT)
-    assert not violations, "L3 line-count violations:\n" + "\n".join(violations)
+    assert not violations, "L3/L4 line-count violations:\n" + "\n".join(violations)
+
+
+def test_real_repo_fastapi_routes_confined_to_app():
+    violations = check_fastapi_routes_confined_to_app(SRC_ROOT)
+    assert not violations, "FastAPI route boundary violations:\n" + "\n".join(violations)
 
 
 def test_real_repo_root_cleanliness():
@@ -1203,19 +1253,21 @@ def test_mock_test_isolation_catches_cross_test_imports(tmp_path, rel_path, cont
     assert any(rel_path in msg for msg in violations)
 
 
-def test_mock_test_isolation_checks_full_tree_once_migrated(tmp_path):
+def test_mock_test_isolation_checks_full_tree_and_forbids_root_tests(tmp_path):
     _, tests_root = _build_valid_mock_repo(tmp_path)
     _write_tree(
         tests_root,
         {
+            "browser/test_browser_leak.py": "from test_other import helper\n",
             "custom_migrated/test_custom.py": "from test_legacy import helper\n",
         },
     )
     violations = check_test_isolation(tests_root)
+    assert any("browser/test_browser_leak.py" in msg for msg in violations)
     assert any("custom_migrated/test_custom.py" in msg for msg in violations)
 
 
-def test_mock_test_isolation_respects_transitional_root_while_guarding_migrated_dirs(tmp_path):
+def test_mock_test_isolation_flags_root_test_files_and_root_cross_imports(tmp_path):
     _, tests_root = _build_valid_mock_repo(tmp_path)
     _write_tree(
         tests_root,
@@ -1224,8 +1276,35 @@ def test_mock_test_isolation_respects_transitional_root_while_guarding_migrated_
             "test_legacy_b.py": "helper = 1\n",
         },
     )
-    assert check_test_isolation(tests_root) == []
-
-    _write_tree(tests_root, {"core/test_bad_migrated.py": "from test_legacy_b import helper\n"})
     violations = check_test_isolation(tests_root)
-    assert any("core/test_bad_migrated.py" in msg for msg in violations)
+    assert any("test_legacy_a.py: root-level test module is forbidden" in msg for msg in violations)
+    assert any("test_legacy_a.py:1: cross-test import" in msg for msg in violations)
+
+
+@pytest.mark.parametrize(
+    ("rel_path", "content"),
+    [
+        ("operations/bad_routes.py", "from fastapi import APIRouter\nrouter = APIRouter()\n@router.get('/x')\ndef f(): pass\n"),
+        ("live/bad_app.py", "from fastapi import FastAPI\napp = FastAPI()\n"),
+        ("agent/bad_dep.py", "from fastapi import Depends\n"),
+    ],
+)
+def test_mock_fastapi_routes_outside_app_rejected(tmp_path, rel_path, content):
+    src_pkg, _ = _build_valid_mock_repo(tmp_path)
+    _write_tree(src_pkg, {rel_path: content})
+    violations = check_fastapi_routes_confined_to_app(src_pkg)
+    assert any(rel_path in msg for msg in violations)
+
+
+def test_mock_l3_l4_line_limits_catches_oversized_module(tmp_path):
+    src_pkg, _ = _build_valid_mock_repo(tmp_path)
+    _write_tree(
+        src_pkg,
+        {
+            "operations/huge.py": "x = 1\n" * 1000,
+            "app/huge_route.py": "x = 1\n" * 1000,
+        },
+    )
+    violations = check_l3_module_line_limits(src_pkg)
+    assert any("operations/huge.py" in msg for msg in violations)
+    assert any("app/huge_route.py" in msg for msg in violations)

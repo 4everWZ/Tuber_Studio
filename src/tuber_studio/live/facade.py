@@ -19,7 +19,7 @@ from .games.interactive_rules import (
     SongRequestRule,
     default_rules,
 )
-from .games.stardew_device import DeviceCommand, StardewDevice, register_stardew_device
+from .games.stardew_device import DeviceCommand, StardewDevice, create_stardew_device
 from .media import (
     MAX_UPLOAD,
     MEDIA_TYPES,
@@ -81,6 +81,7 @@ __all__ = [
     "checked_file",
     "clean_barrage",
     "create_live_facade",
+    "create_stardew_device",
     "default_rules",
     "default_scene",
     "inspect_audio",
@@ -90,7 +91,6 @@ __all__ = [
     "normalize_guess",
     "parse_lrc",
     "public_address",
-    "register_stardew_device",
     "room_feed",
 ]
 

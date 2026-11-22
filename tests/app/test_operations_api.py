@@ -31,7 +31,7 @@ async def test_dynamic_frequency_and_channel_image_permissions_in_browser(settin
         await page.locator("#dynamic-min-post-interval").fill("0")
         await page.get_by_label("允许动态选用图库图片").check()
         await page.get_by_label("允许动态调用生图模型").uncheck()
-        async with page.expect_response(lambda r: r.request.method == "PUT" and r.url.endswith("/api/dynamics/policy")) as saved:
+        async with page.expect_response(lambda r: r.request.method == "PUT" and r.url.endswith("/api/v1/operations/dynamics/policy")) as saved:
             await page.get_by_role("button", name="保存动态设置").click()
         assert (await saved.value).ok
         await page.reload()
@@ -58,26 +58,26 @@ def test_dynamic_routes_require_admin_and_overlay_does_not_grant_access(settings
     monkeypatch.setattr(app.state.runtime.operation_llm, "generate_json", wait_decision)
     with TestClient(app) as client:
         for path in ("policy", "posts", "decisions", "memories", "memory-summary", "materials"):
-            assert client.get(f"/api/dynamics/{path}").status_code == 401
-        assert client.post("/api/dynamics/evaluate").status_code == 401
-        assert client.put("/api/dynamics/policy", json={"enabled": True}).status_code == 401
-        client.post("/api/overlay/auth", json={"token": settings.overlay_token})
-        assert client.post("/api/dynamics/posts/1/publish").status_code == 401
-        client.post("/api/auth", json={"token": settings.admin_token})
-        assert client.get("/api/dynamics/policy").json()["enabled"] is False
-        assert client.get("/api/dynamics/policy").json()["auto_publish"] is True
-        summary = client.get("/api/dynamics/memory-summary").json()
+            assert client.get(f"/api/v1/operations/dynamics/{path}").status_code == 401
+        assert client.post("/api/v1/operations/dynamics/evaluate").status_code == 401
+        assert client.put("/api/v1/operations/dynamics/policy", json={"enabled": True}).status_code == 401
+        client.post("/api/v1/system/auth/overlay", json={"token": settings.overlay_token})
+        assert client.post("/api/v1/operations/dynamics/posts/1/publish").status_code == 401
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
+        assert client.get("/api/v1/operations/dynamics/policy").json()["enabled"] is False
+        assert client.get("/api/v1/operations/dynamics/policy").json()["auto_publish"] is True
+        summary = client.get("/api/v1/operations/dynamics/memory-summary").json()
         assert summary["max_tokens"] == 2048
         assert summary["valid"] is False and summary["entries"] == []
-        assert client.get("/api/dynamics/posts").json() == []
-        assert client.get("/api/dynamics/decisions").json() == []
-        assert client.get("/api/dynamics/memories").json() == []
-        assert client.get("/api/status").json()["dynamic_policy"]["enabled"] is False
-        result = client.post("/api/dynamics/evaluate").json()
+        assert client.get("/api/v1/operations/dynamics/posts").json() == []
+        assert client.get("/api/v1/operations/dynamics/decisions").json() == []
+        assert client.get("/api/v1/operations/dynamics/memories").json() == []
+        assert client.get("/api/v1/system/status").json()["dynamic_policy"]["enabled"] is False
+        result = client.post("/api/v1/operations/dynamics/evaluate").json()
         assert result["action"] == "wait" and result["post_id"] is None
-        assert client.get("/api/dynamics/decisions").json()[0]["reason"] == result["reason"]
+        assert client.get("/api/v1/operations/dynamics/decisions").json()[0]["reason"] == result["reason"]
         assert (
-            client.post("/api/dynamics/evaluate", headers={"Origin": "https://other.example"}).status_code
+            client.post("/api/v1/operations/dynamics/evaluate", headers={"Origin": "https://other.example"}).status_code
             == 403
         )
 
@@ -95,27 +95,27 @@ def test_dynamic_settings_validate_permissions_and_configured_limits(settings):
             {"memory_summary_max_tokens": True},
             {"sessdata": "must-not-accept"},
         ):
-            assert client.put("/api/dynamics/policy", headers=headers, json=data).status_code == 400
+            assert client.put("/api/v1/operations/dynamics/policy", headers=headers, json=data).status_code == 400
         result = client.put(
-            "/api/dynamics/policy",
+            "/api/v1/operations/dynamics/policy",
             headers=headers,
             json={"auto_publish": False, "max_posts_per_day": 24, "min_post_interval_seconds": 60, "memory_summary_max_tokens": 5000},
         )
         assert result.status_code == 200 and result.json()["auto_publish"] is False
-        assert client.get("/api/dynamics/policy", headers=headers).json()["max_posts_per_day"] == 24
-        assert client.get("/api/dynamics/posts?limit=201", headers=headers).status_code == 422
+        assert client.get("/api/v1/operations/dynamics/policy", headers=headers).json()["max_posts_per_day"] == 24
+        assert client.get("/api/v1/operations/dynamics/posts?limit=201", headers=headers).status_code == 422
         assert (
-            client.put("/api/dynamics/memories/1", headers=headers, json={"public": "yes"}).status_code == 400
+            client.put("/api/v1/operations/dynamics/memories/1", headers=headers, json={"public": "yes"}).status_code == 400
         )
         assert (
             client.post(
-                "/api/dynamics/posts/1/review",
+                "/api/v1/operations/dynamics/posts/1/review",
                 headers=headers,
                 json={"action": "approve", "source_ids": ["fake"]},
             ).status_code
             == 400
         )
-        assert client.post("/api/dynamics/posts/1/publish", headers=headers).status_code == 400
+        assert client.post("/api/v1/operations/dynamics/posts/1/publish", headers=headers).status_code == 400
 
 
 def test_provider_reconfiguration_requires_stopping_autonomous_operations(settings):
@@ -127,16 +127,16 @@ def test_provider_reconfiguration_requires_stopping_autonomous_operations(settin
             {"enabled": True}, account_id="injected-test-account", character=app.state.runtime.character
         )
         response = client.put(
-            "/api/settings/providers",
+            "/api/v1/system/settings/providers",
             headers={"Authorization": "Bearer " + settings.admin_token},
             json={},
         )
         assert response.status_code == 409
-        assert "停止自主运营" in response.json()["detail"]
+        assert "停止自主运营" in response.json()["message"]
         app.state.runtime.operations.configure({"enabled": False})
         assert app.state.store.get("dynamic_policy")["enabled"]
         assert client.put(
-            "/api/settings/providers",
+            "/api/v1/system/settings/providers",
             headers={"Authorization": "Bearer " + settings.admin_token},
             json={},
         ).status_code == 200

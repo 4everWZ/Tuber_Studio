@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from tuber_studio.core.text import comment_body_issue
 from tuber_studio.operations.kernel.quotas import publication_time
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 JUDGMENTS = ("satisfied", "needs_revision")
 
 PUBLIC_CANDIDATES = """

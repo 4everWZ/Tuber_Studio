@@ -145,7 +145,7 @@ def test_clear_chat_cleans_portable_turn_origin_and_preserves_durable_note(setti
         assert memory.save_organized(("200", *scope[1:]), source, decision, None)
         assert not db.in_transaction
         assert runtime.store.one("SELECT account FROM memory_sources")["account"] == "100"
-        client.delete("/api/chat/intelligent").raise_for_status()
+        client.delete("/api/v1/agent/chat").raise_for_status()
         assert not runtime.store.one("SELECT id FROM grounded_memory WHERE event_id='operator:old'")
         assert not runtime.context.existing(mode, runtime.character)
         assert memory.lookup_source(scope, "operator", "turn:old")[0]["quote"] == source["text"]

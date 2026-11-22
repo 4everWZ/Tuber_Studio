@@ -10,8 +10,8 @@ from tests.support.operations_helpers import ControlledPlatform
 from tuber_studio.agent.memory_organizer.owner_memory import history_preference
 from tuber_studio.app import create_app
 
-CHAT = "/api/chat/intelligent"
-TASKS = "/api/agent/tasks"
+CHAT = "/api/v1/agent/chat"
+TASKS = "/api/v1/agent/tasks"
 BV = "BV1A12345678"
 URL = "https://archive.example/field-note"
 REASON = "入场前有四秒静默，留出了报幕的时间。"

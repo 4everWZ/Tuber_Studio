@@ -37,7 +37,7 @@ async def test_catalog_matches_finite_private_projection(workshop):
     assert not {"workshop_settings", "settings_catalog", "read_settings", "update_settings"} & runtime.tasks.tools.keys()
 
 
-@pytest.mark.parametrize("group", ["memory", "character", "model", "roles", "permissions", "provider", "/api/settings"])
+@pytest.mark.parametrize("group", ["memory", "character", "model", "roles", "permissions", "provider", "/api/v1/system/settings"])
 async def test_core_groups_cannot_be_read_or_constructed_as_writes(workshop, group):
     runtime, _ = workshop
     with pytest.raises(ValueError):
@@ -75,7 +75,7 @@ async def test_tool_changes_preserve_ui_siblings_and_private_authority(workshop)
     result = await set_values(workshop, "browsing", {"daily_watch_limit": 13, "interval_seconds": 180})
     assert result["values"]["daily_watch_limit"] == runtime.browsing.policy()["daily_watch_limit"] == 13
     assert runtime.operations.policy() == original
-    (await client.put("/api/automation/settings", json={"max_per_hour": 4})).raise_for_status()
+    (await client.put("/api/v1/operations/automation/settings", json={"max_per_hour": 4})).raise_for_status()
     assert runtime.browsing.policy()["max_per_hour"] == 4
     assert runtime.operations.account_limits() == limits
     result = await set_values(workshop, "illustrations", {"use_memes": True})
@@ -83,20 +83,20 @@ async def test_tool_changes_preserve_ui_siblings_and_private_authority(workshop)
     for group in ("messages", "dynamics"):
         assert not getattr(runtime.browsing, group).policy()["base"]["enabled"]
     assert (await set_values(workshop, "live", {"timezone": "UTC"}))["values"]["timezone"] == "UTC"
-    assert (await client.get("/api/live/options")).json()["timezone"] == "UTC"
+    assert (await client.get("/api/v1/live/options")).json()["timezone"] == "UTC"
     old_scene = runtime.live.media.scene()
     await set_values(workshop, "scene", {"background": "transparent"})
     assert runtime.live.media.scene() == old_scene | {"background": "transparent"}
-    before = (await client.get("/api/live/music")).json()["settings"]
+    before = (await client.get("/api/v1/live/music")).json()["settings"]
     await set_values(workshop, "music", {"volume": 0.4})
-    assert (await client.get("/api/live/music")).json()["settings"] == before | {"volume": 0.4}
+    assert (await client.get("/api/v1/live/music")).json()["settings"] == before | {"volume": 0.4}
 
 
 async def test_ui_change_invalidates_observed_value_and_scope(workshop):
     runtime, client = workshop
     snapshot = read_settings(runtime, "music")
-    data = (await client.get("/api/live/music")).json()["settings"]
-    (await client.put("/api/live/music", json=data | {"volume": 0.25})).raise_for_status()
+    data = (await client.get("/api/v1/live/music")).json()["settings"]
+    (await client.put("/api/v1/live/music", json=data | {"volume": 0.25})).raise_for_status()
     with pytest.raises(ValueError, match="重新读取"):
         await set_values(workshop, "music", {"volume": 0.5}, snapshot)
     with pytest.raises(ValueError, match="重新读取"):
@@ -118,7 +118,7 @@ async def test_pet_choices_share_installed_service_and_refuse_extra_targets(work
 
     runtime, client = workshop
     role = runtime.character["id"]
-    route = f"/api/pets/{role}"
+    route = f"/api/v1/persona/pets/{role}"
     initial = (await client.get(route)).raise_for_status().json()
     index, asset = next((i, item) for i, item in enumerate(initial["items"], 1) if not item.get("is_default"))
 

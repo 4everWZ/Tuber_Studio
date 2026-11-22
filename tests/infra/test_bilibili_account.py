@@ -117,12 +117,12 @@ def network(monkeypatch):
 def account_client(settings, network):
     app = create_app(settings)
     with TestClient(app) as client:
-        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
         yield client, app, network[0], network[1]
 
 
 def configure(client):
-    response = client.put("/api/account/bilibili", json=SECRET)
+    response = client.put("/api/v1/operations/account/bilibili", json=SECRET)
     assert response.status_code == 200
     assert response.json()["configured"] == {"sessdata": True, "csrf": True}
     assert all(secret not in response.text for secret in SECRET.values())
@@ -131,24 +131,24 @@ def configure(client):
 
 def test_get_configure_blank_clear_and_retired_policy_are_local_and_redacted(account_client, settings):
     client, app, calls, _ = account_client
-    assert client.get("/api/account/bilibili").json()["state"] == "not_configured"
+    assert client.get("/api/v1/operations/account/bilibili").json()["state"] == "not_configured"
     configure(client)
-    assert client.get("/api/account/bilibili").json()["state"] == "unverified"
-    blank = client.put("/api/account/bilibili", json={"sessdata": " ", "bili_jct": ""})
+    assert client.get("/api/v1/operations/account/bilibili").json()["state"] == "unverified"
+    blank = client.put("/api/v1/operations/account/bilibili", json={"sessdata": " ", "bili_jct": ""})
     assert blank.status_code == 200 and app.state.bilibili_account.credentials == SECRET
-    assert client.get("/api/comments/policy").status_code == 404
-    assert client.put("/api/comments/policy", json={"csrf": "new-csrf"}).status_code == 404
+    assert client.get("/api/v1/operations/comments/policy").status_code == 404
+    assert client.put("/api/v1/operations/comments/policy", json={"csrf": "new-csrf"}).status_code == 404
     assert app.state.bilibili_account.credentials == SECRET
-    changed = client.put("/api/account/bilibili", json={"csrf": "new-csrf"})
+    changed = client.put("/api/v1/operations/account/bilibili", json={"csrf": "new-csrf"})
     assert changed.status_code == 200 and "new-csrf" not in changed.text
     assert app.state.bilibili_account.credentials == SECRET | {"csrf": "new-csrf"}
     path = settings.runtime / "bilibili-credentials.json"
     assert json.loads(path.read_text()) == SECRET | {"csrf": "new-csrf"}
     if os.name == "posix":
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
-    assert client.put("/api/account/bilibili", json={"clear": True, "sessdata": "x"}).status_code == 400
-    assert client.put("/api/account/bilibili", json={"csrf": "a", "bili_jct": "b"}).status_code == 400
-    clear = client.put("/api/account/bilibili", json={"clear": True})
+    assert client.put("/api/v1/operations/account/bilibili", json={"clear": True, "sessdata": "x"}).status_code == 400
+    assert client.put("/api/v1/operations/account/bilibili", json={"csrf": "a", "bili_jct": "b"}).status_code == 400
+    clear = client.put("/api/v1/operations/account/bilibili", json={"clear": True})
     assert clear.json()["configured"] == {"sessdata": False, "csrf": False}
     assert json.loads(path.read_text()) == {}
     assert calls == []  # Neither GET nor credential editing may trigger platform reads.
@@ -156,14 +156,14 @@ def test_get_configure_blank_clear_and_retired_policy_are_local_and_redacted(acc
 
 def test_credentials_and_last_verified_login_survive_restart(settings, network):
     with TestClient(create_app(settings)) as first:
-        first.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        first.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
         configure(first)
-        original = first.post("/api/account/bilibili/refresh").json()
+        original = first.post("/api/v1/operations/account/bilibili/refresh").json()
         assert original["state"] == "logged_in"
     count = len(network[0])
     with TestClient(create_app(settings)) as second:
-        second.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        response = second.get("/api/account/bilibili")
+        second.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
+        response = second.get("/api/v1/operations/account/bilibili")
         assert response.json()["state"] == "logged_in"
         assert response.json()["configured"] == {"sessdata": True, "csrf": True}
         assert response.json()["profile"] == original["profile"]
@@ -175,10 +175,10 @@ def test_credentials_and_last_verified_login_survive_restart(settings, network):
 def test_profile_age_is_stale_without_resetting_the_verified_session(account_client):
     client, app, calls, _ = account_client
     configure(client)
-    assert client.post("/api/account/bilibili/refresh").json()["state"] == "logged_in"
+    assert client.post("/api/v1/operations/account/bilibili/refresh").json()["state"] == "logged_in"
     app.state.runtime.account.observed["checked_at"] -= 3600
     count = len(calls)
-    current = client.get("/api/account/bilibili").json()
+    current = client.get("/api/v1/operations/account/bilibili").json()
     assert current["state"] == "logged_in" and current["verification_stale"]
     assert len(calls) == count
 
@@ -187,7 +187,7 @@ def test_profile_permission_error_preserves_platform_verified_login(account_clie
     client, _, _, state = account_client
     configure(client)
     state["details_code"] = -403
-    result = client.post("/api/account/bilibili/refresh").json()
+    result = client.post("/api/v1/operations/account/bilibili/refresh").json()
     assert result["state"] == "logged_in" and result["profile"]["uid"] == "123"
     assert result["profile"]["bio"] is None
 
@@ -198,7 +198,7 @@ def test_qr_login_persists_renewal_and_recovers_confirmation_after_restart(setti
     first = SECRET | {"uid": "123", "refresh_token": "fixture-original-refresh"}
     renewed = {"sessdata": "fixture-next-session", "csrf": "fixture-next-csrf",
                "uid": "123", "refresh_token": "fixture-next-refresh"}
-    login_root = "/api/account/bilibili/login"
+    login_root = "/api/v1/operations/account/bilibili/login"
     file = settings.runtime / "bilibili-credentials.json"
     monkeypatch.setattr(bilibili_account, "QR_POLL_SECONDS", 0)
     outcomes = iter((86101, 86090, 0))
@@ -258,7 +258,7 @@ def test_qr_login_persists_renewal_and_recovers_confirmation_after_restart(setti
     app = new_app()
     with TestClient(app) as client:
         assert client.post(login_root).status_code == 401
-        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
         ticket = client.post(login_root).json()
         assert "platform-qr-secret" not in json.dumps(ticket)
         path = f"{login_root}/{ticket['id']}"
@@ -270,16 +270,16 @@ def test_qr_login_persists_renewal_and_recovers_confirmation_after_restart(setti
         assert json.loads(file.read_text()) == first
         assert first["refresh_token"] not in completed.text
         assert client.post(path + "/poll").json()["account"]["state"] == "logged_in"
-        assert client.post("/api/account/bilibili/refresh").json()["renewal"]["state"] == "available"
+        assert client.post("/api/v1/operations/account/bilibili/refresh").json()["renewal"]["state"] == "available"
         renewal_needed = True
-        pending = client.post("/api/account/bilibili/refresh")
+        pending = client.post("/api/v1/operations/account/bilibili/refresh")
         assert pending.json()["state"] == "logged_in"
         assert pending.json()["renewal"]["state"] == "confirmation_pending"
         assert first["refresh_token"] not in pending.text and renewed["refresh_token"] not in pending.text
     with TestClient(new_app()) as client:
-        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        assert client.get("/api/account/bilibili").json()["state"] == "logged_in"
-        assert client.post("/api/account/bilibili/refresh").json()["renewal"]["state"] == "available"
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
+        assert client.get("/api/v1/operations/account/bilibili").json()["state"] == "logged_in"
+        assert client.post("/api/v1/operations/account/bilibili/refresh").json()["renewal"]["state"] == "available"
         assert json.loads(file.read_text()) == renewed
     assert count == {"renew": 1, "confirm": 2}
 
@@ -287,7 +287,7 @@ def test_qr_login_persists_renewal_and_recovers_confirmation_after_restart(setti
 def test_refresh_reads_actual_nav_stats_and_profile_cache_does_not_poll(account_client):
     client, app, calls, _ = account_client
     configure(client)
-    response = client.post("/api/account/bilibili/refresh")
+    response = client.post("/api/v1/operations/account/bilibili/refresh")
     data = response.json()
     assert data["state"] == "logged_in"
     assert data["profile"] == {
@@ -302,7 +302,7 @@ def test_refresh_reads_actual_nav_stats_and_profile_cache_does_not_poll(account_
     assert len(calls) == 3
     assert "SESSDATA=" + SECRET["sessdata"] in calls[0].headers["cookie"]
     for _ in range(3):
-        assert client.get("/api/account/bilibili").json()["state"] == "logged_in"
+        assert client.get("/api/v1/operations/account/bilibili").json()["state"] == "logged_in"
     assert len(calls) == 3
     assert all(secret not in response.text for secret in SECRET.values())
 
@@ -311,7 +311,7 @@ def test_partial_stats_keep_verified_profile_with_explicit_missing_count(account
     client, _, _, state = account_client
     configure(client)
     state["stats_code"] = -352
-    data = client.post("/api/account/bilibili/refresh").json()
+    data = client.post("/api/v1/operations/account/bilibili/refresh").json()
     assert data["state"] == "logged_in"
     assert data["profile"]["fans"] is None and data["warnings"]
     assert data["profile"]["coins"] == 3.5
@@ -322,14 +322,14 @@ def test_remote_bio_updates_the_verified_system_identity_without_versioning_chec
 
     client, app, _, state = account_client
     configure(client)
-    client.post("/api/account/bilibili/refresh").raise_for_status()
+    client.post("/api/v1/operations/account/bilibili/refresh").raise_for_status()
     first = cached_account_actor(app.state.store, SECRET, None)
     assert first["account_uid"] == "123" and first["account_bio"] == state["bio"]
     version = identity_snapshot(first, app.state.runtime.character)["identity_version"]
-    client.post("/api/account/bilibili/refresh").raise_for_status()
+    client.post("/api/v1/operations/account/bilibili/refresh").raise_for_status()
     assert identity_snapshot(cached_account_actor(app.state.store, SECRET, "123"), app.state.runtime.character)["identity_version"] == version
     state["bio"] = "今天把海底小屋的白饭锅修好了。"
-    result = client.post("/api/account/bilibili/refresh").json()
+    result = client.post("/api/v1/operations/account/bilibili/refresh").json()
     assert result["profile"]["bio"] == state["bio"]
     updated = cached_account_actor(app.state.store, SECRET, "123")
     assert updated["account_bio"] == state["bio"]
@@ -340,9 +340,9 @@ def test_remote_bio_updates_the_verified_system_identity_without_versioning_chec
 def test_homepage_of_a_different_uid_does_not_replace_the_verified_identity(account_client):
     client, app, _, state = account_client
     configure(client)
-    original = client.post("/api/account/bilibili/refresh").json()["profile"]
+    original = client.post("/api/v1/operations/account/bilibili/refresh").json()["profile"]
     state["profile_uid"] = 456
-    failed = client.post("/api/account/bilibili/refresh").json()
+    failed = client.post("/api/v1/operations/account/bilibili/refresh").json()
     assert failed["state"] == "error" and failed["profile"] == original
     assert cached_account_actor(app.state.store, SECRET, "123")["account_bio"] == original["bio"]
 
@@ -354,7 +354,7 @@ def test_expired_restricted_and_exception_states_are_sanitized(account_client, c
     client, _, _, state = account_client
     configure(client)
     state.update(nav_code=code, network_error=error)
-    response = client.post("/api/account/bilibili/refresh")
+    response = client.post("/api/v1/operations/account/bilibili/refresh")
     assert response.status_code == 200
     assert response.json()["state"] == expected
     assert response.json()["profile"] is None
@@ -365,17 +365,17 @@ def test_expired_restricted_and_exception_states_are_sanitized(account_client, c
 def test_transient_refresh_retains_last_verified_profile_and_time(account_client, code, error, expected):
     client, app, _, state = account_client
     configure(client)
-    original = client.post("/api/account/bilibili/refresh").json()
-    assert client.get("/api/account/bilibili/avatar").content == PNG
+    original = client.post("/api/v1/operations/account/bilibili/refresh").json()
+    assert client.get("/api/v1/operations/account/bilibili/avatar").content == PNG
     state.update(nav_code=code, network_error=error)
-    failed = client.post("/api/account/bilibili/refresh").json()
+    failed = client.post("/api/v1/operations/account/bilibili/refresh").json()
     assert failed["state"] == expected
     assert failed["profile"] == original["profile"]
     assert failed["checked_at"] == original["checked_at"]
     assert failed["attempted_at"] >= original["attempted_at"]
     assert failed["error"]
     # A temporary platform failure also keeps the already-fetched avatar.
-    assert client.get("/api/account/bilibili/avatar").content == PNG
+    assert client.get("/api/v1/operations/account/bilibili/avatar").content == PNG
     cached = app.state.store.get(PROFILE_CACHE_KEY)
     assert cached["profile"] == original["profile"]
     assert all(secret not in json.dumps(cached) for secret in SECRET.values())
@@ -384,9 +384,9 @@ def test_transient_refresh_retains_last_verified_profile_and_time(account_client
 def test_confirmed_expiry_clears_last_profile_and_verified_account_binding(account_client):
     client, app, _, state = account_client
     configure(client)
-    assert client.post("/api/account/bilibili/refresh").json()["state"] == "logged_in"
+    assert client.post("/api/v1/operations/account/bilibili/refresh").json()["state"] == "logged_in"
     state["nav_code"] = -101
-    failed = client.post("/api/account/bilibili/refresh").json()
+    failed = client.post("/api/v1/operations/account/bilibili/refresh").json()
     assert failed["state"] == "expired"
     assert failed["profile"] is None
     assert not app.state.bilibili_account.credentials
@@ -400,39 +400,39 @@ def test_invalid_login_indicator_preserves_credentials_until_explicit_logout(acc
     configure(client)
     original = app.state.bilibili_account.credential_path.read_bytes()
     state["is_login"] = None
-    assert client.post("/api/account/bilibili/refresh").json()["state"] == "error"
+    assert client.post("/api/v1/operations/account/bilibili/refresh").json()["state"] == "error"
     assert app.state.bilibili_account.credential_path.read_bytes() == original
     state["is_login"] = False
-    assert client.post("/api/account/bilibili/refresh").json()["state"] == "expired"
+    assert client.post("/api/v1/operations/account/bilibili/refresh").json()["state"] == "expired"
     assert json.loads(app.state.bilibili_account.credential_path.read_text()) == {}
 
 
 def test_unchanged_credentials_keep_profile_but_replacement_and_clear_drop_it(account_client):
     client, app, _, _ = account_client
     configure(client)
-    original = client.post("/api/account/bilibili/refresh").json()
-    unchanged = client.put("/api/account/bilibili", json={"sessdata": " ", "csrf": ""}).json()
+    original = client.post("/api/v1/operations/account/bilibili/refresh").json()
+    unchanged = client.put("/api/v1/operations/account/bilibili", json={"sessdata": " ", "csrf": ""}).json()
     assert unchanged["profile"] == original["profile"]
-    replaced = client.put("/api/account/bilibili", json={"sessdata": "new-account"}).json()
+    replaced = client.put("/api/v1/operations/account/bilibili", json={"sessdata": "new-account"}).json()
     assert replaced["profile"] is None
     assert app.state.store.get(PROFILE_CACHE_KEY) is None
-    assert client.post("/api/account/bilibili/refresh").json()["profile"]
-    assert client.put("/api/account/bilibili", json={"clear": True}).json()["profile"] is None
+    assert client.post("/api/v1/operations/account/bilibili/refresh").json()["profile"]
+    assert client.put("/api/v1/operations/account/bilibili", json={"clear": True}).json()["profile"] is None
     assert app.state.store.get(PROFILE_CACHE_KEY) is None
 
 
 def test_avatar_proxy_has_no_platform_cookies_and_caches_only_current_identity(account_client):
     client, _, calls, _ = account_client
     configure(client)
-    client.post("/api/account/bilibili/refresh").raise_for_status()
-    response = client.get("/api/account/bilibili/avatar?url=https://evil.invalid/unused")
+    client.post("/api/v1/operations/account/bilibili/refresh").raise_for_status()
+    response = client.get("/api/v1/operations/account/bilibili/avatar?url=https://evil.invalid/unused")
     assert response.status_code == 200 and response.content == PNG
     assert response.headers["content-type"] == "image/png"
     assert len([call for call in calls if call.url.host.endswith("hdslb.com")]) == 1
-    assert client.get("/api/account/bilibili/avatar").status_code == 200
+    assert client.get("/api/v1/operations/account/bilibili/avatar").status_code == 200
     assert len(calls) == 4
-    client.put("/api/account/bilibili", json={"sessdata": "new-account"}).raise_for_status()
-    assert client.get("/api/account/bilibili/avatar").status_code == 404
+    client.put("/api/v1/operations/account/bilibili", json={"sessdata": "new-account"}).raise_for_status()
+    assert client.get("/api/v1/operations/account/bilibili/avatar").status_code == 404
     assert len(calls) == 4
 
 
@@ -443,9 +443,9 @@ def test_avatar_legacy_urls_are_upgraded_to_https_and_gif_is_preserved(account_c
     state["face"] = prefix + "//i0.hdslb.com/bfs/face/avatar.gif"
     state["image"] = (settings.root / "assets/whale/cheerful.gif").read_bytes()
     state["mime"] = "image/gif"
-    result = client.post("/api/account/bilibili/refresh").json()
+    result = client.post("/api/v1/operations/account/bilibili/refresh").json()
     assert result["profile"]["avatar_url"] == "https://i0.hdslb.com/bfs/face/avatar.gif"
-    response = client.get("/api/account/bilibili/avatar")
+    response = client.get("/api/v1/operations/account/bilibili/avatar")
     assert response.status_code == 200 and response.content == state["image"]
     assert calls[-1].url.scheme == "https"
     assert "cookie" not in calls[-1].headers
@@ -466,8 +466,8 @@ def test_platform_avatar_cannot_be_an_arbitrary_url(account_client, url):
     client, _, calls, state = account_client
     configure(client)
     state["face"] = url
-    assert client.post("/api/account/bilibili/refresh").json()["profile"]["avatar_url"] is None
-    assert client.get("/api/account/bilibili/avatar").status_code == 404
+    assert client.post("/api/v1/operations/account/bilibili/refresh").json()["profile"]["avatar_url"] is None
+    assert client.get("/api/v1/operations/account/bilibili/avatar").status_code == 404
     assert len(calls) == 3 and avatar_url(url) is None
 
 
@@ -475,14 +475,14 @@ def test_platform_avatar_cannot_be_an_arbitrary_url(account_client, url):
 def test_avatar_redirect_size_and_mime_fail_without_external_follow(account_client, failure):
     client, _, calls, state = account_client
     configure(client)
-    client.post("/api/account/bilibili/refresh").raise_for_status()
+    client.post("/api/v1/operations/account/bilibili/refresh").raise_for_status()
     if failure == "redirect":
         state["cdn_status"] = 302
     elif failure == "size":
         state["image"] = PNG + b"x" * (2 * 1024 * 1024)
     else:
         state["mime"] = "text/html"
-    assert client.get("/api/account/bilibili/avatar").status_code == 404
+    assert client.get("/api/v1/operations/account/bilibili/avatar").status_code == 404
     assert len(calls) == 4
 
 

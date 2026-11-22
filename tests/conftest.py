@@ -7,9 +7,9 @@ import pytest
 
 from tests.support.fake_providers import OfflineChat
 from tests.support.stores import STARTUP_MIGRATIONS
+from tuber_studio.app.runtime import Runtime
 from tuber_studio.core.config import ROOT, Settings
 from tuber_studio.core.store import Store
-from tuber_studio.runtime import Runtime
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ def settings(tmp_path, monkeypatch):
     config.data["omni"].update(
         context_tokens=131072, native_context_tokens=131072, auto_compact_token_limit=117964,
     )
-    from tuber_studio import runtime as runtime_module
+    from tuber_studio.app import runtime as runtime_module
 
     create_chat = runtime_module.create_llm
     monkeypatch.setattr(runtime_module, "create_llm", lambda current: OfflineChat() if current is config else create_chat(current))

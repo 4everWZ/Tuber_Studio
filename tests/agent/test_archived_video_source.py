@@ -239,7 +239,7 @@ async def test_source_mount_failure_does_not_block_history_or_other_research(
             base_url="http://test",
             headers={"Authorization": "Bearer fixture"},
         ) as client:
-            assert (await client.get("/api/chat/intelligent")).json()["turns"] == []
+            assert (await client.get("/api/v1/agent/chat")).json()["turns"] == []
         task = tasks.create(str(uuid4()), "看看 " + URL)
         step = {
             "tool": "inspect_video",

@@ -20,10 +20,10 @@ from fastapi import HTTPException, Request
 from evaluations.agent.creative_browser import edition, exercise, isolated_app, positive, send, write
 from evaluations.agent.creative_browser_receipt import DEFAULT_BV, Mismatch, load, require
 from evaluations.agent.omni_chat_loop import ROOT, connection
-from evaluations.browser_login import fill_private_login
 from evaluations.memory.creative_memory_receipt import REPLACE, WRITE_TABLES, counts, verify_memory
 from evaluations.memory.owner_memory_device import AUTO, CONFIRMED, SEARCH
 from evaluations.memory.owner_memory_voice import VOICE_RULE, spoken_rule, voice_on_page
+from evaluations.operations.browser_login import fill_private_login
 from tuber_studio.agent.voice.origin import sign
 from tuber_studio.core.auth import COOKIE_NAME
 from tuber_studio.core.models import content_hash
@@ -163,7 +163,7 @@ async def open_source(page, entries, citation):
     quote = entry.locator("blockquote:visible")
     await quote.wait_for()
     note = await entry.get_by_label("记忆内容").input_value()
-    report = await page.request.get(f"{urlsplit(page.url).scheme}://{urlsplit(page.url).netloc}/api/daily-memory")
+    report = await page.request.get(f"{urlsplit(page.url).scheme}://{urlsplit(page.url).netloc}/api/v1/persona/daily-memory")
     require(report.ok, "设置未读回当前记忆")
     current = next((r for r in (await report.json())["organized"] if r["id"] == citation["id"]), None)
     require(current and current["source"]["key"] == citation["source_key"] and current["revision"] == citation["revision"],
@@ -224,15 +224,15 @@ class MemoryScenario:
                         return row
                     await asyncio.sleep(2)
         except TimeoutError as error:
-            state = await self.api(page, "GET", "/api/daily-memory")
+            state = await self.api(page, "GET", "/api/v1/persona/daily-memory")
             self.record(label + "_unresolved", {"source": source, "organization": state["organization"]})
             raise Mismatch("期限内未读到绑定本轮原话的偏好，已保留整理状态") from error
 
     async def prepare(self, page):
         await self.checkpoint(page)
-        history = await self.api(page, "GET", "/api/chat/intelligent")
-        tasks = await self.api(page, "GET", "/api/agent/tasks")
-        notes = await self.api(page, "GET", "/api/daily-memory")
+        history = await self.api(page, "GET", "/api/v1/agent/chat")
+        tasks = await self.api(page, "GET", "/api/v1/agent/tasks")
+        notes = await self.api(page, "GET", "/api/v1/persona/daily-memory")
         require(
             not (history["turns"] or history["account_id"] or tasks["tasks"] or notes["organized"]),
             "当前网页已有号主业务数据",
@@ -273,7 +273,7 @@ class MemoryScenario:
         self.record(label + "_visible", seen)
 
     async def current(self, page, row):
-        current = await self.api(page, "POST", "/api/agent/memory.get", {"id": row["id"]})
+        current = await self.api(page, "POST", "/api/v1/agent/memory/get", {"id": row["id"]})
         require(current == row, "跨浏览器读回的条目、修订或原话不符")
 
     async def correct(self, page, first):
@@ -311,7 +311,7 @@ class MemoryScenario:
                 and result.get("correction") == {"id": original["id"], "revision": original["revision"] + 1},
                 "私有通话未完成原生最终转写与号主确认",
             )
-            corrected = await self.api(page, "POST", "/api/agent/memory.get", {"id": original["id"]})
+            corrected = await self.api(page, "POST", "/api/v1/agent/memory/get", {"id": original["id"]})
             self.record("corrected", corrected)
             require(
                 corrected["quote"] == result["owner_confirmed_text"]
@@ -359,7 +359,7 @@ class MemoryScenario:
         await self.current(page, row)
         async with settings_entries(page) as entries:
             entry, _ = await open_source(page, entries, row)
-            path = f"/api/daily-memory/organized/{row['id']}"
+            path = f"/api/v1/persona/daily-memory/organized/{row['id']}"
             async def confirm_delete(dialog):
                 if dialog.message == "确认删除这条记忆吗？":
                     await dialog.accept()

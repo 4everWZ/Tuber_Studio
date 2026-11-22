@@ -1,4 +1,6 @@
-"""Authenticated live authoring and playback-only scene projections."""
+"""L4 live routes (`/api/v1/live/*`), live media endpoints, and overlay WebSocket (`/ws/overlay`)."""
+
+from __future__ import annotations
 
 import asyncio
 import hashlib
@@ -7,21 +9,22 @@ import os
 import tempfile
 import time
 from pathlib import Path
+from uuid import UUID
 
 from fastapi import Body, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse
 from pydantic import Field
 
-from ..core.models import Event, StrictModel
-from ..infra.media.cache import CachePolicy
-from ..persona.characters.performance import performance
-from .activity_filter import LivePoll
-from .avatar import LiveAvatar
-from .games.stardew_device import register_stardew_device
-from .media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
-from .music.online_songs import SongRequestSettings
-from .options import LiveOptions
-from .studio import room_feed
+from ...core.models import Event, StrictModel
+from ...live.activity_filter import LivePoll
+from ...live.avatar import LiveAvatar
+from ...live.games.stardew_device import DeviceCommand, create_stardew_device
+from ...live.media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
+from ...live.music.online_songs import SongRequestSettings
+from ...live.options import LiveOptions
+from ...live.studio import room_feed
+from ...persona.characters.performance import performance
+from .system import ERROR_RESPONSES
 
 
 class ConfirmSong(StrictModel):
@@ -29,29 +32,22 @@ class ConfirmSong(StrictModel):
     number: int = Field(ge=1, le=20, strict=True)
 
 
-def register_live_api(
-    app,
-    settings,
-    runtime,
-    require_admin,
-    admin_ok,
-    overlay_ok,
-    same_origin,
-    *,
-    web_page_renderer=None,
-    on_stardew_device=None,
-):
-    device = register_stardew_device(app, require_admin, on_device=on_stardew_device)
+def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None) -> None:
+    """Register all 38 `/api/v1/live/*` routes, live media routes, and `WS /ws/overlay`."""
+    device = create_stardew_device()
+    app.state.stardew_device = device
+    if device.directory and on_stardew_device is not None:
+        on_stardew_device(device)
     if getattr(runtime, "live_facade", None) is not None:
         runtime.live_facade.attach_stardew_device(device)
+
     media, store = runtime.live.media, runtime.store
     avatar = LiveAvatar(settings)
+    admin_dep = [Depends(auth.require_admin)]
+    view_dep = [Depends(auth.require_view)]
+    prefix = "/api/v1/live"
 
-    async def require_view(request: Request):
-        if not (admin_ok(request) or overlay_ok(request)):
-            raise HTTPException(401, "需要管理或播放器凭证")
-
-    def view(*, operator=False):
+    def view(*, operator: bool = False):
         queued = []
         for identity in runtime.live.queue:
             job = store.job(identity)
@@ -91,11 +87,17 @@ def register_live_api(
             "scene": media.scene(),
             "queue": queued,
             "events": list(reversed(events)),
-            "character": {"id": character["id"], "version": character["version"],
-                          "name": store.display_name(character["id"])},
+            "character": {
+                "id": character["id"],
+                "version": character["version"],
+                "name": store.display_name(character["id"]),
+            },
             "performance": show,
-            "lip_sync": {"provider": "ditto", "status": "tbd" if show["avatar_enabled"] else "off",
-                         "renderer": "pet" if show["pets_enabled"] else "none"},
+            "lip_sync": {
+                "provider": "ditto",
+                "status": "tbd" if show["avatar_enabled"] else "off",
+                "renderer": "pet" if show["pets_enabled"] else "none",
+            },
             "assets": settings.assets(character) if show["pets_enabled"] else [],
             "live2d": None,
             "playback": runtime.live.playback,
@@ -108,75 +110,7 @@ def register_live_api(
             "weather_attribution": bool(runtime.live.options().weather and not settings.data.get("commercial_mode")),
         }
 
-    @app.get("/live")
-    async def workbench(request: Request):
-        html = (Path(__file__).parents[1] / "web/live.html").read_text(encoding="utf-8")
-        return web_page_renderer(request, html) if web_page_renderer else HTMLResponse(html)
-
-    @app.get("/api/live/view", dependencies=[Depends(require_view)])
-    async def live_view(request: Request):
-        return view(operator=admin_ok(request))
-
-    @app.get("/api/live/studio", dependencies=[Depends(require_admin)])
-    async def live_studio():
-        return view(operator=True) | room_feed(runtime.live) | {
-            "live_enabled": settings.data.get("features", {}).get("live_enabled", False),
-            "inference_transitioning": False,
-        }
-
-    @app.get("/media/live2d/{group}/{relative:path}", dependencies=[Depends(require_view)])
-    async def live2d_file(group: str, relative: str):
-        try:
-            path = avatar.file(runtime.character["id"], group, relative)
-        except (OSError, KeyError, TypeError, ValueError, AttributeError):
-            raise HTTPException(404, "Live2D 文件未安装") from None
-        return FileResponse(path, headers={"Cache-Control": "private, max-age=60"})
-
-    @app.put("/api/live/scene", dependencies=[Depends(require_admin)])
-    async def save_scene(data: dict = Body(...)):
-        return media.save_scene(data)
-
-    @app.get("/api/live/scene/default", dependencies=[Depends(require_admin)])
-    async def reset_scene():
-        return default_scene()
-
-    @app.get("/api/live/music", dependencies=[Depends(require_admin)])
-    async def music():
-        return {
-            "settings": media.config(),
-            "songs": media.songs(),
-            "singing": media.singing.describe(runtime.character),
-        }
-
-    @app.put("/api/live/music", dependencies=[Depends(require_admin)])
-    async def save_music(data: MusicSettings):
-        return media.save_music_settings(data, runtime.character)
-
-    @app.put("/api/live/songs/{identity}", dependencies=[Depends(require_admin)])
-    async def save_song(identity: str, data: dict = Body(...)):
-        if data.get("id") != identity:
-            raise ValueError("歌曲ID不一致")
-        return await media.save_song(data)
-
-    @app.delete("/api/live/songs/{identity}", dependencies=[Depends(require_admin)])
-    async def remove_song(identity: str):
-        store.set("music_catalog", [song for song in media.songs() if song["id"] != identity])
-        return {"removed": identity}
-
-    @app.post("/api/live/uploads", dependencies=[Depends(require_admin)])
-    async def upload(request: Request):
-        try:
-            async with (
-                asyncio.timeout(90),
-                runtime.cache.write(
-                    "music", int(request.headers.get("content-length") or MAX_UPLOAD)
-                ) as allowed,
-            ):
-                return await receive_upload(request, allowed)
-        except TimeoutError:
-            raise ValueError("歌曲上传超过90秒，已取消并释放临时文件") from None
-
-    async def receive_upload(request, allowed):
+    async def receive_upload(request: Request, allowed: int):
         descriptor, name = tempfile.mkstemp(prefix=".upload-", dir=media.directory)
         temporary = Path(name)
         size, digest = 0, hashlib.sha256()
@@ -200,50 +134,103 @@ def register_live_api(
         finally:
             temporary.unlink(missing_ok=True)
 
-    @app.get("/media/music/{identity}", dependencies=[Depends(require_view)])
+    @app.get(prefix + "/view", dependencies=view_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def live_view(request: Request):
+        return view(operator=auth.admin_ok(request))
+
+    @app.get(prefix + "/studio", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def live_studio():
+        return (
+            view(operator=True)
+            | room_feed(runtime.live)
+            | {
+                "live_enabled": settings.data.get("features", {}).get("live_enabled", False),
+                "inference_transitioning": False,
+            }
+        )
+
+    @app.get("/media/live2d/{group}/{relative:path}", dependencies=view_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def live2d_file(group: str, relative: str):
+        try:
+            path = avatar.file(runtime.character["id"], group, relative)
+        except (OSError, KeyError, TypeError, ValueError, AttributeError):
+            raise HTTPException(404, "Live2D 文件未安装") from None
+        return FileResponse(path, headers={"Cache-Control": "private, max-age=60"})
+
+    @app.get("/media/music/{identity}", dependencies=view_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def music_file(identity: str):
         path = media.blob(identity)
         runtime.cache.touch(path)
         return FileResponse(path, media_type=MEDIA_TYPES[path.suffix])
 
-    @app.get("/api/cache", dependencies=[Depends(require_admin)])
-    async def cache_status():
-        return runtime.cache.status()
+    @app.put(prefix + "/scene", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def save_scene(data: dict = Body(...)):
+        return media.save_scene(data)
 
-    @app.put("/api/cache", dependencies=[Depends(require_admin)])
-    async def cache_policy(data: CachePolicy):
-        return await runtime.cache.configure(data.model_dump())
+    @app.get(prefix + "/scene/default", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def reset_scene():
+        return default_scene()
 
-    @app.post("/api/cache/{category}/clear", dependencies=[Depends(require_admin)])
-    async def clear_cache(category: str):
-        return {"result": await runtime.cache.clear(category), **runtime.cache.status()}
+    @app.get(prefix + "/music", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def music():
+        return {
+            "settings": media.config(),
+            "songs": media.songs(),
+            "singing": media.singing.describe(runtime.character),
+        }
 
-    @app.get("/api/live/online", dependencies=[Depends(require_admin)])
+    @app.put(prefix + "/music", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def save_music(data: MusicSettings):
+        return media.save_music_settings(data, runtime.character)
+
+    @app.put(prefix + "/songs/{identity}", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def save_song(identity: str, data: dict = Body(...)):
+        if data.get("id") != identity:
+            raise ValueError("歌曲ID不一致")
+        return await media.save_song(data)
+
+    @app.delete(prefix + "/songs/{identity}", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def remove_song(identity: str):
+        store.set("music_catalog", [song for song in media.songs() if song["id"] != identity])
+        return {"removed": identity}
+
+    @app.post(prefix + "/uploads", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def upload(request: Request):
+        try:
+            async with (
+                asyncio.timeout(90),
+                runtime.cache.write("music", int(request.headers.get("content-length") or MAX_UPLOAD)) as allowed,
+            ):
+                return await receive_upload(request, allowed)
+        except TimeoutError:
+            raise ValueError("歌曲上传超过90秒，已取消并释放临时文件") from None
+
+    @app.get(prefix + "/online", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def online_status():
         return runtime.live.online_songs.status()
 
-    @app.put("/api/live/online", dependencies=[Depends(require_admin)])
+    @app.put(prefix + "/online", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def configure_online(data: SongRequestSettings):
         return await runtime.live.online_songs.configure(data.model_dump())
 
-    @app.post("/api/live/online/restart", dependencies=[Depends(require_admin)])
+    @app.post(prefix + "/online/restart", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def restart_online():
         if not runtime.live.online_songs.config()["enabled"]:
             raise ValueError("请先启用在线点歌")
         return await runtime.live.online_songs.configure(runtime.live.online_songs.config(), restart=True)
 
-    @app.get("/api/live/online/search", dependencies=[Depends(require_admin)])
+    @app.get(prefix + "/online/search", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def online_search(q: str):
         if not q.strip() or len(q) > 100:
             raise ValueError("请输入100字以内的歌名／歌手")
         return {"songs": await runtime.live.online_songs.search(q)}
 
-    @app.post("/api/live/online/confirm", dependencies=[Depends(require_admin)])
+    @app.post(prefix + "/online/confirm", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def confirm_online(data: ConfirmSong):
         event, snapshot = runtime.live.online_songs.confirm(data.token, data.number)
         return await runtime.submit(event, online_snapshot=snapshot)
 
-    @app.put("/api/live/queue", dependencies=[Depends(require_admin)])
+    @app.put(prefix + "/queue", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def reorder(data: list[str] = Body(...)):
         if len(data) != len(set(data)) or set(data) != set(runtime.live.queue):
             raise ValueError("队列已改变，请刷新后重排完整待播队列")
@@ -251,112 +238,135 @@ def register_live_api(
         runtime.live.online_songs.sync()
         return {"queue": data}
 
-    @app.delete("/api/live/queue/{identity}", dependencies=[Depends(require_admin)])
+    @app.delete(prefix + "/queue/{identity}", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def remove_queued(identity: str):
         if identity not in runtime.live.queue:
             raise ValueError("该任务已开始或不在队列中")
         runtime.live.queue.remove(identity)
         job = store.job(identity)
         store.update_job(identity, status="cancelled", error="人工移除待播任务")
-        store.execute(
-            "UPDATE events SET status='cancelled',reason=? WHERE id=?", ("人工移除", job["event_id"])
-        )
+        store.execute("UPDATE events SET status='cancelled',reason=? WHERE id=?", ("人工移除", job["event_id"]))
         runtime.live.online_songs.sync()
         return {"removed": identity}
 
-    @app.post("/api/live/mock-event", dependencies=[Depends(require_admin)])
+    @app.post(prefix + "/mock-event", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def mock_event(event: Event):
         return await runtime.submit(event)
 
-    @app.get("/api/live/options", dependencies=[Depends(require_admin)])
+    @app.get(prefix + "/options", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def live_options():
         return runtime.live.options()
 
-    @app.put("/api/live/options", dependencies=[Depends(require_admin)])
+    @app.put(prefix + "/options", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def set_live_options(data: LiveOptions):
         return runtime.live.set_options(data)
 
-    @app.post("/api/live/poll/start", dependencies=[Depends(require_admin)])
+    @app.post(prefix + "/poll/start", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def start_poll(data: LivePoll):
         return runtime.live.start_poll(data)
 
-    @app.post("/api/live/poll/finish", dependencies=[Depends(require_admin)])
+    @app.post(prefix + "/poll/finish", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def finish_poll():
         return runtime.live.finish_poll()
 
-    @app.post("/api/live/{action}", dependencies=[Depends(require_admin)])
+    @app.post(prefix + "/{action}", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def control(action: str):
         return await runtime.control(action)
 
-    @app.get("/api/events", dependencies=[Depends(require_admin)])
+    @app.get(prefix + "/events", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def events(limit: int = Query(50, ge=1, le=200)):
         rows = store.all("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,))
         for row in rows:
             row["payload"] = json.loads(row["payload"])
         return rows
 
-    @app.get("/api/jobs", dependencies=[Depends(require_admin)])
+    @app.get(prefix + "/jobs", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def jobs(limit: int = Query(50, ge=1, le=200)):
         rows = store.all("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,))
         for row in rows:
             row.pop("playback_token", None)
         return rows
 
-    @app.get("/api/interactive-rules", dependencies=[Depends(require_admin)])
+    @app.get(prefix + "/interactive-rules", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def get_interactive_rules():
         return runtime.live.interactive_rules.get_rules().model_dump()
 
-    @app.put("/api/interactive-rules", dependencies=[Depends(require_admin)])
+    @app.put(prefix + "/interactive-rules", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def put_interactive_rules(data: dict = Body(...)):
         return runtime.live.interactive_rules.save_rules(data)
 
-    @app.get("/api/games/status", dependencies=[Depends(require_admin)])
+    @app.get(prefix + "/games/status", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def get_games_status():
         return runtime.live.game_livestream.status()
 
-    @app.post("/api/games/control", dependencies=[Depends(require_admin)])
+    @app.post(prefix + "/games/control", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def control_game(data: dict = Body(...)):
         return runtime.live.game_livestream.transfer_control(data.get("owner"))
 
-    @app.post("/api/games/switch", dependencies=[Depends(require_admin)])
+    @app.post(prefix + "/games/switch", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def switch_game(data: dict = Body(...)):
         target = data.get("game_id")
         if not target:
             raise ValueError("缺少 game_id")
         return runtime.live.game_livestream.switch_game(target, reason="主播后台手动切换")
 
-    @app.post("/api/games/action", dependencies=[Depends(require_admin)])
+    @app.post(prefix + "/games/action", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def execute_game_action(data: dict = Body(...)):
         action = data.get("action")
         if not action:
             raise ValueError("缺少 action")
         return runtime.live.game_livestream.manual_action(action, data.get("params"))
 
-    @app.post("/api/games/step", dependencies=[Depends(require_admin)])
+    @app.post(prefix + "/games/step", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def step_game():
         return runtime.live.game_livestream.step_game()
 
-    @app.get("/api/draw-and-guess/status", dependencies=[Depends(require_admin)])
+    @app.get(prefix + "/draw-and-guess/status", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def get_draw_and_guess_status():
         return runtime.live.draw_and_guess.get_overlay_state()
 
-    @app.post("/api/draw-and-guess/start", dependencies=[Depends(require_admin)])
+    @app.post(prefix + "/draw-and-guess/start", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def start_draw_and_guess(data: dict = Body(...)):
         user = data.get("trigger_user", "主播")
         duration = int(data.get("duration_sec", 60))
         return runtime.live.draw_and_guess.start_round(trigger_user=user, duration_sec=duration)
 
-    @app.post("/api/draw-and-guess/stop", dependencies=[Depends(require_admin)])
+    @app.post(prefix + "/draw-and-guess/stop", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def stop_draw_and_guess():
         return runtime.live.draw_and_guess.stop_round()
 
-    @app.get("/api/draw-and-guess/overlay")
+    @app.get(prefix + "/draw-and-guess/overlay", responses=ERROR_RESPONSES, tags=["live"])
     async def draw_and_guess_overlay_data():
-        return runtime.live.draw_and_guess.get_overlay_state() | {"character": store.display_name(runtime.character["id"])}
+        return runtime.live.draw_and_guess.get_overlay_state() | {
+            "character": store.display_name(runtime.character["id"])
+        }
+
+    @app.get(prefix + "/games/device/stardew", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    def stardew_state():
+        return device.status()
+
+    @app.post(prefix + "/games/device/stardew/actions", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    def stardew_submit(command: DeviceCommand):
+        try:
+            return device.submit(command)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get(
+        prefix + "/games/device/stardew/actions/{session}/{identity}",
+        dependencies=admin_dep,
+        responses=ERROR_RESPONSES,
+        tags=["live"],
+    )
+    def stardew_receipt(session: UUID, identity: UUID):
+        result = device.receipt(session, identity)
+        if result is None:
+            raise HTTPException(404, "没有这个实机会话的动作记录")
+        return result
 
     @app.websocket("/ws/overlay")
     async def overlay_ws(websocket: WebSocket):
-        if not same_origin(websocket) or not overlay_ok(websocket):
+        if not auth.same_origin(websocket) or not auth.overlay_ok(websocket):
             await websocket.close(code=1008)
             return
         await websocket.accept()

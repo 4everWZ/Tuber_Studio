@@ -62,7 +62,7 @@ async def studio(settings, monkeypatch):
     app.state.browsing.discovery.remember_account("900")
     store.set("message_policy", {"enabled": True})
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as owner:
-        path = "/api/agent/reply-selections"
+        path = "/api/v1/agent/reply-selections"
         assert (await owner.get(path)).status_code == 401
         owner.headers["Authorization"] = "Bearer test-owner"
         scope = (await owner.get(path)).json()

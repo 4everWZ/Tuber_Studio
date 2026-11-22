@@ -15,7 +15,7 @@ async def verify_chat_admission(client, runtime, device, port, token, deadline, 
         request_id = str(uuid4())
         turn = {"request_id": request_id, "message": quote}
         source = "turn:" + request_id
-        response = await client.post("/api/chat/intelligent", json=turn)
+        response = await client.post("/api/v1/agent/chat", json=turn)
         response.raise_for_status()
         receipts.append({"source": source, "owner_quote": quote, "expected": expected})
         record("cooperation_admission", receipts)

@@ -9,7 +9,7 @@ from uuid import UUID, uuid4, uuid5
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
-from fastapi import Depends, HTTPException
+from fastapi import HTTPException
 from pydantic import Field, model_validator
 
 from ...core.models import StrictModel
@@ -227,19 +227,7 @@ class GoalFollowups:
                     }, "completed" if success else "failed", steps, now)
 
 
-def register_goal_followups(app, tasks, require_admin):
+def attach_goal_followups(tasks):
+    """Attach scheduled goal follow-up manager onto tasks."""
     followups = tasks.followups = GoalFollowups(tasks)
-    path = "/api/agent/tasks/{identity}/goal/followup"
-    deps = [Depends(require_admin)]
-
-    @app.get(path, dependencies=deps)
-    async def get_followup(identity: UUID):
-        return followups.get(str(identity))
-
-    @app.put(path, dependencies=deps)
-    async def set_followup(identity: UUID, body: FollowupGrant):
-        return followups.configure(str(identity), body, time.time())
-
-    @app.delete(path, dependencies=deps)
-    async def disable_followup(identity: UUID):
-        return followups.disable(str(identity))
+    return followups

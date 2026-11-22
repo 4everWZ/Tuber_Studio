@@ -78,23 +78,23 @@ async def test_lower_limit_does_not_delete_or_commit_below_protected_sources(run
 def test_cache_api_scopes_shared_setting_and_music_hard_max(settings):
     app = create_app(settings)
     with TestClient(app) as client:
-        assert client.get("/api/cache").status_code == 401
-        client.post("/api/overlay/auth", json={"token": settings.overlay_token})
-        assert client.get("/api/cache").status_code == 401
-        client.post("/api/auth", json={"token": settings.admin_token})
-        assert client.get("/api/cache").json()["settings"]["music_limit_mib"] == 15360
-        assert client.put("/api/cache", json={"music_limit_mib": 15361}).status_code == 422
-        assert client.put("/api/cache", json={"music_limit_mib": 1024}).status_code == 200
-        assert client.get("/api/live/online").json()["settings"]["cache_limit_mib"] == 1024
-        assert client.post("/api/cache/not-a-directory/clear").status_code == 400
+        assert client.get("/api/v1/system/cache").status_code == 401
+        client.post("/api/v1/system/auth/overlay", json={"token": settings.overlay_token})
+        assert client.get("/api/v1/system/cache").status_code == 401
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
+        assert client.get("/api/v1/system/cache").json()["settings"]["music_limit_mib"] == 15360
+        assert client.put("/api/v1/system/cache", json={"music_limit_mib": 15361}).status_code == 422
+        assert client.put("/api/v1/system/cache", json={"music_limit_mib": 1024}).status_code == 200
+        assert client.get("/api/v1/live/online").json()["settings"]["cache_limit_mib"] == 1024
+        assert client.post("/api/v1/system/cache/not-a-directory/clear").status_code == 400
         assert CachePolicy().music_limit_mib * MIB == 15 * 1024**3
 
 
 def test_music_lru_access_preserves_etag_and_conditional_ranges(settings):
     with TestClient(create_app(settings)) as client:
-        client.post("/api/auth", json={"token": settings.admin_token})
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
         data = FIXTURE.read_bytes()
-        uploaded = client.post("/api/live/uploads", content=data).json()
+        uploaded = client.post("/api/v1/live/uploads", content=data).json()
         url = "/media/music/" + uploaded["id"]
         first = client.get(url)
         second = client.get(url, headers={"Range": "bytes=0-31", "If-Range": first.headers["etag"]})

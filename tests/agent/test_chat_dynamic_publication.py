@@ -7,7 +7,7 @@ import httpx
 import pytest
 from PIL import ImageFont
 
-from tests.support.agent_helpers import CHAT, turn, wait_status
+from tests.support.agent_helpers import CHAT, turn, until, wait_status
 from tests.support.agent_helpers import studio as studio
 from tuber_studio.agent.chat.lookup.dynamic_publication import PUBLICATION_TOOL
 from tuber_studio.core.identity import runtime_identity
@@ -17,7 +17,7 @@ REQUEST = "小鱼，把之前积压的站动态都发出去"
 PROGRESS = "你发完了吗"
 SMALLTALK = "今天真累"
 ACCOUNT = "12345"
-TASKS = "/api/agent/tasks/"
+TASKS = "/api/v1/agent/tasks/"
 
 
 async def configure_publication(runtime, monkeypatch, *, disconnect=False, mixed=True):
@@ -204,8 +204,13 @@ async def test_publish_interval_keeps_the_rest_of_the_confirmed_batch_pending(st
     path, data = await confirmation(runtime, client, await turn(client, REQUEST))
     (await client.patch(path, json={"revision": data["revision"], "step_id": data["step_id"], "action": "approve",
                                    "selected_ids": ids[:2]})).raise_for_status()
-    task = await wait_status(runtime.tasks, data["id"], "waiting")
-    assert "额度恢复后继续" in task["message"] and task["due"] > time.time() + 30
+    task = await until(
+        lambda: (cur := runtime.tasks.current(data["id"]))
+        and cur["status"] == "waiting"
+        and "额度恢复后继续" in cur["message"]
+        and cur
+    )
+    assert task["due"] > time.time() + 30
     assert writes == ["标题 A"] and len(runtime.tasks.activity()) == 1
     runtime.store.execute("UPDATE dynamic_posts SET attempted_at=? WHERE id=?", (time.time() - 90, ids[0]))
     runtime.tasks._save(task, due=0)

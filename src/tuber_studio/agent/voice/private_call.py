@@ -11,8 +11,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
-from fastapi import Depends, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from ...core.config import omni_base
@@ -139,117 +138,121 @@ def call_avatar(settings, character):
     return {"still": idle, "speaking": None, "fallback": idle}
 
 
-def register_private_call(app, runtime, require_admin, *, operator_chat=None):
-    recording_route = "/api/chat/private-call/recordings"
+RECORDING_ROUTE = "/api/v1/agent/private-call/recordings"
 
-    def recordings(character):
-        if character != runtime.character["id"] or not re.fullmatch("[a-zA-Z0-9_-]+", character):
-            return {}
-        base = runtime.settings.runtime / "private-call-previews" / character
-        if base.is_symlink() or base.parent.is_symlink():
-            return {}
-        files = {}
-        for profile in ("mature", "q"):
-            path = base / (profile + ".mp4")
-            if path.is_file() and not path.is_symlink():
-                files[profile] = path
-        return files
 
-    @app.get("/api/chat/private-call", dependencies=[Depends(require_admin)])
-    async def availability():
-        character = runtime.character["id"]
-        result = {"configured": private_service(runtime.settings) is not None,
-                  "character": runtime.store.display_name(character)}
-        if profiles := recordings(character):
-            result["recordings"] = {p: f"{recording_route}/{character}/{p}.mp4" for p in profiles}
-        return result
+def call_recordings(runtime, character):
+    """Return available private-call preview recordings keyed by profile."""
+    if character != runtime.character["id"] or not re.fullmatch("[a-zA-Z0-9_-]+", character):
+        return {}
+    base = runtime.settings.runtime / "private-call-previews" / character
+    if base.is_symlink() or base.parent.is_symlink():
+        return {}
+    files = {}
+    for profile in ("mature", "q"):
+        path = base / (profile + ".mp4")
+        if path.is_file() and not path.is_symlink():
+            files[profile] = path
+    return files
 
-    @app.get(recording_route + "/{character}/{profile}.mp4", dependencies=[Depends(require_admin)])
-    async def recording(character: str, profile: str):
-        path = recordings(character).get(profile)
-        if path is None:
-            raise HTTPException(404, "当前角色没有这段通话实录")
-        return FileResponse(path, media_type="video/mp4")
 
-    async def read_voice(character):
-        try:
-            voice = runtime.settings.voice(character["voice_profile"])
-            reference = await asyncio.to_thread(runtime.voices._read_reference, voice)
-        except (OSError, ValueError):
-            raise HTTPException(409, "当前音色缺少实时参考录音，请在角色卡中选择可用音色。") from None
-        return voice, reference
+def call_availability(runtime):
+    """Return private-call readiness and available preview recording URLs."""
+    character = runtime.character["id"]
+    result = {
+        "configured": private_service(runtime.settings) is not None,
+        "character": runtime.store.display_name(character),
+    }
+    if profiles := call_recordings(runtime, character):
+        result["recordings"] = {p: f"{RECORDING_ROUTE}/{character}/{p}.mp4" for p in profiles}
+    return result
 
-    @app.get("/api/chat/private-call/reference", dependencies=[Depends(require_admin)])
-    async def call_reference():
-        _, reference = await read_voice(runtime.character)
-        return Response(reference, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
-    @app.post("/api/chat/private-call/ticket", dependencies=[Depends(require_admin)])
-    async def create_ticket(request: Request, options: CallOptions = CallOptions()):
-        service = private_service(runtime.settings)
-        if service is None:
-            raise HTTPException(503, "尚未配置可用的 Omni 私聊连接")
-        origin, token = service
-        grant = runtime.tasks.scope()
-        character = runtime.character
-        voice, reference = await read_voice(character)
-        try:
-            ticket = await mint_ticket(origin, token)
-        except httpx.HTTPStatusError as error:
-            if error.response.status_code == 429:
-                raise HTTPException(429, "语音服务繁忙，请稍后重试") from None
-            raise HTTPException(502, "语音服务未签发私聊票据，请核对应用凭据与服务地址") from None
-        except (httpx.RequestError, ValueError):
-            raise HTTPException(502, "私聊语音服务不可用") from None
-        if runtime.tasks.scope() != grant or private_service(runtime.settings) != service:
-            raise HTTPException(409, "角色、授权或 Omni 连接已变化，请重新开始通话")
-        topic = "" if options.temporary else options.topic.strip()
-        inherited = not options.temporary and not topic and options.topic_turn is not None
-        if inherited:
-            topic = inherited_topic(runtime, options.topic_turn)
-        shared = shared_call_facts(runtime, operator_chat, options.topic_turn) if inherited else []
-        rows = private_rows(runtime, topic) if topic else []
-        topic_source = None
-        if inherited and (rows or shared):
-            topic_source = {"turn_id": options.topic_turn, "history_revision": history_preference(runtime)["history_revision"],
-                            "topic_stamp": content_hash(topic) if rows else None,
-                            **({"shared_stamp": content_hash(shared)} if shared else {})}
-        # A retained headline or source quote may contain the superseded preference.
-        notes = [row["anecdote"] for row in rows]
-        instructions = [persona_instructions(character), private_participant_instructions(
-            character, operating_account=operating_account_facts(runtime.account.status()))]
-        if notes:
-            instructions.append("与本次私聊话题有关的记忆资料：" + dump(notes))
-        if shared:
-            instructions.append("接通时的工作台状态：" + dump(shared))
-        instruction_text = "\n".join(instructions)
-        # The deployed gateway supports an 8 MiB realtime message. Account for
-        # the encoded reference, role instructions and session.update envelope.
-        encoded_bytes = 4 * ((len(reference) + 2) // 3)
-        if encoded_bytes + len(dump({"instructions": instruction_text}).encode()) + 512 > 8 * 1024 * 1024:
-            raise HTTPException(409, "参考录音超过实时网关的单条消息大小，请在角色卡中更换音色。")
-        show = performance(runtime.store)
-        socket_origin = browser_socket_origin(origin)
-        request_origin = f"{'wss' if request.url.scheme == 'https' else 'ws'}://{request.url.netloc}"
-        socket_prefix = request.scope.get("root_path", "").rstrip("/") if socket_origin == request_origin else ""
-        return {
-            "socket": socket_origin + socket_prefix + "/v1/realtime",
-            "ticket": ticket,
-            "voice_context": ticket_context(token, ticket, grant) if not options.temporary else None,
-            "call_scope": content_hash(grant),
-            "character": runtime.store.display_name(character["id"]),
-            "voice": {
-                "id": voice["id"], "name": voice["name"],
-                "reference_sha256": hashlib.sha256(reference).hexdigest(),
-            },
-            "performance": show,
-            "avatar": call_avatar(runtime.settings, character) if show["pets_enabled"] else {
-                "still": None, "speaking": None, "fallback": None,
-            },
-            "memory_citations": [citation(row) for row in rows],
-            "correction_targets": [row["id"] for row in rows if correctable_preference(row, runtime.daily_memory.private_owner)],
-            "memory_use": {"ids": [row["id"] for row in rows], "stamp": read_stamp(runtime, rows)}
-            if rows or topic_source else None,
-            **({"topic_source": topic_source} if topic_source else {}),
-            "instructions": instruction_text,
+async def read_call_voice(runtime, character):
+    """Load the active character's reference WAV bytes for realtime voice setup."""
+    try:
+        voice = runtime.settings.voice(character["voice_profile"])
+        reference = await asyncio.to_thread(runtime.voices._read_reference, voice)
+    except (OSError, ValueError):
+        raise HTTPException(409, "当前音色缺少实时参考录音，请在角色卡中选择可用音色。") from None
+    return voice, reference
+
+
+async def create_call_ticket(request_origin: str, root_path: str, runtime, operator_chat, options: CallOptions):
+    """Mint a realtime Omni ticket and assemble scoped voice call instructions."""
+    service = private_service(runtime.settings)
+    if service is None:
+        raise HTTPException(503, "尚未配置可用的 Omni 私聊连接")
+    origin, token = service
+    grant = runtime.tasks.scope()
+    character = runtime.character
+    voice, reference = await read_call_voice(runtime, character)
+    try:
+        ticket = await mint_ticket(origin, token)
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code == 429:
+            raise HTTPException(429, "语音服务繁忙，请稍后重试") from None
+        raise HTTPException(502, "语音服务未签发私聊票据，请核对应用凭据与服务地址") from None
+    except (httpx.RequestError, ValueError):
+        raise HTTPException(502, "私聊语音服务不可用") from None
+    if runtime.tasks.scope() != grant or private_service(runtime.settings) != service:
+        raise HTTPException(409, "角色、授权或 Omni 连接已变化，请重新开始通话")
+    topic = "" if options.temporary else options.topic.strip()
+    inherited = not options.temporary and not topic and options.topic_turn is not None
+    if inherited:
+        topic = inherited_topic(runtime, options.topic_turn)
+    shared = shared_call_facts(runtime, operator_chat, options.topic_turn) if inherited else []
+    rows = private_rows(runtime, topic) if topic else []
+    topic_source = None
+    if inherited and (rows or shared):
+        topic_source = {
+            "turn_id": options.topic_turn,
+            "history_revision": history_preference(runtime)["history_revision"],
+            "topic_stamp": content_hash(topic) if rows else None,
+            **({"shared_stamp": content_hash(shared)} if shared else {}),
         }
+    # A retained headline or source quote may contain the superseded preference.
+    notes = [row["anecdote"] for row in rows]
+    instructions = [
+        persona_instructions(character),
+        private_participant_instructions(
+            character, operating_account=operating_account_facts(runtime.account.status())
+        ),
+    ]
+    if notes:
+        instructions.append("与本次私聊话题有关的记忆资料：" + dump(notes))
+    if shared:
+        instructions.append("接通时的工作台状态：" + dump(shared))
+    instruction_text = "\n".join(instructions)
+    # The deployed gateway supports an 8 MiB realtime message. Account for
+    # the encoded reference, role instructions and session.update envelope.
+    encoded_bytes = 4 * ((len(reference) + 2) // 3)
+    if encoded_bytes + len(dump({"instructions": instruction_text}).encode()) + 512 > 8 * 1024 * 1024:
+        raise HTTPException(409, "参考录音超过实时网关的单条消息大小，请在角色卡中更换音色。")
+    show = performance(runtime.store)
+    socket_origin = browser_socket_origin(origin)
+    socket_prefix = root_path.rstrip("/") if socket_origin == request_origin else ""
+    return {
+        "socket": socket_origin + socket_prefix + "/v1/realtime",
+        "ticket": ticket,
+        "voice_context": ticket_context(token, ticket, grant) if not options.temporary else None,
+        "call_scope": content_hash(grant),
+        "character": runtime.store.display_name(character["id"]),
+        "voice": {
+            "id": voice["id"],
+            "name": voice["name"],
+            "reference_sha256": hashlib.sha256(reference).hexdigest(),
+        },
+        "performance": show,
+        "avatar": call_avatar(runtime.settings, character) if show["pets_enabled"] else {
+            "still": None, "speaking": None, "fallback": None,
+        },
+        "memory_citations": [citation(row) for row in rows],
+        "correction_targets": [
+            row["id"] for row in rows if correctable_preference(row, runtime.daily_memory.private_owner)
+        ],
+        "memory_use": {"ids": [row["id"] for row in rows], "stamp": read_stamp(runtime, rows)}
+        if rows or topic_source else None,
+        **({"topic_source": topic_source} if topic_source else {}),
+        "instructions": instruction_text,
+    }

@@ -110,7 +110,7 @@ class PetAppearances:
                 continue
             asset.pop("path")
             if _attributed(asset):
-                items.append(asset | {"preview_url": f"/api/memes/{row['asset_id']}/preview",
+                items.append(asset | {"preview_url": f"/api/v1/persona/memes/{row['asset_id']}/preview",
                                       "style": "档案馆投稿" if asset["source"]["kind"] == "licensed_pack" else "Q版全身",
                                       "is_default": False})
         return items

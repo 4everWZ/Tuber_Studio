@@ -21,7 +21,7 @@ import uvicorn
 from playwright.async_api import async_playwright
 
 from evaluations.agent.omni_chat_loop import ROOT, connection
-from evaluations.browser_login import fill_private_login
+from evaluations.operations.browser_login import fill_private_login
 from tuber_studio.app import create_app
 from tuber_studio.core.config import Settings
 
@@ -137,7 +137,7 @@ async def exercise(
         await page.locator("#operator-chat-more-toggle").click()
         await page.locator("#private-call-open").click()
         choices = await page.evaluate("""async () => {
-            const response = await fetch('/api/chat/private-call/avatars');
+            const response = await fetch('/api/v1/agent/private-call/avatars');
             if (!response.ok) throw Error('Profile lookup: HTTP ' + response.status);
             return response.json();
         }""")
@@ -212,7 +212,7 @@ async def exercise(
         page.on("websocket", socket_open)
         try:
             async with page.expect_response(
-                lambda r: r.url.endswith("/api/chat/private-call/avatars") and r.request.method == "POST"
+                lambda r: r.url.endswith("/api/v1/agent/private-call/avatars") and r.request.method == "POST"
             ) as attachment:
                 await page.locator("#private-call-start").click()
             bound = await attachment.value

@@ -87,10 +87,10 @@ async def test_chat_and_dynamic_use_same_older_sources_after_scoped_search(studi
     assert set(recalled["tool_receipt"]["values"]["source_ids"]) == expected
     assert any(entry["href"].endswith("?p=2&t=19") for group in recalled["sources"] for entry in group["entries"])
     assert (await dynamics.evaluate(manual=True, topic="鲸鱼"))["action"] == "wait"
-    shown = (await client.get("/api/dynamics/materials")).raise_for_status().json()
+    shown = (await client.get("/api/v1/operations/dynamics/materials")).raise_for_status().json()
     assert {item["id"] for item in shown["sources"]} == expected
     runtime.browsing.discovery.remember_account("65432")
-    assert (await client.get("/api/dynamics/materials")).json()["sources"] == []
+    assert (await client.get("/api/v1/operations/dynamics/materials")).json()["sources"] == []
     assert ORIGINAL not in (await client.get(CHAT)).text
 
 
@@ -123,7 +123,7 @@ async def test_private_preference_only_resolves_in_owner_chat_and_revokes(studio
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", omni, raising=False)
     result = await turn(client, "还记得我喜欢什么标题吗？")
     assert result["reply_text"] == text and result["tool_receipt"]["values"]["source_ids"] == [key]
-    (await client.delete(f"/api/daily-memory/organized/{memory_id}")).raise_for_status()
+    (await client.delete(f"/api/v1/persona/daily-memory/organized/{memory_id}")).raise_for_status()
     assert search(dynamics, query, private=True)["items"] == []
     assert text not in (await client.get(CHAT)).text
 

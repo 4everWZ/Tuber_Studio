@@ -71,7 +71,7 @@ async def test_private_anonymous_video_uses_only_requested_part(settings, monkey
             tasks._save(task, steps=[step])
             monkeypatch.setenv("TUBER_ADMIN_TOKEN", "fixture-owner")
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as device:
-                path = f"/api/agent/tasks/{task['id']}/clips/{request.id}"
+                path = f"/api/v1/agent/tasks/{task['id']}/clips/{request.id}"
                 assert (await device.get(path)).status_code == 401
                 device.headers["Authorization"] = "Bearer fixture-owner"
                 assert (await device.get(path)).content == b"fixture clip bytes"
@@ -89,7 +89,7 @@ async def test_private_anonymous_video_uses_only_requested_part(settings, monkey
                     raise ValueError("引用的记忆已撤回")
 
                 monkeypatch.setattr(tasks, "_validate_reads", revoked)
-                assert not (await device.get(f"/api/agent/tasks/{task['id']}")).json()["steps"]
+                assert not (await device.get(f"/api/v1/agent/tasks/{task['id']}")).json()["steps"]
                 assert (await device.get(path)).status_code == 404
     finally:
         app.state.store.close()

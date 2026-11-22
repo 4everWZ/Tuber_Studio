@@ -24,7 +24,7 @@ def test_owner_can_replace_preview_and_restore_without_changing_existing_job(set
         path = f"{PREFIX}/whale/q"
         assert client.get(path).status_code == 401
         assert client.put(path, content=upload).status_code == 401
-        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
         app.state.store.save_character(app.state.store.character() | {"id": "another", "name": "另一个角色"})
         assert client.get(path).content == default
         assert client.get(f"{PREFIX}/another/q").status_code == 404

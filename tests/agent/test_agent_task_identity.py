@@ -100,7 +100,7 @@ async def test_authenticated_owner_reads_after_key_rotation_without_platform_loo
     monkeypatch.setenv("TUBER_ADMIN_TOKEN", "test-key-before")
     app = create_app(settings)
     transport = httpx.ASGITransport(app=app, client=("192.0.2.1", 9000))
-    endpoint = "/api/agent/tasks"
+    endpoint = "/api/v1/agent/tasks"
     identity = str(uuid4())
     async with httpx.AsyncClient(transport=transport, base_url="http://studio.test") as client:
         assert (await client.get(endpoint)).status_code == 401

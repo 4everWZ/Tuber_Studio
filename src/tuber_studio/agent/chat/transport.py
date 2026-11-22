@@ -1,23 +1,20 @@
-"""HTTP/SSE transport, turn orchestration, push-back delivery and route registration (L1)."""
+"""HTTP/SSE transport, turn orchestration and push-back delivery (L1)."""
 
 import asyncio
 import json
 import logging
 import time
-from typing import Literal
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 from anyio import CancelScope
-from fastapi import Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import HTTPException
 
 from ...core.identity import operating_account_facts
 from ...core.sse import encode_event
 from ...core.store import dump
 from ...persona.context.message_builder import build_messages
 from ..memory_organizer.owner_memory import private_rows
-from ..memory_organizer.writer import connect_private_writer
 from ..tasks.history import history_preference, reason_reply, select_reason_lines
 from . import front_dialogue
 from . import router as turn_router
@@ -34,8 +31,6 @@ from .models import (
     _TASK_CONTROLS,
     _TASK_REFERENCE_ACTIONS,
     ChatIntent,
-    ChatTurn,
-    ControlConfirmation,
     PendingChat,
     chat_model_provider,
     verify_call,
@@ -678,75 +673,3 @@ class ChatTransport:
                 yield encode_event("delivery", visible)
         finally:
             self.unsubscribe_deliveries(queue)
-
-
-def register_chat_routes(app, service, require_admin):
-    """Mount operator chat REST and SSE routes onto FastAPI."""
-    connect_private_writer(service.runtime)
-    deps = [Depends(require_admin)]
-
-    @app.get("/api/chat/intelligent", dependencies=deps)
-    async def history(limit: int = Query(20, ge=1, le=100), before: UUID | None = None):
-        return service.history(limit, str(before) if before else None)
-
-    @app.get("/api/chat/intelligent/events", dependencies=deps)
-    async def delivery_events():
-        return StreamingResponse(
-            service.transport.delivery_events(),
-            media_type="text/event-stream",
-            headers={"X-Accel-Buffering": "no"},
-        )
-
-    @app.get("/api/chat/intelligent/turns/{request_id}", dependencies=deps)
-    async def get_turn(request_id: UUID):
-        return service.visible_turn(service.current_turn(str(request_id), read_only=True))
-
-    @app.get("/api/chat/intelligent/turns/{request_id}/inspection-image", dependencies=deps)
-    async def inspection_image(request_id: UUID):
-        return service.inspection_image(str(request_id))
-
-    @app.get("/api/chat/intelligent/turns/{request_id}/artifact", dependencies=deps)
-    async def cited_artifact(request_id: UUID):
-        turn = service.visible_turn(service.current_turn(str(request_id), read_only=True))
-        card = turn.get("card") or {}
-        if card.get("type") != "history_artifact":
-            raise HTTPException(404, "当前无法引用这份成果")
-        return service.task_history.read(turn["task_reference"], card["data"])["delivery"]
-
-    @app.post("/api/chat/intelligent/turns/{request_id}/cancel-video", dependencies=deps)
-    async def cancel_video(request_id: UUID):
-        return await service.update_video(str(request_id), resume=False)
-
-    @app.post("/api/chat/intelligent/turns/{request_id}/resume-video", dependencies=deps)
-    async def resume_video(request_id: UUID):
-        return await service.update_video(str(request_id), resume=True)
-
-    @app.post("/api/chat/intelligent", dependencies=deps)
-    async def send(data: ChatTurn):
-        return await service.send(data)
-
-    @app.post("/api/chat/intelligent/stream", dependencies=deps)
-    async def stream(data: ChatTurn):
-        return StreamingResponse(
-            service.stream(data),
-            media_type="text/event-stream",
-            headers={"X-Accel-Buffering": "no"},
-        )
-
-    @app.post("/api/chat/intelligent/turns/{request_id}/stop-generation", dependencies=deps)
-    async def stop_generation(request_id: UUID):
-        return service.stop_generation(str(request_id))
-
-    @app.post("/api/chat/intelligent/turns/{request_id}/confirm/{action}", dependencies=deps)
-    async def confirm(request_id: UUID, action: Literal["start", "save", "live"], data: ControlConfirmation):
-        return await service.confirm_control(str(request_id), action, data)
-
-    @app.post("/api/chat/intelligent/turns/{request_id}/refresh-confirmation", dependencies=deps)
-    async def refresh_confirmation(request_id: UUID):
-        return await service.refresh_confirmation(str(request_id))
-
-    @app.delete("/api/chat/intelligent", dependencies=deps)
-    async def clear():
-        return await service.clear()
-
-    return service

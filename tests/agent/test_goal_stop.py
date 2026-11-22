@@ -7,8 +7,8 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from tuber_studio.agent.api.tasks import register_task_api
 from tuber_studio.agent.tasks.runtime import TaskRuntime, Tool
+from tuber_studio.app.routes.agent_tasks import register_task_routes
 from tuber_studio.core.models import StrictModel
 from tuber_studio.core.store import Store
 
@@ -24,8 +24,8 @@ async def test_confirmed_goal_stop_closes_admission_and_preserves_other_scopes_a
     root = new(tasks, "直播提纲")
     tasks.workspace.promote(tasks.current(root))
     app = FastAPI()
-    register_task_api(app, tasks, lambda: None)
-    path = f"/api/agent/tasks/{root}"
+    register_task_routes(app, tasks, lambda: None)
+    path = f"/api/v1/agent/tasks/{root}"
     delivered = new(tasks, "已交付", root)
     tasks._save(tasks.current(delivered), status="completed", message="原版提纲")
     tasks.workspace.edit(tasks.current(delivered), 1, 1, "号主修订版")
@@ -49,7 +49,7 @@ async def test_confirmed_goal_stop_closes_admission_and_preserves_other_scopes_a
             assert result.json()["creative_goal"]["closed"] and not result.json()["can_control"]
         for identity in (root, child, delivered):
             task = tasks.current(identity)
-            result = await client.patch(f"/api/agent/tasks/{identity}", json={
+            result = await client.patch(f"/api/v1/agent/tasks/{identity}", json={
                 "action": "steer", "revision": task["revision"], "goal": "继续",
             })
             assert result.status_code == 409

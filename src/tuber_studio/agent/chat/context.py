@@ -783,7 +783,7 @@ class ChatContext:
             if (artifact and artifact["task_revision"] == delivery["revision"]
                     and self.runtime.tasks.edition_recallable(task["id"], artifact["task_revision"])):
                 artifact_link = (
-                    f"/api/agent/tasks/{task['id']}/artifacts/"
+                    f"/api/v1/agent/tasks/{task['id']}/artifacts/"
                     f"{artifact['task_revision']}/{artifact['edition']}?download=true"
                 )
             sources = recall_memory.delivery_citations(view["steps"], (task["plan"] or {}).get("selected", {}))

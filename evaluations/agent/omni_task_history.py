@@ -23,8 +23,8 @@ from tuber_studio.app import create_app
 from tuber_studio.core.authority import acquire_business_writer
 from tuber_studio.core.config import Settings
 
-CHAT = "/api/chat/intelligent"
-PREF = "/api/daily-memory/preferences"
+CHAT = "/api/v1/agent/chat"
+PREF = "/api/v1/persona/daily-memory/preferences"
 QUESTION = "我上次为什么选那段？"
 ORIGINAL = "**开场片段**\n选材理由：两声木鱼之间留出了报幕的节拍，主持人正好能在这里念出节目名。\n来源：<https://archive.example/opening>"
 EDIT = "号主后续编辑：本版只保留尾声占位。"
@@ -86,7 +86,7 @@ async def exercise(directory, root, token, env):
             return lease
 
         # Hold the ordinary writer lock and release it at teardown without starting schedulers.
-        with patch("tuber_studio.app.acquire_business_writer", writer):
+        with patch("tuber_studio.app.factory.acquire_business_writer", writer):
             app = create_app(settings)
         runtime = app.state.runtime
         # ASGITransport leaves the business lifespan and every scheduler stopped.
@@ -97,19 +97,19 @@ async def exercise(directory, root, token, env):
             transport=httpx.ASGITransport(app, client=("192.0.2.1", 3000)), base_url="http://studio.example",
             trust_env=False))
         require((await client.get(PREF)).status_code == 401, "authenticated_entry")
-        (await client.post("/api/auth", json={"token": login})).raise_for_status()
+        (await client.post("/api/v1/system/auth/login", json={"token": login})).raise_for_status()
 
         task_id = str(uuid4())
         task = runtime.tasks.create(task_id, "为下次节目留一段开场素材")
         with runtime.store.db as db:
             runtime.tasks.workspace.record_delivery(db, task, ORIGINAL)
-        (await client.patch(f"/api/agent/tasks/{task_id}/artifact",
+        (await client.patch(f"/api/v1/agent/tasks/{task_id}/artifact",
                             json={"task_revision": 1, "edition": 1, "body": EDIT})).raise_for_status()
         for index in range(51):
             runtime.tasks.create(str(uuid4()), f"清点备用素材 {index + 1}")
         runtime.browsing.discovery.remember_account("history-replay-owner")
         require(runtime.tasks.current(task_id) and not runtime.tasks.executable(task_id), "read_only_scope")
-        require(task_id not in [t["id"] for t in (await client.get("/api/agent/tasks")).json()["tasks"]], "outside_activity")
+        require(task_id not in [t["id"] for t in (await client.get("/api/v1/agent/tasks")).json()["tasks"]], "outside_activity")
 
         async def ask(question=QUESTION):
             identity = str(uuid4())

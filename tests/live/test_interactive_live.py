@@ -19,7 +19,7 @@ def client(settings):
     app = create_app(settings, ReadOnlyPlatform())
     with TestClient(app) as test_client:
         # Authenticate
-        res = test_client.post("/api/auth", json={"token": settings.admin_token})
+        res = test_client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
         assert res.status_code == 200
         yield test_client
 
@@ -52,7 +52,7 @@ async def test_live_reply_uses_only_current_trusted_scene(settings, monkeypatch)
 
 
 def test_api_interactive_rules(client):
-    res = client.get("/api/interactive-rules")
+    res = client.get("/api/v1/live/interactive-rules")
     assert res.status_code == 200
     data = res.json()
     assert "song_request" in data
@@ -62,52 +62,52 @@ def test_api_interactive_rules(client):
     # Update rules
     data["song_request"]["mode"] = "gift_only"
     data["song_request"]["min_coin"] = 25
-    put_res = client.put("/api/interactive-rules", json=data)
+    put_res = client.put("/api/v1/live/interactive-rules", json=data)
     assert put_res.status_code == 200
     assert put_res.json()["song_request"]["mode"] == "gift_only"
     assert put_res.json()["song_request"]["min_coin"] == 25
 
 
 def test_api_games_management(client):
-    res = client.get("/api/games/status")
+    res = client.get("/api/v1/live/games/status")
     assert res.status_code == 200
     data = res.json()
     assert data["active_game_id"] == "stardew_valley"
     assert "星露谷物语" in data["active_status"]["summary"]
 
     # Switch game
-    sw_res = client.post("/api/games/switch", json={"game_id": "pvz"})
+    sw_res = client.post("/api/v1/live/games/switch", json={"game_id": "pvz"})
     assert sw_res.status_code == 200
     assert sw_res.json()["current_game_id"] == "pvz"
     assert "植物大战僵尸" in sw_res.json()["spoken_text"]
 
     # Execute action
-    act_res = client.post("/api/games/action", json={"action": "plant_sunflower"})
+    act_res = client.post("/api/v1/live/games/action", json={"action": "plant_sunflower"})
     assert act_res.status_code == 200
     assert act_res.json()["success"] is True
 
     # Step game
-    step_res = client.post("/api/games/step")
+    step_res = client.post("/api/v1/live/games/step")
     assert step_res.status_code == 200
 
 
 def test_api_draw_and_guess(client):
-    res = client.get("/api/draw-and-guess/status")
+    res = client.get("/api/v1/live/draw-and-guess/status")
     assert res.status_code == 200
 
     # Start round
-    start_res = client.post("/api/draw-and-guess/start", json={"trigger_user": "小强", "duration_sec": 45})
+    start_res = client.post("/api/v1/live/draw-and-guess/start", json={"trigger_user": "小强", "duration_sec": 45})
     assert start_res.status_code == 200
     assert start_res.json()["status"] == "started"
     assert "小强" in start_res.json()["spoken_text"]
 
     # Check status
-    st_res = client.get("/api/draw-and-guess/status")
+    st_res = client.get("/api/v1/live/draw-and-guess/status")
     assert st_res.status_code == 200
     assert st_res.json()["active"] is True
 
     # Stop round
-    stop_res = client.post("/api/draw-and-guess/stop")
+    stop_res = client.post("/api/v1/live/draw-and-guess/stop")
     assert stop_res.status_code == 200
     assert stop_res.json()["status"] == "stopped"
 

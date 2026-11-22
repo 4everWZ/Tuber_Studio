@@ -113,7 +113,7 @@ async def test_external_selection_and_sample_never_impersonate_reference(setting
 def test_preview_returns_real_sample_or_verified_omni_audio_and_redacts_errors(settings, gateway):
     calls, state = gateway
     with TestClient(create_app(settings), headers={"Authorization": "Bearer " + settings.admin_token}) as client:
-        route = "/api/tts/preview"
+        route = "/api/v1/persona/voices/preview"
         sample = settings.voice("whale_sample_v1")
         for text in ("播放指定样音。", ""):
             resp = client.post(route, json={"voice_id": sample["id"], "text": text})
@@ -125,7 +125,7 @@ def test_preview_returns_real_sample_or_verified_omni_audio_and_redacts_errors(s
         assert not calls
 
         resp = client.post(route, json={"voice_id": "yaoyao_reference", "text": "瑶瑶试听。"})
-        assert resp.status_code == 400 and "参考录音缺失" in resp.json()["detail"]
+        assert resp.status_code == 400 and "参考录音缺失" in resp.json()["message"]
         assert not calls
 
         assert settings.data["voice_id"] == "whale_reference"
@@ -134,5 +134,5 @@ def test_preview_returns_real_sample_or_verified_omni_audio_and_redacts_errors(s
         assert calls == [("语音试听。", settings.asset_path("assets/whale/ref.wav").read_bytes())]
         state.update(status=401, audio=b"private-upstream-details")
         resp = client.post(route, json={"voice_id": "whale_reference", "text": "新的试听。"})
-        assert resp.status_code == 502 and "HTTP 401" in resp.json()["detail"]
+        assert resp.status_code == 502 and "HTTP 401" in resp.json()["message"]
         assert "private-upstream-details" not in resp.text and "test-omni-key" not in resp.text

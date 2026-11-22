@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from evaluations.live_operations_evidence import collect, has_comment_receipt, tally_reviews
+from evaluations.operations.live_operations_evidence import collect, has_comment_receipt, tally_reviews
 from tuber_studio.operations.kernel.continuations import ContinuationCoordinator
 from tuber_studio.operations.kernel.control import OperationsControl
 from tuber_studio.operations.kernel.repository import BrowsingRepository

@@ -17,7 +17,7 @@ if (-not $Config) {
     else { $Config = Join-Path $Data 'studio.json' }
 }
 $Config = (Resolve-Path -LiteralPath $Config).Path
-if (-not (Test-Path -LiteralPath (Join-Path $Source 'src/tuber_studio/app.py'))) {
+if (-not (Test-Path -LiteralPath (Join-Path $Source 'src/tuber_studio/app/factory.py'))) {
     throw 'Source must be the Tuber Studio program directory'
 }
 if (-not (Test-Path -LiteralPath (Join-Path $Data 'studio.sqlite3'))) {

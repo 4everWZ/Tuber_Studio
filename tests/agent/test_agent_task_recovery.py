@@ -6,7 +6,6 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from tuber_studio.agent.api.tasks import register_task_api
 from tuber_studio.agent.tasks.runtime import (
     PlannedStep,
     ReceiptCondition,
@@ -16,6 +15,7 @@ from tuber_studio.agent.tasks.runtime import (
     Tool,
     ToolWait,
 )
+from tuber_studio.app.routes.agent_tasks import register_task_routes
 from tuber_studio.core.models import StrictModel
 from tuber_studio.core.store import Store
 from tuber_studio.infra.inference.http_api import response_json
@@ -100,20 +100,20 @@ async def test_create_conflict_returns_http_conflict_without_exposing_previous_t
     app = FastAPI()
     scope = ["owner"]
     runtime = TaskRuntime(store, lambda: scope, None)
-    register_task_api(app, runtime, lambda: None)
+    register_task_routes(app, runtime, lambda: None)
     identity = str(uuid4())
     try:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://agent.test") as client:
             body = {"request_id": identity, "goal": "旧要求"}
-            created = await client.post("/api/agent/tasks", json=body)
+            created = await client.post("/api/v1/agent/tasks", json=body)
             assert created.status_code == 200
-            retried = await client.post("/api/agent/tasks", json=body)
+            retried = await client.post("/api/v1/agent/tasks", json=body)
             assert retried.json() == created.json()
-            conflict = await client.post("/api/agent/tasks", json=body | {"goal": "新要求"})
+            conflict = await client.post("/api/v1/agent/tasks", json=body | {"goal": "新要求"})
             assert conflict.status_code == 409
             scope = ["other"]
-            conflict = await client.post("/api/agent/tasks", json=body)
+            conflict = await client.post("/api/v1/agent/tasks", json=body)
             assert conflict.status_code == 409 and "旧要求" not in conflict.text
     finally:
         store.close()

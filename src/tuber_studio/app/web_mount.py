@@ -29,7 +29,7 @@ class WebMount:
 
 def route_path(request):
     path, root = request.url.path, request.scope.get("root_path", "").rstrip("/")
-    return path[len(root):] if path.startswith(root + "/") else path
+    return path[len(root) :] if path.startswith(root + "/") else path
 
 
 def web_page(request, content):

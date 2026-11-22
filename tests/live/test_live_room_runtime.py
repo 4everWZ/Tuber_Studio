@@ -143,11 +143,11 @@ def test_live2d_files_remain_scoped_without_automatic_scene_selection(settings):
     with TestClient(app) as client:
         path = "/media/live2d/model/whale/whale.model3.json"
         assert client.get(path).status_code == 401
-        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        view = client.get("/api/live/view").raise_for_status().json()
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
+        view = client.get("/api/v1/live/view").raise_for_status().json()
         assert view["live2d"] is None
-        client.put("/api/settings/performance", json={"avatar_enabled": True}).raise_for_status()
-        assert client.get("/api/live/view").json()["live2d"] is None
+        client.put("/api/v1/system/settings/performance", json={"avatar_enabled": True}).raise_for_status()
+        assert client.get("/api/v1/live/view").json()["live2d"] is None
         assert client.get(path).status_code == 200
         assert client.get("/media/live2d/model/whale/private.txt").status_code == 404
         assert client.get("/media/live2d/model/other/whale.model3.json").status_code == 404
@@ -155,24 +155,24 @@ def test_live2d_files_remain_scoped_without_automatic_scene_selection(settings):
             "Idle": [{"File": "motion.json", "Sound": "second-audio.wav"}],
         }}}
         (model / "whale.model3.json").write_text(json.dumps(broken), encoding="utf-8")
-        assert client.get("/api/live/view").json()["live2d"] is None
+        assert client.get("/api/v1/live/view").json()["live2d"] is None
         assert client.get(path).status_code == 404
 
 
 def test_live_controls_and_mock_poll_endpoints(settings):
     with TestClient(create_app(settings)) as client:
-        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        assert client.get("/api/live/options").json()["weather"] is None
-        assert client.put("/api/live/options", json={"timezone": "InvalidTZ"}).status_code == 422
-        assert client.put("/api/live/options", json={"idle": True, "timezone": "UTC"}).json()["idle"]
-        client.post("/api/live/start").raise_for_status()
-        client.post("/api/live/pause").raise_for_status()
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
+        assert client.get("/api/v1/live/options").json()["weather"] is None
+        assert client.put("/api/v1/live/options", json={"timezone": "InvalidTZ"}).status_code == 422
+        assert client.put("/api/v1/live/options", json={"idle": True, "timezone": "UTC"}).json()["idle"]
+        client.post("/api/v1/live/start").raise_for_status()
+        client.post("/api/v1/live/pause").raise_for_status()
         payload = {"topic": "晚饭", "options": ["白饭", "海带"]}
-        started = client.post("/api/live/poll/start", json=payload).raise_for_status().json()
-        assert client.get("/api/live/view").json()["poll"]["id"] == started["id"]
-        receipt = client.post("/api/live/mock-event", json={"text": "1", "platform_user_id": "voter"}).json()
+        started = client.post("/api/v1/live/poll/start", json=payload).raise_for_status().json()
+        assert client.get("/api/v1/live/view").json()["poll"]["id"] == started["id"]
+        receipt = client.post("/api/v1/live/mock-event", json={"text": "1", "platform_user_id": "voter"}).json()
         assert receipt["reason"] == "已计票"
-        final = client.post("/api/live/poll/finish").raise_for_status().json()
+        final = client.post("/api/v1/live/poll/finish").raise_for_status().json()
         assert final["winner"] == "白饭"
-        view = client.get("/api/live/view").raise_for_status().json()
+        view = client.get("/api/v1/live/view").raise_for_status().json()
         assert not view["poll"] and not view["events"] and not view["queue"]

@@ -175,13 +175,13 @@ async def test_chat_delegates_across_existing_services_and_cancels_video(setting
     client = httpx.ASGITransport(app=app, client=("127.0.0.1", 54000))
     async with app.router.lifespan_context(app), httpx.AsyncClient(transport=client, base_url="http://127.0.0.1") as owner:
         app.state.browsing.discovery.remember_account("100")
-        response = await owner.post("/api/chat/intelligent", json=payload)
+        response = await owner.post("/api/v1/agent/chat", json=payload)
         assert response.json()["card"]["type"] == "agent_task", response.text
         await until(lambda: tasks.current(request_id)["status"] == "waiting")
         assert seen[0]["state"] == "off" and seen[1]["state"] == "stopped"
         assert set(seen[1]) == {"state", "muted", "session_id"}
         assert seen[2]["simulated"] is True
-        activity_url = f"/api/agent/tasks/{request_id}"
+        activity_url = f"/api/v1/agent/tasks/{request_id}"
         # A second client reads the same task after chat has already returned.
         async with httpx.AsyncClient(transport=client, base_url="http://127.0.0.1") as other:
             result = (await other.get(activity_url)).json()
@@ -202,7 +202,7 @@ async def test_chat_delegates_across_existing_services_and_cancels_video(setting
         rejected = await owner.patch(activity_url, json={
             "revision": continued["revision"], "action": "steer", "goal": "按旧授权再做一次",
         })
-        assert rejected.status_code == 409 and "授权已失效" in rejected.json()["detail"]
+        assert rejected.status_code == 409 and "授权已失效" in rejected.json()["message"]
 
 
 @pytest.mark.parametrize("value, expected", [("", None), ("   ", None), ("ftp://bridge.test", "unavailable"),
@@ -237,7 +237,7 @@ async def test_live_status_reports_native_program_separately_in_tasks_and_chat(s
     async with app.router.lifespan_context(app), httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as owner:
         status = await live_tool.run(None, StrictModel())
         assert status["state"] == "stopped" and status["native_program"] == {"state": "publishing"}
-        response = await owner.post("/api/chat/intelligent", json={
+        response = await owner.post("/api/v1/agent/chat", json={
             "request_id": str(uuid4()), "message": "查直播状态", "intent": {"action": "live_status"},
         })
         assert response.status_code == 200, response.text
@@ -439,7 +439,7 @@ async def test_owner_lookup_routes_to_bound_uid(settings, monkeypatch):
     transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 54000))
     async with app.router.lifespan_context(app), httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as owner:
         app.state.browsing.discovery.remember_account("200")
-        result = await owner.post("/api/chat/intelligent", json={
+        result = await owner.post("/api/v1/agent/chat", json={
             "request_id": str(uuid4()), "message": "去看看你主人的 B 站账号",
         })
         assert result.json()["card"]["data"]["url"] == "https://space.bilibili.com/123", result.text
@@ -469,11 +469,11 @@ def test_agent_live_handoff_requires_approval_and_actual_playback(settings, monk
     monkeypatch.setattr(runtime.llm, "generate", generate)
     monkeypatch.setattr(runtime.voices, "synthesize_live", synthesize)
     identity = str(uuid4())
-    url = f"/api/agent/tasks/{identity}"
+    url = f"/api/v1/agent/tasks/{identity}"
     with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 54000)) as client:
         client.cookies.set("tuber_overlay", settings.overlay_token)
-        client.post("/api/live/start").raise_for_status()
-        client.post("/api/agent/tasks", json={"request_id": identity, "goal": "在本场节目谈风铃"}).raise_for_status()
+        client.post("/api/v1/live/start").raise_for_status()
+        client.post("/api/v1/agent/tasks", json={"request_id": identity, "goal": "在本场节目谈风铃"}).raise_for_status()
         for _ in range(100):
             waiting = client.get(url).json()
             if waiting["status"] == "awaiting_approval":

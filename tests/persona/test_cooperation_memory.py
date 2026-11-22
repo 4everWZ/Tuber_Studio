@@ -77,7 +77,7 @@ async def test_private_chat_admission_requires_independent_original_evidence(set
                                      headers={"Authorization": "Bearer " + settings.admin_token}) as client:
             for quote in EXAMPLES:
                 identity = str(uuid4())
-                response = await client.post("/api/chat/intelligent", json={"request_id": identity, "message": quote,
+                response = await client.post("/api/v1/agent/chat", json={"request_id": identity, "message": quote,
                                              "intent": {"action": "chat"}})
                 response.raise_for_status()
                 originals[quote] = "turn:" + identity
@@ -187,9 +187,9 @@ async def test_old_greeting_is_inspectable_but_never_reaches_retry_or_reedition(
         row, = memory.organized(scope)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://localhost",
                                      headers={"Authorization": "Bearer " + settings.admin_token}) as client:
-            result = await client.post("/api/agent/memory.get", json={"id": row["id"]})
+            result = await client.post("/api/v1/agent/memory/get", json={"id": row["id"]})
             assert result.raise_for_status().json()["quote"] == GREETING
-            lookup = await client.post("/api/agent/memory.search", json={"query": row["source"]["key"]})
+            lookup = await client.post("/api/v1/agent/memory/search", json={"query": row["source"]["key"]})
             assert [item["quote"] for item in lookup.raise_for_status().json()["items"]] == [GREETING]
         assert not private_rows(runtime, row["source"]["key"])
         assert not memory.recall_organized(scope, "operator", GREETING)

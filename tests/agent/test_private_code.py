@@ -15,8 +15,8 @@ async def test_owner_grant_runs_attachment_calculation_and_preserves_output(sett
     payload = {"request_id": identity, "goal": "统计播放数", "allow_code": True,
                "attachments": [{"name": "播放.json", "text": "[2,3,7]"}]}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1") as client:
-        assert (await client.post("/api/agent/tasks", json=payload)).status_code == 200
-        assert (await client.post("/api/agent/tasks", json=payload | {"allow_code": False})).status_code == 409
+        assert (await client.post("/api/v1/agent/tasks", json=payload)).status_code == 200
+        assert (await client.post("/api/v1/agent/tasks", json=payload | {"allow_code": False})).status_code == 409
 
     args = {"name": "总计.txt", "script": "return String(JSON.parse(files[0].text).reduce((a,b)=>a+b,0))"}
 

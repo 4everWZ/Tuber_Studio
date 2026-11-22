@@ -193,7 +193,7 @@ async def edition(page, origin, task, revision, directory, timeout):
     try:
         async with deadline:
             while True:
-                response = await page.request.get(f"{origin}/api/agent/tasks/{task}")
+                response = await page.request.get(f"{origin}/api/v1/agent/tasks/{task}")
                 require(response.ok, "无法读取原任务")
                 data = await response.json()
                 require(data["id"] == task and data["revision"] <= revision, "任务引用或修订号错位")
@@ -237,7 +237,7 @@ async def drill(page, origin, first, second, report):
     panel = page.locator("#chat-activity")
     await panel.get_by_text(f"任务 r{current['task_revision']} · 成果 v{current['edition']}", exact=True).wait_for()
     await panel.get_by_text("历史成果", exact=True).click()
-    url = f"{origin}/api/agent/tasks/{task}/artifacts/{old['task_revision']}/{old['edition']}"
+    url = f"{origin}/api/v1/agent/tasks/{task}/artifacts/{old['task_revision']}/{old['edition']}"
     async with page.expect_response(lambda r: r.url == url and r.request.method == "GET") as read:
         await panel.get_by_text(f"任务 r{old['task_revision']} · 成果 v{old['edition']}", exact=True).click()
     response = await read.value
@@ -261,7 +261,7 @@ async def drill(page, origin, first, second, report):
         item = next(s for s in archived if (clip := s["result"].get("clip"))
                     and clip["start"] <= seconds < clip["end"] and
                     any(f.get("seconds") == seconds and f.get("url") == frame[1] for f in s["result"].get("findings", [])))
-        path = f"/api/agent/tasks/{task}/clips/{item['id']}"
+        path = f"/api/v1/agent/tasks/{task}/clips/{item['id']}"
         require(await link.get_attribute("href") == frame[1], "归档成果的原始出处链接不符")
         report["video"] = frame[1]
         source = await page.context.new_page()
@@ -321,7 +321,7 @@ async def exercise(origin, directory, args, *, memory=None, login=None):
             require(await original.get_by_role("button", name="查看任务").count(), "交办回复没有任务卡")
             task = str(UUID(await original.get_attribute("data-request-id")))
             report["task"] = task
-            task_read = await page.request.get(f"{origin}/api/agent/tasks/{task}")
+            task_read = await page.request.get(f"{origin}/api/v1/agent/tasks/{task}")
             require(task_read.ok, "设备 A 任务不可读")
             status = (await task_read.json())["status"]
             require(
@@ -342,7 +342,7 @@ async def exercise(origin, directory, args, *, memory=None, login=None):
             }
             write(directory / "browser.json", report)
             require(await turn.get_by_role("button", name="查看任务").count() == 0, "闲聊被识别为交办")
-            after_chat = await page.request.get(f"{origin}/api/agent/tasks/{task}")
+            after_chat = await page.request.get(f"{origin}/api/v1/agent/tasks/{task}")
             require(after_chat.ok and (await after_chat.json())["revision"] == 1, "闲聊改变了原任务的要求")
         async with device(pw.chromium, origin, args, login) as page:
             report["secondBrowserProcess"] = True

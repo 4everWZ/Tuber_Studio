@@ -28,6 +28,7 @@ from pathlib import Path
 import httpx
 import psutil
 
+from tuber_studio.app.runtime import Runtime
 from tuber_studio.core.config import Settings
 from tuber_studio.core.store import Store
 from tuber_studio.infra.media.cache import MediaCache
@@ -41,7 +42,6 @@ from tuber_studio.operations.kernel.evidence import BrowsingEvidence
 from tuber_studio.operations.kernel.models import BrowsingPolicy
 from tuber_studio.operations.kernel.repository import BrowsingRepository
 from tuber_studio.operations.service import BrowsingService
-from tuber_studio.runtime import Runtime
 
 VIDEOS = [f"BV1{number:09d}" for number in range(1, 5)]
 BODY = [

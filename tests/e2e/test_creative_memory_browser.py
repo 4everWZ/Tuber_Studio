@@ -53,7 +53,7 @@ def test_workstation_checkpoint_requires_fresh_directory_session_and_no_platform
             assert (await client.get(runner.CHECKPOINT + "/identity")).json()["run"] == "run"
             assert (await client.get(runner.CHECKPOINT)).status_code == 401
             login = (args.runtime / "admin-token").read_text().strip()
-            assert (await client.post("/api/auth", json={"token": login})).status_code == 200
+            assert (await client.post("/api/v1/system/auth/login", json={"token": login})).status_code == 200
             assert (await client.get(runner.CHECKPOINT)).json() == {
                 "run": "run",
                 "denied": 0,
@@ -163,7 +163,7 @@ def test_title_comparison_targets_new_second_item_and_preserves_first():
 def test_settings_receipt_binds_visible_quote_and_revision_to_the_inspected_source(field):
     memory = memories()
     row = memory["layout"] | {"note": "原话摘要"}
-    seen = {"quote": row["quote"], "history_path": "/api/daily-memory/organized/1/revisions",
+    seen = {"quote": row["quote"], "history_path": "/api/v1/persona/daily-memory/organized/1/revisions",
             "source_key": row["source_key"], "revision": 1, "visible_revision": "v1 · 原话摘要"}
     memory.update(layout=row, citation_surface="settings", r3_api=[row], r3_visible=[seen])
     check_citations(memory, "r3", [row], [row])
@@ -473,10 +473,10 @@ async def test_chat_memory_migration_in_chromium(settings, monkeypatch):
                                   receipt=voice_origin.sign(key, ["omni.mic.v1", signed["ticket_hash"],
                                                                   "voice-fixture", 16000, machine]))
                     body = {"source": "confirmed_voice", "text": quote, "voice_origin": signed}
-                    preview = await scenario.api(page, "POST", "/api/agent/memory.propose", body)
-                    confirmed = await scenario.api(page, "POST", "/api/agent/memory/confirm",
+                    preview = await scenario.api(page, "POST", "/api/v1/agent/memory/propose", body)
+                    confirmed = await scenario.api(page, "POST", "/api/v1/agent/memory/confirm",
                                                    body | {"stamp": preview["stamp"]})
-                    voice = await scenario.api(page, "POST", "/api/agent/memory.get", {"id": confirmed["id"]})
+                    voice = await scenario.api(page, "POST", "/api/v1/agent/memory/get", {"id": confirmed["id"]})
                     scenario.report.update(citation_surface="settings_current", corrected=voice, r2_api=[layout, voice],
                                            voice={"bound_final_transcript": machine, "owner_confirmed_text": quote})
                     await scenario.inspect_settings(page, [layout, voice], "r2")

@@ -7,7 +7,6 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import Depends, HTTPException
 from pydantic import Field
 
 from ...core.models import StrictModel
@@ -274,41 +273,11 @@ class PrivateBrowser:
         await self.readers.close()
 
 
-def register_private_browser(app, tasks, require_admin, *, tool_cls=None):
+def attach_private_browser(tasks, *, tool_cls=None):
+    """Attach the private Chromium reader tool onto the task coordinator."""
     tool_factory = tool_cls or tasks.Tool
     browser = tasks.private_browser = PrivateBrowser(tasks)
     tasks.register("private_browser", tool_factory("操作独立 Chromium 阅读页。open 用来源编号，activate 用可见控件编号，"
                    "find 用页内文字，read/next/previous 读取或翻页。", BrowserAction, browser.tool,
                    responses_only=True, own_deadline=True))
-    path = "/api/agent/tasks/{identity}/browser"
-    deps = [Depends(require_admin)]
-
-    def call(fn, *args):
-        try:
-            return fn(*args)
-        except LookupError:
-            raise HTTPException(404, "找不到当前授权下的浏览任务") from None
-        except ValueError as exc:
-            raise HTTPException(409, str(exc)) from None
-
-    @app.get(path, dependencies=deps)
-    async def state(identity: UUID):
-        return call(browser.state, str(identity))
-
-    @app.put(path, dependencies=deps)
-    async def grant(identity: UUID, body: BrowserGrant):
-        return call(browser.grant, str(identity), body)
-
-    @app.patch(path, dependencies=deps)
-    async def control(identity: UUID, body: Control):
-        return call(browser.control, str(identity), body)
-
-    @app.post(path + "/actions", dependencies=deps)
-    async def interact(identity: UUID, body: Command):
-        try:
-            await browser.turn(str(identity), body, "owner")
-            return browser.state(str(identity))
-        except LookupError:
-            raise HTTPException(404, "找不到当前授权下的浏览任务") from None
-        except ValueError as exc:
-            raise HTTPException(409, str(exc)) from None
+    return browser

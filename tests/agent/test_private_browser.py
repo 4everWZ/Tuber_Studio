@@ -79,10 +79,10 @@ async def studio(settings, monkeypatch):
 async def create_browser_task(studio):
     tasks, owner, reads = studio
     identity = str(uuid4())
-    path = f"/api/agent/tasks/{identity}/browser"
+    path = f"/api/v1/agent/tasks/{identity}/browser"
     assert (await owner.get(path)).status_code == 401
     owner.headers["Authorization"] = "Bearer fixture-only"
-    result = await owner.post("/api/agent/tasks", json={"request_id": identity, "goal": "读指定来源", "browser_sources": SOURCES})
+    result = await owner.post("/api/v1/agent/tasks", json={"request_id": identity, "goal": "读指定来源", "browser_sources": SOURCES})
     assert result.status_code == 200, result.text
     return identity, path
 
@@ -163,7 +163,7 @@ async def test_foreign_step_and_separate_capabilities(studio):
     result = await tasks.private_browser.tool(ToolRequest(str(uuid4()), second["goal"], second["scope"], None, None), args)
     assert "error" in result and not reads
     assert "private_browser" not in tasks.private_browser.menu(second, tasks.tools)
-    mixed = await owner.post("/api/agent/tasks", json={"request_id": str(uuid4()), "goal": "混合", "browser_sources": SOURCES,
+    mixed = await owner.post("/api/v1/agent/tasks", json={"request_id": str(uuid4()), "goal": "混合", "browser_sources": SOURCES,
                              "attachments": [{"name": "private.txt", "text": "私人内容"}]})
     assert mixed.status_code == 409
 

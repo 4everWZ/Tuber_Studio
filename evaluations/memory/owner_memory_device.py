@@ -26,7 +26,7 @@ from tuber_studio.core.config import ROOT, Settings
 
 CONFIRMED = "Group related points and separate distinct concerns. Use headings and lists when they improve readability."
 AUTO = "以后写直播素材提纲，每个标题都用问句，以问号结尾。"
-SEARCH = "/api/agent/memory.search"
+SEARCH = "/api/v1/agent/memory/search"
 
 # The remote client gets its own Studio cookie and verifies access is denied before authentication.
 REMOTE = """
@@ -37,12 +37,12 @@ def call(method, path, data):
     body = json.dumps(data).encode() if data is not None else None
     return json.load(opener.open(urllib.request.Request(origin+path, body, {"Content-Type":"application/json"}, method=method), timeout=30))
 try:
-    call("GET", "/api/daily-memory/preferences", None)
+    call("GET", "/api/v1/persona/daily-memory/preferences", None)
 except urllib.error.HTTPError as error:
     assert error.code == 401
 else:
     raise RuntimeError("unauthenticated request accepted")
-assert call("POST", "/api/auth", {"token":login})["authenticated"]
+assert call("POST", "/api/v1/system/auth/login", {"token":login})["authenticated"]
 print(json.dumps({"arch":platform.machine(),"value":call(method,path,data)}))
 """
 
@@ -135,14 +135,14 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                     context = await browser.new_context(service_workers="block")
                     stack.push_async_callback(context.close)
                     await context.route("**/*", lambda route: route.continue_() if route.request.url.startswith(local+"/") else route.abort())
-                    assert (await context.request.post(local+"/api/auth", data={"token":token})).ok
+                    assert (await context.request.post(local+"/api/v1/system/auth/login", data={"token":token})).ok
                     if check_cooperation:
                         from evaluations.memory.owner_memory_budget import admission_wire
                         from evaluations.memory.owner_memory_cooperation import verify_chat_admission
                         stack.enter_context(admission_wire(runtime.llm, record))
                         record("stage", "checking_ordinary_chat_preferences")
                         async with httpx.AsyncClient(base_url=local, trust_env=False, timeout=180) as qa:
-                            (await qa.post("/api/auth", json={"token": token})).raise_for_status()
+                            (await qa.post("/api/v1/system/auth/login", json={"token": token})).raise_for_status()
                             await verify_chat_admission(qa, runtime, device, port, token, deadline, record)
                     page = await context.new_page()
                     await page.goto(local + "/#personalization")
@@ -162,7 +162,7 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                                   independent_device={"architecture":remote["arch"], "fresh_authenticated_session":True,
                                                       "read_after_page_close":True})
                     client = await stack.enter_async_context(httpx.AsyncClient(base_url=local, trust_env=False, timeout=180))
-                    (await client.post("/api/auth", json={"token":token})).raise_for_status()
+                    (await client.post("/api/v1/system/auth/login", json={"token":token})).raise_for_status()
                     record("stage", "independent_device_authenticated")
                     async def correct_voice(target):
                         from evaluations.memory.owner_memory_voice import (
@@ -183,7 +183,7 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                             result = {"status":"unverified", "reason":type(error).__name__}
                         record("final_user_transcript", result)
                         if isinstance(result.get("correction"), dict):
-                            updated = (await device_call(device, port, token, "POST", "/api/agent/memory.get",
+                            updated = (await device_call(device, port, token, "POST", "/api/v1/agent/memory/get",
                                                          {"id":target["id"]}))["value"]
                             assert updated["revision"] == result["correction"]["revision"]
                             assert updated["quote"] == result["owner_confirmed_text"]
@@ -210,7 +210,7 @@ async def run(device, live, voice_wav, gateway_checkout=None, voice_only=False, 
                     else:
                         report["final_user_transcript"] = {"status":"unverified", "reason":"ordinary_service_binding_missing"}
                         report["video"] = {"status":"unverified", "reason":"ordinary_service_binding_missing" if live else "device_only"}
-                        await device_call(device, port, token, "DELETE", f"/api/daily-memory/organized/{row['id']}?expected_revision={row['revision']}")
+                        await device_call(device, port, token, "DELETE", f"/api/v1/persona/daily-memory/organized/{row['id']}?expected_revision={row['revision']}")
                     assert not (await client.post(SEARCH, json={"query":first_note})).json()["items"]
                     report["independent_device"]["forget_visible_on_original_client"] = True
                     if live and gateway_checkout:

@@ -64,7 +64,7 @@ async def test_unbound_settings_proposal_returns_to_chat(studio, monkeypatch, qu
         return {"reply_markdown": "我在这儿陪你呢。"}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
-    result = (await client.post("/api/chat/intelligent", json=turn(question))).raise_for_status().json()
+    result = (await client.post("/api/v1/agent/chat", json=turn(question))).raise_for_status().json()
     assert result["reply_text"] == "我在这儿陪你呢。" and not result.get("tool_receipt")
     assert calls == ["TurnRoute", "FrontDialogueReply"]
     assert not runtime.store.one("SELECT 1 FROM agent_tasks")
@@ -88,14 +88,14 @@ async def test_owner_identity_uses_current_binding_with_stale_chat_history(studi
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
     old = turn("你住在哪里？")
-    (await client.post("/api/chat/intelligent", json=old)).raise_for_status()
+    (await client.post("/api/v1/agent/chat", json=old)).raise_for_status()
     for text in ("小鱼，你的主人是谁呀", "我说你的主人呀", "养你的那位叫什么名字呀？"):
-        result = (await client.post("/api/chat/intelligent", json=turn(text))).raise_for_status().json()
+        result = (await client.post("/api/v1/agent/chat", json=turn(text))).raise_for_status().json()
         assert result["reply_text"] == "我的主人是新号主呀。" and result["reply_format"] in {"plain", "markdown"}
-    history = (await client.get("/api/chat/intelligent/turns/" + old["request_id"])).raise_for_status().json()
+    history = (await client.get("/api/v1/agent/chat/turns/" + old["request_id"])).raise_for_status().json()
     assert history["reply_text"] == "我住在 Jetson 里。"
     runtime.store.replace_character(char | {"bilibili_owner": None})
-    result = (await client.post("/api/chat/intelligent", json=turn("你的主人是谁？"))).raise_for_status().json()
+    result = (await client.post("/api/v1/agent/chat", json=turn("你的主人是谁？"))).raise_for_status().json()
     assert result["reply_text"] == "我还没有绑定 B 站号主呀。"
 
 
@@ -128,7 +128,7 @@ async def test_settings_followup_is_read_only_and_ends_when_topic_changes(studio
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
     before = runtime.live.media.scene()
     for index, text in enumerate((first, followup, unrelated, followup)):
-        result = (await client.post("/api/chat/intelligent", json=turn(text))).raise_for_status().json()
+        result = (await client.post("/api/v1/agent/chat", json=turn(text))).raise_for_status().json()
         if text == first:
             assert result["tool_receipt"]["action"] == "read"
         elif index == 1:
@@ -143,7 +143,7 @@ async def test_capability_discovery_reads_catalog_without_settings_writes(studio
     char = runtime.character["id"]
     before = runtime.pets.state(char), runtime.browsing.policy()
     calls = choose_tools(runtime, monkeypatch, {"action": "workbench_capabilities"})
-    response = await client.post("/api/chat/intelligent", json=turn("先告诉我你能调什么"))
+    response = await client.post("/api/v1/agent/chat", json=turn("先告诉我你能调什么"))
     text = response.raise_for_status().json()["reply_text"]
     assert all(label in text for label in ("宠物", "每日观看", "点歌", "运营配图", "直播画布", "后台"))
     assert before == (runtime.pets.state(char), runtime.browsing.policy())
@@ -165,11 +165,11 @@ async def test_pet_choice_from_real_catalog_is_bound_and_replayable(studio, monk
 
     calls = choose_tools(runtime, monkeypatch, {"action": "pet_settings"}, select)
     body = turn("换个开心的鱼鱼")
-    first = (await client.post("/api/chat/intelligent", json=body)).raise_for_status().json()
+    first = (await client.post("/api/v1/agent/chat", json=body)).raise_for_status().json()
     saved = runtime.pets.state(char)
     assert saved["selected_asset_id"] == first["tool_receipt"]["selected_asset_id"] == picked["asset_id"]
     assert picked["title"] in first["reply_text"]
-    assert (await client.post("/api/chat/intelligent", json=body)).raise_for_status().json() == first
+    assert (await client.post("/api/v1/agent/chat", json=body)).raise_for_status().json() == first
     assert calls == ["TurnRoute", "PetChoice"] and runtime.pets.state(char) == saved
 
 
@@ -183,7 +183,7 @@ async def test_pet_mixed_arguments_are_atomic(studio, monkeypatch, choice):
     char = runtime.character["id"]
     before = runtime.pets.state(char)
     choose_tools(runtime, monkeypatch, {"action": "pet_settings"}, choice)
-    response = await client.post("/api/chat/intelligent", json=turn("收起宠物"))
+    response = await client.post("/api/v1/agent/chat", json=turn("收起宠物"))
     assert response.status_code == 400 and runtime.pets.state(char) == before
 
 
@@ -193,7 +193,7 @@ async def test_pet_rejects_a_settings_group_before_domain_selection(studio, monk
     before = runtime.pets.state(char)
     calls = choose_tools(runtime, monkeypatch, {"action": "pet_settings", "settings_group": "memory"},
                          {"action": "hide"})
-    response = await client.post("/api/chat/intelligent", json=turn("让宠物歇会儿吧"))
+    response = await client.post("/api/v1/agent/chat", json=turn("让宠物歇会儿吧"))
     assert response.status_code == 400 and runtime.pets.state(char) == before
     assert "PetChoice" not in calls
 
@@ -209,7 +209,7 @@ async def test_pet_choice_rejects_character_switch_during_inference(studio, monk
         return {"action": "hide"}
 
     choose_tools(runtime, monkeypatch, {"action": "pet_settings"}, switch_before_reply)
-    response = await client.post("/api/chat/intelligent", json=turn("收起宠物"))
+    response = await client.post("/api/v1/agent/chat", json=turn("收起宠物"))
     assert response.status_code == 409
     assert runtime.pets.state(other["id"])["pets_enabled"] == before["pets_enabled"]
     runtime.store.activate(original)
@@ -226,7 +226,7 @@ async def test_daily_settings_readback_or_atomic_rejection(studio, monkeypatch, 
         patch[extra] = True
     choose_tools(runtime, monkeypatch, {"action": "daily_settings", "settings_group": "browsing"},
                  {"action": "update", "changes": patch})
-    response = await client.post("/api/chat/intelligent", json=turn("每天最多看三十七个视频"))
+    response = await client.post("/api/v1/agent/chat", json=turn("每天最多看三十七个视频"))
     if extra:
         assert response.status_code == 400 and runtime.browsing.policy() == before
     else:
@@ -264,7 +264,7 @@ async def test_original_owner_request_blocks_partial_model_write(studio, monkeyp
     before = runtime.live.media.config(), runtime.pets.state(runtime.character["id"])
     memory = runtime.daily_memory.preference(runtime.memory_organizer.scope())
     calls = choose_tools(runtime, monkeypatch, direct, subset)
-    result = (await client.post("/api/chat/intelligent", json=turn(message))).raise_for_status().json()
+    result = (await client.post("/api/v1/agent/chat", json=turn(message))).raise_for_status().json()
     assert calls == []
     assert "号主设置页" in result["reply_text"] and "tool_receipt" not in result
     assert before == (runtime.live.media.config(), runtime.pets.state(runtime.character["id"]))
@@ -277,7 +277,7 @@ async def test_declined_mixed_request_cannot_bind_the_next_independent_task(stud
     choose_tools(runtime, monkeypatch, {"action": "daily_settings", "settings_group": "music"},
                  {"action": "update", "changes": {"cooldown_seconds": 47}})
     mixed = turn("把点歌冷却改成47秒，同时关闭历史引用，两项必须一起生效。")
-    refused = (await client.post("/api/chat/intelligent", json=mixed)).raise_for_status().json()
+    refused = (await client.post("/api/v1/agent/chat", json=mixed)).raise_for_status().json()
     assert "号主设置页" in refused["reply_text"]
     stored = runtime.store.one("SELECT result FROM operator_chat_turns WHERE request_id=?", (mixed["request_id"],))
     assert "clarification_request" not in json.loads(stored["result"])
@@ -291,5 +291,5 @@ async def test_declined_mixed_request_cannot_bind_the_next_independent_task(stud
     body = turn(goal)
     choose_tools(runtime, monkeypatch, {"action": "agent_task"})
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", delegate)
-    accepted = (await client.post("/api/chat/intelligent", json=body)).raise_for_status().json()
+    accepted = (await client.post("/api/v1/agent/chat", json=body)).raise_for_status().json()
     assert accepted["card"]["type"] == "agent_task" and runtime.tasks.current(body["request_id"])["goal"] == goal

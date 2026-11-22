@@ -78,16 +78,16 @@ async def test_chat_selection_survives_steer_and_replacement_filters_old_evidenc
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
         payload = {"request_id": identity, "message": "用这些片段准备开场", "intent": {"action": "agent_task"},
                    "video_selection": SELECTION}
-        first = await client.post("/api/chat/intelligent", json=payload)
+        first = await client.post("/api/v1/agent/chat", json=payload)
         assert first.raise_for_status().json()["card"]["data"]["id"] == identity
-        changed = await client.post("/api/chat/intelligent", json=payload | {"video_selection": {"bvid": OTHER}})
+        changed = await client.post("/api/v1/agent/chat", json=payload | {"video_selection": {"bvid": OTHER}})
         assert changed.status_code == 409
         update = {"message": "只留一句", "intent": {"action": "steer_task", "reference": identity}}
-        (await client.post("/api/chat/intelligent", json=update | {"request_id": str(uuid4())})).raise_for_status()
+        (await client.post("/api/v1/agent/chat", json=update | {"request_id": str(uuid4())})).raise_for_status()
         previous = tasks.current(identity)
         assert previous["plan"]["video_selection"] == SELECTION and previous["revision"] == 2
         narrow = {"bvid": BV, "ranges": [{"part": 2, "start": 12, "end": 17}]}
-        response = await client.post("/api/chat/intelligent", json=update | {"request_id": str(uuid4()), "video_selection": narrow})
+        response = await client.post("/api/v1/agent/chat", json=update | {"request_id": str(uuid4()), "video_selection": narrow})
         response.raise_for_status()
         edited = tasks.current(identity)
         assert edited["plan"]["video_selection"] == narrow and edited["revision"] == 3

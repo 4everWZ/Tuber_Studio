@@ -24,7 +24,7 @@ def add_turn(runtime, text, **result):
 
 def test_owner_memory_switch_follows_character_across_operating_accounts(settings):
     app = create_app(settings)
-    path = "/api/daily-memory/preferences"
+    path = "/api/v1/persona/daily-memory/preferences"
     with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
         runtime = app.state.runtime
         discovery = app.state.browsing.discovery
@@ -33,22 +33,22 @@ def test_owner_memory_switch_follows_character_across_operating_accounts(setting
         assert before["enabled"] and before["revision"] == 0
         disabled = client.put(path, json={"enabled": False, "scope": before["scope"]}).raise_for_status().json()
         assert not disabled["enabled"] and disabled["revision"] == 1
-        assert client.get("/api/daily-memory").json()["organization"]["status"] == "disabled"
+        assert client.get("/api/v1/persona/daily-memory").json()["organization"]["status"] == "disabled"
         assert MemoryOrganizer(runtime).state()["status"] == "disabled"
         discovery.remember_account("200")
         assert not client.get(path).json()["enabled"]
         assert client.put(path, json={"enabled": False, "scope": before["scope"]}).status_code == 409
         discovery.remember_account("100")
-        other = client.post("/api/characters", json={"name": "另一个角色"}).raise_for_status().json()
-        client.post(f"/api/characters/{other['id']}/activate").raise_for_status()
+        other = client.post("/api/v1/persona/characters", json={"name": "另一个角色"}).raise_for_status().json()
+        client.post(f"/api/v1/persona/characters/{other['id']}/activate").raise_for_status()
         assert client.get(path).json()["enabled"]
-        client.post("/api/characters/whale/activate").raise_for_status()
+        client.post("/api/v1/persona/characters/whale/activate").raise_for_status()
         assert client.get(path).json() == disabled
 
 
 def test_memory_summary_ask_and_correct_existing_note(settings):
     app = create_app(settings)
-    path = "/api/daily-memory"
+    path = "/api/v1/persona/daily-memory"
     with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
         runtime = app.state.runtime
         discovery = app.state.browsing.discovery
@@ -93,7 +93,7 @@ def test_memory_summary_ask_and_correct_existing_note(settings):
 
 def test_memory_summary_proposal_requires_exact_request_text_and_applies_once(settings):
     app = create_app(settings)
-    path = "/api/daily-memory"
+    path = "/api/v1/persona/daily-memory"
     content = "以后运营汇报先看风险"
     with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
         runtime = app.state.runtime
@@ -128,7 +128,7 @@ def test_memory_summary_proposal_requires_exact_request_text_and_applies_once(se
 
 def test_legacy_notes_require_review_without_hiding_source_or_explicit_correction(settings):
     app = create_app(settings)
-    path = "/api/daily-memory"
+    path = "/api/v1/persona/daily-memory"
     original = "海豹在换毛吗？"
     unverified = "已经核实八千只在换毛。"
     with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
@@ -269,10 +269,10 @@ async def test_queued_private_chat_correction_preserves_both_turns_and_versions(
     try:
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://localhost",
                                      headers={"Authorization": "Bearer " + settings.admin_token}) as client:
-            pref = (await client.get("/api/daily-memory/preferences")).raise_for_status().json()
+            pref = (await client.get("/api/v1/persona/daily-memory/preferences")).raise_for_status().json()
             assert pref["enabled"] and pref["revision"] == 0
             for request_id, quote in turns:
-                reply = await client.post("/api/chat/intelligent", json={"request_id": request_id, "message": quote})
+                reply = await client.post("/api/v1/agent/chat", json={"request_id": request_id, "message": quote})
                 assert reply.raise_for_status().json()["card"] is None
             assert await organizer.run_once() == 2
             assert await organizer.run_once() == 0
@@ -283,7 +283,7 @@ async def test_queued_private_chat_correction_preserves_both_turns_and_versions(
                                      (latest["id"],)) == [{"source_key": "turn:" + rid, "quote": text} for rid, text in turns]
             for rid, quote in turns:
                 source = "turn:" + rid
-                response = await client.post("/api/agent/memory.get", json={"id": latest["id"], "source_key": source})
+                response = await client.post("/api/v1/agent/memory/get", json={"id": latest["id"], "source_key": source})
                 if rid != turns[-1][0]:
                     assert response.status_code == 404
                     continue
@@ -383,8 +383,8 @@ async def test_organization_cannot_create_memory_from_assistant_output(settings)
 
 
 async def test_shared_memory_keeps_owner_correction_after_two_client_restart(settings):
-    chat_path = "/api/chat/intelligent"
-    memory_path = "/api/daily-memory"
+    chat_path = "/api/v1/agent/chat"
+    memory_path = "/api/v1/persona/daily-memory"
     initial = "以后运营汇报先讲结论。"
     pending = "以后运营汇报先讲进度。"
     correction = "以后运营汇报先讲风险。"
@@ -446,7 +446,7 @@ async def test_shared_memory_keeps_owner_correction_after_two_client_restart(set
         runtime.browsing.discovery.remember_account("100")
         for client in (first, second):
             assert (await client.get(memory_path)).status_code == 401
-            (await client.post("/api/auth", json={"token": settings.admin_token})).raise_for_status()
+            (await client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})).raise_for_status()
         assert first.cookies != second.cookies
         initial_turn = await send(first, initial)
         await runtime.memory_organizer.run_once()
@@ -499,7 +499,7 @@ async def test_bound_collaboration_preference_can_be_corrected_across_bindings(s
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", chat, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
         async def tell(text):
-            result = await client.post("/api/chat/intelligent", json={"request_id": str(uuid4()), "message": text})
+            result = await client.post("/api/v1/agent/chat", json={"request_id": str(uuid4()), "message": text})
             result.raise_for_status()
 
         await tell("以后运营汇报先说结论")

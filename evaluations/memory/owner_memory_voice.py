@@ -83,7 +83,7 @@ async def voice_probe(playwright, executable, origin, login, audio, target, expe
     try:
         context = await browser.new_context(service_workers="block", permissions=["microphone"])
         await context.route("**/*", lambda route: route.continue_() if route.request.url.startswith(origin + "/") else route.abort())
-        assert (await context.request.post(origin + "/api/auth", data={"token": login})).ok
+        assert (await context.request.post(origin + "/api/v1/system/auth/login", data={"token": login})).ok
         page = await context.new_page()
         return await voice_on_page(page, origin, audio, target, expected)
     finally:
@@ -187,7 +187,7 @@ async def voice_on_page(page, origin, audio, target, expected, *, progress=None)
             await dialog.accept()
             report["confirmation_dialog_accepted"] = True
         page.once("dialog", confirm)
-        async with page.expect_response(lambda r: r.url.endswith("/api/agent/memory/confirm")) as response:
+        async with page.expect_response(lambda r: r.url.endswith("/api/v1/agent/memory/confirm")) as response:
             await row.get_by_role("button", name="确认用这句话更正").click()
         result = await response.value
         report["confirm_http_status"] = result.status

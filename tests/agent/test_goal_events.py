@@ -97,7 +97,7 @@ async def test_next_authorized_reply_starts_private_work_and_delivers_to_origina
     assert tasks.workspace.latest(queued["id"])
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
                                  headers={"Authorization": "Bearer fixture-only"}) as client:
-        turns = (await client.get("/api/chat/intelligent")).raise_for_status().json()["turns"]
+        turns = (await client.get("/api/v1/agent/chat")).raise_for_status().json()["turns"]
     delivered, = [turn for turn in turns if turn.get("task_delivery")]
     assert delivered["task_delivery"]["task_id"] == queued["id"]
     assert "确认邮件草稿" in delivered["reply_text"]
@@ -108,7 +108,7 @@ async def test_inbox_event_worker_readback_filters_and_never_replies(studio, mon
     app, tasks, goal = studio
     monkeypatch.setenv("TUBER_ADMIN_TOKEN", "fixture-only")
     incoming(app, 1)
-    url = f"/api/agent/tasks/{goal}/goal/events"
+    url = f"/api/v1/agent/tasks/{goal}/goal/events"
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as owner:
         assert (await owner.get(url)).status_code == 401
         owner.headers["Authorization"] = "Bearer fixture-only"
@@ -132,20 +132,20 @@ async def test_inbox_event_worker_readback_filters_and_never_replies(studio, mon
         tasks.start()
         try:
             async with asyncio.timeout(3):
-                while not (await owner.get("/api/agent/attention")).json()["count"]:
+                while not (await owner.get("/api/v1/agent/attention")).json()["count"]:
                     await asyncio.sleep(0.02)
         finally:
             await tasks.close()
-        listing = (await owner.get("/api/agent/tasks")).json()
+        listing = (await owner.get("/api/v1/agent/tasks")).json()
         notice, = listing["attention"]
-        task_url = "/api/agent/tasks/" + notice["id"]
+        task_url = "/api/v1/agent/tasks/" + notice["id"]
         detail = (await owner.get(task_url)).json()
         receipt = detail["steps"][0]["result"]
         assert receipt["message_id"] == "5" and receipt["sender_uid"] == "200" and receipt["account_id"] == "100"
         assert detail["status"] == "completed" and "消息 ID：5" in detail["message"]
         assert "只有收件箱" not in str(detail) and "私有原话" not in str(detail["steps"])
         assert (await owner.delete(task_url + "/attention", params={"updated": detail["attention"]})).status_code == 200
-        assert (await owner.get("/api/agent/attention")).json() == {"count": 0}
+        assert (await owner.get("/api/v1/agent/attention")).json() == {"count": 0}
         state = (await owner.get(url)).json()
         assert (await owner.delete(url, params={"revision": state["revision"]})).json()["enabled"] is False
         incoming(app, 6)
@@ -219,7 +219,7 @@ def observe(tasks, comment, *, resource="BV1d8pU6xEZX", root="42", uid="200", ac
 async def test_comment_watch_deduplicates_verified_observations_and_restarts(studio, settings, monkeypatch):
     app, tasks, goal = studio
     monkeypatch.setenv("TUBER_ADMIN_TOKEN", "fixture-only")
-    path = f"/api/agent/tasks/{goal}/goal/comment-events"
+    path = f"/api/v1/agent/tasks/{goal}/goal/comment-events"
     observe(tasks, 1)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as owner:
         assert (await owner.get(path)).status_code == 401

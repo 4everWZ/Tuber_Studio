@@ -39,33 +39,33 @@ def test_character_edit_overwrites_current_card_and_preserves_historical_sources
     with TestClient(app) as client:
         headers = {"Authorization": "Bearer " + settings.admin_token}
         store, runtime = app.state.store, app.state.runtime
-        assert [row["id"] for row in client.get("/api/characters", headers=headers).json()] == ["whale"]
+        assert [row["id"] for row in client.get("/api/v1/persona/characters", headers=headers).json()] == ["whale"]
         before = store.character()
         current = store.save_character(before)
         previous_identity = identity_snapshot({}, current)
         runtime.operations.configure({"enabled": True}, account_id="100", character=current)
         saved = client.put(
-            "/api/characters/whale", json=current | {"core": {"identity": "更新后的角色"}}, headers=headers,
+            "/api/v1/persona/characters/whale", json=current | {"core": {"identity": "更新后的角色"}}, headers=headers,
         ).raise_for_status().json()
         assert "version" not in saved
         assert store.character()["version"] == current["version"] and len(store.versions("whale")) == 2
         assert store.character("whale", before["version"]) == before
         assert identity_snapshot({}, store.character()) != previous_identity
         assert "_edit_identity" not in saved and runtime.operations.policy()["enabled"] is False
-        assert client.get("/api/characters/whale/versions", headers=headers).status_code == 404
+        assert client.get("/api/v1/persona/characters/whale/versions", headers=headers).status_code == 404
         repeated = identity_snapshot({}, store.character())
-        client.put("/api/characters/whale", json=saved, headers=headers).raise_for_status()
+        client.put("/api/v1/persona/characters/whale", json=saved, headers=headers).raise_for_status()
         assert identity_snapshot({}, store.character()) == repeated
         assert "更新后的角色" in build_messages(store.character(), {"event_id": "e", "text": "你好"}, {})[0]["content"]
 
         other = client.post(
-            "/api/characters/whale/clone", json={"id": "second-role", "name": "新角色"}, headers=headers,
+            "/api/v1/persona/characters/whale/clone", json={"id": "second-role", "name": "新角色"}, headers=headers,
         ).raise_for_status().json()
-        client.post("/api/characters/second-role/activate", headers=headers).raise_for_status()
+        client.post("/api/v1/persona/characters/second-role/activate", headers=headers).raise_for_status()
         assert runtime.character["id"] == other["id"] and other["name"] == "新角色"
 
         auto = client.post(
-            "/api/characters/second-role/clone", json={"name": " 大肥鱼改良版 "}, headers=headers,
+            "/api/v1/persona/characters/second-role/clone", json={"name": " 大肥鱼改良版 "}, headers=headers,
         ).raise_for_status().json()
         assert auto["id"].startswith("oc-") and auto["id"] != other["id"]
         assert auto["name"] == "大肥鱼改良版" and auto["core"] == other["core"]
@@ -77,14 +77,14 @@ def test_create_blank_character_and_rename_before_and_after_activation(settings)
     with TestClient(app) as client:
         headers = {"Authorization": "Bearer " + settings.admin_token}
         original = app.state.runtime.character
-        card = client.post("/api/characters", json={"name": " 新卡片 "}, headers=headers).raise_for_status().json()
+        card = client.post("/api/v1/persona/characters", json={"name": " 新卡片 "}, headers=headers).raise_for_status().json()
         assert card["id"].startswith("oc-") and card["name"] == "新卡片"
         assert card["core"] == card["style"] == {}
         assert card["voice_profile"] == DEFAULT_CHARACTER_VOICE
         assert card["avatar_manifest"] == DEFAULT_CHARACTER_MANIFEST
         assert card["rules"] == card["lore"] == card["sources"] == []
         assert app.state.runtime.character == original
-        path = f"/api/characters/{card['id']}"
+        path = f"/api/v1/persona/characters/{card['id']}"
         card = client.put(path, json=card | {"name": "新角色", "aliases": ["小站长"], "core": {"identity": "新设定"}},
                           headers=headers).raise_for_status().json()
         client.post(f"{path}/activate", headers=headers).raise_for_status()
@@ -102,18 +102,18 @@ def test_web_display_name_does_not_edit_character_or_operator_grant(settings):
         store, runtime = app.state.store, app.state.runtime
         before = store.character()
         runtime.operations.configure({"enabled": True}, account_id="100", character=before)
-        path = "/api/characters/whale"
+        path = "/api/v1/persona/characters/whale"
         card = client.get(path, headers=headers).raise_for_status().json()
         assert card["display_name"] == "大肥鱼"
         updated = client.put(path, json=card | {"display_name": " 戏台署名 "}, headers=headers).raise_for_status().json()
         assert updated["display_name"] == "戏台署名" and updated["name"] == "大肥鱼"
         assert store.character() == before and "display_name" not in runtime.character
         assert runtime.operations.policy()["enabled"] is True
-        assert client.get("/api/chat/intelligent", headers=headers).json()["character"] == "戏台署名"
-        assert client.get("/api/chat/private-call", headers=headers).json()["character"] == "戏台署名"
+        assert client.get("/api/v1/agent/chat", headers=headers).json()["character"] == "戏台署名"
+        assert client.get("/api/v1/agent/private-call", headers=headers).json()["character"] == "戏台署名"
         cleared = client.put(path, json=updated | {"display_name": ""}, headers=headers).raise_for_status().json()
         assert cleared["display_name"] == ""
-        assert client.get("/api/chat/intelligent", headers=headers).json()["character"] == "whale"
+        assert client.get("/api/v1/agent/chat", headers=headers).json()["character"] == "whale"
 
 
 def test_blank_card_prefers_configured_yaoyao_recording(settings):
@@ -152,14 +152,14 @@ def test_paste_complete_card_delete_active_and_restore(settings):
     app = create_app(settings)
     with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
         store = app.state.store
-        original = client.get("/api/characters/whale").raise_for_status().json()
-        target = client.post("/api/characters", json={"name": "大肥鱼 v2"}).raise_for_status().json()
-        path = f"/api/characters/{target['id']}"
+        original = client.get("/api/v1/persona/characters/whale").raise_for_status().json()
+        target = client.post("/api/v1/persona/characters", json={"name": "大肥鱼 v2"}).raise_for_status().json()
+        path = f"/api/v1/persona/characters/{target['id']}"
         assert client.put(path, json=original | {"voice_profile": "missing"}).status_code == 422
         assert client.get(path).json() == target
         saved = client.put(path, json=original | {"name": "改名 v2"}).raise_for_status().json()
         assert saved == original | {"id": target["id"], "name": "改名 v2"}
-        assert client.get("/api/characters/whale").json() == original
+        assert client.get("/api/v1/persona/characters/whale").json() == original
         client.post(f"{path}/activate").raise_for_status()
         history = store.character(target["id"])
         assert client.delete(path).status_code == 409
@@ -168,8 +168,8 @@ def test_paste_complete_card_delete_active_and_restore(settings):
         assert client.request("DELETE", path, json={"replacement_id": "whale"}).raise_for_status().json() == {
             "active_character_id": "whale",
         }
-        assert [row["id"] for row in client.get("/api/characters").json()] == ["whale"]
-        assert client.get("/api/characters/deleted").json() == [saved]
+        assert [row["id"] for row in client.get("/api/v1/persona/characters").json()] == ["whale"]
+        assert client.get("/api/v1/persona/characters/deleted").json() == [saved]
         assert client.get(path).status_code == 400
         assert client.put(path, json=saved).status_code == 400
         assert client.post(f"{path}/activate").status_code == 400
@@ -193,7 +193,7 @@ def test_character_owner_uses_verified_profile_and_persists_per_card(settings, m
         return profile
 
     monkeypatch.setattr(app.state.bilibili_account.adapter, "public_profile", lookup)
-    path = "/api/characters/whale"
+    path = "/api/v1/persona/characters/whale"
     preview = f"{path}/bilibili-owner"
     space = f"https://space.bilibili.com/{profile['uid']}/?spm_id_from=example"
     with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
@@ -206,7 +206,7 @@ def test_character_owner_uses_verified_profile_and_persists_per_card(settings, m
         }).raise_for_status().json()
         assert saved["bilibili_owner"] == app.state.runtime.character["bilibili_owner"] == profile
         assert lookup_uids == [profile["uid"]] * 2
-        other = client.post("/api/characters", json={"name": "新角色"}).raise_for_status().json()
+        other = client.post("/api/v1/persona/characters", json={"name": "新角色"}).raise_for_status().json()
         assert "bilibili_owner" not in other
         client.put(path, json=card | {"name": "改名"}).raise_for_status()
         assert client.get(path).json()["bilibili_owner"] == profile

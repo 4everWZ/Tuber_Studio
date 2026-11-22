@@ -395,26 +395,26 @@ def test_management_dto_and_disable_use_one_shared_catalog(settings):
 
     app = create_app(settings, Platform())
     with TestClient(app) as client:
-        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
         assert app.state.messages.memes is app.state.memes is app.state.dynamics.memes
-        item = client.get("/api/memes?character=whale").json()["items"][0]
+        item = client.get("/api/v1/persona/memes?character=whale").json()["items"][0]
         identity = item["asset_id"]
         other = app.state.store.save_character(
             app.state.store.character() | {"id": "another", "name": "另一个角色"}
         )["id"]
-        assert client.put(f"/api/memes/{identity}", json={"enabled": True}).json()["enabled"]
+        assert client.put(f"/api/v1/persona/memes/{identity}", json={"enabled": True}).json()["enabled"]
         assert app.state.memes.read(identity, other)["content"]
-        assert client.delete(f"/api/memes/{identity}").status_code == 400
-        disabled = client.put(f"/api/memes/{identity}", json={"enabled": False})
+        assert client.delete(f"/api/v1/persona/memes/{identity}").status_code == 400
+        disabled = client.put(f"/api/v1/persona/memes/{identity}", json={"enabled": False})
         assert disabled.status_code == 200 and not disabled.json()["enabled"]
         for character in ("whale", other):
-            result = client.get("/api/memes", params={"character": character}).json()
+            result = client.get("/api/v1/persona/memes", params={"character": character}).json()
             current = next(row for row in result["items"] if row["asset_id"] == identity)
             assert not current["enabled"]
-        assert client.get(f"/api/memes/{identity}/preview?character=whale").status_code == 200
+        assert client.get(f"/api/v1/persona/memes/{identity}/preview?character=whale").status_code == 200
         with pytest.raises(ValueError, match="未启用"):
             app.state.memes.read(identity, "whale")
-        assert client.delete(f"/api/memes/{identity}").json()["deleted"]
+        assert client.delete(f"/api/v1/persona/memes/{identity}").json()["deleted"]
 
 
 def test_management_can_delete_a_missing_unpinned_library_entry(settings):
@@ -424,10 +424,10 @@ def test_management_can_delete_a_missing_unpinned_library_entry(settings):
 
     app = create_app(settings, Platform())
     with TestClient(app) as client:
-        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
         content = (settings.root / "assets/whale/sing_open.png").read_bytes()
         result = client.post(
-            "/api/memes",
+            "/api/v1/persona/memes",
             json={
                 "character": "whale",
                 "title": "uploaded temporary fixture",
@@ -440,13 +440,13 @@ def test_management_can_delete_a_missing_unpinned_library_entry(settings):
         result.raise_for_status()
         identity = result.json()["asset_id"]
         path = app.state.memes.resolve(identity, "whale")["path"]
-        client.put(f"/api/memes/{identity}", json={"character": "whale", "enabled": False}).raise_for_status()
+        client.put(f"/api/v1/persona/memes/{identity}", json={"character": "whale", "enabled": False}).raise_for_status()
         path.unlink()
-        listing = client.get("/api/memes?character=whale").json()["items"]
+        listing = client.get("/api/v1/persona/memes?character=whale").json()["items"]
         assert next(item for item in listing if item["asset_id"] == identity)["missing"]
-        deleted = client.delete(f"/api/memes/{identity}?character=whale")
+        deleted = client.delete(f"/api/v1/persona/memes/{identity}?character=whale")
         assert deleted.status_code == 200, deleted.text
         assert deleted.json()["deleted"]
         assert identity not in {
-            item["asset_id"] for item in client.get("/api/memes?character=whale").json()["items"]
+            item["asset_id"] for item in client.get("/api/v1/persona/memes?character=whale").json()["items"]
         }

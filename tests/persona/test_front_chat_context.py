@@ -77,8 +77,8 @@ async def test_chat_model_packet_keeps_account_out_and_uses_current_question(
         body["intent"] = {"action": "chat"}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
         if semantic:
-            assert (await client.post("/api/chat/intelligent", json=body)).status_code == 503
-        reply = (await client.post("/api/chat/intelligent", json=body)).raise_for_status().json()
+            assert (await client.post("/api/v1/agent/chat", json=body)).status_code == 503
+        reply = (await client.post("/api/v1/agent/chat", json=body)).raise_for_status().json()
     assert reply["reply_text"] == "好。"
     if semantic:
         assert calls[0][0] == calls[1][0]

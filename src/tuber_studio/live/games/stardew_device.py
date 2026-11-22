@@ -8,7 +8,6 @@ from tempfile import NamedTemporaryFile
 from typing import Literal
 from uuid import UUID
 
-from fastapi import Depends, HTTPException
 from pydantic import Field
 
 from ...core.models import StrictModel
@@ -107,28 +106,6 @@ class StardewDevice:
         return {"status": "cancelled", "session": str(session), "id": str(identity)}
 
 
-def register_stardew_device(app, require_admin, *, on_device=None):
-    device = StardewDevice(os.environ.get("TUBER_STARDEW_BRIDGE"))
-    app.state.stardew_device = device
-    deps = [Depends(require_admin)]
-    if device.directory and on_device is not None:
-        on_device(device)
-
-    @app.get("/api/games/device/stardew", dependencies=deps)
-    def state():
-        return device.status()
-
-    @app.post("/api/games/device/stardew/actions", dependencies=deps)
-    def submit(command: DeviceCommand):
-        try:
-            return device.submit(command)
-        except ValueError as exc:
-            raise HTTPException(409, str(exc)) from exc
-
-    @app.get("/api/games/device/stardew/actions/{session}/{identity}", dependencies=deps)
-    def receipt(session: UUID, identity: UUID):
-        result = device.receipt(session, identity)
-        if result is None:
-            raise HTTPException(404, "没有这个实机会话的动作记录")
-        return result
-    return device
+def create_stardew_device() -> StardewDevice:
+    """Construct the optional local SMAPI bridge transport from environment configuration."""
+    return StardewDevice(os.environ.get("TUBER_STARDEW_BRIDGE"))

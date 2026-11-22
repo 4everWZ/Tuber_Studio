@@ -10,7 +10,7 @@ Tuber Studio 连接独立推理网关。Omni 处理前台对话、电话和实�
 
 同一网关地址可在工作台保存新的普通应用凭据。保存值优先，清除后恢复该地址的 Compose 凭据。换成其他地址时须为新地址单独授权。
 
-设置 API 的 `PUT /api/settings/providers` 接受 `omni.base_url`、`omni.model` 和 `omni.responses_model`。后台并发和输出额度分别使用 `omni.responses_options.parallel_reads` 和 `max_output_tokens`。填写 `credentials.omni` 可更换凭据，发送 `clear_credentials: ["omni"]` 可清除保存值。`GET /api/settings` 通过 `provider_credentials.omni` 报告当前是否持有可用凭据。
+设置 API 的 `PUT /api/v1/system/settings/providers` 接受 `omni.base_url`、`omni.model` 和 `omni.responses_model`。后台并发和输出额度分别使用 `omni.responses_options.parallel_reads` 和 `max_output_tokens`。填写 `credentials.omni` 可更换凭据，发送 `clear_credentials: ["omni"]` 可清除保存值。`GET /api/v1/system/settings` 通过 `provider_credentials.omni` 报告当前是否持有可用凭据。
 
 ```sh
 docker compose -f deploy/omni/app-compose.yml config --quiet

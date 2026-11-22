@@ -34,7 +34,7 @@ async page => {
       !(await archive.getByRole("link", {name:"许可说明"}).getAttribute("href")).endsWith("/ai-girl-stickers/issues/32"))
     throw Error("archive image or grant is not attributed");
   await archive.getByRole("button", {name:"选用花花"}).click();
-  await page.waitForFunction(() => document.querySelector("#chat-agent-avatar").naturalWidth > 0 && document.querySelector("#chat-agent-avatar").src.includes("/api/memes/"));
+  await page.waitForFunction(() => document.querySelector("#chat-agent-avatar").naturalWidth > 0 && document.querySelector("#chat-agent-avatar").src.includes("/api/v1/persona/memes/"));
   if (await page.locator("#chat-agent-avatar").evaluate(async image => {
     await image.decode();
     return image.naturalWidth !== 898 || image.naturalHeight !== 898;
@@ -49,7 +49,7 @@ async page => {
   await page.getByRole("button",{name:"关闭面板"}).click();
   await page.waitForTimeout(3100);
   const paths = new Set(blocked.map(url => new URL(url).pathname));
-  if (paths.size !== 2 || !paths.has("/api/account/bilibili") || !paths.has("/api/automation")) {
+  if (paths.size !== 2 || !paths.has("/api/v1/operations/account/bilibili") || !paths.has("/api/v1/operations/automation")) {
     throw Error("unexpected homepage dependencies: " + blocked.join(", "));
   }
   await page.getByRole("link",{name:"设置",exact:true}).click();

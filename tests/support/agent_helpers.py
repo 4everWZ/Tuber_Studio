@@ -19,8 +19,8 @@ from tuber_studio.core.store import dump
 from tuber_studio.infra.inference import http_api as http_api
 from tuber_studio.operations.channels.comments.timeline import ensure_comment_timeline
 
-CHAT = "/api/chat/intelligent"
-MEM = "/api/agent/memory"
+CHAT = "/api/v1/agent/chat"
+MEM = "/api/v1/agent/memory"
 NOTE = "写开场时我喜欢先讲海底厨房。"
 
 ACCOUNT = "12345"
@@ -181,7 +181,7 @@ def seed_workshop(runtime):
 
 async def save(client, source="settings", **fields):
     body = {"source": source, "text": NOTE, **fields}
-    proposal = (await client.post(MEM + ".propose", json=body)).raise_for_status().json()
+    proposal = (await client.post(MEM + "/propose", json=body)).raise_for_status().json()
     response = await client.post(MEM + "/confirm", json=body | {"stamp": proposal["stamp"]})
     return response.raise_for_status().json()["id"]
 

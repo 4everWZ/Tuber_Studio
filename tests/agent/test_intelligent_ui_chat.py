@@ -67,7 +67,7 @@ async def test_chat_delegation_survives_interleaved_conversation_and_delivers_la
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
     monkeypatch.setattr(runtime.tasks, "_step", step)
-    path = "/api/chat/intelligent"
+    path = "/api/v1/agent/chat"
     async with app.router.lifespan_context(app), httpx.AsyncClient(
         transport=httpx.ASGITransport(app), base_url="http://127.0.0.1",
     ) as client:
@@ -102,7 +102,7 @@ async def test_clear_private_chat_removes_other_login_placeholders_and_rejects_o
     owner, char = runtime.tasks.identity.principal, runtime.character
     account = "123"
     runtime.browsing.discovery.remember_account(account)
-    path = "/api/chat/intelligent"
+    path = "/api/v1/agent/chat"
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
         request_id = str(uuid4())
         original = {"request_id": request_id, "message": "整理舞台交接记录", "intent": {"action": "agent_task"}}
@@ -148,7 +148,7 @@ async def test_omni_uses_workbench_fields_without_changing_conversational_routin
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", model, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
-        path = "/api/chat/intelligent"
+        path = "/api/v1/agent/chat"
         for message in ("今天过得好吗？", "日历上的日期是什么？"):
             result = (await client.post(path, json={"request_id": str(uuid4()), "message": message})).raise_for_status().json()
             if message.startswith("今天"):
@@ -220,7 +220,7 @@ def test_assistant_stream_persists_only_final_text_and_retries_under_same_id(set
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
     with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 52000)) as client:
-        path = "/api/chat/intelligent"
+        path = "/api/v1/agent/chat"
         char = app.state.runtime.character
         for message, saved, when in [
             ("今天运营发生什么", {"card": {"type": "operation_events", "data": {"items": [
@@ -252,7 +252,7 @@ def test_assistant_rejects_invalid_tool_payload_before_dispatch(settings, monkey
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
     with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 52000)) as client:
-        response = client.post("/api/chat/intelligent/stream", json={
+        response = client.post("/api/v1/agent/chat/stream", json={
             "request_id": str(uuid4()), "message": "帮我看一下视频中的一帧",
         })
         assert "event: error" in response.text
@@ -285,7 +285,7 @@ async def test_chat_lifecycle_separates_live_status_from_persistent_work(setting
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
         identity = str(uuid4())
-        response = await client.post("/api/chat/intelligent", json={
+        response = await client.post("/api/v1/agent/chat", json={
             "request_id": identity, "message": "核对一下直播状态" + ("，给我留份交接记录" if lifecycle == "delegate_task" else ""),
         })
         assert calls == ["TurnRoute"]
@@ -324,7 +324,7 @@ async def test_nonchat_acknowledgement_is_neither_streamed_nor_saved(settings, m
 
     monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS_URL", raising=False)
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
-    path = "/api/chat/intelligent"
+    path = "/api/v1/agent/chat"
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
         if route == "steer_task":
             (await client.post(path, json={"request_id": previous, "message": "预备素材",
@@ -345,7 +345,7 @@ async def test_chat_projects_only_active_goal_and_evidence_after_steer(settings,
     app = create_app(settings, adapter=ControlledPlatform())
     tasks = app.state.runtime.tasks
     identity = str(uuid4())
-    path = "/api/chat/intelligent"
+    path = "/api/v1/agent/chat"
     original = (f"写一份便笺，取 {BV} P2，给没看过的观众，不能剧透。" if not replace else
                 "交给后台准备一份私有交接便笺，先查工坊当前的直播状态。")
     latest = "改为只检查自主运营是否启动，写进同一份便笺" if replace else "把第二段写短一点"
@@ -396,7 +396,7 @@ async def test_chat_projects_only_active_goal_and_evidence_after_steer(settings,
 async def test_semantic_task_cards_bind_clarified_steering_without_approval(settings, monkeypatch):
     app = create_app(settings, adapter=ControlledPlatform())
     runtime = app.state.runtime
-    path = "/api/chat/intelligent"
+    path = "/api/v1/agent/chat"
     ids = [str(uuid4()) for _ in range(4)]
     texts = ["给下场暖场留两段可选的，别发", "这周的选题也备一份", "第二段换成轻松点的", "我是指暖场那份"]
 
@@ -444,7 +444,7 @@ async def test_semantic_task_cards_bind_clarified_steering_without_approval(sett
 async def test_unverified_card_revision_finishes_without_a_chat_success_claim(settings, monkeypatch, patch):
     app = create_app(settings, adapter=ControlledPlatform())
     tasks = app.state.runtime.tasks
-    path = "/api/chat/intelligent"
+    path = "/api/v1/agent/chat"
     identity, turn_id = str(uuid4()), str(uuid4())
     original = "交给后台准备一份私有交接便笺，先查工坊当前的直播状态。"
     request = {"request_id": turn_id, "message": "继续刚才的那份便笺，改为只检查自主运营是否启动，写进同一份便笺。"}
@@ -479,7 +479,7 @@ async def test_unverified_card_revision_finishes_without_a_chat_success_claim(se
 @pytest.mark.parametrize("ask_about_card", [True, False])
 async def test_discussing_a_card_or_chatting_without_material_does_not_steer(settings, monkeypatch, ask_about_card):
     app = create_app(settings, adapter=ControlledPlatform())
-    path, identity = "/api/chat/intelligent", str(uuid4())
+    path, identity = "/api/v1/agent/chat", str(uuid4())
     stages = []
 
     async def generate(messages, schema, *, on_content, **options):
@@ -533,7 +533,7 @@ async def test_typed_video_selection_is_input_not_dispatch(settings, monkeypatch
     monkeypatch.setattr(app.state.browsing, "queue_full_video", queue)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
         identity = str(uuid4())
-        result = await client.post("/api/chat/intelligent", json={"request_id": identity, "video_selection": selection,
+        result = await client.post("/api/v1/agent/chat", json={"request_id": identity, "video_selection": selection,
             "message": "准备一份提纲" if route == "agent_task" else "看看这段", **(
                 {"intent": {"action": "full_video"}} if route == "shortcut" else {})})
         card = result.raise_for_status().json()["card"]
@@ -560,7 +560,7 @@ async def test_chat_steer_rejects_concurrent_revision_and_non_card_tasks(setting
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", decide, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
-        path = "/api/chat/intelligent"
+        path = "/api/v1/agent/chat"
         result = await client.post(path, json={"request_id": identity, "message": "准备提纲", "intent": {"action": "agent_task"}})
         assert result.status_code == 200, result.text
         changed = await client.post(path, json={"request_id": str(uuid4()), "message": "留一段就好"})
@@ -575,7 +575,7 @@ async def test_chat_steer_rejects_concurrent_revision_and_non_card_tasks(setting
 async def test_bound_private_chat_survives_version_and_account_but_not_role_switch(settings, monkeypatch):
     app = create_app(settings, adapter=ControlledPlatform())
     runtime, discovery = app.state.runtime, app.state.browsing.discovery
-    store, path = runtime.store, "/api/chat/intelligent"
+    store, path = runtime.store, "/api/v1/agent/chat"
     prompts = []
 
     async def decide(messages, schema, **options):
@@ -654,7 +654,7 @@ def test_assistant_rechecks_private_scope_before_delivery(settings, monkeypatch,
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
     with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 52000)) as client:
         browsing.discovery.remember_account("100")
-        response = client.post("/api/chat/intelligent/stream", json={
+        response = client.post("/api/v1/agent/chat/stream", json={
             "request_id": str(uuid4()), "message": "还记得刚才的事吗",
         })
         assert "event: error" in response.text
@@ -677,7 +677,7 @@ async def test_stop_generation_cancels_only_the_bound_chat_and_releases_model(se
             cancelled.set()
 
     monkeypatch.setattr(runtime.llm, "generate", wait_for_stop)
-    path = "/api/chat/intelligent"
+    path = "/api/v1/agent/chat"
     request_id = str(uuid4())
     async with app.router.lifespan_context(app), httpx.AsyncClient(
         transport=httpx.ASGITransport(app), base_url="http://127.0.0.1",
@@ -756,7 +756,7 @@ def test_chat_persists_private_turns_and_resolves_real_task_cards(settings, monk
     monkeypatch.setattr(runtime.llm, "generate", private_model)
     monkeypatch.setattr(app.state.browsing, "run", fake_preview)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
-        path = "/api/chat/intelligent"
+        path = "/api/v1/agent/chat"
         chat_id = str(uuid4())
         chat = {"request_id": chat_id, "message": "私聊专用内容 xyz123"}
         response = client.post(path, json=chat)
@@ -776,7 +776,7 @@ def test_chat_persists_private_turns_and_resolves_real_task_cards(settings, monk
         assert client.post(path, json=dynamic).json()["card"]["data"]["id"] == post_id
         assert store.one("SELECT status FROM dynamic_posts WHERE id=?", (post_id,))["status"] == "pending_review"
         assert "xyz123" not in str(packets)
-        response = client.post(f"/api/dynamics/posts/{post_id}/publish", json={"text": "换成这句白饭。"})
+        response = client.post(f"/api/v1/operations/dynamics/posts/{post_id}/publish", json={"text": "换成这句白饭。"})
         assert response.status_code == 400  # this isolated app has no platform credentials
         assert app.state.dynamics._post(post_id)["content"] == "换成这句白饭。"
 
@@ -799,7 +799,7 @@ def test_chat_history_cursor_and_activity_are_bound_to_current_scope(settings):
     store, browsing = app.state.store, app.state.browsing
     char = app.state.runtime.character
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
-        path = "/api/chat/intelligent"
+        path = "/api/v1/agent/chat"
         requests = sorted(str(uuid4()) for _ in range(3))
         for request in requests:
             store.execute("INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)", (
@@ -889,13 +889,13 @@ def test_chat_corrects_original_dynamic_without_reposting(settings, monkeypatch,
         studio._status(post_id, "published", receipt=receipt)
         posted_at = studio._post(post_id)["published_at"]
         request_id = str(uuid4())
-        response = client.post("/api/chat/intelligent", json={
+        response = client.post("/api/v1/agent/chat", json={
             "request_id": request_id, "message": f"修改 https://www.bilibili.com/opus/{identifier}，原评论里没有认错人。",
         })
         card = response.raise_for_status().json()["card"]
         assert card["type"] == "dynamic_edit" and card["data"]["caption"] == new
         assert not writes
-        path = f"/api/dynamics/edits/{request_id}/apply"
+        path = f"/api/v1/operations/dynamics/edits/{request_id}/apply"
         result = client.post(path).raise_for_status().json()
         if unknown:
             assert result["status"] == "pending_verification"
@@ -915,11 +915,11 @@ def test_operations_card_refreshes_permissions_and_confirmation(settings, monkey
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", model)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
-        path = "/api/chat/intelligent"
+        path = "/api/v1/agent/chat"
         command = {"request_id": str(uuid4()), "message": "启动自主运营", "intent": {"action": "start_operations"}}
         control = client.post(path, json=command).json()["card"]
         assert control["type"] == "operation_control" and control["data"]["policy"]["enabled"] is False
-        updated = client.put("/api/automation/settings", json={"reply_enabled": True}).json()
+        updated = client.put("/api/v1/operations/automation/settings", json={"reply_enabled": True}).json()
         current = client.get(path + "/turns/" + command["request_id"]).json()["card"]["data"]
         assert current["permissions"] == updated["permissions"] and current["permissions"]["replies"] == "review"
         assert client.post(path + f"/turns/{command['request_id']}/confirm/start", json={}).status_code == 409
@@ -967,7 +967,7 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", model)
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", assistant, raising=False)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
-        path = "/api/chat/intelligent"
+        path = "/api/v1/agent/chat"
         app.state.browsing.discovery.remember_account("100")
 
         def send(text):
@@ -984,7 +984,7 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
         assert send("后来回了没")[1]["card"]["data"]["event"]["reply"]["text"] == "知道了"
         proposal, turn = send("把它记成公开经历")
         assert turn["card"]["data"]["text"] == "第一句"
-        memory_path = "/api/daily-memory"
+        memory_path = "/api/v1/persona/daily-memory"
         saved, = client.get(memory_path).json()["organized"]
         assert saved["source"]["references"][0]["text"] == "第一句"
         assert saved["visibility"] == "shared"
@@ -1039,7 +1039,7 @@ def test_live_proposal_runs_existing_control_once_and_demo_shortcut_remains_avai
 
     monkeypatch.setattr(runtime, "control", control)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
-        path = "/api/chat/intelligent"
+        path = "/api/v1/agent/chat"
         request = {"request_id": str(uuid4()), "message": "开始直播"}
         assert client.post(path, json=request).status_code == 503
         proposed = client.post(path, json=request | {"intent": {"action": "start_live"}}).json()
@@ -1088,7 +1088,7 @@ def test_precise_video_chat_uses_bound_part_and_reports_fallback(settings, monke
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", intent)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
-        path = "/api/chat/intelligent"
+        path = "/api/v1/agent/chat"
         for _ in range(2 if stream_available else 1):
             identity = str(uuid4())
             queued = client.post(path, json={"request_id": identity, "message": f"看一下 {BV} P2 的 02:17.400"})
@@ -1134,7 +1134,7 @@ def test_specified_video_reuses_range_checkpoints_and_reconnects_under_same_id(s
     browsing = app.state.browsing
     browsing.read_interval = 0
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
-        path = "/api/chat/intelligent"
+        path = "/api/v1/agent/chat"
         request = {"request_id": str(uuid4()), "message": "看完整视频：" + BV, "intent": {"action": "full_video"}, "video_selection": {
             "bvid": BV, "ranges": [{"part": 1, "start": 0, "end": 5}, {"part": 2, "start": 3, "end": 20}],
         }}
@@ -1158,14 +1158,14 @@ def test_specified_video_reuses_range_checkpoints_and_reconnects_under_same_id(s
         assert client.post(path, json=waiting_request).json()["card"]["data"]["status"] == "waiting"
         assert client.post(waiting_url + "/cancel-video").json()["card"]["data"]["status"] == "cancelled"
         assert client.post(waiting_url + "/resume-video").json()["card"]["data"]["status"] == "waiting"
-        assert client.post("/api/automation/stop", json={"emergency": True}).json()["state"] == "emergency"
+        assert client.post("/api/v1/operations/automation/stop", json={"emergency": True}).json()["state"] == "emergency"
         assert client.get(waiting_url).json()["card"]["data"]["status"] == "paused"
         cancelled = client.get(turn_url).json()["card"]["data"]
         assert cancelled["status"] == "cancelled" and cancelled["can_resume"]
         assert client.post(path, json=request).json()["card"]["data"]["status"] == "cancelled"
         assert client.post(path, json=request | {"video_selection": {"bvid": BV}}).status_code == 409
         assert client.post(turn_url + "/resume-video").status_code == 400
-        assert client.post("/api/automation/reset-stop").status_code == 200
+        assert client.post("/api/v1/operations/automation/reset-stop").status_code == 200
         platform.hold_second = False
         assert client.post(turn_url + "/resume-video").status_code == 200
         result = until(lambda data: data["status"] == "completed")
@@ -1222,7 +1222,7 @@ def test_operator_discussion_to_dynamic_uses_only_sanitized_material(settings, m
     monkeypatch.setattr(runtime.operation_llm, "generate_json", draft)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         client.cookies.set("tuber_overlay", settings.overlay_token)
-        path = "/api/chat/intelligent"
+        path = "/api/v1/agent/chat"
         client.post(path, json={"request_id": str(uuid4()), "message": f"姓名：{private_name}，聊聊布光 {private_url}"}).raise_for_status()
         command = {"request_id": str(uuid4()), "message": "把刚才聊的布光写成动态",
                    "intent": {"action": "dynamic", "source": "discussion"}}
@@ -1298,7 +1298,7 @@ def test_operator_video_to_live_uses_only_handoff_text_and_player_receipt(settin
     monkeypatch.setattr(runtime.operation_llm, "generate_operator_json", interpret, raising=False)
     monkeypatch.setattr(runtime.llm, "generate", generate)
     monkeypatch.setattr(runtime.voices, "synthesize_live", synthesize)
-    path = "/api/chat/intelligent"
+    path = "/api/v1/agent/chat"
 
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         client.cookies.set("tuber_overlay", settings.overlay_token)
@@ -1323,7 +1323,7 @@ def test_operator_video_to_live_uses_only_handoff_text_and_player_receipt(settin
         row = browsing.repo.round(request["request_id"])
         assert name not in json.dumps(row, ensure_ascii=False) and private_url not in json.dumps(row)
         assert ("subtitles", BV, "11") in platform.calls and platform.sent == []
-        client.post("/api/live/start").raise_for_status()
+        client.post("/api/v1/live/start").raise_for_status()
         send("以后直播都先讲结果")
         req, handoff = send("本场讲一下这个视频的发现")
         assert handoff["card"]["data"]["text"] == safe_text
@@ -1352,8 +1352,8 @@ def test_operator_video_to_live_uses_only_handoff_text_and_player_receipt(settin
                     break
                 time.sleep(0.01)
             assert done["spoken"] == spoken
-        client.post("/api/live/stop").raise_for_status()
-        client.post("/api/live/start").raise_for_status()
+        client.post("/api/v1/live/stop").raise_for_status()
+        client.post("/api/v1/live/start").raise_for_status()
         assert client.get(f"{path}/turns/{req['request_id']}").json()["card"]["data"]["spoken"] == spoken
         _, history = send("刚才有说鸡蛋吗", intent={"action": "live_history", "topic": "鸡蛋"})
         assert [entry["text"] for entry in history["card"]["data"]["items"]] == [spoken]
@@ -1371,28 +1371,28 @@ def test_operator_video_to_live_uses_only_handoff_text_and_player_receipt(settin
 def test_game_chat_handoff_uses_save_and_yields_to_operator(settings):
     app = create_app(settings, adapter=ControlledPlatform())
     game = app.state.runtime.live.game_livestream
-    path = "/api/chat/intelligent"
+    path = "/api/v1/agent/chat"
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         def handoff(action, *, request_id=None):
             request_id = request_id or str(uuid4())
             return client.post(path, json={"request_id": request_id, "message": "私聊背景：验收姓名乙和内部链接",
                                           "intent": {"action": "game_handoff", "game_action": action}}).raise_for_status().json()
 
-        original = client.get("/api/games/status").json()["active_status"]
+        original = client.get("/api/v1/live/games/status").json()["active_status"]
         identity = str(uuid4())
         first = handoff("water_crops", request_id=identity)
         assert first["card"]["type"] == "game_handoff"
         assert "验收姓名乙" not in json.dumps(game.last_handoff, ensure_ascii=False)
-        watered = client.get("/api/games/status").json()["active_status"]
+        watered = client.get("/api/v1/live/games/status").json()["active_status"]
         assert watered["unwatered_crops"] < original["unwatered_crops"]
         assert handoff("water_crops", request_id=identity) == first
-        assert client.post("/api/games/control", json={"owner": "operator"}).json()["owner"] == "operator"
+        assert client.post("/api/v1/live/games/control", json={"owner": "operator"}).json()["owner"] == "operator"
         assert "号主接管" in handoff("sleep_day")["reply_text"]
-        assert client.post("/api/games/step").status_code == 400
-        assert client.post("/api/games/action", json={"action": "sleep_day"}).json()["success"]
+        assert client.post("/api/v1/live/games/step").status_code == 400
+        assert client.post("/api/v1/live/games/action", json={"action": "sleep_day"}).json()["success"]
         saved = GameLivestreamService(store=app.state.store)
         assert saved.status()["active_status"]["day"] == original["day"] + 1 and saved.owner == "operator"
-        client.post("/api/games/control", json={"owner": "studio"}).raise_for_status()
+        client.post("/api/v1/live/games/control", json={"owner": "studio"}).raise_for_status()
         assert handoff("step")["card"]["type"] == "game_handoff"
 
 
@@ -1412,7 +1412,7 @@ def test_specified_video_can_resume_when_previously_unavailable_subtitles_appear
         return await original(*args)
 
     monkeypatch.setattr(browsing.evidence, "subtitle_part", subtitles)
-    path, identity = "/api/chat/intelligent", str(uuid4())
+    path, identity = "/api/v1/agent/chat", str(uuid4())
     turn = f"{path}/turns/{identity}"
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         assert client.post(path, json={"request_id": identity, "message": "看完整视频：" + BV,
@@ -1443,7 +1443,7 @@ def test_specified_video_can_resume_when_previously_unavailable_subtitles_appear
 async def test_opened_edition_routes_once_with_current_instruction(settings, monkeypatch, operation, quote, expected, revision):
     app = create_app(settings, adapter=ControlledPlatform())
     runtime = app.state.runtime
-    path = "/api/chat/intelligent"
+    path = "/api/v1/agent/chat"
     identity = str(uuid4())
     message = "原定的素材，另挑一段。" if operation == "revise" else "这项交办，停止这项交办，已有的稿子留着。"
     coord = {"task_revision": 1, "edition": 1}
@@ -1487,7 +1487,7 @@ async def test_unopened_running_task_cannot_absorb_unrelated_conversation(settin
     runtime = app.state.runtime
     identity = str(uuid4())
     goal = "为下场直播从视频取两个片段，保存提纲，写两句引言。"
-    path = "/api/chat/intelligent"
+    path = "/api/v1/agent/chat"
     conversation = "辛苦啦，跟我聊两句吧。"
 
     async def generate(messages, schema, **options):
