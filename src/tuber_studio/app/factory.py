@@ -40,6 +40,10 @@ from .runtime import Runtime
 from .web_mount import WebMount
 
 
+def _default_web_dist() -> Path:
+    return Path(__file__).resolve().parents[1] / "web_dist"
+
+
 def register_all_routes(
     app: FastAPI,
     *,
@@ -61,10 +65,10 @@ def register_all_routes(
     install_error_handlers(app)
     auth = AuthContext(settings, sessions)
 
-    web = Path(__file__).resolve().parents[1] / "web"
+    web_dist = _default_web_dist()
     if mount_static:
-        if web.is_dir():
-            app.mount("/static", StaticFiles(directory=web), name="static")
+        if web_dist.is_dir():
+            app.mount("/static", StaticFiles(directory=web_dist), name="static")
         assets_dir = settings.root / "assets"
         if assets_dir.is_dir():
             app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
@@ -98,7 +102,7 @@ def register_all_routes(
     register_operations_channel_routes(
         app, store, account, comments, browsing, dynamics, messages, auth.require_admin
     )
-    register_entry_routes(app, settings, store, auth, web_dir=web)
+    register_entry_routes(app, settings, store, auth, web_dir=web_dist)
     register_http_middleware(app, auth, sessions, call_guards=call_guards)
     if prefix := os.getenv("TUBER_WEB_PREFIX"):
         app.add_middleware(WebMount, prefix=prefix)

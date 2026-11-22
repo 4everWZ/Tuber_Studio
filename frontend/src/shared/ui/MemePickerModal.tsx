@@ -61,6 +61,8 @@ const SOURCE_KIND_LABELS: Record<string, string> = {
   generated: "生成图片",
 };
 
+const DEFAULT_ACCEPT = () => true;
+
 export function defaultMemePreviewUrl(asset: MemeAsset): string {
   return studioPath(`/api/v1/persona/memes/${encodeURIComponent(asset.asset_id)}/preview`);
 }
@@ -155,7 +157,7 @@ export function MemePickerModal({
   resetLabel,
   loadItems,
   previewUrl = defaultMemePreviewUrl,
-  accept = () => true,
+  accept = DEFAULT_ACCEPT,
   onSelect,
   onClose,
 }: MemePickerModalProps) {

@@ -1,8 +1,8 @@
-"""Untouched web entry HTML pages, healthz, and shared audio media routes."""
+"""Built React SPA entry HTML pages, healthz, and shared audio media routes."""
 
 from __future__ import annotations
 
-import re
+from html import escape
 from pathlib import Path
 
 from fastapi import HTTPException, Request
@@ -10,10 +10,29 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from ..web_mount import web_page
 
+_MISSING_BUILD_HINT = "pnpm --dir frontend build"
+
+
+def _serve_entry_html(request: Request, web_dist: Path, filename: str) -> HTMLResponse:
+    target = web_dist / filename
+    if not web_dist.is_dir() or not target.is_file():
+        return HTMLResponse(
+            (
+                "<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
+                "<title>前端构建产物缺失</title></head>"
+                "<body><h1>前端构建产物缺失</h1>"
+                f"<p>未能读取 <code>src/tuber_studio/web_dist/{escape(filename)}</code>。"
+                f"请先运行 <code>{_MISSING_BUILD_HINT}</code> 生成前端静态资源。</p>"
+                "</body></html>"
+            ),
+            status_code=503,
+        )
+    return web_page(request, target.read_text(encoding="utf-8"))
+
 
 def register_entry_routes(app, settings, store, auth, *, web_dir: Path | None = None) -> None:
     """Register `/`, `/live`, `/overlay`, `/overlay/draw-guess`, `/settings`, `/healthz`, and `/media/audio/{name}`."""
-    web = web_dir or (Path(__file__).resolve().parents[2] / "web")
+    web_dist = web_dir if web_dir is not None else (Path(__file__).resolve().parents[2] / "web_dist")
 
     @app.get("/settings", include_in_schema=False)
     async def settings_page(request: Request):
@@ -21,26 +40,19 @@ def register_entry_routes(app, settings, store, auth, *, web_dir: Path | None = 
 
     @app.get("/")
     async def index(request: Request):
-        shell = (web / "index.html").read_text(encoding="utf-8")
-        content = re.sub(
-            r"<!-- page: ([a-z-]+) -->",
-            lambda match: (web / "pages" / f"{match[1]}.html").read_text(encoding="utf-8"),
-            shell,
-        )
-        return web_page(request, content)
+        return _serve_entry_html(request, web_dist, "index.html")
 
     @app.get("/live")
     async def workbench(request: Request):
-        html = (web / "live.html").read_text(encoding="utf-8")
-        return web_page(request, html) if web_page else HTMLResponse(html)
+        return _serve_entry_html(request, web_dist, "live.html")
 
     @app.get("/overlay")
     async def overlay(request: Request):
-        return web_page(request, (web / "overlay.html").read_text(encoding="utf-8"))
+        return _serve_entry_html(request, web_dist, "overlay.html")
 
     @app.get("/overlay/draw-guess")
     async def draw_guess_overlay(request: Request):
-        return web_page(request, (web / "draw-guess-overlay.html").read_text(encoding="utf-8"))
+        return _serve_entry_html(request, web_dist, "draw-guess-overlay.html")
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz():

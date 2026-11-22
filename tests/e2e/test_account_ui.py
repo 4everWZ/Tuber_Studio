@@ -1,46 +1,23 @@
-"""Exercise browser account, operations, and request clients in Node."""
+"""Verify built React workbench entry shell and static bundle assets."""
 
-import shutil
-import subprocess
-from pathlib import Path
+import re
 
-import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
 
+BUNDLE_REF_RE = re.compile(r'(?:src|href)="(static/bundle/[^"]+)"')
 
-def test_workbench_serves_page_fragments_in_the_shell(settings):
+
+def test_workbench_serves_built_spa_shell_and_assets(settings):
     with TestClient(create_app(settings)) as client:
         page = client.get("/").raise_for_status().text
-    assert "<!-- page:" not in page
-    for identity in (
-        "workspace-sidebar",
-        "op-round-settings",
-        "matrix-max-per-day",
-        "messages-panel",
-        "queue-view",
-    ):
-        assert page.count(f'id="{identity}"') == 1
-
-
-TESTS_ROOT = Path(__file__).resolve().parents[1]
-
-
-@pytest.mark.parametrize(
-    "script",
-    sorted(path.name for path in TESTS_ROOT.glob("*.test.cjs")),
-)
-def test_shared_web_clients(script):
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("Node is not installed")
-    result = subprocess.run(
-        [node, "--test", str(TESTS_ROOT / script)],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=30,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
+        assert "<!-- page:" not in page
+        assert '<base href="/">' in page
+        assert '<script src="static/studio-path.js" defer></script>' in page
+        assert '<div id="root"></div>' in page
+        assert client.get("/static/studio-path.js").status_code == 200
+        refs = BUNDLE_REF_RE.findall(page)
+        assert refs
+        for ref in refs:
+            assert client.get(f"/{ref}").status_code == 200
