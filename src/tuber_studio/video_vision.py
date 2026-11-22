@@ -29,15 +29,30 @@ from .providers import public_error, validate_reply
 VIDEO_EVIDENCE_PROTOCOL = "sequential_captions_indexed_assessment_v2"
 
 
+def part_identity(metadata, cid):
+    cid = str(cid)
+    for index, part in enumerate(metadata.get("parts") or (), 1):
+        if str(part.get("cid")) != cid:
+            continue
+        page = part.get("page")
+        number = page if type(page) is int and page > 0 else index
+        title = part.get("title")
+        clean_title = title.strip()[:160] if isinstance(title, str) and title.strip() else None
+        return number, clean_title
+    return None, None
+
+
 class VideoPartText:
     """Public text already read for one video part. Times are seconds on that part."""
 
     def __init__(self, metadata, cid, tracks):
-        part = next(part for part in metadata["parts"] if str(part["cid"]) == cid)
+        number, title = part_identity(metadata, cid)
+        if number is None:
+            next(part for part in metadata["parts"] if str(part["cid"]) == cid)
         self.video = self.video_fields(metadata)
-        self.part = {"CID": cid}
-        if isinstance(part.get("title"), str) and part["title"].strip():
-            self.part["分P名"] = part["title"].strip()[:160]
+        self.part = {"分P": f"P{number}" if number else "未知分P", "CID": cid}
+        if title:
+            self.part["分P名"] = title
         rows = set()
         for track in tracks:
             if (track.get("visual") or not metadata.get("bvid") or track.get("bvid") != metadata["bvid"]
@@ -84,10 +99,20 @@ class VideoPartText:
                           for row in self.rows if (row[0] <= timepoint < row[1] if row[2] == "归档字幕"
                                                    else row[0] - 8 <= timepoint <= row[1] + 8))
             selected.update(row for _, _, row in nsmallest(2, candidates))
-        return self.part | {"邻近文字": [
-            {"开始秒": start, "结束秒": end, "来源": source, "正文": text}
-            for start, end, source, text in sorted(selected)
-        ]}
+        status = (
+            "无公开字幕或音频转写轨"
+            if not self.rows
+            else "已附带邻近时间窗内字幕或转写"
+            if selected
+            else "存在字幕或转写轨，但当前抽帧邻近无条目"
+        )
+        return self.part | {
+            "字幕轨状态": status,
+            "邻近文字": [
+                {"开始秒": start, "结束秒": end, "来源": source, "正文": text}
+                for start, end, source, text in sorted(selected)
+            ],
+        }
 
 
 def frame_reading_context(sources, frames):
@@ -100,7 +125,11 @@ def frame_reading_context(sources, frames):
             "分P资料": [sources[cid].nearby(points) for cid, points in times.items()]}
 
 
-TEXT_SOURCE_NOTE = "以下视频资料与带时码文字仅供理解语境。画面所见须以图像为据。"
+TEXT_SOURCE_NOTE = (
+    "以下投稿资料与带时码文字仅供理解语境，画内文字须明确区分于公开字幕或音频转写轨；"
+    "若字幕轨状态显示无公开字幕或音频转写轨，不可将画内烧录字误报为公开字幕。"
+    "引用投稿标题、UP主或附带说明时以所附资料为准。画面所见须以图像为据。"
+)
 
 
 class VideoVisionAdmissionRequired(ValueError):
@@ -406,7 +435,7 @@ class ApiVideoEvidenceProvider:
             self._check_properties(props, expected, identity)
         return validate_reply(json.dumps(value), None, event_id)
 
-    async def _observe_sequential(self, task, frames, question, deadline, identity, expected, repository, sources):
+    async def _observe_sequential(self, task, frames, question, deadline, identity, expected, repository, sources, *, part_labels=None):
         captions, stages = [], []
         caption_schema = {
             "type": "object", "required": ["caption"], "additionalProperties": False,
@@ -416,13 +445,14 @@ class ApiVideoEvidenceProvider:
         for number, frame in enumerate(frames, 1):
             image, preprocessing = await self._image_content(frame)
             context = frame_reading_context(sources, [frame])
+            part_label = (part_labels or {}).get(str(frame["cid"])) or f"CID {frame['cid']}"
             messages = [
                 {
                     "role": "user",
                     "content": [
                         {
                             "type": "text",
-                            "text": f"这张画面来自分P {frame['cid']}，实际采样时间为"
+                            "text": f"这张画面来自 {part_label}，实际采样时间为"
                             f" {frame['actual_time']} 秒。描述这张画面中的人物、物品和动作，"
                             "结合当前问题给出相关所见。当前问题：" + question
                             + ("\n" + TEXT_SOURCE_NOTE + json.dumps(context, ensure_ascii=False) if context else ""),
@@ -461,7 +491,10 @@ class ApiVideoEvidenceProvider:
                 "content": "围绕当前问题，根据下列逐帧观察作答。"
                 "sufficient是这些观察是否足以回答问题的判断；"
                 "used_frames填写所用观察的整数编号，summary写自然回答，"
-                "limitations写还需补充的相关信息。" + (TEXT_SOURCE_NOTE if sources else ""),
+                "limitations写还需补充的相关信息。"
+                "投稿标题、UP主、分P名称与所附文字资料可据实完整引用；"
+                "若字幕轨状态显示无公开字幕或音频转写轨，禁止将画面内烧录文字误报为公开字幕。"
+                + (TEXT_SOURCE_NOTE if sources else ""),
             },
             {
                 "role": "user",
@@ -472,6 +505,7 @@ class ApiVideoEvidenceProvider:
                         "observations": [
                             {
                                 "number": number,
+                                "part": (part_labels or {}).get(str(item["frame"]["cid"])) or f"CID {item['frame']['cid']}",
                                 "cid": item["frame"]["cid"],
                                 "actual_time": item["frame"]["actual_time"],
                                 "text": item["text"],
@@ -497,13 +531,14 @@ class ApiVideoEvidenceProvider:
         stages.append(stage | {"stage": "assessment"})
         return captions, assessment, props, stages
 
-    async def _observe_joint(self, task, frames, question, deadline, identity, expected, repository, sources):
+    async def _observe_joint(self, task, frames, question, deadline, identity, expected, repository, sources, *, part_labels=None):
         content, preprocessing = [], []
         for number, frame in enumerate(frames, 1):
             image, metadata = await self._image_content(frame)
+            part_label = (part_labels or {}).get(str(frame["cid"])) or f"CID {frame['cid']}"
             label = {
                 "type": "text",
-                "text": f"画面 {number}｜分P {frame['cid']}｜{frame['actual_time']} 秒",
+                "text": f"画面 {number}｜{part_label}｜{frame['actual_time']} 秒",
             }
             content.extend((image, label) if self.config.image_order == "image_first" else (label, image))
             preprocessing.append(metadata)
@@ -517,6 +552,8 @@ class ApiVideoEvidenceProvider:
                     "按图片输入顺序在captions写每张画面实际所见。"
                     "根据当前问题填写sufficient、使用的画面序号used_frames、自然回答summary"
                     "和仍需补充的信息limitations。区分看到的动作与对画面外情节的推测。"
+                    "投稿标题、UP主、分P名称与所附文字资料可据实完整引用；"
+                    "若字幕轨状态显示无公开字幕或音频转写轨，禁止将画面内烧录文字误报为公开字幕。"
                 ),
             },
             {"role": "user", "content": content},
@@ -554,6 +591,11 @@ class ApiVideoEvidenceProvider:
         self._validate_frames(metadata, frames)
         sources = {cid: VideoPartText(metadata, cid, metadata.get("visual_text_tracks", ()))
                    for cid in {str(frame["cid"]) for frame in frames}} if metadata.get("bvid") else {}
+        part_labels = {
+            cid: (f"P{number}" if number else f"CID {cid}")
+            for cid in {str(frame["cid"]) for frame in frames}
+            for number, _ in (part_identity(metadata, cid),)
+        }
         if not isinstance(question, str) or not 0 < len(question) <= 8000:
             raise ValueError("视觉问题须为1至8000字")
         started = time.monotonic()
@@ -568,7 +610,7 @@ class ApiVideoEvidenceProvider:
                     self._observe_joint if self.config.frame_strategy == "joint" else self._observe_sequential
                 )
                 captions, assessment, props, stages = await observe(
-                    task, frames, question, deadline, identity, expected, repository, sources
+                    task, frames, question, deadline, identity, expected, repository, sources, part_labels=part_labels
                 )
                 self._check_task(task, deadline)
                 final_props = await self._confirmed_properties(props, identity)

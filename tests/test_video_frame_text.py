@@ -1,6 +1,7 @@
 """Exercise the reading entries through the actual visual HTTP message builder."""
 
 import json
+import time
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -14,6 +15,7 @@ from test_video_vision import provider as provider
 
 from tuber_studio.agent.public_video import read_public_part
 from tuber_studio.agent.task_tools import Video
+from tuber_studio.video_vision import VideoPartText, frame_reading_context
 
 
 def messages(state):
@@ -99,7 +101,7 @@ async def test_precise_cache_is_scoped_to_part_text_and_reuses_another_parts_edi
     assert "新UP" in last and "更正识别" in last and "本地识别" not in last
 
 
-async def test_fresh_metadata_prevents_reuse_of_older_visual_followup(provider, evidence_factory, config):
+async def _assert_fresh_metadata_prevents_reuse_of_older_visual_followup(provider, evidence_factory, config):
     vision, state = provider
     state["result"]["used_frames"] = [1]
     adapter = PublicAdapter()
@@ -114,6 +116,18 @@ async def test_fresh_metadata_prevents_reuse_of_older_visual_followup(provider, 
     assert "更新的署名" in messages(state)[-1][-1]["content"]
     await service.prepare(BV, config, visual_source_ids=target)
     assert len(messages(state)) == 4
+
+
+async def test_fresh_metadata_prevents_reuse_of_older_visual_followup(provider, evidence_factory, config):
+    await _assert_fresh_metadata_prevents_reuse_of_older_visual_followup(provider, evidence_factory, config)
+
+
+async def test_same_timestamp_fresh_metadata_prevents_reuse_of_older_visual_followup(
+    monkeypatch, provider, evidence_factory, config
+):
+    fixed_now = time.time()
+    monkeypatch.setattr("tuber_studio.operations.browsing.evidence.time.time", lambda: fixed_now)
+    await _assert_fresh_metadata_prevents_reuse_of_older_visual_followup(provider, evidence_factory, config)
 
 
 async def test_private_archive_same_pixels_with_and_without_optional_text(package, provider):
@@ -134,7 +148,10 @@ async def test_private_archive_same_pixels_with_and_without_optional_text(packag
         return sent
 
     sparse = await read()
+    sparse_text = json.dumps(sparse, ensure_ascii=False)
     assert "简介" not in str(sparse) and "归档字幕" not in str(sparse)
+    assert "P2" in sparse_text and "无公开字幕或音频转写轨" in sparse_text
+    assert all(f"分P {cid}" not in sparse_text for cid in ("27", package.source["cid"]))
     archive_metadata = package.video_metadata
 
     async def metadata(bvid):
@@ -152,3 +169,21 @@ async def test_private_archive_same_pixels_with_and_without_optional_text(packag
     for item in full:
         text = json.dumps(item, ensure_ascii=False)
         assert "后来取得的简介" in text and "窗口内字幕" in text and "授权窗口外" not in text
+        assert "已附带邻近时间窗内字幕或转写" in text
+
+
+def test_part_identity_uses_explicit_page_over_cid_and_distinguishes_empty_track():
+    metadata = {
+        "bvid": BV,
+        "title": "《雍正王朝》精讲合集",
+        "owner": {"name": "历史UP"},
+        "parts": [{"page": 2, "cid": "301983263", "title": "第2集"}],
+    }
+    part = VideoPartText(metadata, "301983263", [{"bvid": BV, "cid": "301983263", "segments": []}])
+    context = frame_reading_context({"301983263": part}, [{"cid": "301983263", "actual_time": 108.0}])
+    part_info = context["分P资料"][0]
+    assert part_info["分P"] == "P2"
+    assert part_info["CID"] == "301983263"
+    assert part_info["分P名"] == "第2集"
+    assert part_info["字幕轨状态"] == "无公开字幕或音频转写轨"
+    assert part_info["邻近文字"] == []

@@ -268,7 +268,7 @@ class BrowsingEvidence:
         newest_text = None
         if not force:
             for row in self.store.all(
-                "SELECT id,expires_at FROM browsing_materials WHERE bvid=? AND expires_at>? ORDER BY created_at DESC LIMIT 4",
+                "SELECT id,expires_at FROM browsing_materials WHERE bvid=? AND expires_at>? ORDER BY created_at DESC, rowid DESC LIMIT 4",
                 (video, time.time()),
             ):
                 try:
@@ -644,7 +644,7 @@ class BrowsingEvidence:
         matches = self.store.all(
             "SELECT f.material_id FROM browsing_stream_frames f JOIN browsing_materials m ON m.id=f.material_id "
             "WHERE f.bvid=? AND f.cid=? AND f.version=? AND f.provider=? AND f.start<=? AND f.end>? AND m.expires_at>? "
-            "ORDER BY m.created_at DESC LIMIT 4",
+            "ORDER BY m.created_at DESC, m.rowid DESC LIMIT 4",
             (metadata["bvid"], str(cid), json.dumps(version), json.dumps(provider), timestamp, timestamp, time.time()),
         )
         for item in matches:

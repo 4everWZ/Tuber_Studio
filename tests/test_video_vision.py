@@ -450,8 +450,8 @@ async def test_real_inline_image_probe_and_distinct_frame_evidence(provider):
     assert assessment == {
         "question": "分别观察",
         "observations": [
-            {"number": 1, "cid": "34", "actual_time": 10, "text": "红色圆形"},
-            {"number": 2, "cid": "34", "actual_time": 30, "text": "蓝色方形"},
+            {"number": 1, "part": "P1", "cid": "34", "actual_time": 10, "text": "红色圆形"},
+            {"number": 2, "part": "P1", "cid": "34", "actual_time": 30, "text": "蓝色方形"},
         ],
     }
     assert all(frame["id"] not in json.dumps(payloads[-1]) for frame in FRAMES)
@@ -836,7 +836,10 @@ async def test_each_caption_request_receives_current_question_as_its_observation
         content = body["messages"][-1]["content"]
         texts = [item["text"] for item in content if item["type"] == "text"]
         assert any(question in text and "人物、物品和动作" in text for text in texts)
-        assert any(f"{frame['actual_time']} 秒" in text and f"分P {frame['cid']}" in text for text in texts)
+        assert any(
+            f"{frame['actual_time']} 秒" in text and "P1" in text and f"分P {frame['cid']}" not in text
+            for text in texts
+        )
         assert all(frame["id"] not in json.dumps(body) for frame in FRAMES)
 
 
