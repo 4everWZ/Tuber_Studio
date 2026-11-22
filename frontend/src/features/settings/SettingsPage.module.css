@@ -1,0 +1,48 @@
+.providersPanel {
+  margin-top: 16px;
+}
+
+.providerFields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.providerSection {
+  padding-block: 1rem;
+  border-top: 1px solid var(--win-border-light);
+}
+
+.providerSection > h3 {
+  margin-bottom: 4px;
+}
+
+.providerSection > h3 + :global(.hint) {
+  margin-block-start: 0;
+}
+
+.providerSection summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.providerSection[open] > summary {
+  margin-bottom: 0.8rem;
+}
+
+.providerFields :global(label + .actions) {
+  margin-top: 8px;
+}
+
+.providersPanel [role="status"]:empty {
+  display: none;
+}
+
+.providersPanel :global(.actions):has(:global(#save-providers):disabled):has(:global(#reset-providers):disabled) {
+  display: none;
+}
+
+.displayActions {
+  margin-top: 8px;
+}

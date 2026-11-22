@@ -1,0 +1,193 @@
+.layout {
+  grid-template-columns: clamp(245px, 30%, 400px) minmax(0, 1fr);
+  margin-block-end: 16px;
+}
+
+.objectList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.objectList button {
+  text-align: left;
+  justify-content: flex-start;
+  display: block;
+  white-space: normal;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+}
+
+.objectList button.selected {
+  background: var(--win-accent-soft);
+  border-color: #93c5fd;
+  color: var(--win-accent);
+  font-weight: 600;
+}
+
+.listHeading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.listHeading img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: contain;
+}
+
+.listOwner {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.subgroupSpacer {
+  margin-top: 16px;
+}
+
+.tabNav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--win-border-light);
+}
+
+.tabBtn {
+  display: inline-flex;
+  min-height: 39px;
+  align-items: center;
+  padding: 7px 11px;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.tabBtn:hover:not(:disabled) {
+  color: var(--ink);
+  background: #f7f7f7;
+}
+
+.tabBtnActive {
+  color: var(--ink);
+  font-weight: 680;
+  border-color: var(--ink);
+}
+
+.tabContent {
+  margin-top: 12px;
+}
+
+.tabContent textarea:not(:global(#character-editor)) {
+  min-height: 0;
+  font: inherit;
+  line-height: 1.65;
+}
+
+.codeEditor {
+  background: #f8fafc;
+  min-height: 320px;
+}
+
+.ownerProfileLink {
+  overflow-wrap: anywhere;
+}
+
+.actionsSpacer {
+  margin-top: 14px;
+}
+
+.deleteDialog {
+  max-width: 540px;
+  width: calc(100% - 36px);
+  box-sizing: border-box;
+  padding: 24px;
+  border: 1px solid #c9d8e0;
+  border-radius: 8px;
+  background: #fff;
+  color: #203a4c;
+  box-shadow: 0 16px 70px #183a4d33;
+}
+
+.deleteDialog::backdrop {
+  background: #10233370;
+}
+
+.deleteDialog h2 {
+  margin: 0 0 16px;
+  font-size: 20px;
+}
+
+.deleteDialog .actions {
+  margin-top: 16px;
+}
+
+.recentPreviewRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 19px;
+  margin: 0;
+  border: 1px solid var(--win-border-light);
+  border-radius: 17px;
+  background: var(--panel);
+}
+
+.recentPreviewRow > span {
+  min-width: 0;
+}
+
+.recentPreviewRow strong,
+.recentPreviewRow small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.recentPreviewRow small {
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 3px;
+}
+
+.recentButton {
+  border: 0;
+  border-radius: 999px;
+  background: #ededed;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+
+.recentButton:hover:not(:disabled) {
+  background: #e3e3e3;
+}
+
+.cloneDetails {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--win-border-light);
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.cloneDetails > summary {
+  cursor: pointer;
+  font-size: 0.97rem;
+  color: var(--win-ink-secondary);
+  font-weight: 650;
+}
+
+@media (max-width: 950px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

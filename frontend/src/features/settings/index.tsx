@@ -1,14 +1,26 @@
-import { PAGE_TITLES, type ParsedRoute } from "@/shell/navigation";
+import type { ParsedRoute } from "@/shell/navigation";
+import { AccountsPage } from "./AccountsPage";
+import { OverviewPage } from "./OverviewPage";
+import { SettingsPage } from "./SettingsPage";
+
+export { AccountsPage } from "./AccountsPage";
+export { ArtworkReferencesPanel, CharacterDisplayPanel } from "./ArtworkReferencesPanel";
+export { BilibiliAccountPanel } from "./BilibiliAccountPanel";
+export { CachePanel } from "./CachePanel";
+export { IllustrationPolicyPanel } from "./IllustrationPolicyPanel";
+export { OverviewPage } from "./OverviewPage";
+export { ProvidersPanel } from "./ProvidersPanel";
+export { RetentionPanel } from "./RetentionPanel";
+export { SettingsPage } from "./SettingsPage";
 
 export function SettingsFeature({ route }: { route: ParsedRoute }) {
-  return (
-    <section data-section={route.page} className="win-page-view">
-      <div className="page-heading win-heading">
-        <h1>{PAGE_TITLES[route.page]}</h1>
-      </div>
-      <div className="panel">
-        <p className="hint">设置与账号占位视图（M4-A 脚手架就绪）。</p>
-      </div>
-    </section>
-  );
+  switch (route.page) {
+    case "accounts":
+      return <AccountsPage />;
+    case "overview":
+      return <OverviewPage />;
+    case "settings":
+    default:
+      return <SettingsPage />;
+  }
 }

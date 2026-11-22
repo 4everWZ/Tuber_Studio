@@ -1,0 +1,155 @@
+.uploadDetails {
+  border-top: 0;
+  margin: 4px 0 14px;
+  padding-top: 0;
+}
+
+.uploadDetails > summary {
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fields {
+  padding: 0;
+  border: 0;
+  margin: 15px 0 0;
+  min-width: 0;
+}
+
+.emotions {
+  display: flex;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+  padding: 0;
+  border: 0;
+  margin: 16px 0;
+}
+
+.emotions legend {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 9px;
+}
+
+.emotions label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.emotions input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.filterInput {
+  max-width: 400px;
+}
+
+.failuresList {
+  padding-inline-start: 22px;
+  overflow-wrap: anywhere;
+}
+
+.cardTitle {
+  font-size: 13px;
+  margin: 12px 0 7px;
+  overflow-wrap: anywhere;
+}
+
+.cardText {
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+
+.cardTags {
+  color: var(--accent, #376f91);
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+
+.cardActions {
+  margin-top: 10px;
+  gap: 7px;
+}
+
+.cardActions button {
+  font-size: 11px;
+  padding: 6px 9px;
+  min-height: 31px;
+}
+
+.metadataForm {
+  margin-top: 8px;
+}
+
+.metadataForm label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.metadataForm input,
+.metadataForm textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.assetSection {
+  margin-top: 16px;
+}
+
+.assetGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.assetCard {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.assetPreview {
+  height: 140px;
+  display: grid;
+  place-items: center;
+  background: #f8fafc;
+}
+
+.assetPreview img {
+  max-height: 130px;
+  max-width: 95%;
+  object-fit: contain;
+}
+
+.assetMeta {
+  padding: 10px 12px;
+}
+
+.assetMeta h3 {
+  font-size: 0.95rem;
+  margin: 0 0 6px;
+}
+
+@media (max-width: 520px) {
+  .cardActions button {
+    min-height: 31px;
+  }
+
+  .fields :global(.form-grid) {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,273 @@
+.settingsContainer {
+  max-width: 940px;
+  margin-inline: auto;
+}
+
+.settingsHeading {
+  margin: 8px 0 22px;
+}
+
+.rowsCard {
+  border: 1px solid var(--win-border-light);
+  border-radius: 17px;
+  background: var(--panel);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 19px;
+  margin: 0;
+}
+
+.row + .row {
+  border-top: 1px solid var(--win-border-light);
+}
+
+.row > span {
+  min-width: 0;
+}
+
+.row strong,
+.row small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.row small {
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 3px;
+}
+
+.pillButton {
+  border: 0;
+  border-radius: 999px;
+  background: #ededed;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+
+.pillButton:hover:not(:disabled) {
+  background: #e3e3e3;
+}
+
+.switchInput {
+  appearance: none;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 25px;
+  border: 0;
+  border-radius: 999px;
+  padding: 3px;
+  margin: 0;
+  background: #777;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.switchInput::before {
+  display: block;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #fff;
+  content: "";
+  transition: transform 0.15s ease;
+}
+
+.switchInput:checked {
+  background: #3564bd;
+}
+
+.switchInput:checked::before {
+  transform: translateX(17px);
+}
+
+.switchInput:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.statusMessage:empty {
+  display: none;
+}
+
+.dialog {
+  box-sizing: border-box;
+  width: min(calc(100% - 28px), 650px);
+  max-height: min(calc(100dvh - 28px), 720px);
+  padding: 0;
+  border: 1px solid var(--win-border-light);
+  border-radius: 21px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 12px 36px #0002;
+  overflow: hidden;
+}
+
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog::backdrop {
+  background: #0003;
+}
+
+.dialogHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--win-border-light);
+}
+
+.dialogTitle {
+  margin: 0;
+  font-size: 1.14rem;
+  font-weight: 650;
+}
+
+.closeButton {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 1.35rem;
+  background: transparent;
+}
+
+.dialogBody {
+  overflow: auto;
+  padding: 15px 20px 20px;
+  overscroll-behavior: contain;
+}
+
+.summaryHeading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.8rem;
+}
+
+.summaryList h3 {
+  margin: 0.55rem 0 0.15rem;
+  font-size: 0.93rem;
+}
+
+.summaryRequestForm {
+  border-top: 1px solid var(--line);
+  padding-block-start: 0.7rem;
+  margin-block-start: 0.85rem;
+}
+
+.summaryRequestForm label {
+  display: block;
+  margin-block-end: 0.3rem;
+}
+
+.summaryQuestion {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.loadState:not([hidden]) {
+  min-height: 180px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.detailList {
+  display: grid;
+}
+
+.detailList article {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding-block: 11px;
+}
+
+.detailList article + article {
+  border-top: 1px solid var(--win-border-light);
+}
+
+.detailList article :is(p, blockquote) {
+  margin: 6px 0;
+}
+
+.detailList article blockquote {
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--win-border-light);
+}
+
+.detailList summary,
+.olderList > summary {
+  cursor: pointer;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sharingToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.sharingToggle input {
+  margin: 0;
+}
+
+.olderList {
+  margin-top: 14px;
+}
+
+.contextTools {
+  margin-top: 16px;
+  padding: 14px 19px;
+}
+
+.contextTools > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.statementBox {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: 0;
+}
+
+@media (max-width: 520px) {
+  .row,
+  .dialogHeader,
+  .dialogBody {
+    padding-inline: 13px;
+  }
+
+  .row {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switchInput,
+  .switchInput::before {
+    transition: none;
+  }
+}

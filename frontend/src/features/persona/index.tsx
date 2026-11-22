@@ -1,14 +1,27 @@
-import { PAGE_TITLES, type ParsedRoute } from "@/shell/navigation";
+import type { ParsedRoute } from "@/shell/navigation";
+import { AssetsPage } from "./AssetsPage";
+import { CharactersPage } from "./CharactersPage";
+import { PersonalizationPage } from "./PersonalizationPage";
+import { VoicesPage } from "./VoicesPage";
+
+export { AssetsPage } from "./AssetsPage";
+export { CharactersPage } from "./CharactersPage";
+export { MemeGallery } from "./MemeGallery";
+export { MemorySummaryDialog } from "./MemorySummaryDialog";
+export { PersonalizationPage } from "./PersonalizationPage";
+export { RecentEventsDialog } from "./RecentEventsDialog";
+export { VoicesPage } from "./VoicesPage";
 
 export function PersonaFeature({ route }: { route: ParsedRoute }) {
-  return (
-    <section data-section={route.page} className="win-page-view">
-      <div className="page-heading win-heading">
-        <h1>{PAGE_TITLES[route.page]}</h1>
-      </div>
-      <div className="panel">
-        <p className="hint">角色工作室与个性化占位视图（M4-A 脚手架就绪）。</p>
-      </div>
-    </section>
-  );
+  switch (route.page) {
+    case "voices":
+      return <VoicesPage />;
+    case "assets":
+      return <AssetsPage />;
+    case "personalization":
+      return <PersonalizationPage />;
+    case "characters":
+    default:
+      return <CharactersPage />;
+  }
 }

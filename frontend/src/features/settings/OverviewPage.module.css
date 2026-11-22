@@ -1,0 +1,46 @@
+.groupSpacer {
+  margin-top: 16px;
+}
+
+.cacheGroups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-block: 12px;
+}
+
+.cacheGroup {
+  padding: 12px;
+  border: 1px solid var(--win-border-light);
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.cacheGroup h3 {
+  margin: 0 0 6px;
+}
+
+.inlineField {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 500;
+}
+
+.inlineField input {
+  width: auto;
+  margin-top: 0;
+}
+
+.retentionDaysInput {
+  width: 100px;
+}
+
+.retentionPreview {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--win-border-light);
+  border-radius: 8px;
+  background: #ffffff;
+}
