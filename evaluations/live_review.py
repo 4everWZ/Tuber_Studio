@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from tuber_studio.operations.browsing.evidence import BrowsingEvidence
+from tuber_studio.operations.kernel.evidence import BrowsingEvidence
 
 
 def material_proof(row, runtime):

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from tuber_studio.agent.memory_organizer import MemoryOrganizer, MemorySuggestion
 from tuber_studio.app import create_app
 from tuber_studio.core.models import Reply
-from tuber_studio.operations.browsing.models import BrowsingPolicy
+from tuber_studio.operations.kernel.models import BrowsingPolicy
 from tuber_studio.persona.memory.daily import DailyMemoryService
 
 

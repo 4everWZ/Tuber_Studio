@@ -7,13 +7,13 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 
-from tuber_studio.comments import Comments
 from tuber_studio.core.errors import PlatformRejected
 from tuber_studio.core.meter import GenerationMeter
 from tuber_studio.infra.inference.api_providers import APIProvider
 from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
 from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
-from tuber_studio.operations.browsing.models import BrowsingPolicy
+from tuber_studio.operations.channels.comments import Comments
+from tuber_studio.operations.kernel.models import BrowsingPolicy
 
 BV = "BV1d8pU6xEZX"
 
@@ -531,7 +531,7 @@ async def test_source_changed_during_rejected_post_keeps_original_feedback_witho
 def test_uncertain_response_raw_is_private_scoped_and_never_creates_recipient(
     runtime, store, output, visibility
 ):
-    from tuber_studio.operation_feedback import generation_view, private_generation_views
+    from tuber_studio.operations.kernel.feedback import generation_view, private_generation_views
 
     char = runtime.character
     row = runtime.continuations.begin(
@@ -566,10 +566,10 @@ async def test_other_channels_revise_real_business_rejection_under_same_intent(
 ):
     from PIL import ImageFont
 
-    from tuber_studio import dynamic_comment_card
-    from tuber_studio.direct_messages import DirectMessages
-    from tuber_studio.dynamics import Dynamics
     from tuber_studio.infra.platforms.bilibili.messages import BilibiliMessagesAdapter
+    from tuber_studio.operations.channels.direct_messages import DirectMessages
+    from tuber_studio.operations.channels.dynamics import Dynamics
+    from tuber_studio.operations.channels.dynamics import comment_card as dynamic_comment_card
 
     comments, comment_draft, _, requests = await prepared_service(settings, store, runtime)
     writes = []
@@ -691,7 +691,7 @@ async def test_other_channels_revise_real_business_rejection_under_same_intent(
 
 @pytest.mark.parametrize("action", ["read_comments", "watch_frames", "read_more", "finish", "skip"])
 def test_video_only_generation_actions_remain_public_and_do_not_create_private_inbox_entries(runtime, action):
-    from tuber_studio.operation_feedback import generation_view, private_generation_views
+    from tuber_studio.operations.kernel.feedback import generation_view, private_generation_views
 
     char = runtime.character
     value = {"action": action, "explanation": "盐水浮鸡蛋看明白了，按内容选择下一步", "text": ""}

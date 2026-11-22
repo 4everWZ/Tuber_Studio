@@ -33,31 +33,8 @@ TARGET_LAYER_PACKAGES = frozenset({"core", "infra", "persona", "operations", "li
 
 # Explicit finite set of root .py files slated for M2 (operations/) and M3 (app/) per #7.
 # No new .py file may ever be added to src/tuber_studio/ root.
-LEGACY_ROOT_PENDING_M2 = frozenset(
-    {
-        "comment_capabilities.py",
-        "comment_materials.py",
-        "comment_workbench.py",
-        "comments.py",
-        "direct_messages.py",
-        "dynamic_comment_card.py",
-        "dynamic_materials.py",
-        "dynamics.py",
-        "maintenance.py",
-        "message_outreach.py",
-        "operation_attachments.py",
-        "operation_continuations.py",
-        "operation_feedback.py",
-        "operation_generation.py",
-        "operation_images.py",
-        "operation_sends.py",
-        "operation_turns.py",
-        "operations_control.py",
-        "operations_memory.py",
-        "operations_revisions.py",
-        "public_mentions.py",
-    }
-)
+# All 21 M2-A operations kernel and channel root modules are now migrated.
+LEGACY_ROOT_PENDING_M2 = frozenset()
 LEGACY_ROOT_PENDING_M3 = frozenset(
     {
         "app.py",
@@ -129,51 +106,30 @@ LEGACY_ROOT_PENDING_M1 = frozenset(
     }
 )
 
-# Explicit finite allowlist for pre-M2/M3 un-migrated operations/live/agent internals ONLY.
-# ZERO entries are allowed for core/, infra/, or persona/.
+# Explicit finite allowlist for pre-M2-B/M3 un-migrated operations/live/agent internals ONLY.
+# ZERO entries are allowed for core/, infra/, persona/, or operations -> agent/live.
 LEGACY_CROSS_ALLOWLIST = frozenset(
     {
-        # M2 operations -> agent
-        ("tuber_studio.dynamics", "tuber_studio.agent.recall_memory"),
-        # M2/M3 live -> agent / app_legacy
+        # M2-B/M3 live -> agent / app_legacy
         ("tuber_studio.live.api", "tuber_studio.web_entry"),
         ("tuber_studio.live.stardew_tools", "tuber_studio.agent.task_runtime"),
-        # M2/M3 agent -> operations / live / app_legacy
-        ("tuber_studio.agent.api", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.capability_dispatcher", "tuber_studio.operations.browsing.quotas"),
-        ("tuber_studio.agent.chat_context", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.chat_context", "tuber_studio.operations.browsing.quotas"),
-        ("tuber_studio.agent.chat_delivery", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.dynamic_publication", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.goal_comment_events", "tuber_studio.operations.browsing.comment_timeline"),
-        ("tuber_studio.agent.memory_organizer", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.memory_organizer", "tuber_studio.operations.browsing.comment_timeline"),
+        # M2-B/M3 agent -> operations / live / app_legacy (pending facade wiring in M2-B / M3)
+        ("tuber_studio.agent.capability_dispatcher", "tuber_studio.operations.kernel.quotas"),
+        ("tuber_studio.agent.goal_comment_events", "tuber_studio.operations.channels.comments.timeline"),
+        ("tuber_studio.agent.memory_organizer", "tuber_studio.operations.channels.comments.timeline"),
         ("tuber_studio.agent.operator_facts", "tuber_studio.operations.browsing.activity_history"),
-        ("tuber_studio.agent.operator_facts", "tuber_studio.operations.browsing.caption_corrections"),
-        ("tuber_studio.agent.operator_facts", "tuber_studio.operations.browsing.comment_timeline"),
-        ("tuber_studio.agent.owner_memory", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.owner_memory_api", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.owner_memory_use", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.personal_agent", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.private_call", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.private_call_guard", "tuber_studio.operation_continuations"),
+        ("tuber_studio.agent.operator_facts", "tuber_studio.operations.kernel.caption_corrections"),
+        ("tuber_studio.agent.operator_facts", "tuber_studio.operations.channels.comments.timeline"),
         ("tuber_studio.agent.private_call_guard", "tuber_studio.web_entry"),
-        ("tuber_studio.agent.private_call_work", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.recall_memory", "tuber_studio.dynamic_materials"),
-        ("tuber_studio.agent.recall_memory", "tuber_studio.operations.browsing.comment_timeline"),
-        ("tuber_studio.agent.reply_operations", "tuber_studio.operation_attachments"),
-        ("tuber_studio.agent.reply_operations", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.reply_operations", "tuber_studio.operation_feedback"),
-        ("tuber_studio.agent.reply_operations", "tuber_studio.operations.browsing.thread_context"),
+        ("tuber_studio.agent.reply_operations", "tuber_studio.operations.channels.attachments.attachments"),
+        ("tuber_studio.agent.reply_operations", "tuber_studio.operations.kernel.feedback"),
+        ("tuber_studio.agent.reply_operations", "tuber_studio.operations.channels.comments.timeline"),
         ("tuber_studio.agent.task_tools", "tuber_studio.live.game_livestream"),
-        ("tuber_studio.agent.voice_origin", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.workshop_lookup", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.workshop_lookup", "tuber_studio.operations.browsing.comment_timeline"),
-        ("tuber_studio.agent.workshop_lookup", "tuber_studio.operations.browsing.quotas"),
+        ("tuber_studio.agent.workshop_lookup", "tuber_studio.operations.channels.comments.timeline"),
+        ("tuber_studio.agent.workshop_lookup", "tuber_studio.operations.kernel.quotas"),
         ("tuber_studio.agent.workshop_settings", "tuber_studio.live.media"),
         ("tuber_studio.agent.workshop_settings", "tuber_studio.live.options"),
-        ("tuber_studio.agent.workshop_settings", "tuber_studio.operation_continuations"),
-        ("tuber_studio.agent.workshop_settings", "tuber_studio.operations.browsing.models"),
+        ("tuber_studio.agent.workshop_settings", "tuber_studio.operations.kernel.models"),
     }
 )
 
@@ -858,7 +814,7 @@ def check_test_isolation(tests_root: Path) -> list[str]:
 
 
 def test_allowlists_are_strictly_bounded_to_m2_m3():
-    assert len(LEGACY_ROOT_PENDING_M2) == 21
+    assert len(LEGACY_ROOT_PENDING_M2) == 0
     assert len(LEGACY_ROOT_PENDING_M3) == 6
     assert LEGACY_ROOT_PENDING_M2_M3 == (LEGACY_ROOT_PENDING_M2 | LEGACY_ROOT_PENDING_M3)
     assert len(LEGACY_ROOT_PENDING_M1) == 49

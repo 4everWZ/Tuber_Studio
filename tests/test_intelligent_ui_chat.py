@@ -18,8 +18,8 @@ from tuber_studio.core.identity import provider_identity_messages
 from tuber_studio.core.models import Reply
 from tuber_studio.infra.inference.providers import Audio
 from tuber_studio.live.game_livestream import GameLivestreamService
-from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
+from tuber_studio.operations.kernel.models import BrowsingPolicy
 
 
 async def test_chat_delegation_survives_interleaved_conversation_and_delivers_latest_revision(settings, monkeypatch):
@@ -838,7 +838,8 @@ def test_chat_history_cursor_and_activity_are_bound_to_current_scope(settings):
 
 @pytest.mark.parametrize("unknown", [False, True])
 def test_chat_corrects_original_dynamic_without_reposting(settings, monkeypatch, unknown):
-    from tuber_studio import dynamics as module
+    from tuber_studio.operations.channels.dynamics import drafter as drafter_module
+    from tuber_studio.operations.channels.dynamics import publisher as module
 
     app = create_app(settings, adapter=ControlledPlatform())
     studio = app.state.dynamics
@@ -870,6 +871,7 @@ def test_chat_corrects_original_dynamic_without_reposting(settings, monkeypatch,
         assert packet["public_sources"] == [source]
         return {"caption": new}
 
+    monkeypatch.setattr(drafter_module, "read_dynamic_caption", read)
     monkeypatch.setattr(module, "read_dynamic_caption", read)
     monkeypatch.setattr(module, "edit_dynamic_caption", write)
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", generate)
@@ -1395,7 +1397,7 @@ def test_game_chat_handoff_uses_save_and_yields_to_operator(settings):
 
 
 def test_specified_video_can_resume_when_previously_unavailable_subtitles_appear(settings, monkeypatch):
-    from tuber_studio.operations.browsing.evidence import EvidenceUnavailable
+    from tuber_studio.operations.kernel.evidence import EvidenceUnavailable
 
     platform = ControlledPlatform()
     app = create_app(settings, adapter=platform)

@@ -7,8 +7,8 @@ import sqlite3
 import pytest
 
 from tuber_studio.infra.platforms.bilibili.browsing import PlatformReadError
-from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.notifications import NotificationInbox
+from tuber_studio.operations.kernel.models import BrowsingPolicy
 
 
 def event(identity, timestamp=1000, *, account="100", kind="mention", resource="video"):

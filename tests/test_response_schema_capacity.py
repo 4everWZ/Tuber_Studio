@@ -4,12 +4,12 @@ import pytest
 
 from tests.support.http_isolation import validate_schema_complexity
 from tuber_studio.infra.web_client.fetch import MAX_URL, OperationWebFetch
-from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
-from tuber_studio.operations.browsing.models import response_schema
+from tuber_studio.operations.kernel.inputs import ResponseDecisionInput
+from tuber_studio.operations.kernel.models import response_schema
 
 
 def test_new_private_decisions_offer_invited_contact_only_while_old_audits_remain_readable():
-    from tuber_studio.operations.browsing.models import ResponseDecision
+    from tuber_studio.operations.kernel.models import ResponseDecision
 
     schema = response_schema({"r1"})
     assert all(branch["properties"]["action"]["enum"] != ["handoff_private"] for branch in schema["oneOf"])

@@ -14,7 +14,7 @@ from tuber_studio.infra.inference.video_vision import (
     VideoVisionTimeout,
 )
 from tuber_studio.live.scene import LiveScene
-from tuber_studio.operations.browsing.models import BrowsingPolicy
+from tuber_studio.operations.kernel.models import BrowsingPolicy
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="

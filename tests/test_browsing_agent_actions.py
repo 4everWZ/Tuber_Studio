@@ -5,8 +5,8 @@ import json
 from test_browsing import BV, finished, wait_for_sends
 from test_browsing import browsing as browsing
 
-from tuber_studio.operations.browsing.models import ContentDecision
-from tuber_studio.operations.browsing.round_context import agent_depth
+from tuber_studio.operations.kernel.context import agent_depth
+from tuber_studio.operations.kernel.models import ContentDecision
 
 
 async def test_agent_chooses_comments_without_a_main_reply_or_interest_classification(browsing):

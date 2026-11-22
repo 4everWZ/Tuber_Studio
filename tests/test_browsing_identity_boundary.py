@@ -1,6 +1,6 @@
 """Tests for explicit UID-based mention authentication and third-party dialogue boundaries."""
 
-from tuber_studio.operations.browsing.inputs import bind_response_actors
+from tuber_studio.operations.kernel.inputs import bind_response_actors
 
 
 def test_third_party_same_name_mention_is_flagged_as_third_party_dialogue():

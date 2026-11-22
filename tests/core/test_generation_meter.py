@@ -7,14 +7,14 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from tuber_studio.comments import Comments
 from tuber_studio.core.meter import GenerationMeter, current_meter
 from tuber_studio.core.models import Reply
-from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.infra.inference.api_providers import APIProvider
 from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
-from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
+from tuber_studio.operations.channels.comments import Comments
+from tuber_studio.operations.channels.direct_messages import DirectMessages
+from tuber_studio.operations.kernel.models import BrowsingPolicy
 
 
 def parent(store, *, calls=16):

@@ -9,8 +9,8 @@ from test_comments import Platform, draft
 from test_comments import comments as comments
 
 from tuber_studio.app import create_app
-from tuber_studio.comment_workbench import list_queue
 from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
+from tuber_studio.operations.channels.comments.workbench import list_queue
 
 
 async def test_current_generation_filters_out_old_selected_drafts_and_prioritizes_its_results(

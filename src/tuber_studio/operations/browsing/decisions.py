@@ -8,8 +8,6 @@ import unicodedata
 from contextlib import ExitStack
 from difflib import SequenceMatcher
 
-from ...comment_materials import model_comment_materials, prepare_comment_materials
-from ...comments import category
 from ...core.errors import ContextWindowExceeded, SendLimitReached
 from ...core.identity import BILIBILI_OWNER_INSTRUCTION, bilibili_owner_context, captured_identity
 from ...core.meter import BrowsingBudgetDeferred, GenerationMeter, budgeted_json
@@ -18,21 +16,17 @@ from ...core.store import dump
 from ...core.text import operation_character, operation_output_diagnostics
 from ...core.turns import operation_lane
 from ...infra.inference.providers import public_error
-from ...message_outreach import confirmed_invitation
-from ...operation_generation import GenerationInvalid, generate_with_recovery
-from ...operations_control import canonical_intent
 from ...persona.characters.front_persona import expressive_persona
 from ...persona.context.message_builder import SYSTEM_RULES
-from ...public_mentions import MENTION_INSTRUCTION, bind_mentions, mention_participants
-from .comment_reader import (
-    CommentProgress,
-    admit_comment_page,
-    evaluate_comment_visit,
-    handoff_comment,
-    merge_continuous_comments,
-    source_discussion,
-)
-from .inputs import (
+from ..channels.comments import category
+from ..channels.comments.materials import model_comment_materials, prepare_comment_materials
+from ..channels.comments.timeline import comment_thread_context
+from ..channels.direct_messages.outreach import confirmed_invitation
+from ..channels.mentions import MENTION_INSTRUCTION, bind_mentions, mention_participants
+from ..kernel.context import agent_depth
+from ..kernel.control import canonical_intent
+from ..kernel.generation import GenerationInvalid, generate_with_recovery
+from ..kernel.inputs import (
     CLASSIFICATION_INPUT_VERSION,
     CLASSIFICATION_INSTRUCTION,
     RESPONSE_ACTOR_INSTRUCTION,
@@ -48,7 +42,7 @@ from .inputs import (
     join_content_sources,
     restore_stored_content_decisions,
 )
-from .models import (
+from ..kernel.models import (
     CONTENT_DECISION_INTENT_GLOSS,
     RESPONSE_INSTRUCTION,
     RESPONSE_REFERENCE_INSTRUCTION,
@@ -60,9 +54,15 @@ from .models import (
     content_decision_schema,
     response_schema,
 )
-from .quotas import DailyReplyLimitReached, day_window
-from .round_context import agent_depth
-from .thread_context import comment_thread_context
+from ..kernel.quotas import DailyReplyLimitReached, day_window
+from .comment_reader import (
+    CommentProgress,
+    admit_comment_page,
+    evaluate_comment_visit,
+    handoff_comment,
+    merge_continuous_comments,
+    source_discussion,
+)
 
 
 def normalized(text):
@@ -130,7 +130,7 @@ class BrowsingDecisions:
             )
         memories = []
         if root_id and row.get("account_id"):
-            from .comment_timeline import resource_key
+            from ..channels.comments.timeline import resource_key
 
             memories = memory.recall_organized(
                 scope, "comment", source.get("text") or "", resource=resource_key(target), thread=root_id,
@@ -289,7 +289,7 @@ class BrowsingDecisions:
         character, messages, model_schema = self._model_input(
             row, schema, data, instruction, response_input=response_input
         )
-        from .models import VideoEngagementDecision
+        from ..kernel.models import VideoEngagementDecision
 
         output = (
             max_tokens
@@ -1514,7 +1514,7 @@ class BrowsingDecisions:
         return None
 
     async def _engagement_decision(self, row, material, actionable, metrics):
-        from .models import VideoEngagementDecision
+        from ..kernel.models import VideoEngagementDecision
 
         metadata = material.get("metadata", {})
         title = metadata.get("title", "")

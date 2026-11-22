@@ -4,7 +4,7 @@ from test_browsing import browsing as browsing
 from test_browsing_comment_only import enable_comment_choices
 
 from tuber_studio.operations.browsing.comment_reader import merge_continuous_comments
-from tuber_studio.operations_control import canonical_intent
+from tuber_studio.operations.kernel.control import canonical_intent
 
 
 def comment(cid, text, ctime, *, uid="300", parent="600", mentions=None):

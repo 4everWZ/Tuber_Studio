@@ -5,11 +5,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.comments import Comments
 from tuber_studio.core.models import Reply
 from tuber_studio.core.store import Store
 from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
 from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
+from tuber_studio.operations.channels.comments import Comments
 from tuber_studio.runtime import Runtime
 
 

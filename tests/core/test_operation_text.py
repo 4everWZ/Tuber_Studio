@@ -45,7 +45,7 @@ from tuber_studio.infra.inference.video_vision import (
     VideoVisionAdmissionRequired,
     VideoVisionConfig,
 )
-from tuber_studio.operations.browsing.models import BrowsingPolicy
+from tuber_studio.operations.kernel.models import BrowsingPolicy
 from tuber_studio.persona.context.message_builder import build_messages
 
 LONG_TEXT = "\n".join(f"第{i}段，鱼鱼顺着这件事聊一聊自己的想法，也听听你接下来怎么说。" for i in range(80))

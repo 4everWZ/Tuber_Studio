@@ -14,10 +14,11 @@ import uvicorn
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
 
-from tuber_studio import operation_attachments, operation_images
 from tuber_studio.app import create_app
 from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
 from tuber_studio.infra.platforms.bilibili.messages import BilibiliMessagesAdapter
+from tuber_studio.operations.channels.attachments import attachments as operation_attachments
+from tuber_studio.operations.channels.attachments import images as operation_images
 from tuber_studio.persona.characters.references import Reference
 
 BV = "BV1d8pU6xEZX"

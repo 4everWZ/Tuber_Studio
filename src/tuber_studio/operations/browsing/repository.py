@@ -11,8 +11,8 @@ from ...core.meter import (
     settle_counters,
 )
 from ...core.store import dump
+from ..kernel.quotas import BrowsingQuotas
 from .batches import BrowsingBatches
-from .quotas import BrowsingQuotas
 
 
 class BrowsingRepository:

@@ -9,9 +9,9 @@ from test_browsing_batches import authorize
 
 from tuber_studio.core.errors import SendLimitReached
 from tuber_studio.infra.inference.api_providers import APIProvider
-from tuber_studio.operation_feedback import FeedbackModel
 from tuber_studio.operations.browsing.decisions import BrowsingDecisions
-from tuber_studio.operations.browsing.models import ResponseDecision
+from tuber_studio.operations.kernel.feedback import FeedbackModel
+from tuber_studio.operations.kernel.models import ResponseDecision
 
 
 def test_normal_short_acknowledgements_and_shared_openings_are_not_treated_as_mechanical_repetition():

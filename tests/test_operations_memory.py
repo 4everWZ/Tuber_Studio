@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from tuber_studio.operations_memory import OperationsMemory
+from tuber_studio.operations.kernel.memory import OperationsMemory
 
 SOURCES = [
     {

@@ -10,8 +10,8 @@ import httpx
 import pytest
 from PIL import Image
 
-from tuber_studio import operation_images as ops
-from tuber_studio.operation_attachments import decision, image_scope
+from tuber_studio.operations.channels.attachments import images as ops
+from tuber_studio.operations.channels.attachments.attachments import decision, image_scope
 from tuber_studio.persona.assets.memes import MemeCatalog
 from tuber_studio.persona.assets.workstation_images import ImageBrief, image_payload
 from tuber_studio.persona.characters.references import Reference

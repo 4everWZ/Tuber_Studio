@@ -6,7 +6,7 @@ import copy
 import pytest
 
 from tuber_studio.core.store import Store
-from tuber_studio.operations_control import OperationsControl, canonical_intent
+from tuber_studio.operations.kernel.control import OperationsControl, canonical_intent
 
 
 def scope(character, source="42"):

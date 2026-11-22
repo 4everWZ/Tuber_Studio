@@ -6,13 +6,13 @@ import time
 import httpx
 import pytest
 
-from tuber_studio.comments import Comments
 from tuber_studio.core.errors import SendLimitReached
 from tuber_studio.core.store import Store
-from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
 from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
-from tuber_studio.operations_control import OperationsControl, canonical_intent
+from tuber_studio.operations.channels.comments import Comments
+from tuber_studio.operations.channels.direct_messages import DirectMessages
+from tuber_studio.operations.kernel.control import OperationsControl, canonical_intent
 
 
 @pytest.mark.parametrize(("daily", "window"), [(0, 3600), (1, 86400)])

@@ -28,19 +28,19 @@ from pathlib import Path
 import httpx
 import psutil
 
-from tuber_studio.comments import Comments
 from tuber_studio.core.config import Settings
 from tuber_studio.core.store import Store
-from tuber_studio.direct_messages import DirectMessages
-from tuber_studio.dynamics import Dynamics
 from tuber_studio.infra.media.cache import MediaCache
 from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
 from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
-from tuber_studio.operations.browsing.evidence import BrowsingEvidence
-from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
-from tuber_studio.operations.browsing.round_context import read_round
 from tuber_studio.operations.browsing.service import BrowsingService
+from tuber_studio.operations.channels.comments import Comments
+from tuber_studio.operations.channels.direct_messages import DirectMessages
+from tuber_studio.operations.channels.dynamics import Dynamics
+from tuber_studio.operations.kernel.context import read_round
+from tuber_studio.operations.kernel.evidence import BrowsingEvidence
+from tuber_studio.operations.kernel.models import BrowsingPolicy
 from tuber_studio.runtime import Runtime
 
 VIDEOS = [f"BV1{number:09d}" for number in range(1, 5)]

@@ -1,6 +1,6 @@
 import asyncio
 
-from tuber_studio.operation_turns import OperationTurns
+from tuber_studio.operations.kernel.turns import OperationTurns
 
 
 async def order(lanes, *, skip=()):

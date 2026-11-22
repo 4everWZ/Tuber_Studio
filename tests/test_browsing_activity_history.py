@@ -7,9 +7,9 @@ from types import SimpleNamespace
 import pytest
 
 from tuber_studio.operations.browsing.activity_history import activity, history
-from tuber_studio.operations.browsing.comment_timeline import comment_thread, observe_thread
-from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
+from tuber_studio.operations.channels.comments.timeline import comment_thread, observe_thread
+from tuber_studio.operations.kernel.models import BrowsingPolicy
 
 BV = "BV1d8pU6xEZX"
 
@@ -94,7 +94,7 @@ def reply(service, row, identity, at, *, bvid=BV, kind="reply_public", status="p
 def test_comment_timeline_merges_discovery_and_distinguishes_round_outcomes(service, monkeypatch):
     previous, current = round_row(service), round_row(service)
     now = stamp("2026-11-08T10:05:00+08:00")
-    monkeypatch.setattr("tuber_studio.operations.browsing.comment_timeline.time.time", lambda: now)
+    monkeypatch.setattr("tuber_studio.operations.channels.comments.timeline.time.time", lambda: now)
     items = [
         {"comment_id": "40", "thread_id": "40", "platform_user_id": "51", "content": "起因", "created_at": now - 50},
         {"comment_id": "41", "thread_id": "40", "parent_comment_id": "40", "platform_user_id": "52", "content": "追问", "created_at": now - 40},
@@ -146,7 +146,7 @@ def test_recent_events_keep_thread_identity_when_receipt_is_confirmed(service, m
     row = round_row(service)
     at = stamp("2026-11-08T10:05:00+08:00")
     monkeypatch.setattr(operator_facts, "now", lambda _: dt.datetime.fromisoformat("2026-11-08T10:06:00+08:00"))
-    monkeypatch.setattr("tuber_studio.operations.browsing.comment_timeline.time.time", lambda: at)
+    monkeypatch.setattr("tuber_studio.operations.channels.comments.timeline.time.time", lambda: at)
     items = [{"comment_id": root, "thread_id": root, "platform_user_id": "51", "content": "原评" + root}
              for root in ("40", "70")]
     with service.store.db:

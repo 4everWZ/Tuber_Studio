@@ -2,8 +2,8 @@
 
 import pytest
 
-from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION
-from tuber_studio.operations.browsing.round_context import agent_depth
+from tuber_studio.operations.kernel.context import agent_depth
+from tuber_studio.operations.kernel.models import RESPONSE_INSTRUCTION
 
 
 @pytest.mark.asyncio

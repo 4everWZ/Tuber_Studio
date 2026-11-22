@@ -6,8 +6,6 @@ import json
 import time
 from contextlib import ExitStack
 
-from ...comment_materials import prepare_comment_materials
-from ...comments import category
 from ...core.errors import ContextWindowExceeded, SendLimitReached
 from ...core.meter import BrowsingBudgetDeferred
 from ...core.models import content_hash
@@ -15,13 +13,21 @@ from ...core.store import dump
 from ...core.turns import operation_lane, operation_ready_at
 from ...infra.inference.providers import public_error
 from ...infra.platforms.bilibili.client import PlatformReadError
-from ...message_outreach import confirmed_invitation
-from ...operations_control import canonical_intent
-from .comment_timeline import observe_thread, resource_key
-from .inputs import ResponseDecisionInput
-from .models import ResponseDecision
-from .quotas import DailyReplyLimitReached, day_window
-from .thread_context import comment_source, comment_thread_context, operator_reply, read_scoped_thread
+from ..channels.comments import category
+from ..channels.comments.materials import prepare_comment_materials
+from ..channels.comments.timeline import (
+    comment_source,
+    comment_thread_context,
+    observe_thread,
+    operator_reply,
+    read_scoped_thread,
+    resource_key,
+)
+from ..channels.direct_messages.outreach import confirmed_invitation
+from ..kernel.control import canonical_intent
+from ..kernel.inputs import ResponseDecisionInput
+from ..kernel.models import ResponseDecision
+from ..kernel.quotas import DailyReplyLimitReached, day_window
 
 PENDING_VISITS = "'received','source_verified','context_ready','reply_deferred'"
 

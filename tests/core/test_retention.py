@@ -10,7 +10,7 @@ from tests.support.fake_providers import OfflineChat
 from tuber_studio.app import create_app
 from tuber_studio.core.config import Settings
 from tuber_studio.core.retention import RetentionManager
-from tuber_studio.operations_memory import OperationsMemory
+from tuber_studio.operations.kernel.memory import OperationsMemory
 from tuber_studio.persona.context.manager import ContextManager
 
 

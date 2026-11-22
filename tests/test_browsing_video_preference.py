@@ -2,8 +2,8 @@ import pytest
 from test_browsing import BV, finished
 from test_browsing import browsing as browsing
 
-from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
-from tuber_studio.operations.browsing.models import response_schema
+from tuber_studio.operations.kernel.inputs import ResponseDecisionInput
+from tuber_studio.operations.kernel.models import response_schema
 
 
 @pytest.mark.parametrize("preference", ["like", "neutral", "not_interested"])

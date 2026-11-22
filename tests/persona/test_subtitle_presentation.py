@@ -7,13 +7,13 @@ import pytest
 from pydantic import ValidationError
 
 from tuber_studio.infra.platforms.bilibili.subtitles import clean_stutter, deduplicate_subtitles
-from tuber_studio.operations.browsing.inputs import (
+from tuber_studio.operations.kernel.inputs import (
     ContentDecisionInput,
     ResolvedContentDecision,
     bind_content_decision,
     format_content_input,
 )
-from tuber_studio.operations.browsing.models import ContentDecision, content_decision_schema
+from tuber_studio.operations.kernel.models import ContentDecision, content_decision_schema
 from tuber_studio.persona.context.subtitles import timestamp
 
 

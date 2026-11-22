@@ -28,6 +28,6 @@ class CommentAdmission:
             video_reply = row["character_id"], bvid, policy["max_replies_per_video"], policy["business_timezone"]
         with self.browsing.sends.preparation_slot(
             row["account_id"], channel, limits, retry_seconds=row["config"]["notification_interval_seconds"],
-            recipient=str(recipient or ""), video_reply=video_reply,
+            recipient=str(recipient or ""), video_reply=video_reply, direct=(kind != "top_level"),
         ) as blocked:
             yield blocked

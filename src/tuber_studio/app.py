@@ -26,7 +26,6 @@ from .agent.private_call_work import register_call_work
 from .agent.reply_operations import register_reply_operations
 from .agent.task_api import register_task_api
 from .agent.task_tools import create_task_runtime
-from .comments import Comments
 from .core.auth import (
     COOKIE_MAX_AGE,
     COOKIE_NAME,
@@ -37,8 +36,6 @@ from .core.auth import (
 from .core.authority import acquire_business_writer
 from .core.config import Settings, atomic_bytes
 from .core.store import Store
-from .direct_messages import DirectMessages
-from .dynamics import Dynamics
 from .infra.inference.diagnostics import check_provider_diagnostics, saved_provider_models
 from .infra.inference.providers import public_error
 from .infra.inference.video_vision_service import configured_video_provider
@@ -53,6 +50,9 @@ from .operation_recovery_api import register_operation_recovery_api
 from .operations.api import register_operations_api
 from .operations.browsing.api import register_browsing_api
 from .operations.browsing.service import BrowsingService
+from .operations.channels.comments import Comments
+from .operations.channels.direct_messages import DirectMessages
+from .operations.channels.dynamics import Dynamics
 from .persona.assets.illustration_policy import (
     IllustrationPolicy,
     illustration_policy,
@@ -215,12 +215,27 @@ def create_app(
     sessions = AuthSessions(settings, store)
     runtime = Runtime(settings, store, singing_provider=singing_provider, live_scene=live_scene)
     account = BilibiliAccount(settings, store, adapter)
-    comments = Comments(settings, store, runtime, account)
+    comments = Comments(
+        settings,
+        store,
+        runtime,
+        account,
+        is_live_busy=lambda: runtime.live.state in {"live", "paused"}
+        and bool(runtime.live.queue or runtime.live.current_id),
+    )
     runtime.account = account
     memes = runtime.pets.catalog
     runtime.operation_images.catalog = memes
     comments.memes = memes
-    dynamics = Dynamics(settings, store, runtime, comments, account=account, memes=memes)
+    dynamics = Dynamics(
+        settings,
+        store,
+        runtime,
+        comments,
+        account=account,
+        memes=memes,
+        is_live_busy=lambda: runtime.live.state in {"live", "paused"} and bool(runtime.live.busy),
+    )
     messages = DirectMessages(settings, store, runtime, comments, message_adapter, account=account, memes=memes)
     comments.direct_messages = messages
     visual = (

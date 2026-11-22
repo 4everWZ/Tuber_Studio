@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from ..operations.browsing.activity_history import activity
-from ..operations.browsing.caption_corrections import CORRECTED_VIDEOS, corrected_caption
-from ..operations.browsing.comment_timeline import comment_href, comment_thread
+from ..operations.channels.comments.timeline import comment_href, comment_thread
+from ..operations.kernel.caption_corrections import CORRECTED_VIDEOS, corrected_caption
 
 
 def now(browsing):

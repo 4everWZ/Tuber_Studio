@@ -50,7 +50,7 @@ class ControlledPlatform:
     async def subtitles(self, bvid, cid, languages):
         self.calls.append(("subtitles", bvid, cid))
         if self.no_subtitles:
-            from tuber_studio.operations.browsing.evidence import EvidenceUnavailable
+            from tuber_studio.operations.kernel.evidence import EvidenceUnavailable
 
             raise EvidenceUnavailable("no_subtitles", "无CC字幕")
         await asyncio.sleep(self.delay)

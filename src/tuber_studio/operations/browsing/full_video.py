@@ -9,21 +9,21 @@ from ...core.models import content_hash
 from ...core.turns import operation_lane
 from ...infra.inference.providers import public_error
 from ...infra.inference.video_vision import VideoPartText
-from .caption_corrections import CORRECTED_VIDEOS, corrected_caption
-from .comment_reader import (
-    admit_comment_page,
-    commit_comment_context,
-    enqueue_comment_visit,
-    video_comment_context,
-)
-from .evidence import (
+from ..kernel.caption_corrections import CORRECTED_VIDEOS, corrected_caption
+from ..kernel.context import agent_depth
+from ..kernel.evidence import (
     STORYBOARD_SCAN_QUESTION,
     EvidenceUnavailable,
     storyboard_changes,
     storyboard_windows,
     visual_gaps,
 )
-from .round_context import agent_depth
+from .comment_reader import (
+    admit_comment_page,
+    commit_comment_context,
+    enqueue_comment_visit,
+    video_comment_context,
+)
 
 
 def _plan(metadata, selection):

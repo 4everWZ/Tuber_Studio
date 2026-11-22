@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 from test_browsing import browsing as browsing
 
-from tuber_studio.operations.browsing.inputs import (
+from tuber_studio.operations.kernel.inputs import (
     ResponseDecisionInput,
     bind_response_actors,
     compact_actor_context,
 )
-from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
+from tuber_studio.operations.kernel.models import RESPONSE_INSTRUCTION, ResponseDecision
 
 
 def packet(count=2):
@@ -175,7 +175,7 @@ async def test_live_response_packet_binds_current_account_before_reference_forma
 def test_real_public_thread_mentions_remain_third_party_in_response_input(case):
     from tuber_studio.core.models import content_hash
     from tuber_studio.infra.platforms.bilibili.client import BilibiliAdapter
-    from tuber_studio.operations.browsing.thread_context import comment_thread_context
+    from tuber_studio.operations.channels.comments.timeline import comment_thread_context
 
     raw = case["platform_response"]
     items = [BilibiliAdapter._comment(raw["root"])] + [
@@ -464,7 +464,7 @@ async def prepared_row(browsing):
 
 
 async def test_canonical_id_in_wire_is_invalid_without_an_automatic_repair_call(browsing):
-    from tuber_studio.operation_generation import GenerationInvalid
+    from tuber_studio.operations.kernel.generation import GenerationInvalid
 
     browsing.store.set("browsing_policy", browsing.policy() | {"max_output_tokens": 32768})
     row = await prepared_row(browsing)

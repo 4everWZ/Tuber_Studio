@@ -6,10 +6,15 @@ import math
 import time
 from zoneinfo import ZoneInfo
 
-from ...message_outreach import contact_state
-from .comment_timeline import comment_activity, comment_href, comment_thread, resource_key
-from .quotas import publication_time
-from .thread_context import COMMENT_ID
+from ..channels.comments.timeline import (
+    COMMENT_ID,
+    comment_activity,
+    comment_href,
+    comment_thread,
+    resource_key,
+)
+from ..channels.direct_messages.outreach import contact_state
+from ..kernel.quotas import publication_time
 
 _AUTO = "r.preview=0 AND (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1)"
 _PRIORITY = "json_extract(r.config,'$.full_video')=1"

@@ -4,12 +4,12 @@ import pytest
 from test_browsing import browsing as browsing
 from test_context_delivery import original_and_draft
 
-from tuber_studio.maintenance import (
+from tuber_studio.operations.browsing.repository import BrowsingRepository
+from tuber_studio.operations.kernel.maintenance import (
     preview_rejected_operations,
     prune_empty_interrupted_rounds,
     prune_rejected_operations,
 )
-from tuber_studio.operations.browsing.repository import BrowsingRepository
 from tuber_studio.persona.characters.archive import archive_character_version
 
 

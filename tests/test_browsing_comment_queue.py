@@ -101,7 +101,7 @@ async def test_old_page_keeps_its_cursor_when_backlog_pauses_admission(browsing,
 
 
 async def test_saved_comment_decision_keeps_review_provenance_before_intent_creation(browsing, monkeypatch):
-    from tuber_studio.operations.browsing.models import ResponseDecision
+    from tuber_studio.operations.kernel.models import ResponseDecision
 
     await enable_comment_choices(browsing, monkeypatch, automatic=True)
     main = await finished(browsing, automatic=True, video_only=True)

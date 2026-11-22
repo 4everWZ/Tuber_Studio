@@ -8,10 +8,11 @@ from PIL import ImageFont
 from test_dynamics import published_reply
 from test_dynamics import service as service
 
-from tuber_studio import dynamic_comment_card, dynamics
 from tuber_studio.agent.dynamic_publication import ExistingDraft, named_in_goal, register_dynamic_publication
 from tuber_studio.agent.task_runtime import TaskRuntime
 from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
+from tuber_studio.operations.channels.dynamics import comment_card as dynamic_comment_card
+from tuber_studio.operations.channels.dynamics import publisher as dynamics
 
 
 @pytest.fixture

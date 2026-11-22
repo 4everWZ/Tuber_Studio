@@ -9,7 +9,9 @@ import httpx
 from fastapi import Body, Depends, Header, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 
-from ..comment_workbench import (
+from ..core.sse import encode_event
+from ..infra.inference.providers import public_error
+from ..operations.channels.comments.workbench import (
     generation_task,
     list_queue,
     prepare_queue_selection,
@@ -18,8 +20,6 @@ from ..comment_workbench import (
     queue_selection,
     review_queue_selection,
 )
-from ..core.sse import encode_event
-from ..infra.inference.providers import public_error
 
 
 def register_operations_api(app, store, account, comments, browsing, dynamics, require_admin):
@@ -27,7 +27,12 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
 
     @app.get("/api/operations/illustrations/{channel}/{identity}/{artifact_id}", dependencies=[Depends(require_admin)])
     async def illustration(channel: Literal["comments", "browsing", "dynamics", "messages"], identity: str, artifact_id: str):
-        from ..operation_attachments import checked_image, decision, image_scope, row_ref
+        from ..operations.channels.attachments.attachments import (
+            checked_image,
+            decision,
+            image_scope,
+            row_ref,
+        )
 
         if channel == "comments":
             row = comments._draft_source(identity)
@@ -219,7 +224,7 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
     async def review(draft_id: int, data: dict = Body(...)):
         options = {k: data[k] for k in ("image_ref", "updated_at", "expected_image") if k in data}
         if "mentions" in data:
-            from ..public_mentions import bind_mentions
+            from ..operations.channels.mentions import bind_mentions
 
             row = comments._draft_source(draft_id)
             if not row or data.get("updated_at") != row["updated_at"]:

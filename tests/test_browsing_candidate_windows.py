@@ -8,7 +8,7 @@ from test_browsing_batches import authorize
 
 from tests.support.http_isolation import validate_schema_complexity
 from tuber_studio.core.models import content_hash
-from tuber_studio.operations.browsing.models import (
+from tuber_studio.operations.kernel.models import (
     BatchCandidateChoice,
     candidate_batch_plan,
     candidate_batch_schema,
@@ -62,7 +62,7 @@ def test_candidate_priority_is_an_integer_without_silent_conversion(priority):
 
 
 def test_canonical_history_remains_readable_but_cannot_bypass_current_actions():
-    from tuber_studio.operations.browsing.models import CandidateBatchPlan
+    from tuber_studio.operations.kernel.models import CandidateBatchPlan
 
     historical = {
         "videos": [BV], "workers": 1,
@@ -307,7 +307,7 @@ async def test_candidate_plan_keeps_all_sources_and_records_one_invalid_result_w
 ):
     from copy import deepcopy
 
-    from tuber_studio.operation_generation import GenerationInvalid
+    from tuber_studio.operations.kernel.generation import GenerationInvalid
 
     row, candidates = planner_round
     choices = [
@@ -370,7 +370,7 @@ async def test_candidate_plan_keeps_all_sources_and_records_one_invalid_result_w
 async def test_partial_candidate_plan_is_invalid_without_dropping_or_filling_choices(
     browsing, monkeypatch, planner_round,
 ):
-    from tuber_studio.operation_generation import GenerationInvalid
+    from tuber_studio.operations.kernel.generation import GenerationInvalid
 
     row, candidates = planner_round
     invalid = batch_plan_wire([
@@ -404,8 +404,8 @@ async def test_partial_candidate_plan_is_invalid_without_dropping_or_filling_cho
 async def test_keyed_wire_version_plans_the_same_candidates_without_reusing_an_old_invalid_list_result(
     browsing, monkeypatch, planner_round,
 ):
-    from tuber_studio.operation_generation import GenerationInvalid
     from tuber_studio.operations.browsing import decisions
+    from tuber_studio.operations.kernel.generation import GenerationInvalid
 
     row, candidates = planner_round
     choices = [

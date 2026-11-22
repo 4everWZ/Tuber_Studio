@@ -14,9 +14,9 @@ from test_message_memes import prepared
 
 from tuber_studio.core.identity import identity_snapshot
 from tuber_studio.core.models import OperationReply
-from tuber_studio.direct_messages import MessageInputChanged
-from tuber_studio.message_outreach import invitation_possibility
-from tuber_studio.operation_generation import generate_with_recovery
+from tuber_studio.operations.channels.direct_messages import MessageInputChanged
+from tuber_studio.operations.channels.direct_messages.outreach import invitation_possibility
+from tuber_studio.operations.kernel.generation import generate_with_recovery
 
 ACTOR = "injected-test-account"
 

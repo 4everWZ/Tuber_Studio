@@ -8,12 +8,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.comments import Comments
 from tuber_studio.core.models import Reply
-from tuber_studio.direct_messages import DirectMessages
-from tuber_studio.dynamics import Dynamics
 from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
-from tuber_studio.operations_control import canonical_intent
+from tuber_studio.operations.channels.comments import Comments
+from tuber_studio.operations.channels.direct_messages import DirectMessages
+from tuber_studio.operations.channels.dynamics import Dynamics
+from tuber_studio.operations.kernel.control import canonical_intent
 from tuber_studio.persona.memory.relationships import Relationships
 
 

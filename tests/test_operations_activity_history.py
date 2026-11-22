@@ -6,10 +6,10 @@ import pytest
 from test_browsing_activity_history import BV, reply, round_row, stamp, task
 from test_browsing_activity_history import service as service
 
-from tuber_studio.operation_feedback import publication_binding
 from tuber_studio.operations.browsing.activity_history import activity, history
-from tuber_studio.operations.browsing.comment_timeline import observe_thread
-from tuber_studio.operations_control import OperationsControl
+from tuber_studio.operations.channels.comments.timeline import observe_thread
+from tuber_studio.operations.kernel.control import OperationsControl
+from tuber_studio.operations.kernel.feedback import publication_binding
 
 
 @pytest.fixture
@@ -295,7 +295,7 @@ def test_comment_result_filter_runs_before_pagination_and_uses_operation_day(cha
 def test_activity_merges_repeated_observations_of_same_reply_before_pagination(channels, monkeypatch):
     at = stamp("2026-11-07T17:00:00+08:00")
     rounds = [round_row(channels) for _ in range(3)]
-    monkeypatch.setattr("tuber_studio.operations.browsing.comment_timeline.time.time", lambda: at)
+    monkeypatch.setattr("tuber_studio.operations.channels.comments.timeline.time.time", lambda: at)
     for row in rounds:
         for root in (601, 701):
             observe_thread(channels.store, row, BV, [

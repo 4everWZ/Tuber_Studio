@@ -10,14 +10,14 @@ from test_browsing_comment_only import attach_comment_source, enable_comment_cho
 from test_direct_messages import Delivery
 from test_response_inputs import prepared_row
 
-from tuber_studio.message_outreach import (
+from tuber_studio.operations.browsing.comment_reader import handoff_comment
+from tuber_studio.operations.channels.direct_messages.outreach import (
     OutreachAssessment,
     assess_outreach,
     invitation_anchor,
     invitation_possibility,
 )
-from tuber_studio.operations.browsing.comment_reader import handoff_comment
-from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
+from tuber_studio.operations.kernel.models import RESPONSE_INSTRUCTION, ResponseDecision
 
 
 def thread():

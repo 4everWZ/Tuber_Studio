@@ -6,7 +6,7 @@ from tests.support.stores import FIXTURES, create_store
 from tuber_studio.core.config import ROOT
 from tuber_studio.core.models import Character, canonical_voice_id
 from tuber_studio.core.store import dump
-from tuber_studio.operations_control import OperationsControl
+from tuber_studio.operations.kernel.control import OperationsControl
 from tuber_studio.persona.characters.archive import archive_character_version
 from tuber_studio.persona.characters.presets import _fingerprint
 from tuber_studio.persona.context.message_builder import build_messages

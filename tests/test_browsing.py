@@ -8,12 +8,12 @@ import time
 import httpx
 import pytest
 
-from tuber_studio.comments import Comments
-from tuber_studio.direct_messages import DirectMessages
-from tuber_studio.dynamics import Dynamics
 from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
-from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.service import BrowsingService
+from tuber_studio.operations.channels.comments import Comments
+from tuber_studio.operations.channels.direct_messages import DirectMessages
+from tuber_studio.operations.channels.dynamics import Dynamics
+from tuber_studio.operations.kernel.models import BrowsingPolicy
 
 BV = "BV1d8pU6xEZX"
 
@@ -99,7 +99,7 @@ class ControlledPlatform:
     async def subtitles(self, bvid, cid, languages):
         self.calls.append(("subtitles", bvid, cid))
         if self.no_subtitles:
-            from tuber_studio.operations.browsing.evidence import EvidenceUnavailable
+            from tuber_studio.operations.kernel.evidence import EvidenceUnavailable
 
             raise EvidenceUnavailable("no_subtitles", "无CC字幕")
         await asyncio.sleep(self.delay)
@@ -754,7 +754,7 @@ async def test_discovery_unknown_receipt_only_reads_original_and_keeps_publishin
 
 async def test_discovery_agent_revises_definite_rejection_and_resubmits(browsing, monkeypatch):
     from tuber_studio.core.errors import PlatformRejected
-    from tuber_studio.operation_feedback import FeedbackModel
+    from tuber_studio.operations.kernel.feedback import FeedbackModel
 
     browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     texts = []
@@ -946,7 +946,7 @@ async def test_evidence_workers_inherit_parent_budget_and_deadline(browsing, mon
 
 
 async def test_visual_evidence_cannot_charge_a_different_parent_round(browsing):
-    from tuber_studio.operations.browsing.round_context import read_round
+    from tuber_studio.operations.kernel.context import read_round
 
     row, _ = browsing.repo.create_round("100", browsing.runtime.character, browsing.policy(), 0, True)
     token = read_round.set(row["id"])
@@ -1168,7 +1168,7 @@ async def test_long_cc_chunks_use_provider_tokens_and_keep_every_reference(brows
     chunks = await browsing.decisions._chunks(material, row)
     assert len(chunks) > 1
     assert [s["id"] for chunk in chunks for s in chunk] == [s["id"] for s in segments]
-    from tuber_studio.operations.browsing.inputs import ContentDecisionInput
+    from tuber_studio.operations.kernel.inputs import ContentDecisionInput
 
     presentation = ContentDecisionInput(material)
     for chunk in chunks:

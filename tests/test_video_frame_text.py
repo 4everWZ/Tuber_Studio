@@ -126,7 +126,7 @@ async def test_same_timestamp_fresh_metadata_prevents_reuse_of_older_visual_foll
     monkeypatch, provider, evidence_factory, config
 ):
     fixed_now = time.time()
-    monkeypatch.setattr("tuber_studio.operations.browsing.evidence.time.time", lambda: fixed_now)
+    monkeypatch.setattr("tuber_studio.operations.kernel.evidence.time.time", lambda: fixed_now)
     await _assert_fresh_metadata_prevents_reuse_of_older_visual_followup(provider, evidence_factory, config)
 
 

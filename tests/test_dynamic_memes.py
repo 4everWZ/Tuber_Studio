@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from tuber_studio.dynamics import Dynamics
 from tuber_studio.infra.platforms.bilibili.client import BilibiliAdapter
+from tuber_studio.operations.channels.dynamics import Dynamics
 from tuber_studio.persona.assets.memes import MemeCatalog
 from tuber_studio.persona.memory.core_memory import GroundedMemory
 

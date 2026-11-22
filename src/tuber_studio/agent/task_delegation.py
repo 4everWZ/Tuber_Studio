@@ -8,6 +8,7 @@ from uuid import UUID, uuid5
 from pydantic import Field, ValidationError
 
 from ..core.models import StrictModel
+from ..core.models import tool_function as function
 from ..core.store import dump
 from ..infra.inference.responses_provider import EmptyResponseTurn
 from ..infra.web_client.fetch import programme_credit_text
@@ -78,26 +79,7 @@ def visible_steps(runtime, task):
     return context
 
 
-def function(name, description, arguments, *, require_all=True):
-    schema = arguments.copy() if isinstance(arguments, dict) else arguments.model_json_schema()
-    definitions = schema.pop("$defs", {})
-
-    def wire(node):
-        if isinstance(node, list):
-            return [wire(item) for item in node]
-        if not isinstance(node, dict):
-            return node
-        if "$ref" in node:
-            target = node["$ref"].removeprefix("#/$defs/")
-            node = definitions[target] | {key: value for key, value in node.items() if key != "$ref"}
-        result = {key: wire(value) for key, value in node.items() if key not in {"title", "default", "properties"}}
-        if "properties" in node:
-            result["properties"] = {field: wire(value) for field, value in node["properties"].items()}
-            if require_all:
-                result["required"] = list(result["properties"])
-        return result
-
-    return {"type": "function", "name": name, "description": description, "parameters": wire(schema), "strict": require_all}
+# Schema builder delegates to core.models.tool_function.
 
 
 def model_input(task, context):

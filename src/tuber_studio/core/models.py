@@ -245,3 +245,32 @@ class ResponsesConfig(StrictModel):
         if not value.strip():
             raise ValueError("后台模型ID不能为空")
         return value
+
+
+def tool_function(name, description, arguments, *, require_all=True):
+    """Build a strict Responses API function tool definition from a schema or StrictModel."""
+    schema = arguments.copy() if isinstance(arguments, dict) else arguments.model_json_schema()
+    definitions = schema.pop("$defs", {})
+
+    def wire(node):
+        if isinstance(node, list):
+            return [wire(item) for item in node]
+        if not isinstance(node, dict):
+            return node
+        if "$ref" in node:
+            target = node["$ref"].removeprefix("#/$defs/")
+            node = definitions[target] | {key: value for key, value in node.items() if key != "$ref"}
+        result = {key: wire(value) for key, value in node.items() if key not in {"title", "default", "properties"}}
+        if "properties" in node:
+            result["properties"] = {field: wire(value) for field, value in node["properties"].items()}
+            if require_all:
+                result["required"] = list(result["properties"])
+        return result
+
+    return {
+        "type": "function",
+        "name": name,
+        "description": description,
+        "parameters": wire(schema),
+        "strict": require_all,
+    }

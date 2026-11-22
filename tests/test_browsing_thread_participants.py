@@ -13,7 +13,7 @@ from tuber_studio.core.models import content_hash
 from tuber_studio.infra.platforms.bilibili.client import BilibiliAdapter
 from tuber_studio.operations.browsing.comment_reader import event_unlocked
 from tuber_studio.operations.browsing.decisions import BrowsingDecisions
-from tuber_studio.operations.browsing.models import ResponseDecision
+from tuber_studio.operations.kernel.models import ResponseDecision
 
 adapter_factory = browsing_adapter_factory
 

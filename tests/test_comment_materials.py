@@ -9,13 +9,13 @@ from test_browsing import BV, model_packet
 from test_browsing import browsing as browsing
 from test_browsing_comment_only import comment, enable_comment_choices, finish_comment_round
 
-from tuber_studio.comment_materials import prepare_comment_materials
 from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter, PlatformReadError
 from tuber_studio.infra.platforms.bilibili.comment_materials import (
     article_excerpt,
     comment_attachments,
     sample_comment_image,
 )
+from tuber_studio.operations.channels.comments.materials import prepare_comment_materials
 
 IMAGE = "https://i0.hdslb.com/bfs/new_dyn/test.gif"
 

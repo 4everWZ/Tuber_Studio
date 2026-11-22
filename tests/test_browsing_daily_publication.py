@@ -2,7 +2,7 @@ import pytest
 from test_browsing import browsing as browsing
 from test_browsing import finished
 
-from tuber_studio.operations.browsing.models import ResponseDecision
+from tuber_studio.operations.kernel.models import ResponseDecision
 
 
 async def test_daily_publication_limit_counts_main_and_thread_successes_and_keeps_extra_drafts(

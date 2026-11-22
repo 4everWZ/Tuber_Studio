@@ -10,9 +10,9 @@ from test_browsing import browsing as browsing
 from test_browsing import finished, model_packet
 
 from tuber_studio.core.text import operation_character
-from tuber_studio.dynamics import dynamic_decision_messages
 from tuber_studio.infra.inference.api_providers import APIProvider
-from tuber_studio.operations.browsing.inputs import (
+from tuber_studio.operations.channels.dynamics import dynamic_decision_messages
+from tuber_studio.operations.kernel.inputs import (
     CLASSIFICATION_INSTRUCTION,
     ContentDecisionInput,
     ResponseDecisionInput,
@@ -26,7 +26,7 @@ from tuber_studio.operations.browsing.inputs import (
     persona_fingerprint,
     restore_stored_content_decisions,
 )
-from tuber_studio.operations.browsing.models import (
+from tuber_studio.operations.kernel.models import (
     RESPONSE_INSTRUCTION,
     BrowsingPolicy,
     ContentDecision,
@@ -438,8 +438,8 @@ def test_registered_classification_view_is_opt_in_and_follows_complete_persona_c
 
 
 def test_content_view_does_not_replace_full_persona_for_response_generation(browsing, monkeypatch):
-    import tuber_studio.operations.browsing.inputs as inputs
-    from tuber_studio.operations.browsing.models import ResponseDecision
+    import tuber_studio.operations.kernel.inputs as inputs
+    from tuber_studio.operations.kernel.models import ResponseDecision
     from tuber_studio.persona.context.message_builder import SYSTEM_RULES
 
     character = operation_character(browsing.runtime.character)
@@ -719,7 +719,7 @@ async def test_one_group_expands_to_twelve_segments_but_intent_keeps_only_reply_
 
 
 async def test_inconsistent_intent_keeps_invalid_output_without_an_automatic_repair(browsing):
-    from tuber_studio.operation_generation import GenerationInvalid
+    from tuber_studio.operations.kernel.generation import GenerationInvalid
 
     bad = {
         "interest": "like",

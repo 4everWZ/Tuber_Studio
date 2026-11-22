@@ -8,9 +8,10 @@ from test_browsing import BV, finished, wait_for_sends
 from test_browsing import browsing as browsing
 from test_direct_messages import Delivery, incoming
 
-from tuber_studio import operation_attachments, operation_images
 from tuber_studio.core.errors import PublishUncertain
-from tuber_studio.operations.browsing.quotas import day_window
+from tuber_studio.operations.channels.attachments import attachments as operation_attachments
+from tuber_studio.operations.channels.attachments import images as operation_images
+from tuber_studio.operations.kernel.quotas import day_window
 
 
 def arrival(browsing):

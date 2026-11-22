@@ -12,11 +12,11 @@ import tempfile
 import time
 from pathlib import Path
 
-from tuber_studio.comments import Comments
 from tuber_studio.core.config import Settings, redact_credentials
 from tuber_studio.core.store import Store
 from tuber_studio.infra.inference.providers import public_error
 from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
+from tuber_studio.operations.channels.comments import Comments
 from tuber_studio.persona.context.compaction import is_summary_message
 from tuber_studio.runtime import Runtime
 

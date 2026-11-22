@@ -145,7 +145,7 @@ def register_browsing_api(app, browsing, require_admin):
             raise ValueError("未知审核字段")
         options = {k: data[k] for k in ("image_ref", "updated_at", "expected_image") if k in data}
         if "mentions" in data:
-            from ...public_mentions import bind_mentions
+            from ..channels.mentions import bind_mentions
 
             row = browsing.repo.decode(browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
             if not row or data.get("updated_at") != row["updated_at"]:

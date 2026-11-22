@@ -10,7 +10,7 @@ from tuber_studio.agent.reply_operations import SelectedReply
 from tuber_studio.app import create_app
 from tuber_studio.core.store import dump
 from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
-from tuber_studio.operations_control import OperationsControl
+from tuber_studio.operations.kernel.control import OperationsControl
 
 
 class Transport:

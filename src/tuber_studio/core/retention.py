@@ -64,6 +64,7 @@ class RetentionManager:
             "operation_write_retries",
             "operation_revision_tickets",
             "operation_write_resolutions",
+            "operation_claims",
             "browsing_intents",
             "browsing_events",
             "browsing_cursors",

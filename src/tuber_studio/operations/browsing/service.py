@@ -11,31 +11,35 @@ from ...core.config import operation_profile
 from ...core.errors import SendLimitReached
 from ...core.store import dump
 from ...core.turns import operation_checkpoint, operation_lane
-from ...direct_messages import MessagePolicy
 from ...infra.inference.providers import public_error
-from ...operation_attachments import can_attach_comment_image, comment_payload, image_decision_pending
-from ...operation_sends import OperationSends, ReconciliationPending
-from ...operations_control import COMMENT_WRITE_FILTER
+from ..channels.attachments.attachments import (
+    can_attach_comment_image,
+    comment_payload,
+    image_decision_pending,
+)
+from ..channels.comments.timeline import comment_thread_context, ensure_comment_timeline
+from ..channels.direct_messages import MessagePolicy
+from ..kernel.context import read_round
+from ..kernel.control import COMMENT_WRITE_FILTER
+from ..kernel.evidence import BrowsingEvidence, EvidenceUnavailable
+from ..kernel.models import (
+    BrowsingPolicy,
+    browsing_filter_reason,
+)
+from ..kernel.read_gate import PlatformReadGate
+from ..kernel.sends import OperationSends, ReconciliationPending
+from ..kernel.telemetry import flow_window, install_flow_ledger
 from . import batches as batches_tasks
 from . import comment_reader as comment_reader_tasks
 from . import discovery as discovery_tasks
 from . import progress as progress_tasks
 from . import task_views as task_views_tasks
-from .backlog import flow_window, install_flow_ledger
 from .comment_admission import CommentAdmission
-from .comment_timeline import ensure_comment_timeline
 from .decisions import BrowsingDecisions
 from .discovery import BackgroundDiscovery
-from .evidence import BrowsingEvidence, EvidenceUnavailable
 from .full_video import correct_coverage_captions
-from .models import (
-    BrowsingPolicy,
-    browsing_filter_reason,
-)
 from .notifications import NotificationInbox
 from .publication import BrowsingPublication
-from .round_context import proactive_read, read_round
-from .thread_context import comment_thread_context
 
 
 class BrowsingService:
@@ -47,9 +51,7 @@ class BrowsingService:
         self.bilibili_account = bilibili_account or comments.account
         self.operations, self.repo = runtime.operations, runtime.browsing_repository
         self.adapter = self.bilibili_account.adapter
-        self.read_interval = read_interval
-        self.read_lock = asyncio.Lock()
-        self.last_read = 0
+        self.read_gate = PlatformReadGate(read_interval=read_interval)
         self.evidence = BrowsingEvidence(runtime, self.adapter, self._read, visual)
         self.notifications = NotificationInbox(store, self._read, self.adapter)
         self.active = {}
@@ -84,6 +86,26 @@ class BrowsingService:
         self.status_sequence = 0
         if hasattr(self.adapter, "request_gate"):
             self.adapter.request_gate = self._gate
+
+    @property
+    def read_interval(self):
+        return self.read_gate.read_interval
+
+    @read_interval.setter
+    def read_interval(self, value):
+        self.read_gate.read_interval = float(value)
+
+    @property
+    def read_lock(self):
+        return self.read_gate.read_lock
+
+    @property
+    def last_read(self):
+        return self.read_gate.last_read
+
+    @last_read.setter
+    def last_read(self, value):
+        self.read_gate.last_read = value
 
     @property
     def visual_provider(self):
@@ -567,36 +589,27 @@ class BrowsingService:
             self.abort_task = None
 
     async def _gate(self):
-        identity = read_round.get()
-        if checkpoint := operation_checkpoint.get():
-            checkpoint()
-        if identity:
-            self.repo.reserve_budget(identity, reads=1)
-        async with self.read_lock:
-            await asyncio.sleep(max(0, self.last_read + self.read_interval - time.monotonic()))
-            if proactive_read.get() and (due := self.comment_window_due()):
-                raise SendLimitReached("评论小时额度已用完，读取进度已保存", due)
-            self.last_read = time.monotonic()
+        await self.read_gate.gate(
+            reserve_budget=lambda round_id: self.repo.reserve_budget(round_id, reads=1),
+            quota_check=self.comment_window_due,
+            account_id=str(self.account or ""),
+        )
 
     async def _read_proactively(self, method, *args, **kwargs):
-        token = proactive_read.set(True)
-        try:
-            return await method(*args, **kwargs)
-        finally:
-            proactive_read.reset(token)
+        return await self.read_gate.read_proactively(method, *args, **kwargs)
 
     async def _read(self, method, *args, **kwargs):
         identity = read_round.get()
         config = self.repo.round(identity)["config"] if identity else self.policy()
-        for attempt in range(config["read_retries"] + 1):
-            try:
-                if not hasattr(self.adapter, "request_gate"):
-                    await self._gate()
-                return await method(*args, **kwargs)
-            except ValueError as error:
-                if getattr(error, "kind", None) != "network" or attempt >= config["read_retries"]:
-                    raise
-                await asyncio.sleep(0.5 * (attempt + 1))
+        return await self.read_gate.read(
+            method,
+            *args,
+            retries=config["read_retries"],
+            gate_fn=self._gate,
+            use_adapter_gate=hasattr(self.adapter, "request_gate"),
+            account_id=str(self.account or ""),
+            **kwargs,
+        )
 
     async def _prepare_evidence(
         self,

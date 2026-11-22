@@ -6,9 +6,9 @@ import sqlite3
 import httpx
 import pytest
 
-from tuber_studio.comments import Comments
 from tuber_studio.infra.inference.api_providers import APIProvider
 from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
+from tuber_studio.operations.channels.comments import Comments
 
 
 class LocalOnly:

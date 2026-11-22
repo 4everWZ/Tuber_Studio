@@ -7,7 +7,7 @@ from copy import deepcopy
 from test_browsing import browsing as browsing
 from test_browsing import finished, model_packet
 
-from tuber_studio.operations.browsing.models import BrowsingPolicy
+from tuber_studio.operations.kernel.models import BrowsingPolicy
 
 
 async def test_invalid_generation_requires_explicit_resume_with_original_material_and_stays_preview(browsing):

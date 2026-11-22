@@ -4,7 +4,7 @@ import json
 from test_browsing import browsing as browsing
 
 from tuber_studio.core.turns import operation_lane
-from tuber_studio.operations.browsing.models import ResponseDecision
+from tuber_studio.operations.kernel.models import ResponseDecision
 
 
 async def test_parallel_notifications_for_the_same_source_refresh_after_waiting_and_generate_once(

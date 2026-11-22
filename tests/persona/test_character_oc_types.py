@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from tuber_studio.app import create_app
 from tuber_studio.core.identity import identity_snapshot
 from tuber_studio.core.models import DEFAULT_CHARACTER_MANIFEST, DEFAULT_CHARACTER_VOICE, Character
-from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
+from tuber_studio.operations.kernel.models import RESPONSE_INSTRUCTION, ResponseDecision
 from tuber_studio.persona.context.message_builder import build_messages
 
 

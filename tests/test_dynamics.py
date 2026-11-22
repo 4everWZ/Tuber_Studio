@@ -7,10 +7,12 @@ from uuid import uuid4
 
 import pytest
 
-from tuber_studio import dynamics as module
-from tuber_studio.dynamics import Dynamics
 from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
 from tuber_studio.infra.web_client import fetch as web_fetch
+from tuber_studio.operations.channels.dynamics import MAX_SAFE_INTEGER, Dynamics
+from tuber_studio.operations.channels.dynamics import attachments as attachments_module
+from tuber_studio.operations.channels.dynamics import evaluator as evaluator_module
+from tuber_studio.operations.channels.dynamics import publisher as module
 from tuber_studio.persona.memory.core_memory import GroundedMemory
 
 
@@ -176,7 +178,7 @@ async def test_dynamic_from_public_reply_publishes_the_reviewed_text_and_comment
 
     from PIL import Image, ImageFont
 
-    from tuber_studio import dynamic_comment_card
+    from tuber_studio.operations.channels.dynamics import comment_card as dynamic_comment_card
 
     monkeypatch.setattr(dynamic_comment_card, "_font", lambda size: ImageFont.load_default())
     draft_id = published_reply(service)
@@ -230,8 +232,8 @@ async def test_public_comment_can_illustrate_its_story_without_losing_the_source
     published_reply(service)
     service.runtime.operation_llm.illustration = "picture"
     generated = {"artifact_id": "a" * 32, "sha256": "b" * 64}
-    monkeypatch.setattr(module, "workstation_image_decisions", lambda _: True)
-    monkeypatch.setattr(module, "queue_image", lambda *args, **kwargs: generated)
+    monkeypatch.setattr(evaluator_module, "workstation_image_decisions", lambda _: True)
+    monkeypatch.setattr(attachments_module, "queue_image", lambda *args, **kwargs: generated)
     monkeypatch.setattr(service.account, "display_account_id", lambda: "100", raising=False)
     draft = await service.evaluate(manual=True)
     row = service._post(draft["post_id"])
@@ -262,7 +264,7 @@ async def test_legacy_public_dynamic_reselects_from_saved_actor_and_text(service
         assert scope["account_id"] == "100" and job_id == "legacy-reselected"
         return {"job_id": job_id, "status": "queued"}
 
-    monkeypatch.setattr(module, "queue_image", queue)
+    monkeypatch.setattr(attachments_module, "queue_image", queue)
     monkeypatch.setattr(service.runtime, "operation_images", SimpleNamespace(
         status=status, reselect=lambda scope, job_id: received.append(job_id),
     ), raising=False)
@@ -272,7 +274,7 @@ async def test_legacy_public_dynamic_reselects_from_saved_actor_and_text(service
 
 
 def test_old_dynamic_card_preserves_the_original_quote_order_for_reconciliation():
-    from tuber_studio.dynamic_comment_card import comment_card
+    from tuber_studio.operations.channels.dynamics.comment_card import comment_card
 
     sources = [{"type": "public_incident", "public_sources": [
         {"bvid": "BV1d8pU6xEZX", "comment_id": "42", "quote": "原来的原话"},
@@ -287,9 +289,9 @@ def test_old_dynamic_card_preserves_the_original_quote_order_for_reconciliation(
 def test_long_card_keeps_ancestors_and_confirmed_outcome_across_pages(service, monkeypatch):
     from PIL import ImageFont
 
-    from tuber_studio import dynamic_comment_card
-    from tuber_studio.operations.browsing.comment_timeline import observe_thread
     from tuber_studio.operations.browsing.repository import BrowsingRepository
+    from tuber_studio.operations.channels.comments.timeline import observe_thread
+    from tuber_studio.operations.channels.dynamics import comment_card as dynamic_comment_card
 
     monkeypatch.setattr(dynamic_comment_card, "_font", lambda size: ImageFont.load_default())
     store = service.store
@@ -992,10 +994,11 @@ async def test_final_guard_after_signing_await_cancels_without_write(service, mo
 
 
 @pytest.mark.parametrize("after_lock", [False, True])
-async def test_live_priority_checked_before_and_inside_generation_lock(service, after_lock):
+async def test_live_priority_checked_before_and_inside_generation_lock(service, after_lock, monkeypatch):
     public_memory(service)
     await service.set_policy({"enabled": True})
     live = service.runtime.live = SimpleNamespace(state="live", busy=False)
+    monkeypatch.setattr(service, "is_live_busy", lambda: live.state in {"live", "paused"} and live.busy)
     if after_lock:
         async with service.runtime.generation_lock:
             task = asyncio.create_task(service.evaluate())
@@ -1131,7 +1134,7 @@ async def test_decision_grammar_references_only_authorized_sources(service):
     assert props["action"]["enum"] == ["post", "wait"]
     assert props["source_ids"]["items"]["enum"] == [f"memory:{chosen}"]
     assert f"memory:{omitted}" not in props["source_ids"]["items"]["enum"]
-    assert props["next_evaluation_seconds"] == {"type": "integer", "minimum": 1, "maximum": module.MAX_SAFE_INTEGER}
+    assert props["next_evaluation_seconds"] == {"type": "integer", "minimum": 1, "maximum": MAX_SAFE_INTEGER}
 
 
 @pytest.mark.parametrize(

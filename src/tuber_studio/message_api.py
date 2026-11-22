@@ -6,7 +6,7 @@ from fastapi import Depends, Path
 from pydantic import Field
 
 from .core.models import StrictModel
-from .direct_messages import MessagePolicy
+from .operations.channels.direct_messages import MessagePolicy
 
 
 class ReviewMessage(StrictModel):

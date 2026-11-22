@@ -10,7 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from tuber_studio.core.text import comment_body_issue
-from tuber_studio.operations.browsing.quotas import publication_time
+from tuber_studio.operations.kernel.quotas import publication_time
 
 ROOT = Path(__file__).resolve().parents[1]
 JUDGMENTS = ("satisfied", "needs_revision")

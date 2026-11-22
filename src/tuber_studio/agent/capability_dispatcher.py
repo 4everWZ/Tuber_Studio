@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from ..core.identity import operating_account_facts
 from ..core.store import dump
-from ..operations.browsing.quotas import day_window
+from ..operations.kernel.quotas import day_window
 from . import operator_facts, outgoing_queue, recall_memory, workbench_tools, workshop_lookup
 from .chat_context import ChatContext
 from .chat_models import (

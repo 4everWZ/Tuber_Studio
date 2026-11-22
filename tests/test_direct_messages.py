@@ -10,10 +10,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.comments import Comments
-from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
 from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
+from tuber_studio.operations.channels.comments import Comments
+from tuber_studio.operations.channels.direct_messages import DirectMessages
 
 
 class Delivery:
@@ -108,7 +108,7 @@ async def test_unpublished_private_draft_does_not_become_sent_context(messages):
 
 async def test_processed_private_message_shares_only_role_reflection(messages, monkeypatch):
     from tuber_studio.core.models import OperationReply
-    from tuber_studio.dynamics import Dynamics
+    from tuber_studio.operations.channels.dynamics import Dynamics
 
     account = "900"
     secret = "这条私信含不公开的行程和我的姓名，星路下午四点。"
@@ -392,7 +392,7 @@ async def test_automatic_poll_resumes_saved_messages_when_queue_has_space(messag
 
 
 async def test_private_stories_cannot_enter_dynamic_source_pool(messages):
-    from tuber_studio.dynamics import Dynamics
+    from tuber_studio.operations.channels.dynamics import Dynamics
 
     character = messages.runtime.character
     messages.runtime.context.record(

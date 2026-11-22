@@ -22,12 +22,12 @@ from .infra.inference.video_vision_service import restore_admission
 from .infra.media.cache import MediaCache
 from .live.scene import LiveScene
 from .live.session import HANDOFF_PLATFORM, LiveSession
-from .operation_continuations import ContinuationCoordinator
-from .operation_generation import generate_with_recovery, hold_comment_body, reply_generation_binding
-from .operation_images import OperationImages
-from .operation_turns import OperationTurns
 from .operations.browsing.repository import BrowsingRepository
-from .operations_control import OperationsControl
+from .operations.channels.attachments.images import OperationImages
+from .operations.kernel.continuations import ContinuationCoordinator
+from .operations.kernel.control import OperationsControl
+from .operations.kernel.generation import generate_with_recovery, hold_comment_body, reply_generation_binding
+from .operations.kernel.turns import OperationTurns
 from .persona.characters.front_persona import front_identity
 from .persona.characters.pets import PetAppearances
 from .persona.context.delivery import comment_scope
@@ -440,11 +440,11 @@ class Runtime:
             operating_account=operating_account_facts(self.account.status()) if mode == "operator_chat" and hasattr(self, "account") else None,
         )
         if mode == "comment_draft":
-            from .public_mentions import MENTION_INSTRUCTION
+            from .operations.channels.mentions import MENTION_INSTRUCTION
 
             messages.append({"role": "system", "content": MENTION_INSTRUCTION})
         elif mode == "direct_message" and event.get("share_reflection"):
-            from .dynamic_materials import REFLECTION_INSTRUCTION
+            from .operations.channels.dynamics.materials import REFLECTION_INSTRUCTION
 
             messages.append({"role": "system", "content": REFLECTION_INSTRUCTION})
         generation_identity = self.identity_snapshot(character, event.get("account_id"))

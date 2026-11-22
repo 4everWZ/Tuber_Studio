@@ -6,7 +6,7 @@ import pytest
 from test_direct_messages import finished, incoming
 from test_direct_messages import messages as messages
 
-from tuber_studio.direct_messages import DirectMessages
+from tuber_studio.operations.channels.direct_messages import DirectMessages
 
 
 async def test_cold_start_keeps_private_generation_queued_until_explicit_resume_and_never_reuses_send_grant(
@@ -143,7 +143,7 @@ async def test_saving_private_permissions_while_parent_stopped_does_not_resume_o
 def test_private_handoff_accepts_completed_and_paused_parent_but_rejects_cancellation(messages):
     import json
 
-    from tuber_studio.operations.browsing.models import BrowsingPolicy
+    from tuber_studio.operations.kernel.models import BrowsingPolicy
 
     character = messages.runtime.character
     repository = messages.runtime.browsing_repository

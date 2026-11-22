@@ -201,7 +201,7 @@ async def test_priority_bridges_empty_window_and_only_requests_stream_for_remain
 
 
 def test_visual_coverage_uses_neighbor_spacing_and_checks_both_edges():
-    from tuber_studio.operations.browsing.evidence import visual_gaps
+    from tuber_studio.operations.kernel.evidence import visual_gaps
 
     assert visual_gaps(0, 30, [6, 22]) == []
     assert visual_gaps(0, 41, [10, 31]) == [(0, 10), (10, 31), (31, 41)]

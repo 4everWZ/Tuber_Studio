@@ -153,7 +153,7 @@ def test_profile_clear_or_opt_out_never_reintroduces_unsent_memory(comments):
 
 def test_dynamic_public_mark_and_cached_summary_do_not_launder_an_unsent_memory(comments, monkeypatch):
     from tuber_studio.core.identity import identity_snapshot
-    from tuber_studio.dynamics import Dynamics
+    from tuber_studio.operations.channels.dynamics import Dynamics
 
     _, _, _, text, _ = original_and_draft(comments, status="rejected")
     runtime, store, char = comments.runtime, comments.store, comments.runtime.character

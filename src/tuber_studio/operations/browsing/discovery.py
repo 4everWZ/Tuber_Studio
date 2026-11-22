@@ -8,10 +8,10 @@ import time
 from ...core.store import dump
 from ...infra.inference.providers import public_error
 from ...infra.platforms.bilibili.account import PROFILE_CACHE_KEY, signature
-from ...operations_control import canonical_intent
-from .evidence import EvidenceUnavailable
+from ..kernel.control import canonical_intent
+from ..kernel.evidence import EvidenceUnavailable
+from ..kernel.models import BrowsePlan, CandidateBatchPlan
 from .issues import issue_history
-from .models import BrowsePlan, CandidateBatchPlan
 
 ACTIVE_TASKS = ("discovered", "claimed", "preparing", "evidence_ready")
 MAX_SOURCE_PAGE = 10  # BilibiliBrowsingAdapter.discover's existing page contract.

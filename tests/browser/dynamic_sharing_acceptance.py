@@ -12,7 +12,7 @@ from playwright.sync_api import expect, sync_playwright
 from tuber_studio.app import create_app
 from tuber_studio.infra.inference.api_providers import create_operation_llm
 from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
-from tuber_studio.operations.browsing.comment_timeline import observe_thread
+from tuber_studio.operations.channels.comments.timeline import observe_thread
 
 VIDEO = "BV1d8pU6xEZX"
 ACCOUNT = "900"

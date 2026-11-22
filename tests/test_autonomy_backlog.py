@@ -8,12 +8,15 @@ from test_browsing import browsing as browsing
 from test_browsing_comment_only import comment, enable_comment_choices
 from test_direct_messages import incoming
 
-from tuber_studio.comment_workbench import prepare_queue_selection, review_queue_selection
 from tuber_studio.core.errors import PublishUncertain
 from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
-from tuber_studio.operations.browsing.backlog import inventory
 from tuber_studio.operations.browsing.comment_reader import admit_comment_page, resume_comment_page
-from tuber_studio.operations.browsing.models import ResponseDecision
+from tuber_studio.operations.channels.comments.workbench import (
+    prepare_queue_selection,
+    review_queue_selection,
+)
+from tuber_studio.operations.kernel.models import ResponseDecision
+from tuber_studio.operations.kernel.telemetry import inventory
 
 
 async def approved_replies(browsing, count, monkeypatch):

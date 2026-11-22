@@ -6,12 +6,12 @@ import httpx
 import pytest
 from test_dynamics import service as service
 
-from tuber_studio import dynamics as dynamics_module
 from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
 from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
 from tuber_studio.infra.platforms.bilibili.dynamics import publish_image, publish_text
-from tuber_studio.operations.browsing.comment_timeline import observe_thread
-from tuber_studio.public_mentions import bind_mentions
+from tuber_studio.operations.channels.comments.timeline import observe_thread
+from tuber_studio.operations.channels.dynamics import publisher as dynamics_module
+from tuber_studio.operations.channels.mentions import bind_mentions
 
 TEXT = "🌊 和 @阿蓝 一起看日出，再叫上 @贝贝 。"
 PEOPLE = [{"uid": "71", "name": "阿蓝"}, {"uid": "72", "name": "贝贝"}]
@@ -184,7 +184,7 @@ async def test_mention_timeout_reconciles_original_once_after_service_restart(se
     from types import SimpleNamespace
 
     from tuber_studio.core.errors import UnknownPublication
-    from tuber_studio.dynamics import Dynamics
+    from tuber_studio.operations.channels.dynamics import Dynamics
 
     service.account.account_id = fake_account
     service.account.display_account_id = lambda: "900"

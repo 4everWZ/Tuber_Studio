@@ -10,8 +10,8 @@ from tuber_studio.core.errors import ContextWindowExceeded, IncompleteCompaction
 from tuber_studio.core.meter import GenerationMeter
 from tuber_studio.core.turns import operation_ticket
 from tuber_studio.infra.inference.api_providers import APIProvider, create_llm
-from tuber_studio.operation_turns import OperationTurns
-from tuber_studio.operations.browsing.models import BrowsingPolicy
+from tuber_studio.operations.kernel.models import BrowsingPolicy
+from tuber_studio.operations.kernel.turns import OperationTurns
 
 
 async def test_workstation_congestion_releases_background_turn_for_chat(settings):

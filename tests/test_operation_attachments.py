@@ -13,7 +13,8 @@ from test_dynamics import Model
 from test_message_memes import image_http as image_http
 from test_message_memes import meme_messages as meme_messages
 
-from tuber_studio import operation_attachments, operation_images
+from tuber_studio.operations.channels.attachments import attachments as operation_attachments
+from tuber_studio.operations.channels.attachments import images as operation_images
 
 
 @pytest.fixture

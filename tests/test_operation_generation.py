@@ -11,8 +11,8 @@ from tuber_studio.core.models import OperationReply
 from tuber_studio.core.text import operation_output_diagnostics
 from tuber_studio.infra.inference.api_providers import APIProvider
 from tuber_studio.infra.web_client import fetch as web_fetch
-from tuber_studio.operation_generation import GenerationInvalid, generate_with_recovery
-from tuber_studio.operations.browsing.models import BrowsingPolicy, ResponseDecision
+from tuber_studio.operations.kernel.generation import GenerationInvalid, generate_with_recovery
+from tuber_studio.operations.kernel.models import BrowsingPolicy, ResponseDecision
 
 
 async def model_for(

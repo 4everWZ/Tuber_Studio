@@ -5,7 +5,7 @@ import json
 import pytest
 from test_browsing import browsing as browsing
 
-from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
+from tuber_studio.operations.kernel.inputs import ResponseDecisionInput
 
 
 def response(text):
@@ -57,7 +57,7 @@ def test_reference_namespace_has_exact_token_boundaries_and_invocation_local_cit
 @pytest.mark.parametrize("fetch_ok", [False, True])
 async def test_web_product_keeps_its_name_when_reusing_a_comment_decision(browsing, monkeypatch, fetch_ok):
     from tuber_studio.infra.web_client import fetch as web_fetch
-    from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
+    from tuber_studio.operations.kernel.models import RESPONSE_INSTRUCTION, ResponseDecision
 
     await browsing.preflight()
     browsing.runtime.operation_llm.supports_operation_web_fetch = True

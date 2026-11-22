@@ -7,7 +7,6 @@ import time
 from contextlib import nullcontext
 from uuid import uuid4
 
-from ...comment_materials import model_comment_materials, validate_comment_material_sources
 from ...core.errors import PlatformRejected, UnknownPublication
 from ...core.identity import runtime_identity
 from ...core.models import content_hash
@@ -15,7 +14,7 @@ from ...core.store import dump
 from ...core.text import comment_body_issue, validate_comment_body, validate_operation_text
 from ...infra.inference.providers import public_error
 from ...infra.platforms.bilibili.client import PlatformReadError, PublishUncertain
-from ...operation_attachments import (
+from ..channels.attachments.attachments import (
     TEXT_ONLY_IMAGE,
     checked_image,
     comment_image,
@@ -30,20 +29,27 @@ from ...operation_attachments import (
     row_ref,
     wait_decision,
 )
-from ...operation_feedback import (
+from ..channels.comments.materials import model_comment_materials, validate_comment_material_sources
+from ..channels.comments.timeline import (
+    comment_source,
+    comment_thread_context,
+    observe_thread,
+    operator_reply,
+    read_scoped_thread,
+    resource_key,
+)
+from ..channels.mentions import rebase_mentions, revision_payload
+from ..kernel.context import read_round
+from ..kernel.control import canonical_intent
+from ..kernel.feedback import (
     FeedbackPublication,
     PublicationContext,
     publication_binding,
 )
-from ...operation_generation import generate_with_recovery, generation_requires_review
-from ...operation_sends import current_send
-from ...operations_control import canonical_intent
-from ...public_mentions import rebase_mentions, revision_payload
-from .comment_timeline import observe_thread, resource_key
-from .inputs import ResponseDecisionInput
-from .models import RESPONSE_INSTRUCTION, ResponseDecision
-from .round_context import read_round
-from .thread_context import comment_source, comment_thread_context, operator_reply, read_scoped_thread
+from ..kernel.generation import generate_with_recovery, generation_requires_review
+from ..kernel.inputs import ResponseDecisionInput
+from ..kernel.models import RESPONSE_INSTRUCTION, ResponseDecision
+from ..kernel.sends import current_send
 
 _COMMENT_KINDS = {"top_level", "reply_public"}
 _ENGAGEMENT_CHANNELS = {"video_like": "video_likes", "video_fav": "video_favorites",

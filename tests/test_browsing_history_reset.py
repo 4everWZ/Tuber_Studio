@@ -2,8 +2,8 @@ import time
 
 from test_browsing import browsing as browsing
 
-from tuber_studio.comment_workbench import list_queue
-from tuber_studio.maintenance import archive_browsing_history
+from tuber_studio.operations.channels.comments.workbench import list_queue
+from tuber_studio.operations.kernel.maintenance import archive_browsing_history
 
 
 async def test_reset_retires_old_runs_and_unreviewed_drafts_without_losing_receipts_or_dedup(browsing):

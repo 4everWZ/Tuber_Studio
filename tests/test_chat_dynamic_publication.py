@@ -10,9 +10,9 @@ from test_agent_task_recovery import wait_status
 from test_personal_agent import CHAT, turn
 from test_personal_agent import studio as studio
 
-from tuber_studio import dynamic_comment_card
 from tuber_studio.agent.dynamic_publication import PUBLICATION_TOOL
 from tuber_studio.core.identity import runtime_identity
+from tuber_studio.operations.channels.dynamics import comment_card as dynamic_comment_card
 
 REQUEST = "小鱼，把之前积压的站动态都发出去"
 PROGRESS = "你发完了吗"

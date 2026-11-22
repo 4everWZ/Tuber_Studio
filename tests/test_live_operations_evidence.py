@@ -6,9 +6,9 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from evaluations.live_operations_evidence import collect, has_comment_receipt, tally_reviews
-from tuber_studio.operation_continuations import ContinuationCoordinator
 from tuber_studio.operations.browsing.repository import BrowsingRepository
-from tuber_studio.operations_control import OperationsControl
+from tuber_studio.operations.kernel.continuations import ContinuationCoordinator
+from tuber_studio.operations.kernel.control import OperationsControl
 
 
 def test_public_candidates_receipts_and_explicit_reviews_are_distinct(settings, store):

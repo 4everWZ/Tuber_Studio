@@ -2,10 +2,10 @@
 
 import json
 
-from ...message_outreach import contact_state as outreach_contact_state
-from ...operation_feedback import continuation_view, generation_view
-from .backlog import flow_window
-from .evidence import EvidenceUnavailable
+from ..channels.direct_messages.outreach import contact_state as outreach_contact_state
+from ..kernel.evidence import EvidenceUnavailable
+from ..kernel.feedback import continuation_view, generation_view
+from ..kernel.telemetry import flow_window
 
 
 def selection_tasks(store, *, status=None, round_id=None, task_id=None):
