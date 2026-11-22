@@ -20,6 +20,7 @@
 
 ## 计划与交接
 
+- [全仓分层重构与运营双管线架构蓝图](design/layered-architecture-refactor.md)
 - [当前工作与待验收项](plans/current.md)
 - [游戏模拟和实机计划](plans/game-livestream.md)
 - [当前部署交接](handoff.md)
