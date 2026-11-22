@@ -1,5 +1,13 @@
 # syntax=docker/dockerfile:1
 FROM ghcr.io/astral-sh/uv:0.11.8 AS uv
+FROM node:24-bookworm-slim AS web-build
+WORKDIR /build/frontend
+RUN corepack enable && corepack prepare pnpm@10.28.1 --activate
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --ignore-scripts
+COPY frontend ./
+RUN pnpm build
+
 FROM node:24-bookworm-slim AS songs
 WORKDIR /songs
 COPY components/song_requests/package.json components/song_requests/package-lock.json ./
@@ -17,6 +25,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project --no-cache
 COPY LICENSE ./
 COPY src ./src
+COPY --from=web-build /build/src/tuber_studio/web_dist ./src/tuber_studio/web_dist
 COPY config ./config
 COPY assets ./assets
 COPY components/song_requests/helper.cjs components/song_requests/matching.cjs ./components/song_requests/

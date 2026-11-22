@@ -352,8 +352,15 @@ async def test_chat_memory_migration_in_chromium(settings, monkeypatch):
     }
 
     class Model:
+        supports_memory_organization = True
+
         def __getattr__(self, name):
             return getattr(base, name)
+
+        async def generate_text_stream(self, messages, **options):
+            if options.get("on_content"):
+                options["on_content"]("好的，我会按这个格式写标题。")
+            return "好的，我会按这个格式写标题。"
 
         async def generate_assistant_json(self, messages, schema, **options):
             if schema.get("title") == "TurnRoute":
@@ -429,7 +436,7 @@ async def test_chat_memory_migration_in_chromium(settings, monkeypatch):
                     layout = await scenario.preference(page, runner.CONFIRMED, "layout")
                     row = await scenario.preference(page, runner.AUTO, "original")
                     assert reviews == [runner.CONFIRMED, runner.AUTO]
-                    assert not any(url.endswith(("/memory.propose", "/memory/confirm")) for url in writes)
+                    assert not any(url.endswith(("/memory/propose", "/memory/confirm")) for url in writes)
                     await page.reload()
                     await expect(turns).to_have_count(4)
                     for turn in await turns.all():

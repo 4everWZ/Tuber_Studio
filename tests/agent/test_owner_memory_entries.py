@@ -231,7 +231,9 @@ async def test_chromium_owner_controls(settings, monkeypatch, mode):
     app = create_app(settings)
 
     async def chat(messages, schema, **kwargs):
-        return {"action": "chat", "reply_markdown": "好的，我来准备开场。"}
+        if schema.get("title") == "TurnRoute":
+            return {"route": "chat", "action": "chat"}
+        return {"reply_markdown": "好的，我来准备开场。"}
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", chat, raising=False)
     with socket.socket() as listener:

@@ -5,6 +5,13 @@
 !src
 !src/tuber_studio
 !src/tuber_studio/**
+src/tuber_studio/web_dist
+src/tuber_studio/web_dist/**
+!frontend
+!frontend/**
+frontend/node_modules
+frontend/**/node_modules
+frontend/dist
 !config
 !config/characters.json
 !config/operations-persona-views.json

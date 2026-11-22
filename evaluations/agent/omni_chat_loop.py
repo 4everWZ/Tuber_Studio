@@ -15,7 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
-from tuber_studio.core.config import operation_profile
+from tuber_studio.core.config import chat_profile, operation_profile
 from tuber_studio.core.models import StrictModel
 from tuber_studio.core.store import Store
 from tuber_studio.core.validation import endpoint, validate_api_key
@@ -54,7 +54,7 @@ def connection(env):
     return root, token
 
 
-async def exercise(store, omni, operations, responses, *, token, explicit=False):
+async def exercise(store, omni, chat_llm, operations, responses, *, token, explicit=False):
     from tuber_studio.agent.chat import ChatIntent, ChatTurn, OperatorChat
     from tuber_studio.agent.tasks.runtime import Tool
     from tuber_studio.agent.tasks.tools import create_task_runtime
@@ -68,8 +68,9 @@ async def exercise(store, omni, operations, responses, *, token, explicit=False)
     seeds = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
     character = next(seed for seed in seeds if seed["id"] == "whale") | {"version": 1}
     runtime = SimpleNamespace(
-        store=store, character=character, llm=omni, operation_llm=operations, operator_generation=nullcontext,
-        offline_generation=nullcontext, chat_routing_generation=nullcontext,
+        store=store, character=character, llm=omni, chat_llm=chat_llm, operation_llm=operations,
+        operator_generation=nullcontext, offline_generation=nullcontext,
+        chat_routing_generation=nullcontext, chat_text_generation=nullcontext,
         settings=SimpleNamespace(data={"omni": omni.config}, responses_config=responses.config.model_dump(),
                                  provider_key=lambda name: token if name == "omni" else None),
         daily_memory=SimpleNamespace(preference=lambda scope: {"enabled": False}),
@@ -151,11 +152,13 @@ async def run(env, *, explicit=False):
         stack.push_async_callback(omni.close)
         responses = await stack.enter_async_context(ResponsesClient(
             {"base_url": root + "/llm/v1", "model": env.get("OMNI_LLM_MODEL_ALIAS", "llm-default")}, token))
+        chat_llm = APIProvider(chat_profile(omni.config | {"responses_model": responses.config.model}), token)
+        stack.push_async_callback(chat_llm.close)
         operations = APIProvider(operation_profile(omni.config | {"responses_model": responses.config.model}),
                                  token, background=True)
         stack.push_async_callback(operations.close)
         async with asyncio.timeout(300):
-            return await exercise(store, omni, operations, responses, explicit=explicit, token=token)
+            return await exercise(store, omni, chat_llm, operations, responses, explicit=explicit, token=token)
 
 
 def main():

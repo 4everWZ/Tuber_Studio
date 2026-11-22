@@ -6,7 +6,9 @@ Tuber Studio 连接独立推理网关。Omni 处理前台对话、电话和实�
 
 ## Core
 
-在仓库根目录执行。先从基础设施管理员取得分配给 Core 的网关服务令牌，并将它存入 `deploy/omni/secrets/gateway-core.token`。`secrets/` 用宿主目录权限限制访问，容器内 UID/GID 65532 需要可读各自的令牌文件。可用 `OMNI_CORE_TOKEN_FILE` 指向授权的其他文件。
+在统一代码检出根目录（`<code-root>/Tuber_Studio`，与 `<code-root>/omni-avatar-api` 同级）执行，替代旧式 `<state-root>/releases/<sha>` 解包目录。先从基础设施管理员取得分配给 Core 的网关服务令牌，并将它存入 `deploy/omni/secrets/gateway-core.token`（正式环境的高敏密钥、环境文件与归档备份建议统一置于代码树外的 `<state-root>/{secrets,backups}`，业务数据库持久化挂载于 `/data/business`）。`secrets/` 用宿主目录权限限制访问，容器内 UID/GID 65532 需要可读各自的令牌文件。可用 `OMNI_CORE_TOKEN_FILE` 指向授权的其他文件。
+
+正式工作站切换前，应在 `<code-root>/` 留存历史发布回滚归档并清理占用失效本地路径与未使用端口的旧静态文件进程。
 
 同一网关地址可在工作台保存新的普通应用凭据。保存值优先，清除后恢复该地址的 Compose 凭据。换成其他地址时须为新地址单独授权。
 
@@ -17,6 +19,8 @@ docker compose -f deploy/omni/app-compose.yml config --quiet
 docker compose -f deploy/omni/app-compose.yml up -d --build --wait tuber-core
 curl --fail http://127.0.0.1:9020/healthz
 ```
+
+`deploy/omni/Dockerfile` 的 `web-build` 阶段使用 Node 24 与 `pnpm` 将 `frontend/` 编译到镜像内的 `src/tuber_studio/web_dist`，无需在宿主机提前安装前端构建产物。
 
 通过 `OMNI_GATEWAY_URL` 指定服务根地址（不带 `/v1`）。Omni 前台使用 `OMNI_MODEL_ALIAS`，后台使用 `OMNI_LLM_MODEL_ALIAS`。工作站与 Core 在不同机器时使用 Core 可达的工作站地址；不需要在 Core 安装引擎。用应用凭据验证 Chat、模型卡实报窗口、后台 `/llm/v1/responses` 真实图文输入与函数结果回传。只得到健康响应不代表 Agent 已接通。参考音色朗读使用同一 Omni 连接。 [能力与验收](../../docs/specs/foundation/omni-deployment.md#接入验收与切换)
 

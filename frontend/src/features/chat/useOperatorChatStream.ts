@@ -77,7 +77,7 @@ export interface ChatStatusMessage {
 
 type ScrollIntent =
   | { kind: "bottom" }
-  | { kind: "preserve"; prevHeight: number }
+  | { kind: "preserve"; prevHeight: number; anchorRequestId?: string; anchorTop?: number }
   | null;
 
 interface InFlightState {
@@ -230,6 +230,15 @@ export function useOperatorChatStream({
     if (intent.kind === "bottom") {
       timeline.scrollTop = timeline.scrollHeight;
     } else if (intent.kind === "preserve") {
+      if (intent.anchorRequestId && intent.anchorTop !== undefined) {
+        const anchorEl = timeline.querySelector<HTMLElement>(
+          `[data-request-id="${CSS.escape(intent.anchorRequestId)}"]`
+        );
+        if (anchorEl) {
+          timeline.scrollTop += anchorEl.getBoundingClientRect().top - intent.anchorTop;
+          return;
+        }
+      }
       timeline.scrollTop += timeline.scrollHeight - intent.prevHeight;
     }
   }, [turns, transient?.partial, transient?.stageText, statusMessage.text, timelineRef]);
@@ -351,6 +360,12 @@ export function useOperatorChatStream({
 
   const loadOlder = useCallback(async () => {
     if (!nextCursor || historyPendingRef.current) return;
+    const firstTurn = timelineRef.current?.querySelector<HTMLElement>(
+      ".operator-chat-turn[data-request-id]"
+    );
+    const anchorRequestId = firstTurn?.dataset.requestId;
+    const anchorTop = firstTurn?.getBoundingClientRect().top;
+    const prevHeightBeforeLoad = timelineRef.current?.scrollHeight ?? 0;
     const currentEpoch = epochRef.current;
     historyPendingRef.current = true;
     setOlderPending(true);
@@ -366,8 +381,8 @@ export function useOperatorChatStream({
         return;
       }
       setHistoryNote("");
-      const prevHeight = timelineRef.current?.scrollHeight ?? 0;
-      scrollIntentRef.current = { kind: "preserve", prevHeight };
+      const prevHeight = timelineRef.current?.scrollHeight ?? prevHeightBeforeLoad;
+      scrollIntentRef.current = { kind: "preserve", prevHeight, anchorRequestId, anchorTop };
       setTurns((prev) => prependOlderTurns(prev, result.turns || []));
       setNextCursor(result.next_cursor ?? null);
     } catch (error) {

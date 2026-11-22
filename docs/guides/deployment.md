@@ -2,12 +2,14 @@
 
 ## 项目环境
 
-本地开发使用项目专用 Python 3.12 与 uv，不向系统／base环境安装依赖：
+本地开发使用项目专用 Python 3.12（`uv`）与独立前端工程 `frontend/`（Node 24 + `pnpm@10.28.1` + React 19 + Vite），不向系统／base 环境安装依赖：
 
     uv sync --python 3.12
+    pnpm --dir frontend install --frozen-lockfile --ignore-scripts
+    pnpm --dir frontend run build
     uv run python -m tuber_studio --port 8020
 
-工作台默认在 `http://127.0.0.1:8020`。配置读取业务目录的 `studio.json`，新装以 `config/studio.example.json` 为模板。运行中的正式实例通过设置 API 保存更改。
+`pnpm --dir frontend run build` 将前端多入口产物构建到 `src/tuber_studio/web_dist/`（`.gitignore` 排除，不入库）。工作台默认在 `http://127.0.0.1:8020`（或经 `TUBER_WEB_PREFIX=/dafeiyu` 配置子路径挂载 `<base href="/dafeiyu/">`）。配置读取业务目录的 `studio.json`，新装以 `config/studio.example.json` 为模板。运行中的正式实例通过 `/api/v1/system/settings/*` 保存更改。
 
 远程或代理访问从 `runtime/admin-token` 读取管理令牌，登录后浏览器保留会话。保留 `runtime/studio.sqlite3` 和 `admin-token` 可跨服务重启及代码更新继续使用。远程管理设置可重置令牌和退出登录。若部署显式设置 `TUBER_ADMIN_TOKEN`，本机访问也使用该令牌，轮换在环境中完成。
 
@@ -17,20 +19,29 @@ B 站账号在「设置 → 账号与登录」扫码并在手机上确认。工�
 
 ## 提交前检查
 
-在准备提交的开发工作树中，用锁定的开发环境运行代码检查入口：
+在准备提交的开发工作树中，用锁定的项目环境分别运行前端、OpenAPI 契约、后端、AST 架构守卫与脱敏检查：
 
     uv sync --locked --group dev --python 3.12
+    pnpm --dir frontend install --frozen-lockfile --ignore-scripts
+    pnpm --dir frontend run typecheck && pnpm --dir frontend run lint && pnpm --dir frontend run check:openapi && pnpm --dir frontend run test && pnpm --dir frontend run build
+    uv run --locked python tools/ci/export_openapi.py --check
     uv run --locked python tools/ci/check_style.py
+    uv run --locked pytest -q
+    uv run --locked python tools/check_release_privacy.py
 
-该命令分别报告 lint 和格式检查结果，任一失败即返回非零退出码。可用 `uv run --locked ruff format src tests tools` 修正格式，确认差异后重新检查。
+`tools/ci/check_style.py` 分别报告 Ruff lint 和格式检查结果；可用 `uv run --locked ruff format src tests evaluations tools deploy` 修正格式。`pytest` 自动执行 `tests/architecture/` 零例外 AST 分层与边界守卫，以及 `/api/v1/*` 契约与双管线回归测试。可选点歌组件使用 `npm --prefix components/song_requests test`（`node --test test/*.test.cjs`）。
 
-CI 分别运行锁定项目环境的 Python 测试和可选点歌组件的 Node 测试。Lint 和格式检查保留为本地命令。
-
-这些代码检查可在 Windows／Linux 的开发环境独立运行。服务能力和实际设备上的端到端验收见下文。
+GitHub Actions 工作流（`.github/workflows/ci.yml`）按 `song-component`、`frontend` 与 `checks`（含 OpenAPI 同步校验、`ruff check` 与 `pytest`）运行上述阻断检查。所有文档、脚本与验收记录必须通过 `tools/check_release_privacy.py`，禁止写入真实私网地址、主机名、个人 OS 路径、真实账号 UID 或 Docker 卷哈希。
 
 ## 业务部署与服务接入
 
-大肥鱼工坊的正式入口部署在工作站。Core 在同一进程提供工作台前端、静态文件和业务 API，工作站同时承载数据库、推理与 Avatar。笔电浏览器打开工作站 HTTPS 地址下的 `/dafeiyu`。麦克风需要浏览器信任该 IP 对应的服务器证书。[工作站 IP 部署](../../deploy/omni/README.md#工作站-ip-入口)
+大肥鱼工坊的正式入口部署在工作站。Core（`src/tuber_studio/app/__init__.py`）在同一进程提供打包后的 React 前端（`src/tuber_studio/web_dist/`）、静态资源与 `/api/v1/*` 业务 API，工作站同时承载数据库、推理与 Avatar。笔电浏览器打开工作站 HTTPS 地址下的 `/dafeiyu/`。麦克风需要浏览器信任该 IP 对应的服务器证书。[工作站 IP 部署](../../deploy/omni/README.md#工作站-ip-入口)
+
+工作站生产构造遵循统一代码目录与运行时隔离约定：
+
+- **统一代码与 Compose 构建根目录：** 直接在统一 Git 检出目录 `<code-root>/Tuber_Studio`（与 `<code-root>/omni-avatar-api` 同级）执行 `docker compose build/up`，不再向 `<state-root>/releases/<sha>` 解压旧式版本包；`deploy/omni/Dockerfile` 的 `web-build` 阶段（`node:24-bookworm-slim` + `pnpm@10.28.1`）自动在容器内构建 `src/tuber_studio/web_dist` 并拷贝入 `core` 镜像。
+- **状态、密钥与备份分离：** 业务 SQLite 与运行状态持久化挂载在 `/data/business`；网关令牌、环境配置与正式备份目录保留在 `<state-root>/{secrets,backups}`，严格脱离代码树与 Git 仓库。
+- **切换前清理清单：** 正式上线切换前，在 `<code-root>/` 保留好回滚归档包再退役旧解包发布目录，并提前停止占用失效本地路径与未使用端口的旧静态文件进程。
 
 在「设置 → 共用 Omni API」填写网关地址、图文与语音模型别名、后台 Responses 别名和普通应用凭据，点击「保存 Omni 设置」。新装示例的 `omni.base_url` 为 `http://127.0.0.1:8000/v1`。使用工作站时填 Core 可达的网关地址。前台和后台可使用服务分配的不同别名；后台 Responses、视频取帧、参考朗读和配图共用这项连接。[能力路由及验收](../specs/foundation/omni-deployment.md)
 
@@ -44,7 +55,7 @@ Windows 业务主机也可使用项目环境直接启动。启用在线点歌时
     npm --prefix components/song_requests ci --ignore-scripts
     & tools/deployment/run-business.ps1 -Data runtime/desktop/business -Background
 
-启动器默认监听 `http://127.0.0.1:9020`，通过 `TUBER_RUNTIME` 传递数据目录。可用 `-Source`、`-Python`、`-Config` 和 `-BindAddress` 指定程序、环境、配置和绑定地址。同一业务目录须由一个服务进程独占。
+启动器验证 `src/tuber_studio/app/__init__.py`、业务数据目录与 `src/tuber_studio/web_dist/index.html`（若缺少构建产物且环境存在 `pnpm`，会自动安装依赖并执行 `pnpm build`），默认监听 `http://127.0.0.1:9020`，通过 `TUBER_RUNTIME` 传递数据目录。可用 `-Source`、`-Python`、`-Config` 和 `-BindAddress` 指定程序、环境、配置和绑定地址。同一业务目录须由一个服务进程独占。
 
 ### 迁移业务数据
 
@@ -68,7 +79,7 @@ Windows 业务主机也可使用项目环境直接启动。启用在线点歌时
 
 ## 连接验证
 
-在设置中点击「检查已保存的连接」，分别查看前台与后台模型卡的读取结果。「前台 Omni」设置前台模型与思考开关，「后台 Agent」设置后台模型、运营与委派任务各自的单次输出上限，以及视频取材额度。地址与应用凭据在「共用连接与凭据」里统一维护。用普通应用凭据读取网关模型卡与窗口，再验证正常与流式对话、后台工具回执和真实视频帧。改变网关或窗口后重新计数。思考默认开启，可在设置中切换。画面读取失败时在任务详情查看原因，有字幕可继续取材。凭据保存在业务端，换地址时重新绑定。[API 接入验收](../specs/foundation/omni-deployment.md#接入验收与切换)
+在「设置 → 连接」点击「检查已保存的连接」，通过统一的单个 Omni/vLLM 网关入口维护地址、模型别名与凭据（无 Ollama 连接），分别查看前台对话模型与后台文本模型的模型卡读取结果。文本对话前台（`chat_llm` → `/llm/v1/chat/completions`，`enable_thinking=False`）与后台路由／任务／运营（`/llm/v1/responses` 与 `/llm/v1/chat/completions`）共用网关上的 `responses_model`（`llm-default`），全双工私有语音通话专走 Omni `/v1/realtime`。用普通应用凭据读取网关模型卡与窗口，再验证正常与流式对话、后台工具回执和真实视频帧。改变网关或窗口后重新计数。思考选项保留在设置中；画面读取失败时在任务详情查看原因，有字幕可继续取材。凭据保存在业务端，换地址时重新绑定。[API 接入验收](../specs/foundation/omni-deployment.md#接入验收与切换)
 
 参考朗读从工作台输入新句并试听。直播另用获播放权的独立播放器验证播完回执。启用节目媒体时，从实际浏览器或 OBS 验证解码和可达性。[节目接入](../../deploy/omni/README.md#gif-avatar-与-obs-媒体)
 

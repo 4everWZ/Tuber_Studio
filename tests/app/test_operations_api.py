@@ -22,30 +22,36 @@ async def test_dynamic_frequency_and_channel_image_permissions_in_browser(settin
     app = create_app(settings, ReadOnlyPlatform())
     async with server(app) as origin, async_playwright() as pw:
         browser = await pw.chromium.launch(executable_path=os.getenv("CHROMIUM_EXECUTABLE"))
-        page = await browser.new_page()
-        await page.route("**/*", lambda r: r.continue_() if r.request.url.startswith(origin + "/") else r.abort())
-        await page.goto(origin + "/#dynamic-policy-settings")
-        limit = page.get_by_label("24 小时最大尝试次数", exact=False)
-        await expect(limit).to_be_enabled()
-        await limit.fill("24")
-        await page.locator("#dynamic-min-post-interval").fill("0")
-        await page.get_by_label("允许动态选用图库图片").check()
-        await page.get_by_label("允许动态调用生图模型").uncheck()
-        async with page.expect_response(lambda r: r.request.method == "PUT" and r.url.endswith("/api/v1/operations/dynamics/policy")) as saved:
-            await page.get_by_role("button", name="保存动态设置").click()
-        assert (await saved.value).ok
-        await page.reload()
-        await expect(limit).to_have_value("24")
-        await expect(page.locator("#dynamic-min-post-interval")).to_have_value("0")
-        await expect(page.get_by_label("允许动态选用图库图片")).to_be_checked()
-        await expect(page.get_by_label("允许动态调用生图模型")).not_to_be_checked()
-        await page.get_by_role("link", name="私信收取与回复").click()
-        await expect(page.get_by_label("允许私信调用生图模型")).to_be_checked()
-        await expect(page.get_by_label("允许私信选用图库图片")).not_to_be_checked()
-        await expect(page.get_by_label("允许视频主评调用生图模型")).to_be_checked()
-        await expect(page.get_by_label("允许视频主评选用图库图片")).not_to_be_checked()
-        assert not app.state.store.one("SELECT 1 FROM dynamic_posts")
-        await browser.close()
+        try:
+            page = await browser.new_page()
+            await page.route("**/*", lambda r: r.continue_() if r.request.url.startswith(origin + "/") else r.abort())
+            await page.goto(origin + "/#dynamic-policy-settings")
+            limit = page.get_by_label("24 小时最大尝试次数", exact=False)
+            await expect(limit).to_be_enabled()
+            await limit.fill("24")
+            await page.locator("#dynamic-min-post-interval").fill("0")
+            async with page.expect_response(lambda r: r.request.method == "PUT" and r.url.endswith("/api/v1/operations/dynamics/policy")) as saved:
+                await page.get_by_role("button", name="保存动态设置").click()
+            assert (await saved.value).ok
+            await page.reload()
+            await expect(limit).to_have_value("24")
+            await expect(page.locator("#dynamic-min-post-interval")).to_have_value("0")
+            await page.locator('a[data-page="settings"]').click()
+            policy_box = page.locator("#illustration-policy")
+            await expect(policy_box).to_be_enabled()
+            use_memes = policy_box.get_by_label("图库")
+            generate_images = policy_box.get_by_label("生图")
+            await expect(use_memes).to_be_checked()
+            await expect(generate_images).not_to_be_checked()
+            async with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith("/api/v1/persona/illustrations/policy")) as img_saved:
+                await generate_images.check()
+            assert (await img_saved.value).ok
+            await page.reload()
+            await expect(policy_box.get_by_label("图库")).to_be_checked()
+            await expect(policy_box.get_by_label("生图")).to_be_checked()
+            assert not app.state.store.one("SELECT 1 FROM dynamic_posts")
+        finally:
+            await browser.close()
 
 
 def test_dynamic_routes_require_admin_and_overlay_does_not_grant_access(settings, monkeypatch):

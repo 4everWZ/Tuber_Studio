@@ -37,19 +37,16 @@ def review_in_browser(origin, token, check_mention):
             page.goto(origin)
             page.locator("#token").fill(token)
             page.locator("#login-form button").click()
+            page.locator("#workspace-sidebar").wait_for()
             page.evaluate("location.hash = '#dynamics'")
-            page.get_by_role("button", name="生成动态草稿").click()
-            rows = page.locator("#dynamic-posts tr")
-            expect(rows.locator("button")).to_have_count(1, timeout=180000)
-            rows.locator("button").click()
-            expect(page.locator("#approve-dynamic")).to_be_enabled()
-            page.get_by_text("素材来源原文", exact=True).click()
-            source = page.locator("#dynamic-post-sources details")
-            for detail in source.all():
-                detail.locator("summary").click()
+            page.locator("[data-evaluate-dynamics]").click()
+            rows = page.locator("[data-post-list] button[data-post-id]")
+            expect(rows).to_have_count(1, timeout=180000)
+            rows.click()
+            expect(page.locator("[data-approve-dynamic]")).to_be_enabled()
             for original in COMMENTS:
-                expect(page.locator("#dynamic-post-sources").get_by_text(original, exact=True)).to_be_visible()
-            posted = page.locator("#dynamic-post-text").input_value()
+                expect(page.locator("[data-dynamic-sources]").get_by_text(original, exact=True)).to_be_visible()
+            posted = page.locator("[data-dynamic-textarea]").input_value()
             if check_mention:
                 mention = page.get_by_role("link", name="@珊瑚")
                 expect(mention).to_have_attribute("href", "https://space.bilibili.com/73")
@@ -57,9 +54,9 @@ def review_in_browser(origin, token, check_mention):
                     mention.click()
                 expect(destination.value.locator("body")).to_contain_text("UID 73")
                 destination.value.close()
-            page.get_by_role("button", name="审核通过").click()
+            page.locator("[data-approve-dynamic]").click()
             with page.expect_response(lambda response: response.url.endswith("/publish")) as submitted:
-                page.locator("#publish-dynamic").click()
+                page.locator("[data-publish-dynamic]").click()
             assert submitted.value.ok and submitted.value.json()["status"] == "published"
             return posted
         finally:

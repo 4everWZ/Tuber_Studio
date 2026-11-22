@@ -33,6 +33,37 @@ jobs:
         working-directory: components/song_requests
         run: npm test
 
+  frontend:
+    name: React frontend build and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Node 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.28.1 --activate
+      - name: Install frontend dependencies without lifecycle scripts
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Typecheck
+        working-directory: frontend
+        run: pnpm typecheck
+      - name: Lint
+        working-directory: frontend
+        run: pnpm lint
+      - name: Vitest
+        working-directory: frontend
+        run: pnpm test
+      - name: Vite production bundle
+        working-directory: frontend
+        run: pnpm build
+
   checks:
     name: Python and CPU contracts
     runs-on: ubuntu-24.04
@@ -42,6 +73,10 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Node 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
       - name: Python 3.12
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -54,10 +89,20 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Locked project environment
         run: uv sync --locked --group dev
+      - name: Frontend dependencies and OpenAPI contract sync
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.28.1 --activate
+          pnpm --dir frontend install --frozen-lockfile --ignore-scripts
+          uv run --locked python tools/ci/export_openapi.py --check
+          pnpm --dir frontend run check:openapi
+          pnpm --dir frontend run build
       - name: Image decoder and Chinese fonts for rendering contracts
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk
+      - name: Ruff lint
+        run: uv run --locked ruff check src tests evaluations tools deploy
       - name: Workbench tests
         run: |
           mkdir -p tmp/ci-results

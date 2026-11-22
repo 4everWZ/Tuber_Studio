@@ -105,7 +105,7 @@ export function IssuesPanel({ embedded = false }: IssuesPanelProps) {
           <p className="hint">暂无匹配的告警或错误。</p>
         ) : (
           filtered.map((item) => (
-            <article key={item.key} className={styles.issueRow}>
+            <article key={item.key} className={`issue-row ${styles.issueRow}`}>
               <p>{item.text}</p>
               <span className="hint">
                 {item.unread > 0 ? `未读 ${item.unread} 次` : "已读"} ·{" "}

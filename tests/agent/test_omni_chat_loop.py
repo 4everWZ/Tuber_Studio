@@ -35,8 +35,11 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
         elif path in {"/v1/chat/prompt_tokens", "/llm/v1/chat/prompt_tokens"}:
             result = {"count": 128}
         elif path in {"/v1/chat/completions", "/llm/v1/chat/completions"}:
+            assert path == "/llm/v1/chat/completions", "Text chat/ack/editor must not hit Omni /v1/chat/completions"
             content = body["messages"][-1]["content"]
-            if path == "/v1/chat/completions" and "structured_outputs" not in body and "response_format" not in body:
+            if "structured_outputs" not in body and "response_format" not in body:
+                assert body["model"] == "llm-default"
+                assert body["chat_template_kwargs"]["enable_thinking"] is False
                 chat_stages.append("front_ack")
                 result = {"choices": [{"finish_reason": "stop", "message": {"content": "好的，已经交给后台处理，结果会回到这里。"}}],
                           "usage": {"prompt_tokens": 128}}
@@ -141,7 +144,8 @@ async def test_isolated_chat_and_responses_wire(tmp_path, monkeypatch, behavior)
         result = await replay.run(config)
     assert result == {"status": "passed", "task_revision": 2, "local_reads": ["operation_status"], "platform_writes": 0}
     assert chat_stages == ["turn_router", "front_ack", "card_steering", "evidence_editor"]
+    assert "/v1/chat/completions" not in calls
     assert [path for path in calls if path.endswith(("chat/completions", "responses"))] == [
-        "/llm/v1/responses", "/v1/chat/completions", "/llm/v1/responses",
+        "/llm/v1/responses", "/llm/v1/chat/completions", "/llm/v1/responses",
         "/llm/v1/responses", "/llm/v1/responses", "/llm/v1/chat/completions",
     ]

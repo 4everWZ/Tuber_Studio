@@ -75,7 +75,13 @@ def isolated_app(directory, endpoint, key, *, traffic=None, realtime_ticket_url=
     transport = httpx.AsyncHTTPTransport.handle_async_request
     posts = {
         httpx.URL(endpoint + path)
-        for path in ("/v1/chat/completions", "/v1/chat/prompt_tokens", "/llm/v1/responses")
+        for path in (
+            "/v1/chat/completions",
+            "/v1/chat/prompt_tokens",
+            "/llm/v1/chat/completions",
+            "/llm/v1/chat/prompt_tokens",
+            "/llm/v1/responses",
+        )
     }
     denied = []
 

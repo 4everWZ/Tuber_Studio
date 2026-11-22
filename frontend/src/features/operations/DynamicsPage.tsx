@@ -399,6 +399,7 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
       !isDetached &&
       (activePost.status === "pending_review" || activePost.status === "approved")
   );
+  const awaitingChoice = activePost?.illustration_choice === "awaiting_choice";
 
   const canPublish = Boolean(
     activePost && !isDetached && activePost.status === "approved" && !busy
@@ -882,7 +883,7 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
                       <button
                         type="button"
                         data-approve-dynamic=""
-                        disabled={busy}
+                        disabled={busy || awaitingChoice}
                         onClick={() =>
                           void submitPostReview(
                             activePost,
@@ -983,8 +984,12 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
                       </span>
                     )}
                     {activePost.illustration_choice && (
-                      <span className="hint">
-                        选择：{activePost.illustration_choice}
+                      <span className="hint" data-dynamic-meme-name="">
+                        {activePost.illustration_choice === "awaiting_choice"
+                          ? "等待重新选图"
+                          : activePost.illustration_choice === "text_only"
+                            ? "纯文字"
+                            : `选择：${activePost.illustration_choice}`}
                       </span>
                     )}
                     {activeIllustrationState && (
@@ -1026,7 +1031,7 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
                       >
                         重选或跳过配图
                       </button>
-                      {activePost.meme_id && (
+                      {(activePost.meme_id || activeMemePreviewHref || awaitingChoice) && (
                         <button
                           type="button"
                           data-dynamic-clear-meme=""

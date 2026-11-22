@@ -101,4 +101,71 @@ describe("AppShell", () => {
       expect(document.getElementById("login-form")).not.toBeNull();
     });
   });
+
+  it("keeps polling characterDisplayStore even when WS status pushes arrive every second", async () => {
+    vi.useFakeTimers();
+    let performanceFetches = 0;
+    let lastSocket: FakeWebSocket | null = null;
+    class TrackingWebSocket extends FakeWebSocket {
+      constructor(url: string) {
+        super(url);
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        lastSocket = this;
+      }
+    }
+    vi.stubGlobal("WebSocket", TrackingWebSocket);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/system/settings")) {
+          return Response.json({ local_access: false, omni: { model: "demo" } });
+        }
+        if (url.endsWith("/api/v1/system/status")) {
+          return Response.json({
+            state: "stopped",
+            character: { id: "dafeiyu", display_name: "大肥鱼" },
+            context: { capacity_source: "model_card", verified: true },
+          });
+        }
+        if (url.endsWith("/api/v1/system/settings/performance")) {
+          performanceFetches += 1;
+          return Response.json({ pets_enabled: performanceFetches === 1, avatar_enabled: false });
+        }
+        return Response.json({});
+      })
+    );
+
+    try {
+      render(<AppShell renderRoute={(route) => <div data-testid="route-slot">{route.page}</div>} />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(screen.getByTestId("route-slot")).toHaveTextContent("chat");
+      const initialFetches = performanceFetches;
+
+      // Simulate 1s /ws/admin status pushes arriving while the 2.5s poll runs.
+      for (let i = 0; i < 3; i += 1) {
+        await act(async () => {
+          lastSocket?.onmessage?.(
+            new MessageEvent("message", {
+              data: JSON.stringify({
+                type: "status",
+                data: {
+                  state: "stopped",
+                  character: { id: "dafeiyu", display_name: "大肥鱼" },
+                  context: { capacity_source: "model_card", verified: true },
+                },
+              }),
+            })
+          );
+          await vi.advanceTimersByTimeAsync(1000);
+        });
+      }
+
+      expect(performanceFetches).toBeGreaterThan(initialFetches);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

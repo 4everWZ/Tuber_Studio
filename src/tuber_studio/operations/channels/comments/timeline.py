@@ -199,21 +199,28 @@ def observe_thread(store, row, resource, items, *, via, resource_author_uid=None
                         _timestamp(item.get("created_at")), _id(resource_author_uid)))
         observations.append((*key, via, row.get("round_id") or row.get("id"), now))
     if entries:
-        store.db.executemany(
-            "INSERT INTO browsing_comment_timeline VALUES(?,?,?,?,?,?,?,?,?,?,?) "
-            "ON CONFLICT(account_id,character_id,resource,root_id,comment_id) DO UPDATE SET "
-            "parent_comment_id=COALESCE(excluded.parent_comment_id,browsing_comment_timeline.parent_comment_id),"
-            "author_uid=excluded.author_uid,author_name=excluded.author_name,text=excluded.text,"
-            "created_at=COALESCE(excluded.created_at,browsing_comment_timeline.created_at),"
-            "resource_author_uid=COALESCE(excluded.resource_author_uid,browsing_comment_timeline.resource_author_uid)",
-            entries,
-        )
-        store.db.executemany(
-            "INSERT INTO browsing_comment_observations VALUES(?,?,?,?,?,?,?,?) "
-            "ON CONFLICT(account_id,character_id,resource,root_id,comment_id,via,round_id) DO UPDATE SET "
-            "observed_at=excluded.observed_at",
-            observations,
-        )
+        def _persist():
+            store.db.executemany(
+                "INSERT INTO browsing_comment_timeline VALUES(?,?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(account_id,character_id,resource,root_id,comment_id) DO UPDATE SET "
+                "parent_comment_id=COALESCE(excluded.parent_comment_id,browsing_comment_timeline.parent_comment_id),"
+                "author_uid=excluded.author_uid,author_name=excluded.author_name,text=excluded.text,"
+                "created_at=COALESCE(excluded.created_at,browsing_comment_timeline.created_at),"
+                "resource_author_uid=COALESCE(excluded.resource_author_uid,browsing_comment_timeline.resource_author_uid)",
+                entries,
+            )
+            store.db.executemany(
+                "INSERT INTO browsing_comment_observations VALUES(?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(account_id,character_id,resource,root_id,comment_id,via,round_id) DO UPDATE SET "
+                "observed_at=excluded.observed_at",
+                observations,
+            )
+
+        if store.db.in_transaction:
+            _persist()
+        else:
+            with store.db:
+                _persist()
 
 
 def comment_activity(store, account_id, character_id, *, start, end, round_id=None):

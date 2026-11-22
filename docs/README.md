@@ -27,6 +27,7 @@
 
 ## 实测记录
 
+- [全仓分层重构与阶段二运营双管线 M0–M5 总验收](../evaluations/results/20261122-layered-refactor-dual-pipeline-acceptance.md)
 - [工作站正式 IP 入口](../evaluations/results/workstation-studio-ip-20261119.md) · [业务库迁移](../evaluations/results/workstation-business-cutover-20261119.md) · [工作站至桌面的媒体传输](../evaluations/results/workstation-whep-ip-20261119.md)
 - [获选 Q 与 mature 成图绑定](../evaluations/results/approved-oc-rigs-20261119.md) · [原稿工作站实测](../evaluations/results/inochi-whep-master-rigs-20261119.md) · [真实 Omni 私有通话回归](../evaluations/results/private-rig-omni-voice-20261119.md)
 - [三渠道配图与正式入口](../evaluations/results/operations-images-three-channels.md) · [后台生成与参考图](../evaluations/results/operations-artwork-20261119.md)

@@ -17,11 +17,30 @@ if (-not $Config) {
     else { $Config = Join-Path $Data 'studio.json' }
 }
 $Config = (Resolve-Path -LiteralPath $Config).Path
-if (-not (Test-Path -LiteralPath (Join-Path $Source 'src/tuber_studio/app/factory.py'))) {
+if (-not (Test-Path -LiteralPath (Join-Path $Source 'src/tuber_studio/app/__init__.py'))) {
     throw 'Source must be the Tuber Studio program directory'
 }
 if (-not (Test-Path -LiteralPath (Join-Path $Data 'studio.sqlite3'))) {
     throw 'Restore or initialize the business data directory first'
+}
+$webDistIndex = Join-Path $Source 'src/tuber_studio/web_dist/index.html'
+if (-not (Test-Path -LiteralPath $webDistIndex)) {
+    $pnpm = Get-Command pnpm -ErrorAction SilentlyContinue
+    if (-not $pnpm) {
+        throw "Frontend bundle missing at $webDistIndex and 'pnpm' was not found on PATH. Run: pnpm --dir frontend install --frozen-lockfile --ignore-scripts && pnpm --dir frontend run build"
+    }
+    $frontendDir = Join-Path $Source 'frontend'
+    $frontendModules = Join-Path $frontendDir 'node_modules'
+    if (-not (Test-Path -LiteralPath $frontendModules)) {
+        & $pnpm.Source --dir $frontendDir install --frozen-lockfile --ignore-scripts
+        if ($LASTEXITCODE -ne 0) {
+            throw "Frontend dependency install failed (exit $LASTEXITCODE); run 'pnpm --dir frontend install --frozen-lockfile --ignore-scripts && pnpm --dir frontend run build'"
+        }
+    }
+    & $pnpm.Source --dir $frontendDir run build
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $webDistIndex)) {
+        throw "Frontend build failed (exit $LASTEXITCODE); expected built bundle at $webDistIndex"
+    }
 }
 $env:TUBER_RUNTIME = $Data
 $env:TUBER_CONFIG = $Config

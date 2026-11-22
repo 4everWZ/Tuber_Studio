@@ -70,7 +70,11 @@ class Runtime:
         self.chat_llm = create_chat_llm(settings)
         self.operation_llm = create_operation_llm(settings)
         self._default_llm = self.llm
+        self._default_llm_client = getattr(self.llm, "client", None)
+        self._default_llm_uses_model_card = getattr(self.llm, "uses_model_card", None)
         self._default_chat_llm = self.chat_llm
+        self._default_chat_client = getattr(self.chat_llm, "client", None)
+        self._default_chat_uses_model_card = getattr(self.chat_llm, "uses_model_card", None)
         self._default_chat_llm_tracking = True
         self.voices = VoiceService(settings)
         self.daily_memory = DailyMemoryService(store)
@@ -156,9 +160,13 @@ class Runtime:
             if llm is not None:
                 self.llm = llm
                 self._default_llm = llm
+                self._default_llm_client = getattr(llm, "client", None)
+                self._default_llm_uses_model_card = getattr(llm, "uses_model_card", None)
             if chat_llm is not None:
                 self.chat_llm = chat_llm
                 self._default_chat_llm = chat_llm
+                self._default_chat_client = getattr(chat_llm, "client", None)
+                self._default_chat_uses_model_card = getattr(chat_llm, "uses_model_card", None)
                 self._chat_llm_explicit = False
             if operation_llm is not None:
                 self.operation_llm = operation_llm
@@ -172,20 +180,23 @@ class Runtime:
             "generate_assistant_json",
             "generate_operator_json",
             "generate_text_stream",
-            "uses_model_card",
             "capacity_window",
         )
         chat_dict = getattr(self.chat_llm, "__dict__", {})
         if (
             self._chat_llm_explicit
             or self.chat_llm is not self._default_chat_llm
-            or any(key in chat_dict for key in ("client", *patched))
+            or getattr(self.chat_llm, "client", None) is not getattr(self, "_default_chat_client", None)
+            or getattr(self.chat_llm, "uses_model_card", None) != getattr(self, "_default_chat_uses_model_card", None)
+            or any(key in chat_dict for key in patched)
         ):
             return self.chat_llm
         llm_dict = getattr(self.llm, "__dict__", {})
         if (
             not isinstance(self.llm, APIProvider)
             or self.llm is not self._default_llm
+            or getattr(self.llm, "client", None) is not getattr(self, "_default_llm_client", None)
+            or getattr(self.llm, "uses_model_card", None) != getattr(self, "_default_llm_uses_model_card", None)
             or any(key in llm_dict for key in patched)
         ):
             return self.llm

@@ -20,18 +20,21 @@ async def test_overlay_finished_handoff(settings):
     app = create_app(settings, adapter=platform)
     runtime = app.state.runtime
     voice = next(item for item in settings.voices() if item["id"] == "whale_sample_v1")
+    spoken_line = voice["sample_text"].replace("。", "，", 1)
 
     async def decide(goal, steps, tools):
         if not steps:
-            return TaskDecision(action="tool", tool="live_handoff", arguments={"text": voice["sample_text"]})
+            return TaskDecision(action="tool", tool="live_handoff", arguments={"text": spoken_line})
         return TaskDecision(action="finish", message="已核对本场播放器回执。")
 
     async def generate(*args, **kwargs):
-        return Reply(spoken_text=voice["sample_text"])
+        return Reply(spoken_text=spoken_line)
 
     async def speech(*args, **kwargs):
-        return await runtime.voices.prerecorded(voice["sample_asset"], voice["sample_text"])
+        return await runtime.voices.prerecorded(voice["sample_asset"], spoken_line)
 
+    runtime.tasks.requires_responses = lambda: False
+    runtime.tasks.responses_client = lambda: None
     runtime.tasks.make_plan = None
     runtime.tasks.decide = decide
     runtime.llm.generate = generate
@@ -76,10 +79,10 @@ async def test_overlay_finished_handoff(settings):
             status, text = db.execute("SELECT status,text FROM jobs WHERE id=?", (job_id,)).fetchone()
             assert status == state
             spoken = db.execute("SELECT reply_text FROM conversations WHERE job_id=?", (job_id,)).fetchall()
-            assert spoken == ([(voice["sample_text"],)] if index == 0 else [])
+            assert spoken == ([(spoken_line,)] if index == 0 else [])
             assert step["result"]["status"] == state
             if index == 0:
-                assert row[0] == "completed" and step["result"]["spoken"] == text == voice["sample_text"]
+                assert row[0] == "completed" and step["result"]["spoken"] == text == spoken_line
             else:
                 assert not step["result"].get("spoken")
         assert not db.execute("SELECT count(*) FROM account_writes").fetchone()[0]

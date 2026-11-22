@@ -4,6 +4,9 @@
 
 - **适用范围：** 后端 `src/tuber_studio/`、前端 `frontend/`、测试 `tests/`、评测 `evaluations/` 及对应构建部署配置 `deploy/`、`tools/`。
 - **推进原则：** 在 M0 提交 Batch 1 已验收基线与本蓝图后，将全仓分层重构与阶段二（运营共享内核 + 主动探索 Discovery / 消息响应 Inbox 双管线）合并推进至 M5 闭环。阶段四（工作站正式业务库备份归档与容器上线）在本蓝图 M0–M5 全部里程碑验收通过后单独执行。
+- **补充修订（M3–M5）：**
+  1. **#55 模型职责分离：** 文本前台表达（`runtime.chat_llm` → `chat_profile`）与后台路由/长任务/运营（`Responses` + `operation_llm`）共用 `/llm/v1/*` 上的快速文本模型（`responses_model` / `llm-default`），前台思考默认关闭（`enable_thinking=False`），且 `OperationTurns` 对 `chat` 车道执行无条件抢占并遵循「入队并获得真实 `task_id` 后再发送受理响应」的不变式；Omni 模型（`/v1/realtime?duplex=1`）专责全双工私有语音通话，并通过共享 `runtime.tasks` 跨模态连续跟踪同一交办（严禁同步原始长语音上下文）。
+  2. **#115 脱敏与工作站统一构建约定：** 全部 Git 追踪文档、部署模板、脚本与评测结果严格遵守零私网/零个人路径脱敏（见 `tools/check_release_privacy.py`）。工作站构建统一从单一代码检出目录 `<code-root>/Tuber_Studio`（与 `<code-root>/omni-avatar-api` 同级）直接执行 `docker compose build/up`，持久化 SQLite 业务卷挂载 `/data/business`，密钥/环境配置/备份隔离于 `<state-root>/{secrets,backups}`，切换前保留回滚归档并清理残留静态端口进程。
 
 ---
 
@@ -465,7 +468,7 @@ frontend/
     3. **队列审核重写：** 支持待审核草稿在页内直接编辑正文、切换/重选配图、提交平台拒绝后的一次性票据修订，并在服务端回报后精确刷新选中项。
 - **构建产物与容器整合：**
   - Vite 构建直接输出至 `src/tuber_studio/web_dist/`（加入 `.gitignore`，不入库）；
-  - `deploy/omni/Dockerfile` 新增基于 `node:24-bookworm-slim` 的 `web-build` 构建阶段执行 `pnpm install --frozen-lockfile && pnpm build`，并将产物复制入 `core` 镜像的 `/opt/tuber/src/tuber_studio/web_dist`；CI 同步校验前端单测、类型检查与产物构建。
+  - `deploy/omni/Dockerfile` 新增基于 `node:24-bookworm-slim` 的 `web-build` 构建阶段执行 `pnpm install --frozen-lockfile --ignore-scripts && pnpm build`，并将产物复制入 `core` 镜像的 `/opt/tuber/src/tuber_studio/web_dist`；CI 同步校验前端单测、类型检查、OpenAPI 同步与产物构建。
 
 ### 6.2 REST API `/api/v1/*` 契约与类型生成
 
@@ -562,7 +565,16 @@ tests/
 | **M2** | L3 业务域拆分与阶段二双管线内核落地 | 1. 完成 `operations/`、`live/`、`agent/` 全部迁移与剩余 10 个超千行热点拆细；<br>2. 落地 `operations/kernel/` 五大原语（含 `claims.py` `operation_claims` 与 `direct_quota_reserve`）；<br>3. 拆出 `discovery/` 与 `inbox/` 双管线及无损增量 DB/配置迁移（默认 `discovery.enabled=False`、`inbox.enabled=False`）；<br>4. 迁移 `tests/{operations,live,agent}/` 与 `evaluations/` 脚本（保留 `results/` 与 `cases/`）。 | • AST 守卫开启 L0–L3 全规则（含 `discovery↔inbox` 隔离与 `facade` 门面检查）全绿；<br>• 新增测试覆盖：原子认领与 Inbox 优先让路、`direct_quota_reserve`（含 `0` 不预留）、412 退避优先保消息、单开 Inbox 24h 不计观看/不发主评、旧库无损迁移且默认关自动开关；<br>• 全量 `pytest` 通过。 |
 | **M3** | L4 `app/` 重组与 `/api/v1/*` 契约收敛 | 1. `app.py` 拆为 `app/{__init__,lifespan,middleware,errors,web_mount,routes/*}`，`tuber_studio.app:create_app` 保持兼容；<br>2. 210 条 API 路由全量切换 `/api/v1/*` + 统一 `{code, message, details}` 错误信封 + 阶段二双管线控制 API；<br>3. 补齐 Pydantic 响应模型与 OpenAPI 导出脚本，生成前端 `schema.d.ts`；<br>4. 迁移 `tests/app/` 及剩余集成测试／评测脚本适配 `/api/v1/*`。 | • AST 守卫开启 L0–L4 全仓规则（根目录仅留 `__init__.py`、`__main__.py`）全绿；<br>• OpenAPI schema 导出零报错且覆盖全量 `/api/v1/*` 端点；<br>• 全量后端 `pytest` 与 `tools/ci/check_style.py` 通过。 |
 | **M4** | React 19 前端工程落地与构建一体化 | 1. 建立 `frontend/`（Vite + React 19 + TS + CSS Modules + TanStack Query + Vitest/RTL）；<br>2. 实现 4 个 HTML 入口（适配 `<base href>`）与全部 20 页；<br>3. 落地自主运营双控制卡、活动流来源标注与队列审核重写；<br>4. FastAPI 挂载 `web_dist/`，`deploy/omni/Dockerfile` 增加 `web-build` 阶段；<br>5. 落地 ESLint 边界守卫与 Playwright E2E。 | • `pnpm typecheck`、`pnpm lint`（含边界守卫）、`pnpm test`（Vitest/RTL）与 `pnpm build` 全绿；<br>• OpenAPI `schema.d.ts` 漂移检查通过；<br>• Playwright E2E 跑通 Chats 主流、双控制卡启停与子路径挂载；<br>• Docker 多阶段镜像在离线/受控构建下成功打包 `web_dist/`。 |
-| **M5** | 全仓清理与总验收闭环 | 1. 彻底清除遗留旧 `src/tuber_studio/web/` 静态源码及过渡配置碎片；<br>2. 更新全套受影响规范文档（`docs/specs/`、`docs/guides/`、`docs/plans/current.md`）；<br>3. 执行全量自动化与隔离实机验收（含双脑 Chats 回归、P2 视觉、阶段二双管线端到端行为与无损迁移演练）。 | • 全仓 AST + ESLint + Ruff + Pytest + Vitest + Playwright 全量通过；<br>• 隔离实机复验（零平台写入）与双管线验收指标记录归档至 `evaluations/results/`；<br>• `check_release_privacy.py` 零新增违规；<br>• **签署 M5 结项，正式准入阶段四正式库备份归档与工作站上线。** |
+| **M5** | 全仓清理与总验收闭环 | 1. 彻底清除遗留旧 `src/tuber_studio/web/` 静态源码及过渡配置碎片；<br>2. 补齐 CI / Docker `web-build` / `run-business.ps1` 一体化构建与规范/运维/部署脱敏文档（`#55` + `#115`）；<br>3. 执行全量自动化、OpenAPI 契约同步与真实 Microsoft Edge 隔离实机验收（含 `#55` 文本走 9B `/llm/v1/*` 回归、阶段二双控制卡/急停/配额预留与 `/dafeiyu/` 子路径挂载）。 | • 全仓 AST（0 例外）+ ESLint + Ruff + Pytest + Vitest + Node + Microsoft Edge E2E 全量通过；<br>• 隔离实机复验（零平台写入）与 M0–M5 总结报告归档至 `evaluations/results/20261122-layered-refactor-dual-pipeline-acceptance.md`；<br>• `check_release_privacy.py` 零新增违规；<br>• **签署 M5 结项并打标 `milestone/m5-acceptance`，正式准入阶段四正式库备份归档与工作站上线。** |
+
+### M0–M5 里程碑闭环摘要
+
+- **M0（`7ad556a`，`milestone/m0-batch1`）：** 完成 Batch 1 双脑基线固定与架构蓝图定稿。
+- **M1（`3e04f77`，`milestone/m1-l0-l2`）：** 完成 `L0 core` / `L1 infra` / `L2 persona` 下沉、B 站凭据剥离至 `infra/platforms/bilibili/account.py`、测试公共桩收拢至 `tests/support/` 与 AST 守卫建立。
+- **M2（`d53a096`，`milestone/m2-operations-dual-pipeline`）：** 完成 L3 业务域拆分、全部 12 处热点模块拆解、`operations/kernel` 五大共享原语、`discovery` / `inbox` 双管线解耦与数据库/配置无损增量迁移。
+- **M3（`f263138`，`milestone/m3-live-agent-api-v1`）：** 完成 `L4 app/` 模块化装配、`/api/v1/*` 统一 REST 契约与 `{code, message, details}` 错误信封、OpenAPI 导出链及 `#55` 双脑/语音任务分离。
+- **M4（`d996266`，`milestone/m4-react-frontend`）：** 完成 `frontend/`（React 19 + TS + TanStack Query + Vitest）全量 20 页与 4 个 HTML 入口构建至 `src/tuber_studio/web_dist/`，并移除旧 `src/tuber_studio/web/`。
+- **M5（`milestone/m5-acceptance`）：** 完成 CI / Docker `web-build` / `run-business.ps1` 构建闭环、`#115` 脱敏部署文档与规范同步、真实 Microsoft Edge E2E 复验及 `evaluations/results/20261122-layered-refactor-dual-pipeline-acceptance.md` 总结报告；**准入用户审批后的阶段四正式部署切换。**
 
 ---
 

@@ -98,10 +98,16 @@ def serve(args):
     denied = []
     model_calls = []
     front_json = APIProvider.generate_json
+    front_assistant_json = APIProvider.generate_assistant_json
     front_text = APIProvider.generate_text
+    front_text_stream = APIProvider.generate_text_stream
     responses_turn = ResponsesClient.create
     advance = task_delegation.advance
     working_on = ContextVar("replay_task_revision", default=None)
+
+    def provider_endpoint(provider):
+        base_path = urlsplit(str(provider.client.base_url)).path.removeprefix(gateway.path.rstrip("/")).strip("/")
+        return (base_path + "/chat/completions").lstrip("/")
 
     async def observe_revision(runtime, task):
         token = working_on.set({"task_id": task["id"], "revision": task["revision"]})
@@ -110,11 +116,17 @@ def serve(args):
         finally:
             working_on.reset(token)
 
-    async def observe_front(provider, messages, schema, **options):
-        entry = {"endpoint": "chat/completions", "schema": schema.get("title"), "task": working_on.get()}
+    async def _observe_front_json(call, provider, messages, schema, **options):
+        entry = {
+            "endpoint": provider_endpoint(provider),
+            "model": provider.config.get("model"),
+            "thinking": (provider.config.get("chat_options") or {}).get("enable_thinking", provider.config.get("enable_thinking")),
+            "schema": schema.get("title"),
+            "task": working_on.get(),
+        }
         model_calls.append(entry)
         try:
-            value = await front_json(provider, messages, schema, **options)
+            value = await call(provider, messages, schema, **options)
         except asyncio.CancelledError:
             entry["cancelled"] = True
             raise
@@ -127,11 +139,23 @@ def serve(args):
         ) if key in value}
         return value
 
-    async def observe_front_text(provider, messages, **options):
-        entry = {"endpoint": "chat/completions", "schema": "plain_text", "task": working_on.get()}
+    async def observe_front(provider, messages, schema, **options):
+        return await _observe_front_json(front_json, provider, messages, schema, **options)
+
+    async def observe_front_assistant(provider, messages, schema, **options):
+        return await _observe_front_json(front_assistant_json, provider, messages, schema, **options)
+
+    async def _observe_front_text(call, provider, messages, **options):
+        entry = {
+            "endpoint": provider_endpoint(provider),
+            "model": provider.config.get("model"),
+            "thinking": (provider.config.get("chat_options") or {}).get("enable_thinking", provider.config.get("enable_thinking")),
+            "schema": "plain_text",
+            "task": working_on.get(),
+        }
         model_calls.append(entry)
         try:
-            text = await front_text(provider, messages, **options)
+            text = await call(provider, messages, **options)
         except asyncio.CancelledError:
             entry["cancelled"] = True
             raise
@@ -142,6 +166,12 @@ def serve(args):
         entry["usage"] = getattr(provider, "last_usage", {})
         entry["chars"] = len(text)
         return text
+
+    async def observe_front_text(provider, messages, **options):
+        return await _observe_front_text(front_text, provider, messages, **options)
+
+    async def observe_front_text_stream(provider, messages, **options):
+        return await _observe_front_text(front_text_stream, provider, messages, **options)
 
     async def observe_background(client, *args, **options):
         role = "routing" if options.get("tool_choice") == "required" and working_on.get() is None else "execution"
@@ -213,7 +243,9 @@ def serve(args):
         ),
         patch.object(httpx.AsyncHTTPTransport, "handle_async_request", guarded),
         patch.object(APIProvider, "generate_json", observe_front),
+        patch.object(APIProvider, "generate_assistant_json", observe_front_assistant),
         patch.object(APIProvider, "generate_text", observe_front_text),
+        patch.object(APIProvider, "generate_text_stream", observe_front_text_stream),
         patch.object(ResponsesClient, "create", observe_background),
         patch.object(task_delegation, "advance", observe_revision),
     ):
@@ -785,7 +817,8 @@ async def check(args):
                 )
             stats = await read("/replay/front-tools")
             restart_only = args.cases and set(args.cases) <= {"restart_seed", "restart_resume"}
-            assert (restart_only or stats["gateway_calls"].get("/v1/chat/completions")) and stats["blocked_requests"] == 0
+            assert (restart_only or stats["gateway_calls"].get("/llm/v1/chat/completions")) and stats["blocked_requests"] == 0
+            assert not stats["gateway_calls"].get("/v1/chat/completions")
             assert not any(stats["platform_attempts"].values())
             print(json.dumps({"turns": results, "network": stats, "failed": failed}, ensure_ascii=False))
             return bool(failed)

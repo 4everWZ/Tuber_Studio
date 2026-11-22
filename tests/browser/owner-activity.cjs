@@ -134,11 +134,11 @@ async function run(browser) {
   await page.reload();
   await restored.getByRole("button", { name: "查看任务" }).click();
   await panel.getByText(artifactEdit, { exact: true }).waitFor();
-  await panel.getByText("任务 r2 · 成果 v2", { exact: true }).waitFor();
+  await panel.getByText(/任务 r2 · 成果 v2$/).waitFor();
   const sourceLink = panel.locator(`a[href="${source}"]`);
   assert.equal(await sourceLink.getAttribute("target"), "_blank");
   await panel.getByText("历史成果", { exact: true }).click();
-  await panel.getByText("任务 r2 · 成果 v1", { exact: true }).click();
+  await panel.getByText(/任务 r2 · 成果 v1$/).click();
   const previous = panel.locator("details[open] details[open]");
   await previous.getByText(/平台已确认该动态发布/).first().waitFor();
   assert.equal(await previous.getByText(artifactEdit, { exact: true }).count(), 0);

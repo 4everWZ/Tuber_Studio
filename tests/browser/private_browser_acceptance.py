@@ -44,17 +44,6 @@ async def test_owner_and_agent_share_chromium_reading_state(settings, monkeypatc
             {"task_id": identity, "version": version, "kind": kind, "index": 0, "text": ""}),), "", {})
     tasks.responses_client = lambda: model
     origin = "http://127.0.0.1"
-    html = (settings.root / "src/tuber_studio/web/pages/chat.html").read_text(encoding="utf-8")
-    html += """<script type="module">
-      import {initTaskActivity} from '/static/modules/task-activity.js';
-      document.querySelector('[data-section=chat]').hidden=false;
-      const api=async (path,{method,body}={})=>{
-        const response=await fetch(path,{method,headers:{"Content-Type":"application/json","Authorization":"Bearer fixture-only"},
-          body:body===undefined?undefined:JSON.stringify(body)});
-        const value=await response.json(); if(!response.ok) throw Error(value.detail); return value;
-      };
-      initTaskActivity(api,()=>crypto.randomUUID());
-    </script>"""
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=origin) as client, async_playwright() as pw:
         browser = await pw.chromium.launch(channel="msedge" if sys.platform == "win32" else "chromium", chromium_sandbox=True)
         context = await browser.new_context(service_workers="block")
@@ -64,19 +53,21 @@ async def test_owner_and_agent_share_chromium_reading_state(settings, monkeypatc
             if url.host != "127.0.0.1":
                 external.append(url.host)
                 return await route.abort()
-            if url.path == "/":
-                return await route.fulfill(content_type="text/html; charset=utf-8", body=html)
-            if not url.path.startswith(("/static/", "/api/v1/agent/")):
+            if url.path == "/api/v1/agent/chat/events":
+                return await route.fulfill(status=200, content_type="text/event-stream", body=b"")
+            if url.path != "/" and not url.path.startswith(("/static/", "/assets/", "/api/v1/")):
                 return await route.abort()
             response = await client.request(route.request.method, str(url), headers=await route.request.all_headers(),
                                             content=route.request.post_data_buffer)
-            await route.fulfill(status=response.status_code, content_type=response.headers.get("content-type"),
-                                body=response.content)
+            headers = {k: v for k, v in response.headers.items() if k.lower() not in {"content-length", "transfer-encoding"}}
+            await route.fulfill(status=response.status_code, headers=headers, body=response.content)
         await context.route("**/*", serve)
         page = await context.new_page()
         page.set_default_timeout(25000)
         try:
             await page.goto(origin)
+            await page.locator("#token").fill("fixture-only")
+            await page.locator("#login-form button[type=submit]").click()
             await page.locator("#chat-activity-toggle").click()
             await page.get_by_role("button", name="用浏览器交办").click()
             await page.get_by_label("希望阅读这些来源做什么？").fill("查看证据和附录")

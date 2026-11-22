@@ -11,17 +11,17 @@
 
 ## 常驻 Agent 与跨端记忆
 
-Chats 支持交办、改口、取消和查看工具回执。工作站隔离浏览器已验证后台运行时继续闲聊、改口后只执行新版读范围、结果回到原对话以及刷新和清空。活动页继续提供任务、回执与成果入口。对稿习惯的后台整理、引用与更正见[记忆规范](../specs/foundation/memory.md)。[连续对话实测](../../evaluations/results/operator-chat-continuity-20261120.md) · [记忆与成品实测](../../evaluations/results/owner-memory-20261119.md)
+Chats 支持交办、改口、取消和查看工具回执。已完成全仓分层重构与双脑职责落位：文本前台（`chat_llm` → `/llm/v1/chat/completions`，`enable_thinking=False`）与后台路由/长任务共用 9B 文本服务且 `OperationTurns` 优先抢占前台对话；全双工私有语音通话专走 Omni `/v1/realtime` 并共享同一 `runtime.tasks` 生命周期（断挂后可从文本 Chats 连续接管而不同步语音原文）。M5 已通过真实 Microsoft Edge 隔离复验，工作站隔离回放与活动页见[连续对话实测](../../evaluations/results/operator-chat-continuity-20261120.md) · [记忆与成品实测](../../evaluations/results/owner-memory-20261119.md) · [分层与阶段二总验收](../../evaluations/results/20261122-layered-refactor-dual-pipeline-acceptance.md)。
 
 ## 运营主线
 
-工作站正式工坊已有统一启停、视频取材、评论及楼内回复、私信和动态工作区。三渠道复用已有图片或生成工件，审核绑定对象、正文和附件。正式 Edge 只读核对页面；上传、分步发送、撤权及提交后断线使用隔离传输验收，真实平台写入为零。新链路的平台送达、真实来信及号主代回仍需对应授权和事件才能取证。[部署与三渠道验收](../../evaluations/results/operations-images-three-channels.md) · [生成工件](../../evaluations/results/operations-artwork-20261119.md) · [调度](../../evaluations/results/operations-scheduler-20261114.md)
+全仓已迁移至 `L0–L4` 单向分层架构、React 19 顶层 `frontend/` 与 `/api/v1/*` 契约，并落地阶段二运营双管线：主动探索（Discovery）与消息响应（Inbox）共用 `operations/kernel/`（`operation_claims` 原子认领与楼级 Inbox 优先租约、`direct_quota_reserve` 预留保护、412/429 风控退避保消息与 `(bvid, cid)` 单飞证据池）。工作台具备独立双控制卡、全局急停/解除、活动流 `discovery`/`inbox`/`manual` 来源徽标与 `/dafeiyu/` 子路径挂载，零平台写入的 Edge E2E 与架构 AST 守卫已全量闭环；新链路的真实平台送达、来信及工作站阶段四切换等待用户审批后单独执行。[部署与三渠道验收](../../evaluations/results/operations-images-three-channels.md) · [分层与阶段二总验收](../../evaluations/results/20261122-layered-refactor-dual-pipeline-acceptance.md) · [调度](../../evaluations/results/operations-scheduler-20261114.md)
 
-日常看帧已接同一投稿、对应分 P 的元数据及邻近带时码文字。逐帧、联合与汇总请求由隔离传输核对。普通网关单次实读答对场景大意和两帧时码，漏答标题与简介，并把画内烧录字误报为公开字幕，整项未通过。[消息对照](../../tests/test_video_frame_text.py) · [普通画面实读](../../evaluations/results/p2-ordinary-frame-reading-20261119.md)
+日常看帧已接同一投稿、对应分 P 的元数据及邻近带时码文字。逐帧、联合与汇总请求由隔离传输核对。普通网关单次实读答对场景大意和两帧时码，漏答标题与简介，并把画内烧录字误报为公开字幕，整项未通过。[消息对照](../../tests/agent/test_video_frame_text.py) · [普通画面实读](../../evaluations/results/p2-ordinary-frame-reading-20261119.md)
 
 ## 共享推理与 Avatar API
 
-工作站正式 HTTPS 入口、Core 与唯一业务写入卷已切换，笔电旧库已退役。后台文本使用 Responses，私有电话使用原生双工语音；Pets、角色参考图设置和有效 B 站登录已在正式入口核对。服务替换时按实报能力复验工具往返、长文语义、排队和取消。[迁移回执](../../evaluations/results/workstation-business-cutover-20261119.md) · [正式入口](../../evaluations/results/workstation-studio-ip-20261119.md) · [服务准入](../specs/foundation/omni-deployment.md#接入验收与切换)
+M0–M5 代码重构、React 前端构建、Docker 多阶段打包（`deploy/omni/Dockerfile` `web-build`）、CI 检查、脱敏文档规范与隔离 Edge 验收已全部就绪，待用户审批后按[交接清单](../handoff.md)执行阶段四（`<code-root>/Tuber_Studio` 构建与 `/data/business`、`staged → active` 业务卷切换）。后台文本使用 `/llm/v1/responses` 与 9B 对话，私有电话使用 Omni 原生双工语音；服务替换时按实报能力复验工具往返、长文语义、排队和取消。[迁移回执](../../evaluations/results/workstation-business-cutover-20261119.md) · [正式入口](../../evaluations/results/workstation-studio-ip-20261119.md) · [服务准入](../specs/foundation/omni-deployment.md#接入验收与切换)
 
 ## 直播、点歌与部署验收
 

@@ -96,12 +96,47 @@ async def select_candidate(task, evidence):
     return PrivateDelivery.model_validate(task["plan"]["candidate"])
 
 
+def _offline_inference(request: httpx.Request) -> httpx.Response:
+    path = request.url.path
+    if path.endswith("/models"):
+        return httpx.Response(200, json={"data": [
+            {"id": "omni-default", "max_model_len": 32768},
+            {"id": "text-default", "max_model_len": 32768},
+        ]})
+    if path.endswith("/chat/prompt_tokens"):
+        return httpx.Response(200, json={"prompt_tokens": 64})
+    body = json.loads(request.content or b"{}")
+    schema_props = (((body.get("response_format") or {}).get("json_schema") or {}).get("schema") or {}).get("properties", {})
+    if "headline" in schema_props:
+        content = json.dumps({"action": "skip", "reason": "fixture", "tags": [], "headline": ""})
+    else:
+        content = "已交办后台核对。"
+    if body.get("stream"):
+        lines = (
+            f"data: {json.dumps({'choices': [{'delta': {'content': content}}]}, ensure_ascii=False)}\n\n"
+            f"data: {json.dumps({'choices': [{'delta': {}, 'finish_reason': 'stop'}], 'usage': {'prompt_tokens': 64, 'completion_tokens': 8}})}\n\n"
+            "data: [DONE]\n\n"
+        )
+        return httpx.Response(200, text=lines, headers={"content-type": "text/event-stream"})
+    return httpx.Response(200, json={
+        "choices": [{"message": {"content": content}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 64, "completion_tokens": 8},
+    })
+
+
 async def setup(runtime_dir, denied):
     settings = Settings(runtime=runtime_dir)
     platform = Platform()
     app = create_app(settings, adapter=platform)
     state = app.state
     runtime, store = state.runtime, state.store
+    transport = httpx.MockTransport(_offline_inference)
+    for provider in (runtime.llm, runtime.chat_llm, runtime.operation_llm):
+        old_client = provider.client
+        provider.client = httpx.AsyncClient(
+            base_url=old_client.base_url, headers=old_client.headers, transport=transport, trust_env=False,
+        )
+        await old_client.aclose()
     runtime.tasks.responses_client = lambda: scripted_response
     runtime.tasks.edit_delivery = select_candidate
     state.bilibili_account.credentials.update(sessdata=platform._sessdata, csrf=platform._csrf)
@@ -111,8 +146,10 @@ async def setup(runtime_dir, denied):
         cid = store.execute("INSERT INTO comments(video_id,comment_id,content) VALUES(?,?,?)",
                             ("BV1d8pU6xEZX", str(41 + i), f"海底厨房来信 {i}")).lastrowid
         draft = store.execute(
-            "INSERT INTO drafts(comment_id,text,status,character_id,character_version,receipt) VALUES(?,?,?,?,?,?)",
-            (cid, f"海底厨房回信 {i}", "published", char["id"], char["version"], json.dumps({"rpid": str(76 + i)})),
+            "INSERT INTO drafts(comment_id,text,status,character_id,character_version,receipt,account_id) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (cid, f"海底厨房回信 {i}", "published", char["id"], char["version"],
+             json.dumps({"rpid": str(76 + i), "account_id": platform.uid}), platform.uid),
         ).lastrowid
         sources = state.dynamics._sources()
         decision = {"action": "post", "reason": "浏览器验收", "content": body, "source_ids": [f"reply:{draft}"],

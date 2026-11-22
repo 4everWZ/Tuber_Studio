@@ -632,6 +632,8 @@ class DynamicsEvaluatorMixin:
                             raise ValueError("动态取材来源或授权已变化")
 
                     client = tasks.responses_client() if tasks else None
+                    if getattr(client, "_requires_omni_key", False) and not self.settings.provider_key("omni"):
+                        client = None
                     if client and sources:
                         browsing = self.runtime.browsing
                         recall = recall_memory.RecallSession(self, private=False)

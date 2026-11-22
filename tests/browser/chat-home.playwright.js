@@ -3,11 +3,11 @@ async page => {
   await page.emulateMedia({reducedMotion:"no-preference"});
   const blocked = [], errors = [];
   page.on("pageerror", error => errors.push(error.message));
-  const domain = /\/api\/(voices|assets|characters|account\/bilibili|automation)(\/|\?|$)/;
+  const domain = /\/api\/v1\/(?:persona\/(?:voices|assets|characters)|operations\/(?:account\/bilibili|automation))(\/|\?|$)/;
   await page.route(domain, route => { blocked.push(route.request().url()); return route.fulfill({status: 503, body: "{}"}); });
   const base = await page.evaluate(() => ({origin: location.origin, host: location.hostname}));
   if (!["127.0.0.1", "localhost"].includes(base.host)) throw Error("Open an isolated local Studio before running this check");
-  const gallery = /\/api\/memes(?:[/?]|$)/;
+  const gallery = /\/api\/v1\/persona\/memes(?:[/?]|$)/;
   const blockGallery = route => { blocked.push(route.request().url()); return route.fulfill({status: 503, body:"{}"}); };
   await page.route(gallery, blockGallery);
   await page.goto(base.origin);
@@ -18,7 +18,7 @@ async page => {
     const image = document.querySelector("#chat-agent-avatar");
     return image.naturalWidth > 0 && new URL(image.src).pathname === "/assets/whale/idle.gif";
   });
-  await page.getByRole("textbox", {name:"给大肥鱼发消息"}).fill("保留草稿");
+  await page.getByRole("textbox", {name:"发消息"}).fill("保留草稿");
   await page.unroute(gallery, blockGallery);
   await pet.click();
   await page.getByRole("dialog", {name:"宠物表情"}).waitFor();
@@ -56,6 +56,9 @@ async page => {
   await page.locator("#providers-form").waitFor();
   if (await page.locator("#inference-node-panel, [data-inference-mode]").count()) throw Error("node controls remain");
   await page.getByRole("link",{name:"对话",exact:true}).click();
+  await pet.click();
+  await page.getByRole("button", {name:"恢复默认形象"}).click();
+  await page.waitForFunction(() => document.querySelector("#chat-agent-avatar").src.endsWith("/assets/whale/idle.gif") && document.querySelector("#chat-agent-avatar").naturalWidth > 0);
   await page.setViewportSize({width:390,height:844});
   await page.emulateMedia({reducedMotion:"reduce"});
   await page.waitForFunction(() => document.querySelector("#chat-agent-avatar").src.endsWith(".png") && document.querySelector("#chat-agent-avatar").naturalWidth > 0);

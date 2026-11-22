@@ -97,6 +97,7 @@
 .countCell dt {
   font-size: 0.78rem;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .countCell dd {

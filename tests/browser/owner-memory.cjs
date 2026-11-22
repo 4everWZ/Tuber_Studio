@@ -53,7 +53,7 @@ async function test(browser, origin, mode) {
   let send, sentTranscript = false, acknowledged = 0, markClosed;
   const originalClosed = new Promise(resolve => { markClosed = resolve; });
   await page.routeWebSocket(url => url.pathname === "/v1/realtime", socket => {
-    assert.equal(new URL(socket.url()).searchParams.has("input_transcription"), false);
+    assert.equal(new URL(socket.url()).searchParams.get("input_transcription"), "explicit");
     if (!send) socket.onClose(markClosed);
     send = event => socket.send(JSON.stringify(event));
     socket.onMessage(raw => {
@@ -88,7 +88,7 @@ async function test(browser, origin, mode) {
   await page.locator("#owner-memory-statement").fill(statement);
   releaseStatus();
   if (mode === "save") {
-    await page.waitForFunction(() => document.querySelector("#overview-queue").textContent.trim() === "0");
+    await page.waitForFunction(() => Boolean(document.querySelector("#service-status-capsule .status-text")?.textContent.trim()));
     assert.equal(await page.locator("#owner-memory-statement").evaluate(input => input === document.activeElement), true);
     assert.equal(await page.locator("#owner-memory-statement").inputValue(), statement);
   }
@@ -135,7 +135,7 @@ async function test(browser, origin, mode) {
   const originalRow = (await original.json()).items[0];
   const memoryWrites = [];
   page.on("request", request => {
-    if (/\/api\/agent\/memory(?:\.propose|\/confirm)$/.test(request.url())) memoryWrites.push(request.url());
+    if (/\/api\/v1\/agent\/memory\/(?:propose|confirm)$/.test(request.url())) memoryWrites.push(request.url());
   });
   assert.equal(await page.locator("#private-call-citations").count(), 0);
   assert.equal(await page.locator("#private-call-topic").isVisible(), false);

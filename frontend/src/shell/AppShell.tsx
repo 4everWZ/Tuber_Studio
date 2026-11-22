@@ -66,6 +66,8 @@ export function AppShell({ renderRoute, queryClient: providedQueryClient }: AppS
   const scrollPositionsRef = useRef<Map<PageId, number>>(new Map());
   const prevPageRef = useRef<PageId>(route.page);
   const wsClientRef = useRef<AdminWsClient | null>(null);
+  const hasStatusRef = useRef(false);
+  hasStatusRef.current = status !== null;
 
   const handleUnauthorized = useCallback(() => {
     wsClientRef.current?.disconnect();
@@ -172,7 +174,7 @@ export function AppShell({ renderRoute, queryClient: providedQueryClient }: AppS
     const poll = async () => {
       if (typeof document !== "undefined" && document.hidden) return;
       const tasks: Array<Promise<unknown>> = [];
-      if (!wsClientRef.current?.isOpen || !status) {
+      if (!wsClientRef.current?.isOpen || !hasStatusRef.current) {
         tasks.push(refreshStatus().catch(() => {}));
       }
       if (route.page === "chat" || route.page === "settings") {
@@ -202,7 +204,7 @@ export function AppShell({ renderRoute, queryClient: providedQueryClient }: AppS
         document.removeEventListener("visibilitychange", onVisibilityChange);
       }
     };
-  }, [authenticated, route.page, route.section, status, refreshStatus, refreshShellBadges]);
+  }, [authenticated, route.page, route.section, refreshStatus, refreshShellBadges]);
 
   // Hash navigation listener
   useEffect(() => {
