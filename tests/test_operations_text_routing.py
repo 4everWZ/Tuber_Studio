@@ -2,8 +2,8 @@ import json
 
 import httpx
 
-from tuber_studio.api_providers import create_operation_llm
-from tuber_studio.generation_meter import GenerationMeter
+from tuber_studio.core.meter import GenerationMeter
+from tuber_studio.infra.inference.api_providers import create_operation_llm
 
 
 async def test_long_background_text_counts_and_generates_at_the_same_engine(settings, runtime, monkeypatch):

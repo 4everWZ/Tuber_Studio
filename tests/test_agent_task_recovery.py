@@ -16,9 +16,9 @@ from tuber_studio.agent.task_runtime import (
     Tool,
     ToolWait,
 )
-from tuber_studio.http_api import response_json
-from tuber_studio.models import StrictModel
-from tuber_studio.store import Store
+from tuber_studio.core.models import StrictModel
+from tuber_studio.core.store import Store
+from tuber_studio.infra.inference.http_api import response_json
 
 
 async def wait_status(runtime, identity, status):

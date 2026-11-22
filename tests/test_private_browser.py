@@ -10,8 +10,8 @@ from tuber_studio.agent.private_browser import BrowserAction, Command, Control, 
 from tuber_studio.agent.task_identity import TaskIdentity
 from tuber_studio.agent.task_runtime import TaskRuntime
 from tuber_studio.app import create_app
-from tuber_studio.responses_provider import FunctionCall, ResponseTurn
-from tuber_studio.store import Store
+from tuber_studio.core.store import Store
+from tuber_studio.infra.inference.responses_provider import FunctionCall, ResponseTurn
 
 SOURCES = ["https://reading.example/doc", "https://reading.example/next"]
 

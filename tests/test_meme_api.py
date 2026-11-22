@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.memes import MAX_BYTES
+from tuber_studio.persona.assets.memes import MAX_BYTES
 
 
 class OfflinePlatform:

@@ -10,12 +10,12 @@ from test_archived_video_source import package as package
 from test_browsing_evidence import BV, PublicAdapter
 from test_browsing_evidence import config as config
 from test_browsing_evidence import evidence_factory as evidence_factory
-from test_video_vision import FRAMES, generations
-from test_video_vision import provider as provider
 
+from tests.support.fake_providers import FRAMES, generations
+from tests.support.fake_providers import provider as provider
 from tuber_studio.agent.public_video import read_public_part
 from tuber_studio.agent.task_tools import Video
-from tuber_studio.video_vision import VideoPartText, frame_reading_context
+from tuber_studio.infra.inference.video_vision import VideoPartText, frame_reading_context
 
 
 def messages(state):

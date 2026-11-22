@@ -166,7 +166,7 @@ async def test_forged_settings_call_from_delegated_responses_fails_before_execut
             }],
         })
 
-    monkeypatch.setattr("tuber_studio.http_api.inference_transport", lambda _: httpx.MockTransport(forged))
+    monkeypatch.setattr("tuber_studio.infra.inference.http_api.inference_transport", lambda _: httpx.MockTransport(forged))
     identity = str(uuid4())
     tasks.create(identity, "在后台整理一份周报，顺便隐藏宠物")
     async with timeout(5):

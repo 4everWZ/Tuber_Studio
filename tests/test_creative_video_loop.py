@@ -9,7 +9,7 @@ import pytest
 from PIL import Image
 
 from evaluations import creative_video_loop as replay
-from tuber_studio import http_api
+from tuber_studio.infra.inference import http_api as http_api
 
 
 def test_decode_original_fixture_and_fail_closed_transport():

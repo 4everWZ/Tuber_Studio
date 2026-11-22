@@ -4,13 +4,13 @@ import json
 import time
 from uuid import uuid4
 
-from ...generation_meter import (
+from ...core.meter import (
     BrowsingBudgetDeferred,
     GenerationBudgetExceeded,
     reserve_counters,
     settle_counters,
 )
-from ...store import dump
+from ...core.store import dump
 from .batches import BrowsingBatches
 from .quotas import BrowsingQuotas
 

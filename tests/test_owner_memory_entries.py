@@ -12,7 +12,7 @@ import uvicorn
 
 from tuber_studio.agent import private_call
 from tuber_studio.app import create_app
-from tuber_studio.responses_provider import FunctionCall, ResponseTurn
+from tuber_studio.infra.inference.responses_provider import FunctionCall, ResponseTurn
 
 CHAT = "/api/chat/intelligent"
 MEM = "/api/agent/memory"
@@ -24,7 +24,7 @@ async def owner(settings):
     app = create_app(settings)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://127.0.0.1") as client:
         yield client, app.state
-    await app.state.comments.adapter.close()
+    await app.state.bilibili_account.adapter.close()
     app.state.store.close()
 
 
@@ -38,11 +38,11 @@ async def save(client, source="settings", **fields):
 @pytest.mark.parametrize(("owner_limit", "input_tokens", "expected"), [
     (4096, 2650, 4096), (4096, 5200, 2992), (512, 2650, 512), (4096, 8192, None)])
 async def test_private_writing_budget_on_the_counted_structured_request(owner, monkeypatch, owner_limit, input_tokens, expected):
-    from tuber_studio import http_api
     from tuber_studio.agent.private_editor_memory import connect_private_editor
     from tuber_studio.agent.task_delivery import PrivateDelivery, evidence_index
-    from tuber_studio.api_providers import APIProvider
-    from tuber_studio.compaction import ContextWindowExceeded
+    from tuber_studio.core.errors import ContextWindowExceeded
+    from tuber_studio.infra.inference import http_api as http_api
+    from tuber_studio.infra.inference.api_providers import APIProvider
 
     client, state = owner
     rt = state.runtime
@@ -255,7 +255,7 @@ async def test_chromium_owner_controls(settings, monkeypatch, mode):
         finally:
             server.should_exit = True
             await serving
-            await app.state.comments.adapter.close()
+            await app.state.bilibili_account.adapter.close()
             app.state.store.close()
 
 @pytest.mark.parametrize("scenario", ["corrected", "withdrawn", "still_invalid", "statement", "label_with_period",
@@ -347,7 +347,7 @@ async def test_private_video_editor_reads_preferences_only_after_research(owner,
         if "title_words" in packet:
             words = packet["title_words"]
             if scenario == "incomplete_final" or (scenario == "incomplete_initial" and words == first_title):
-                from tuber_studio.http_api import InferenceBudgetExceeded
+                from tuber_studio.infra.inference.http_api import InferenceBudgetExceeded
                 raise InferenceBudgetExceeded("测试送审未完整结束")
             assert not words.endswith(("？", "。")) and note not in str(packet)
             form, core = {"左侧有一把椅子":("陈述句","有一把椅子"), "椅子放在哪里":("问句","哪里"), "椅子是谁的":("问句","谁"),

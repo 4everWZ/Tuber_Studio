@@ -12,11 +12,11 @@ from anyio import CancelScope
 from fastapi import Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from ..operation_identity import operating_account_facts
-from ..providers import build_messages
-from ..sse import encode_event
-from ..store import dump
-from . import front_dialogue, turn_router, workshop_lookup
+from ..core.identity import operating_account_facts
+from ..core.sse import encode_event
+from ..core.store import dump
+from ..persona.context.message_builder import build_messages
+from . import front_dialogue, turn_router
 from .capability_dispatcher import CapabilityDispatcher, build_delivery_packet
 from .chat_context import ChatContext
 from .chat_delivery import delivery_turn_id, record_chat_delivery

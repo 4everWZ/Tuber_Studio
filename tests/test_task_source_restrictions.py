@@ -11,8 +11,8 @@ from tuber_studio.agent import public_sources, public_video
 from tuber_studio.agent.task_delivery import AdditionalVideoRead, DelegationError, evidence_index
 from tuber_studio.agent.task_tools import Video, create_task_runtime
 from tuber_studio.app import create_app
-from tuber_studio.platforms.bilibili import PlatformReadError
-from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
+from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
+from tuber_studio.infra.platforms.bilibili.client import PlatformReadError
 
 BV = "BV1aa1234567"
 URL = f"https://www.bilibili.com/video/{BV}/?p=2"

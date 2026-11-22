@@ -5,7 +5,7 @@ import pytest
 
 from evaluations.owner_memory_video import measure_edition
 from tuber_studio.agent.title_form import grounded_options
-from tuber_studio.operation_identity import captured_identity, provider_identity_messages
+from tuber_studio.core.identity import captured_identity, provider_identity_messages
 
 
 @pytest.mark.parametrize("omit_place", [False, True])

@@ -7,23 +7,23 @@ import time
 import pytest
 from test_comments import comments as comments
 
-from tuber_studio.bilibili_account import PROFILE_CACHE_KEY, signature
-from tuber_studio.models import Reply
-from tuber_studio.operation_identity import identity_snapshot
+from tuber_studio.core.identity import identity_snapshot
+from tuber_studio.core.models import Reply
+from tuber_studio.infra.platforms.bilibili.account import PROFILE_CACHE_KEY, signature
 from tuber_studio.runtime import Runtime
 
 
 async def test_comment_account_switch_does_not_inherit_other_account_or_unbound_assistant_history(comments, store, monkeypatch):
     runtime = comments.runtime
     character = runtime.character
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
     active = {"uid": "100"}
 
     async def account_id():
         return active["uid"]
 
-    monkeypatch.setattr(comments, "account_id", account_id)
-    monkeypatch.setattr(comments, "display_account_id", lambda: active["uid"])
+    monkeypatch.setattr(comments.account, "account_id", account_id)
+    monkeypatch.setattr(comments.account, "display_account_id", lambda: active["uid"])
     video, floor = "import-account-context", "same-floor"
     scoped_a = comments.account_context_scope(video, floor, account_id="100")
     legacy = "comments:" + json.dumps(["bilibili", video, floor], separators=(",", ":"))
@@ -56,7 +56,7 @@ async def test_comment_account_switch_does_not_inherit_other_account_or_unbound_
 
 async def test_manual_comment_keeps_real_mentions_and_speaking_account_through_generation(comments, store, monkeypatch):
     credentials = {"sessdata": "test-session", "csrf": "test-csrf"}
-    comments.credentials = credentials
+    comments.account.credentials = credentials
     store.set(PROFILE_CACHE_KEY, {"format": 1, "credential_signature": signature(credentials),
               "profile": {"uid": "injected-test-account", "name": "大肥鱼只想过平静生活", "bio": "喜欢白饭。"},
               "checked_at": time.time()})
@@ -97,7 +97,7 @@ async def test_manual_comment_keeps_real_mentions_and_speaking_account_through_g
     original_event = json.loads(store.one("SELECT input_summary FROM drafts")["input_summary"])
     assert original_event["comment_context"]["source"]["text"] == rows[1]["content"]
     assert "thread" not in original_event
-    assert not comments.adapter.sent
+    assert not comments.account.adapter.sent
     # Re-import enriches identity metadata without replacing a draft or source body.
     comments.import_items("import-actors", [rows[1] | {"content": "不覆盖原文", "mentions": [{"uid": "other-oc", "name": "新显示名"}]}])
     assert store.one("SELECT content FROM comments WHERE id=?", (source["id"],))["content"] == rows[1]["content"]
@@ -107,7 +107,7 @@ async def test_manual_comment_keeps_real_mentions_and_speaking_account_through_g
 @pytest.mark.parametrize("account_changed", [False, True], ids=["same-uid", "different-uid"])
 async def test_manual_publish_keeps_reviewed_text_and_verifies_current_uid(comments, store, monkeypatch, account_changed):
     runtime = comments.runtime
-    comments.credentials = {"sessdata": "test-session", "csrf": "test-csrf"}
+    comments.account.credentials = {"sessdata": "test-session", "csrf": "test-csrf"}
     state = {"account_uid": "100", "account_display_name": "旧账号名", "account_bio": "旧简介"}
     verified_uids = []
 
@@ -119,7 +119,7 @@ async def test_manual_publish_keeps_reviewed_text_and_verifies_current_uid(comme
     def current(character=None, account_id=None):
         return identity_snapshot(state, character or runtime.character)
 
-    monkeypatch.setattr(comments.adapter, "self_uid", self_uid, raising=False)
+    monkeypatch.setattr(comments.account.adapter, "self_uid", self_uid, raising=False)
     monkeypatch.setattr(runtime, "identity_snapshot", current)
     monkeypatch.setattr(runtime, "generate_reply", Runtime.generate_reply.__get__(runtime, Runtime))
     video, comment = "BV1d8pU6xEZX", "321"
@@ -139,17 +139,17 @@ async def test_manual_publish_keeps_reviewed_text_and_verifies_current_uid(comme
     async def unexpected(*args, **kwargs):
         pytest.fail("Manual publication must not read the profile or call the model")
 
-    monkeypatch.setattr(comments.adapter, "account_profile", unexpected, raising=False)
+    monkeypatch.setattr(comments.account.adapter, "account_profile", unexpected, raising=False)
     monkeypatch.setattr(runtime, "refresh_identity", unexpected)
     monkeypatch.setattr(runtime, "generate_reply", unexpected)
     monkeypatch.setattr(runtime.operation_llm, "generate", unexpected)
     if account_changed:
         with pytest.raises(ValueError, match="该草稿属于其他账号"):
             await comments.publish(row["id"])
-        assert not comments.adapter.sent and not store.all("SELECT * FROM account_writes")
+        assert not comments.account.adapter.sent and not store.all("SELECT * FROM account_writes")
     else:
         await comments.publish(row["id"])
-        assert comments.adapter.sent == [(video, comment, original)]
+        assert comments.account.adapter.sent == [(video, comment, original)]
         assert store.all("SELECT account_id,status FROM account_writes") == [{"account_id": "100", "status": "published"}]
     assert verified_uids == [state["account_uid"]]
     saved = store.one("SELECT * FROM drafts")
@@ -167,7 +167,7 @@ async def test_automatic_publish_refreshes_comment_profile_and_honors_new_diagno
     comments, store, monkeypatch, profile_available, diagnostic
 ):
     monkeypatch.setattr(comments.runtime, "generate_reply", Runtime.generate_reply.__get__(comments.runtime, Runtime))
-    comments.credentials = {"sessdata": "test-session", "csrf": "test-csrf"}
+    comments.account.credentials = {"sessdata": "test-session", "csrf": "test-csrf"}
     state = {"platform": "bilibili", "account_uid": "injected-test-account", "account_display_name": "旧账号名", "account_bio": "旧简介"}
     comments.operations.configure({"enabled": True}, account_id=state["account_uid"], character=comments.runtime.character)
     store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
@@ -184,7 +184,7 @@ async def test_automatic_publish_refreshes_comment_profile_and_honors_new_diagno
     async def profile():
         return {}
 
-    monkeypatch.setattr(comments.adapter, "account_profile", profile, raising=False)
+    monkeypatch.setattr(comments.account.adapter, "account_profile", profile, raising=False)
     monkeypatch.setattr(comments.runtime, "identity_snapshot", current)
     monkeypatch.setattr(comments.runtime, "refresh_identity", refresh)
     comments.import_items("BV1d8pU6xEZX", [{"comment_id": "321", "platform_user_id": "neighbor", "content": "你现在叫什么名字？"}])
@@ -206,7 +206,7 @@ async def test_automatic_publish_refreshes_comment_profile_and_honors_new_diagno
             await comments.publish(row["id"], automatic=True)
         retained = store.one("SELECT * FROM drafts")
         assert retained["status"] == "pending_review" and retained["text"] == old_text
-        assert not calls and not comments.adapter.sent
+        assert not calls and not comments.account.adapter.sent
         return
     if diagnostic:
         with pytest.raises(ValueError, match="正文诊断尚待审核"):
@@ -215,11 +215,11 @@ async def test_automatic_publish_refreshes_comment_profile_and_honors_new_diagno
         assert retained["status"] == "pending_review"
         check = json.loads(retained["answer_check"])
         assert check["output"]["needs_review"] and check["continuation"]["state"] == "awaiting_review"
-        assert len(calls) == 1 and not comments.adapter.sent
+        assert len(calls) == 1 and not comments.account.adapter.sent
         comments.review(row["id"], "approve")
     await comments.publish(row["id"], automatic=not diagnostic)
     sent = store.one("SELECT * FROM drafts")
     assert sent["status"] == "published" and sent["text"].startswith("现在的账号名")
     assert len(calls) == 1
-    assert comments.adapter.sent == [("BV1d8pU6xEZX", "321", sent["text"])]
+    assert comments.account.adapter.sent == [("BV1d8pU6xEZX", "321", sent["text"])]
     assert json.loads(sent["answer_check"])["generation_identity"]["identity_version"] == current()["identity_version"]

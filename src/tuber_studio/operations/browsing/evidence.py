@@ -12,12 +12,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from ...api_providers import validate_image
-from ...generation_meter import BrowsingBudgetDeferred
-from ...media_cache import linked
-from ...platforms.bilibili_browsing import CREDIT
-from ...providers import public_error
-from ...video_vision import VideoPartText
+from ...core.meter import BrowsingBudgetDeferred
+from ...core.validation import linked
+from ...infra.inference.providers import public_error
+from ...infra.inference.validation import validate_image
+from ...infra.inference.video_vision import VideoPartText
+from ...infra.platforms.bilibili.browsing import CREDIT
 from .models import DisabledVideoEvidence, browsing_filter_reason
 from .round_context import read_round
 

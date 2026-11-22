@@ -7,14 +7,14 @@ import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
 
-from tuber_studio import web_fetch
 from tuber_studio.agent import goal_followups
 from tuber_studio.agent.goal_followups import FollowupGrant, GoalFollowups
 from tuber_studio.agent.task_api import register_task_api
 from tuber_studio.agent.task_identity import TaskIdentity
 from tuber_studio.agent.task_runtime import TaskRuntime, Tool
-from tuber_studio.models import StrictModel
-from tuber_studio.store import Store
+from tuber_studio.core.models import StrictModel
+from tuber_studio.core.store import Store
+from tuber_studio.infra.web_client import fetch as web_fetch
 
 
 def stamp(value):

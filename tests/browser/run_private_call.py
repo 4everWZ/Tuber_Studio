@@ -63,7 +63,7 @@ def main():
     with tempfile.TemporaryDirectory(dir=tmp) as folder, ExitStack() as cleanup:
         runtime = Path(folder)
         if args.reference_defaults:
-            from tuber_studio.artwork_references import DEFAULTS
+            from tuber_studio.persona.characters.references import DEFAULTS
             dest = runtime / "private-artifacts/artwork-defaults"
             dest.mkdir(parents=True)
             for name, _ in DEFAULTS.values():

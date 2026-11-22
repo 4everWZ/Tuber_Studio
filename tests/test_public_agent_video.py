@@ -2,8 +2,8 @@ import time
 from types import SimpleNamespace
 from uuid import uuid4
 
-import pytest
 import httpx
+import pytest
 
 from tuber_studio.agent import public_video
 from tuber_studio.agent.task_runtime import ToolRequest

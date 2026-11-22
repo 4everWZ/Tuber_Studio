@@ -7,10 +7,10 @@ from test_agent_creative_delegation import call, gateway
 from test_browsing import BV, ControlledPlatform
 
 from tuber_studio.agent.operator_chat import VideoSelection
+from tuber_studio.agent.task_delegation import visible_steps
 from tuber_studio.agent.task_delivery import evidence_index
 from tuber_studio.agent.task_runtime import ToolRequest, ToolWait
 from tuber_studio.agent.task_tools import Video
-from tuber_studio.agent.task_delegation import visible_steps
 from tuber_studio.agent.task_video_scope import permits, video_binding
 from tuber_studio.app import create_app
 

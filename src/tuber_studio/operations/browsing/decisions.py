@@ -10,23 +10,20 @@ from difflib import SequenceMatcher
 
 from ...comment_materials import model_comment_materials, prepare_comment_materials
 from ...comments import category
-from ...compaction import ContextWindowExceeded
-from ...front_persona import expressive_persona
-from ...generation_meter import BrowsingBudgetDeferred, GenerationMeter, budgeted_json
+from ...core.errors import ContextWindowExceeded, SendLimitReached
+from ...core.identity import BILIBILI_OWNER_INSTRUCTION, bilibili_owner_context, captured_identity
+from ...core.meter import BrowsingBudgetDeferred, GenerationMeter, budgeted_json
+from ...core.models import content_hash
+from ...core.store import dump
+from ...core.text import operation_character, operation_output_diagnostics
+from ...core.turns import operation_lane
+from ...infra.inference.providers import public_error
 from ...message_outreach import confirmed_invitation
-from ...operation_continuations import content_hash
 from ...operation_generation import GenerationInvalid, generate_with_recovery
-from ...operation_identity import BILIBILI_OWNER_INSTRUCTION, bilibili_owner_context, captured_identity
-from ...operation_text import (
-    operation_character,
-    operation_output_diagnostics,
-)
-from ...operation_turns import operation_lane
 from ...operations_control import canonical_intent
-from ...providers import SYSTEM_RULES, public_error
-from ...publication_errors import SendLimitReached
+from ...persona.characters.front_persona import expressive_persona
+from ...persona.context.message_builder import SYSTEM_RULES
 from ...public_mentions import MENTION_INSTRUCTION, bind_mentions, mention_participants
-from ...store import dump
 from .comment_reader import (
     CommentProgress,
     admit_comment_page,

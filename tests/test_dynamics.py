@@ -8,10 +8,10 @@ from uuid import uuid4
 import pytest
 
 from tuber_studio import dynamics as module
-from tuber_studio import web_fetch
 from tuber_studio.dynamics import Dynamics
-from tuber_studio.memory import GroundedMemory
-from tuber_studio.platforms.bilibili import PublishUncertain
+from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
+from tuber_studio.infra.web_client import fetch as web_fetch
+from tuber_studio.persona.memory.core_memory import GroundedMemory
 
 
 class Model:
@@ -74,11 +74,17 @@ class Model:
 
 @pytest.fixture
 def service(settings, store, monkeypatch):
-    comments = SimpleNamespace(adapter=object(), publish_lock=asyncio.Lock(), configured=True)
-    comments.policy = lambda: {"credentials_configured": comments.configured}
+    account = SimpleNamespace(
+        adapter=object(),
+        credential_lock=asyncio.Lock(),
+        credentials={},
+        credentials_configured=True,
+        display_account_id=lambda: "",
+    )
+    comments = SimpleNamespace(account=account)
     runtime = SimpleNamespace(operation_llm=Model(), generation_lock=asyncio.Lock())
     runtime.offline_generation = lambda lane: runtime.generation_lock
-    service = Dynamics(settings, store, runtime, comments)
+    service = Dynamics(settings, store, runtime, comments, account=account)
     service.operations.configure(
         {"enabled": True}, account_id="injected-test-account", character=store.character()
     )
@@ -126,7 +132,7 @@ def due(service):
 
 
 async def test_public_incident_is_factual_cited_and_removed_from_draft_sources(service):
-    from tuber_studio.daily_memory import DailyMemoryService
+    from tuber_studio.persona.memory.daily import DailyMemoryService
 
     memory = DailyMemoryService(service.store)
     char = service._character()
@@ -226,7 +232,7 @@ async def test_public_comment_can_illustrate_its_story_without_losing_the_source
     generated = {"artifact_id": "a" * 32, "sha256": "b" * 64}
     monkeypatch.setattr(module, "workstation_image_decisions", lambda _: True)
     monkeypatch.setattr(module, "queue_image", lambda *args, **kwargs: generated)
-    monkeypatch.setattr(service.comments, "display_account_id", lambda: "100", raising=False)
+    monkeypatch.setattr(service.account, "display_account_id", lambda: "100", raising=False)
     draft = await service.evaluate(manual=True)
     row = service._post(draft["post_id"])
     assert row["comment_card"] is None
@@ -241,7 +247,7 @@ async def test_public_comment_can_illustrate_its_story_without_losing_the_source
 
 async def test_legacy_public_dynamic_reselects_from_saved_actor_and_text(service, monkeypatch):
     published_reply(service)
-    monkeypatch.setattr(service.comments, "display_account_id", lambda: "100", raising=False)
+    monkeypatch.setattr(service.account, "display_account_id", lambda: "100", raising=False)
     service.runtime.operation_llm.illustration = "none"
     legacy = service._post((await service.evaluate(manual=True))["post_id"])
     assert legacy["comment_card"] is None and legacy["generation_identity"].startswith("{")
@@ -334,7 +340,7 @@ def test_dynamic_decision_can_merge_episodes(service):
 
 
 async def test_dynamic_refreshes_identity_regenerates_and_keeps_existing_approval(service):
-    from tuber_studio.operation_identity import identity_snapshot
+    from tuber_studio.core.identity import identity_snapshot
 
     public_memory(service)
     char = service._character()
@@ -355,7 +361,7 @@ async def test_dynamic_refreshes_identity_regenerates_and_keeps_existing_approva
     )
 
     async def refresh(character=None, account_id=None):
-        assert not service.comments.publish_lock.locked()
+        assert not service.account.credential_lock.locked()
         current["account_display_name"] = "新名字"
         return service.runtime.identity_snapshot(character, account_id)
 
@@ -399,10 +405,10 @@ async def test_dynamic_identity_verification_failure_keeps_approved_draft_unsent
 
 
 async def test_automatic_dynamic_identity_refresh_preserves_automatic_authorization(service):
-    from tuber_studio.operation_identity import identity_snapshot
+    from tuber_studio.core.identity import identity_snapshot
 
     public_memory(service)
-    service.comments.display_account_id = lambda: "injected-test-account"
+    service.account.display_account_id = lambda: "injected-test-account"
     char = service._character()
     current = {"account_uid": "injected-test-account", "account_display_name": "旧名字"}
     service.runtime.identity_snapshot = lambda character=None, account_id=None: identity_snapshot(
@@ -689,7 +695,7 @@ async def test_review_mode_and_current_client(service):
         await service.publish(result["post_id"])
     service.review(result["post_id"], "approve", "虚构海底剧场：小厨房开饭啦！")
     replacement = object()
-    service.comments.adapter = replacement
+    service.account.adapter = replacement
     await service.publish(result["post_id"])
     assert service.sent == [(replacement, "虚构海底剧场：小厨房开饭啦！")]
 
@@ -917,7 +923,7 @@ async def test_publish_shares_comment_lock_and_rechecks_source_after_wait(servic
     mid = public_memory(service)
     decision = await service.evaluate(manual=True)
     service.review(decision["post_id"], "approve")
-    async with service.comments.publish_lock:
+    async with service.account.credential_lock:
         task = asyncio.create_task(service.publish(decision["post_id"]))
         await asyncio.sleep(0)
         assert not service.sent
@@ -945,7 +951,7 @@ async def test_policy_bounds(service, patch):
 
 
 async def test_enable_requires_credentials_and_worker_disabled_by_default(service):
-    service.comments.configured = False
+    service.account.credentials_configured = False
     with pytest.raises(ValueError, match="凭证"):
         await service.set_policy({"enabled": True})
     await service.open()
@@ -972,7 +978,7 @@ async def test_final_guard_after_signing_await_cancels_without_write(service, mo
         elif change == "character":
             service.store.save_character(service.store.character())
         else:
-            service.comments.adapter = object()
+            service.account.adapter = object()
         before_send()
         writes.append(text)
         return {"dynamic_id": "123"}

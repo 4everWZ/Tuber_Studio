@@ -22,7 +22,7 @@ import uvicorn
 from playwright.async_api import async_playwright
 
 from tuber_studio.app import create_app
-from tuber_studio.config import ROOT, Settings
+from tuber_studio.core.config import ROOT, Settings
 
 CONFIRMED = "Group related points and separate distinct concerns. Use headings and lists when they improve readability."
 AUTO = "以后写直播素材提纲，每个标题都用问句，以问号结尾。"

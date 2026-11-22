@@ -29,18 +29,19 @@ import httpx
 import psutil
 
 from tuber_studio.comments import Comments
-from tuber_studio.config import Settings
+from tuber_studio.core.config import Settings
+from tuber_studio.core.store import Store
 from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.dynamics import Dynamics
-from tuber_studio.media_cache import MediaCache
+from tuber_studio.infra.media.cache import MediaCache
+from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
+from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
 from tuber_studio.operations.browsing.evidence import BrowsingEvidence
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
 from tuber_studio.operations.browsing.round_context import read_round
 from tuber_studio.operations.browsing.service import BrowsingService
-from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
 from tuber_studio.runtime import Runtime
-from tuber_studio.store import Store
 
 VIDEOS = [f"BV1{number:09d}" for number in range(1, 5)]
 BODY = [
@@ -145,7 +146,8 @@ class Fixture:
         self.runtime = Runtime(self.settings, self.store)
         self.source = ControlledSource(latency, restricted=restricted, blocked=blocked)
         self.adapter = BrowsingAdapter()
-        self.comments = Comments(self.settings, self.store, self.runtime, self.adapter)
+        self.account = BilibiliAccount(self.settings, self.store, self.adapter)
+        self.comments = Comments(self.settings, self.store, self.runtime, self.account)
         self.messages = DirectMessages(self.settings, self.store, self.runtime, self.comments)
         self.dynamics = Dynamics(self.settings, self.store, self.runtime, self.comments)
         self.service = ObservedBrowsingService(
@@ -171,6 +173,7 @@ class Fixture:
     async def close(self):
         await self.service.evidence.close()
         await self.messages.close()
+        await self.account.close()
         await self.comments.close()
         await self.runtime.close()
         self.store.close()

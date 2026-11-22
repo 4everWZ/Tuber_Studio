@@ -6,10 +6,9 @@ import binascii
 import httpx
 from fastapi import Body, Depends, HTTPException
 
-from ..api_providers import validate_image
-from ..provider_diagnostics import register_provider_diagnostics
-from ..provider_settings import ProviderConfigurationError, apply_settings
-from ..providers import public_error
+from ..infra.inference.providers import public_error
+from ..infra.inference.settings import ProviderConfigurationError, apply_settings
+from ..infra.inference.validation import validate_image
 
 
 def register_model_api(app, settings, runtime, require_admin):
@@ -76,4 +75,3 @@ def register_model_api(app, settings, runtime, require_admin):
             "context_installed": False,
         }
 
-    register_provider_diagnostics(app, settings, runtime, require_admin)

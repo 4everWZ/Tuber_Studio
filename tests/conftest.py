@@ -4,11 +4,12 @@ import json
 
 import httpx
 import pytest
-from offline_chat import OfflineChat
 
-from tuber_studio.config import ROOT, Settings
+from tests.support.fake_providers import OfflineChat
+from tests.support.stores import STARTUP_MIGRATIONS
+from tuber_studio.core.config import ROOT, Settings
+from tuber_studio.core.store import Store
 from tuber_studio.runtime import Runtime
-from tuber_studio.store import Store
 
 
 @pytest.fixture
@@ -55,7 +56,7 @@ def settings(tmp_path, monkeypatch):
 @pytest.fixture
 def store(settings):
     seeds = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
-    value = Store(settings.runtime / "test.sqlite3", seeds)
+    value = Store(settings.runtime / "test.sqlite3", seeds, migrations=STARTUP_MIGRATIONS)
     yield value
     value.close()
 

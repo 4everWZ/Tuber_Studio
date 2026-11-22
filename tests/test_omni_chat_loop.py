@@ -4,10 +4,9 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from front_effects import direct_request
 
 from evaluations import omni_chat_loop as replay
-from tuber_studio import http_api
+from tuber_studio.infra.inference import http_api as http_api
 
 
 async def test_unconfigured_rehearsal_skips_without_opening_credentials(tmp_path):

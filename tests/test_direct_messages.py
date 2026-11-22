@@ -12,7 +12,8 @@ from fastapi.testclient import TestClient
 from tuber_studio.app import create_app
 from tuber_studio.comments import Comments
 from tuber_studio.direct_messages import DirectMessages
-from tuber_studio.platforms.bilibili import PublishUncertain
+from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
+from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
 
 
 class Delivery:
@@ -41,7 +42,7 @@ class Delivery:
 
 @pytest.fixture
 async def messages(runtime, settings, store):
-    comments = Comments(settings, store, runtime)
+    comments = Comments(settings, store, runtime, BilibiliAccount(settings, store))
     delivery = Delivery()
     service = DirectMessages(settings, store, runtime, comments, delivery)
     comments.direct_messages = service
@@ -50,6 +51,7 @@ async def messages(runtime, settings, store):
     yield service
     await service.close()
     await comments.close()
+    await comments.account.close()
 
 
 async def finished(messages, identity):
@@ -105,8 +107,8 @@ async def test_unpublished_private_draft_does_not_become_sent_context(messages):
 
 
 async def test_processed_private_message_shares_only_role_reflection(messages, monkeypatch):
+    from tuber_studio.core.models import OperationReply
     from tuber_studio.dynamics import Dynamics
-    from tuber_studio.models import OperationReply
 
     account = "900"
     secret = "这条私信含不公开的行程和我的姓名，星路下午四点。"
@@ -119,7 +121,7 @@ async def test_processed_private_message_shares_only_role_reflection(messages, m
     monkeypatch.setattr(messages.runtime, "generate_reply", generate)
     await messages._generate(identity, False)
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "pending_review"
-    monkeypatch.setattr(messages.comments, "display_account_id", lambda: account)
+    monkeypatch.setattr(messages.account, "display_account_id", lambda: account)
     dynamics = Dynamics(messages.settings, messages.store, messages.runtime, messages.comments)
     reflection, = [source for source in dynamics._sources() if source["type"] == "own_reflection"]
     assert secret not in json.dumps(reflection, ensure_ascii=False) and "鱼宝" not in str(reflection)
@@ -243,14 +245,14 @@ async def test_confirmed_handoff_never_records_private_reply_in_public_context(m
     await messages.configure({"enabled": True})
     original_llm = dict(messages.settings.data["omni"])
     comments = messages.comments
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
-    comments.verified_account_id = "injected-test-account"
-    comments.verified_credential = dict(comments.credentials)
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.verified_account_id = "injected-test-account"
+    comments.account.verified_credential = dict(comments.account.credentials)
 
     async def account():
         return "injected-test-account"
 
-    monkeypatch.setattr(comments, "account_id", account)
+    monkeypatch.setattr(comments.account, "account_id", account)
     comments.import_items("import-private", [{"comment_id": "c1", "platform_user_id": "123",
         "display_name": "鱼宝", "content": invitation,
         "mentions": [{"uid": "injected-test-account", "name": "大肥鱼"}]}])

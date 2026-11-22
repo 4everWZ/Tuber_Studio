@@ -5,10 +5,10 @@ import subprocess
 from types import SimpleNamespace
 from uuid import uuid4
 
-import pytest
 import httpx
-from evaluations.creative_archive_handoff import export
+import pytest
 
+from evaluations.creative_archive_handoff import export
 from tuber_studio.agent import task_tools
 from tuber_studio.agent.archived_video import ArchivedVideo, MountedArchive
 from tuber_studio.agent.public_video import clip_path, read_public_part
@@ -17,9 +17,9 @@ from tuber_studio.agent.task_runtime import ToolRequest
 from tuber_studio.agent.task_tools import Search, Video, video_provenance
 from tuber_studio.agent.task_video_scope import scoped_video_step
 from tuber_studio.app import create_app
-from tuber_studio.web_fetch import WebFetchRequest
-from tuber_studio.platforms.bilibili import PlatformReadError
-from tuber_studio.video_vision import VideoPartText, frame_reading_context
+from tuber_studio.infra.inference.video_vision import VideoPartText, frame_reading_context
+from tuber_studio.infra.platforms.bilibili.client import PlatformReadError
+from tuber_studio.infra.web_client.fetch import WebFetchRequest
 
 BV = "BV1aa1234567"
 URL = f"https://www.bilibili.com/video/{BV}/?p=2"

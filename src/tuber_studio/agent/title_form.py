@@ -6,11 +6,10 @@ from unicodedata import category
 
 from pydantic import Field
 
-from ..models import StrictModel
-from ..operation_identity import visual_editor_context
-from ..store import dump
+from ..core.identity import visual_editor_context
+from ..core.models import StrictModel
+from ..core.store import dump
 from .task_delivery import DelegationError
-
 
 RequestedTitleForm = Literal["陈述句", "问句", "名词短语"]
 

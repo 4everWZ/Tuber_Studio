@@ -38,7 +38,7 @@ async def test_uncertain_main_reply_keeps_same_video_new_threads_available_witho
     from test_browsing import finished
     from test_browsing_batches import authorize
 
-    from tuber_studio.platforms.bilibili import PublishUncertain
+    from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
 
     await browsing.configure({
         "sources": ["specified"], "watch_videos": [BV], "workers": 1,

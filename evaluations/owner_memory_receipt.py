@@ -7,10 +7,9 @@ from contextlib import closing
 from pathlib import Path
 from uuid import UUID
 
-from tuber_studio.agent.public_video import clip_path
-from tuber_studio.config import ROOT
-
 from evaluations.owner_memory_video import SELECTION
+from tuber_studio.agent.public_video import clip_path
+from tuber_studio.core.config import ROOT
 
 
 def reviewed_read(directory, step_id):

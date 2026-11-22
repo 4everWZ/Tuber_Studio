@@ -6,11 +6,13 @@ import time
 
 import httpx
 import pytest
-
-from test_browsing import BV, browsing, finished
-from test_comments import comments
+from test_browsing import BV, finished
+from test_browsing import browsing as browsing
+from test_comments import comments as comments
 from test_dynamics import Model
-from test_message_memes import image_http, meme_messages
+from test_message_memes import image_http as image_http
+from test_message_memes import meme_messages as meme_messages
+
 from tuber_studio import operation_attachments, operation_images
 
 
@@ -47,7 +49,7 @@ async def settled(runtime, channel, row):
 
 
 async def test_comment_generation_worker_exposes_only_text_for_replies(comments, store, text_only):
-    comments.credentials = {"sessdata": "fixture", "csrf": "fixture"}
+    comments.account.credentials = {"sessdata": "fixture", "csrf": "fixture"}
     comments.import_items(
         BV, [{"comment_id": "13", "thread_id": "11", "platform_user_id": "124", "content": "楼层原话"}]
     )
@@ -59,19 +61,19 @@ async def test_comment_generation_worker_exposes_only_text_for_replies(comments,
     with pytest.raises(ValueError, match="仅视频一级评论"):
         comments.review(row["id"], "edit", image_ref={"asset_id": "unavailable", "sha256": "x"})
     assert operation_attachments.comment_payload(row, comments.runtime) == {"text": row["text"]}
-    assert not comments.adapter.sent
+    assert not comments.account.adapter.sent
 
 
 async def test_autonomous_video_comment_and_video_dynamic_use_scoped_material(
     browsing, text_only, monkeypatch
 ):
-    browsing.comments.credentials = {"sessdata": "fixture", "csrf": "fixture"}
+    browsing.bilibili_account.credentials = {"sessdata": "fixture", "csrf": "fixture"}
     await finished(browsing, preview=True)
     main = next(intent for intent in browsing.intents() if intent["kind"] == "top_level")
     comment = await settled(browsing.runtime, "browsing", main)
     assert comment["context"]["bvid"] == BV and comment["context"]["evidence"]
     assert {s["id"] for s in comment["context"]["evidence"]} <= set(main["evidence"])
-    await browsing.comments.account_id()
+    await browsing.bilibili_account.account_id()
     model = Model()
     monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", model.generate_json)
     monkeypatch.setattr(browsing.runtime.operation_llm, "count_tokens", model.count_tokens)

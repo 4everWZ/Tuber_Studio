@@ -18,7 +18,7 @@ import uvicorn
 
 from tuber_studio.agent.public_video import clip_path
 from tuber_studio.app import create_app
-from tuber_studio.config import ROOT, Settings
+from tuber_studio.core.config import ROOT, Settings
 
 
 def replay(source, reference, folder):

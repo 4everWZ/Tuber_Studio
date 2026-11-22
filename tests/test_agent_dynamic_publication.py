@@ -11,7 +11,7 @@ from test_dynamics import service as service
 from tuber_studio import dynamic_comment_card, dynamics
 from tuber_studio.agent.dynamic_publication import ExistingDraft, named_in_goal, register_dynamic_publication
 from tuber_studio.agent.task_runtime import TaskRuntime
-from tuber_studio.platforms.bilibili import PublishUncertain
+from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
 
 
 @pytest.fixture
@@ -19,12 +19,12 @@ async def handoff(service, monkeypatch):
     account = "100"
     character = service._character()
     scope = [account, character["id"], character["version"], "edit"]
-    service.comments.display_account_id = lambda: account
+    service.account.display_account_id = lambda: account
 
     async def account_id():
         return account
 
-    service.comments.account_id = account_id
+    service.account.account_id = account_id
     monkeypatch.setattr(dynamic_comment_card, "_font", lambda size: ImageFont.load_default())
     published_reply(service)
     draft = (await service.evaluate(manual=True))["post_id"]
@@ -35,7 +35,7 @@ async def handoff(service, monkeypatch):
     tasks = TaskRuntime(service.store, scope_fn, None)
     register_dynamic_publication(tasks, service)
     adapter = SimpleNamespace()
-    service.comments.adapter = adapter
+    service.account.adapter = adapter
     outcome = {"disconnect": False, "visible": False}
     sends, reads = [], []
 
@@ -105,7 +105,7 @@ async def test_approval_never_resends_or_inherits_an_unbound_receipt(handoff, mo
     elif case == "wrong_account":
         async def changed():
             return "101"
-        service.comments.account_id = changed
+        service.account.account_id = changed
     elif case.startswith("lost"):
         publish = service.publish
         async def interrupt(*args, **kwargs):

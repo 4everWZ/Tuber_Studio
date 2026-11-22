@@ -3,8 +3,8 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+from tuber_studio.core.models import Event
 from tuber_studio.live.activity_filter import LivePoll
-from tuber_studio.models import Event
 
 
 def chat(text, uid="u1", **extra):

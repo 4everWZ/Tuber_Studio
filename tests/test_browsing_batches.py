@@ -8,7 +8,7 @@ from test_browsing import browsing as browsing
 
 
 async def authorize(browsing, identity="durable-batch"):
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     await authorize_automation(browsing)
 
 
@@ -247,7 +247,7 @@ async def test_daily_watch_wait_does_not_block_new_batch_or_repeat_count(browsin
 
 
 async def test_comment_visit_does_not_hold_the_only_new_video_window(browsing, monkeypatch):
-    from tuber_studio.operation_turns import operation_lane
+    from tuber_studio.core.turns import operation_lane
 
     entered_reply, release_reply, entered_video = asyncio.Event(), asyncio.Event(), asyncio.Event()
     lanes = []

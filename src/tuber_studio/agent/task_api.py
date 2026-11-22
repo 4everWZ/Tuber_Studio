@@ -8,8 +8,8 @@ from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse, Response
 from pydantic import Field, PositiveInt, field_validator
 
-from ..models import StrictModel
-from ..store import dump
+from ..core.models import StrictModel
+from ..core.store import dump
 from .dynamic_publication import approval_image
 from .goal_events import register_goal_events
 from .goal_followups import register_goal_followups

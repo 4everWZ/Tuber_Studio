@@ -7,12 +7,12 @@ from contextvars import ContextVar
 
 import httpx
 
+from .core.errors import PlatformRejected, SendLimitReached, UnknownPublication
+from .core.models import content_hash
+from .infra.inference.providers import public_error
+from .infra.platforms.bilibili.client import BilibiliAccountExpired
 from .operations.browsing.quotas import DailyReplyLimitReached
-from .operation_continuations import content_hash
 from .operations_control import COMMENT_WRITE_FILTER, REACTION_CHANNELS
-from .providers import public_error
-from .platforms.bilibili import BilibiliAccountExpired
-from .publication_errors import PlatformRejected, SendLimitReached, UnknownPublication
 
 current_send = ContextVar("current_operation_send", default=None)
 

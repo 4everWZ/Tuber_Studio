@@ -56,7 +56,7 @@ def test_reference_namespace_has_exact_token_boundaries_and_invocation_local_cit
 
 @pytest.mark.parametrize("fetch_ok", [False, True])
 async def test_web_product_keeps_its_name_when_reusing_a_comment_decision(browsing, monkeypatch, fetch_ok):
-    from tuber_studio import web_fetch
+    from tuber_studio.infra.web_client import fetch as web_fetch
     from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
 
     await browsing.preflight()
@@ -110,7 +110,7 @@ async def test_web_product_keeps_its_name_when_reusing_a_comment_decision(browsi
 async def test_reference_in_speech_keeps_candidate_for_review_without_repair_or_automatic_send(browsing, monkeypatch):
     from test_browsing import BV, finished
 
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({"sources": ["specified"], "watch_videos": [BV], "recent_sample_limit": 0})
     original = browsing.runtime.operation_llm.generate_json
     calls = []

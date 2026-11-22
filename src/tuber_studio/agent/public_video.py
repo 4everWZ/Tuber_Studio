@@ -1,15 +1,15 @@
 """Private research on an explicitly selected public video without a platform account."""
 
-import time
 import tempfile
+import time
 from pathlib import Path
 from uuid import UUID
 
 import httpx
 
-from ..http_api import InferenceBudgetExceeded, InferenceQueueBusy
-from ..platforms.bilibili import PlatformReadError
-from ..platforms.bilibili_browsing import BrowsingAdapter
+from ..infra.inference.http_api import InferenceBudgetExceeded, InferenceQueueBusy
+from ..infra.platforms.bilibili.browsing import BrowsingAdapter
+from ..infra.platforms.bilibili.client import PlatformReadError
 from .public_sources import video_read_restriction
 
 

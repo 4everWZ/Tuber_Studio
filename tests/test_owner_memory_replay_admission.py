@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from evaluations import owner_memory_video as replay
-from tuber_studio.http_api import InferenceBudgetExceeded, check_response_status
+from tuber_studio.infra.inference.http_api import InferenceBudgetExceeded, check_response_status
 
 
 def gateway_response(code, reason, delay=None):

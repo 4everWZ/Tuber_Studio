@@ -16,9 +16,9 @@ from playwright.sync_api import expect, sync_playwright
 
 from tuber_studio import operation_attachments, operation_images
 from tuber_studio.app import create_app
-from tuber_studio.artwork_references import Reference
-from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
-from tuber_studio.platforms.bilibili_messages import BilibiliMessagesAdapter
+from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
+from tuber_studio.infra.platforms.bilibili.messages import BilibiliMessagesAdapter
+from tuber_studio.persona.characters.references import Reference
 
 BV = "BV1d8pU6xEZX"
 ORIGINAL = "把视频里这段灯光变化也画出来吧。"
@@ -231,8 +231,8 @@ async def test_operations_images_browser(settings, monkeypatch):
     app = create_app(settings, adapter=public, message_adapter=dm)
     state = app.state
     store, char = state.store, state.runtime.character
-    state.comments.credentials.update(credentials)
-    assert await state.comments.account_id() == OWNER
+    state.bilibili_account.credentials.update(credentials)
+    assert await state.bilibili_account.account_id() == OWNER
     await state.runtime.refresh_identity(char, OWNER)
     audit = json.dumps({"generation_identity": state.runtime.identity_snapshot(char, OWNER)})
     now = time.time()

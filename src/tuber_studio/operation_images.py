@@ -9,15 +9,14 @@ from uuid import uuid4
 import httpx
 from pydantic import Field
 
-from .artwork_references import resolve_reference
 from .comment_capabilities import video_top_level_images
-from .gallery_search import model_fields, shortlist
-from .http_api import InferenceBudgetExceeded
-from .illustration_policy import illustration_policy
-from .models import StrictModel
-from .responses_provider import ResponsesClient
-from .store import dump
-from .workstation_images import (
+from .core.models import StrictModel
+from .core.store import dump
+from .infra.inference.http_api import InferenceBudgetExceeded
+from .infra.inference.responses_provider import ResponsesClient
+from .persona.assets.gallery_search import model_fields, shortlist
+from .persona.assets.illustration_policy import illustration_policy
+from .persona.assets.workstation_images import (
     ImageBrief,
     gateway,
     gateway_base,
@@ -25,6 +24,7 @@ from .workstation_images import (
     result_png,
     submit,
 )
+from .persona.characters.references import resolve_reference
 
 
 class ImageScope(StrictModel):

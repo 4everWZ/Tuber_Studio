@@ -5,8 +5,8 @@ from typing import Annotated, Literal
 from fastapi import Depends, Path
 from pydantic import Field
 
+from .core.models import StrictModel
 from .direct_messages import MessagePolicy
-from .models import StrictModel
 
 
 class ReviewMessage(StrictModel):

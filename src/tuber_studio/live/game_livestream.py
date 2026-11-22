@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..store import dump
+from ..core.store import dump
 
 logger = logging.getLogger(__name__)
 

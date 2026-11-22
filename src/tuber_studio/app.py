@@ -1,6 +1,8 @@
 """Local workbench, authenticated remote management, and scoped OBS playback."""
 
 import asyncio
+import hashlib
+import io
 import json
 import os
 import re
@@ -9,11 +11,12 @@ import time
 import weakref
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from PIL import Image, ImageOps
 
 from .agent.api import register_agent_api
 from .agent.operator_chat import register_operator_chat
@@ -23,22 +26,23 @@ from .agent.private_call_work import register_call_work
 from .agent.reply_operations import register_reply_operations
 from .agent.task_api import register_task_api
 from .agent.task_tools import create_task_runtime
-from .artwork_references import MAX_BYTES as MAX_REFERENCE_BYTES
-from .artwork_references import PREFIX as REFERENCE_PREFIX
-from .artwork_references import register_artwork_references
-from .auth_sessions import (
+from .comments import Comments
+from .core.auth import (
     COOKIE_MAX_AGE,
     COOKIE_NAME,
     AuthSessions,
     EnvironmentManagedToken,
     InvalidAdminCredential,
 )
-from .bilibili_account import BilibiliAccount
-from .comments import Comments
-from .config import Settings
+from .core.authority import acquire_business_writer
+from .core.config import Settings, atomic_bytes
+from .core.store import Store
 from .direct_messages import DirectMessages
 from .dynamics import Dynamics
-from .illustration_policy import register_illustration_policy
+from .infra.inference.diagnostics import check_provider_diagnostics, saved_provider_models
+from .infra.inference.providers import public_error
+from .infra.inference.video_vision_service import configured_video_provider
+from .infra.platforms.bilibili.account import BilibiliAccount
 from .live.api import register_live_api
 from .live.media import MAX_UPLOAD
 from .meme_api import MAX_REQUEST as MAX_MEME_REQUEST
@@ -49,14 +53,143 @@ from .operation_recovery_api import register_operation_recovery_api
 from .operations.api import register_operations_api
 from .operations.browsing.api import register_browsing_api
 from .operations.browsing.service import BrowsingService
-from .performance import register_performance
-from .pet_appearance import register_pet_api
-from .providers import public_error
+from .persona.assets.illustration_policy import (
+    IllustrationPolicy,
+    illustration_policy,
+    migrate_illustration_policy,
+    save_illustration_policy,
+)
+from .persona.characters.performance import Performance, performance, save_performance
+from .persona.characters.pets import PetSelection
+from .persona.characters.presets import upgrade_bundled_characters
+from .persona.characters.references import DEFAULTS as REFERENCE_DEFAULTS
+from .persona.characters.references import MAX_BYTES as MAX_REFERENCE_BYTES
+from .persona.characters.references import PREFIX as REFERENCE_PREFIX
+from .persona.characters.references import Variant as ReferenceVariant
+from .persona.characters.references import (
+    _location as reference_location,
+)
+from .persona.characters.references import (
+    _selection as reference_selection,
+)
+from .persona.characters.references import (
+    _validate_upload as validate_reference_upload,
+)
+from .persona.characters.references import (
+    resolve_reference,
+)
 from .runtime import Runtime
-from .runtime_authority import acquire_business_writer
-from .store import Store
-from .video_vision_service import configured_video_provider
 from .web_entry import WebMount, route_path, web_page
+
+
+def register_provider_diagnostics(app, settings, runtime, require_admin):
+    @app.post("/api/providers/check", dependencies=[Depends(require_admin)])
+    async def check():
+        return await check_provider_diagnostics(settings, runtime)
+
+    @app.get("/api/providers/models", dependencies=[Depends(require_admin)])
+    async def saved_models():
+        return await saved_provider_models(settings)
+
+
+def register_performance(app, runtime, require_admin):
+    @app.get("/api/settings/performance", dependencies=[Depends(require_admin)])
+    async def read():
+        return performance(runtime.store)
+
+    @app.put("/api/settings/performance", dependencies=[Depends(require_admin)])
+    async def update(body: Performance):
+        return save_performance(runtime.store, body)
+
+
+def register_pet_api(app, pets, require_admin):
+    path = "/api/pets/{character_id}"
+    auth = [Depends(require_admin)]
+
+    @app.get(path, dependencies=auth)
+    async def options(character_id: str):
+        return await pets.options(character_id)
+
+    @app.put(path, dependencies=auth)
+    async def select(character_id: str, body: PetSelection):
+        return await pets.select(character_id, body.asset_id)
+
+
+def register_illustration_policy(app, store, require_admin):
+    path = "/api/settings/illustrations"
+
+    @app.get(path, dependencies=[Depends(require_admin)])
+    async def read():
+        return illustration_policy(store)
+
+    @app.patch(path, dependencies=[Depends(require_admin)])
+    async def update(value: IllustrationPolicy):
+        changes = value.model_dump(exclude_unset=True)
+        if not changes:
+            raise HTTPException(400, "请选择要修改的配图方式")
+        return save_illustration_policy(store, illustration_policy(store).model_dump() | changes)
+
+
+def register_artwork_references(app, settings, store, require_admin):
+    route = REFERENCE_PREFIX + "/{character_id}"
+    auth = [Depends(require_admin)]
+
+    @app.get(route, dependencies=auth)
+    def list_references(character_id: str):
+        store.character(character_id)
+        variants = {}
+        for variant in REFERENCE_DEFAULTS:
+            try:
+                _, digest, source = reference_location(settings, character_id, variant)
+                url = f"{REFERENCE_PREFIX}/{quote(character_id, safe='')}/{variant}?sha256={digest}"
+                variants[variant] = dict(
+                    available=True,
+                    source=source,
+                    sha256=digest,
+                    preview_url=url,
+                    thumbnail_url=url + "&thumbnail=true",
+                )
+            except FileNotFoundError:
+                variants[variant] = dict(available=False, source=None, sha256=None, preview_url=None)
+        return dict(character_id=character_id, variants=variants)
+
+    @app.get(route + "/{variant}", dependencies=auth)
+    def preview(character_id: str, variant: ReferenceVariant, sha256: str | None = None, thumbnail: bool = False):
+        store.character(character_id)
+        try:
+            ref = resolve_reference(settings, character_id, variant, sha256=sha256)
+        except FileNotFoundError:
+            raise HTTPException(404, "该版本参考图不可用") from None
+        if thumbnail:
+            with Image.open(io.BytesIO(ref.data)) as picture:
+                picture.thumbnail((224, 224), Image.Resampling.LANCZOS)
+                thumb = ImageOps.exif_transpose(picture).convert("RGBA")
+                out = io.BytesIO()
+                thumb.save(out, "PNG")
+            return Response(out.getvalue(), media_type="image/png")
+        mime = "image/png" if ref.data.startswith(b"\x89PNG") else "image/jpeg"
+        return Response(ref.data, media_type=mime)
+
+    @app.put(route + "/{variant}", dependencies=auth)
+    async def replace(character_id: str, variant: ReferenceVariant, request: Request):
+        store.character(character_id)
+        data = bytearray()
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > MAX_REFERENCE_BYTES:
+                raise HTTPException(413, "参考图不能超过 4 MiB")
+            data.extend(chunk)
+        validate_reference_upload(data)
+        digest = hashlib.sha256(data).hexdigest()
+        folder = reference_selection(settings, character_id, variant)
+        atomic_bytes(folder / digest, data, private=True)
+        atomic_bytes(folder / "active", digest.encode("ascii"), private=True)
+        return list_references(character_id)
+
+    @app.delete(route + "/{variant}", dependencies=auth)
+    def restore(character_id: str, variant: ReferenceVariant):
+        store.character(character_id)
+        (reference_selection(settings, character_id, variant) / "active").unlink(missing_ok=True)
+        return list_references(character_id)
 
 
 def create_app(
@@ -75,27 +208,29 @@ def create_app(
         settings.migrate_connection()
         AuthSessions.prepare_runtime(settings)
         seeds = json.loads((settings.root / "config/characters.json").read_text(encoding="utf-8"))
-        store = Store(settings.runtime / "studio.sqlite3", seeds)
+        store = Store(settings.runtime / "studio.sqlite3", seeds, migrations=(migrate_illustration_policy, upgrade_bundled_characters))
     except BaseException:
         writer.__exit__(None, None, None)
         raise
     sessions = AuthSessions(settings, store)
     runtime = Runtime(settings, store, singing_provider=singing_provider, live_scene=live_scene)
-    comments = Comments(settings, store, runtime, adapter)
-    account = BilibiliAccount(comments)
+    account = BilibiliAccount(settings, store, adapter)
+    comments = Comments(settings, store, runtime, account)
     runtime.account = account
     memes = runtime.pets.catalog
     runtime.operation_images.catalog = memes
     comments.memes = memes
-    dynamics = Dynamics(settings, store, runtime, comments, memes=memes)
-    messages = DirectMessages(settings, store, runtime, comments, message_adapter, memes=memes)
+    dynamics = Dynamics(settings, store, runtime, comments, account=account, memes=memes)
+    messages = DirectMessages(settings, store, runtime, comments, message_adapter, account=account, memes=memes)
     comments.direct_messages = messages
     visual = (
         video_evidence_factory(runtime)
         if video_evidence_factory is not None
         else configured_video_provider(runtime)
     )
-    browsing = BrowsingService(settings, store, runtime, comments, messages, dynamics, visual=visual)
+    browsing = BrowsingService(
+        settings, store, runtime, comments, messages, dynamics, visual=visual, bilibili_account=account
+    )
     runtime.browsing = browsing
     runtime.tasks = create_task_runtime(runtime, store, browsing)
     login_attempts = {}
@@ -252,6 +387,7 @@ def create_app(
     register_task_api(app, runtime.tasks, require_admin)
     register_reply_operations(app, runtime.tasks, comments, messages, require_admin)
     register_model_api(app, settings, runtime, require_admin)
+    register_provider_diagnostics(app, settings, runtime, require_admin)
     register_operations_api(app, store, account, comments, browsing, dynamics, require_admin)
     register_message_api(app, messages, require_admin)
     register_meme_api(app, memes, runtime, require_admin)

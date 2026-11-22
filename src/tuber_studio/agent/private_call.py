@@ -15,15 +15,15 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from ..daily_memory import contains_memory_credential
-from ..deployment_profiles import omni_base
-from ..front_persona import persona_instructions
-from ..http_api import endpoint
-from ..memory_sources import original_turn
-from ..operation_continuations import content_hash
-from ..operation_identity import operating_account_facts, private_participant_instructions
-from ..performance import performance
-from ..store import dump
+from ..core.config import omni_base
+from ..core.identity import operating_account_facts, private_participant_instructions
+from ..core.models import content_hash
+from ..core.store import dump
+from ..core.validation import endpoint
+from ..persona.characters.front_persona import persona_instructions
+from ..persona.characters.performance import performance
+from ..persona.memory.daily import contains_memory_credential
+from ..persona.memory.sources import original_turn
 from . import front_dialogue
 from .memory_organizer import is_chat_turn
 from .owner_memory import citation, correctable_preference, history_preference, private_rows, read_stamp

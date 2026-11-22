@@ -4,8 +4,8 @@ from difflib import SequenceMatcher
 
 from pydantic import Field, PrivateAttr
 
-from ..models import StrictModel
-from ..store import dump
+from ..core.models import StrictModel
+from ..core.store import dump
 
 
 class TaskPatch(StrictModel):

@@ -17,8 +17,8 @@ import uvicorn
 
 from tuber_studio.agent.task_delivery import PrivateDelivery
 from tuber_studio.app import create_app
-from tuber_studio.config import ROOT, Settings
-from tuber_studio.responses_provider import FunctionCall, ResponseTurn
+from tuber_studio.core.config import ROOT, Settings
+from tuber_studio.infra.inference.responses_provider import FunctionCall, ResponseTurn
 
 
 class Platform:
@@ -104,8 +104,8 @@ async def setup(runtime_dir, denied):
     runtime, store = state.runtime, state.store
     runtime.tasks.responses_client = lambda: scripted_response
     runtime.tasks.edit_delivery = select_candidate
-    state.comments.credentials.update(sessdata=platform._sessdata, csrf=platform._csrf)
-    assert await state.comments.account_id() == platform.uid
+    state.bilibili_account.credentials.update(sessdata=platform._sessdata, csrf=platform._csrf)
+    assert await state.bilibili_account.account_id() == platform.uid
     char = runtime.character
     for i, body in enumerate(["今晚开场分享海底厨房的来信。", "另一份未获授权的草稿。"], 1):
         cid = store.execute("INSERT INTO comments(video_id,comment_id,content) VALUES(?,?,?)",

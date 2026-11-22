@@ -18,8 +18,8 @@ from ..comment_workbench import (
     queue_selection,
     review_queue_selection,
 )
-from ..providers import public_error
-from ..sse import encode_event
+from ..core.sse import encode_event
+from ..infra.inference.providers import public_error
 
 
 def register_operations_api(app, store, account, comments, browsing, dynamics, require_admin):
@@ -37,7 +37,7 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
             row = store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         else:
             row = store.one("SELECT * FROM dynamic_posts WHERE id=?", (identity,))
-        if not row or row["account_id"] != comments.display_account_id():
+        if not row or row["account_id"] != account.display_account_id():
             raise HTTPException(404)
         ref = decision(comments.runtime, channel, row, row_ref(row))
         if not ref or ref.get("artifact_id") != artifact_id:
@@ -47,11 +47,11 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
         return Response(image["content"], media_type=image["mime_type"], headers={"Cache-Control":"private, no-store"})
 
     def can_write_comments():
-        return comments.policy()["credentials_configured"]
+        return account.credentials_configured
 
     def workbench_scope():
         actor = browsing.runtime.character
-        account_id = comments.display_account_id()
+        account_id = account.display_account_id()
         return (account_id, actor["id"], actor["version"]) if account_id else None
 
     @app.get("/api/account/bilibili", dependencies=[Depends(require_admin)])
@@ -97,7 +97,7 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
     @app.get("/api/comments/videos", dependencies=[Depends(require_admin)])
     async def videos():
         try:
-            return await comments.adapter.popular()
+            return await account.adapter.popular()
         except Exception as error:
             raise ValueError(public_error(error)) from None
 
@@ -224,7 +224,7 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
             row = comments._draft_source(draft_id)
             if not row or data.get("updated_at") != row["updated_at"]:
                 raise ValueError("草稿已变化，请刷新正文和提及")
-            mentions, pending = await bind_mentions(comments.adapter, data.get("text", row["text"]), data["mentions"],
+            mentions, pending = await bind_mentions(account.adapter, data.get("text", row["text"]), data["mentions"],
                 [{"uid": row["platform_user_id"], "name": row["display_name"]}])
             options["mention_selection"] = {"mentions": mentions, "pending_mentions": pending}
         return comments.review(draft_id, data.get("action"), data.get("text"), **options)

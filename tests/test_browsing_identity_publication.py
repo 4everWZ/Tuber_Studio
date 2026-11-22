@@ -4,8 +4,8 @@ import pytest
 from test_browsing import browsing as browsing
 from test_browsing import finished
 
-from tuber_studio.operation_identity import identity_snapshot
-from tuber_studio.publication_errors import PlatformRejected
+from tuber_studio.core.errors import PlatformRejected
+from tuber_studio.core.identity import identity_snapshot
 
 
 @pytest.mark.parametrize("rejected", [False, True])

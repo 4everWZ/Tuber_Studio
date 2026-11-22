@@ -5,9 +5,9 @@ import json
 import time
 from collections import Counter, defaultdict
 
-from .context_delivery import DELIVERY_SCOPES, delivered_history, operation_delivery
+from .core.store import dump
 from .operations_control import canonical_intent
-from .store import dump
+from .persona.context.delivery import DELIVERY_SCOPES, delivered_history, operation_delivery
 
 
 def empty_interrupted_rounds(store):
@@ -54,19 +54,6 @@ def prune_empty_interrupted_rounds(store):
             store.db.execute("DELETE FROM browsing_tasks WHERE round_id=?", (identity,))
             store.db.execute("DELETE FROM browsing_rounds WHERE id=?", (identity,))
     return identities
-
-
-def archive_character_version(store, character_id, version, reason):
-    """Hide retired cards from selection; historical provenance stays readable."""
-    store.character(character_id, version)
-    if store.get("active_character") == character_id:
-        active = store.character(character_id)
-        if active["version"] == version:
-            raise ValueError("当前使用中的人设不能归档")
-    store.execute(
-        "INSERT OR IGNORE INTO character_archives VALUES(?,?,?,?)",
-        (character_id, version, reason, time.time()),
-    )
 
 
 def archive_browsing_history(store, *, before=None):

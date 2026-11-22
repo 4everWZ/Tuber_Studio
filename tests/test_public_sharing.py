@@ -4,16 +4,14 @@ from urllib.parse import parse_qs
 
 import httpx
 import pytest
+from test_dynamics import service as service
 
 from tuber_studio import dynamics as dynamics_module
+from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
+from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
+from tuber_studio.infra.platforms.bilibili.dynamics import publish_image, publish_text
 from tuber_studio.operations.browsing.comment_timeline import observe_thread
-from tuber_studio.platforms.bilibili import PublishUncertain
-from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
-from tuber_studio.platforms.bilibili_dynamics import publish_image, publish_text
 from tuber_studio.public_mentions import bind_mentions
-
-from test_dynamics import service
-
 
 TEXT = "🌊 和 @阿蓝 一起看日出，再叫上 @贝贝 。"
 PEOPLE = [{"uid": "71", "name": "阿蓝"}, {"uid": "72", "name": "贝贝"}]
@@ -37,7 +35,7 @@ async def test_mentions_use_platform_fields_and_verify_original(kind, monkeypatc
     async def upload(*args, **kwargs):
         return picture
 
-    monkeypatch.setattr("tuber_studio.platforms.bilibili_dynamics.upload_image", upload)
+    monkeypatch.setattr("tuber_studio.infra.platforms.bilibili.dynamics.upload_image", upload)
 
     def respond(request):
         path = request.url.path
@@ -111,12 +109,13 @@ async def test_same_name_requires_selection_and_new_target_requires_review(servi
 
 
 async def test_shared_update_history_includes_pending_confirmed_and_new_comment(service):
-    from tuber_studio.operations.browsing.repository import BrowsingRepository
     from types import SimpleNamespace
 
+    from tuber_studio.operations.browsing.repository import BrowsingRepository
+
     BrowsingRepository(service.store)
-    service.comments.display_account_id = lambda: "900"
-    service.comments.account_id = fake_account
+    service.account.display_account_id = lambda: "900"
+    service.account.account_id = fake_account
     service.runtime.browsing = SimpleNamespace(account="900", policy=lambda: {}, sends=SimpleNamespace(withdraw=lambda *args: None))
     character = service._character()
     bvid = "BV1d8pU6xEZX"
@@ -153,8 +152,8 @@ async def test_video_with_visual_evidence_can_be_shared_twice(service):
     from tuber_studio.operations.browsing.repository import BrowsingRepository
 
     BrowsingRepository(service.store)
-    service.comments.display_account_id = lambda: "900"
-    service.comments.account_id = fake_account
+    service.account.display_account_id = lambda: "900"
+    service.account.account_id = fake_account
     service.runtime.browsing = SimpleNamespace(
         account="900", policy=lambda: {}, sends=SimpleNamespace(withdraw=lambda *args: None),
     )
@@ -184,11 +183,11 @@ async def test_video_with_visual_evidence_can_be_shared_twice(service):
 async def test_mention_timeout_reconciles_original_once_after_service_restart(service, monkeypatch):
     from types import SimpleNamespace
 
+    from tuber_studio.core.errors import UnknownPublication
     from tuber_studio.dynamics import Dynamics
-    from tuber_studio.publication_errors import UnknownPublication
 
-    service.comments.account_id = fake_account
-    service.comments.display_account_id = lambda: "900"
+    service.account.account_id = fake_account
+    service.account.display_account_id = lambda: "900"
     service.operations.configure({"enabled": True}, account_id="900", character=service._character())
     platform = {"posts": [], "visible": False}
     mentions, _ = await bind_mentions(object(), TEXT, REQUESTS, PEOPLE)
@@ -204,7 +203,7 @@ async def test_mention_timeout_reconciles_original_once_after_service_restart(se
             "status": "not_found"
         }
 
-    service.comments.adapter = SimpleNamespace(reconcile_dynamic_publication=read)
+    service.account.adapter = SimpleNamespace(reconcile_dynamic_publication=read)
     monkeypatch.setattr(dynamics_module, "publish_text", submit)
     post = service._save_decision(service._character(), True, {
         "action": "post", "reason": "约大家一起看日出", "source_ids": [], "content": TEXT,

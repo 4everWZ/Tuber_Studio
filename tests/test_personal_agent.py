@@ -9,7 +9,7 @@ import pytest
 from test_agent_task_recovery import wait_status
 
 from tuber_studio.agent import operator_facts, task_tools, turn_router
-from tuber_studio.agent.operator_chat import ChatIntent, OperatorChat
+from tuber_studio.agent.operator_chat import ChatIntent
 from tuber_studio.agent.owner_memory import history_preference
 from tuber_studio.agent.personal_agent import (
     PublicSearchTerms,
@@ -18,9 +18,9 @@ from tuber_studio.agent.personal_agent import (
 )
 from tuber_studio.agent.task_runtime import TaskDecision, TaskRuntime, Tool
 from tuber_studio.app import create_app
-from tuber_studio.models import StrictModel
-from tuber_studio.store import Store
-from tuber_studio.web_fetch import read_excerpt
+from tuber_studio.core.models import StrictModel
+from tuber_studio.core.store import Store
+from tuber_studio.infra.web_client.fetch import read_excerpt
 
 CHAT = "/api/chat/intelligent"
 

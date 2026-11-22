@@ -5,7 +5,7 @@ import pytest
 from test_browsing import BV, batch_plan_wire, finished, model_packet, wait_for_sends
 from test_browsing import browsing as browsing
 
-from tuber_studio.operation_turns import operation_lane
+from tuber_studio.core.turns import operation_lane
 
 
 async def enable_comment_choices(browsing, monkeypatch, *, automatic=False):
@@ -15,7 +15,7 @@ async def enable_comment_choices(browsing, monkeypatch, *, automatic=False):
         "reply_enabled": True, "reply_auto_publish": automatic,
         "recent_sample_limit": 0, "max_replies_per_video": 0, "recipient_cooldown_seconds": 0,
     })
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.set_enabled(True)
     original = browsing.runtime.operation_llm.generate_json
     mode = {"action": "comments"}

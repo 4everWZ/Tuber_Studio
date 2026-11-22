@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from pydantic import Field, field_validator
 
-from ..models import StrictModel
+from ..core.models import StrictModel
 
 MAX_VOTERS = 5000
 MAX_VOTE_EVENTS = 20000

@@ -2,7 +2,12 @@ import json
 
 import pytest
 
-from tuber_studio.agent.visual_specificity import VisualAlternative, _compared_term, review_visual_specificity, shared_visual_facts
+from tuber_studio.agent.visual_specificity import (
+    VisualAlternative,
+    _compared_term,
+    review_visual_specificity,
+    shared_visual_facts,
+)
 
 
 def with_frame_structure(model):

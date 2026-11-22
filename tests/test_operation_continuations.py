@@ -7,11 +7,11 @@ from contextlib import nullcontext
 
 import pytest
 
+from tuber_studio.core.models import content_hash
 from tuber_studio.operation_continuations import (
     ContinuationCheckpoint,
     ContinuationCoordinator,
     GenerationFeedback,
-    content_hash,
     continuation_messages,
 )
 from tuber_studio.operations_control import OperationsControl

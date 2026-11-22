@@ -9,9 +9,9 @@ import pytest
 from test_browsing import browsing as browsing
 from test_browsing import finished, model_packet
 
-from tuber_studio.api_providers import APIProvider
+from tuber_studio.core.text import operation_character
 from tuber_studio.dynamics import dynamic_decision_messages
-from tuber_studio.operation_text import operation_character
+from tuber_studio.infra.inference.api_providers import APIProvider
 from tuber_studio.operations.browsing.inputs import (
     CLASSIFICATION_INSTRUCTION,
     ContentDecisionInput,
@@ -33,7 +33,7 @@ from tuber_studio.operations.browsing.models import (
     ResponseDecision,
     content_decision_schema,
 )
-from tuber_studio.providers import build_messages
+from tuber_studio.persona.context.message_builder import build_messages
 
 
 def test_prepared_intent_combination_has_specific_field_feedback():
@@ -440,7 +440,7 @@ def test_registered_classification_view_is_opt_in_and_follows_complete_persona_c
 def test_content_view_does_not_replace_full_persona_for_response_generation(browsing, monkeypatch):
     import tuber_studio.operations.browsing.inputs as inputs
     from tuber_studio.operations.browsing.models import ResponseDecision
-    from tuber_studio.providers import SYSTEM_RULES
+    from tuber_studio.persona.context.message_builder import SYSTEM_RULES
 
     character = operation_character(browsing.runtime.character)
     view = {
@@ -515,7 +515,7 @@ def test_chunk_local_aliases_bind_to_different_originals_and_reject_other_chunk_
 async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_real_ids(
     browsing, monkeypatch, use_web_fetch
 ):
-    from tuber_studio import web_fetch
+    from tuber_studio.infra.web_client import fetch as web_fetch
 
     bodies = []
     fetched = []

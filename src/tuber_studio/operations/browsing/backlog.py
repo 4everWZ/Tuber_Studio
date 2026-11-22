@@ -9,7 +9,6 @@ from pathlib import Path
 
 from .comment_reader import PENDING_VISITS
 
-
 VISITS = f"""
 WITH events AS (
     SELECT id,account_id,created_at,timestamp,

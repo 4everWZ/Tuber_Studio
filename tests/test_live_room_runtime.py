@@ -7,11 +7,11 @@ import httpx
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
+from tuber_studio.core.models import Event
 from tuber_studio.live import options
 from tuber_studio.live.avatar import SDK
 from tuber_studio.live.options import LiveOptions, WeatherLocation
 from tuber_studio.live.session import IDLE_AFTER
-from tuber_studio.models import Event
 
 
 class Overlay:

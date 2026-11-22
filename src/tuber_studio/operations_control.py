@@ -8,10 +8,10 @@ from uuid import uuid4
 
 from pydantic import Field
 
-from .models import StrictModel
+from .core.errors import SendLimitReached
+from .core.models import StrictModel
 from .operations.browsing.quotas import BrowsingQuotas
 from .operations_revisions import OperationRevisions
-from .publication_errors import SendLimitReached
 
 
 class OperationsPolicy(StrictModel):

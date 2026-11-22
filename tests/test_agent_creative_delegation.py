@@ -9,7 +9,6 @@ import pytest
 from test_agent_tasks import until
 from test_browsing import BV, ControlledPlatform
 
-from tuber_studio import http_api, web_search
 from tuber_studio.agent import task_tools
 from tuber_studio.agent.task_delivery import (
     CreativeItem,
@@ -19,8 +18,10 @@ from tuber_studio.agent.task_delivery import (
     render_private_delivery,
 )
 from tuber_studio.agent.task_runtime import ToolRequest
-from tuber_studio.api_providers import APIProvider
 from tuber_studio.app import create_app
+from tuber_studio.infra.inference import http_api as http_api
+from tuber_studio.infra.inference.api_providers import APIProvider
+from tuber_studio.infra.web_client import search as web_search
 
 
 def call(name, args, identity):

@@ -5,10 +5,10 @@ import hashlib
 import json
 
 from .comment_capabilities import video_top_level_images
-from .operation_continuations import content_hash
+from .core.models import content_hash
 from .operation_images import image_permissions
 from .operations.browsing.thread_context import COMMENT_ID, VIDEO_ID
-from .workstation_images import gateway_base
+from .persona.assets.workstation_images import gateway_base
 
 PENDING_IMAGE_STATES = ("queued", "deciding", "submitting", "running")
 TEXT_ONLY_IMAGE = {"text_only": True}

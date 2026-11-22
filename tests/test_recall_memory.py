@@ -9,8 +9,8 @@ from test_workshop_lookup import ACCOUNT, SOURCE, seed_workshop
 
 from tuber_studio.agent.recall_memory import NAME, RecallQuery, RecallSession, search
 from tuber_studio.agent.task_delivery import PrivateDelivery, evidence_index
-from tuber_studio.responses_provider import FunctionCall, ResponseTurn
-from tuber_studio.store import dump
+from tuber_studio.core.store import dump
+from tuber_studio.infra.inference.responses_provider import FunctionCall, ResponseTurn
 
 ORIGINAL = "录到了鲸鱼叫声"
 

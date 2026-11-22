@@ -8,10 +8,10 @@ from fractions import Fraction
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from ..platforms.bilibili import PlatformReadError
-from ..platforms.bilibili_frames import FfmpegTiles, MAX_FRAME_BYTES
-from ..platforms.bilibili_stream_frame import _timestamps
-from ..video_vision import VideoPartText, frame_reading_context
+from ..infra.inference.video_vision import VideoPartText, frame_reading_context
+from ..infra.platforms.bilibili.client import PlatformReadError
+from ..infra.platforms.bilibili.frames import MAX_FRAME_BYTES, FfmpegTiles
+from ..infra.platforms.bilibili.stream_frame import _timestamps
 
 
 class ArchiveUnavailable(ValueError):

@@ -7,11 +7,12 @@ import httpx
 import pytest
 
 from tuber_studio.comments import Comments
+from tuber_studio.core.errors import SendLimitReached
+from tuber_studio.core.store import Store
 from tuber_studio.direct_messages import DirectMessages
+from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
+from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
 from tuber_studio.operations_control import OperationsControl, canonical_intent
-from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
-from tuber_studio.publication_errors import SendLimitReached
-from tuber_studio.store import Store
 
 
 @pytest.mark.parametrize(("daily", "window"), [(0, 3600), (1, 86400)])
@@ -241,8 +242,8 @@ def approved_public(comments, store, *, status="approved", source="42"):
 
 
 async def test_legacy_public_and_private_send_paths_share_the_final_quota(settings, store, runtime):
-    comments = Comments(settings, store, runtime, PublicPlatform())
-    comments.credentials = {"sessdata": "fixture", "csrf": "fixture"}
+    comments = Comments(settings, store, runtime, BilibiliAccount(settings, store, PublicPlatform()))
+    comments.account.credentials = {"sessdata": "fixture", "csrf": "fixture"}
     messages = DirectMessages(settings, store, runtime, comments, PrivatePlatform())
     await messages.configure({"enabled": True})
     comments.operations.configure({"max_per_hour": 1})
@@ -263,17 +264,18 @@ async def test_legacy_public_and_private_send_paths_share_the_final_quota(settin
     try:
         with pytest.raises(ValueError, match="全渠道"):
             await messages.send(second)
-        assert len(comments.adapter.sent) == 1 and messages.adapter.sent == []
+        assert len(comments.account.adapter.sent) == 1 and messages.adapter.sent == []
         assert store.one("SELECT COUNT(*) AS n FROM account_writes")["n"] == 1
     finally:
         await messages.close()
         await comments.close()
+        await comments.account.close()
 
 
 async def test_legacy_final_http_check_blocks_emergency_during_platform_preparation(settings, store, runtime):
     requests = []
     adapter = BrowsingAdapter({"sessdata": "fixture", "csrf": "fixture"})
-    comments = Comments(settings, store, runtime, adapter)
+    comments = Comments(settings, store, runtime, BilibiliAccount(settings, store, adapter))
     control = runtime.operations
 
     def handler(request):
@@ -287,7 +289,7 @@ async def test_legacy_final_http_check_blocks_emergency_during_platform_preparat
     adapter.client = httpx.AsyncClient(
         base_url="https://api.bilibili.com", transport=httpx.MockTransport(handler)
     )
-    comments.credentials = {"sessdata": "fixture", "csrf": "fixture"}
+    comments.account.credentials = {"sessdata": "fixture", "csrf": "fixture"}
     store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     identity = approved_public(comments, store, status="pending_review")
     try:
@@ -297,3 +299,4 @@ async def test_legacy_final_http_check_blocks_emergency_during_platform_preparat
         assert not store.all("SELECT * FROM account_writes")
     finally:
         await comments.close()
+        await comments.account.close()

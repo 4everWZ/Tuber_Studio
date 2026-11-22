@@ -8,7 +8,7 @@ from test_browsing import browsing as browsing
 from test_browsing_evidence import PNG
 from test_browsing_visual_followup import install_visual
 
-from tuber_studio.generation_meter import BrowsingBudgetDeferred
+from tuber_studio.core.meter import BrowsingBudgetDeferred
 from tuber_studio.operations.browsing.comment_reader import comment_cursor_key
 
 

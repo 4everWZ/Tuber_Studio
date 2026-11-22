@@ -10,10 +10,20 @@ from dataclasses import dataclass
 import httpx
 from pydantic import Field, StrictInt
 
+from .core.errors import PlatformRejected, SendLimitReached, UnknownPublication
+from .core.identity import runtime_identity
+from .core.meter import GenerationMeter, budgeted_json
+from .core.models import OperationReply, ReflectionDirection, StrictModel, content_hash
+from .core.text import operation_output_diagnostics, validate_operation_text
+from .core.turns import operation_ready_at
 from .dynamic_materials import REFLECTION_INSTRUCTION, REFLECTIONS, ensure_reflections
-from .generation_meter import GenerationMeter, budgeted_json
-from .illustration_policy import illustration_policy
-from .meme_selection import select_meme
+from .infra.inference.providers import public_error
+from .infra.platforms.bilibili.client import PublishUncertain
+from .infra.platforms.bilibili.messages import (
+    BilibiliMessagesAdapter,
+    MessagePreparationCancelled,
+    message_sequence,
+)
 from .message_outreach import (
     assess_outreach,
     confirmed_invitation,
@@ -22,7 +32,6 @@ from .message_outreach import (
     invitation_key,
     verified_agreement,
 )
-from .models import OperationReply, ReflectionDirection, StrictModel
 from .operation_attachments import (
     TEXT_ONLY_IMAGE,
     checked_image,
@@ -38,7 +47,7 @@ from .operation_attachments import (
     workstation_image_decisions,
 )
 from .operation_attachments import decision as image_decision
-from .operation_continuations import GenerationFeedback, content_hash
+from .operation_continuations import GenerationFeedback
 from .operation_feedback import (
     FeedbackPublication,
     PublicationContext,
@@ -48,18 +57,9 @@ from .operation_feedback import (
     publication_binding,
 )
 from .operation_generation import generate_with_recovery, generation_requires_review, reply_generation_binding
-from .operation_identity import runtime_identity
-from .operation_text import operation_output_diagnostics, validate_operation_text
-from .operation_turns import operation_ready_at
 from .operations_control import canonical_intent
-from .platforms.bilibili import PublishUncertain
-from .platforms.bilibili_messages import (
-    BilibiliMessagesAdapter,
-    MessagePreparationCancelled,
-    message_sequence,
-)
-from .providers import public_error
-from .publication_errors import PlatformRejected, SendLimitReached, UnknownPublication
+from .persona.assets.illustration_policy import illustration_policy
+from .persona.assets.meme_selection import select_meme
 
 
 class MessagePolicy(StrictModel):
@@ -115,8 +115,9 @@ class ConversationWindow:
 
 
 class DirectMessages:
-    def __init__(self, settings, store, runtime, comments, adapter=None, *, memes=None):
+    def __init__(self, settings, store, runtime, comments, adapter=None, *, account=None, memes=None):
         self.settings, self.store, self.runtime, self.comments = settings, store, runtime, comments
+        self.account = account or comments.account
         ensure_reflections(store)
         self.adapter, self.injected = adapter, adapter is not None
         self.memes = memes
@@ -230,7 +231,7 @@ class DirectMessages:
             "automation_override": self.operations.policy()["enabled"],
             "emergency": self.operations.policy()["emergency"],
             "credentials_configured": bool(
-                self.comments.credentials.get("sessdata") and self.comments.credentials.get("csrf")
+                self.account.credentials.get("sessdata") and self.account.credentials.get("csrf")
             ),
             "last_error": self.error,
             "last_sync": self.last_sync,
@@ -254,7 +255,7 @@ class DirectMessages:
     async def _adapter(self):
         if self.injected:
             return self.adapter
-        credentials = self.comments.credentials
+        credentials = self.account.credentials
         signature = (credentials.get("sessdata"), credentials.get("csrf"))
         if signature != self.credential_signature or self.adapter is None:
             if self.adapter:
@@ -314,13 +315,13 @@ class DirectMessages:
         if automatic and not self.policy()["auto_poll"]:
             raise ValueError("自动读取私信已停止")
         async with self.sync_lock:
-            credential = dict(self.comments.credentials)
+            credential = dict(self.account.credentials)
             adapter = await self._adapter()
 
             def require_current_account():
                 if not self.injected and (
                     self.adapter is not adapter
-                    or self.comments.credentials != credential
+                    or self.account.credentials != credential
                     or self.credential_signature != (credential.get("sessdata"), credential.get("csrf"))
                 ):
                     raise ValueError("读取期间账号已变更，未导入旧账号私信")
@@ -469,7 +470,7 @@ class DirectMessages:
         if self.runtime.character["id"] != draft["character_id"]:
             raise ValueError("当前OC已变化，请切回原会话角色")
         async with self.sync_lock:
-            credential = dict(self.comments.credentials)
+            credential = dict(self.account.credentials)
             adapter = await self._adapter()
             account = str(await adapter.self_uid())
             self._require_unchanged_draft(draft)
@@ -477,7 +478,7 @@ class DirectMessages:
                 raise ValueError("当前账号与私信会话不一致")
             def guard():
                 self._require_unchanged_draft(draft)
-                if self.adapter is not adapter or credential != self.comments.credentials:
+                if self.adapter is not adapter or credential != self.account.credentials:
                     raise ValueError("读取期间账号已变化，未混入私密上下文")
 
             _, complete = await self._sync_history(adapter, draft["platform_user_id"], account, draft["display_name"],
@@ -1275,7 +1276,7 @@ class DirectMessages:
         authorization_epoch = self.authorizations.pop(identity, None)
         origin = self._origin_round(draft, active=True)
         character = self.store.character(draft["character_id"], draft["character_version"])
-        credential = dict(self.comments.credentials)
+        credential = dict(self.account.credentials)
         identity_adapter = None
         actor_snapshot = (
             await self.runtime.refresh_identity(character, draft["account_id"])
@@ -1286,7 +1287,7 @@ class DirectMessages:
             actor = str(actor_snapshot.get("account_uid") or "") if actor_snapshot else str(await identity_adapter.self_uid())
             if (
                 self.adapter is not identity_adapter
-                or self.comments.credentials != credential
+                or self.account.credentials != credential
                 or self.credential_signature != (credential.get("sessdata"), credential.get("csrf"))
             ):
                 raise ValueError("核验期间账号已变更，未读取旧账号私密上下文")
@@ -1338,7 +1339,7 @@ class DirectMessages:
             if draft.get("resume_pending") and not self._processing_authorized():
                 return
             if not self.injected and (
-                self.adapter is not identity_adapter or self.comments.credentials != credential
+                self.adapter is not identity_adapter or self.account.credentials != credential
             ):
                 raise ValueError("等待模型期间账号已变更，未读取旧账号私密上下文")
             self.store.execute(
@@ -1653,7 +1654,7 @@ class DirectMessages:
             else str(await adapter.self_uid())
         )
         binding = self._publication_binding(row, source, account, character)
-        credential = dict(self.comments.credentials)
+        credential = dict(self.account.credentials)
 
         def guard():
             if self.closed:
@@ -1681,7 +1682,7 @@ class DirectMessages:
             if (
                 self._publication_binding(fresh, current, account, character) != binding
                 or self.adapter is not adapter
-                or self.comments.credentials != credential
+                or self.account.credentials != credential
             ):
                 raise ValueError("恢复期间私信账号、收件人或原始来源已变化")
             policy = self.policy()
@@ -1837,7 +1838,7 @@ class DirectMessages:
             target = row["binding"]["target"] | {"message_kind": payload.get("message_kind", "text")}
             if guard:
                 guard(row, attempt)
-            credential = dict(self.comments.credentials)
+            credential = dict(self.account.credentials)
             async def verify(kind, receipt):
                 return await adapter.reconcile_publication(
                     target | {"message_kind": kind}, author_uid=row["binding"]["account_id"],
@@ -1864,7 +1865,7 @@ class DirectMessages:
             else:
                 result = await verify(target["message_kind"], attempt["receipt"])
             if guard:
-                if self.adapter is not adapter or self.comments.credentials != credential:
+                if self.adapter is not adapter or self.account.credentials != credential:
                     raise ValueError("核对期间私信账号连接已变化")
                 guard(row, attempt)
             return result
@@ -2111,7 +2112,7 @@ class DirectMessages:
                     raise ValueError("当前平台未提供图片私信接口，保留草稿")
             previous, now = row["status"], time.time()
             token = None
-            credential = dict(self.comments.credentials)
+            credential = dict(self.account.credentials)
             if submission:
                 submission.check()
             attempt = self.store.execute(
@@ -2167,8 +2168,8 @@ class DirectMessages:
                     if automatic and row["source_kind"] == "comment" and browsing:
                         browsing.assert_comment_evidence(self._event(row, character))
                     if not self.injected and self.credential_signature != (
-                        self.comments.credentials.get("sessdata"),
-                        self.comments.credentials.get("csrf"),
+                        self.account.credentials.get("sessdata"),
+                        self.account.credentials.get("csrf"),
                     ):
                         return False
                     if (
@@ -2177,7 +2178,7 @@ class DirectMessages:
                             and (not automatic or policy["auto_send"])
                             and (row["source_kind"] != "comment" or policy["allow_comment_handoff"])
                         )
-                        or self.comments.credentials != credential
+                        or self.account.credentials != credential
                     ):
                         return False
                     fresh = self._source(row["source_kind"], row["source_id"], character)
@@ -2494,9 +2495,9 @@ class DirectMessages:
         }
 
     def display_account_id(self):
-        if self.active_credential == self.comments.credentials:
+        if self.active_credential == self.account.credentials:
             return self.active_account_id
-        return self.comments.display_account_id()
+        return self.account.display_account_id()
 
     async def open(self):
         self.closed = False
@@ -2535,9 +2536,9 @@ class DirectMessages:
         account_id = self.display_account_id()
         if not account_id:
             adapter = await self._adapter()
-            credential = dict(self.comments.credentials)
+            credential = dict(self.account.credentials)
             account_id, _ = await adapter.sessions()
-            if self.adapter is not adapter or self.comments.credentials != credential:
+            if self.adapter is not adapter or self.account.credentials != credential:
                 return
             self.active_account_id, self.active_credential = str(account_id), credential
         if self.closed or not self._processing_authorized() or not self.operations.accepting_work:

@@ -9,9 +9,9 @@ import uvicorn
 from uvicorn.config import LOGGING_CONFIG
 
 from tuber_studio.app import create_app
-from tuber_studio.config import Settings, validate_api_key
-from tuber_studio.deployment_profiles import omni_base
-from tuber_studio.runtime_authority import acquire_business_writer, read_business_authority
+from tuber_studio.core.authority import acquire_business_writer, read_business_authority
+from tuber_studio.core.config import Settings, omni_base
+from tuber_studio.core.validation import validate_api_key
 
 
 def deployed_base():

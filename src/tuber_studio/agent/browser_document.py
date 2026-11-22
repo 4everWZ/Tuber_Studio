@@ -7,7 +7,7 @@ from urllib.parse import urldefrag
 
 import httpx
 
-from ..web_fetch import MAX_URL, public_https_address, public_ip
+from ..infra.web_client.fetch import MAX_URL, public_https_address, public_ip
 
 MAX_DOCUMENT = 256 * 1024
 MAX_SOURCES = 6

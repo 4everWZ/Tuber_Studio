@@ -1,10 +1,10 @@
 import pytest
 
+from tuber_studio.core.models import Event
 from tuber_studio.live.interactive_rules import (
     InteractiveRulesService,
     default_rules,
 )
-from tuber_studio.models import Event
 
 
 @pytest.fixture

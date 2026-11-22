@@ -4,8 +4,8 @@ import asyncio
 import json
 from uuid import uuid4
 
-from ...generation_meter import BrowsingBudgetDeferred
-from ...providers import public_error
+from ...core.meter import BrowsingBudgetDeferred
+from ...infra.inference.providers import public_error
 from .evidence import EvidenceUnavailable
 from .round_context import agent_depth, read_round
 

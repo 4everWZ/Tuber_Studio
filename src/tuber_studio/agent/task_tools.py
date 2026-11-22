@@ -14,20 +14,24 @@ from typing import Literal
 import httpx
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 
-from ..api_providers import APIProvider
-from ..compaction import ContextWindowExceeded
-from ..front_persona import character_names, persona_instructions
-from ..generation_meter import budgeted_call
-from ..http_api import InferenceQueueBusy, response_json
+from ..core.errors import ContextWindowExceeded
+from ..core.identity import (
+    operating_account_facts,
+    private_participant_instructions,
+    visual_editor_context,
+)
+from ..core.meter import budgeted_call
+from ..core.models import StrictModel
+from ..core.store import dump
+from ..infra.inference.api_providers import APIProvider
+from ..infra.inference.http_api import InferenceQueueBusy, response_json
+from ..infra.inference.responses_provider import ResponsesClient
+from ..infra.platforms.bilibili.client import PlatformReadError
+from ..infra.platforms.bilibili.frames import FfmpegTiles
+from ..infra.web_client.fetch import WebFetchRequest, fetch_excerpt, programme_credit_text, source_url
+from ..infra.web_client.search import search_broadcast_programmes, search_public_web
 from ..live.game_livestream import PvZAdapter, StardewValleyAdapter
-from ..models import StrictModel
-from ..operation_identity import operating_account_facts, private_participant_instructions, visual_editor_context
-from ..platforms.bilibili import PlatformReadError
-from ..platforms.bilibili_frames import FfmpegTiles
-from ..responses_provider import ResponsesClient
-from ..store import dump
-from ..web_fetch import WebFetchRequest, fetch_excerpt, programme_credit_text, source_url
-from ..web_search import search_broadcast_programmes, search_public_web
+from ..persona.characters.front_persona import character_names, persona_instructions
 from . import operator_facts, recall_memory, workshop_lookup
 from .archived_video import MountedArchive
 from .clip_refinement import positive_subwindows, subwindow_brief

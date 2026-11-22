@@ -4,11 +4,11 @@ from typing import Annotated
 
 from pydantic import Field, StringConstraints
 
-from ..models import StrictModel
-from ..cooperation import applicable_chat_memory
-from ..operation_continuations import content_hash
-from .owner_memory_use import MemoryUse as MemoryUse, check_use as check_use, read_stamp as read_stamp
-
+from ..core.models import StrictModel, content_hash
+from ..persona.memory.cooperation import applicable_chat_memory
+from .owner_memory_use import MemoryUse as MemoryUse
+from .owner_memory_use import check_use as check_use
+from .owner_memory_use import read_stamp as read_stamp
 
 QueryText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 OwnerNote = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=150)]

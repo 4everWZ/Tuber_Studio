@@ -123,7 +123,7 @@ def test_external_token_replacement_is_observed_without_restart(client, settings
 
 
 def test_cookie_is_secure_on_https_and_rolls_only_when_due(settings):
-    from tuber_studio.auth_sessions import COOKIE_REFRESH_SECONDS
+    from tuber_studio.core.auth import COOKIE_REFRESH_SECONDS
 
     app = create_app(settings, ReadOnlyPlatform())
     with TestClient(app, base_url="https://testserver") as client:

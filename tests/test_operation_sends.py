@@ -9,8 +9,8 @@ from test_browsing import browsing as browsing
 from test_direct_messages import Delivery, incoming
 
 from tuber_studio import operation_attachments, operation_images
+from tuber_studio.core.errors import PublishUncertain
 from tuber_studio.operations.browsing.quotas import day_window
-from tuber_studio.publication_errors import PublishUncertain
 
 
 def arrival(browsing):
@@ -155,7 +155,7 @@ async def test_replies_wait_for_every_exhausted_window(browsing, monkeypatch, ho
 
 
 async def test_comment_slots_do_not_reserve_private_message_or_dynamic_capacity(browsing, monkeypatch):
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({"max_per_hour": 1, "max_per_day": 0, "recipient_cooldown_seconds": 0,
                               "top_level_auto_publish": True})
     await browsing.messages.configure({"enabled": True, "auto_send": True})

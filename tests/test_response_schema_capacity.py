@@ -1,11 +1,11 @@
 """Long transcript source sets retain compact references through tool selection."""
 
 import pytest
-from schema_contract import validate_schema_complexity
 
+from tests.support.http_isolation import validate_schema_complexity
+from tuber_studio.infra.web_client.fetch import MAX_URL, OperationWebFetch
 from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
 from tuber_studio.operations.browsing.models import response_schema
-from tuber_studio.web_fetch import MAX_URL, OperationWebFetch
 
 
 def test_new_private_decisions_offer_invited_contact_only_while_old_audits_remain_readable():

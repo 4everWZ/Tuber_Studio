@@ -1,8 +1,8 @@
 import json
 
 import pytest
-
 from test_visual_specificity import with_frame_structure
+
 from tuber_studio.agent.task_delivery import DelegationError
 from tuber_studio.agent.visual_specificity import review_visual_specificity, shared_visual_facts
 

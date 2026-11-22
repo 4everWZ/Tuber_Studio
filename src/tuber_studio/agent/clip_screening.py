@@ -5,9 +5,9 @@ from typing import Literal
 
 from pydantic import Field
 
-from ..compaction import ContextWindowExceeded
-from ..http_api import InferenceBudgetExceeded
-from ..models import StrictModel
+from ..core.errors import ContextWindowExceeded
+from ..core.models import StrictModel
+from ..infra.inference.http_api import InferenceBudgetExceeded
 from .task_delivery import DelegationError
 
 

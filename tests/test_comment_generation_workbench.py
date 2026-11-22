@@ -10,7 +10,7 @@ from test_comments import comments as comments
 
 from tuber_studio.app import create_app
 from tuber_studio.comment_workbench import list_queue
-from tuber_studio.platforms.bilibili import PublishUncertain
+from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
 
 
 async def test_current_generation_filters_out_old_selected_drafts_and_prioritizes_its_results(
@@ -51,7 +51,7 @@ async def test_current_generation_filters_out_old_selected_drafts_and_prioritize
     assert comments.list_comments("import-current")[0]["draft"] is not None
     assert comments.list_comments("import-current")[-1]["comment_id"] == "untouched"
     assert store.one("SELECT text FROM drafts WHERE id=?", (old["id"],))["text"] == old["text"]
-    assert not comments.adapter.sent
+    assert not comments.account.adapter.sent
 
 
 async def test_processing_tasks_are_scoped_to_selected_video_and_comment_ids(comments, store):
@@ -135,7 +135,7 @@ def test_batch_publish_orders_one_floor_and_keeps_partial_outcomes_and_original_
     app = create_app(settings, platform)
     with TestClient(app) as client:
         client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        app.state.comments.credentials = {"sessdata": "test", "csrf": "test"}
+        app.state.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
         store = app.state.store
         for parent in ("103", "102", "101"):
             app.state.comments.import_items("BV1d8pU6xEZX", [{

@@ -11,10 +11,10 @@ import pytest
 from PIL import Image
 
 from tuber_studio import operation_images as ops
-from tuber_studio.artwork_references import Reference
-from tuber_studio.memes import MemeCatalog
 from tuber_studio.operation_attachments import decision, image_scope
-from tuber_studio.workstation_images import ImageBrief, image_payload
+from tuber_studio.persona.assets.memes import MemeCatalog
+from tuber_studio.persona.assets.workstation_images import ImageBrief, image_payload
+from tuber_studio.persona.characters.references import Reference
 
 
 @pytest.mark.parametrize(("character_id", "variant", "whale_anatomy"), [
@@ -272,7 +272,7 @@ async def test_gallery_and_generated_scene_share_scoped_choice(fixture, store, m
 
 
 def test_shared_sources_migrate_without_expanding_permissions(store):
-    from tuber_studio.illustration_policy import KEY, migrate_illustration_policy
+    from tuber_studio.persona.assets.illustration_policy import KEY, migrate_illustration_policy
 
     store.execute("DELETE FROM kv WHERE key=?", (KEY,))
     channels = ("browsing_policy", "message_policy", "dynamic_policy")
@@ -299,7 +299,7 @@ async def test_restart_with_remote_receipt_only_reads_existing_job(fixture, stor
 
 
 async def test_gateway_rejection_retries_only_explicit_full_queue(monkeypatch):
-    from tuber_studio import workstation_images
+    from tuber_studio.persona.assets import workstation_images as workstation_images
     delays = []
 
     async def wait(delay):

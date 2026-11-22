@@ -6,26 +6,26 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from .compaction import ContextWindowExceeded
-from .generation_meter import GenerationBudgetExceeded, budgeted_call, budgeted_json
-from .operation_continuations import (
-    ContinuationCoordinator,
-    GenerationFeedback,
-    content_hash,
-    continuation_context,
-    continuation_messages,
-    continuation_schema,
-)
-from .operation_identity import identity_messages, runtime_identity
-from .operation_text import (
+from .core.errors import ContextWindowExceeded, PlatformRejected, UnknownPublication
+from .core.identity import identity_messages, runtime_identity
+from .core.meter import GenerationBudgetExceeded, budgeted_call, budgeted_json
+from .core.models import content_hash
+from .core.store import dump
+from .core.text import (
     operation_character,
     operation_output_diagnostics,
     validate_comment_body,
     validate_operation_text,
 )
-from .providers import SYSTEM_RULES, public_error
-from .publication_errors import PlatformRejected, UnknownPublication
-from .store import dump
+from .infra.inference.providers import public_error
+from .operation_continuations import (
+    ContinuationCoordinator,
+    GenerationFeedback,
+    continuation_context,
+    continuation_messages,
+    continuation_schema,
+)
+from .persona.context.message_builder import SYSTEM_RULES
 
 
 def publication_binding(channel, account_id, character, intent, target, source):

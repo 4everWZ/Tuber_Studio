@@ -3,7 +3,7 @@
 import json
 from uuid import uuid4
 
-from ..store import dump
+from ..core.store import dump
 
 
 class TaskIdentity:

@@ -33,9 +33,9 @@ from pathlib import Path
 
 import psutil
 
-from tuber_studio.config import ROOT, Settings
+from tuber_studio.core.config import ROOT, Settings
+from tuber_studio.core.store import Store
 from tuber_studio.runtime import Runtime
-from tuber_studio.store import Store
 
 HERE = None
 REPEATS = 25

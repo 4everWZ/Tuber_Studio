@@ -6,8 +6,8 @@ from uuid import uuid4
 import pytest
 
 from tuber_studio.agent.task_runtime import TaskDecision, TaskRuntime, Tool
-from tuber_studio.models import StrictModel
-from tuber_studio.store import Store
+from tuber_studio.core.models import StrictModel
+from tuber_studio.core.store import Store
 
 
 async def read_terminal(tasks, identity, wanted=None):

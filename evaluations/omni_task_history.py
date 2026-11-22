@@ -20,8 +20,8 @@ import httpx
 from evaluations.omni_chat_loop import ROOT, ReplayMismatch, connection
 from tuber_studio.agent.operator_chat import OperatorChat
 from tuber_studio.app import create_app
-from tuber_studio.config import Settings
-from tuber_studio.runtime_authority import acquire_business_writer
+from tuber_studio.core.authority import acquire_business_writer
+from tuber_studio.core.config import Settings
 
 CHAT = "/api/chat/intelligent"
 PREF = "/api/daily-memory/preferences"

@@ -6,24 +6,23 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 from uuid import uuid4
 
 import httpx
 import pytest
 from test_browsing import BV, ControlledPlatform
 
-from tuber_studio.agent import chat_models, private_call_work, turn_router, workshop_lookup
+from tuber_studio.agent import private_call_work, turn_router, workshop_lookup
 from tuber_studio.agent.chat_models import DeliveryPacket
 from tuber_studio.agent.front_dialogue import paraphrase_task_delivery
 from tuber_studio.agent.personal_agent import object_scope
 from tuber_studio.agent.task_delegation import function
 from tuber_studio.app import create_app
-from tuber_studio.config import ROOT
-from tuber_studio.http_api import InferenceBudgetExceeded
-from tuber_studio.operation_identity import runtime_identity
-from tuber_studio.responses_provider import FunctionCall, ResponseTurn, ResponsesClient
-from tuber_studio.store import dump
+from tuber_studio.core.config import ROOT
+from tuber_studio.core.identity import runtime_identity
+from tuber_studio.core.store import dump
+from tuber_studio.infra.inference.http_api import InferenceBudgetExceeded
+from tuber_studio.infra.inference.responses_provider import FunctionCall, ResponsesClient, ResponseTurn
 
 CHAT = "/api/chat/intelligent"
 AGENT_DIR = ROOT / "src/tuber_studio/agent"
@@ -545,9 +544,9 @@ async def test_inference_budget_exceeded_logs_sanitized_warning_and_keeps_error_
             "output": [],
         }
 
-    monkeypatch.setattr("tuber_studio.responses_provider.response_json", transport)
+    monkeypatch.setattr("tuber_studio.infra.inference.responses_provider.response_json", transport)
     async with ResponsesClient({"base_url": "https://api.example/llm/v1", "model": "worker"}) as client:
-        with caplog.at_level(logging.WARNING, logger="tuber_studio.responses_provider"):
+        with caplog.at_level(logging.WARNING, logger="tuber_studio.infra.inference.responses_provider"):
             with pytest.raises(InferenceBudgetExceeded, match="1300 token"):
                 await client.create("SECRET_PROMPT_XYZ", tools=[tool], max_output_tokens=1300)
     assert "max_output_tokens=1300" in caplog.text
@@ -558,6 +557,7 @@ async def test_inference_budget_exceeded_logs_sanitized_warning_and_keeps_error_
 
 async def test_route_tools_schema_normalization_and_intent_guards(settings):
     from types import SimpleNamespace
+
     from tuber_studio.agent import recall_memory
     from tuber_studio.agent.chat_context import ChatContext
     from tuber_studio.agent.personal_agent import ConversationObject

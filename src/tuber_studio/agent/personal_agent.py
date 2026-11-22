@@ -9,8 +9,7 @@ from typing import Literal
 import httpx
 from pydantic import Field
 
-from ..models import StrictModel
-from ..operation_continuations import content_hash
+from ..core.models import StrictModel, content_hash
 from . import operator_facts
 from .goal_comment_events import CommentWatch
 from .goal_events import EventGrant

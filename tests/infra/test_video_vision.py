@@ -1,0 +1,965 @@
+import asyncio
+import base64
+import copy
+import json
+import time
+
+import httpx
+import pytest
+
+from tuber_studio.infra.inference.video_vision import (
+    ApiVideoEvidenceProvider,
+    VideoVisionAdmissionRequired,
+    VideoVisionConfig,
+    VideoVisionTimeout,
+)
+from tuber_studio.live.scene import LiveScene
+from tuber_studio.operations.browsing.models import BrowsingPolicy
+
+PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
+)
+META = {"parts": [{"cid": "34", "duration": 40}]}
+FRAMES = [
+    {
+        "id": "first",
+        "cid": "34",
+        "actual_time": 10,
+        "requested_time": 15,
+        "kind": "storyboard",
+        "image": PNG,
+        "width": 1,
+        "height": 1,
+        "mime_type": "image/png",
+    },
+    {
+        "id": "second",
+        "cid": "34",
+        "actual_time": 30,
+        "requested_time": 25,
+        "kind": "storyboard",
+        "image": PNG,
+        "width": 1,
+        "height": 1,
+        "mime_type": "image/png",
+    },
+]
+CONFIG = {
+    "model": "actual-vlm",
+    "base_url": "http://127.0.0.1:18080/v1",
+    "model_revision": "weights-sha",
+    "runtime_revision": "runtime-sha",
+    "max_frames": 2,
+}
+
+
+@pytest.fixture
+async def omni_provider(runtime):
+    checkpoint = "f" * 40
+    value = ApiVideoEvidenceProvider(runtime, {
+        "model": "omni-default", "model_revision": checkpoint,
+        "base_url": "https://vision.example/v1",
+    }, api_key="scoped-service-key")
+    await value.api.client.aclose()
+    health = {
+        "state": "ready", "alias": "omni-default", "model": "MiniCPM-o-4_5", "configured_model": "MiniCPM-o-4_5",
+        "checkpoint": checkpoint, "checkpoint_source": "deployment", "checkpoint_root_verified": True,
+        "engine_version": "vLLM-Omni 0.32.0", "engine_version_source": "deployment",
+    }
+    registry = {"data": [{"id": "omni-default", "max_model_len": 40960}]}
+    requests = []
+
+    async def handle(request):
+        assert request.headers["authorization"] == "Bearer scoped-service-key"
+        if request.url.path == "/healthz":
+            return httpx.Response(200 if health["state"] == "ready" else 503, json=health)
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json=registry)
+        assert request.url.path == "/v1/chat/completions"
+        payload = json.loads(request.content)
+        requests.append(payload)
+        schema = payload.get("response_format", {}).get("json_schema", {}).get("schema")
+        if payload["max_tokens"] == 1:
+            content, finish = None, "length"
+        elif schema and "captions" in schema.get("properties", {}):
+            content, finish = json.dumps({"captions": ["深红轮廓"]}), "stop"
+        elif schema and "caption" in schema.get("properties", {}):
+            content, finish = json.dumps({"caption": "一张红色轮廓的图"}), "stop"
+        elif schema:
+            content, finish = json.dumps({
+                "sufficient": True, "used_frames": [1], "summary": "红色轮廓", "limitations": [],
+            }), "stop"
+        else:
+            content, finish = "一张红色轮廓的图", "stop"
+        return httpx.Response(200, json={
+            "choices": [{"finish_reason": finish, "message": {"content": content}}],
+            "usage": {"prompt_tokens": 38900, "completion_tokens": 1 if finish == "length" else 20},
+        })
+
+    value.api.client = httpx.AsyncClient(
+        base_url="https://vision.example/v1", headers={"Authorization": "Bearer scoped-service-key"},
+        transport=httpx.MockTransport(handle),
+    )
+    yield value, health, registry, requests
+    await value.close()
+
+
+async def test_omni_video_uses_real_frame_transport_and_verified_identity(omni_provider):
+    value, health, _, requests = omni_provider
+    assert not value.capabilities()["available"]
+    assert value.capabilities()["context_tokens"] is None
+    assert value.identity()["context_source"] == "model_card"
+    assert "context_tokens" not in value.identity()
+    assert "context_tokens" not in value.api.config
+    result = await value.analyze_video_evidence({"id": "video-1"}, META, FRAMES[:1], "描写图象", deadline=time.time() + 10)
+    assert result["frame_observations"] == {"first": "一张红色轮廓的图"}
+    assert result["provenance"]["checkpoint"] == health["checkpoint"]
+    assert result["provenance"]["model"] == health["model"]
+    assert result["provenance"]["engine_version_source"] == "deployment"
+    assert result["provenance"]["max_model_len"] == 40960
+    assert value.capabilities()["available"]
+    assert value.capabilities()["provenance"] == result["provenance"]
+    assert value.capabilities()["context_tokens"] == 40960
+    assert value.capabilities()["runtime_context_tokens"] == 40960
+    assert not value.capabilities()["admitted"]
+    assert any("data:image/png;base64," in json.dumps(request) for request in requests)
+    assert requests[-1]["response_format"]["type"] == "json_schema"
+    assert "uniqueItems" not in json.dumps(requests[-1]["response_format"])
+    assert all("thinking_budget_tokens" not in request and "reasoning_format" not in request for request in requests)
+
+
+@pytest.mark.parametrize("mismatch", ["checkpoint", "window"])
+async def test_omni_video_refuses_unverified_identity_before_generation(omni_provider, mismatch):
+    value, health, registry, requests = omni_provider
+    if mismatch == "window":
+        registry["data"][0]["max_model_len"] = True
+    else:
+        health[mismatch] = None
+    with pytest.raises(VideoVisionAdmissionRequired):
+        await value.analyze_video_evidence({"id": "video-1"}, META, FRAMES[:1], "画面", deadline=time.time() + 10)
+    assert not requests
+    assert not value.capabilities()["available"]
+    assert value.capabilities()["provenance"] is None
+
+
+async def test_omni_video_cannot_continue_when_verified_model_card_window_changes(omni_provider, monkeypatch):
+    value, _, registry, requests = omni_provider
+    runtime_properties = value._runtime_properties
+
+    async def changed_properties():
+        if requests:
+            registry["data"][0]["max_model_len"] = 32768
+        return await runtime_properties()
+
+    monkeypatch.setattr(value, "_runtime_properties", changed_properties)
+    with pytest.raises(VideoVisionAdmissionRequired, match="实际模型、窗口或配置"):
+        await value.analyze_video_evidence({"id": "video-1"}, META, FRAMES[:1], "画面", deadline=time.time() + 10)
+    assert len(requests) == 2
+    assert not value.capabilities()["available"]
+
+
+async def test_unpinned_omni_observes_frames_without_deployment_health(omni_provider):
+    value, health, _, requests = omni_provider
+    value.config.model_revision = ""
+    health.clear()
+    result = await value.analyze_video_evidence({"id": "video-1"}, META, FRAMES[:1], "画面", deadline=time.time() + 10)
+    assert requests and result["frame_observations"] == {"first": "一张红色轮廓的图"}
+    assert result["provenance"] == {"alias": "omni-default", "max_model_len": 40960}
+
+
+async def test_omni_visual_failure_is_reported_as_missing_evidence(omni_provider):
+    value, health, _, requests = omni_provider
+    health["state"] = "unavailable"
+    with pytest.raises(VideoVisionAdmissionRequired, match="上游HTTP 503"):
+        await value.analyze_video_evidence({"id": "video-1"}, META, FRAMES[:1], "画面", deadline=time.time() + 10)
+    assert not requests
+
+
+async def test_background_vision_limits_thinking_and_distinguishes_request_timeout(runtime):
+    config = CONFIG | {"model_revision": "", "runtime_revision": "", "enable_thinking": True}
+    value = ApiVideoEvidenceProvider(runtime, config, background=True)
+    await value.api.client.aclose()
+    routes = []
+    stalled = False
+
+    def handle(request):
+        name = request.url.path.rsplit("/", 1)[-1]
+        if name == "models":
+            return httpx.Response(200, json={"data": [{"id": CONFIG["model"], "max_model_len": 262144}]})
+        body = json.loads(request.content)
+        if name == "prompt_tokens":
+            return httpx.Response(200, json={"count": 100})
+        routes.append(name)
+        assert body["chat_template_kwargs"]["enable_thinking"] is True
+        assert body["thinking_token_budget"] == 128
+        assert body.get("max_output_tokens", body.get("max_tokens")) == 2048
+        if stalled:
+            raise httpx.ReadTimeout("upstream wait", request=request)
+        if name == "responses":
+            return httpx.Response(200, json={"id": "frame", "status": "completed",
+                "output": [{"type": "message", "content": [{"type": "output_text", "text": '{"caption":"红色轮廓"}'}]}],
+                "usage": {"input_tokens": 100, "output_tokens": 20}})
+        assessment = {"sufficient": True, "used_frames": [1], "summary": "红色轮廓", "limitations": []}
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(assessment)}}],
+                                         "usage": {"prompt_tokens": 100, "completion_tokens": 20}})
+
+    value.api.client = httpx.AsyncClient(base_url="https://vision.example/llm/v1", transport=httpx.MockTransport(handle))
+    try:
+        result = await value.analyze_video_evidence({}, META, FRAMES[:1], "观察画面", deadline=None)
+        assert routes == ["responses", "completions"]
+        assert result["frame_observations"] == {"first": "红色轮廓"}
+        stalled = True
+        with pytest.raises(VideoVisionTimeout, match="视觉模型请求超时"):
+            await value.analyze_video_evidence({}, META, FRAMES[:1], "再次观察", deadline=None)
+    finally:
+        await value.close()
+
+
+async def test_omni_comment_attachments_use_same_schema_and_identity(omni_provider):
+    value, health, _, requests = omni_provider
+    captions = await value.analyze_comment_images({"id": "comment-1"}, FRAMES[:1], deadline=time.time() + 10)
+    assert captions == ["深红轮廓"]
+    assert value.capabilities()["provenance"]["checkpoint"] == health["checkpoint"]
+    assert requests[-1]["response_format"]["type"] == "json_schema"
+    assert "data:image/png;base64," in json.dumps(requests[-1])
+
+
+def test_compose_background_vision_uses_only_its_scoped_service_key(tmp_path, monkeypatch):
+    from deploy.omni.core_entrypoint import ComposeSettings
+
+    token_file = tmp_path / "gateway.token"
+    token_file.write_text("scoped-compose-key", encoding="utf-8")
+    monkeypatch.setenv("OMNI_GATEWAY_TOKEN_FILE", str(token_file))
+    monkeypatch.setenv("OMNI_GATEWAY_URL", "https://inference.example/service/")
+    monkeypatch.setenv("OMNI_LLM_MODEL_ALIAS", "workers")
+    monkeypatch.setenv("TUBER_RUNTIME", str(tmp_path))
+    monkeypatch.setenv("TUBER_CONFIG", str(tmp_path / "studio.json"))
+    monkeypatch.setenv("TUBER_CORE_MODE", "omni")
+    settings = ComposeSettings()
+    vision = VideoVisionConfig.model_validate(settings.video_config)
+    assert vision.base_url == "https://inference.example/service/llm/v1"
+    assert not vision.model_revision
+    assert settings.responses_config["model"] == "workers"
+    assert settings.responses_config["base_url"] == "https://inference.example/service/llm/v1"
+    assert settings.provider_key("omni") == "scoped-compose-key"
+    settings.data["omni"]["base_url"] = "https://other.example/v1"
+    assert settings.provider_key("omni") is None
+    assert settings.video_config["base_url"] == "https://other.example/llm/v1"
+    assert settings.responses_config["base_url"] == "https://other.example/llm/v1"
+
+
+@pytest.mark.parametrize("joint", [False, True])
+def test_assessment_schema_requires_frame_and_summary_when_sufficient(joint):
+    schema = ApiVideoEvidenceProvider._schema(3, joint=joint)
+    branches = {
+        branch["properties"]["sufficient"]["const"]: branch["properties"] for branch in schema["oneOf"]
+    }
+    assert branches[True]["used_frames"]["minItems"] == 1
+    assert branches[True]["summary"]["minLength"] == 1
+    assert branches[False]["used_frames"]["minItems"] == 0
+    assert all(("captions" in branch["required"]) == joint for branch in schema["oneOf"])
+
+
+@pytest.fixture
+async def provider(runtime, request):
+    value = ApiVideoEvidenceProvider(runtime, CONFIG | getattr(request, "param", {}))
+    await value.api.client.aclose()
+    state = {
+        "requests": [],
+        "result": {
+            "sufficient": True,
+            "summary": "两帧有不同图形",
+            "used_frames": [1, 2],
+            "limitations": ["仅抽样画面"],
+        },
+        "captions": {"first": "红色圆形", "second": "蓝色方形"},
+        "caption_requests": 0,
+        "window": 131072,
+        "vision": True,
+        "aliases": ["actual-vlm"],
+        "block": False,
+        "started": asyncio.Event(),
+        "cancelled": asyncio.Event(),
+    }
+
+    async def handle(request):
+        state["requests"].append(request)
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": alias, "max_model_len": state["window"]}
+                                                       for alias in state["aliases"]]})
+        if request.url.path == "/healthz":
+            return httpx.Response(200, json={"checkpoint": value.config.model_revision,
+                                             "engine_version": state.get("build_info", value.config.runtime_revision)})
+        assert request.url.path == "/v1/chat/completions"
+        payload = json.loads(request.content)
+        assert "tools" not in payload and not payload["stream"]
+        caption = "caption" in payload.get("response_format", {}).get("json_schema", {}).get("schema", {}).get("properties", {})
+        probe = payload["max_tokens"] == 1
+        if (
+            state["block"]
+            or not probe
+            and (
+                state.get("block_assessment")
+                and not caption
+                or state.get("block_at_caption") == state["caption_requests"] + 1
+                and caption
+            )
+        ):
+            state["started"].set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                state["cancelled"].set()
+        if probe:
+            content = None
+        elif caption:
+            index = state["caption_requests"] % len(state["captions"])
+            state["caption_requests"] += 1
+            content = json.dumps({"caption": list(state["captions"].values())[index]})
+        else:
+            content = json.dumps(state["result"])
+        message = state.get("message") or {"role": "assistant", "content": content}
+        if not probe and state.get("after_generation"):
+            state["after_generation"](payload)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"finish_reason": "length" if probe else state.get("finish", "stop"), "message": message}
+                ],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 1 if probe else 20},
+            },
+        )
+
+    value.api.client = httpx.AsyncClient(
+        base_url="http://127.0.0.1:18080/v1/", transport=httpx.MockTransport(handle)
+    )
+    yield value, state
+    await value.close()
+
+
+async def test_comment_attachment_observation_uses_ordered_images_without_video_identity(provider):
+    value, state = provider
+    state["result"] = {"captions": ["第一帧所见", "第二帧所见"]}
+    frames = [
+        {"image": PNG, "mime_type": "image/png", "width": 1, "height": 1, "time_ms": stamp}
+        for stamp in (0, 120)
+    ]
+    assert await value.analyze_comment_images({"id": "comment-1"}, frames, deadline=time.time() + 10) == [
+        "第一帧所见", "第二帧所见",
+    ]
+    bodies = [json.loads(request.content) for request in state["requests"] if request.url.path.endswith("completions")]
+    actual = next(body for body in bodies if body["max_tokens"] > 1)
+    assert actual["max_tokens"] == 768
+    images = actual["messages"][-1]["content"]
+    assert [part["type"] for part in images] == ["text", "image_url", "text", "image_url"]
+    assert "120 ms" in images[2]["text"] and "分P" not in images[2]["text"]
+
+
+def proof(provider):
+    return {
+        "passed": True,
+        "configuration": provider.identity(),
+        "context_tokens": 131072,
+        "max_frames": 2,
+        "max_pixels": 1024 * 1024,
+        "max_bytes": 1024 * 1024,
+    }
+
+
+async def admit(provider):
+    return await provider.probe(FRAMES, metadata=META, resource_admission=proof(provider))
+
+
+async def test_admitted_live_frame_reaches_the_selected_omni_model(provider):
+    value, state = provider
+    await admit(value)
+    state["result"] = {"spoken_text": "我看见了。", "reply_to": ["event"]}
+    scene = LiveScene("session", time.monotonic(), "桌面", PNG, "image/png", 1, 1)
+    messages = [{"role": "user", "content": "看得到吗？"}]
+    llm = {"base_url": value.config.base_url, "model": value.config.model, "max_tokens": 128}
+    assert await value.generate_live_reply(scene, messages, llm | {"model": "other"}, "event") is None
+    reply = await value.generate_live_reply(scene, messages, llm, "event")
+    assert reply.spoken_text == state["result"]["spoken_text"] and reply.reply_to == ["event"]
+    request = state["requests"][-1]
+    body = json.loads(request.content)
+    assert request.url.path == "/v1/chat/completions" and body["model"] == llm["model"]
+    image, text = body["messages"][-1]["content"]
+    assert image["image_url"]["url"] == "data:image/png;base64," + base64.b64encode(PNG).decode()
+    assert "桌面" in text["text"] and "看得到吗？" in text["text"]
+    assert body["response_format"]["json_schema"]["schema"]["properties"]["reply_to"]["items"]["enum"] == ["event"]
+
+
+def caption_body(body):
+    schema = body.get("response_format", {}).get("json_schema", {}).get("schema", {})
+    return "caption" in schema.get("properties", {})
+
+
+def generations(state):
+    return [request for request in state["requests"] if request.method == "POST"]
+
+
+async def test_normal_visual_request_runs_without_admission(provider):
+    value, state = provider
+    assert not value.capabilities()["available"]
+    result = await value.analyze_video_evidence({}, META, FRAMES, "查看", deadline=time.time() + 10)
+    assert result["evidence_ids"] == ["first", "second"]
+    assert value.capabilities()["images"] and not value.capabilities()["admitted"]
+    assert len(generations(state)) == 6
+
+
+@pytest.mark.parametrize("provider", [{"frame_strategy": "joint"}], indirect=True)
+async def test_joint_observation_binds_frames_and_rejects_missing_caption(provider):
+    value, state = provider
+    state["result"]["captions"] = ["第一个圆形", "第二个方形"]
+    await admit(value)
+    state["requests"].clear()
+    result = await value.analyze_video_evidence({}, META, FRAMES, "观察画面", deadline=time.time() + 10)
+    assert result["frame_observations"] == {"first": "第一个圆形", "second": "第二个方形"}
+    payloads = [json.loads(item.content) for item in generations(state)]
+    completed = [body for body in payloads if body["max_tokens"] > 1]
+    assert len(completed) == 1 and len(payloads) <= 2
+    assert sum(part["type"] == "image_url" for part in completed[0]["messages"][-1]["content"]) == 2
+    state["result"]["captions"].pop()
+    with pytest.raises(ValueError, match="每一帧"):
+        await value.analyze_video_evidence({}, META, FRAMES, "观察画面", deadline=time.time() + 10)
+
+
+
+
+async def test_real_inline_image_probe_and_distinct_frame_evidence(provider):
+    value, state = provider
+    assert (await admit(value))["capabilities"]["admitted"]
+    result = await value.analyze_video_evidence(
+        {"id": "task"}, META, FRAMES, "分别观察", deadline=time.time() + 10
+    )
+    assert result["frame_observations"] == {"first": "红色圆形", "second": "蓝色方形"}
+    assert result["coverage"]["frames"] == [
+        {"id": "first", "cid": "34", "actual_time": 10},
+        {"id": "second", "cid": "34", "actual_time": 30},
+    ]
+    assert result["elapsed_ms"] >= 0 and result["usage"]["final_generation"]["prompt_tokens"] == 100
+    payloads = [json.loads(request.content) for request in generations(state)]
+    captions = [body for body in payloads if caption_body(body)]
+    assert len(captions) == 4  # Two sequential frame calls in probe and analysis.
+    for body in captions:
+        content = body["messages"][-1]["content"]
+        assert len([item for item in content if item["type"] == "image_url"]) == 1
+        assert all(frame["id"] not in json.dumps(body) for frame in FRAMES)
+    assessment = json.loads(payloads[-1]["messages"][-1]["content"])
+    assert assessment == {
+        "question": "分别观察",
+        "observations": [
+            {"number": 1, "part": "P1", "cid": "34", "actual_time": 10, "text": "红色圆形"},
+            {"number": 2, "part": "P1", "cid": "34", "actual_time": 30, "text": "蓝色方形"},
+        ],
+    }
+    assert all(frame["id"] not in json.dumps(payloads[-1]) for frame in FRAMES)
+
+
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"passed": False},
+        {"context_tokens": 8192},
+        {"max_frames": 1},
+        {"max_bytes": 1024},
+        {"configuration": {"model": "different"}},
+    ],
+)
+async def test_resource_proof_must_match_measured_configuration_and_bounds(provider, patch):
+    value, _ = provider
+    report = await value.probe(FRAMES, metadata=META, resource_admission=proof(value) | patch)
+    assert report["capabilities"]["images"] and not report["capabilities"]["admitted"]
+
+
+async def test_runtime_change_invalidates_benchmark_and_still_reads_at_supported_capacity(provider):
+    value, state = provider
+    await admit(value)
+    before = len(generations(state))
+    state["window"] *= 2
+    await value.analyze_video_evidence({}, META, FRAMES, "观察", deadline=time.time() + 10)
+    assert len(generations(state)) > before and not value.capabilities()["admitted"]
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"used_frames": [3]},
+        {"used_frames": [0]},
+        {"used_frames": [-1]},
+        {"used_frames": [True]},
+        {"used_frames": [1.0]},
+        {"used_frames": ["1"]},
+        {"used_frames": [1, 1]},
+        {"used_frames": []},
+        {"summary": 123},
+        {"summary": ""},
+        {"sufficient": 1},
+        {"limitations": ["缺项"] * 21},
+        {"evidence_ids": ["invented"]},
+    ],
+)
+async def test_unknown_refs_missing_map_and_structural_errors_are_rejected(provider, patch):
+    value, state = provider
+    await admit(value)
+    state["result"].update(patch)
+    with pytest.raises(ValueError):
+        await value.analyze_video_evidence({}, META, FRAMES, "观察", deadline=time.time() + 10)
+
+
+@pytest.mark.parametrize(
+    "summary,per_frame,limitations",
+    [
+        (
+            "背景模糊，但前景红杯清楚，两个画面中杯子都在桌上。",
+            {"first": "背景看不清，前景可见桌上的红杯。", "second": "红杯仍在桌上，背景不可辨。"},
+            ["无法判断背景墙上的文字；当前问题只问杯子颜色。"],
+        ),
+        (
+            "两帧都显示桌上放着红杯。",
+            {"first": "桌上放着红杯。", "second": "桌上放着红杯。"},
+            [],
+        ),
+        (
+            "A red cup is visible in the foreground; the background is blurry.",
+            {"first": "A red cup on a table.", "second": "A red cup on a table."},
+            ["Cannot determine the lettering on the background wall."],
+        ),
+    ],
+)
+async def test_local_blur_and_same_scene_observations_preserve_model_assessment(
+    provider, summary, per_frame, limitations
+):
+    value, state = provider
+    await admit(value)
+    original = {
+        "sufficient": True,
+        "observations": summary,
+        "evidence_ids": ["first", "second"],
+        "frame_observations": per_frame,
+        "limitations": limitations,
+    }
+    state["captions"] = copy.deepcopy(per_frame)
+    state["result"] = {
+        "sufficient": True,
+        "summary": summary,
+        "used_frames": [1, 2],
+        "limitations": limitations,
+    }
+    result = await value.analyze_video_evidence(
+        {}, META, FRAMES, "前景杯子是什么颜色？", deadline=time.time() + 10
+    )
+    assert {key: result[key] for key in original} == original
+    assert result["coverage"]["complete"] is False
+    assert result["coverage"]["frames"] == [
+        {"id": frame["id"], "cid": frame["cid"], "actual_time": frame["actual_time"]} for frame in FRAMES
+    ]
+    payload = json.loads(generations(state)[-1].content)
+    system = next(message["content"] for message in payload["messages"] if message["role"] == "system")
+    assert "围绕当前问题" in system and "limitations" in system
+    assert "禁止把综合观察复制到多帧" not in system and "sufficient=false" not in system
+
+
+async def test_sufficiency_is_retained_as_model_self_assessment_not_a_word_filter(provider):
+    value, state = provider
+    await admit(value)
+    # A self-assessment can itself be wrong. Structural validation preserves it
+    # and its original observations; actual image/question semantics need review.
+    state["result"]["summary"] = "画面模糊无法判断。"
+    result = await value.analyze_video_evidence({}, META, FRAMES, "观察", deadline=time.time() + 10)
+    assert result["sufficient"] is True
+    assert result["observations"] == "画面模糊无法判断。"
+
+
+async def test_model_can_report_insufficient_without_inventing_frame_observations(provider):
+    value, state = provider
+    await admit(value)
+    state["result"] = {
+        "sufficient": False,
+        "summary": "",
+        "used_frames": [],
+        "limitations": ["画面模糊无法判断"],
+    }
+    result = await value.analyze_video_evidence({}, META, FRAMES, "观察", deadline=time.time() + 10)
+    assert not result["sufficient"] and not result["coverage"]["frames"]
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"id": "second"},
+        {"cid": "99"},
+        {"actual_time": 45},
+        {"actual_time": -1},
+        {"actual_time": True},
+        {"actual_time": float("nan")},
+        {"kind": "cover"},
+        {"width": 100000},
+        {"image": b"invalid"},
+    ],
+)
+async def test_invalid_inputs_do_not_reach_generation(provider, patch):
+    value, state = provider
+    await admit(value)
+    frames = copy.deepcopy(FRAMES)
+    frames[0].update(patch)
+    before = len(state["requests"])
+    with pytest.raises(ValueError):
+        await value.analyze_video_evidence({}, META, frames, "观察", deadline=time.time() + 10)
+    assert len(state["requests"]) == before
+
+
+@pytest.mark.parametrize("mode", ["tool", "length"])
+async def test_tool_calls_and_incomplete_generation_are_rejected(provider, mode):
+    value, state = provider
+    await admit(value)
+    if mode == "tool":
+        state["message"] = {"content": "{}", "tool_calls": [{"function": {"name": "send_message"}}]}
+    else:
+        state["finish"] = "length"
+    with pytest.raises(ValueError):
+        await value.analyze_video_evidence({}, META, FRAMES, "观察", deadline=time.time() + 10)
+
+
+async def test_round_meter_counts_actual_image_token_probe_and_completion(provider, runtime):
+    value, _ = provider
+    await admit(value)
+    repo = runtime.browsing_repository
+    row, _ = repo.create_round("100", runtime.character, BrowsingPolicy().model_dump(), 0, True)
+    result = await value.analyze_video_evidence(
+        {"id": "task", "round_id": row["id"]}, META, FRAMES, "计量新问题", deadline=time.time() + 10
+    )
+    assert result["usage"]["including_token_probes"] == {
+        "model_calls": 6,
+        "input_tokens": 600,
+        "output_tokens": 63,
+    }
+    assert repo.round(row["id"])["budget"]["model_calls"] == 6
+
+
+async def test_probe_also_accepts_parent_meter_and_budget_blocks_second_request(provider, runtime):
+    value, state = provider
+    repo = runtime.browsing_repository
+    config = BrowsingPolicy(max_model_calls=1).model_dump()
+    row, _ = repo.create_round("100", runtime.character, config, 0, True)
+    with pytest.raises(ValueError, match="预算"):
+        await value.probe(
+            FRAMES, metadata=META, resource_admission=proof(value), task={"round_id": row["id"]}
+        )
+    assert len(generations(state)) == 1 and not value.capabilities()["admitted"]
+    assert repo.round(row["id"])["budget"]["input_tokens"] == 100
+
+
+async def test_shared_generation_lock_and_owned_cancellation_release_everything(provider, runtime):
+    value, state = provider
+    await admit(value)
+    state["block"] = True
+    before = len(generations(state))
+    async with runtime.generation_lock:
+        task = asyncio.create_task(
+            value.analyze_video_evidence({"id": "owned"}, META, FRAMES, "取消测试", deadline=time.time() + 10)
+        )
+        await asyncio.sleep(0.02)
+        assert len(generations(state)) == before
+    await state["started"].wait()
+    await value.cancel("owned")
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert state["cancelled"].is_set() and not value._active and not runtime.generation_lock.locked()
+
+
+async def test_deadline_and_close_cancel_owned_http_only(provider, runtime):
+    value, state = provider
+    await admit(value)
+    state["block"] = True
+    with pytest.raises(TimeoutError):
+        await value.analyze_video_evidence(
+            {"id": "timeout"}, META, FRAMES, "期限测试", deadline=time.time() + 0.03
+        )
+    assert state["cancelled"].is_set() and not value._active and not runtime.generation_lock.locked()
+    state["started"].clear()
+    state["cancelled"].clear()
+    task = asyncio.create_task(value.analyze_video_evidence({"id": "closing"}, META, FRAMES, "取消测试", deadline=None))
+    await asyncio.wait_for(state["started"].wait(), 2)
+    await value.close()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert state["cancelled"].is_set() and not value._active and not runtime.generation_lock.locked()
+    assert value.api.client.is_closed
+    assert not value.capabilities()["images"] and not value.capabilities()["admitted"]
+    assert runtime.llm is not None
+
+
+@pytest.mark.parametrize("provider", [{"timeout_seconds": 0.05}], indirect=True)
+async def test_vision_request_timeout_starts_after_the_generation_queue(provider, runtime):
+    value, state = provider
+    async with runtime.generation_lock:
+        pending = asyncio.create_task(value.analyze_video_evidence({}, META, FRAMES, "观察画面", deadline=None))
+        await asyncio.sleep(0.1)
+        assert not pending.done()
+        assert not state["requests"]
+
+    result = await asyncio.wait_for(pending, 2)
+    assert result["evidence_ids"] == ["first", "second"]
+
+    state["block"] = True
+    with pytest.raises(TimeoutError, match="视觉模型请求超时"):
+        await value.analyze_video_evidence({}, META, FRAMES, "请求超时", deadline=None)
+    assert state["cancelled"].is_set() and not runtime.generation_lock.locked()
+
+
+async def test_cancel_signal_during_http_collects_the_owned_generation(provider, runtime):
+    value, state = provider
+    await admit(value)
+    state["block"] = True
+    signal = asyncio.Event()
+    task = asyncio.create_task(
+        value.analyze_video_evidence(
+            {"id": "signal", "cancel_signal": signal}, META, FRAMES, "信号取消", deadline=time.time() + 10
+        )
+    )
+    await state["started"].wait()
+    signal.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert state["cancelled"].is_set() and not value._active and not runtime.generation_lock.locked()
+
+
+async def test_past_deadline_never_reaches_health_or_generation(provider):
+    value, state = provider
+    await admit(value)
+    before = len(state["requests"])
+    with pytest.raises(TimeoutError):
+        await value.analyze_video_evidence({}, META, FRAMES, "过期", deadline=time.time() - 1)
+    assert len(state["requests"]) == before
+
+
+@pytest.mark.parametrize(
+    "provider",
+    [
+        {"enable_thinking": thinking, "timeout_seconds": 300, "max_output_tokens": 4096}
+        for thinking in (None, True, False)
+    ],
+    indirect=True,
+)
+async def test_public_configuration_controls_outbound_thinking_timeout_and_budget(provider):
+    value, state = provider
+    observed = await value.probe(FRAMES, metadata=META, resource_admission=proof(value))
+    assert observed["capabilities"]["admitted"]
+    assert observed["capabilities"]["timeout_seconds"] == 300
+    result = await value.analyze_video_evidence({}, META, FRAMES, "分别观察杯子", deadline=time.time() + 400)
+    assert result["evidence_ids"] == ["first", "second"]
+    posts = generations(state)
+    assert [json.loads(request.content)["max_tokens"] for request in posts] == [1, 4096] * 6
+    for request in posts:
+        assert request.extensions["timeout"]["read"] == 300
+        body = json.loads(request.content)
+        assert "tools" not in body
+        if value.config.enable_thinking is None:
+            assert "chat_template_kwargs" not in body
+        else:
+            assert body["chat_template_kwargs"] == {"enable_thinking": value.config.enable_thinking}
+
+
+def test_vision_defaults_remain_compatible_and_explicit_bounds_are_validated():
+    defaults = VideoVisionConfig(model="visual")
+    assert defaults.timeout_seconds == 60 and defaults.enable_thinking is None
+    assert defaults.max_output_tokens == 2048
+    assert VideoVisionConfig(model="visual", timeout_seconds=600).timeout_seconds == 600
+    assert VideoVisionConfig(model="visual", max_frames=24).max_frames == 24
+    for patch in ({"timeout_seconds": 601}, {"timeout_seconds": 0}, {"enable_thinking": "on"},
+                  {"max_frames": 25}, {"frame_strategy": "joint", "max_frames": 9}):
+        with pytest.raises(ValueError):
+            VideoVisionConfig(model="visual", **patch)
+
+
+@pytest.mark.parametrize(
+    "provider", [{"enable_thinking": True, "timeout_seconds": 300, "max_output_tokens": 4096}], indirect=True
+)
+async def test_long_transport_timeout_keeps_parent_budget_and_cancel_deadline(provider, runtime):
+    value, state = provider
+    repo = runtime.browsing_repository
+    policy = BrowsingPolicy(max_model_calls=1, decision_max_tokens=4096).model_dump()
+    row, _ = repo.create_round("isolated", runtime.character, policy, 0, True)
+    with pytest.raises(ValueError, match="预算"):
+        await value.probe(
+            FRAMES, metadata=META, resource_admission=proof(value), task={"round_id": row["id"]}
+        )
+    assert len(generations(state)) == 1
+    assert not value.capabilities()["admitted"]
+    await admit(value)
+    state["block"] = True
+    with pytest.raises(TimeoutError):
+        await value.analyze_video_evidence({}, META, FRAMES, "短父期限", deadline=time.time() + 0.03)
+    assert state["cancelled"].is_set() and not value._active and not runtime.generation_lock.locked()
+
+
+@pytest.mark.parametrize("provider", [{"enable_thinking": True}], indirect=True)
+async def test_resource_proof_for_different_thinking_setting_does_not_admit(provider):
+    value, _ = provider
+    resource = proof(value)
+    resource["configuration"] = resource["configuration"] | {"enable_thinking": False}
+    observed = await value.probe(FRAMES, metadata=META, resource_admission=resource)
+    assert observed["capabilities"]["images"] and not observed["capabilities"]["admitted"]
+
+
+
+
+
+
+async def test_assessment_numbers_map_exact_captions_without_model_source_ids(provider):
+    value, state = provider
+    await admit(value)
+    state["result"]["used_frames"] = [2, 1]
+    result = await value.analyze_video_evidence({}, META, FRAMES, "比较", deadline=time.time() + 10)
+    assert result["evidence_ids"] == ["second", "first"]
+    assert result["frame_observations"] == {"second": "蓝色方形", "first": "红色圆形"}
+    assert [row["frame_id"] for row in result["usage"]["stages"][:-1]] == ["first", "second"]
+    assert all(row["elapsed_ms"] >= 0 for row in result["usage"]["stages"])
+
+
+@pytest.mark.parametrize(
+    "question", ["杯子是什么颜色？", "请读出牌子上的字幕。", "20秒后杯子的颜色是否变化？"]
+)
+async def test_each_caption_request_receives_current_question_as_its_observation_focus(provider, question):
+    value, state = provider
+    await admit(value)
+    before = len(generations(state))
+    await value.analyze_video_evidence({}, META, FRAMES, question, deadline=time.time() + 10)
+    bodies = [json.loads(request.content) for request in generations(state)[before:]]
+    captions = [body for body in bodies if caption_body(body)]
+    assert len(captions) == 2
+    for frame, body in zip(FRAMES, captions, strict=True):
+        content = body["messages"][-1]["content"]
+        texts = [item["text"] for item in content if item["type"] == "text"]
+        assert any(question in text and "人物、物品和动作" in text for text in texts)
+        assert any(
+            f"{frame['actual_time']} 秒" in text and "P1" in text and f"分P {frame['cid']}" not in text
+            for text in texts
+        )
+        assert all(frame["id"] not in json.dumps(body) for frame in FRAMES)
+
+
+async def test_source_snapshot_stays_bound_when_callers_mutate_frames_during_http(provider):
+    value, state = provider
+    await admit(value)
+    frames = copy.deepcopy(FRAMES)
+
+    def mutate(_):
+        frames[0].update(id="forged", cid="other", actual_time=999)
+
+    state["after_generation"] = mutate
+    result = await value.analyze_video_evidence({}, META, frames, "观察", deadline=time.time() + 10)
+    assert result["evidence_ids"] == ["first", "second"]
+    assert result["coverage"]["frames"][0] == {"id": "first", "cid": "34", "actual_time": 10}
+
+
+async def test_old_nested_json_protocol_proof_does_not_admit_new_call_graph(provider):
+    value, _ = provider
+    resource = proof(value)
+    assert resource["configuration"].pop("protocol") == "sequential_captions_indexed_assessment_v2"
+    observed = await value.probe(FRAMES, metadata=META, resource_admission=resource)
+    assert observed["capabilities"]["images"] and not observed["capabilities"]["admitted"]
+
+
+@pytest.mark.parametrize("stage", ["second_caption", "assessment"])
+async def test_cancelling_later_stage_collects_tasks_and_never_finishes_pipeline(provider, runtime, stage):
+    value, state = provider
+    await admit(value)
+    if stage == "second_caption":
+        state["block_at_caption"] = state["caption_requests"] + 2
+    else:
+        state["block_assessment"] = True
+    task = asyncio.create_task(
+        value.analyze_video_evidence({"id": "later"}, META, FRAMES, "稍后取消", deadline=time.time() + 10)
+    )
+    await asyncio.wait_for(state["started"].wait(), timeout=2)
+    await value.cancel("later")
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert state["cancelled"].is_set() and not value._active and not runtime.generation_lock.locked()
+
+
+async def test_assessment_deadline_cancels_after_captions_without_partial_return(provider, runtime):
+    value, state = provider
+    await admit(value)
+    state["block_assessment"] = True
+    with pytest.raises(TimeoutError):
+        await value.analyze_video_evidence({}, META, FRAMES, "限时汇总", deadline=time.time() + 0.05)
+    assert state["started"].is_set() and state["cancelled"].is_set()
+    assert not value._active and not runtime.generation_lock.locked()
+
+
+@pytest.mark.parametrize("stage", ["caption", "assessment"])
+async def test_runtime_switch_between_stages_or_before_return_revokes_admission(provider, stage):
+    value, state = provider
+    await admit(value)
+
+    def switch(body):
+        if (not caption_body(body)) == (stage == "assessment"):
+            state["window"] *= 2
+
+    state["after_generation"] = switch
+    before = len(generations(state))
+    with pytest.raises(ValueError, match="变化"):
+        await value.analyze_video_evidence({}, META, FRAMES, "模型切换", deadline=time.time() + 10)
+    assert not value.capabilities()["admitted"]
+    if stage == "caption":
+        assert len(generations(state)) == before + 2
+
+
+async def test_endpoint_switch_with_identical_model_properties_revokes_admission(provider):
+    value, state = provider
+    await admit(value)
+    value.api.client.base_url = "http://127.0.0.1:18081/v1/"
+    before = len(generations(state))
+    await value.analyze_video_evidence({}, META, FRAMES, "端点切换", deadline=time.time() + 10)
+    assert len(generations(state)) > before and not value.capabilities()["admitted"]
+
+
+async def test_public_probe_and_analysis_share_real_parent_meter_for_all_stages(provider, runtime):
+    value, state = provider
+    repo = runtime.browsing_repository
+    policy = BrowsingPolicy(
+        max_model_calls=16, max_input_tokens=1048576, max_output_tokens=65536
+    ).model_dump()
+    row, _ = repo.create_round("100", runtime.character, policy, 0, True)
+    task = {"id": "metered", "round_id": row["id"]}
+    observed = await value.probe(FRAMES, metadata=META, resource_admission=proof(value), task=task)
+    result = await value.analyze_video_evidence(task, META, FRAMES, "新的问题", deadline=time.time() + 10)
+    assert len(generations(state)) == repo.round(row["id"])["budget"]["model_calls"] == 12
+    assert repo.round(row["id"])["budget"]["input_tokens"] == 1200
+    assert repo.round(row["id"])["budget"]["output_tokens"] == 126
+    for output in (observed["result"], result):
+        assert len(output["usage"]["stages"]) == 3
+        for key in ("model_calls", "input_tokens", "output_tokens"):
+            assert (
+                sum(stage["including_token_probes"][key] for stage in output["usage"]["stages"])
+                == output["usage"]["including_token_probes"][key]
+            )
+
+
+async def test_tight_budget_stops_before_assessment_post_without_overrun(provider, runtime):
+    value, state = provider
+    repo = runtime.browsing_repository
+    policy = BrowsingPolicy(max_model_calls=4).model_dump()
+    row, _ = repo.create_round("100", runtime.character, policy, 0, True)
+    with pytest.raises(ValueError, match="预算"):
+        await value.probe(
+            FRAMES, metadata=META, resource_admission=proof(value), task={"round_id": row["id"]}
+        )
+    assert len(generations(state)) == repo.round(row["id"])["budget"]["model_calls"] == 4
+    assert all(body["max_tokens"] == 1 or caption_body(body) for body in (json.loads(r.content) for r in generations(state)))
+    assert not value.capabilities()["admitted"]
+
+
+@pytest.mark.parametrize("caption", ["", "x" * 4001])
+async def test_empty_or_oversize_caption_never_reaches_assessment(provider, caption):
+    value, state = provider
+    state["captions"]["first"] = caption
+    with pytest.raises(ValueError):
+        await admit(value)
+    assert all(body["max_tokens"] == 1 or caption_body(body) for body in (json.loads(r.content) for r in generations(state)))

@@ -12,7 +12,7 @@ from test_browsing import ControlledPlatform
 
 from tuber_studio.agent.task_runtime import TaskDecision
 from tuber_studio.app import create_app
-from tuber_studio.models import Reply
+from tuber_studio.core.models import Reply
 
 
 async def test_overlay_finished_handoff(settings):

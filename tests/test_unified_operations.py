@@ -84,7 +84,7 @@ async def test_comment_only_parent_start_does_not_probe_or_start_video_discovery
 async def test_start_keeps_semantic_validation_as_diagnostics_and_sends_nothing_when_auto_publish_is_off(
     browsing,
 ):
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     browsing.store.set("browsing_semantic_validation", {"passed": False, "signature": "old-diagnostic"})
     await browsing.configure({"discovery_enabled": True, "top_level_auto_publish": False})
     status = await browsing.set_enabled(True)
@@ -115,7 +115,7 @@ async def test_stop_during_startup_cannot_late_enable_the_parent(browsing, monke
 
 
 async def test_parent_stop_preserves_settings_but_gates_every_automatic_channel(browsing):
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({"discovery_enabled": True})
     await browsing.messages.configure({"enabled": True, "auto_poll": True, "auto_send": True})
     browsing.store.set("dynamic_policy", {"enabled": True, "auto_publish": True})

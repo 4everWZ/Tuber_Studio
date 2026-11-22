@@ -6,10 +6,11 @@ from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
 from tuber_studio.comments import Comments
-from tuber_studio.models import Reply
-from tuber_studio.platforms.bilibili import PublishUncertain
+from tuber_studio.core.models import Reply
+from tuber_studio.core.store import Store
+from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
+from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
 from tuber_studio.runtime import Runtime
-from tuber_studio.store import Store
 
 
 class Platform:
@@ -42,11 +43,12 @@ async def comments(settings, store, runtime, monkeypatch):
 
     # Comments owns scheduling, not the runtime's fact checking/retry algorithm.
     monkeypatch.setattr(runtime, "generate_reply", generate, raising=False)
-    service = Comments(settings, store, runtime, Platform())
+    service = Comments(settings, store, runtime, BilibiliAccount(settings, store, Platform()))
     # Isolated worker only: the browsing loop must never make a real network call.
     service.worker = asyncio.create_task(service._worker())
     yield service
     await service.close()
+    await service.account.close()
 
 
 async def draft(comments, store, automatic=False):
@@ -67,19 +69,19 @@ async def test_default_review_and_manual_approval_never_sends(comments, store):
         await comments.publish(row["id"])
     comments.review(row["id"], "approve", "修改后的候选回复")
     assert comments.copy(row["id"])["text"] == "修改后的候选回复"
-    assert comments.adapter.sent == []
+    assert comments.account.adapter.sent == []
     assert store.one("SELECT status FROM drafts")["status"] == "copied"
 
 
 async def test_legacy_approved_comment_stays_editable_without_using_a_publish_attempt(comments, store):
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
     row = await draft(comments, store)
     store.execute("UPDATE comments SET display_name='小鲸' WHERE id=?", (row["comment_id"],))
     text = '答完了。”}{'
     store.execute("UPDATE drafts SET status='approved',text=? WHERE id=?", (text, row["id"]))
     with pytest.raises(ValueError, match="结构"):
         await comments.publish(row["id"])
-    assert not comments.adapter.sent and not store.all("SELECT * FROM publish_attempts")
+    assert not comments.account.adapter.sent and not store.all("SELECT * FROM publish_attempts")
     assert store.one("SELECT text FROM drafts WHERE id=?", (row["id"],))["text"] == text
 
     with pytest.raises(ValueError, match="空格"):
@@ -88,11 +90,11 @@ async def test_legacy_approved_comment_stays_editable_without_using_a_publish_at
     comments.review(row["id"], "approve", corrected)
     sent = await comments.publish(row["id"])
     assert sent["status"] == "published"
-    assert comments.adapter.sent == [("BV1d8pU6xEZX", "123", corrected)]
+    assert comments.account.adapter.sent == [("BV1d8pU6xEZX", "123", corrected)]
 
 
 async def test_pending_draft_is_not_speech_and_receipt_records_only_final_approved_body(comments, store, runtime):
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
     row = await draft(comments, store)
     scope = comments.account_context_scope("BV1d8pU6xEZX", "123", account_id=row["account_id"])
     history = json.loads(runtime.context.existing(scope, runtime.character)["history"])
@@ -131,7 +133,7 @@ async def test_reject_removes_unsent_assistant_recall_but_keeps_source_and_draft
     assert store.one("SELECT history FROM context_history_audit WHERE window_key=?", (runtime.context.key(scope, runtime.character),))
     assert store.one("SELECT content FROM comments WHERE id=?", (source["id"],))["content"] == source["content"]
     kept = store.one("SELECT text,status FROM drafts WHERE id=?", (row["id"],))
-    assert kept == {"text": row["text"], "status": "rejected"} and not comments.adapter.sent
+    assert kept == {"text": row["text"], "status": "rejected"} and not comments.account.adapter.sent
 
 
 async def test_auto_reply_requires_credentials_and_explicit_enable(comments, store):
@@ -143,18 +145,18 @@ async def test_auto_reply_requires_credentials_and_explicit_enable(comments, sto
     pending = await draft(comments, store)
     with pytest.raises(ValueError):
         await comments.publish(pending["id"], automatic=True)
-    assert not comments.adapter.sent
-    comments.credentials = {"sessdata": "test-session", "csrf": "test-csrf"}
+    assert not comments.account.adapter.sent
+    comments.account.credentials = {"sessdata": "test-session", "csrf": "test-csrf"}
     store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     comments.operations.configure(
         {"enabled": True}, account_id="injected-test-account", character=comments.runtime.character
     )
     row = await comments.publish(pending["id"], automatic=True)
     assert row["status"] == "published"
-    assert len(comments.adapter.sent) == 1
+    assert len(comments.account.adapter.sent) == 1
     with pytest.raises(ValueError):
         await comments.publish(pending["id"], automatic=True)
-    assert len(comments.adapter.sent) == 1
+    assert len(comments.account.adapter.sent) == 1
     assert "test-session" not in str(comments.policy())
 
 
@@ -162,31 +164,31 @@ async def test_auto_reply_requires_credentials_and_explicit_enable(comments, sto
 async def test_uncertain_send_cannot_be_retried(comments, store, failure):
     row = await draft(comments, store)
     comments.review(row["id"], "approve")
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
-    comments.adapter.failure = failure
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.adapter.failure = failure
     with pytest.raises(ValueError):
         await comments.publish(row["id"])
     assert store.one("SELECT status FROM drafts")["status"] == "publish_uncertain"
     assert not store.all("SELECT id FROM grounded_memory WHERE role='assistant'")
     with pytest.raises(ValueError):
         await comments.publish(row["id"])
-    assert len(comments.adapter.sent) == 1
+    assert len(comments.account.adapter.sent) == 1
 
 
 async def test_definite_platform_rejection_preserves_reviewed_draft(comments, store):
     row = await draft(comments, store)
     comments.review(row["id"], "approve")
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
-    comments.adapter.failure = ValueError("平台明确拒绝")
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.adapter.failure = ValueError("平台明确拒绝")
     with pytest.raises(ValueError):
         await comments.publish(row["id"])
     assert store.one("SELECT status FROM drafts")["status"] == "approved"
-    assert len(comments.adapter.sent) == 1
+    assert len(comments.account.adapter.sent) == 1
     assert not store.all("SELECT id FROM grounded_memory WHERE role='assistant'")
 
 
 async def test_stop_auto_reply_retains_later_drafts(comments, store):
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
     store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     store.set("comment_policy", {"auto_reply": True})  # Retired settings cannot override current permissions.
     comments.operations.configure(
@@ -195,7 +197,7 @@ async def test_stop_auto_reply_retains_later_drafts(comments, store):
     store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": False})
     row = await draft(comments, store, automatic=True)
     assert row["status"] == "pending_review"
-    assert comments.adapter.sent == []
+    assert comments.account.adapter.sent == []
 
 
 def test_import_1000_comments_is_idempotent_and_keeps_same_name_users_separate(comments, store):
@@ -216,20 +218,20 @@ def test_import_1000_comments_is_idempotent_and_keeps_same_name_users_separate(c
 
 
 async def test_manual_batches_stay_reviewable_when_auto_mode_is_enabled(comments, store):
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
     store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     comments.operations.configure(
         {"enabled": True}, account_id="injected-test-account", character=comments.runtime.character
     )
     row = await draft(comments, store, automatic=False)
     assert row["status"] == "pending_review"
-    assert comments.adapter.sent == []
+    assert comments.account.adapter.sent == []
 
 
 async def test_platform_success_followed_by_database_failure_never_allows_resend(comments, store):
     row = await draft(comments, store)
     comments.review(row["id"], "approve")
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
     store.execute("""CREATE TRIGGER refuse_receipt BEFORE UPDATE OF status ON drafts
         WHEN NEW.status='published' BEGIN SELECT RAISE(ABORT,'simulated storage failure'); END""")
     with pytest.raises(ValueError, match="本地回执待补录"):
@@ -237,20 +239,20 @@ async def test_platform_success_followed_by_database_failure_never_allows_resend
     assert store.one("SELECT status FROM drafts")["status"] == "publish_uncertain"
     with pytest.raises(ValueError):
         await comments.publish(row["id"])
-    assert len(comments.adapter.sent) == 1
+    assert len(comments.account.adapter.sent) == 1
 
 
 async def test_cancellation_after_send_starts_is_uncertain(comments, store):
     row = await draft(comments, store)
     comments.review(row["id"], "approve")
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
     started = asyncio.Event()
 
     async def blocked_send(*args):
         started.set()
         await asyncio.sleep(60)
 
-    comments.adapter.publish = blocked_send
+    comments.account.adapter.publish = blocked_send
     sending = asyncio.create_task(comments.publish(row["id"]))
     await started.wait()
     sending.cancel()
@@ -262,7 +264,7 @@ async def test_cancellation_after_send_starts_is_uncertain(comments, store):
 async def test_hourly_limit_is_enforced_before_second_http_write(comments, store):
     row = await draft(comments, store)
     comments.review(row["id"], "approve")
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
     store.set("browsing_policy", {"max_per_hour": 1})
     await comments.publish(row["id"])
     comments.import_items("BV1d8pU6xEZX", [{"comment_id": "456", "content": "下一条问题怎么处理？"}])
@@ -273,7 +275,7 @@ async def test_hourly_limit_is_enforced_before_second_http_write(comments, store
     comments.review(second_draft["id"], "approve")
     with pytest.raises(ValueError, match="频率上限"):
         await comments.publish(second_draft["id"])
-    assert len(comments.adapter.sent) == 1
+    assert len(comments.account.adapter.sent) == 1
 
 
 def test_csv_mapping_preview_does_not_write_and_operator_category_survives_analyze(comments, store):
@@ -499,7 +501,7 @@ async def test_shutdown_collects_thread_children_and_cancels_queued_batches(
     assert all(child.done() for child in children)
     assert not comments.thread_tasks and not runtime.operation_generation_lock.locked()
     assert {row["status"] for row in store.all("SELECT status FROM comment_tasks")} == {"cancelled"}
-    assert not store.all("SELECT * FROM drafts") and not comments.adapter.sent
+    assert not store.all("SELECT * FROM drafts") and not comments.account.adapter.sent
 
 
 async def test_checks_are_stored_and_threaded_duplicate_batches_never_republish(
@@ -517,7 +519,7 @@ async def test_checks_are_stored_and_threaded_duplicate_batches_never_republish(
         return Reply(spoken_text="我会根据原始记录回答，并保留数量缺项。"), check
 
     monkeypatch.setattr(runtime, "generate_reply", generate)
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
     store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     comments.operations.configure(
         {"enabled": True}, account_id="injected-test-account", character=comments.runtime.character
@@ -534,7 +536,7 @@ async def test_checks_are_stored_and_threaded_duplicate_batches_never_republish(
     history = json.loads(runtime.context.window(scope, runtime.character)["history"])
     assert history[-1]["memory_kind"] == "derived_reply"
     assert draft["status"] == "published"
-    assert len(comments.adapter.sent) == 1
+    assert len(comments.account.adapter.sent) == 1
     assert store.one("SELECT COUNT(*) AS n FROM publish_attempts")["n"] == 1
 
 
@@ -544,7 +546,7 @@ async def test_real_runtime_checker_integrates_without_borrowing_another_threads
     # Exercise the actual Runtime checker and actual context/source-memory stores;
     # The test fixture supplies offline chat inference.
     monkeypatch.setattr(runtime, "generate_reply", Runtime.generate_reply.__get__(runtime, Runtime))
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
     comments.import_items("import-grounded", [{"comment_id": "original", "thread_id": "story-floor", "content": "刚才发生什么？"}])
     original = store.one("SELECT * FROM comments WHERE comment_id='original'")
     scope = comments.context_scope("import-grounded", "story-floor", account_id="injected-test-account")
@@ -578,7 +580,7 @@ async def test_real_runtime_checker_integrates_without_borrowing_another_threads
         grounded["status"] == "pending_review"
     )  # A warning is not a fabricated success or a blanket refusal.
     assert store.one("SELECT status,errors FROM comment_tasks") == {"status": "completed", "errors": 0}
-    assert comments.adapter.sent == []
+    assert comments.account.adapter.sent == []
 
 
 async def test_auto_reply_targets_nested_comment_in_its_original_thread(comments, store):
@@ -588,8 +590,8 @@ async def test_auto_reply_targets_nested_comment_in_its_original_thread(comments
         sent.append((video, thread_id, comment))
         return {"rpid": "321", "root": thread_id, "parent": comment}
 
-    comments.adapter.publish = publish
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.adapter.publish = publish
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
     store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     comments.operations.configure(
         {"enabled": True}, account_id="injected-test-account", character=comments.runtime.character
@@ -620,8 +622,8 @@ async def test_cancelling_thread_batch_collects_inflight_publish_and_never_sends
         started.set()
         await asyncio.Event().wait()
 
-    comments.adapter.publish = blocked
-    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.account.adapter.publish = blocked
+    comments.account.credentials = {"sessdata": "test", "csrf": "test"}
     store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     comments.operations.configure(
         {"enabled": True}, account_id="injected-test-account", character=comments.runtime.character

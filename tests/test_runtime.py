@@ -7,9 +7,9 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from tuber_studio.models import Event, Reply
-from tuber_studio.provider_settings import apply_settings
-from tuber_studio.providers import build_messages
+from tuber_studio.core.models import Event, Reply
+from tuber_studio.infra.inference.settings import apply_settings
+from tuber_studio.persona.context.message_builder import build_messages
 
 
 async def until(predicate):
@@ -56,7 +56,7 @@ async def test_saved_omni_serves_reference_preview_and_live(runtime, store, monk
         transcript = base64.b64encode(body["input"].encode()).decode()
         return httpx.Response(200, content=response_wav, headers={"X-Omni-Transcript": transcript})
 
-    monkeypatch.setattr("tuber_studio.http_api.inference_transport", lambda _: httpx.MockTransport(gateway))
+    monkeypatch.setattr("tuber_studio.infra.inference.http_api.inference_transport", lambda _: httpx.MockTransport(gateway))
 
     async def reply(*_):
         return Reply(spoken_text="直播开始啦。"), None

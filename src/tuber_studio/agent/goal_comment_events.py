@@ -6,9 +6,9 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Query
 from pydantic import Field
 
-from ..models import StrictModel
+from ..core.models import StrictModel
+from ..core.store import dump
 from ..operations.browsing.comment_timeline import comment_href, ensure_comment_timeline
-from ..store import dump
 
 
 class CommentWatch(StrictModel):

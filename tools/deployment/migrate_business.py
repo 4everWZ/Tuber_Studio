@@ -23,7 +23,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from tuber_studio.runtime_authority import (  # noqa: E402
+from tuber_studio.core.authority import (  # noqa: E402
     AUTHORITY_FILE,
     LOCK_FILE,
     acquire_business_writer,

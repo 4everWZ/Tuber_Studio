@@ -7,10 +7,10 @@ from uuid import UUID, uuid5
 
 from pydantic import Field, ValidationError
 
-from ..models import StrictModel
-from ..responses_provider import EmptyResponseTurn
-from ..store import dump
-from ..web_fetch import programme_credit_text
+from ..core.models import StrictModel
+from ..core.store import dump
+from ..infra.inference.responses_provider import EmptyResponseTurn
+from ..infra.web_client.fetch import programme_credit_text
 from .clip_refinement import positive_subwindows, subwindow_brief
 from .private_code import private_tools
 from .public_sources import restriction_messages

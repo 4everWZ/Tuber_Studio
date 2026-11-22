@@ -32,7 +32,7 @@ from evaluations.creative_browser_receipt import (
 )
 from evaluations.omni_chat_loop import ROOT, connection
 from tuber_studio.app import create_app
-from tuber_studio.config import Settings
+from tuber_studio.core.config import Settings
 
 
 def write(path, value):

@@ -10,7 +10,7 @@ from tuber_studio.operations.browsing.round_context import agent_depth
 
 
 async def test_agent_chooses_comments_without_a_main_reply_or_interest_classification(browsing):
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({"reply_enabled": True, "recent_sample_limit": 0})
 
     async def fetch(video, max_pages=1):
@@ -71,7 +71,7 @@ async def test_agent_chooses_comments_without_a_main_reply_or_interest_classific
 
 
 async def test_no_main_reply_decision_survives_revisit_and_character_version(browsing):
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({"reply_enabled": True, "recent_sample_limit": 0})
     original = browsing.runtime.operation_llm.generate_json
     decisions = []

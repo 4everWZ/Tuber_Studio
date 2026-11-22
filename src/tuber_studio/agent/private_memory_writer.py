@@ -4,11 +4,11 @@ from dataclasses import replace
 
 from pydantic import Field
 
-from ..daily_memory import MemoryChanged, contains_memory_credential
-from ..models import StrictModel
-from ..store import dump
-from .private_editor_memory import connect_private_editor
+from ..core.models import StrictModel
+from ..core.store import dump
+from ..persona.memory.daily import MemoryChanged, contains_memory_credential
 from .owner_memory import Get, MemoryUse, OwnerNote, Search, check_use, citation, private_rows, read_stamp
+from .private_editor_memory import connect_private_editor
 from .task_delivery import evidence_index
 from .task_runtime import MAX_STEPS
 

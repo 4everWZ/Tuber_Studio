@@ -3,7 +3,7 @@ import json
 
 from test_browsing import browsing as browsing
 
-from tuber_studio.operation_turns import operation_lane
+from tuber_studio.core.turns import operation_lane
 from tuber_studio.operations.browsing.models import ResponseDecision
 
 

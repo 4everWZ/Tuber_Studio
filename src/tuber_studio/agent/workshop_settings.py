@@ -2,12 +2,16 @@
 
 from pydantic import TypeAdapter, ValidationError
 
-from ..illustration_policy import IllustrationPolicy, illustration_policy, save_illustration_policy
+from ..core.models import content_hash
 from ..live.media import MusicSettings, Scene
 from ..live.options import LiveOptions
-from ..operation_continuations import content_hash
 from ..operations.browsing.models import BrowsingPolicy
-from ..performance import Performance
+from ..persona.assets.illustration_policy import (
+    IllustrationPolicy,
+    illustration_policy,
+    save_illustration_policy,
+)
+from ..persona.characters.performance import Performance
 
 # These are opt-in projections. Adding a provider or UI setting does not grant model access.
 _GROUPS = {

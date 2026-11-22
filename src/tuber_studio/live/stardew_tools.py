@@ -4,7 +4,7 @@ from typing import Literal
 from uuid import UUID
 
 from ..agent.task_runtime import Tool, ToolWait
-from ..models import StrictModel
+from ..core.models import StrictModel
 from .stardew_device import DeviceCommand
 
 

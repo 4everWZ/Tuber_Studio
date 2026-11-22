@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 from pydantic import Field
 
-from ..models import Animation, Emotion, StrictModel
+from ..core.models import Animation, Emotion, StrictModel
 
 SDK = ("pixi.min.js", "live2dcubismcore.min.js", "cubism4.min.js")
 PREFIX = "/media/live2d"

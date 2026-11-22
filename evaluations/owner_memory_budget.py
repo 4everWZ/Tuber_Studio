@@ -5,7 +5,8 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import httpx
-from tuber_studio import responses_provider
+
+from tuber_studio.infra.inference import responses_provider
 
 
 @contextmanager

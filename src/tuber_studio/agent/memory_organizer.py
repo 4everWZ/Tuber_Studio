@@ -11,16 +11,15 @@ from typing import Literal
 import httpx
 from pydantic import Field, create_model
 
-from ..cooperation import RoutineReview, corroborates, locate_rule, with_scope_context
-from ..daily_memory import contains_memory_credential
-from ..generation_meter import budgeted_call
-from ..memory_sources import install_chat_cleanup, memory_transaction
-from ..models import StrictModel
-from ..operation_continuations import content_hash
-from ..operation_identity import without_model_identity
+from ..core.identity import without_model_identity
+from ..core.meter import budgeted_call
+from ..core.models import StrictModel, content_hash
+from ..core.store import dump
+from ..infra.inference.providers import public_error
 from ..operations.browsing.comment_timeline import comment_thread, resource_key
-from ..providers import public_error
-from ..store import dump
+from ..persona.memory.cooperation import RoutineReview, corroborates, locate_rule, with_scope_context
+from ..persona.memory.daily import contains_memory_credential
+from ..persona.memory.sources import install_chat_cleanup, memory_transaction
 
 # Only the isolated replay installs a sink. Private turns never enter general application logs.
 admission_receipt = ContextVar("private_memory_admission_receipt", default=None)

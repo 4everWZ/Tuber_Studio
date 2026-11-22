@@ -6,8 +6,8 @@ from typing import Literal
 
 from pydantic import Field, StrictBool, StrictFloat, StrictInt
 
-from ..front_persona import character_names
-from ..models import StrictModel
+from ..core.models import StrictModel
+from ..persona.characters.front_persona import character_names
 from .workshop_settings import read_settings, settings_catalog, update_settings
 
 OWNER_CONTROL_REPLY = "这项权限可在号主设置页管理。"

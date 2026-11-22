@@ -11,7 +11,7 @@ from uuid import UUID
 from fastapi import Depends, HTTPException
 from pydantic import Field
 
-from ..models import StrictModel
+from ..core.models import StrictModel
 
 
 class DeviceCommand(StrictModel):

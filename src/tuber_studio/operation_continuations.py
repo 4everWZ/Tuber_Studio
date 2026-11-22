@@ -5,7 +5,6 @@ This coordinator owns the recovery state machine, never platform destinations.
 """
 
 import asyncio
-import hashlib
 import inspect
 import json
 import time
@@ -19,8 +18,8 @@ from uuid import uuid4
 import httpx
 from pydantic import Field, ValidationError
 
-from .compaction import ContextWindowExceeded
-from .generation_meter import (
+from .core.errors import ContextWindowExceeded
+from .core.meter import (
     BrowsingBudgetDeferred,
     GenerationBudgetExceeded,
     GenerationMeter,
@@ -28,17 +27,11 @@ from .generation_meter import (
     reserve_counters,
     settle_counters,
 )
-from .http_api import InferenceBudgetExceeded
-from .models import StrictModel
-from .store import dump
+from .core.models import StrictModel, content_hash
+from .core.store import dump
+from .infra.inference.http_api import InferenceBudgetExceeded
 
 continuation_context = ContextVar("operation_continuation_context", default=None)
-
-
-def content_hash(value):
-    return hashlib.sha256(
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
 
 
 def continuation_messages(messages):
@@ -815,7 +808,7 @@ class ContinuationCoordinator:
                 or previous.get("binding") != binding
             ):
                 raise ValueError("人工修订需要原平台明确拒绝的绑定发送")
-            from .publication_errors import platform_recovery_condition
+            from .core.errors import platform_recovery_condition
 
             if (content_hash(visible_payload(value)) == trigger.get("content_hash")
                     and not platform_recovery_condition(trigger.get("code"))):

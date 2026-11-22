@@ -5,16 +5,15 @@ from uuid import uuid4
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from front_effects import direct_request
 from test_browsing import BV, ControlledPlatform
 
 from tuber_studio.agent import task_tools
 from tuber_studio.agent.task_runtime import TaskDecision, TaskRuntime, Tool, ToolRequest, ToolWait
 from tuber_studio.app import create_app
-from tuber_studio.models import BilibiliOwner, Reply, StrictModel
-from tuber_studio.providers import Audio
-from tuber_studio.store import Store
-from tuber_studio.web_fetch import WebFetchRequest
+from tuber_studio.core.models import BilibiliOwner, Reply, StrictModel
+from tuber_studio.core.store import Store
+from tuber_studio.infra.inference.providers import Audio
+from tuber_studio.infra.web_client.fetch import WebFetchRequest
 
 
 async def until(condition):

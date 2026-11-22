@@ -3,16 +3,17 @@ import json
 import time
 
 import httpx
-from test_browsing import BV, browsing as browsing, finished, wait_for_sends
+from test_browsing import BV, finished, wait_for_sends
+from test_browsing import browsing as browsing
 from test_browsing_comment_only import comment, enable_comment_choices
 from test_direct_messages import incoming
 
 from tuber_studio.comment_workbench import prepare_queue_selection, review_queue_selection
+from tuber_studio.core.errors import PublishUncertain
+from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
 from tuber_studio.operations.browsing.backlog import inventory
 from tuber_studio.operations.browsing.comment_reader import admit_comment_page, resume_comment_page
 from tuber_studio.operations.browsing.models import ResponseDecision
-from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
-from tuber_studio.publication_errors import PublishUncertain
 
 
 async def approved_replies(browsing, count, monkeypatch):
@@ -20,8 +21,8 @@ async def approved_replies(browsing, count, monkeypatch):
                               "recipient_cooldown_seconds": 0, "reply_enabled": True})
     await browsing.messages.configure({"enabled": True, "auto_poll": True})
     await browsing.set_enabled(True)
-    browsing.comments.credentials = {"sessdata": "fixture", "csrf": "fixture"}
-    monkeypatch.setattr(browsing.comments, "display_account_id", lambda: "100")
+    browsing.bilibili_account.credentials = {"sessdata": "fixture", "csrf": "fixture"}
+    monkeypatch.setattr(browsing.bilibili_account, "display_account_id", lambda: "100")
 
     async def thread(target):
         parent = target["parent"]

@@ -13,9 +13,9 @@ from pydantic import Field
 from evaluations.omni_chat_loop import connection
 from evaluations.owner_memory_video import await_admission
 from tuber_studio.agent.title_form import title_words
-from tuber_studio.api_providers import create_llm
-from tuber_studio.config import ROOT, Settings
-from tuber_studio.models import StrictModel
+from tuber_studio.core.config import ROOT, Settings
+from tuber_studio.core.models import StrictModel
+from tuber_studio.infra.inference.api_providers import create_llm
 
 
 class BlindReading(StrictModel):

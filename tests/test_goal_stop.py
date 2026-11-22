@@ -9,8 +9,8 @@ from fastapi import FastAPI
 
 from tuber_studio.agent.task_api import register_task_api
 from tuber_studio.agent.task_runtime import TaskRuntime, Tool
-from tuber_studio.models import StrictModel
-from tuber_studio.store import Store
+from tuber_studio.core.models import StrictModel
+from tuber_studio.core.store import Store
 
 
 def new(tasks, title, root=None):

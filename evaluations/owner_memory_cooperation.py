@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from evaluations.owner_memory_device import SEARCH, device_call
 from evaluations.owner_memory_video import await_admission, forget_current
-from tuber_studio.cooperation import bound_statement
+from tuber_studio.persona.memory.cooperation import bound_statement
 
 
 async def verify_chat_admission(client, runtime, device, port, token, deadline, record):

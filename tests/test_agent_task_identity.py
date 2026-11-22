@@ -6,7 +6,7 @@ import pytest
 
 from tuber_studio.agent.task_identity import TaskIdentity
 from tuber_studio.agent.task_runtime import TaskRuntime
-from tuber_studio.store import Store, dump
+from tuber_studio.core.store import Store, dump
 
 
 def studio_tasks(store):

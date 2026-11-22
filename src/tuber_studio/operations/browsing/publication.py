@@ -8,6 +8,13 @@ from contextlib import nullcontext
 from uuid import uuid4
 
 from ...comment_materials import model_comment_materials, validate_comment_material_sources
+from ...core.errors import PlatformRejected, UnknownPublication
+from ...core.identity import runtime_identity
+from ...core.models import content_hash
+from ...core.store import dump
+from ...core.text import comment_body_issue, validate_comment_body, validate_operation_text
+from ...infra.inference.providers import public_error
+from ...infra.platforms.bilibili.client import PlatformReadError, PublishUncertain
 from ...operation_attachments import (
     TEXT_ONLY_IMAGE,
     checked_image,
@@ -23,26 +30,15 @@ from ...operation_attachments import (
     row_ref,
     wait_decision,
 )
-from ...operation_continuations import content_hash
 from ...operation_feedback import (
     FeedbackPublication,
     PublicationContext,
     publication_binding,
 )
 from ...operation_generation import generate_with_recovery, generation_requires_review
-from ...operation_identity import runtime_identity
 from ...operation_sends import current_send
-from ...operation_text import (
-    comment_body_issue,
-    validate_comment_body,
-    validate_operation_text,
-)
 from ...operations_control import canonical_intent
-from ...platforms.bilibili import PlatformReadError, PublishUncertain
-from ...providers import public_error
 from ...public_mentions import rebase_mentions, revision_payload
-from ...publication_errors import PlatformRejected, UnknownPublication
-from ...store import dump
 from .comment_timeline import observe_thread, resource_key
 from .inputs import ResponseDecisionInput
 from .models import RESPONSE_INSTRUCTION, ResponseDecision
@@ -273,7 +269,7 @@ class BrowsingPublication:
         scoped = row | {"target": target}
         raw = target.get("image_ref")
         if action == "reselect_image":
-            if options or text != row["text"] or row["account_id"] != self.browsing.comments.display_account_id():
+            if options or text != row["text"] or row["account_id"] != self.browsing.bilibili_account.display_account_id():
                 raise ValueError("请切换到草稿所属账号，并先保存正文")
             require_comment_attachment("browsing", scoped, raw)
             target["image_ref"] = rebind_image(self.browsing.runtime, "browsing", scoped, text, retry=True)
@@ -807,7 +803,7 @@ class BrowsingPublication:
         self, identity, *, automatic=False, revision_ticket=None, binding=None, body_hash=None
     ):
         await self._refresh_intent_identity(identity, automatic)
-        async with self.browsing.comments.publish_lock:
+        async with self.browsing.bilibili_account.credential_lock:
             row = self.browsing.repo.decode(
                 self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
             )

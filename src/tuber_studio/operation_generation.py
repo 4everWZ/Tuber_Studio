@@ -2,17 +2,14 @@
 
 import time
 
-from .compaction import ContextWindowExceeded
-from .generation_meter import GenerationBudgetExceeded
-from .operation_continuations import (
-    ContinuationCheckpoint,
-    GenerationFeedback,
-    content_hash,
-)
+from .core.errors import ContextWindowExceeded
+from .core.identity import captured_identity, identity_messages, runtime_identity
+from .core.meter import GenerationBudgetExceeded
+from .core.models import content_hash
+from .core.text import comment_body_issue
+from .infra.web_client.fetch import OperationWebFetch
+from .operation_continuations import ContinuationCheckpoint, GenerationFeedback
 from .operation_feedback import coordinator_for, episode_limits
-from .operation_identity import captured_identity, identity_messages, runtime_identity
-from .operation_text import comment_body_issue
-from .web_fetch import OperationWebFetch
 
 
 def reply_generation_binding(scope, character, event, mode):

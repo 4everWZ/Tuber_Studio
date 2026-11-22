@@ -3,8 +3,8 @@
 import json
 from uuid import UUID, uuid5
 
-from ..operation_continuations import content_hash
-from ..store import dump
+from ..core.models import content_hash
+from ..core.store import dump
 
 
 def waiting_delivery(steps):

@@ -9,11 +9,10 @@ import httpx
 import uvicorn
 from playwright.sync_api import expect, sync_playwright
 
-from tuber_studio.api_providers import create_operation_llm
 from tuber_studio.app import create_app
+from tuber_studio.infra.inference.api_providers import create_operation_llm
+from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
 from tuber_studio.operations.browsing.comment_timeline import observe_thread
-from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
-
 
 VIDEO = "BV1d8pU6xEZX"
 ACCOUNT = "900"
@@ -123,8 +122,8 @@ async def test_merge_sources_review_then_submit_once(settings, monkeypatch):
         settings.provider_keys = {"omni": os.environ["DYNAMIC_ACCEPTANCE_TOKEN"]}
     app = create_app(settings, adapter=adapter)
     state = app.state
-    state.comments.credentials.update(credentials)
-    assert await state.comments.account_id() == ACCOUNT
+    state.bilibili_account.credentials.update(credentials)
+    assert await state.bilibili_account.account_id() == ACCOUNT
     character = state.runtime.character
     await state.runtime.refresh_identity(character, ACCOUNT)
     await state.dynamics.set_policy({"auto_publish": False})

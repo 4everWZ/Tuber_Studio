@@ -1,10 +1,10 @@
 """Read the same bundled image from the chat picker and the gallery in an isolated Studio."""
 
 import asyncio
-from copy import copy
 import os
 import shutil
 import socket
+from copy import copy
 
 import pytest
 import uvicorn
@@ -111,5 +111,5 @@ async def test_gallery_shows_one_bundled_error_and_rejects_a_broken_upload(setti
         finally:
             server.should_exit = True
             await serving
-            await app.state.comments.adapter.close()
+            await app.state.bilibili_account.adapter.close()
             app.state.store.close()

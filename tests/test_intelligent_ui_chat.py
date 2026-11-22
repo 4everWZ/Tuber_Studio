@@ -6,21 +6,20 @@ from uuid import uuid4
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from front_effects import direct_request
+from test_agent_task_recovery import wait_status
 from test_browsing import BV, ControlledPlatform
 from test_browsing_evidence import PNG, TestVisual
-from test_agent_task_recovery import wait_status
 
 from tuber_studio.agent import operator_facts, task_delegation
 from tuber_studio.agent.assistant_output import AssistantTextStream, assistant_markdown
 from tuber_studio.agent.operator_task_patch import TaskPatch, grounded_patch, patch_vocabulary
 from tuber_studio.app import create_app
+from tuber_studio.core.identity import provider_identity_messages
+from tuber_studio.core.models import Reply
+from tuber_studio.infra.inference.providers import Audio
 from tuber_studio.live.game_livestream import GameLivestreamService
-from tuber_studio.models import Reply
-from tuber_studio.operation_identity import provider_identity_messages
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
-from tuber_studio.providers import Audio
 
 
 async def test_chat_delegation_survives_interleaved_conversation_and_delivers_latest_revision(settings, monkeypatch):
@@ -1179,7 +1178,7 @@ def test_specified_video_reuses_range_checkpoints_and_reconnects_under_same_id(s
         assert platform.calls.count(("subtitles", BV, "22")) == 1
         assert vision.calls == 2 and platform.sent == []
         assert app.state.store.one("SELECT COUNT(*) AS n FROM browsing_tasks WHERE round_id=?", (result["id"],))["n"] == 1
-        browsing.comments.verified_account_id = "200"
+        browsing.bilibili_account.verified_account_id = "200"
         assert client.get(turn_url).json()["card"]["data"]["status"] == "unavailable"
 
 

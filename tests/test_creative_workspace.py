@@ -8,8 +8,8 @@ from tuber_studio.agent.task_api import register_task_api
 from tuber_studio.agent.task_delivery import PrivateDelivery
 from tuber_studio.agent.task_runtime import TaskRuntime
 from tuber_studio.app import create_app
-from tuber_studio.responses_provider import FunctionCall, ResponseTurn
-from tuber_studio.store import Store
+from tuber_studio.core.store import Store
+from tuber_studio.infra.inference.responses_provider import FunctionCall, ResponseTurn
 
 
 async def test_activity_available_while_model_health_is_blocked(settings):

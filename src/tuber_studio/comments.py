@@ -10,31 +10,34 @@ import time
 from collections import deque
 from uuid import uuid4
 
-from .bilibili_account import cached_account_actor
 from .comment_materials import (
     model_comment_materials,
     prepare_comment_materials,
     validate_comment_material_sources,
-    without_article_links,
 )
-from .config import atomic_json
-from .media_cache import linked
+from .core.errors import PlatformRejected, SendLimitReached, UnknownPublication
+from .core.identity import runtime_identity
+from .core.models import content_hash
+from .core.store import dump
+from .core.text import validate_comment_body, validate_operation_text
+from .infra.inference.providers import public_error
+from .infra.platforms.bilibili.account import cached_account_actor
+from .infra.platforms.bilibili.client import BilibiliAdapter, PublishUncertain
+from .infra.platforms.bilibili.comment_materials import without_article_links
 from .operation_attachments import (
     comment_payload,
     decision,
     require_comment_attachment,
     row_ref,
 )
-from .operation_continuations import content_hash
 from .operation_feedback import (
     FeedbackPublication,
     PublicationContext,
     generation_view,
     publication_binding,
 )
-from .operation_identity import runtime_identity
-from .operation_text import validate_comment_body, validate_operation_text
 from .operations.browsing.models import BrowsingPolicy
+from .operations.browsing.quotas import DailyReplyLimitReached
 from .operations.browsing.thread_context import (
     comment_source,
     comment_thread_context,
@@ -42,14 +45,13 @@ from .operations.browsing.thread_context import (
     read_scoped_thread,
 )
 from .operations_control import OperationsControl, canonical_intent
-from .platforms.bilibili import BilibiliAdapter, PublishUncertain
-from .operations.browsing.quotas import DailyReplyLimitReached
-from .publication_errors import SendLimitReached
-from .platforms.bilibili_login import validate_credentials
-from .providers import public_error
-from .publication_errors import PlatformRejected, UnknownPublication
-from .public_mentions import bind_mentions, draft_mentions, mention_participants, rebase_mentions, revision_payload
-from .store import dump
+from .public_mentions import (
+    bind_mentions,
+    draft_mentions,
+    mention_participants,
+    rebase_mentions,
+    revision_payload,
+)
 
 CATEGORIES = {"question", "suggestion", "interaction", "spam", "general"}
 THREAD_WORKERS = 4
@@ -69,34 +71,16 @@ def category(text, attachments=()):
 
 
 class Comments:
-    def __init__(self, settings, store, runtime, adapter=None):
-        self.settings, self.store, self.runtime = settings, store, runtime
+    def __init__(self, settings, store, runtime, account):
+        self.settings, self.store, self.runtime, self.account = settings, store, runtime, account
         self.memes = None
         if "image_ref" not in {r[1] for r in store.db.execute("PRAGMA table_info(drafts)")}:
             store.execute("ALTER TABLE drafts ADD COLUMN image_ref TEXT")
         self.operations = getattr(runtime, "operations", None) or OperationsControl(store)
         runtime.operations = self.operations
-        self.credential_path = settings.runtime / "bilibili-credentials.json"
-        if linked(self.credential_path):
-            raise ValueError("账号凭证文件不能使用链接")
-        credentials = (
-            json.loads(self.credential_path.read_text(encoding="utf-8"))
-            if self.credential_path.exists()
-            else {}
-        )
-        self.credentials = credentials
-        if adapter is None:
-            from .platforms.bilibili_browsing import BrowsingAdapter
-
-            adapter = BrowsingAdapter(credentials)
-            self.injected = False
-        else:
-            self.injected = True
-        self.adapter = adapter
         self.queue = asyncio.Queue(maxsize=40)
         self.worker = None
         self.policy_changed = asyncio.Event()
-        self.publish_lock = asyncio.Lock()
         self.fetch_lock = asyncio.Lock()
         self.active_task_id = None
         self.thread_tasks = set()
@@ -104,8 +88,6 @@ class Comments:
         self.direct_messages = None
         self.task_authorizations = {}
         self.active_automation_epoch = None
-        self.verified_account_id = ""
-        self.verified_credential = None
         if "account_id" not in {row[1] for row in store.db.execute("PRAGMA table_info(drafts)")}:
             store.execute("ALTER TABLE drafts ADD COLUMN account_id TEXT NOT NULL DEFAULT ''")
         if "generation_continuation_id" not in {
@@ -140,11 +122,10 @@ class Comments:
                 (time.time(), task_id),
             )
             self.queue.task_done()
-        await self.adapter.close()
 
     def policy(self):
         configured = BrowsingPolicy.model_validate(self.store.get("browsing_policy", {}))
-        credentials = bool(self.credentials.get("sessdata") and self.credentials.get("csrf"))
+        credentials = self.account.credentials_configured
         base = {
             "auto_reply": configured.reply_enabled and configured.reply_auto_publish,
             "max_replies_per_hour": configured.max_per_hour,
@@ -158,52 +139,6 @@ class Comments:
             "emergency": self.operations.policy()["emergency"],
             "credentials_configured": credentials,
         }
-
-    async def replace_credentials(self, credential, *, expected=None, verified_uid=None):
-        """Atomically replace the account credential store against its observed version."""
-        validate_credentials(credential)
-        from .platforms.bilibili_browsing import BrowsingAdapter
-
-        async with self.publish_lock:
-            if expected is not None and self.credentials != expected:
-                raise ValueError("账号凭证已被另一项设置更新，请刷新后重新保存")
-            if credential == self.credentials:
-                return
-            if all(credential.get(key) == self.credentials.get(key) for key in ("sessdata", "csrf", "uid")):
-                atomic_json(self.credential_path, credential, private=True)
-                if self.verified_credential == self.credentials:
-                    self.verified_credential = dict(credential)
-                self.credentials = dict(credential)
-                return
-            replacement = BrowsingAdapter(credential)
-            try:
-                atomic_json(self.credential_path, credential, private=True)
-            except BaseException:
-                await replacement.close()
-                raise
-            old = self.adapter
-            self.credentials, self.adapter, self.injected = dict(credential), replacement, False
-            self.verified_account_id = verified_uid or ""
-            self.verified_credential = dict(credential) if verified_uid else None
-            self.policy_changed.set()
-            await old.close()
-
-    async def account_id(self):
-        adapter = self.adapter
-        credential = dict(self.credentials)
-        if hasattr(adapter, "self_uid"):
-            account_id = str(await adapter.self_uid())
-            if self.adapter is not adapter or self.credentials != credential:
-                raise ValueError("核验期间账号已变更，请重试")
-            self.verified_account_id = account_id
-            self.verified_credential = credential
-            return account_id
-        if self.injected:
-            return "injected-test-account"
-        raise ValueError("平台适配器不能核验当前账号")
-
-    def display_account_id(self):
-        return self.verified_account_id if self.verified_credential == self.credentials else ""
 
     def prepare_import(self, video_id, items=None, csv_text=None, field_mapping=None, *, platform_fetch=False):
         if not isinstance(video_id, str) or not re.fullmatch(
@@ -343,7 +278,7 @@ class Comments:
         if not isinstance(max_pages, int) or not 1 <= max_pages <= 5:
             raise ValueError("每次读取1到5页")
         async with self.fetch_lock:
-            data = await self.adapter.fetch(video, max_pages)
+            data = await self.account.adapter.fetch(video, max_pages)
         if not data["items"]:
             return {"imported": 0, "duplicates": 0, "video_id": data["video_id"], "detail": "未读到评论"}
         return self.import_items(data["video_id"], data["items"], platform_fetch=True) | {"title": data.get("title")}
@@ -376,12 +311,9 @@ class Comments:
             [account_id, platform, video_id, thread_id], ensure_ascii=False, separators=(",", ":")
         )
 
-    def context_account_id(self):
-        return self.display_account_id() or cached_account_actor(self.store, self.credentials, None).get("account_uid") or ""
-
     def account_context_scope(self, video_id, thread_id, platform="bilibili", *, account_id=None):
         return self.context_scope(video_id, thread_id, platform,
-                                  account_id=self.context_account_id() if account_id is None else str(account_id))
+                                  account_id=self.account.context_account_id() if account_id is None else str(account_id))
 
     def list_comments(self, video_id=None, category_filter=None, status=None, limit=200, *, thread_id=None):
         conditions, args = [], []
@@ -404,7 +336,7 @@ class Comments:
             + " ORDER BY (d.id IS NOT NULL) DESC,d.updated_at DESC,c.imported_at DESC,c.id DESC LIMIT ?",
             (*args, min(limit, 1000)),
         )
-        account_id = self.display_account_id()
+        account_id = self.account.display_account_id()
         for row in rows:
             row["continuation"] = generation_view(
                 self.runtime, row.get("generation_continuation_id"), "comments", row["id"]
@@ -578,7 +510,7 @@ class Comments:
         source = row | {"mentions": json.loads(row.get("mentions") or "[]")}
         target = {"root": row["thread_id"] or row["comment_id"], "parent": row["comment_id"],
                   "recipient": row["platform_user_id"]}
-        actor = cached_account_actor(self.store, self.credentials, account_id) | {
+        actor = cached_account_actor(self.store, self.account.credentials, account_id) | {
             "character_id": character["id"], "character_name": character["name"],
         }
         return {"self_actor": actor, "comment_context": comment_thread_context(source, items, target)}
@@ -663,7 +595,7 @@ class Comments:
         if row["category"] == "spam" or self.store.one("SELECT id FROM drafts WHERE comment_id=?", (cid,)):
             return
         event = self._comment_event(row)
-        account_id = await self.account_id() if self.policy()["credentials_configured"] else self.context_account_id()
+        account_id = await self.account.account_id() if self.policy()["credentials_configured"] else self.account.context_account_id()
         event["account_id"] = account_id
         if self.direct_messages:
             handoff = await self.direct_messages.route_comment(row, character, event, automatic=automatic)
@@ -738,7 +670,7 @@ class Comments:
                     check.setdefault("generation_identity", generation_identity)
                     mentions = getattr(reply, "mentions", [])
                     if mentions:
-                        bound, pending = await bind_mentions(self.adapter, reply.spoken_text,
+                        bound, pending = await bind_mentions(self.account.adapter, reply.spoken_text,
                             [item.model_dump() for item in mentions],
                             mention_participants({"source": comment_source(row)}))
                         check.update(mentions=bound, pending_mentions=pending)
@@ -909,9 +841,9 @@ class Comments:
         if not row:
             raise ValueError("草稿不存在")
         character = self.store.character(row["character_id"], row["character_version"])
-        account = self.display_account_id() or await self.account_id()
+        account = self.account.display_account_id() or await self.account.account_id()
         binding = self._publication_binding(row, account, character)
-        adapter, credential = self.adapter, dict(self.credentials)
+        adapter, credential = self.account.adapter, dict(self.account.credentials)
 
         def guard():
             fresh = self._draft_source(draft_id)
@@ -928,8 +860,8 @@ class Comments:
             ):
                 raise ValueError("恢复期间草稿、角色或原始来源已变化")
             if (
-                self.adapter is not adapter
-                or credential != self.credentials
+                self.account.adapter is not adapter
+                or credential != self.account.credentials
                 or (automatic and not self.policy()["auto_reply"])
             ):
                 raise ValueError("恢复期间账号或授权已变化")
@@ -958,14 +890,14 @@ class Comments:
         if not automatic:
             return
         refresh = getattr(self.runtime, "refresh_identity", None)
-        if refresh is None or not hasattr(self.adapter, "account_profile"):
+        if refresh is None or not hasattr(self.account.adapter, "account_profile"):
             return
         row = self._draft_source(draft_id)
         if not row or row["status"] != "pending_review":
             return
         validate_comment_body(row["text"], recipient_name=row["display_name"] or "")
         character = self.store.character(row["character_id"], row["character_version"])
-        account = self.display_account_id() or await self.account_id()
+        account = self.account.display_account_id() or await self.account.account_id()
         if row["account_id"] and row["account_id"] != account:
             raise ValueError("该草稿属于其他账号，不能由当前账号发送")
         current = await refresh(character, account)
@@ -1043,7 +975,7 @@ class Comments:
             character = self.runtime.character
             event = self._comment_event(source)
             original = row["binding"]["source"]
-            current_account = await self.account_id() if self.policy()["credentials_configured"] else ""
+            current_account = await self.account.account_id() if self.policy()["credentials_configured"] else ""
             if str(original.get("account_id", "") or "") != str(current_account):
                 raise ValueError("生成检查点的原账号已变化")
             if row["binding"]["character"] != {"id": character["id"], "version": character["version"]} or any(
@@ -1081,17 +1013,17 @@ class Comments:
         async def read(row, attempt):
             if row["feedback"]["sent_payload"].get("asset_sha256") and not (attempt["receipt"] or {}).get("rpid"):
                 return {"status": "unsupported", "reason": "image_receipt_required"}
-            if not hasattr(self.adapter, "reconcile_publication"):
+            if not hasattr(self.account.adapter, "reconcile_publication"):
                 return {"status": "unsupported"}
             try:
-                account = await self.account_id()
+                account = await self.account.account_id()
             except ValueError:
                 return {"status": "check_failed", "reason": "account_unavailable"}
             if account != row["binding"]["account_id"]:
                 return {"status": "check_failed", "reason": "account_changed"}
             if guard:
                 guard(row, attempt)
-            adapter, credential = self.adapter, dict(self.credentials)
+            adapter, credential = self.account.adapter, dict(self.account.credentials)
             result = await adapter.reconcile_publication(
                 row["binding"]["target"] | {"mentions": row["feedback"]["sent_payload"].get("mentions", [])},
                 author_uid=account,
@@ -1100,7 +1032,7 @@ class Comments:
                 receipt=attempt["receipt"],
             )
             if guard:
-                if self.adapter is not adapter or self.credentials != credential:
+                if self.account.adapter is not adapter or self.account.credentials != credential:
                     raise ValueError("核对期间账号连接已变化")
                 guard(row, attempt)
             return result
@@ -1193,7 +1125,7 @@ class Comments:
         submission=None,
     ):
         await self._refresh_draft_identity(draft_id, automatic, authorization_epoch)
-        async with self.publish_lock:
+        async with self.account.credential_lock:
             policy = self.policy()
             if automatic and not policy["auto_reply"]:
                 raise ValueError("自动回复已停止，草稿保留待审核")
@@ -1210,10 +1142,10 @@ class Comments:
             if automatic and json.loads(row["answer_check"] or "{}").get("output", {}).get("needs_review"):
                 raise ValueError("正文诊断尚待审核，未自动发布")
             previous = row["status"]
-            account_id = await self.account_id()
+            account_id = await self.account.account_id()
             if row["account_id"] and row["account_id"] != account_id:
                 raise ValueError("该草稿属于其他账号，不能由当前账号发送")
-            adapter, credential = self.adapter, dict(self.credentials)
+            adapter, credential = self.account.adapter, dict(self.account.credentials)
             if submission and not hasattr(adapter, "read_video_thread"):
                 raise ValueError("当前适配器无法核验原评论和号主回复")
             if hasattr(adapter, "read_video_thread"):
@@ -1222,7 +1154,7 @@ class Comments:
                 thread = await read_scoped_thread(
                     self.store, adapter.read_video_thread, target, target | {"account_id": account_id, "resource_type": "video"},
                 )
-                if adapter is not self.adapter or credential != self.credentials:
+                if adapter is not self.account.adapter or credential != self.account.credentials:
                     raise ValueError("核验期间账号已变化，保留草稿")
                 source = thread["source"]
                 if source["text"] != row["content"] or (
@@ -1287,14 +1219,14 @@ class Comments:
                 self.runtime.validate_memory_delivery(audit)
                 captured = audit.get("generation_identity")
                 if (
-                    automatic and hasattr(self.adapter, "account_profile") and captured
+                    automatic and hasattr(self.account.adapter, "account_profile") and captured
                     and captured.get("identity_version") != runtime_identity(self.runtime, character, account_id)["identity_version"]
                 ):
                     raise ValueError("发送前身份资料已更新，保留草稿重新生成")
                 fresh = self._draft_source(draft_id)
                 if (
-                    self.adapter is not adapter
-                    or credential != self.credentials
+                    self.account.adapter is not adapter
+                    or credential != self.account.credentials
                     or not fresh
                     or fresh["content"] != row["content"]
                     or fresh["platform_comment_id"] != row["platform_comment_id"]
@@ -1363,7 +1295,7 @@ class Comments:
                     before_send()
                 if payload.get("mentions"):
                     options["mentions"] = payload["mentions"]
-                receipt = await self.adapter.publish(
+                receipt = await self.account.adapter.publish(
                     row["video_id"], row["platform_comment_id"], row["text"], **options
                 )
                 if not isinstance(receipt, dict) or not re.fullmatch(

@@ -11,10 +11,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
+from tuber_studio.core.models import Event, Reply
+from tuber_studio.infra.inference.providers import Audio
 from tuber_studio.live.media import default_scene, inspect_wav
 from tuber_studio.live.studio import room_feed
-from tuber_studio.models import Event, Reply
-from tuber_studio.providers import Audio
 
 
 def pcm(seconds=0.4, silence=False):

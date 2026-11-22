@@ -6,6 +6,8 @@ import re
 import time
 from datetime import datetime
 
+from .infra.inference.providers import public_error
+from .infra.platforms.bilibili.client import PlatformReadError
 from .operation_attachments import (
     can_attach_comment_image,
     comment_payload,
@@ -23,8 +25,6 @@ from .operations.browsing.thread_context import (
     public_discussion_url,
     read_scoped_thread,
 )
-from .platforms.bilibili import PlatformReadError
-from .providers import public_error
 
 FILTERS = {
     "review": ("pending_review", "approved"),
@@ -306,7 +306,7 @@ def draft_for_review(browsing, item):
         raise ValueError("草稿不存在")
     actor = browsing.runtime.character
     if (row["account_id"], row["character_id"], row["character_version"]) != (
-            browsing.comments.display_account_id(), actor["id"], actor["version"]):
+            browsing.bilibili_account.display_account_id(), actor["id"], actor["version"]):
         raise ValueError("草稿属于其他账号或角色版本")
     if row["status"] not in REVIEW_STATES:
         raise ValueError("草稿已处理，请刷新")

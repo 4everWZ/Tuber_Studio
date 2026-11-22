@@ -8,12 +8,12 @@ from collections import deque
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from ..daily_memory import MemoryChanged
-from ..models import Event, Reply
-from ..omni_speech import sentences
-from ..performance import performance
-from ..providers import public_error
-from ..store import character_card, dump
+from ..core.models import Event, Reply
+from ..core.store import character_card, dump
+from ..infra.inference.omni_speech import sentences
+from ..infra.inference.providers import public_error
+from ..persona.characters.performance import performance
+from ..persona.memory.daily import MemoryChanged
 from .activity_filter import ActivitySummary, LiveActivityFilter
 from .draw_and_guess import DrawAndGuessService
 from .game_livestream import GameLivestreamService

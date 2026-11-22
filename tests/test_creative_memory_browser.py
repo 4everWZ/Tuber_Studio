@@ -487,5 +487,5 @@ async def test_chat_memory_migration_in_chromium(settings, monkeypatch):
             await runtime.memory_organizer.close()
             server.should_exit = True
             await serving
-            await app.state.comments.adapter.close()
+            await app.state.bilibili_account.adapter.close()
             runtime.store.close()

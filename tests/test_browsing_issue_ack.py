@@ -4,8 +4,8 @@ import pytest
 from test_browsing import BV
 from test_browsing import browsing as browsing
 
+from tuber_studio.core.store import dump
 from tuber_studio.operations.browsing.issues import acknowledge_issues, clear_issues
-from tuber_studio.store import dump
 
 
 def add_error(browsing, identity, stamp):

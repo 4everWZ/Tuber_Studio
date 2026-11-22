@@ -4,9 +4,9 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from ..platforms.bilibili import PlatformReadError
-from ..platforms.bilibili_browsing import BrowsingAdapter
-from ..web_fetch import MAX_EXCERPT, source_url
+from ..infra.platforms.bilibili.browsing import BrowsingAdapter
+from ..infra.platforms.bilibili.client import PlatformReadError
+from ..infra.web_client.fetch import MAX_EXCERPT, source_url
 
 
 def published_on(value, day, timezone, *, now=None):

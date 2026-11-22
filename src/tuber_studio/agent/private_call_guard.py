@@ -7,9 +7,8 @@ from uuid import UUID
 from fastapi import Depends, HTTPException
 from starlette.responses import StreamingResponse
 
-from ..daily_memory import MemoryChanged
-from ..models import StrictModel
-from ..operation_continuations import content_hash
+from ..core.models import StrictModel, content_hash
+from ..persona.memory.daily import MemoryChanged
 from ..web_entry import route_path
 from .owner_memory import history_preference
 from .owner_memory_use import MemoryUse, check_use, read_stamp

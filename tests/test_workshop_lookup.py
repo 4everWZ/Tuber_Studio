@@ -9,9 +9,9 @@ from test_personal_agent import studio as studio
 
 from tuber_studio.agent import operator_facts
 from tuber_studio.agent.assistant_output import calendar_fields, clock_readout
+from tuber_studio.core.store import dump
+from tuber_studio.infra.inference.responses_provider import FunctionCall, ResponseTurn
 from tuber_studio.operations.browsing.comment_timeline import ensure_comment_timeline
-from tuber_studio.responses_provider import FunctionCall, ResponseTurn
-from tuber_studio.store import dump
 
 ACCOUNT = "12345"
 SOURCE = "BV1ab411c7mD"

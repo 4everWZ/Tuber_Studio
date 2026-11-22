@@ -8,10 +8,9 @@ from uuid import UUID
 from fastapi import Depends, HTTPException
 from pydantic import Field
 
-from ..daily_memory import MemoryChanged, contains_memory_credential
-from ..memory_sources import memory_transaction
-from ..models import StrictModel
-from ..operation_continuations import content_hash
+from ..core.models import StrictModel, content_hash
+from ..persona.memory.daily import MemoryChanged, contains_memory_credential
+from ..persona.memory.sources import memory_transaction
 from . import private_call, voice_origin
 from .memory_organizer import MemorySuggestion
 from .owner_memory import (

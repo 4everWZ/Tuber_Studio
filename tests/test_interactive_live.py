@@ -5,8 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
+from tuber_studio.core.models import Event, Reply
 from tuber_studio.live.scene import LiveScene
-from tuber_studio.models import Event, Reply
 
 
 class ReadOnlyPlatform:

@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..models import Event
+from ..core.models import Event
 
 
 class SongRequestRule(BaseModel):

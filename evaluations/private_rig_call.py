@@ -23,7 +23,7 @@ from playwright.async_api import async_playwright
 from evaluations.browser_login import fill_private_login
 from evaluations.omni_chat_loop import ROOT, connection
 from tuber_studio.app import create_app
-from tuber_studio.config import Settings
+from tuber_studio.core.config import Settings
 
 MOUTH_CENTERS = {"original": (370, 418), "q": (347, 465), "oc-mature-v1": (334, 427), "oc-q-v1": (328, 473)}
 

@@ -5,10 +5,10 @@ import json
 import re
 import time
 
-from ...bilibili_account import PROFILE_CACHE_KEY, signature
+from ...core.store import dump
+from ...infra.inference.providers import public_error
+from ...infra.platforms.bilibili.account import PROFILE_CACHE_KEY, signature
 from ...operations_control import canonical_intent
-from ...providers import public_error
-from ...store import dump
 from .evidence import EvidenceUnavailable
 from .issues import issue_history
 from .models import BrowsePlan, CandidateBatchPlan
@@ -81,10 +81,10 @@ class BackgroundDiscovery:
 
     def history_scope(self):
         service = self.browsing
-        comments = service.comments
-        account = comments.display_account_id()
+        bili_account = service.bilibili_account
+        account = bili_account.display_account_id()
         if not account:
-            credential_signature = signature(comments.credentials)
+            credential_signature = signature(bili_account.credentials)
             cached = service.store.get("browsing_discovery_account", {}) or {}
             profile = service.store.get(PROFILE_CACHE_KEY, {}) or {}
             if cached.get("credential_signature") == credential_signature:
@@ -99,7 +99,7 @@ class BackgroundDiscovery:
             "browsing_discovery_account",
             {
                 "account_id": account,
-                "credential_signature": signature(self.browsing.comments.credentials),
+                "credential_signature": signature(self.browsing.bilibili_account.credentials),
             },
         )
 
@@ -107,7 +107,7 @@ class BackgroundDiscovery:
         """Verify an account once for older histories saved before account binding was persisted."""
         service = self.browsing
         account, character, version = self.history_scope()
-        credential = service.comments.credentials
+        credential = service.bilibili_account.credentials
         key = signature(credential)
         if account or not credential.get("sessdata") or self.history_checked_signature == key:
             return
@@ -120,7 +120,7 @@ class BackgroundDiscovery:
         self.history_checked_signature = key
         try:
             async with asyncio.timeout(4):
-                account = await service.comments.account_id()
+                account = await service.bilibili_account.account_id()
             self.remember_account(account)
         except (TimeoutError, ValueError):
             # The operator can verify or update credentials in Accounts.
@@ -219,7 +219,7 @@ class BackgroundDiscovery:
                 "label": "打开刷视频设置",
                 "href": "#operations-controls",
             }
-        elif not attention and not service.comments.policy()["credentials_configured"]:
+        elif not attention and not service.bilibili_account.credentials_configured:
             attention = {
                 "message": "B 站账号缺少登录或写入凭据",
                 "label": "更新 B 站账号",
@@ -252,7 +252,7 @@ class BackgroundDiscovery:
             "source": source_settings(service.policy()),
             "round_source": source_settings(selected_round["config"])["mode"] if selected_round else None,
             "account_id": service.account or control["account_id"],
-            "configured_account_id": service.comments.display_account_id(),
+            "configured_account_id": service.bilibili_account.display_account_id(),
             "character": service.store.web_character(
                 {key: service.runtime.character[key] for key in ("id", "version", "name")}
             ),

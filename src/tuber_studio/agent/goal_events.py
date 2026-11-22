@@ -10,8 +10,8 @@ from uuid import UUID, uuid5
 from fastapi import Depends, HTTPException, Query
 from pydantic import Field
 
-from ..models import StrictModel
-from ..store import dump
+from ..core.models import StrictModel
+from ..core.store import dump
 from .goal_comment_events import GoalCommentEvents, register_comment_events
 from .task_delivery import deliver_from_receipts
 

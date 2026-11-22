@@ -8,9 +8,9 @@ import pytest
 
 from tuber_studio.agent.reply_operations import SelectedReply
 from tuber_studio.app import create_app
+from tuber_studio.core.store import dump
+from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
 from tuber_studio.operations_control import OperationsControl
-from tuber_studio.platforms.bilibili import PublishUncertain
-from tuber_studio.store import dump
 
 
 class Transport:
@@ -57,8 +57,8 @@ async def studio(settings, monkeypatch):
     app = create_app(settings, adapter=transport, message_adapter=transport)
     runtime, store = app.state.runtime, app.state.store
     tasks, comments, messages = runtime.tasks, app.state.comments, app.state.messages
-    comments.credentials = {"sessdata": "fixture", "csrf": "fixture"}
-    await comments.account_id()
+    comments.account.credentials = {"sessdata": "fixture", "csrf": "fixture"}
+    await comments.account.account_id()
     app.state.browsing.discovery.remember_account("900")
     store.set("message_policy", {"enabled": True})
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as owner:

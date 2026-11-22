@@ -9,12 +9,11 @@ from pathlib import Path
 
 from tuber_studio.agent.task_tools import decode_review_frame
 from tuber_studio.agent.visual_specificity import review_visual_specificity
-from tuber_studio.api_providers import APIProvider
+from tuber_studio.infra.inference.api_providers import APIProvider
 
 from .creative_browser_receipt import inspect_file
 from .omni_chat_loop import connection
 from .owner_memory_video import await_admission
-
 
 CASES = {
     "hat": {"items.1.title": {"红色盔帽"}},

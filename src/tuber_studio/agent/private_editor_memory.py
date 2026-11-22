@@ -2,13 +2,13 @@
 
 from pydantic import Field, ValidationError
 
-from ..api_providers import APIProvider
-from ..cooperation import collaboration_text
-from ..daily_memory import MemoryChanged
-from ..generation_meter import budgeted_call
-from ..http_api import InferenceBudgetExceeded
-from ..models import StrictModel
-from ..store import dump
+from ..core.meter import budgeted_call
+from ..core.models import StrictModel
+from ..core.store import dump
+from ..infra.inference.api_providers import APIProvider
+from ..infra.inference.http_api import InferenceBudgetExceeded
+from ..persona.memory.cooperation import collaboration_text
+from ..persona.memory.daily import MemoryChanged
 from .editor_contract import FormatCheck, literal_evidence, review_preferences
 from .owner_memory import MemoryUse, check_use, citation, correctable_preference, private_rows, read_stamp
 from .task_delivery import AdditionalVideoRead, DelegationError, EditorialCorrection, render_private_delivery

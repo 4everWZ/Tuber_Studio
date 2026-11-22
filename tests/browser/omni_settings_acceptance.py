@@ -6,8 +6,16 @@ import socket
 import uvicorn
 from playwright.async_api import async_playwright, expect
 
-from tuber_studio import api_providers, omni_speech, provider_diagnostics
 from tuber_studio.app import create_app
+from tuber_studio.infra.inference import (
+    api_providers as api_providers,
+)
+from tuber_studio.infra.inference import (
+    diagnostics as provider_diagnostics,
+)
+from tuber_studio.infra.inference import (
+    omni_speech as omni_speech,
+)
 
 
 async def test_shared_omni_settings_and_role_preview(settings, monkeypatch):

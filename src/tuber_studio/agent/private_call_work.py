@@ -12,14 +12,12 @@ from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import Field
 
-from ..http_api import InferenceQueueBusy
-from ..models import StrictModel
-from ..omni_speech import sentences
-from ..operation_continuations import content_hash
-from ..store import dump
+from ..core.models import StrictModel, content_hash
+from ..core.store import dump
+from ..infra.inference.http_api import InferenceQueueBusy
+from ..infra.inference.omni_speech import sentences
 from . import turn_router
 from .chat_models import ChatIntent, ChatTurn
-from .task_delegation import function
 from .voice_origin import CallOrigin, VoiceOrigin, verify_call, verify_origin
 
 

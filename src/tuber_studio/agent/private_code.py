@@ -10,7 +10,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from ..models import StrictModel
+from ..core.models import StrictModel
 
 
 class CodeFile(StrictModel):

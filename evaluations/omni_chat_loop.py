@@ -15,13 +15,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
-from tuber_studio.api_providers import APIProvider
-from tuber_studio.config import validate_api_key
-from tuber_studio.deployment_profiles import operation_profile
-from tuber_studio.http_api import endpoint
-from tuber_studio.models import StrictModel
-from tuber_studio.responses_provider import ResponsesClient
-from tuber_studio.store import Store
+from tuber_studio.core.config import operation_profile
+from tuber_studio.core.models import StrictModel
+from tuber_studio.core.store import Store
+from tuber_studio.core.validation import endpoint, validate_api_key
+from tuber_studio.infra.inference.api_providers import APIProvider
+from tuber_studio.infra.inference.responses_provider import ResponsesClient
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUEST = "替我核实演播间现在有没有开播，留份私下的交接便笺，等我回来再看。"

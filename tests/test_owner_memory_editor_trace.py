@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 import httpx
 
 from evaluations.owner_memory_editor_trace import editor_requests
-from tuber_studio.api_providers import APIProvider
+from tuber_studio.infra.inference.api_providers import APIProvider
 
 
 async def test_private_replay_observes_the_final_title_request_without_changing_what_is_sent(monkeypatch):

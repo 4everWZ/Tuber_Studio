@@ -1,0 +1,444 @@
+"""SQLite ownership of versions, identities, events and delivered interactions."""
+
+import json
+import sqlite3
+import time
+from pathlib import Path
+from uuid import uuid4
+
+from .models import Character, canonical_voice_id
+
+DELETED_CHARACTER = "角色工作室删除"
+
+
+def dump(value):
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _read_character(config):
+    # A startup UPDATE would fire the active-card edit trigger and revoke pending tasks.
+    # Translate on read. An actual save persists the canonical ID via Character validation.
+    card = json.loads(config)
+    if "voice_profile" in card:
+        card["voice_profile"] = canonical_voice_id(card["voice_profile"])
+    return card
+
+
+def editable_character(config):
+    return {
+        key: value for key, value in config.items()
+        if key not in {"_edit_identity", "avatar_url", "persona_type", "fine_tuned_model", "compact_system_prompt"}
+    }
+
+
+def character_card(config):
+    card = editable_character(config)
+    card.pop("version", None)
+    return card
+
+
+class Store:
+    def __init__(self, path: Path, seeds: list[dict], *, migrations=()):
+        self.display_names = {seed["id"]: seed["display_name"] for seed in seeds if seed.get("display_name")}
+        self.preset_personas = {
+            seed["id"]: (seed["name"], (seed.get("core") or {}).get("identity"), seed["aliases"])
+            for seed in seeds if seed.get("aliases")
+        }
+        self.db = sqlite3.connect(path, check_same_thread=False)
+        self.db.row_factory = sqlite3.Row
+        self.db.executescript("""
+            PRAGMA journal_mode=WAL;
+            PRAGMA foreign_keys=ON;
+            CREATE TABLE IF NOT EXISTS operation_image_uploads(
+                id INTEGER PRIMARY KEY,channel TEXT NOT NULL,draft_id TEXT NOT NULL,asset_id TEXT NOT NULL,
+                sha256 TEXT NOT NULL,picture TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS operation_image_upload_draft ON operation_image_uploads(channel,draft_id);
+            CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS characters(id TEXT PRIMARY KEY,active_version INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS character_versions(
+                character_id TEXT,version INTEGER,config TEXT NOT NULL,created_at REAL NOT NULL,
+                PRIMARY KEY(character_id,version));
+            CREATE TABLE IF NOT EXISTS character_archives(
+                character_id TEXT,version INTEGER,reason TEXT NOT NULL,created_at REAL NOT NULL,
+                PRIMARY KEY(character_id,version));
+            CREATE TABLE IF NOT EXISTS users(
+                id INTEGER PRIMARY KEY,platform TEXT NOT NULL,platform_user_id TEXT NOT NULL,
+                display_name TEXT NOT NULL,UNIQUE(platform,platform_user_id));
+            CREATE TABLE IF NOT EXISTS relations(
+                character_id TEXT,user_id INTEGER,data TEXT NOT NULL,PRIMARY KEY(character_id,user_id));
+            CREATE TABLE IF NOT EXISTS sessions(
+                id TEXT PRIMARY KEY,character_id TEXT,character_version INTEGER,started_at REAL,summary TEXT);
+            CREATE TABLE IF NOT EXISTS events(
+                id INTEGER PRIMARY KEY,event_key TEXT UNIQUE NOT NULL,event_id TEXT NOT NULL,
+                session_id TEXT,user_id INTEGER,payload TEXT NOT NULL,status TEXT NOT NULL,
+                reason TEXT,duplicates INTEGER DEFAULT 0,created_at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS jobs(
+                id TEXT PRIMARY KEY,event_id INTEGER,session_id TEXT,character_id TEXT,
+                character_version INTEGER,status TEXT NOT NULL,text TEXT,emotion TEXT,
+                animation_id TEXT,audio_ref TEXT,error TEXT,llm_ms REAL,tts_ms REAL,
+                playback_token TEXT,answer_check TEXT,created_at REAL NOT NULL,updated_at REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS events_session ON events(session_id,id);
+            CREATE INDEX IF NOT EXISTS jobs_session_played ON jobs(session_id,status,updated_at);
+            CREATE TABLE IF NOT EXISTS conversations(
+                id INTEGER PRIMARY KEY,session_id TEXT,character_id TEXT,user_id INTEGER,
+                event_text TEXT,reply_text TEXT,job_id TEXT UNIQUE,created_at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS comments(
+                id INTEGER PRIMARY KEY,platform TEXT DEFAULT 'bilibili',video_id TEXT,
+                comment_id TEXT,thread_id TEXT,parent_comment_id TEXT,platform_user_id TEXT,display_name TEXT,content TEXT,
+                category TEXT DEFAULT 'general',category_source TEXT DEFAULT 'auto',like_count INTEGER DEFAULT 0,created_at TEXT,
+                imported_at REAL,UNIQUE(platform,video_id,comment_id));
+            CREATE TABLE IF NOT EXISTS drafts(
+                id INTEGER PRIMARY KEY,comment_id INTEGER UNIQUE NOT NULL,text TEXT NOT NULL,
+                status TEXT NOT NULL,character_id TEXT,character_version INTEGER,model TEXT,
+                input_summary TEXT,answer_check TEXT,error TEXT,receipt TEXT,created_at REAL,updated_at REAL);
+            CREATE TABLE IF NOT EXISTS comment_tasks(
+                id TEXT PRIMARY KEY,status TEXT,total INTEGER,done INTEGER DEFAULT 0,
+                errors INTEGER DEFAULT 0,error TEXT,character_id TEXT,created_at REAL,updated_at REAL);
+            CREATE TABLE IF NOT EXISTS publish_attempts(
+                id INTEGER PRIMARY KEY,draft_id INTEGER,started_at REAL,status TEXT,receipt TEXT,error TEXT);
+            CREATE TABLE IF NOT EXISTS daily_highlights(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,character_id TEXT NOT NULL,character_version INTEGER NOT NULL,
+                highlight_date TEXT NOT NULL,category TEXT NOT NULL,headline TEXT NOT NULL,
+                source_ref TEXT,source_user TEXT,quote TEXT NOT NULL,anecdote TEXT NOT NULL,
+                tags TEXT NOT NULL,status TEXT DEFAULT 'active',created_at REAL NOT NULL,updated_at REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS daily_highlights_lookup
+                ON daily_highlights(character_id,character_version,highlight_date,status);
+        """)
+        columns = {row[1] for row in self.db.execute("PRAGMA table_info(comments)")}
+        if "category_source" not in columns:
+            self.db.execute("ALTER TABLE comments ADD COLUMN category_source TEXT DEFAULT 'auto'")
+        for column in ("thread_id", "parent_comment_id"):
+            if column not in columns:
+                self.db.execute(f"ALTER TABLE comments ADD COLUMN {column} TEXT")
+        self.db.execute("UPDATE comments SET thread_id=comment_id WHERE thread_id IS NULL OR thread_id=''")
+        self.db.execute(
+            "CREATE INDEX IF NOT EXISTS comments_thread ON comments(platform,video_id,thread_id,id)"
+        )
+        for table in ("jobs", "drafts"):
+            if "answer_check" not in {row[1] for row in self.db.execute(f"PRAGMA table_info({table})")}:
+                self.db.execute(f"ALTER TABLE {table} ADD COLUMN answer_check TEXT")
+        if "media" not in {row[1] for row in self.db.execute("PRAGMA table_info(jobs)")}:
+            self.db.execute("ALTER TABLE jobs ADD COLUMN media TEXT")
+        self.db.execute(
+            "UPDATE jobs SET status='cancelled',error='服务重启，取消遗留任务' "
+            "WHERE status NOT IN ('completed','failed','cancelled','expired')"
+        )
+        self.db.execute("UPDATE events SET status='cancelled',reason='服务重启' WHERE status='queued'")
+        self.db.execute(
+            "UPDATE comment_tasks SET status='cancelled',error='服务重启' "
+            "WHERE status IN ('pending','running')"
+        )
+        # An interrupted HTTP write has an uncertain external outcome: never retry it automatically.
+        self.db.execute(
+            "UPDATE drafts SET status='publish_uncertain',error='发布中重启，请核对平台回执' "
+            "WHERE status='publishing'"
+        )
+        self.db.execute(
+            "UPDATE publish_attempts SET status='uncertain',error='发布中重启' WHERE status='sending'"
+        )
+        self.db.commit()
+        for seed in seeds:
+            if not self.one("SELECT id FROM characters WHERE id=?", (seed["id"],)):
+                self.save_character(seed)
+        for migration in migrations:
+            migration(self, seeds)
+        if seeds and self.get("active_character") is None:
+            self.set("active_character", seeds[0]["id"])
+
+    def close(self):
+        self.db.close()
+
+    def one(self, sql, args=()):
+        row = self.db.execute(sql, args).fetchone()
+        return dict(row) if row else None
+
+    def all(self, sql, args=()):
+        return [dict(row) for row in self.db.execute(sql, args).fetchall()]
+
+    def execute(self, sql, args=()):
+        with self.db:
+            cursor = self.db.execute(sql, args)
+        return cursor
+
+    def get(self, key, default=None):
+        row = self.one("SELECT value FROM kv WHERE key=?", (key,))
+        return json.loads(row["value"]) if row else default
+
+    def set(self, key, value):
+        self.execute("INSERT OR REPLACE INTO kv VALUES(?,?)", (key, dump(value)))
+
+    def character(self, character_id=None, version=None):
+        character_id = character_id or self.get("active_character")
+        if version is None:
+            row = self.one("SELECT active_version FROM characters WHERE id=?", (character_id,))
+            if row is None:
+                raise ValueError("角色不存在")
+            version = row["active_version"]
+        row = self.one(
+            "SELECT config FROM character_versions WHERE character_id=? AND version=?",
+            (character_id, version),
+        )
+        if row is None:
+            raise ValueError("角色版本不存在")
+        return _read_character(row["config"])
+
+    def persona_defaults(self, card):
+        preset = self.preset_personas.get(card["id"])
+        if ("aliases" not in card and preset
+                and (card["name"], (card.get("core") or {}).get("identity")) == preset[:2]):
+            return card | {"aliases": list(preset[2])}
+        return card
+
+    def web_character(self, card):
+        name = self.get("character_display:" + card["id"], self.display_names.get(card["id"]))
+        return card | {"display_name": name} if name is not None else card
+
+    def display_name(self, character_id):
+        return self.web_character({"id": character_id}).get("display_name") or character_id
+
+    def characters(self):
+        return [
+            self.character(row["id"])
+            for row in self.all(
+                "SELECT c.id FROM characters c WHERE NOT EXISTS "
+                "(SELECT 1 FROM character_archives a WHERE a.character_id=c.id AND a.version=c.active_version) "
+                "ORDER BY (SELECT v.created_at FROM character_versions v WHERE v.character_id=c.id "
+                "ORDER BY v.version LIMIT 1) ASC, c.id"
+            )
+        ]
+
+    def deleted_characters(self):
+        return [
+            self.character(row["character_id"], row["version"])
+            for row in self.all(
+                "SELECT a.character_id,a.version FROM character_archives a JOIN characters c "
+                "ON c.id=a.character_id AND c.active_version=a.version "
+                "WHERE a.reason=? ORDER BY a.created_at DESC,a.character_id",
+                (DELETED_CHARACTER,),
+            )
+        ]
+
+    def managed_character(self, character_id, version=None):
+        current = self.character(character_id)
+        if self.one(
+            "SELECT 1 FROM character_archives WHERE character_id=? AND version IN (?,?)",
+            (character_id, current["version"], version or current["version"]),
+        ):
+            raise ValueError("该角色已移除或归档，请先恢复")
+        return self.character(character_id, version) if version is not None else current
+
+    def delete_character(self, character_id):
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            if self.get("active_character") == character_id:
+                raise ValueError("请先激活另一张角色卡")
+            current = self.character(character_id)
+            archived = self.one(
+                "SELECT reason FROM character_archives WHERE character_id=? AND version=?",
+                (character_id, current["version"]),
+            )
+            if archived and archived["reason"] != DELETED_CHARACTER:
+                raise ValueError("该角色已归档")
+            self.db.execute(
+                "INSERT OR IGNORE INTO character_archives VALUES(?,?,?,?)",
+                (character_id, current["version"], DELETED_CHARACTER, time.time()),
+            )
+
+    def restore_character(self, character_id):
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            current = self.character(character_id)
+            self.db.execute(
+                "DELETE FROM character_archives WHERE character_id=? AND version=? AND reason=?",
+                (character_id, current["version"], DELETED_CHARACTER),
+            )
+            return self.managed_character(character_id)
+
+    def versions(self, character_id, *, include_archived=False):
+        return [
+            _read_character(r["config"])
+            for r in self.all(
+                "SELECT v.config FROM character_versions v WHERE v.character_id=? AND "
+                "(? OR NOT EXISTS (SELECT 1 FROM character_archives a "
+                "WHERE a.character_id=v.character_id AND a.version=v.version)) ORDER BY v.version DESC",
+                (character_id, int(include_archived)),
+            )
+        ]
+
+    def save_character(self, config):
+        data = Character.model_validate(editable_character(config)).model_dump()
+        display_name = data.pop("display_name", None)
+        row = self.one("SELECT MAX(version) AS v FROM character_versions WHERE character_id=?", (data["id"],))
+        data["version"] = (row["v"] or 0) + 1
+        with self.db:
+            self.db.execute(
+                "INSERT INTO character_versions VALUES(?,?,?,?)",
+                (data["id"], data["version"], dump(data), time.time()),
+            )
+            self.db.execute("INSERT OR REPLACE INTO characters VALUES(?,?)", (data["id"], data["version"]))
+            if display_name is not None:
+                self.db.execute("INSERT OR REPLACE INTO kv VALUES(?,?)",
+                                ("character_display:" + data["id"], dump(display_name)))
+        return data
+
+    def replace_character(self, config):
+        data = Character.model_validate(config).model_dump()
+        display_name = data.pop("display_name", None)
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            current = self.managed_character(data["id"])
+            if display_name is not None:
+                self.db.execute("INSERT OR REPLACE INTO kv VALUES(?,?)",
+                                ("character_display:" + data["id"], dump(display_name)))
+            if "aliases" not in current and data.get("aliases") == self.persona_defaults(current).get("aliases"):
+                data.pop("aliases", None)
+            data["version"] = current["version"]
+            original = Character.model_validate(editable_character(current)).model_dump()
+            # Display names are stored separately, including when the old card still has one.
+            original.pop("display_name", None)
+            if data == original:
+                return data
+            data["_edit_identity"] = uuid4().hex
+            self.db.execute(
+                "UPDATE character_versions SET config=? WHERE character_id=? AND version=?",
+                (dump(data), data["id"], data["version"]),
+            )
+            binding = self.get("operations_binding", {})
+            policy = self.get("operations_policy", {})
+            if policy.get("enabled") and binding.get("character_id") == data["id"]:
+                self.db.executemany(
+                    "UPDATE kv SET value=? WHERE key=?",
+                    (
+                        (dump(policy | {"enabled": False}), "operations_policy"),
+                        (dump(binding | {"epoch": binding["epoch"] + 1}), "operations_binding"),
+                    ),
+                )
+        return editable_character(data)
+
+    def activate(self, character_id, version=None):
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            character = self.managed_character(character_id, version)
+            self.db.execute(
+                "UPDATE characters SET active_version=? WHERE id=?", (character["version"], character_id)
+            )
+            self.db.execute(
+                "INSERT OR REPLACE INTO kv VALUES('active_character',?)", (dump(character_id),)
+            )
+            return character
+
+    def user(self, event):
+        if not event.platform_user_id:
+            return None
+        row = self.one(
+            "SELECT id FROM users WHERE platform=? AND platform_user_id=?",
+            (event.platform, event.platform_user_id),
+        )
+        return row["id"] if row else None
+
+    def ensure_user(self, platform, platform_user_id, display_name):
+        self.execute(
+            "INSERT INTO users(platform,platform_user_id,display_name) VALUES(?,?,?) "
+            "ON CONFLICT(platform,platform_user_id) DO UPDATE SET display_name=CASE WHEN excluded.display_name!='' THEN excluded.display_name ELSE users.display_name END",
+            (platform, platform_user_id, display_name),
+        )
+        return self.one(
+            "SELECT id FROM users WHERE platform=? AND platform_user_id=?",
+            (platform, platform_user_id),
+        )["id"]
+
+    def relationship(self, character_id, user_id):
+        row = self.one(
+            "SELECT data FROM relations WHERE character_id=? AND user_id=?", (character_id, user_id)
+        )
+        return json.loads(row["data"]) if row else {}
+
+    def duplicate_event(self, event):
+        key = dump([event.platform, event.room_id, event.event_id])
+        existing = self.one("SELECT id FROM events WHERE event_key=?", (key,))
+        if existing:
+            self.execute("UPDATE events SET duplicates=duplicates+1 WHERE id=?", (existing["id"],))
+            return existing["id"]
+        return None
+
+    def add_event(self, event, session_id, status, reason=None):
+        if existing := self.duplicate_event(event):
+            return existing, False
+        key = dump([event.platform, event.room_id, event.event_id])
+        user_id = self.user(event)
+        cursor = self.execute(
+            "INSERT INTO events(event_key,event_id,session_id,user_id,payload,status,reason,created_at) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (key, event.event_id, session_id, user_id, event.model_dump_json(), status, reason, time.time()),
+        )
+        return cursor.lastrowid, True
+
+    def event(self, event_id):
+        row = self.one("SELECT * FROM events WHERE id=?", (event_id,))
+        row["payload"] = json.loads(row["payload"])
+        return row
+
+    def job(self, job_id):
+        return self.one("SELECT * FROM jobs WHERE id=?", (job_id,))
+
+    def update_job(self, job_id, **fields):
+        allowed = {
+            "status",
+            "text",
+            "emotion",
+            "animation_id",
+            "audio_ref",
+            "error",
+            "llm_ms",
+            "tts_ms",
+            "playback_token",
+            "answer_check",
+            "media",
+        }
+        if not fields.keys() <= allowed:
+            raise ValueError("未知任务字段")
+        if isinstance(fields.get("answer_check"), (dict, list)):
+            fields["answer_check"] = dump(fields["answer_check"])
+        if isinstance(fields.get("media"), dict):
+            fields["media"] = dump(fields["media"])
+        fields["updated_at"] = time.time()
+        self.execute(
+            "UPDATE jobs SET " + ",".join(f"{k}=?" for k in fields) + " WHERE id=?",
+            (*fields.values(), job_id),
+        )
+
+    def recent(self, session_id, character_id, limit=4):
+        rows = self.all(
+            "SELECT event_text,reply_text FROM conversations WHERE session_id=? AND character_id=? "
+            "ORDER BY id DESC LIMIT ?",
+            (session_id, character_id, limit),
+        )
+        return list(reversed(rows))
+
+    def complete(self, job_id, spoken_text):
+        job = self.job(job_id)
+        if job["status"] != "playing":
+            return False
+        event = self.event(job["event_id"])
+        with self.db:
+            self.db.execute(
+                "UPDATE jobs SET status='completed',text=?,updated_at=? WHERE id=?",
+                (spoken_text, time.time(), job_id),
+            )
+            self.db.execute("UPDATE events SET status='completed' WHERE id=?", (event["id"],))
+            if event["payload"]["type"] in {"song", "idle"}:
+                return True
+            self.db.execute(
+                "INSERT OR IGNORE INTO conversations(session_id,character_id,user_id,event_text,"
+                "reply_text,job_id,created_at) VALUES(?,?,?,?,?,?,?)",
+                (
+                    job["session_id"],
+                    job["character_id"],
+                    event["user_id"],
+                    event["payload"]["text"],
+                    spoken_text,
+                    job_id,
+                    time.time(),
+                ),
+            )
+        return True

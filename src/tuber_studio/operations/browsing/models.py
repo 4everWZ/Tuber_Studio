@@ -5,8 +5,8 @@ from typing import Literal, Protocol
 
 from pydantic import Field, PrivateAttr, field_validator, model_validator
 
-from ...models import PublicMentionRequest, StrictModel
-from ...operation_text import validate_operation_text
+from ...core.models import PublicMentionRequest, StrictModel
+from ...core.text import validate_operation_text
 from ...public_mentions import MENTION_REQUESTS
 
 

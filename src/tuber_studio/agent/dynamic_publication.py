@@ -10,13 +10,11 @@ from uuid import UUID, uuid5
 
 from pydantic import Field, PositiveInt
 
-from ..models import StrictModel
-from ..operation_continuations import content_hash
-from ..operation_identity import runtime_identity
-from ..platforms.bilibili import BilibiliAccountExpired, _positive_id
-from ..publication_errors import PlatformRejected, SendLimitReached
+from ..core.errors import PlatformRejected, SendLimitReached
+from ..core.identity import runtime_identity
+from ..core.models import StrictModel, content_hash
+from ..infra.platforms.bilibili.client import BilibiliAccountExpired, _positive_id
 from .task_runtime import ReviewBlocked, Tool, ToolWait
-
 
 PUBLICATION_TOOL = "publish_dynamic_batch"
 CONFIRM_SECONDS = 15 * 60
@@ -139,7 +137,7 @@ def register_dynamic_publication(tasks, dynamics):
             def guard(original_row, original_attempt):
                 if (tasks.scope() != approval["scope"] or original_attempt["token"] != token
                         or original_row["binding"] != approval["binding"]
-                        or dynamics.comments.display_account_id() != approval["binding"]["account_id"]
+                        or dynamics.account.display_account_id() != approval["binding"]["account_id"]
                         or dynamics.store.one("SELECT send_payload FROM dynamic_posts WHERE id=?", (post_id,)) != row):
                     raise ValueError("对账期间原提交或授权已变化")
 
@@ -153,7 +151,7 @@ def register_dynamic_publication(tasks, dynamics):
             return None
         bound(post)
         account = approval["binding"]["account_id"]
-        if tasks.scope() != approval["scope"] or dynamics.comments.display_account_id() != account:
+        if tasks.scope() != approval["scope"] or dynamics.account.display_account_id() != account:
             return pending("原授权范围已变化")
         original_id = post["duplicate_of"]
         if post["status"] != "published" and allow_read:
@@ -315,7 +313,7 @@ def register_dynamic_publication(tasks, dynamics):
         next_item = next((item for item in posts if str(item["post_id"]) not in items), None)
         if next_item:
             try:
-                account = await dynamics.comments.account_id() if dynamics.policy()["credentials_configured"] else None
+                account = await dynamics.account.account_id() if dynamics.policy()["credentials_configured"] else None
             except BilibiliAccountExpired:
                 account = None
             except ValueError:
@@ -386,7 +384,7 @@ def register_dynamic_publication(tasks, dynamics):
                     bound(row)
                     policy = dynamics.operations.policy()
                     if (tasks.scope() != request.scope or policy["emergency"] or policy["epoch"] != approval["policy_epoch"]
-                            or dynamics.comments.display_account_id() != approval["binding"]["account_id"]
+                            or dynamics.account.display_account_id() != approval["binding"]["account_id"]
                             or row.get("continuation")
                             or row["id"] != args.post_id or row["content"] != approval["draft_text"]
                             or not current_identity(row, dynamics._character(), approval["binding"]["account_id"])
@@ -397,7 +395,7 @@ def register_dynamic_publication(tasks, dynamics):
 
                 if review(args) != approval:
                     return pending("草稿版本、账号、角色或公开来源已变化，原审批无效")
-                if str(await dynamics.comments.account_id()) != approval["binding"]["account_id"]:
+                if str(await dynamics.account.account_id()) != approval["binding"]["account_id"]:
                     return pending("无法核验原账号")
                 if refresh := getattr(dynamics.runtime, "refresh_identity", None):
                     identity = await refresh(dynamics._character(), approval["binding"]["account_id"])

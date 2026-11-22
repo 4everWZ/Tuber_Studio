@@ -2,9 +2,8 @@
 
 from pydantic import Field
 
-from ..daily_memory import MemoryChanged
-from ..models import StrictModel
-from ..operation_continuations import content_hash
+from ..core.models import StrictModel, content_hash
+from ..persona.memory.daily import MemoryChanged
 
 
 class MemoryUse(StrictModel):

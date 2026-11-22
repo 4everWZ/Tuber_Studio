@@ -7,12 +7,13 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 
-from tuber_studio.api_providers import APIProvider
 from tuber_studio.comments import Comments
-from tuber_studio.generation_meter import GenerationMeter
+from tuber_studio.core.errors import PlatformRejected
+from tuber_studio.core.meter import GenerationMeter
+from tuber_studio.infra.inference.api_providers import APIProvider
+from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
+from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
 from tuber_studio.operations.browsing.models import BrowsingPolicy
-from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
-from tuber_studio.publication_errors import PlatformRejected
 
 BV = "BV1d8pU6xEZX"
 
@@ -78,9 +79,9 @@ async def prepared_service(
         transport=httpx.MockTransport(platform),
     )
     await original.aclose()
-    service = Comments(settings, store, runtime, adapter)
+    service = Comments(settings, store, runtime, BilibiliAccount(settings, store, adapter))
     service.reconciliation_requests = []
-    service.credentials = credentials
+    service.account.credentials = credentials
     service.import_items(
         BV,
         [{"comment_id": "123", "thread_id": "120", "platform_user_id": "200", "content": "今天煮饭怎么做？"}],
@@ -153,6 +154,7 @@ async def test_operator_reply_closes_manual_draft_before_any_post(settings, stor
         assert not store.all("SELECT * FROM account_writes")
     finally:
         await service.close()
+        await service.account.close()
 
 
 async def test_manual_publish_sends_legacy_body_without_identity_refresh_or_revision(settings, store, runtime, monkeypatch):
@@ -177,6 +179,7 @@ async def test_manual_publish_sends_legacy_body_without_identity_refresh_or_revi
         assert len(posted) == 1 and not requests
     finally:
         await service.close()
+        await service.account.close()
 
 
 async def reject_manual_publish(service, identity):
@@ -214,6 +217,7 @@ async def test_definite_length_rejection_revises_then_manual_approval_reuses_sam
         assert runtime.continuations.find("comments", identity)["state"] == "completed"
     finally:
         await service.close()
+        await service.account.close()
 
 
 async def test_high_explicit_budget_does_not_strand_body_after_decision_refund(settings, store, runtime):
@@ -228,6 +232,7 @@ async def test_high_explicit_budget_does_not_strand_body_after_decision_refund(s
         assert row["limits"]["generation_max_tokens"] == 65536
     finally:
         await service.close()
+        await service.account.close()
 
 
 @pytest.mark.parametrize("diagnostic", [False, True])
@@ -260,6 +265,7 @@ async def test_platform_revision_diagnostic_is_manual_only_but_clean_revision_ke
         assert len(posted) == 2 and len(requests) == model_calls
     finally:
         await service.close()
+        await service.account.close()
 
 
 @pytest.mark.parametrize("action,state", [("wait", "waiting"), ("abandon", "abandoned")])
@@ -273,6 +279,7 @@ async def test_platform_feedback_can_defer_without_another_write(settings, store
         assert not store.one("SELECT * FROM operation_write_retries")
     finally:
         await service.close()
+        await service.account.close()
 
 
 @pytest.mark.parametrize("mode", ["disabled", "wait"])
@@ -303,6 +310,7 @@ async def test_human_can_edit_approve_and_submit_after_definite_rejection_withou
         )
     finally:
         await service.close()
+        await service.account.close()
 
 
 @pytest.mark.parametrize(
@@ -341,6 +349,7 @@ async def test_human_revision_still_requires_changed_approved_bound_idle_manual_
         )
     finally:
         await service.close()
+        await service.account.close()
 
 
 async def test_expired_recovery_owner_is_fenced_by_manual_revision(settings, store, runtime):
@@ -360,6 +369,7 @@ async def test_expired_recovery_owner_is_fenced_by_manual_revision(settings, sto
         assert len(posted) == 2 and not requests
     finally:
         await service.close()
+        await service.account.close()
 
 
 async def test_unknown_cannot_take_manual_revision_path_even_if_draft_is_changed(settings, store, runtime):
@@ -378,6 +388,7 @@ async def test_unknown_cannot_take_manual_revision_path_even_if_draft_is_changed
         assert not store.all("SELECT * FROM operation_revision_tickets")
     finally:
         await service.close()
+        await service.account.close()
 
 
 async def test_unknown_is_never_revision_or_second_post(settings, store, runtime):
@@ -392,6 +403,7 @@ async def test_unknown_is_never_revision_or_second_post(settings, store, runtime
         assert runtime.continuations.find("comments", identity)["state"] == "needs_reconciliation"
     finally:
         await service.close()
+        await service.account.close()
 
 
 async def test_unknown_read_back_positive_receipt_resolves_without_resend(settings, store, runtime):
@@ -409,6 +421,7 @@ async def test_unknown_read_back_positive_receipt_resolves_without_resend(settin
         assert not store.one("SELECT name FROM sqlite_master WHERE name='operation_channel_blocks'")
     finally:
         await service.close()
+        await service.account.close()
 
 
 async def test_existing_parent_meter_is_reused_without_double_reservation(settings, store, runtime):
@@ -427,6 +440,7 @@ async def test_existing_parent_meter_is_reused_without_double_reservation(settin
         assert len(requests) == 4 and len(posted) == 1
     finally:
         await service.close()
+        await service.account.close()
 
 
 async def test_tight_parent_rejects_generation_before_an_extra_request(settings, store, runtime):
@@ -443,6 +457,7 @@ async def test_tight_parent_rejects_generation_before_an_extra_request(settings,
         assert len(requests) == 1 and requests[0]["max_tokens"] == 1 and len(posted) == 1
     finally:
         await service.close()
+        await service.account.close()
 
 
 async def test_positive_resolution_survives_local_bookkeeping_failure_without_resend(
@@ -473,13 +488,14 @@ async def test_positive_resolution_survives_local_bookkeeping_failure_without_re
         assert not store.all("SELECT * FROM operation_write_retries")
     finally:
         await service.close()
+        await service.account.close()
 
 
 async def test_source_changed_during_rejected_post_keeps_original_feedback_without_model_call(
     settings, store, runtime, monkeypatch
 ):
     service, identity, posted, requests = await prepared_service(settings, store, runtime)
-    publish = service.adapter.publish
+    publish = service.account.adapter.publish
 
     async def changed(*args, **kwargs):
         try:
@@ -487,7 +503,7 @@ async def test_source_changed_during_rejected_post_keeps_original_feedback_witho
         finally:
             store.execute("UPDATE comments SET content='原帖在请求期间已变化'")
 
-    monkeypatch.setattr(service.adapter, "publish", changed)
+    monkeypatch.setattr(service.account.adapter, "publish", changed)
     try:
         continuation_id = await reject_manual_publish(service, identity)
         with pytest.raises(ValueError, match="原始目标或来源已变化"):
@@ -502,6 +518,7 @@ async def test_source_changed_during_rejected_post_keeps_original_feedback_witho
         assert not requests and not store.all("SELECT * FROM operation_write_retries")
     finally:
         await service.close()
+        await service.account.close()
 
 
 @pytest.mark.parametrize(
@@ -552,7 +569,7 @@ async def test_other_channels_revise_real_business_rejection_under_same_intent(
     from tuber_studio import dynamic_comment_card
     from tuber_studio.direct_messages import DirectMessages
     from tuber_studio.dynamics import Dynamics
-    from tuber_studio.platforms.bilibili_messages import BilibiliMessagesAdapter
+    from tuber_studio.infra.platforms.bilibili.messages import BilibiliMessagesAdapter
 
     comments, comment_draft, _, requests = await prepared_service(settings, store, runtime)
     writes = []
@@ -608,7 +625,7 @@ async def test_other_channels_revise_real_business_rejection_under_same_intent(
         return previous
 
     if channel == "messages":
-        adapter = BilibiliMessagesAdapter(comments.credentials)
+        adapter = BilibiliMessagesAdapter(comments.account.credentials)
         await transport(adapter).aclose()
         service = DirectMessages(settings, store, runtime, comments, adapter)
         await service.configure({"enabled": True})
@@ -628,7 +645,7 @@ async def test_other_channels_revise_real_business_rejection_under_same_intent(
         ))
         send = service.send
     else:
-        await transport(comments.adapter).aclose()
+        await transport(comments.account.adapter).aclose()
         store.execute(
             "UPDATE drafts SET status='published',account_id='100',receipt=? WHERE id=?",
             (json.dumps({"rpid": "77"}), comment_draft),
@@ -668,6 +685,7 @@ async def test_other_channels_revise_real_business_rejection_under_same_intent(
             assert all("#reply" in write["dyn_req"]["content"]["contents"][0]["raw_text"] for write in writes)
     finally:
         await service.close()
+        await service.account.close()
         await comments.close()
 
 

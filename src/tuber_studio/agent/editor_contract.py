@@ -1,17 +1,16 @@
 """Check the selected owner's presentation requirements on the actual private deliverable."""
 
+import re
 from typing import Literal
 from unicodedata import normalize
-import re
 
 from pydantic import Field, ValidationError
 
-from ..http_api import InferenceBudgetExceeded
-from ..models import StrictModel
-from ..operation_identity import without_model_identity
-from ..store import dump
+from ..core.identity import without_model_identity
+from ..core.models import StrictModel
+from ..core.store import dump
+from ..infra.inference.http_api import InferenceBudgetExceeded
 from .task_delivery import DelegationError, _text, editorial_fields, primary_frame
-
 
 _PUNCTUATION = {"问号":"？", "句号":"。", "感叹号":"！", "叹号":"！", "冒号":"：", "逗号":"，",
                 "分号":"；", "顿号":"、", "省略号":"……", "破折号":"——"}

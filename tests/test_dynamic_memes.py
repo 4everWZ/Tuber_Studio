@@ -8,9 +8,9 @@ import httpx
 import pytest
 
 from tuber_studio.dynamics import Dynamics
-from tuber_studio.memes import MemeCatalog
-from tuber_studio.memory import GroundedMemory
-from tuber_studio.platforms.bilibili import BilibiliAdapter
+from tuber_studio.infra.platforms.bilibili.client import BilibiliAdapter
+from tuber_studio.persona.assets.memes import MemeCatalog
+from tuber_studio.persona.memory.core_memory import GroundedMemory
 
 CAPTION = "海底小剧场：今天又开饭啦。\n作者：测试用户"
 
@@ -136,16 +136,21 @@ async def dynamic_memes(settings, store):
     adapter.client = httpx.AsyncClient(
         base_url="https://api.bilibili.com", transport=httpx.MockTransport(respond)
     )
-    comments = SimpleNamespace(adapter=adapter, publish_lock=asyncio.Lock(), configured=True)
-    comments.policy = lambda: {"credentials_configured": comments.configured}
-
-    async def account():
+    async def account_id():
         return "900"
 
-    comments.account_id = account
+    account = SimpleNamespace(
+        adapter=adapter,
+        credential_lock=asyncio.Lock(),
+        credentials={},
+        credentials_configured=True,
+        account_id=account_id,
+        display_account_id=lambda: "",
+    )
+    comments = SimpleNamespace(account=account)
     runtime = SimpleNamespace(operation_llm=Model(), generation_lock=asyncio.Lock())
     runtime.offline_generation = lambda lane: runtime.generation_lock
-    service = Dynamics(settings, store, runtime, comments, memes=catalog)
+    service = Dynamics(settings, store, runtime, comments, account=account, memes=catalog)
     GroundedMemory(store).record(
         "public:test",
         store.character(),
@@ -264,10 +269,10 @@ async def test_account_verification_failure_preserves_approved_draft_and_allows_
     identity = await draft(dynamic_memes, image=with_image)
 
     async def account():
-        nav = await service.comments.adapter._get("/x/web-interface/nav", {})
+        nav = await service.account.adapter._get("/x/web-interface/nav", {})
         return str(nav["mid"])
 
-    service.comments.account_id = account
+    service.account.account_id = account
     if failure == "value_error":
         state["nav"] = "failed"
     else:
@@ -300,9 +305,9 @@ async def test_review_during_account_verification_preserves_latest_operator_deci
     state["nav_wait"] = asyncio.Event()
 
     async def account():
-        return str((await service.comments.adapter._get("/x/web-interface/nav", {}))["mid"])
+        return str((await service.account.adapter._get("/x/web-interface/nav", {}))["mid"])
 
-    service.comments.account_id = account
+    service.account.account_id = account
     task = asyncio.create_task(service.publish(identity))
     await asyncio.wait_for(state["nav_entered"].wait(), 2)
     reviewed = service.review(identity, action, text=CAPTION + " 再添一碗。" if action == "edit" else None)
@@ -329,7 +334,7 @@ async def test_upload_then_changed_authorization_never_submits(dynamic_memes, ch
         if change == "disable":
             catalog.enable(asset["asset_id"], False)
         elif change == "account":
-            service.comments.adapter = object()
+            service.account.adapter = object()
         elif change == "source":
             service.mark_memory(memory, False)
         else:
@@ -400,7 +405,7 @@ async def test_cancel_during_final_post_is_uncertain_and_retains_pin(dynamic_mem
 async def test_invalid_selector_keeps_caption_pending_and_does_not_auto_publish(dynamic_memes, bad):
     service, _, _, state, _ = dynamic_memes
     service.operations.configure({"enabled": True}, account_id="900", character=service.store.character())
-    service.comments.display_account_id = lambda: "900"
+    service.account.display_account_id = lambda: "900"
     service.store.set("illustration_policy", {"use_memes": True, "generate_images": False})
     await service.set_policy({"enabled": True, "auto_publish": True})
     service.runtime.operation_llm.selection = {"asset_id": "meme_" + "0" * 32}
@@ -432,7 +437,7 @@ async def test_valid_automatic_selection_posts_once_with_original_caption(dynami
     if not with_source:
         service.mark_memory(memory, False)
     service.operations.configure({"enabled": True}, account_id="900", character=service.store.character())
-    service.comments.display_account_id = lambda: "900"
+    service.account.display_account_id = lambda: "900"
     service.store.set("illustration_policy", {"use_memes": True, "generate_images": False})
     await service.set_policy({"enabled": True, "auto_publish": True})
     if with_image:

@@ -4,8 +4,8 @@ import time
 import pytest
 from test_browsing import browsing as browsing
 
+from tuber_studio.infra.platforms.bilibili.browsing import PlatformReadError
 from tuber_studio.operations.browsing.quotas import DailyReplyLimitReached
-from tuber_studio.platforms.bilibili_browsing import PlatformReadError
 
 
 @pytest.mark.parametrize("failure_kind", ["network", "daily_reply_limit"])

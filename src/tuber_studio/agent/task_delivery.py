@@ -8,8 +8,8 @@ from urllib.parse import parse_qs, urlsplit
 
 from pydantic import Field, PrivateAttr, model_validator
 
-from ..models import StrictModel
-from ..web_fetch import programme_credit_text
+from ..core.models import StrictModel
+from ..infra.web_client.fetch import programme_credit_text
 
 LABELS = {
     "publish_dynamic_batch": "B 站动态发布",

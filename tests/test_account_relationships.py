@@ -9,11 +9,12 @@ from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
 from tuber_studio.comments import Comments
+from tuber_studio.core.models import Reply
 from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.dynamics import Dynamics
-from tuber_studio.models import Reply
+from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
 from tuber_studio.operations_control import canonical_intent
-from tuber_studio.relationships import Relationships
+from tuber_studio.persona.memory.relationships import Relationships
 
 
 class Delivery:
@@ -35,12 +36,13 @@ class Delivery:
 
 @pytest.fixture
 async def service(settings, store, runtime):
-    comments = Comments(settings, store, runtime)
+    comments = Comments(settings, store, runtime, BilibiliAccount(settings, store))
     value = DirectMessages(settings, store, runtime, comments, Delivery())
     await value.configure({"enabled": True})
     yield value
     await value.close()
     await comments.close()
+    await comments.account.close()
 
 
 def incoming(service, account="900", *, key="77", text="私下继续聊", uid="123"):
@@ -78,8 +80,8 @@ def test_confirm_edit_opt_out_and_clear_user_memory(settings):
     app = create_app(settings, Delivery())
     with TestClient(app) as client:
         client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        comments = app.state.comments
-        comments.verified_account_id, comments.verified_credential = "900", dict(comments.credentials)
+        account = app.state.bilibili_account
+        account.verified_account_id, account.verified_credential = "900", dict(account.credentials)
         relations, character = app.state.runtime.relationships, app.state.runtime.character["id"]
         url = "/api/user-memory/bilibili/123"
         scope = {"account_id": "900", "character_id": character}
@@ -137,7 +139,7 @@ async def test_private_event_recent_history_and_operator_view_are_account_scoped
     event = service._event(draft, service.runtime.character)
     encoded = json.dumps(event, ensure_ascii=False)
     assert "只属于乙账号" in encoded and "只属于甲账号" not in encoded and "没有账号归属" not in encoded
-    service.active_account_id, service.active_credential = "901", dict(service.comments.credentials)
+    service.active_account_id, service.active_credential = "901", dict(service.account.credentials)
     view = service.conversation("bilibili", "123")
     assert {row["account_id"] for row in view["messages"]} == {"901"}
     assert {row["account_id"] for row in service.list()["drafts"]} == {"901"}
@@ -217,8 +219,8 @@ async def test_account_switch_refuses_private_generation_and_write(service, monk
     service.injected = False
     # The fixed adapter replaces _adapter(), including its credential binding.
     service.credential_signature = (
-        service.comments.credentials.get("sessdata"),
-        service.comments.credentials.get("csrf"),
+        service.account.credentials.get("sessdata"),
+        service.account.credentials.get("csrf"),
     )
 
     async def adapter():
@@ -239,7 +241,7 @@ async def test_account_switch_refuses_private_generation_and_write(service, monk
 async def test_inbox_account_migration_preserves_ids_and_rolls_back_on_copy_error(
     settings, store, runtime, corrupt
 ):
-    comments = Comments(settings, store, runtime)
+    comments = Comments(settings, store, runtime, BilibiliAccount(settings, store))
     store.execute(
         "CREATE TABLE dm_inbox(id INTEGER PRIMARY KEY,platform TEXT,message_id TEXT NOT NULL,platform_user_id TEXT NOT NULL,display_name TEXT,content TEXT NOT NULL,sent_at REAL,character_id TEXT,received_at REAL,UNIQUE(platform,message_id))"
     )
@@ -263,3 +265,4 @@ async def test_inbox_account_migration_preserves_ids_and_rolls_back_on_copy_erro
         assert store.one("SELECT content FROM dm_inbox WHERE id=55")["content"] == "未绑定账号的旧原文"
     finally:
         await comments.close()
+        await comments.account.close()

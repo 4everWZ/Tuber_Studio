@@ -1,10 +1,10 @@
 """Read-only task DTOs for durable batch choices that need no worker."""
 
 import json
-from .backlog import flow_window
 
 from ...message_outreach import contact_state as outreach_contact_state
 from ...operation_feedback import continuation_view, generation_view
+from .backlog import flow_window
 from .evidence import EvidenceUnavailable
 
 
@@ -201,7 +201,7 @@ def public_comment_intent(browsing, identity):
             unavailable += 1
     row["evidence_segments"] = evidence
     row["unavailable_materials"] = unavailable
-    row["can_publish"] = browsing.comments.policy()["credentials_configured"] and not unavailable
+    row["can_publish"] = browsing.bilibili_account.credentials_configured and not unavailable
     return continuation_view(browsing.runtime, "browsing", row)
 
 

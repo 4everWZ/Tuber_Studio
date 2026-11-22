@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from unittest.mock import patch
 
-from tuber_studio.operation_identity import captured_identity
+from tuber_studio.core.identity import captured_identity
 
 
 @contextmanager

@@ -12,9 +12,9 @@ import httpx
 from fastapi import Depends, HTTPException
 from pydantic import Field, model_validator
 
-from ..models import StrictModel
-from ..store import dump
-from ..web_fetch import fetch_excerpt, source_url
+from ..core.models import StrictModel
+from ..core.store import dump
+from ..infra.web_client.fetch import fetch_excerpt, source_url
 from .task_delivery import deliver_from_receipts
 from .task_runtime import ToolRequest
 

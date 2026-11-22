@@ -5,7 +5,7 @@ import httpx
 from tuber_studio.agent.private_code import CodeFile, run_code
 from tuber_studio.agent.task_runtime import ToolRequest
 from tuber_studio.app import create_app
-from tuber_studio.responses_provider import FunctionCall, ResponseTurn
+from tuber_studio.infra.inference.responses_provider import FunctionCall, ResponseTurn
 
 
 async def test_owner_grant_runs_attachment_calculation_and_preserves_output(settings):

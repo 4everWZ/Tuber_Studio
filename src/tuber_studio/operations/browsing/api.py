@@ -5,7 +5,7 @@ from typing import Literal
 from fastapi import Body, Depends, Query
 from pydantic import Field
 
-from ...models import StrictModel
+from ...core.models import StrictModel
 from .issues import acknowledge_issues, clear_issues
 
 

@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from pydantic import Field
 
-from ..models import StrictModel
+from ..core.models import StrictModel
 
 # Text handoffs never carry a URI or local path. Public video citations are
 # added by the owner UI from the recorded source, outside the speech text.

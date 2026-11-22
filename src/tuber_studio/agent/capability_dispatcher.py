@@ -9,9 +9,9 @@ from datetime import timedelta
 import httpx
 from fastapi import HTTPException
 
-from ..operation_identity import operating_account_facts
+from ..core.identity import operating_account_facts
+from ..core.store import dump
 from ..operations.browsing.quotas import day_window
-from ..store import dump
 from . import operator_facts, outgoing_queue, recall_memory, workbench_tools, workshop_lookup
 from .chat_context import ChatContext
 from .chat_models import (
@@ -360,7 +360,7 @@ class CapabilityDispatcher:
                 if named := requested_draft_ids(request):
                     post_ids = [key for key in post_ids if key in named]
                 tasks_rt = runtime.tasks
-                client = getattr(ctx.dynamics.comments.adapter, "client", None)
+                client = getattr(ctx.dynamics.account.adapter, "client", None)
                 if (PUBLICATION_TOOL not in tasks_rt.tools or not callable(getattr(client, "post", None))
                         or getattr(client, "is_closed", False)):
                     return {

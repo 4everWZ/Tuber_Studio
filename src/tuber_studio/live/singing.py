@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from ..config import atomic_json
-from ..providers import Audio
+from ..core.config import atomic_json
+from ..infra.inference.providers import Audio
 from .media import inspect_wav
 
 

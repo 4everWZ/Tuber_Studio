@@ -70,12 +70,12 @@ def serve(args):
 
     from tuber_studio.agent import operator_facts, task_delegation, task_tools
     from tuber_studio.agent.personal_agent import object_scope
-    from tuber_studio.api_providers import APIProvider
     from tuber_studio.app import create_app
-    from tuber_studio.config import Settings
-    from tuber_studio.responses_provider import ResponsesClient
-    from tuber_studio.web_fetch import public_ip
-    from tuber_studio.web_search import NEWS_FEEDS, SEARCH_HOSTS
+    from tuber_studio.core.config import Settings
+    from tuber_studio.infra.inference.api_providers import APIProvider
+    from tuber_studio.infra.inference.responses_provider import ResponsesClient
+    from tuber_studio.infra.web_client.fetch import public_ip
+    from tuber_studio.infra.web_client.search import NEWS_FEEDS, SEARCH_HOSTS
 
     config = connection(os.environ)
     if not config:

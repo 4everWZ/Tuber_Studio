@@ -3,9 +3,9 @@ import datetime as dt
 
 import pytest
 
+from tuber_studio.core.store import Store
 from tuber_studio.operations.browsing.quotas import BrowsingQuotas, day_window
 from tuber_studio.operations_control import OperationsControl, canonical_intent
-from tuber_studio.store import Store
 
 BV = "BV1d8pU6xEZX"
 BEFORE_MIDNIGHT = dt.datetime(2026, 11, 7, 15, 59, 59, tzinfo=dt.UTC).timestamp()

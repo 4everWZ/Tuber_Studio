@@ -12,15 +12,26 @@ from datetime import datetime
 import httpx
 
 from .agent import recall_memory
-from .context_delivery import memory_source_allowed
-from .daily_memory import DailyMemoryService
-from .deployment_profiles import operation_profile
+from .core.config import operation_profile
+from .core.errors import PlatformRejected, SendLimitReached, UnknownPublication
+from .core.identity import identity_messages, runtime_identity
+from .core.meter import budgeted_json
+from .core.models import content_hash
+from .core.text import MAX_OPERATION_TEXT_BYTES, operation_character, operation_output_diagnostics
 from .dynamic_comment_card import comment_card, render_comment_card
 from .dynamic_materials import MaterialFilter, ensure_reflections, public_reads, reflections, source_links
-from .front_persona import expressive_persona
-from .generation_meter import budgeted_json
-from .illustration_policy import illustration_policy
-from .meme_selection import select_meme
+from .infra.platforms.bilibili.client import PublishUncertain
+from .infra.platforms.bilibili.dynamics import (
+    PublishCancelled,
+    PublishPreparationCancelled,
+    PublishPreparationFailed,
+    edit_dynamic_caption,
+    publish_image,
+    publish_text,
+    read_dynamic_caption,
+    validate_text,
+)
+from .infra.platforms.bilibili.images import bfs_image_path
 from .operation_attachments import (
     checked_image,
     decision,
@@ -34,7 +45,6 @@ from .operation_attachments import (
     wait_decision,
     workstation_image_decisions,
 )
-from .operation_continuations import content_hash
 from .operation_feedback import (
     FeedbackPublication,
     PublicationContext,
@@ -43,26 +53,13 @@ from .operation_feedback import (
     publication_binding,
 )
 from .operation_generation import generate_with_recovery
-from .operation_identity import identity_messages, runtime_identity
-from .operation_text import (
-    MAX_OPERATION_TEXT_BYTES,
-    operation_character,
-    operation_output_diagnostics,
-)
 from .operations_control import OperationsControl, canonical_intent
 from .operations_memory import OperationsMemory
-from .platforms.bilibili import PublishUncertain
-from .platforms.bilibili_dynamics import (
-    PublishCancelled,
-    PublishPreparationCancelled,
-    PublishPreparationFailed,
-    edit_dynamic_caption,
-    publish_image,
-    publish_text,
-    read_dynamic_caption,
-    validate_text,
-)
-from .platforms.bilibili_images import bfs_image_path
+from .persona.assets.illustration_policy import illustration_policy
+from .persona.assets.meme_selection import select_meme
+from .persona.characters.front_persona import expressive_persona
+from .persona.context.delivery import memory_source_allowed
+from .persona.memory.daily import DailyMemoryService
 from .public_mentions import (
     MENTION_INSTRUCTION,
     MENTION_REQUESTS,
@@ -70,7 +67,6 @@ from .public_mentions import (
     mention_requests,
     rebase_mentions,
 )
-from .publication_errors import PlatformRejected, SendLimitReached, UnknownPublication
 
 MAX_SAFE_INTEGER = (1 << 53) - 1  # Exact integer range shared with browser JSON.
 
@@ -160,8 +156,9 @@ def _delivery_key(payload):
 
 
 class Dynamics:
-    def __init__(self, settings, store, runtime, comments, *, memes=None):
+    def __init__(self, settings, store, runtime, comments, *, account=None, memes=None):
         self.settings, self.store, self.runtime, self.comments = settings, store, runtime, comments
+        self.account = account or getattr(comments, "account", None) or comments
         self.memes = memes
         self.operations = getattr(runtime, "operations", None) or OperationsControl(store)
         runtime.operations = self.operations
@@ -265,7 +262,7 @@ class Dynamics:
         base = DEFAULT_POLICY | self.store.get("dynamic_policy", {})
         policy = self.operations.effective("dynamics", base) | {
             "base": base,
-            "credentials_configured": bool(self.comments.policy()["credentials_configured"]),
+            "credentials_configured": bool(self.account.credentials_configured),
             **self.store.get(
                 "dynamic_schedule",
                 {
@@ -423,7 +420,7 @@ class Dynamics:
     def _source_account(self):
         browsing = getattr(self.runtime, "browsing", None)
         discovery = getattr(browsing, "discovery", None)
-        return str(getattr(self.comments, "display_account_id", lambda: "")()
+        return str(getattr(self.account, "display_account_id", lambda: "")()
                    or (discovery.history_scope()[0] if discovery else getattr(browsing, "account", "")) or "")
 
     def _sources(self, *, bound_ids=(), query=None):
@@ -945,7 +942,7 @@ class Dynamics:
     async def resolve_review_mentions(self, post_id, text, requests):
         row = self._post(post_id)
         participants = [person for source in row["sources"] for person in source.get("participants", [])]
-        mentions, pending = await bind_mentions(self.comments.adapter, validate_text(text), requests, participants)
+        mentions, pending = await bind_mentions(self.account.adapter, validate_text(text), requests, participants)
         return {"mentions": mentions, "pending_mentions": pending}
 
     def _publication_images(self, row):
@@ -978,7 +975,7 @@ class Dynamics:
         if not policy["credentials_configured"]:
             raise ValueError("发布动态需要先配置账号登录凭证")
         character = self.store.character(row["character_id"], row["character_version"])
-        account = row.get("account_id") or getattr(self.comments, "display_account_id", lambda: "")() or None
+        account = row.get("account_id") or getattr(self.account, "display_account_id", lambda: "")() or None
         self.operations.assert_allowed(
             automatic=automatic,
             channel="dynamics",
@@ -1115,15 +1112,15 @@ class Dynamics:
             await self._refresh_post_identity(post_id, automatic, epoch)
         row = self._post(post_id)
         character = self.store.character(row["character_id"], row["character_version"])
-        cached = getattr(self.comments, "display_account_id", lambda: "")()
+        cached = getattr(self.account, "display_account_id", lambda: "")()
         account = cached or (
-            await self.comments.account_id()
-            if hasattr(self.comments, "account_id")
+            await self.account.account_id()
+            if hasattr(self.account, "account_id")
             else "injected-test-account"
         )
         binding = self._publication_binding(row, account, character)
-        adapter = self.comments.adapter
-        credential = dict(getattr(self.comments, "credentials", {}))
+        adapter = self.account.adapter
+        credential = dict(getattr(self.account, "credentials", {}))
 
         def guard():
             fresh = self._post(post_id)
@@ -1137,8 +1134,8 @@ class Dynamics:
             ):
                 raise ValueError("恢复期间动态正文、角色或原始公开来源已变化")
             if (
-                self.comments.adapter is not adapter
-                or getattr(self.comments, "credentials", {}) != credential
+                self.account.adapter is not adapter
+                or getattr(self.account, "credentials", {}) != credential
                 or automatic
                 and not (self.policy()["enabled"] and self.policy()["auto_publish"])
             ):
@@ -1208,11 +1205,11 @@ class Dynamics:
         feedback = FeedbackPublication(self.runtime, self.store, self.operations)
 
         async def read(row, attempt):
-            adapter = self.comments.adapter
+            adapter = self.account.adapter
             if not guard and not hasattr(adapter, "reconcile_dynamic_publication"):
                 return {"status": "unsupported"}
             try:
-                account = await self.comments.account_id()
+                account = await self.account.account_id()
             except ValueError:
                 return {"status": "check_failed", "reason": "account_unavailable"}
             if account != row["binding"]["account_id"]:
@@ -1236,7 +1233,7 @@ class Dynamics:
                 started_at=attempt["started_at"],
                 receipt=attempt["receipt"],
             )
-            if self.comments.adapter is not adapter:
+            if self.account.adapter is not adapter:
                 return {"status": "check_failed", "reason": "account_changed"}
             if guard:
                 guard(row, attempt)
@@ -1258,7 +1255,7 @@ class Dynamics:
         if saved.get("duplicate_of"):
             if submission is not None:
                 submission.check(saved)
-            cached_account = getattr(self.comments, "display_account_id", lambda: "")()
+            cached_account = getattr(self.account, "display_account_id", lambda: "")()
             if cached_account and cached_account != saved["account_id"]:
                 raise ValueError("该动态草稿属于其他账号")
             if saved["status"] != "published":
@@ -1317,7 +1314,7 @@ class Dynamics:
         if submission is None:
             await self._refresh_post_identity(post_id, automatic, authorization_epoch)
         checked = self._post(post_id) if automatic else None
-        async with self.comments.publish_lock:
+        async with self.account.credential_lock:
             row, policy = self._post(post_id), self.policy()
             if expected_text is not None and row["content"] != expected_text:
                 raise ValueError("草稿已变化，请重新检查当前正文")
@@ -1339,10 +1336,10 @@ class Dynamics:
             card = row["comment_card"]
             pages = self._publication_images(row)
             image = (pages if len(pages) > 1 else pages[0]) if pages else None
-            adapter = self.comments.adapter
+            adapter = self.account.adapter
             account_id = (
-                await self.comments.account_id()
-                if hasattr(self.comments, "account_id")
+                await self.account.account_id()
+                if hasattr(self.account, "account_id")
                 else "injected-test-account"
             )
             fresh = self._post(post_id)
@@ -1406,7 +1403,7 @@ class Dynamics:
                 nonlocal token
                 current_policy = self.policy()
                 if (
-                    self.comments.adapter is not adapter
+                    self.account.adapter is not adapter
                     or not current_policy["credentials_configured"]
                     or (automatic and not (current_policy["enabled"] and current_policy["auto_publish"]))
                 ):
@@ -1608,7 +1605,7 @@ class Dynamics:
 
     def _recent_public_posts(self, character):
         _, preference = self._memory_preference()
-        account = getattr(self.comments, "display_account_id", lambda: "")()
+        account = getattr(self.account, "display_account_id", lambda: "")()
         return [
             {"content": post["content"], "published_at": post["published_at"]}
             for post in self.list_posts("published", 5)
@@ -1738,7 +1735,7 @@ class Dynamics:
 
     async def _presentation(self, data, sources):
         participants = [person for source in sources for person in source.get("participants", [])]
-        mentions, pending = await bind_mentions(self.comments.adapter, data["content"], data["mentions"], participants)
+        mentions, pending = await bind_mentions(self.account.adapter, data["content"], data["mentions"], participants)
         return {"link_source_ids": data["link_source_ids"], "mentions": mentions, "pending_mentions": pending,
                 "points": data["points"]}
 
@@ -1766,7 +1763,7 @@ class Dynamics:
         next_at = now + data["next_evaluation_seconds"]
         presentation = data.get("presentation")
         owner = (account_id if account_id is not None else
-                 getattr(self.comments, "display_account_id", lambda: "")() or "")
+                 getattr(self.account, "display_account_id", lambda: "")() or "")
         shared_choice = bool(owner and decide_image and workstation_image_decisions(self.runtime))
         if shared_choice:
             presentation = (presentation or {}) | {"image_choice": "shared"}
@@ -1897,8 +1894,8 @@ class Dynamics:
         return row
 
     async def propose_dynamic_edit(self, character, request_id, identifier, instruction):
-        adapter = self.comments.adapter
-        account = str(await self.comments.account_id())
+        adapter = self.account.adapter
+        account = str(await self.account.account_id())
         if self.store.one("SELECT 1 FROM dynamic_edits WHERE request_id=?", (request_id,)):
             previous = self.dynamic_edit(request_id, account, character["id"])
             if previous["platform_id"] != identifier:
@@ -1935,7 +1932,7 @@ class Dynamics:
             }, max_tokens=1024)
         if not isinstance(result, dict) or "caption" not in result or set(result) - {"caption", "mentions"}:
             raise ValueError("模型未返回完整的动态修订")
-        if adapter is not self.comments.adapter or self._post(row["id"]) != row or not self._valid_sources(row):
+        if adapter is not self.account.adapter or self._post(row["id"]) != row or not self._valid_sources(row):
             raise ValueError("账号、动态或公开来源已变化")
         caption = self._edit_caption(row, result["caption"])
         if "mentions" in result:
@@ -1944,7 +1941,7 @@ class Dynamics:
                 raise ValueError("请在编辑要求中提供要 @ 的 B 站 UID 和当前昵称")
         else:
             mentions = rebase_mentions(caption, original.get("mentions", []))
-        if adapter is not self.comments.adapter or self._post(row["id"]) != row:
+        if adapter is not self.account.adapter or self._post(row["id"]) != row:
             raise ValueError("核对提及期间账号或动态已变化")
         self.store.execute(
             "INSERT INTO dynamic_edits(request_id,post_id,account_id,character_id,platform_id,original,caption,outgoing,status,mentions)"
@@ -1955,10 +1952,10 @@ class Dynamics:
         return self.dynamic_edit(request_id, account, character["id"])
 
     async def apply_dynamic_edit(self, request_id):
-        async with self.comments.publish_lock:
-            adapter = self.comments.adapter
-            credentials = dict(self.comments.credentials)
-            account = str(await self.comments.account_id())
+        async with self.account.credential_lock:
+            adapter = self.account.adapter
+            credentials = dict(self.account.credentials)
+            account = str(await self.account.account_id())
             character = self._character()
             edit = self.dynamic_edit(request_id, account, character["id"])
             if edit["status"] == "applied":
@@ -1969,7 +1966,7 @@ class Dynamics:
 
             def guard():
                 if (
-                    adapter is not self.comments.adapter or self.comments.credentials != credentials
+                    adapter is not self.account.adapter or self.account.credentials != credentials
                     or self._character() != character
                 ):
                     raise ValueError("编辑期间账号或角色已变化")
@@ -2152,7 +2149,7 @@ class Dynamics:
                         raise ValueError("运营记忆来源或授权已变化")
                     payload = json.loads(messages[1]["content"])
                     payload["public_sources"] = public_sources
-                    account = getattr(self.comments, "display_account_id", lambda: "")()
+                    account = getattr(self.account, "display_account_id", lambda: "")()
                     payload["related_posts"] = self._related_posts(char, account, sources)
                     for post in payload["related_posts"] + payload["recent_public_posts"]:
                         post["content"] = recall_memory.trim_repeated_quotes(post["content"], originals)

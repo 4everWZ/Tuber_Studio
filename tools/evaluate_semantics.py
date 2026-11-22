@@ -13,11 +13,12 @@ import time
 from pathlib import Path
 
 from tuber_studio.comments import Comments
-from tuber_studio.compaction import is_summary_message
-from tuber_studio.config import Settings, redact_credentials
-from tuber_studio.providers import public_error
+from tuber_studio.core.config import Settings, redact_credentials
+from tuber_studio.core.store import Store
+from tuber_studio.infra.inference.providers import public_error
+from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
+from tuber_studio.persona.context.compaction import is_summary_message
 from tuber_studio.runtime import Runtime
-from tuber_studio.store import Store
 
 ROOT = Path(__file__).resolve().parents[1]
 ACCOUNT = "9000001"
@@ -106,7 +107,8 @@ async def evaluate(config_path, character_id):
             runtime = Runtime(settings, store)
             try:
                 await ready_model(runtime)
-                comments = Comments(settings, store, runtime, adapter=object())
+                account = BilibiliAccount(settings, store, adapter=object())
+                comments = Comments(settings, store, runtime, account)
                 scope, delivered = seed_history(runtime, comments, character, case)
                 history = runtime.context.history_for_model(scope, character)
                 visible = {item["source_event_id"] for item in history if item["role"] == "assistant"}

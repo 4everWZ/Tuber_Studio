@@ -2,8 +2,8 @@ import pytest
 from test_browsing import browsing as browsing
 from test_browsing import finished
 
-from tuber_studio.platforms.bilibili import PublishUncertain
-from tuber_studio.publication_errors import UnknownPublication
+from tuber_studio.core.errors import UnknownPublication
+from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
 
 
 @pytest.mark.parametrize("kind", ["video_like", "video_fav"])
@@ -11,7 +11,7 @@ async def test_uncertain_engagement_stays_unconfirmed_without_a_readback_api(bro
     await browsing.configure({"video_like_enabled": True, "video_fav_enabled": True})
     await finished(browsing, preview=True)
     candidate = next(item for item in browsing.intents() if item["kind"] == kind)
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     browsing.review(candidate["id"], "approve")
     sent = []
 

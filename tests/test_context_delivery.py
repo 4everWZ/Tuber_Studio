@@ -6,8 +6,8 @@ import time
 import pytest
 from test_comments import comments as comments
 
-from tuber_studio.context import ContextManager
-from tuber_studio.context_delivery import comment_delivery, memory_source_allowed
+from tuber_studio.persona.context.delivery import comment_delivery, memory_source_allowed
+from tuber_studio.persona.context.manager import ContextManager
 from tuber_studio.runtime import Runtime
 
 
@@ -125,7 +125,7 @@ def test_context_audit_expires_with_parent_or_disappears_on_explicit_window_dele
     row = manager.existing(scope, char)
     manager._archive_history(row, "test old pollution")
     store.execute("UPDATE context_windows SET oldest_source_at=? WHERE key=?", (1, row["key"]))
-    from tuber_studio.retention import RetentionManager
+    from tuber_studio.core.retention import RetentionManager
 
     retention = RetentionManager(comments.settings, store)
     preview = retention.preview(now=time.time())
@@ -140,7 +140,7 @@ def test_context_audit_expires_with_parent_or_disappears_on_explicit_window_dele
 
 
 def test_profile_clear_or_opt_out_never_reintroduces_unsent_memory(comments):
-    from tuber_studio.relationships import UserProfile
+    from tuber_studio.persona.memory.relationships import UserProfile
 
     scope, _, _, _, _ = original_and_draft(comments, status="rejected")
     runtime, char = comments.runtime, comments.runtime.character
@@ -152,8 +152,8 @@ def test_profile_clear_or_opt_out_never_reintroduces_unsent_memory(comments):
 
 
 def test_dynamic_public_mark_and_cached_summary_do_not_launder_an_unsent_memory(comments, monkeypatch):
+    from tuber_studio.core.identity import identity_snapshot
     from tuber_studio.dynamics import Dynamics
-    from tuber_studio.operation_identity import identity_snapshot
 
     _, _, _, text, _ = original_and_draft(comments, status="rejected")
     runtime, store, char = comments.runtime, comments.store, comments.runtime.character

@@ -12,11 +12,11 @@ from test_message_memes import image_http as image_http
 from test_message_memes import meme_messages as meme_messages
 from test_message_memes import prepared
 
+from tuber_studio.core.identity import identity_snapshot
+from tuber_studio.core.models import OperationReply
 from tuber_studio.direct_messages import MessageInputChanged
 from tuber_studio.message_outreach import invitation_possibility
-from tuber_studio.models import OperationReply
 from tuber_studio.operation_generation import generate_with_recovery
-from tuber_studio.operation_identity import identity_snapshot
 
 ACTOR = "injected-test-account"
 
@@ -567,7 +567,7 @@ async def test_agreement_is_checked_before_waiting_and_rechecks_actual_result_af
     # Execute the existing generation+web_fetch completion path with isolated HTTP.
     from test_operation_generation import model_for
 
-    from tuber_studio import web_fetch
+    from tuber_studio.infra.web_client import fetch as web_fetch
 
     previous = messages.runtime.operation_llm
     original_generate = messages.runtime.generate_reply

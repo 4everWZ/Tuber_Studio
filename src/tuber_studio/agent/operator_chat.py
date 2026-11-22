@@ -6,10 +6,10 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import HTTPException
 
-from ..generation_meter import budgeted_call
-from ..operation_identity import without_model_identity
-from ..store import dump
-from . import chat_context, chat_transport, capability_dispatcher, turn_router
+from ..core.identity import without_model_identity
+from ..core.meter import budgeted_call
+from ..core.store import dump
+from . import capability_dispatcher, turn_router
 from .chat_context import ChatContext
 from .chat_models import (
     ChatIntent,

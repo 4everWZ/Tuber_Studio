@@ -5,8 +5,8 @@ from typing import Literal
 
 from pydantic import Field
 
-from ..models import StrictModel
-from ..store import dump
+from ..core.models import StrictModel
+from ..core.store import dump
 from .task_delivery import DelegationError
 
 

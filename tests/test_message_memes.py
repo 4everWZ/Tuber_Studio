@@ -10,9 +10,10 @@ import pytest
 
 from tuber_studio.comments import Comments
 from tuber_studio.direct_messages import DirectMessages
-from tuber_studio.memes import MemeCatalog
-from tuber_studio.platforms.bilibili import PublishUncertain
-from tuber_studio.platforms.bilibili_messages import BilibiliMessagesAdapter
+from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
+from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
+from tuber_studio.infra.platforms.bilibili.messages import BilibiliMessagesAdapter
+from tuber_studio.persona.assets.memes import MemeCatalog
 
 
 @pytest.fixture
@@ -115,7 +116,7 @@ async def meme_messages(runtime, settings, store, image_http):
         source={"kind": "user_upload", "author": "test operator"},
         license={"name": "fixture only"},
     )
-    comments = Comments(settings, store, runtime)
+    comments = Comments(settings, store, runtime, BilibiliAccount(settings, store))
     messages = DirectMessages(settings, store, runtime, comments, adapter=adapter, memes=catalog)
     comments.direct_messages = messages
     await messages.configure({"enabled": True})
@@ -123,6 +124,7 @@ async def meme_messages(runtime, settings, store, image_http):
     yield messages, catalog, asset, state
     await messages.close()
     await comments.close()
+    await comments.account.close()
 
 
 async def prepared(bundle, *, image=True, automatic=False, account_id=""):
@@ -434,7 +436,7 @@ async def test_review_while_account_nav_waits_preserves_latest_draft_before_any_
     # Use the production account-verification path with the controlled native
     # adapter, retaining its HTTP transport and binding the actual fixture UID.
     messages.injected = False
-    messages.comments.credentials = {"sessdata": "fixture-session", "csrf": "fixture-csrf"}
+    messages.account.credentials = {"sessdata": "fixture-session", "csrf": "fixture-csrf"}
     messages.credential_signature = ("fixture-session", "fixture-csrf")
     state["nav_wait"] = asyncio.Event()
     task = asyncio.create_task(messages.send(identity))

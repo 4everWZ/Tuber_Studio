@@ -9,8 +9,8 @@ from uuid import UUID
 
 from pydantic import Field, PrivateAttr, StringConstraints, model_validator
 
-from ..front_persona import without_address
-from ..models import StrictModel
+from ..core.models import StrictModel
+from ..persona.characters.front_persona import without_address
 from . import recall_memory
 from .operator_task_patch import TaskPatch
 from .personal_agent import CAPABILITIES, Arrangement, ConversationObject

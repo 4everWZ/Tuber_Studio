@@ -11,11 +11,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
+from tuber_studio.core.models import Event
 from tuber_studio.live.media import inspect_audio
 from tuber_studio.live.online_songs import OnlineSongs, SongRequestSettings, cache_bytes, parse_lrc
 from tuber_studio.live.song_component import SongComponent
 from tuber_studio.live.song_download import public_address
-from tuber_studio.models import Event
 
 FIXTURES = Path(__file__).parent / "fixtures/audio"
 SONG = {"id": "123", "title": "测试歌", "artist": "测试歌手", "artists": ["测试歌手"], "duration": 3.0}

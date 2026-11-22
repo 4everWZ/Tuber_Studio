@@ -25,8 +25,8 @@ from evaluations.omni_chat_loop import ROOT, connection
 from evaluations.owner_memory_device import AUTO, CONFIRMED, SEARCH
 from evaluations.owner_memory_voice import VOICE_RULE, spoken_rule, voice_on_page
 from tuber_studio.agent.voice_origin import sign
-from tuber_studio.auth_sessions import COOKIE_NAME
-from tuber_studio.operation_continuations import content_hash
+from tuber_studio.core.auth import COOKIE_NAME
+from tuber_studio.core.models import content_hash
 
 CHECKPOINT = "/api/evaluation/p2-memory"
 

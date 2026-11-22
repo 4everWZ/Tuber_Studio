@@ -10,9 +10,9 @@ from fastapi.testclient import TestClient
 
 from tuber_studio.agent import private_call, private_call_work, voice_origin
 from tuber_studio.app import create_app
-from tuber_studio.front_persona import persona_instructions
-from tuber_studio.operation_identity import operating_account_facts, private_participant_instructions
-from tuber_studio.store import editable_character
+from tuber_studio.core.identity import operating_account_facts, private_participant_instructions
+from tuber_studio.core.store import editable_character
+from tuber_studio.persona.characters.front_persona import persona_instructions
 
 
 def test_public_mount_keeps_the_shell_assets_auth_and_call_tickets_together(settings, monkeypatch):
@@ -225,7 +225,7 @@ async def test_ticket_uses_only_the_eligible_chat_topic_and_revalidates_it(setti
         revoked = fresh["memory_use"] | {"topic_source": fresh["topic_source"]}
         assert (await client.post(path + "/memory-validate", json=revoked)).status_code == 409
         assert (await ticket(topic_turn=turn))["memory_use"] is None
-    await app.state.comments.adapter.close()
+    await app.state.bilibili_account.adapter.close()
     app.state.store.close()
 
 
@@ -273,7 +273,7 @@ async def test_call_uses_the_same_complete_role_card_across_topics(settings, mon
         assert (await ticket(topic_turn=turn))["instructions"] == base
         runtime.store.execute("DELETE FROM operator_chat_turns WHERE request_id=?", (turn,))
         assert (await ticket(topic_turn=turn))["instructions"] == base
-    await app.state.comments.adapter.close()
+    await app.state.bilibili_account.adapter.close()
     app.state.store.close()
 
 

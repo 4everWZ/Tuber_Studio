@@ -13,10 +13,10 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from tuber_studio.agent.task_tools import create_task_runtime
-from tuber_studio.api_providers import APIProvider
-from tuber_studio.http_api import response_json
-from tuber_studio.providers import public_error
-from tuber_studio.store import Store
+from tuber_studio.core.store import Store
+from tuber_studio.infra.inference.api_providers import APIProvider
+from tuber_studio.infra.inference.http_api import response_json
+from tuber_studio.infra.inference.providers import public_error
 
 ROOT = Path(__file__).resolve().parents[1]
 CASE_PATH = ROOT / "evaluations/cases/agent-grounded-v1.json"

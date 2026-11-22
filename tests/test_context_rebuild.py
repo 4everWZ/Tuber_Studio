@@ -6,8 +6,9 @@ import sqlite3
 import httpx
 import pytest
 
-from tuber_studio.api_providers import APIProvider
 from tuber_studio.comments import Comments
+from tuber_studio.infra.inference.api_providers import APIProvider
+from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
 
 
 class LocalOnly:
@@ -96,7 +97,7 @@ async def real_protocol(settings, runtime, *, failure=None, first_large=False):
 
 
 async def test_manual_rebuild_prefills_only_original_floor_data_and_indexes_viewers(settings, store, runtime):
-    service = Comments(settings, store, runtime, LocalOnly())
+    service = Comments(settings, store, runtime, BilibiliAccount(settings, store, LocalOnly()))
     rows = originals(service)
     service.import_items(
         "import-another", [{"comment_id": "else", "thread_id": "floor", "content": "不同视频的秘密"}]
@@ -146,14 +147,14 @@ async def test_manual_rebuild_prefills_only_original_floor_data_and_indexes_view
 
 
 async def test_demo_rebuild_is_explicitly_not_a_real_prefill(settings, store, runtime):
-    service = Comments(settings, store, runtime, LocalOnly())
+    service = Comments(settings, store, runtime, BilibiliAccount(settings, store, LocalOnly()))
     originals(service)
     result = await service.rebuild_context("import-rebuild", "floor")
     assert result["rebuilt"] and result["prefilled"] is False and "演示" in result["message"]
 
 
 async def test_rebuild_refuses_nonempty_or_absent_originals_without_overwrite(settings, store, runtime):
-    service = Comments(settings, store, runtime, LocalOnly())
+    service = Comments(settings, store, runtime, BilibiliAccount(settings, store, LocalOnly()))
     scope = service.context_scope("import-rebuild", "floor")
     runtime.operation_context.record(scope, runtime.character, {"event_id": "kept", "text": "已有问题"}, "已有答复")
     original = copy.deepcopy(runtime.operation_context.existing(scope, runtime.character))
@@ -171,7 +172,7 @@ async def test_rebuild_refuses_nonempty_or_absent_originals_without_overwrite(se
 async def test_failed_or_cancelled_prefill_never_installs_history_or_source_index(
     settings, store, runtime, failure
 ):
-    service = Comments(settings, store, runtime, LocalOnly())
+    service = Comments(settings, store, runtime, BilibiliAccount(settings, store, LocalOnly()))
     originals(service)
     scope = service.context_scope("import-rebuild", "floor")
     previous = copy.deepcopy(runtime.operation_context.window(scope, runtime.character))
@@ -189,7 +190,7 @@ async def test_failed_or_cancelled_prefill_never_installs_history_or_source_inde
 
 
 async def test_dataset_removed_during_prefill_is_not_reanimated(settings, store, runtime):
-    service = Comments(settings, store, runtime, LocalOnly())
+    service = Comments(settings, store, runtime, BilibiliAccount(settings, store, LocalOnly()))
     originals(service)
     await real_protocol(
         settings, runtime, failure=lambda: store.execute("DELETE FROM comments WHERE thread_id='floor'")
@@ -204,7 +205,7 @@ async def test_dataset_removed_during_prefill_is_not_reanimated(settings, store,
 async def test_auto_rebuild_excludes_current_comment_and_uses_generation_prefill_once(
     settings, store, runtime
 ):
-    service = Comments(settings, store, runtime, LocalOnly())
+    service = Comments(settings, store, runtime, BilibiliAccount(settings, store, LocalOnly()))
     rows = originals(service)
     store.execute(
         "INSERT INTO drafts(comment_id,text,status) VALUES(?,?,'pending_review')",
@@ -232,7 +233,7 @@ async def test_auto_rebuild_excludes_current_comment_and_uses_generation_prefill
 
 
 async def test_auto_install_commit_failure_rolls_back_draft_and_window_together(settings, store, runtime):
-    service = Comments(settings, store, runtime, LocalOnly())
+    service = Comments(settings, store, runtime, BilibiliAccount(settings, store, LocalOnly()))
     rows = originals(service)
     await real_protocol(settings, runtime)
     store.db.executescript(
@@ -249,11 +250,11 @@ async def test_auto_install_commit_failure_rolls_back_draft_and_window_together(
 async def test_rebuild_reuses_existing_core_compaction_and_preserves_ingestion_age(
     settings, store, runtime, monkeypatch
 ):
-    service = Comments(settings, store, runtime, LocalOnly())
+    service = Comments(settings, store, runtime, BilibiliAccount(settings, store, LocalOnly()))
     originals(service)
     requests, _, _ = await real_protocol(settings, runtime, first_large=True)
     clock = [1800000000.0]
-    monkeypatch.setattr("tuber_studio.context.time.time", lambda: clock[0])
+    monkeypatch.setattr("tuber_studio.persona.context.manager.time.time", lambda: clock[0])
     result = await service.rebuild_context("import-rebuild", "floor")
     assert result["compacted"] and result["source_count"] == 2
     calls = [body for path, body in requests if path == "/v1/chat/completions"]

@@ -4,8 +4,8 @@ import json
 import re
 from dataclasses import dataclass
 
+from .core.models import content_hash
 from .operations.browsing.comment_timeline import comment_href
-from .operation_continuations import content_hash
 
 
 @dataclass(frozen=True)

@@ -6,14 +6,16 @@ from pathlib import Path
 
 import httpx
 import pytest
-from test_bilibili_browsing import adapter_factory as adapter_factory
 from test_browsing import browsing as browsing
 
-from tuber_studio.operation_continuations import content_hash
+from tests.support.http_isolation import browsing_adapter_factory
+from tuber_studio.core.models import content_hash
+from tuber_studio.infra.platforms.bilibili.client import BilibiliAdapter
 from tuber_studio.operations.browsing.comment_reader import event_unlocked
 from tuber_studio.operations.browsing.decisions import BrowsingDecisions
 from tuber_studio.operations.browsing.models import ResponseDecision
-from tuber_studio.platforms.bilibili import BilibiliAdapter
+
+adapter_factory = browsing_adapter_factory
 
 CASES = json.loads((Path(__file__).parent / "fixtures/browsing_reply_participants_20261107.json").read_text(encoding="utf-8"))["cases"]
 

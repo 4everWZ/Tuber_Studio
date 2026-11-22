@@ -7,11 +7,11 @@ from test_browsing import BV, finished, model_packet
 from test_browsing import browsing as browsing
 from test_browsing_batches import authorize
 
-from tuber_studio.api_providers import APIProvider
+from tuber_studio.core.errors import SendLimitReached
+from tuber_studio.infra.inference.api_providers import APIProvider
 from tuber_studio.operation_feedback import FeedbackModel
 from tuber_studio.operations.browsing.decisions import BrowsingDecisions
 from tuber_studio.operations.browsing.models import ResponseDecision
-from tuber_studio.publication_errors import SendLimitReached
 
 
 def test_normal_short_acknowledgements_and_shared_openings_are_not_treated_as_mechanical_repetition():

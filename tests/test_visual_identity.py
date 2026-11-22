@@ -12,7 +12,7 @@ from tuber_studio.agent.task_tools import (
     unsupported_timecode,
 )
 from tuber_studio.agent.visual_identity import check_people, check_screen_title, extract_people
-from tuber_studio.operation_identity import (
+from tuber_studio.core.identity import (
     captured_identity,
     provider_identity_messages,
     visual_editor_context,

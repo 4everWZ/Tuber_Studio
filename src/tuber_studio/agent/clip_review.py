@@ -15,7 +15,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageFilter, ImageStat
 
-from ..platforms.bilibili_frames import FfmpegTiles
+from ..infra.platforms.bilibili.frames import FfmpegTiles
 
 _W, _H = 320, 180
 _PROXY_BYTES = _W * _H * 3 // 2

@@ -8,9 +8,9 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from ...core.text import verified_comment_quote
 from ...operation_generation import hold_comment_body
-from ...operation_text import verified_comment_quote
-from ...subtitle_presentation import (
+from ...persona.context.subtitles import (
     CitationBlock,
     SourcePart,
     SourceSegment,

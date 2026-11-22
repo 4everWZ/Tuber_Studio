@@ -4,7 +4,7 @@ import inspect
 import re
 from functools import partial
 
-from ...operation_continuations import content_hash
+from ...core.models import content_hash
 
 VIDEO_ID = re.compile(r"BV[0-9A-Za-z]{10}")
 COMMENT_ID = re.compile(r"[1-9][0-9]{0,19}")

@@ -7,21 +7,21 @@ import re
 import time
 from uuid import uuid4
 
-from ...deployment_profiles import operation_profile
+from ...core.config import operation_profile
+from ...core.errors import SendLimitReached
+from ...core.store import dump
+from ...core.turns import operation_checkpoint, operation_lane
 from ...direct_messages import MessagePolicy
+from ...infra.inference.providers import public_error
 from ...operation_attachments import can_attach_comment_image, comment_payload, image_decision_pending
 from ...operation_sends import OperationSends, ReconciliationPending
-from ...operation_turns import operation_checkpoint, operation_lane
 from ...operations_control import COMMENT_WRITE_FILTER
-from ...providers import public_error
-from ...publication_errors import SendLimitReached
-from ...store import dump
 from . import batches as batches_tasks
-from .backlog import flow_window, install_flow_ledger
 from . import comment_reader as comment_reader_tasks
 from . import discovery as discovery_tasks
 from . import progress as progress_tasks
 from . import task_views as task_views_tasks
+from .backlog import flow_window, install_flow_ledger
 from .comment_admission import CommentAdmission
 from .comment_timeline import ensure_comment_timeline
 from .decisions import BrowsingDecisions
@@ -40,12 +40,13 @@ from .thread_context import comment_thread_context
 
 class BrowsingService:
     def __init__(
-        self, settings, store, runtime, comments, messages, dynamics, *, visual=None, read_interval=0.25
+        self, settings, store, runtime, comments, messages, dynamics, *, visual=None, read_interval=0.25, bilibili_account=None
     ):
         self.settings, self.store, self.runtime = settings, store, runtime
         self.comments, self.messages, self.dynamics = comments, messages, dynamics
+        self.bilibili_account = bilibili_account or comments.account
         self.operations, self.repo = runtime.operations, runtime.browsing_repository
-        self.adapter = comments.adapter
+        self.adapter = self.bilibili_account.adapter
         self.read_interval = read_interval
         self.read_lock = asyncio.Lock()
         self.last_read = 0
@@ -230,7 +231,7 @@ class BrowsingService:
                 self.policy().get("daily_watch_limit", 0),
                 self.policy().get("business_timezone", "Asia/Taipei"),
             ),
-            "automatic_sending_ready": self.comments.policy()["credentials_configured"] and ready and not self.blockers,
+            "automatic_sending_ready": self.bilibili_account.credentials_configured and ready and not self.blockers,
             "semantic_validation": self.store.get("browsing_semantic_validation", {}),
             "sending_note": "按设置中已开放的动作与审核方式运行",
             "cache": self.runtime.cache.usage("browsing"),
@@ -254,15 +255,15 @@ class BrowsingService:
         return self.status()
 
     async def _current_account(self, expected=None):
-        if self.adapter is not self.comments.adapter:
+        if self.adapter is not self.bilibili_account.adapter:
             visual = self.visual_provider
             await self.evidence.close()
-            self.adapter = self.comments.adapter
+            self.adapter = self.bilibili_account.adapter
             self.notifications.adapter = self.adapter
             self.evidence = BrowsingEvidence(self.runtime, self.adapter, self._read, visual)
             if hasattr(self.adapter, "request_gate"):
                 self.adapter.request_gate = self._gate
-        self.account = str(await self._read(self.comments.account_id))
+        self.account = str(await self._read(self.bilibili_account.account_id))
         if expected is not None and str(expected) != self.account:
             raise ValueError("候选来源账号已变化")
         return self.account
@@ -352,7 +353,7 @@ class BrowsingService:
                         )
             if config["message_poll_enabled"]:
                 try:
-                    if not self.messages.injected and not self.comments.policy()["credentials_configured"]:
+                    if not self.messages.injected and not self.bilibili_account.credentials_configured:
                         raise ValueError("私信读取需要当前账号登录凭证")
                     adapter = await self.messages._adapter()
                     own_uid, _ = await adapter.sessions()
@@ -364,9 +365,9 @@ class BrowsingService:
 
     def credential_signature(self):
         return (
-            id(self.comments.adapter),
-            self.comments.credentials.get("sessdata"),
-            self.comments.credentials.get("csrf"),
+            id(self.bilibili_account.adapter),
+            self.bilibili_account.credentials.get("sessdata"),
+            self.bilibili_account.credentials.get("csrf"),
         )
 
     async def start_review_session(self, *, resume_session_id=None):
@@ -715,7 +716,7 @@ class BrowsingService:
             return False
         row = self.repo.round(item["id"])
         try:
-            if self.account != account or self.adapter is not self.comments.adapter:
+            if self.account != account or self.adapter is not self.bilibili_account.adapter:
                 await self._current_account(account)
             row["operator_credential"] = self.credential_signature()
             self._check_round(row)
@@ -771,7 +772,7 @@ class BrowsingService:
             if not preview or automatic or not video_only:
                 raise ValueError("对话任务只支持单个只读视频轮次")
             if existing := self.repo.requested_preview(
-                request_id, self.runtime.character, selection, self.comments.display_account_id()
+                request_id, self.runtime.character, selection, self.bilibili_account.display_account_id()
             ):
                 return {"id": existing["id"], "status": existing["status"], "reused": True, "preview": True}
         if automatic and not self.operations.accepting_work:
@@ -1294,7 +1295,7 @@ class BrowsingService:
 
     def assert_comment_evidence(self, event):
         evidence = event.get("video_evidence")
-        if not evidence or evidence["account_id"] != self.comments.display_account_id():
+        if not evidence or evidence["account_id"] != self.bilibili_account.display_account_id():
             raise ValueError("自动评论缺少当前账号的视频证据")
         thread = evidence.get("public_source_thread") or {}
         if not evidence.get("material_keys") and not (thread.get("public_text") or (thread.get("source") or {}).get("text")):

@@ -7,16 +7,14 @@ from uuid import UUID, uuid4
 from fastapi import Depends, HTTPException
 from pydantic import Field
 
+from ..core.models import StrictModel, content_hash
+from ..core.store import dump
+from ..infra.inference.providers import public_error
 from ..operation_attachments import comment_payload
-from ..models import StrictModel
-from ..operation_continuations import content_hash
 from ..operation_feedback import FeedbackPublication
 from ..operations.browsing.thread_context import COMMENT_ID, VIDEO_ID
-from ..providers import public_error
-from ..store import dump
 from .dynamic_publication import pending
 from .task_runtime import Tool, ToolWait
-
 
 LocalID = Annotated[int, Field(strict=True, ge=1, le=9223372036854775807)]
 

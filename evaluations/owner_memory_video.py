@@ -7,8 +7,8 @@ from uuid import uuid4
 from evaluations.owner_memory_device import AUTO, SEARCH, device_call
 from evaluations.owner_memory_editor_trace import editor_requests
 from tuber_studio.agent.title_form import frame_observations, meets_form, read_title, title_words
-from tuber_studio.generation_meter import budgeted_call
-from tuber_studio.http_api import InferenceBudgetExceeded, InferenceQueueBusy
+from tuber_studio.core.meter import budgeted_call
+from tuber_studio.infra.inference.http_api import InferenceBudgetExceeded, InferenceQueueBusy
 
 BV = "BV1Hy4y1J7xH"
 GOAL = (f"请只读取 {BV} P2 的 11 到 14 秒，用其中最接近 13.5 秒的已核实画面给我写一项私有直播文字提纲。"

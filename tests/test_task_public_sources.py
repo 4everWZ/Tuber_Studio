@@ -3,7 +3,7 @@ import pytest
 
 from tuber_studio.agent import public_sources
 from tuber_studio.agent.task_delivery import evidence_index
-from tuber_studio.web_fetch import programme_credit_text, read_excerpt
+from tuber_studio.infra.web_client.fetch import programme_credit_text, read_excerpt
 
 
 async def test_source_is_bound_to_requested_part(monkeypatch):

@@ -12,9 +12,9 @@ from fastapi import Body, Depends, HTTPException, Query, Request, WebSocket, Web
 from fastapi.responses import FileResponse
 from pydantic import Field
 
-from ..media_cache import CachePolicy
-from ..models import Event, StrictModel
-from ..performance import performance
+from ..core.models import Event, StrictModel
+from ..infra.media.cache import CachePolicy
+from ..persona.characters.performance import performance
 from ..web_entry import web_page
 from .activity_filter import LivePoll
 from .avatar import LiveAvatar

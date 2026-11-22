@@ -6,8 +6,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from .models import StrictModel
-from .operation_continuations import content_hash
+from .core.models import StrictModel, content_hash
 
 
 class OutreachAssessment(StrictModel):

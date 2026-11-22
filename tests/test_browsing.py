@@ -11,6 +11,7 @@ import pytest
 from tuber_studio.comments import Comments
 from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.dynamics import Dynamics
+from tuber_studio.infra.platforms.bilibili.account import BilibiliAccount
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.service import BrowsingService
 
@@ -172,7 +173,7 @@ class ControlledModel:
         pass
 
     async def generate(self, messages, character, event_id, source_text=None):
-        from tuber_studio.models import Reply
+        from tuber_studio.core.models import Reply
 
         return Reply(
             spoken_text="鱼鱼在这里陪你聊，我们慢慢说。",
@@ -254,7 +255,7 @@ class ControlledModel:
 @pytest.fixture
 async def browsing(settings, store, runtime):
     adapter = ControlledPlatform()
-    comments = Comments(settings, store, runtime, adapter)
+    comments = Comments(settings, store, runtime, BilibiliAccount(settings, store, adapter))
 
     class MessageTransport:
         async def sessions(self):
@@ -275,6 +276,7 @@ async def browsing(settings, store, runtime):
     yield service
     await service.close()
     await comments.close()
+    await comments.account.close()
     runtime.operation_llm = previous
 
 
@@ -315,7 +317,7 @@ async def wait_for_sends(service):
 
 
 async def test_discovery_batch_has_no_hidden_shared_request_allowance(browsing):
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({"max_model_calls": 1, "decision_max_tokens": 512})
     await browsing._current_account()
 
@@ -352,7 +354,7 @@ async def test_video_preview_leaves_authorized_inbox_to_its_own_round(browsing, 
 
 async def test_interaction_round_replies_to_own_upload_while_discovery_reads(browsing, monkeypatch):
     own_video = "BV1xx411c7mD"
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({
         "reply_auto_publish": True, "reply_enabled": True,
         "replies_enabled": True, "recent_sample_limit": 0,
@@ -443,7 +445,7 @@ async def test_interaction_round_replies_to_own_upload_while_discovery_reads(bro
 @pytest.mark.parametrize(("workers", "cancel"), [(1, False), (2, False), (2, True)])
 async def test_background_discovery_uses_shared_worker_limit(browsing, monkeypatch, workers, cancel):
     videos = [BV, "BV1xx411c7mD", "BV17x411w7KC"]
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure(
         {
             "workers": workers,
@@ -495,7 +497,7 @@ async def test_background_discovery_uses_shared_worker_limit(browsing, monkeypat
 async def test_background_discovery_publishes_top_level_and_thread_replies(browsing, monkeypatch):
     second_video = "BV1xx411c7mD"
     policy = browsing.policy
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     monkeypatch.setattr(
         browsing,
         "policy",
@@ -580,7 +582,7 @@ async def test_background_discovery_publishes_top_level_and_thread_replies(brows
 
 
 async def test_discovery_source_changes_at_the_next_round(browsing, monkeypatch):
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     prepare = browsing._prepare_evidence
     started, resume = asyncio.Event(), asyncio.Event()
 
@@ -614,10 +616,10 @@ async def test_discovery_source_changes_at_the_next_round(browsing, monkeypatch)
 
 @pytest.mark.parametrize("failed_reads", [1, 3])
 async def test_discovery_defers_failed_attempt_then_continues_other_videos(browsing, monkeypatch, failed_reads):
-    from tuber_studio.platforms.bilibili_browsing import PlatformReadError
+    from tuber_studio.infra.platforms.bilibili.browsing import PlatformReadError
 
     first, second = BV, "BV1xx411c7mD"
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     base = browsing.policy
     monkeypatch.setattr(
         browsing,
@@ -696,10 +698,10 @@ async def test_discovery_defers_failed_attempt_then_continues_other_videos(brows
 
 
 async def test_discovery_unknown_receipt_only_reads_original_and_keeps_publishing(browsing, monkeypatch):
-    from tuber_studio.platforms.bilibili import PublishUncertain
+    from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
 
     first, second = BV, "BV1xx411c7mD"
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     base = browsing.policy
     monkeypatch.setattr(
         browsing,
@@ -751,10 +753,10 @@ async def test_discovery_unknown_receipt_only_reads_original_and_keeps_publishin
 
 
 async def test_discovery_agent_revises_definite_rejection_and_resubmits(browsing, monkeypatch):
+    from tuber_studio.core.errors import PlatformRejected
     from tuber_studio.operation_feedback import FeedbackModel
-    from tuber_studio.publication_errors import PlatformRejected
 
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     texts = []
     published = asyncio.Event()
 
@@ -791,7 +793,7 @@ async def test_discovery_agent_revises_definite_rejection_and_resubmits(browsing
 
 
 async def test_emergency_during_discovery_preflight_cancels_start(browsing, monkeypatch):
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     started = asyncio.Event()
 
     async def wait_for_model():
@@ -874,7 +876,7 @@ async def test_content_decision_requests_required_sources_before_generation(brow
 
 @pytest.mark.parametrize("entrypoint", ["video", "comment"])
 async def test_browsing_reads_comments_through_real_adapter_fetch(browsing, entrypoint):
-    from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
+    from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
 
     requests = []
     text = "我也想试试这个盐水实验"
@@ -1002,7 +1004,7 @@ async def test_rejected_top_level_stays_deduplicated_after_reread(browsing):
 
 
 async def test_shared_quota_and_uncertain_block_new_auto_writes(browsing):
-    from tuber_studio.platforms.bilibili import PublishUncertain
+    from tuber_studio.infra.platforms.bilibili.client import PublishUncertain
 
     await finished(browsing, preview=True)
     intent = browsing.intents()[0]
@@ -1037,7 +1039,7 @@ async def test_adapter_replacement_cannot_publish_with_old_account_credentials(b
     previous = browsing.adapter
     replacement = ControlledPlatform()
     replacement.account = "200"
-    browsing.comments.adapter = replacement
+    browsing.bilibili_account.adapter = replacement
     with pytest.raises(ValueError, match="账号已变化"):
         await browsing.publish(intent["id"])
     assert not previous.sent and not replacement.sent
@@ -1061,7 +1063,7 @@ async def test_emergency_during_preflight_to_http_means_no_submit(browsing):
 
     async def change():
         browsing.store.activate("whale") if False else None
-        browsing.comments.credentials["csrf"] = "changed"
+        browsing.bilibili_account.credentials["csrf"] = "changed"
 
     browsing.adapter.before_submit = change
     with pytest.raises(ValueError, match="账号"):
@@ -1381,7 +1383,7 @@ async def test_autonomous_like_and_favorite_auto_publish(browsing):
 
 async def test_model_selects_batch_order_and_parallel_agent_count(browsing):
     videos = [BV, "BV1xx411c7mD", "BV17x411w7KC"]
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure(
         {
             "sources": ["specified"],
@@ -1420,7 +1422,7 @@ async def test_model_selects_batch_order_and_parallel_agent_count(browsing):
 
 
 async def test_revisited_video_replies_to_new_comments_without_another_main_reply_across_versions(browsing):
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure(
         {
             "reply_enabled": True,

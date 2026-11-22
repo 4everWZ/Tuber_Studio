@@ -4,13 +4,18 @@ import asyncio
 import time
 from uuid import uuid4
 
-from ...generation_meter import BrowsingBudgetDeferred
-from ...operation_turns import operation_lane
-from ...providers import public_error
-from ...video_vision import VideoPartText
+from ...core.meter import BrowsingBudgetDeferred
+from ...core.models import content_hash
+from ...core.turns import operation_lane
+from ...infra.inference.providers import public_error
+from ...infra.inference.video_vision import VideoPartText
 from .caption_corrections import CORRECTED_VIDEOS, corrected_caption
-from ...operation_continuations import content_hash
-from .comment_reader import admit_comment_page, commit_comment_context, enqueue_comment_visit, video_comment_context
+from .comment_reader import (
+    admit_comment_page,
+    commit_comment_context,
+    enqueue_comment_visit,
+    video_comment_context,
+)
 from .evidence import (
     STORYBOARD_SCAN_QUESTION,
     EvidenceUnavailable,

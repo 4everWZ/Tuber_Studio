@@ -10,9 +10,9 @@ import httpx
 import pytest
 import pytest_asyncio
 
+from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter, PlatformReadError
 from tuber_studio.operations.browsing.evidence import BrowsingEvidence, EvidenceUnavailable
 from tuber_studio.operations.browsing.models import BrowsingPolicy, DisabledVideoEvidence
-from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter, PlatformReadError
 
 BV = "BV1d8pU6xEZX"
 PNG = base64.b64decode(

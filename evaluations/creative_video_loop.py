@@ -25,10 +25,10 @@ from evaluations.omni_chat_loop import ROOT, ReplayMismatch, connection
 from tuber_studio.agent.operator_chat import ChatTurn, OperatorChat
 from tuber_studio.agent.task_delivery import evidence_index
 from tuber_studio.agent.task_tools import create_task_runtime
-from tuber_studio.api_providers import APIProvider
-from tuber_studio.deployment_profiles import operation_profile
-from tuber_studio.responses_provider import ResponsesClient
-from tuber_studio.store import Store
+from tuber_studio.core.config import operation_profile
+from tuber_studio.core.store import Store
+from tuber_studio.infra.inference.api_providers import APIProvider
+from tuber_studio.infra.inference.responses_provider import ResponsesClient
 
 BV = "BV1P2Demo001"
 ORIGIN = "https://archive.example.invalid"

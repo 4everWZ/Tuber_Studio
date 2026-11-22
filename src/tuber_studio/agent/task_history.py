@@ -6,8 +6,8 @@ from urllib.parse import urlsplit
 
 from pydantic import Field, StrictInt
 
-from ..models import StrictModel
-from ..store import dump
+from ..core.models import StrictModel
+from ..core.store import dump
 from .owner_memory import history_preference
 
 _ID = re.compile(r"(?<![\da-f])[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}(?![\da-f])", re.I)

@@ -125,11 +125,11 @@ async def test_video_main_reply_uses_video_material_without_unrelated_comment_fl
 
 
 async def test_live_response_packet_binds_current_account_before_reference_formatting(browsing):
-    from tuber_studio.bilibili_account import PROFILE_CACHE_KEY, signature
+    from tuber_studio.infra.platforms.bilibili.account import PROFILE_CACHE_KEY, signature
 
     row = await prepared_row(browsing)
     browsing.store.set(PROFILE_CACHE_KEY, {
-        "format": 1, "credential_signature": signature(browsing.comments.credentials),
+        "format": 1, "credential_signature": signature(browsing.bilibili_account.credentials),
         "profile": {"uid": "100", "name": "已核验账号名"}, "checked_at": 1,
     })
     data = packet(1)
@@ -152,7 +152,7 @@ async def test_live_response_packet_binds_current_account_before_reference_forma
         "platform": "bilibili", "account_uid": "100", "account_display_name": "已核验账号名",
         "character_id": row["character_id"], "character_name": browsing.runtime.character["name"],
     }
-    from tuber_studio.operation_identity import captured_identity
+    from tuber_studio.core.identity import captured_identity
 
     assert captured_identity(calls[0]) == header["self_actor"] == result._generation_identity
     generation = browsing.runtime.continuations.get(result._generation_id)
@@ -173,9 +173,9 @@ async def test_live_response_packet_binds_current_account_before_reference_forma
     (Path(__file__).parent / "fixtures/browsing_reply_participants_20261107.json").read_text(encoding="utf-8")
 )["cases"], ids=lambda case: case["case_id"])
 def test_real_public_thread_mentions_remain_third_party_in_response_input(case):
-    from tuber_studio.operation_continuations import content_hash
+    from tuber_studio.core.models import content_hash
+    from tuber_studio.infra.platforms.bilibili.client import BilibiliAdapter
     from tuber_studio.operations.browsing.thread_context import comment_thread_context
-    from tuber_studio.platforms.bilibili import BilibiliAdapter
 
     raw = case["platform_response"]
     items = [BilibiliAdapter._comment(raw["root"])] + [
@@ -308,7 +308,7 @@ async def test_video_comment_uses_cached_video_only_after_quoting_the_request(br
 
 @pytest.mark.parametrize("readable", [False, True])
 async def test_automatic_comment_uses_search_receipt_to_gate_publication(browsing, monkeypatch, readable):
-    from tuber_studio import web_fetch
+    from tuber_studio.infra.web_client import fetch as web_fetch
 
     row = await prepared_row(browsing)
     monkeypatch.setattr(browsing.runtime.operation_llm, "supports_operation_web_fetch", True, raising=False)

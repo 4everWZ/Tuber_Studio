@@ -8,7 +8,7 @@ import pytest
 from test_browsing import browsing as browsing
 from test_browsing import finished, model_packet
 
-from tuber_studio.generation_meter import GenerationMeter, reserve_generation, settle_generation
+from tuber_studio.core.meter import GenerationMeter, reserve_generation, settle_generation
 from tuber_studio.operations.browsing.models import DisabledVideoEvidence
 
 

@@ -14,7 +14,7 @@ from typing import Literal
 import httpx
 from pydantic import Field, field_validator
 
-from ..models import Event, StrictModel
+from ..core.models import Event, StrictModel
 from .media import MAX_UPLOAD, inspect_audio
 from .song_component import SongComponent
 from .song_download import download

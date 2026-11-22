@@ -2,12 +2,12 @@ import json
 
 import pytest
 from pydantic import ValidationError
-from schema_contract import validate_schema_complexity
 from test_browsing import BV, batch_plan_wire, finished, model_packet
 from test_browsing import browsing as browsing
 from test_browsing_batches import authorize
 
-from tuber_studio.operation_continuations import content_hash
+from tests.support.http_isolation import validate_schema_complexity
+from tuber_studio.core.models import content_hash
 from tuber_studio.operations.browsing.models import (
     BatchCandidateChoice,
     candidate_batch_plan,

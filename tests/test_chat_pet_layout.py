@@ -9,7 +9,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from front_effects import direct_request
 
 
 @pytest.fixture
@@ -66,7 +65,7 @@ async def pet_studio(settings, monkeypatch):
         finally:
             server.should_exit = True
             await serving
-            await app.state.comments.adapter.close()
+            await app.state.bilibili_account.adapter.close()
             app.state.store.close()
 
 
@@ -80,7 +79,7 @@ async def capture(page, name):
 async def painted_size(page):
     from PIL import Image, ImageSequence
 
-    from tuber_studio.config import ROOT
+    from tuber_studio.core.config import ROOT
 
     image = page.locator("#chat-agent-avatar")
     await image.evaluate("img => img.decode()")

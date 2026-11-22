@@ -8,11 +8,11 @@ from uuid import UUID, uuid5
 
 from pydantic import Field, StringConstraints, ValidationError, model_validator
 
-from ..cooperation import applicable_chat_memory
+from ..core.models import StrictModel
+from ..core.store import dump
 from ..dynamic_materials import MaterialFilter
-from ..models import StrictModel
 from ..operations.browsing.comment_timeline import comment_href
-from ..store import dump
+from ..persona.memory.cooperation import applicable_chat_memory
 from .operator_facts import now
 from .owner_memory import citation, history_preference, private_rows, read_stamp
 from .task_delegation import function

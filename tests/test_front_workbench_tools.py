@@ -3,7 +3,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from front_effects import direct_request
 from test_agent_creative_delegation import call, gateway, until
 
 from tuber_studio.agent.task_tools import create_task_runtime

@@ -1,6 +1,7 @@
 """Compose the business runtime and coordinate shared generation."""
 
 import asyncio
+import json
 import socket
 import time
 from contextlib import asynccontextmanager
@@ -8,32 +9,47 @@ from contextlib import asynccontextmanager
 import psutil
 
 from .agent.memory_organizer import MemoryOrganizer
-from .agent_tools import build_default_tool_registry
-from .api_providers import create_llm, create_operation_llm
-from .context import ContextManager
-from .context_delivery import comment_scope
-from .daily_memory import DailyMemoryService, MemoryChanged
-from .front_persona import front_identity
-from .generation_meter import budgeted_call
+from .core.identity import identity_messages, identity_snapshot, operating_account_facts
+from .core.meter import budgeted_call
+from .core.models import OperationReply, Reply, canonical_voice_id, content_hash
+from .core.retention import INTERVAL_SECONDS, RetentionManager
+from .core.store import character_card, dump
+from .core.text import operation_output_diagnostics
+from .core.turns import operation_lane, operation_ready_at, operation_ticket
+from .infra.inference.api_providers import create_llm, create_operation_llm
+from .infra.inference.providers import VoiceService, public_error
+from .infra.inference.video_vision_service import restore_admission
+from .infra.media.cache import MediaCache
 from .live.scene import LiveScene
 from .live.session import HANDOFF_PLATFORM, LiveSession
-from .media_cache import MediaCache
-from .memory import missing_slots
-from .models import OperationReply, Reply, canonical_voice_id
-from .operation_continuations import ContinuationCoordinator, content_hash
+from .operation_continuations import ContinuationCoordinator
 from .operation_generation import generate_with_recovery, hold_comment_body, reply_generation_binding
-from .operation_identity import identity_messages, identity_snapshot, operating_account_facts
 from .operation_images import OperationImages
-from .operation_text import operation_output_diagnostics
-from .operation_turns import OperationTurns, operation_lane, operation_ready_at, operation_ticket
+from .operation_turns import OperationTurns
 from .operations.browsing.repository import BrowsingRepository
 from .operations_control import OperationsControl
-from .pet_appearance import PetAppearances
-from .providers import VoiceService, public_error
-from .relationships import Relationships
-from .retention import INTERVAL_SECONDS, RetentionManager
-from .store import character_card, dump
-from .video_vision_service import restore_admission
+from .persona.characters.front_persona import front_identity
+from .persona.characters.pets import PetAppearances
+from .persona.context.delivery import comment_scope
+from .persona.context.manager import ContextManager
+from .persona.context.tools import build_default_tool_registry
+from .persona.memory.core_memory import missing_slots
+from .persona.memory.daily import DailyMemoryService, MemoryChanged
+from .persona.memory.relationships import Relationships
+
+
+def _comment_actor_formatter(event):
+    from .operations.browsing.inputs import (
+        RESPONSE_ACTOR_INSTRUCTION,
+        bind_response_actors,
+        compact_actor_context,
+    )
+
+    actors = compact_actor_context(
+        bind_response_actors({"thread": event.get("comment_context", {})}, event["self_actor"]),
+        current_text_ref="当前观众消息.text",
+    )
+    return actors, RESPONSE_ACTOR_INSTRUCTION
 
 
 class Runtime:
@@ -68,11 +84,13 @@ class Runtime:
             game_livestream=self.live.game_livestream,
             draw_and_guess=self.live.draw_and_guess,
             tool_registry=self.tool_registry,
+            actor_formatter=_comment_actor_formatter,
         )
         self.operation_context = ContextManager(
             settings, store, self.operation_llm, daily_memory=self.daily_memory,
             game_livestream=self.live.game_livestream, draw_and_guess=self.live.draw_and_guess,
             tool_registry=self.tool_registry,
+            actor_formatter=_comment_actor_formatter,
         )
         self.retention = RetentionManager(settings, store)
         self.retention_worker = None
@@ -84,7 +102,14 @@ class Runtime:
         self.operation_turns = OperationTurns(self.operation_generation_lock, lambda: False)
         self._conversation_turns = {}
         self.error = None
-        self.cache = MediaCache(self)
+        self.cache = MediaCache(
+            settings,
+            store,
+            music_ids_provider=self._protected_music_ids,
+            active_speech_provider=self._protected_speech_files,
+            browsing_protected_provider=self.browsing_repository.protected_materials,
+            song_blob_resolver=self.live.media.blob,
+        )
         self.live.media.cache = self.cache
         self.voices.cache = self.cache
 
@@ -112,14 +137,46 @@ class Runtime:
         if hasattr(self, "operation_context"):
             self.operation_context.provider = provider
 
-    def identity_snapshot(self, character=None, account_id=None):
-        from .bilibili_account import cached_account_actor
+    def _protected_music_ids(self):
+        live = self.live
+        identities = {
+            song[field]
+            for song in live.media.songs()
+            for field in ("audio", "vocal", "accompaniment")
+            if song.get(field)
+        }
+        active = ([live.current_id] if live.current_id else []) + live.queue
+        for identity in active:
+            job = self.store.job(identity)
+            if job and job.get("media"):
+                song = json.loads(job["media"])["song"]
+                identities.update(
+                    song[field] for field in ("audio", "vocal", "accompaniment") if song.get(field)
+                )
+        for task in live.online_songs.tasks.values():
+            if task.done() and not task.cancelled() and task.exception() is None:
+                identities.add(task.result()["song"]["audio"])
+        return identities
 
-        account = getattr(self, "account", None)
-        comments = account.comments if account else getattr(getattr(self, "browsing", None), "comments", None)
-        credentials = comments.credentials if comments else {}
-        if account_id is None and comments is not None:
-            account_id = comments.display_account_id() or None
+    def _protected_speech_files(self):
+        speech = set()
+        for identity in (
+            [self.live.current_id] if self.live.current_id else []
+        ) + self.live.queue:
+            job = self.store.job(identity)
+            if job and job.get("audio_ref"):
+                speech.add(job["audio_ref"].rsplit("/", 1)[-1])
+        return speech
+
+    def identity_snapshot(self, character=None, account_id=None):
+        from .infra.platforms.bilibili.account import cached_account_actor
+
+        account = getattr(self, "account", None) or getattr(
+            getattr(self, "browsing", None), "bilibili_account", None
+        )
+        credentials = account.credentials if account else {}
+        if account_id is None and account is not None:
+            account_id = account.display_account_id() or None
         return identity_snapshot(
             cached_account_actor(self.store, credentials, account_id), character or self.character
         )
@@ -130,18 +187,18 @@ class Runtime:
     async def refresh_identity(self, character=None, account_id=None):
         """Share one remote profile read before sends, never certify stale cache."""
         account = getattr(self, "account", None)
-        if account is None or not hasattr(getattr(account.comments, "adapter", None), "account_profile"):
+        if account is None or not hasattr(getattr(account, "adapter", None), "account_profile"):
             return self.identity_snapshot(character, account_id)
-        from .bilibili_account import signature
+        from .infra.platforms.bilibili.account import signature
 
-        credential = signature(account.comments.credentials)
+        credential = signature(account.credentials)
         pending = getattr(self, "_identity_refresh", None)
         if pending is None or pending[0] != credential or pending[1].done():
             pending = (credential, asyncio.create_task(account.refresh()))
             self._identity_refresh = pending
         observed = await asyncio.shield(pending[1])
         if (
-            signature(account.comments.credentials) != credential
+            signature(account.credentials) != credential
             or observed.get("state") != "logged_in"
             or observed.get("error")
             or not observed.get("profile")

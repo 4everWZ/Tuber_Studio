@@ -1,6 +1,6 @@
 """Scoped view of existing publications and their current review state."""
 
-from ..store import dump
+from ..core.store import dump
 
 CHANNELS = {
     "dynamics": ("动态", "dynamic_posts", "content"),

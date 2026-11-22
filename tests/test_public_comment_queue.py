@@ -6,8 +6,8 @@ from test_browsing import BV, finished, model_packet, wait_for_sends
 from test_browsing import browsing as browsing
 from test_browsing_comment_only import enable_comment_choices, finish_comment_round
 
+from tuber_studio.infra.platforms.bilibili.client import PlatformReadError, PublishUncertain
 from tuber_studio.operations.browsing.comment_reader import admit_comment_page
-from tuber_studio.platforms.bilibili import PlatformReadError, PublishUncertain
 
 
 def item(rpid, uid="300", parent=None):

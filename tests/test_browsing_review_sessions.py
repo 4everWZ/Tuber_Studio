@@ -8,7 +8,7 @@ from test_browsing import browsing as browsing
 
 
 async def test_review_runs_same_decisions_and_keeps_drafts_without_sending(browsing):
-    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({"discovery_enabled": True, "top_level_auto_publish": False})
     status = await browsing.start_review_session()
     identity = status["review_session"]["id"]

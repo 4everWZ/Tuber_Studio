@@ -163,7 +163,7 @@ async def test_full_screening_passes_all_batches_through_both_gates(busy_clip, m
                     "subject": "提及片中人物或所讲世界中发生的事" if narrative else PROGRAMME_CONTEXT,
                 }
             }
-        from tuber_studio.http_api import InferenceBudgetExceeded
+        from tuber_studio.infra.inference.http_api import InferenceBudgetExceeded
 
         if len(content[1::2]) > 2:
             raise InferenceBudgetExceeded("service rejected this image batch")
@@ -203,7 +203,7 @@ async def test_full_screening_passes_all_batches_through_both_gates(busy_clip, m
 
 async def test_single_frame_service_budget_error_is_not_a_content_rejection(busy_clip):
     from tuber_studio.agent.task_tools import screen_clip_window
-    from tuber_studio.http_api import InferenceBudgetExceeded
+    from tuber_studio.infra.inference.http_api import InferenceBudgetExceeded
 
     async def denied(*args, **kwargs):
         raise InferenceBudgetExceeded("actual admission error")
@@ -215,7 +215,7 @@ async def test_single_frame_service_budget_error_is_not_a_content_rejection(busy
 async def test_caption_batch_retries_only_actual_capacity_errors():
     from tuber_studio.agent.task_delivery import NON_NARRATIVE, PROGRAMME_CONTEXT
     from tuber_studio.agent.task_tools import classify_clip_captions
-    from tuber_studio.http_api import InferenceBudgetExceeded
+    from tuber_studio.infra.inference.http_api import InferenceBudgetExceeded
 
     calls = []
 

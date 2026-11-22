@@ -9,8 +9,8 @@ from test_direct_messages import messages as messages
 from test_dynamics import public_memory
 from test_dynamics import service as service
 
-from tuber_studio.models import Reply
-from tuber_studio.operation_identity import identity_snapshot
+from tuber_studio.core.identity import identity_snapshot
+from tuber_studio.core.models import Reply
 
 
 @pytest.mark.parametrize("diagnostic", [False, True])

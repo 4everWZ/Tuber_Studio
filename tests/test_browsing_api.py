@@ -29,7 +29,7 @@ def make_app(settings):
     # SQLite, workers, evidence storage and cancellation are production code.
     app = create_app(settings, ControlledPlatform(), message_adapter=ControlledMessages())
     app.state.runtime.operation_llm = ControlledModel()
-    app.state.comments.credentials = {"sessdata": "controlled-session", "csrf": "controlled-csrf"}
+    app.state.bilibili_account.credentials = {"sessdata": "controlled-session", "csrf": "controlled-csrf"}
     app.state.browsing.read_interval = 0
     return app
 
@@ -78,7 +78,7 @@ def test_browsing_close_failure_still_closes_runtime_and_store(settings):
 
 
 def test_application_attaches_and_closes_owned_visual_provider(settings):
-    from tuber_studio.video_vision import ApiVideoEvidenceProvider
+    from tuber_studio.infra.inference.video_vision import ApiVideoEvidenceProvider
 
     owned = []
 
@@ -99,7 +99,7 @@ def test_application_attaches_and_closes_owned_visual_provider(settings):
         response = client.get("/api/automation").json()
         assert not response["vision"]["available"] and not response["vision"]["admitted"]
         assert app.state.browsing.evidence.visual is owned[0]
-        assert not app.state.comments.adapter.sent
+        assert not app.state.bilibili_account.adapter.sent
     assert owned[0].api.client.is_closed and not owned[0]._active
 
 
@@ -108,7 +108,7 @@ def test_every_automation_api_requires_admin_not_overlay(client, settings, metho
     assert client.post("/api/overlay/auth", json={"token": settings.overlay_token}).status_code == 200
     response = client.request(method, "/api/automation" + suffix, json=body)
     assert response.status_code == 401
-    assert client.app.state.comments.adapter.sent == []
+    assert client.app.state.bilibili_account.adapter.sent == []
     assert client.app.state.browsing.rounds() == []
 
 
@@ -125,7 +125,7 @@ def test_all_automation_writes_enforce_same_origin(admin):
         == 200
     )
     assert not admin.get("/api/automation").json()["policy"]["enabled"]
-    assert admin.app.state.comments.adapter.sent == []
+    assert admin.app.state.bilibili_account.adapter.sent == []
 
 
 def test_automation_defaults_to_off_with_configured_unprobed_omni_vision(admin):
@@ -187,7 +187,7 @@ def test_manual_round_body_cannot_escalate_to_automatic_authority(admin, body):
     assert admin.post("/api/automation/round", json=body).status_code == 400
     assert admin.get("/api/automation/rounds").json() == []
     assert admin.get("/api/automation/intents").json() == []
-    assert admin.app.state.comments.adapter.sent == []
+    assert admin.app.state.bilibili_account.adapter.sent == []
 
 
 def wait_round(client, identity):
@@ -228,7 +228,7 @@ def test_real_api_preview_evidence_and_approval_do_not_implicitly_submit(admin):
         f"/api/automation/intents/{intent['id']}/review", json={"action": "approve", "text": intent["text"]}
     )
     assert response.status_code == 200 and response.json()["status"] == "approved"
-    assert admin.app.state.comments.adapter.sent == []
+    assert admin.app.state.bilibili_account.adapter.sent == []
     status = admin.get("/api/automation").json()
     assert status["automatic_sending_ready"] is True
     assert not status["semantic_validation"].get("passed", False)
@@ -260,7 +260,7 @@ def test_comment_workbench_combines_public_drafts_and_redacts_handoff(admin):
     assert admin.get(f"{queue}?view=history").json()["items"][0]["excerpt"] == ""
     assert admin.get(f"{queue}?offset=999").json()["offset"] == 0
     assert admin.get(f"{queue}/comments/4").status_code == 404
-    assert not admin.app.state.comments.adapter.sent
+    assert not admin.app.state.bilibili_account.adapter.sent
 
 
 @pytest.mark.parametrize("clear_account_cache", [False, True])
@@ -301,9 +301,9 @@ def test_unified_operations_requires_explicit_restart_activation(settings, clear
         assert any(row["status"] == "published" and row["title"] == "盐水实验" for row in activity)
         assert not second.get("/api/automation").json()["active_round"]
         assert second.get("/api/automation/intents").json()[0]["status"] == "published"
-        assert not second.app.state.comments.adapter.sent
-        second.app.state.comments.credentials = {"sessdata": "another-session", "csrf": "another-csrf"}
-        second.app.state.comments.adapter.account = "101"
+        assert not second.app.state.bilibili_account.adapter.sent
+        second.app.state.bilibili_account.credentials = {"sessdata": "another-session", "csrf": "another-csrf"}
+        second.app.state.bilibili_account.adapter.account = "101"
         assert second.get(path).json()["last_round"] is None
         assert second.get(path + "/records?recent=true").json()["activity"] == []
 
@@ -375,7 +375,7 @@ def test_parent_start_preserves_permissions_and_uses_latest_saved_settings(admin
     assert status["effective"]["comments"]["auto_reply"] is False
     assert status["base"]["messages"]["max_per_hour"] == 3
     assert status["effective"]["messages"]["auto_send"] is False
-    assert admin.app.state.comments.adapter.sent == []
+    assert admin.app.state.bilibili_account.adapter.sent == []
 
 
 def test_emergency_stop_survives_app_recreation_and_blocks_base_automatic_flags(settings):
@@ -399,7 +399,7 @@ def test_emergency_stop_survives_app_recreation_and_blocks_base_automatic_flags(
         assert restored["policy"]["emergency"] is False and restored["policy"]["enabled"] is False
         assert restored["effective"]["comments"]["auto_reply"] is False
         assert restored["base"]["comments"]["auto_reply"] is True
-        assert second.app.state.comments.adapter.sent == []
+        assert second.app.state.bilibili_account.adapter.sent == []
 
 
 def test_automation_settings_accepts_permission_matrix_with_extra_keys(admin):

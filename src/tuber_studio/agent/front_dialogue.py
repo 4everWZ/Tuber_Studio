@@ -8,11 +8,11 @@ import time
 import httpx
 from fastapi import HTTPException
 
-from ..compaction import ContextWindowExceeded
-from ..daily_memory import contains_memory_credential
-from ..operation_identity import operating_account_facts, without_model_identity
-from ..providers import build_messages
-from ..store import dump
+from ..core.errors import ContextWindowExceeded
+from ..core.identity import operating_account_facts, without_model_identity
+from ..core.store import dump
+from ..persona.context.message_builder import build_messages
+from ..persona.memory.daily import contains_memory_credential
 from . import operator_facts, workshop_lookup
 from .assistant_output import AssistantTextStream, assistant_markdown, clock_readout, workbench_fields
 from .chat_context import ChatContext

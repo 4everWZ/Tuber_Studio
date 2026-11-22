@@ -6,13 +6,13 @@ from uuid import uuid4
 import httpx
 import pytest
 from PIL import ImageFont
-
 from test_agent_task_recovery import wait_status
-from test_personal_agent import CHAT, studio as studio, turn
+from test_personal_agent import CHAT, turn
+from test_personal_agent import studio as studio
+
 from tuber_studio import dynamic_comment_card
 from tuber_studio.agent.dynamic_publication import PUBLICATION_TOOL
-from tuber_studio.operation_identity import runtime_identity
-
+from tuber_studio.core.identity import runtime_identity
 
 REQUEST = "小鱼，把之前积压的站动态都发出去"
 PROGRESS = "你发完了吗"
@@ -23,7 +23,7 @@ TASKS = "/api/agent/tasks/"
 
 async def configure_publication(runtime, monkeypatch, *, disconnect=False, mixed=True):
     dynamics = runtime.browsing.dynamics
-    comments = dynamics.comments
+    comments = dynamics.account
     runtime.browsing.discovery.remember_account(ACCOUNT)
     credentials = {"sessdata": "isolated", "csrf": "isolated"}
     monkeypatch.setattr(comments, "credentials", credentials)
@@ -36,7 +36,7 @@ async def configure_publication(runtime, monkeypatch, *, disconnect=False, mixed
     state = {"visible": not disconnect, "logged_in": True}
 
     async def account():
-        from tuber_studio.platforms.bilibili import BilibiliAccountExpired
+        from tuber_studio.infra.platforms.bilibili.client import BilibiliAccountExpired
 
         if not state["logged_in"]:
             raise BilibiliAccountExpired("登录已失效")

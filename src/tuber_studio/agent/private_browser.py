@@ -10,8 +10,8 @@ import httpx
 from fastapi import Depends, HTTPException
 from pydantic import Field
 
-from ..models import StrictModel
-from ..store import dump
+from ..core.models import StrictModel
+from ..core.store import dump
 from .browser_chromium import ChromiumReaders
 from .browser_document import MAX_SOURCES, read_document, source_list
 from .task_runtime import Tool

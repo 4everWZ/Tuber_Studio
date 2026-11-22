@@ -5,9 +5,9 @@ from typing import Literal
 
 from pydantic import Field
 
-from ..models import StrictModel
-from ..store import dump
-from ..web_fetch import programme_credit_text
+from ..core.models import StrictModel
+from ..core.store import dump
+from ..infra.web_client.fetch import programme_credit_text
 from .task_delivery import DelegationError
 
 

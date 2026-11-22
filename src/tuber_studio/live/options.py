@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 from pydantic import Field, StrictBool, field_validator
 
-from ..models import Reply, StrictModel
-from ..web_fetch import WEB_FETCH_SCHEMA, WebFetchRequest, fetch_excerpt
+from ..core.models import Reply, StrictModel
+from ..infra.web_client.fetch import WEB_FETCH_SCHEMA, WebFetchRequest, fetch_excerpt
 
 LOOKUP_TIMEOUT = 2.0
 WEATHER_TTL = 600

@@ -6,15 +6,13 @@ import logging
 import re
 import time
 from contextlib import nullcontext
-from datetime import timedelta
 
 import httpx
 from fastapi import HTTPException
 
-from ..front_persona import character_names
-from ..operation_identity import without_model_identity
-from ..store import dump
-from . import operator_facts, outgoing_queue, recall_memory, workbench_tools, workshop_lookup
+from ..core.identity import without_model_identity
+from ..core.store import dump
+from . import outgoing_queue, recall_memory, workbench_tools, workshop_lookup
 from .assistant_output import calendar_fields
 from .chat_context import ChatContext
 from .chat_models import (
@@ -22,10 +20,12 @@ from .chat_models import (
     _DIRECT_CHANGES,
     _DIRECT_READS,
     _DIRECT_RELATION,
-    _EVENT_ACTIONS,
-    _MENTIONED_BV,
     _DYNAMIC_ID,
     _DYNAMIC_URL,
+    _EVENT_ACTIONS,
+    _LIVE_PROFILE,
+    _LIVE_TOOL_CONTEXT,
+    _MENTIONED_BV,
     _ORDINAL_REFERENCE,
     _OWNER_FIELDS,
     _OWNER_PLATFORM,
@@ -39,8 +39,6 @@ from .chat_models import (
     _TASK_ROUTING,
     _WORKBENCH_TOOL_CONTEXT,
     _WORKSHOP_OBJECTS,
-    _LIVE_PROFILE,
-    _LIVE_TOOL_CONTEXT,
     ChatIntent,
     DelegationBrief,
     IdentityRead,

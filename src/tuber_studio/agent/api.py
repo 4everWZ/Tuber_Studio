@@ -10,18 +10,17 @@ import httpx
 from fastapi import Body, Depends, HTTPException, Path, Query
 from pydantic import Field, StrictBool, StringConstraints, ValidationError
 
-from ..bilibili_account import space_uid
-from ..daily_memory import (
+from ..core.meter import budgeted_call
+from ..core.models import DEFAULT_CHARACTER_MANIFEST, Character, StrictModel, content_hash
+from ..core.store import character_card, dump, editable_character
+from ..infra.platforms.bilibili.account import space_uid
+from ..persona.memory.daily import (
     HIGHLIGHT_ACCOUNT_FILTER,
     DailyMemoryService,
     MemoryChanged,
     contains_memory_credential,
 )
-from ..generation_meter import budgeted_call
-from ..models import DEFAULT_CHARACTER_MANIFEST, Character, StrictModel
-from ..operation_continuations import content_hash
-from ..relationships import UserProfile
-from ..store import character_card, dump, editable_character
+from ..persona.memory.relationships import UserProfile
 from .handoff import LIVE_STYLE, LIVE_STYLE_GROUP
 from .operator_facts import recent_events
 from .owner_memory import history_preference
@@ -113,7 +112,7 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
 
     def user_memory_scope(platform, user_id, account_id, character_id):
         messages = comments.direct_messages
-        current_account = messages.display_account_id() if messages else comments.display_account_id()
+        current_account = messages.display_account_id() if messages else comments.account.display_account_id()
         if (
             not current_account
             or str(current_account) != account_id
