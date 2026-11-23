@@ -15,6 +15,40 @@ from ...kernel.feedback import generation_view
 
 CATEGORIES = {"question", "suggestion", "interaction", "spam", "general"}
 THREAD_WORKERS = 4
+_LOW_CONTEXT_FILLER = re.compile(
+    r"^(?:哈+|呵+|嘻+|嘿+|确实|不错|可以|好[的耶啊吧呀]?|行吧?|懂了|收到|打卡|沙发|前排|支持|厉害|牛[皮逼哇啊]?|强[啊呀]?|草+|绝了?|笑死|离谱|逆天|泪目|难绷|一般|无语|[a-zA-Z0-9]+)$",
+    re.I,
+)
+
+
+def low_context_skip_reason(
+    text,
+    *,
+    is_direct_to_self: bool = False,
+    mentions=(),
+    attachments=(),
+    self_uid: str = "",
+) -> str | None:
+    """Return a concise skip reason for pure @other+emoji or contextless <=4-char fillers."""
+    if is_direct_to_self or attachments:
+        return None
+    uid = str(self_uid or "")
+    mention_uids = {str(m.get("uid") or "") for m in (mentions or []) if isinstance(m, dict) and m.get("uid")}
+    if uid and uid in mention_uids:
+        return None
+    raw = str(text or "").strip()
+    if not raw:
+        return "低语境空评论"
+    without_emoji = re.sub(r"\[[^\]\r\n]{1,24}\]", "", raw)
+    without_at = re.sub(r"@[^\s@:：,，.。!！?？()（）\[\]]+", "", without_emoji)
+    core = "".join(ch for ch in without_at if ch.isalnum())
+    if not core:
+        return "低语境纯@他人或表情"
+    if "?" in raw or "？" in raw:
+        return None
+    if len(core) <= 4 and (_LOW_CONTEXT_FILLER.fullmatch(core) or len(set(core)) == 1):
+        return "低语境短句"
+    return None
 
 
 def category(text, attachments=()):

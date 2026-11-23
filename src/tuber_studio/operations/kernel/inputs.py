@@ -23,6 +23,7 @@ from .models import MAX_DECISION_REASON_CHARACTERS, ContentDecision, ResponseDec
 
 RESPONSE_ACTOR_INSTRUCTION = (
     "self_actor是你的账号。addressed_to列出原话所指的人。接reply_target里的话，楼内对话和视频用作背景。"
+    "分清self_actor（你自己）、video_source的UP主、reply_target当前说话人及第三方或二创/官方角色，绝不把别人或视频里的大肥鱼当成你自己。"
 )
 
 
@@ -41,7 +42,22 @@ def bind_response_actors(data, self_actor):
         video["uploader_relation_to_self"] = relation(video.get("owner_uid"))
 
     thread = result.get("thread")
+    roles = {
+        "self_account": {
+            "uid": own_uid or None,
+            "name": self_actor.get("account_display_name") or self_actor.get("character_name") or "",
+            "role": "你自己（本工坊小鲸鱼）",
+        }
+    }
+    if isinstance(result.get("video_source"), dict):
+        video = result["video_source"]
+        roles["video_author"] = {
+            "uid": str(video.get("owner_uid") or "") or None,
+            "name": video.get("owner") or "",
+            "is_self": video.get("uploader_relation_to_self") == "self",
+        }
     if not isinstance(thread, dict):
+        result["actor_roles"] = roles
         return result
     source = thread.get("source") or {}
     addressing = thread.setdefault("addressing", {})
@@ -93,6 +109,19 @@ def bind_response_actors(data, self_actor):
             "relation_to_self": relation(source.get("author_uid")),
             "addressed_to": deepcopy(addressing["addressed_to"]),
         }
+        roles["current_speaker"] = {
+            "uid": str(source.get("author_uid") or "") or None,
+            "name": source.get("author_name") or source.get("display_name") or "",
+            "is_self": relation(source.get("author_uid")) == "self",
+        }
+    if parent and str(parent.get("comment_id") or "") != str(source.get("comment_id") or ""):
+        roles["replying_to"] = {
+            "comment_id": str(parent.get("comment_id") or "") or None,
+            "uid": str(parent.get("author_uid") or "") or None,
+            "name": parent.get("author_name") or parent.get("display_name") or "",
+            "is_self": relation(parent.get("author_uid")) == "self",
+        }
+    result["actor_roles"] = roles
     for key in ("root", "parent"):
         if isinstance(thread.get(key), dict):
             thread[key]["relation_to_self"] = relation(thread[key].get("author_uid"))

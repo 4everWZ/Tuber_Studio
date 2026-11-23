@@ -8,6 +8,7 @@ from ....core.models import content_hash
 from ....core.store import dump
 from ....infra.inference.providers import public_error
 from .admission import claims_manager
+from ...channels.comments.scanner import low_context_skip_reason
 from .timeline import _extract_timestamp, comment_source, merge_continuous_comments, observe_thread
 
 PENDING_VISITS = "'received','source_verified','context_ready','reply_deferred'"
@@ -129,15 +130,65 @@ def enqueue_comment_visit(browsing, row, task_id, metadata, items, *, interactiv
     capacity = browsing.backlog_status(persist=False) if live else None
     free = capacity["high_heads"] - capacity["total_heads"] if capacity else len(groups)
     remainder = []
+    by_id = {str(x.get("comment_id")): x for x in items if x.get("comment_id")}
+    own_uid = str(row["account_id"] or "")
     for item in groups:
         source = comment_source(item)
-        if not source["author_uid"] or source["author_uid"] == str(row["account_id"]):
+        if not source["author_uid"] or source["author_uid"] == own_uid:
             continue
         root = str(item.get("thread_id") or source["comment_id"])
         if _inbox_owns_comment(browsing, row, oid=oid, bvid=bvid, root=root, comment_id=source["comment_id"]):
             continue
+        parent_row = by_id.get(str(item.get("parent_comment_id") or ""))
+        parent_uid = str(comment_source(parent_row)["author_uid"]) if parent_row else ""
+        is_direct = bool(own_uid and parent_uid == own_uid)
+        combined_text = "\n".join(
+            filter(None, [source["text"], *(comment_source(g)["text"] for g in item.get("grouped_comments", []))])
+        )
+        low_context_reason = low_context_skip_reason(
+            combined_text,
+            is_direct_to_self=is_direct,
+            mentions=item.get("mentions") or (),
+            attachments=item.get("attachments") or (),
+            self_uid=own_uid,
+        )
         identity = "visit:" + content_hash([*scope, source["comment_id"]])
         existing = browsing.store.one("SELECT status FROM browsing_events WHERE id=?", (identity,))
+        if low_context_reason:
+            if not existing:
+                timestamp = _extract_timestamp(item) or 0
+                skipped_event = {
+                    "event_id": identity,
+                    "kind": "comment_visit",
+                    "account_id": row["account_id"],
+                    "character_id": row["character_id"],
+                    "review_session_id": scope[2],
+                    "resource_type": "video",
+                    "type": 1,
+                    "oid": oid,
+                    "bvid": bvid,
+                    "root": root,
+                    "parent": source["comment_id"],
+                    "comment_id": source["comment_id"],
+                    "sender_uid": source["author_uid"],
+                    "sender_name": source["author_name"],
+                    "source_text": source["text"],
+                }
+                browsing.store.db.execute(
+                    "INSERT OR IGNORE INTO browsing_events VALUES(?,?,?,?,?,?,?,?,?)",
+                    (
+                        identity,
+                        row["account_id"],
+                        "comment_visit",
+                        source["comment_id"],
+                        timestamp,
+                        "skipped",
+                        dump(skipped_event),
+                        low_context_reason,
+                        time.time(),
+                    ),
+                )
+            continue
         heads = (
             browsing.store.all(
                 "SELECT id,source_key,timestamp,error,created_at FROM browsing_events WHERE account_id=? AND kind='comment_visit' "

@@ -13,21 +13,43 @@ from ...core.store import dump
 
 LIVE_SCORE_TTL = 7200
 LIVE_SCORE_LIMIT = 2000
-SCORE_COOLDOWN = 60
-SCORE_DAILY_LIMIT = 10
+SCORE_COOLDOWN = 10
+SCORE_DAILY_LIMIT = 50
+
 
 def detect_negative_sentiment(text: str) -> int:
     """Detect hostile, toxic, or abusive input in live chat or comments.
-    Returns a negative delta (-2 to -10) or 0 if neutral/positive.
+
+    Returns a widened negative delta (-12 or -30) or 0 if neutral/positive.
     """
     text_clean = "".join(text.casefold().split())
     severe = ("去死", "滚出去", "nmsl", "cnm", "傻逼", "弱智", "恶心死了", "垃圾主播", "死肥鱼", "废物")
     if any(pattern in text_clean for pattern in severe):
-        return -10
-    mild = ("真菜", "好菜", "真下饭", "退订", "取关", "别叫了", "闭嘴", "真无聊", "关播吧")
-    if any(pattern in text_clean for pattern in mild):
-        return -2
+        return -30
+    mild = (
+        "真菜", "好菜", "真下饭", "退订", "取关", "别叫了", "闭嘴", "真无聊", "关播吧",
+        "人工智障", "智障", "讨饭",
+    )
+    if any(pattern in text_clean for pattern in mild) or "肥鱼" in text_clean.replace("大肥鱼", ""):
+        return -12
     return 0
+
+
+def detect_positive_sentiment(text: str) -> int:
+    """Detect positive engagement strength for Warband-style [-100, +100] swings."""
+    if detect_negative_sentiment(text) < 0:
+        return 0
+    stripped = text.strip()
+    if len(set(stripped)) <= 1:
+        return 0
+    text_clean = "".join(stripped.casefold().split())
+    warm = ("喜欢", "可爱", "支持", "谢谢", "感谢", "真棒", "太棒", "好听", "厉害", "有趣", "贴心", "辛苦", "小鲸鱼", "宝藏", "神回")
+    has_warm = any(pattern in text_clean for pattern in warm)
+    if has_warm and (len(stripped) >= 40 or any(k in text_clean for k in ("超喜欢", "太喜欢", "太棒了", "一直支持", "宝藏", "神回"))):
+        return 25
+    if has_warm or len(stripped) >= 40:
+        return 15
+    return 5
 
 
 ProfileEntry = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -73,6 +95,19 @@ class Relationships:
             return "熟悉"
         return "特别熟悉"
 
+    @staticmethod
+    def tone_hint(affinity: int) -> str:
+        stage = Relationships.stage(affinity)
+        hints = {
+            "宿敌": "宿敌(-60以下)：毫不留情、冷硬毒舌怼回去，绝不给好脸色。",
+            "恶感": "恶感(-20以下)：态度疏离带刺、明显不耐烦，被叫“大肥鱼”会直接炸毛怼人。",
+            "陌生": "陌生(30以下)：傲娇警惕、嘴硬保持距离；陌生人敢叫“大肥鱼”直接炸毛纠正自己叫“小鲸鱼”。",
+            "认识": "认识(30~59)：偶尔嘴硬但愿意搭话，正常吐槽互动；被叫“大肥鱼”还是会不满反驳。",
+            "熟悉": "熟悉(60~89)：口嫌体正直，嘴上吐槽但心里护短、愿意多聊几句细节。",
+            "特别熟悉": "特别熟悉(90+)：傲娇中带亲近与信任，熟人偶尔打趣“大肥鱼”也只会傲娇轻哼两声后顺着接话。",
+        }
+        return hints[stage]
+
     def view(self, character_id, platform, uid, name="", *, account_id=""):
         if not uid:
             return {}
@@ -83,7 +118,12 @@ class Relationships:
         if data.get("personalization_enabled") is False:
             return {}
         affinity = max(-100, min(100, int(data.get("affinity", 0))))
-        result = {"affinity": affinity, "stage": self.stage(affinity), "nickname": data.get("nickname", "")}
+        result = {
+            "affinity": affinity,
+            "stage": self.stage(affinity),
+            "tone_hint": self.tone_hint(affinity),
+            "nickname": data.get("nickname", ""),
+        }
         if data.get("profile_confirmed_at"):
             for key in ("preferences", "important_events"):
                 if data.get(key):
@@ -191,7 +231,7 @@ class Relationships:
             if delta is None:
                 delta = self._bounded_delta(
                     self._recent_scores(recent), now, source_id, content_hash,
-                    detect_negative_sentiment(text) or int(len(set(text.strip())) > 1),
+                    detect_negative_sentiment(text) or detect_positive_sentiment(text),
                 )
             current_aff = int(data.get("affinity", 0))
             new_affinity = min(100, max(-100, current_aff + delta))
@@ -241,7 +281,9 @@ class Relationships:
         recent = [item for item in record["recent"] if now - item[0] < 86400]
         text_hash = hashlib.sha256("".join(text.casefold().split()).encode()).hexdigest()
         if delta is None:
-            delta = detect_negative_sentiment(text) or int(len(set(text.strip())) >= 4)
+            delta = detect_negative_sentiment(text) or (
+                detect_positive_sentiment(text) if len(set(text.strip())) >= 4 else 0
+            )
         if account_id:
             user = self.store.one("SELECT id FROM users WHERE platform=? AND platform_user_id=?", (platform, uid))
             data = self._data(account_id, character_id, user["id"]) if user else {}

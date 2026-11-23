@@ -52,7 +52,7 @@ class WebSearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     web_search: list[Annotated[str, Field(min_length=2, max_length=160)]] = Field(min_length=1, max_length=2)
-    source_quote: str = Field(min_length=2, max_length=240)
+    source_quote: str = Field(default="", max_length=240)
 
 
 WEB_SEARCH_SCHEMA = WebSearchRequest.model_json_schema()
@@ -86,26 +86,43 @@ def source_url(value):
 class OperationWebFetch:
     """Offer one model-selected page before generating the task result."""
 
-    def __init__(self, guard, *, context=None, record=None, allow_url=None, search_source=None, source_links=()):
+    def __init__(
+        self,
+        guard,
+        *,
+        context=None,
+        record=None,
+        allow_url=None,
+        search_source=None,
+        enable_web_search=False,
+        source_links=(),
+    ):
         self.guard = guard
         self.context = context
         self.record = record
         self.allow_url = allow_url
         self.search_source = search_source
+        self.enable_web_search = bool(enable_web_search or search_source)
         self.source_links = source_links
 
     async def complete(self, messages, schema, invoke):
         if self.context is None:
             instruction = WEB_FETCH_INSTRUCTION
             tools = [operations_fetch_schema(WEB_FETCH_SCHEMA)]
-            if self.search_source:
-                tools = [operations_fetch_schema(COMMENT_WEB_FETCH_SCHEMA), WEB_SEARCH_SCHEMA]
+            if self.enable_web_search:
+                fetch_schema = operations_fetch_schema(
+                    COMMENT_WEB_FETCH_SCHEMA if self.search_source else WEB_FETCH_SCHEMA
+                )
+                tools = [fetch_schema, WEB_SEARCH_SCHEMA]
                 instruction += (
-                    ' 当前评论问到不熟悉的术语、外部事实或具体工具能力时，先查证。'
-                    ' 用 {"web_search":["检索词"],"source_quote":"需要查证的原评片段"}，'
-                    ' 查询只带公开术语和问题关键词；涉及两个项目时可分成两条短查询。'
-                    ' 已知具体网址才用web_fetch，同时填写source_quote。'
-                    ' 楼里其他人的话用来理解来龙去脉；这一条只是分享近况时，直接接话。'
+                    ' 遇到不熟悉的术语、热点新闻、人物事件、具体工具能力或需外部事实时，先查证。'
+                    ' 用 {"web_search":["检索词"]} 搜索公开来源，关键词简洁准确，可拆两条短查询。'
+                    + (
+                        ' 已知具体网址才用web_fetch并填source_quote。'
+                        ' 楼里其他人的话用来理解来龙去脉；这一条只是分享近况时，直接接话。'
+                        if self.search_source
+                        else ' 已知具体HTTPS网址也可用web_fetch读取。'
+                    )
                 )
             choices = schema.get("oneOf")
             if choices:
@@ -127,7 +144,6 @@ class OperationWebFetch:
             started = time.monotonic()
             if "web_search" in choice:
                 request = WebSearchRequest.model_validate(choice)
-                request.source_quote = self._check_quote(request.source_quote)
                 receipt, content = await self._search(request)
             else:
                 if self.search_source:
@@ -173,7 +189,7 @@ class OperationWebFetch:
 
         # A project link supplied on the source itself is a better lead than a
         # ranking for an ambiguous acronym. Only use it when the quote names it.
-        terms = technical_terms(self.search_source or request.source_quote)
+        terms = technical_terms(" ".join(request.web_search) + " " + (self.search_source or request.source_quote or ""))
         linked = next((url for url in self.source_links if terms & technical_terms(url)), None)
         if linked:
             direct, found = await asyncio.gather(self._read(linked), discover_and_read())

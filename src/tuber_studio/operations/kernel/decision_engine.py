@@ -528,6 +528,7 @@ class ResponseEngine:
             and (not response_input.comment_reply or bool(response_input.source_text)),
             allow_web_url=allow_web_url if response_input and response_input.comment_reply and target.get("bvid") else None,
             web_search_source=response_input.source_text if response_input and response_input.comment_reply else None,
+            web_search_enabled=response_input is not None,
             web_search_links=web_search_links,
         )
         result = response_input.resolve(value) if response_input is not None else value
@@ -695,14 +696,18 @@ class ResponseEngine:
         if not material:
             data["allowed_evidence_ids"] = list(allowed)
         source_links = ()
+        if material and (not comment_reply or (
+            (context.get("source") or {}).get("text", "").strip()
+            and (context.get("target") or {}).get("bvid") == material["metadata"].get("bvid")
+        )):
+            description = material["metadata"].get("description") or material["metadata"].get("desc") or ""
+            source_links = tuple(re.findall(r"https://[^\s<>\"'，。！、；）]+", description)[:4])
         if (
             comment_reply
             and material
             and (context.get("source") or {}).get("text", "").strip()
             and (context.get("target") or {}).get("bvid") == material["metadata"].get("bvid")
         ):
-            description = material["metadata"].get("description") or material["metadata"].get("desc") or ""
-            source_links = tuple(re.findall(r"https://[^\s<>\"'，。！、；）]+", description)[:4])
             data["comment_video_available"] = any(
                 segment["id"] in allowed for part in material["parts"] for segment in part["segments"]
             )

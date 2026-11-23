@@ -27,8 +27,8 @@ async def test_public_comment_search_opens_sources_instead_of_returning_search_s
 
     async def invoke(messages, schema):
         if not any(message["role"] == "assistant" for message in messages):
-            assert ["web_search", "source_quote"] == schema["oneOf"][-1]["required"]
-            return {"web_search": ["产品 音高", "产品 官方文档"], "source_quote": "如何测音高"}
+            assert ["web_search"] == schema["oneOf"][-1]["required"]
+            return {"web_search": ["产品 音高", "产品 官方文档"]}
         assert "https://example.org/unavailable" not in messages[-1]["content"]
         assert ("可以测量音高" in messages[-1]["content"]) == readable
         return {"action": "reply_public"}

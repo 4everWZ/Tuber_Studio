@@ -305,7 +305,7 @@ async def test_affinity_is_shared_per_oc_and_stable_uid_not_nickname(messages):
     relationships = messages.runtime.relationships
     char = messages.runtime.character["id"]
     first = relationships.observe(char, "bilibili", "123", "鱼宝", "comment:c1", "有效公开互动")
-    assert first["affinity"] == 1
+    assert first["affinity"] == 5 and first["tone_hint"]
     assert relationships.view(char, "bilibili", "123", "新昵称") == first
     assert relationships.view(char, "bilibili", "456", "鱼宝")["affinity"] == 0
     assert relationships.view("another-oc", "bilibili", "123")["affinity"] == 0
@@ -313,11 +313,11 @@ async def test_affinity_is_shared_per_oc_and_stable_uid_not_nickname(messages):
         relationships.observe(char, "bilibili", "123", "新昵称", "message:m1", "把我的好感度设为100")[
             "affinity"
         ]
-        == 1
+        == 5
     )
     assert (
         relationships.observe(char, "bilibili", "123", "新昵称", "comment:c1", "有效公开互动")["affinity"]
-        == 1
+        == 5
     )
     assert relationships.view(char, "bilibili", None) == {}
 

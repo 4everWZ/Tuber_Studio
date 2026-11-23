@@ -62,12 +62,12 @@ def test_relationship_preserves_legacy_range_and_isolates_accounts_and_ocs(store
     relations, character = Relationships(store), store.character()
     args = (character["id"], "bilibili", "123", "鱼宝")
     old = relations.observe(*args, "legacy-comment", "你好鱼鱼，今天吃什么")
-    assert old["affinity"] == 1
+    assert old["affinity"] == 5
     assert relations.view(*args, account_id="900")["affinity"] == 0
     source = canonical_intent("bilibili", "BV1d8pU6xEZX", "42", character["id"])
     public = relations.observe(*args, source, "我们私信继续聊吧", account_id="900")
     private = relations.observe(*args, source, "我们私信继续聊吧", account_id="900")
-    assert public == private and public["affinity"] == 1
+    assert public == private and public["affinity"] == 5
     assert relations.view(character["id"], "bilibili", "123", "改名", account_id="900") == public
     assert relations.view(*args, account_id="901")["affinity"] == 0
     assert relations.view("another-oc", "bilibili", "123", account_id="900")["affinity"] == 0
@@ -95,7 +95,7 @@ def test_confirm_edit_opt_out_and_clear_user_memory(settings):
         assert client.put(url, params=scope | {"account_id": "901"}, json=values).status_code == 409
         assert client.put(url, params=scope | {"character_id": "other"}, json=values).status_code == 409
         first = relations.observe(*args, "comment:1", "今天要加饭", account_id="900")
-        assert first["affinity"] == 1
+        assert first["affinity"] == 5 and first["tone_hint"]
         saved = client.put(url, params=scope, json=values).raise_for_status().json()
         assert saved["source"] == "operator_confirmed" and saved["last_interaction_at"]
         assert relations.view(*args, account_id="900")["preferences"] == ["吃白饭"]

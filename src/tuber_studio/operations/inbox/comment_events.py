@@ -12,7 +12,7 @@ from ...core.turns import operation_lane, operation_ready_at
 from ...infra.inference.providers import public_error
 from ...infra.platforms.bilibili.client import BilibiliAccountExpired, PlatformReadError
 from ..channels.comments.materials import prepare_comment_materials
-from ..channels.comments.scanner import category
+from ..channels.comments.scanner import category, low_context_skip_reason
 from ..channels.comments.timeline import (
     comment_source,
     comment_thread_context,
@@ -426,6 +426,39 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
         raise ValueError("评论原文或作者已变化，未使用旧候选")
     if category(source["text"], source_row.get("attachments") or []) == "spam":
         raise ValueError("账号来源无效、本人循环或广告互动")
+    parent_id = str(source_row.get("parent_comment_id") or "")
+    parent_row = thread.get("parent") or (
+        next((r for r in items_list if str(r.get("comment_id") or "") == parent_id), None) if parent_id else None
+    )
+    parent_uid = str(
+        (parent_row.get("author_uid") or parent_row.get("platform_user_id") or parent_row.get("user_id") or "")
+        if isinstance(parent_row, dict)
+        else ""
+    )
+    own_uid = str(row["account_id"] or "")
+    mentions_list = list(source_row.get("mentions") or (thread.get("addressing") or {}).get("source_mentions") or [])
+    is_direct_to_self = (
+        event_row["kind"] == "mention"
+        or (event_row["kind"] == "reply" and not parent_uid)
+        or (own_uid and parent_uid == own_uid)
+        or (own_uid and any(str(m.get("uid") or "") == own_uid for m in mentions_list if isinstance(m, dict)))
+    )
+    combined_text = source["text"]
+    if grouped := source_row.get("grouped_comments"):
+        combined_text = "\n".join(filter(None, [combined_text, *(comment_source(g)["text"] for g in grouped)]))
+    if skip_reason := low_context_skip_reason(
+        combined_text,
+        is_direct_to_self=bool(is_direct_to_self),
+        mentions=mentions_list,
+        attachments=source_row.get("attachments") or (),
+        self_uid=own_uid,
+    ):
+        browsing.store.execute(
+            "UPDATE browsing_events SET status='skipped',source_key=?,error=? WHERE id=?",
+            (canonical, skip_reason, event_row["id"]),
+        )
+        settle_aliases(browsing, event_row, row, target, source)
+        return None
     like_enabled = config.get("comment_like_enabled", False)
     like_intent = browsing.publication.comment_like_intent(row, target) if like_enabled else None
     if like_intent:

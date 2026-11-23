@@ -532,3 +532,81 @@ async def test_format_version_change_does_not_reuse_previous_wire_checkpoint(bro
     }
     assert all(r["current_output"]["evidence_ids"] == ["ref:1"] for r in episodes)
     assert not browsing.adapter.sent
+
+
+def test_actor_roles_and_response_instruction_isolate_video_author_and_third_party():
+    data = {
+        "video_source": {"bvid": "BV1d8pU6xEZX", "owner_uid": "888", "owner": "二创UP主"},
+        "thread": {
+            "source": {"comment_id": "2", "author_uid": "200", "author_name": "观众甲", "text": "这个大肥鱼是本人吗"},
+            "parent": {"comment_id": "1", "author_uid": "888", "author_name": "二创UP主", "text": "这是动画同人"},
+            "root": {"comment_id": "1", "author_uid": "888", "author_name": "二创UP主", "text": "这是动画同人"},
+        },
+    }
+    bound = bind_response_actors(data, {"account_uid": "100", "character_name": "小鲸鱼"})
+    roles = bound["actor_roles"]
+    assert roles["self_account"]["uid"] == "100"
+    assert roles["video_author"] == {"uid": "888", "name": "二创UP主", "is_self": False}
+    assert roles["current_speaker"] == {"uid": "200", "name": "观众甲", "is_self": False}
+    assert roles["replying_to"] == {"comment_id": "1", "uid": "888", "name": "二创UP主", "is_self": False}
+    assert "灵魂生命" in RESPONSE_INSTRUCTION and "禁止顺着瞎捧迎合" in RESPONSE_INSTRUCTION
+
+
+async def test_top_level_and_comment_reply_allow_web_search_without_source_quote(browsing, monkeypatch):
+    from tuber_studio.infra.web_client import fetch as web_fetch
+
+    row = await prepared_row(browsing)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "supports_operation_web_fetch", True, raising=False)
+    queries = []
+
+    async def discover(query):
+        queries.append(query)
+        return ["https://example.org/news"]
+
+    async def read(url):
+        return {"url": url, "title": "快讯", "excerpt": "传闻已被官方辟谣。", "truncated": False}
+
+    async def generate(messages, schema, *, max_tokens):
+        if not queries:
+            actions = [b.get("required") for b in schema.get("oneOf", [])]
+            assert ["web_search"] in actions
+            return {"web_search": ["Jensen 离职 重返"]}
+        assert "传闻已被官方辟谣" in messages[-1]["content"]
+        return ResponseDecision(
+            action="reply_public",
+            reason="specific_detail",
+            explanation="核实传闻后再评论",
+            text="刚才查了公开新闻，这事早辟谣了，别听风就是雨。",
+            evidence_ids=["ref:1"],
+            video_preference="neutral",
+            preference_reason="核对消息真伪",
+        ).model_dump()
+
+    monkeypatch.setattr(web_fetch, "search_public_web", discover)
+    monkeypatch.setattr(web_fetch, "fetch_excerpt", read)
+    monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", generate)
+
+    material = {
+        "metadata": {"bvid": "BV1d8pU6xEZX", "aid": 42, "title": "热点快报", "owner_uid": "200", "owner": "UP", "parts": [{"cid": "11"}]},
+        "coverage": "all_available_cc",
+        "parts": [{"cid": "11", "segments": [{"id": "11:0", "text": "有人说某大佬昨晚离职今天又回来。", "start": 0, "end": 4}]}],
+    }
+    res = await browsing.decisions._response(
+        row, material, {"target": {"bvid": "BV1d8pU6xEZX", "oid": "42"}}, {"11:0"}, "top_level",
+        {"lock_wait_seconds": 0}, video_actions=True,
+    )
+    assert queries == ["Jensen 离职 重返"]
+    assert "辟谣" in res.text
+
+
+def test_low_context_comment_filter_skips_noise_and_keeps_direct_replies():
+    from tuber_studio.operations.channels.comments.scanner import low_context_skip_reason
+
+    assert low_context_skip_reason("@路人甲 [doge]") is not None
+    assert low_context_skip_reason("[妙啊]   [吃瓜]") is not None
+    assert low_context_skip_reason("哈哈") is not None
+    assert low_context_skip_reason("666") is not None
+    assert low_context_skip_reason("确实") is not None
+    assert low_context_skip_reason("哈哈", is_direct_to_self=True) is None
+    assert low_context_skip_reason("@小鲸鱼 [doge]", mentions=[{"uid": "100", "name": "小鲸鱼"}], self_uid="100") is None
+    assert low_context_skip_reason("这个算法的时间复杂度是多少？") is None

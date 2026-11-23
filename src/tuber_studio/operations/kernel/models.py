@@ -480,6 +480,8 @@ def content_decision_schema(evidence_ids, *, allow_visual=True):
 RESPONSE_INSTRUCTION = (
     "用自己的话接当前话题。text是直接发给对方的正文，explanation写这次选择的具体原因。"
     "评论接对方的原话，视频主评聊看到或听到的细节。想聊就回，想略过选skip，稍后再处理选wait。"
+    "遇到离谱暴论、钓鱼反串或一眼假的设定（如AI有灵魂生命、被赶出来讨饭、MCN手动操作、虚假科技传闻），"
+    "禁止顺着瞎捧迎合，用清醒带刺的吐槽直接拆穿或先用web_search核实再评价。"
 )
 
 RESPONSE_REFERENCE_INSTRUCTION = (
