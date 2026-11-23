@@ -15,13 +15,13 @@ Chats 支持交办、改口、取消和查看工具回执。已完成全仓分�
 
 ## 运营主线
 
-全仓已迁移至 `L0–L4` 单向分层架构、React 19 顶层 `frontend/` 与 `/api/v1/*` 契约，并落地阶段二运营双管线：主动探索（Discovery）与消息响应（Inbox）共用 `operations/kernel/`（`operation_claims` 原子认领与楼级 Inbox 优先租约、`direct_quota_reserve` 预留保护、412/429 风控退避保消息与 `(bvid, cid)` 单飞证据池）。工作台具备独立双控制卡、全局急停/解除、活动流 `discovery`/`inbox`/`manual` 来源徽标与 `/dafeiyu/` 子路径挂载，零平台写入的 Edge E2E 与架构 AST 守卫已全量闭环；新链路的真实平台送达、来信及工作站阶段四切换等待用户审批后单独执行。[部署与三渠道验收](../../evaluations/results/operations-images-three-channels.md) · [分层与阶段二总验收](../../evaluations/results/20261122-layered-refactor-dual-pipeline-acceptance.md) · [调度](../../evaluations/results/operations-scheduler-20261114.md)
+全仓已迁移至 `L0–L4` 单向分层架构、React 19 顶层 `frontend/` 与 `/api/v1/*` 契约，并已完成工作站阶段四切换（`1953df9`、`tuber-studio-core:1953df9`）。阶段二运营双管线——主动探索（Discovery）与消息响应（Inbox）共用 `operations/kernel/`（`operation_claims` 原子认领与楼级 Inbox 优先租约、`direct_quota_reserve` 预留保护、412/429 风控退避保消息与 `(bvid, cid)` 单飞证据池），正式库已完成停机备份、`--network none` 积压归档与 `v2` 无损迁移（默认双关等待操作者在工作台按需开启）。新链路的真实平台送达、来信及私有语音通话待用户后续在工作台启用后实机验收。[部署与三渠道验收](../../evaluations/results/operations-images-three-channels.md) · [分层与阶段二总验收](../../evaluations/results/20261122-layered-refactor-dual-pipeline-acceptance.md) · [阶段四上线验收](../../evaluations/results/20261123-stage4-workstation-cutover.md) · [调度](../../evaluations/results/operations-scheduler-20261114.md)
 
 日常看帧已接同一投稿、对应分 P 的元数据及邻近带时码文字。逐帧、联合与汇总请求由隔离传输核对。普通网关单次实读答对场景大意和两帧时码，漏答标题与简介，并把画内烧录字误报为公开字幕，整项未通过。[消息对照](../../tests/agent/test_video_frame_text.py) · [普通画面实读](../../evaluations/results/p2-ordinary-frame-reading-20261119.md)
 
 ## 共享推理与 Avatar API
 
-M0–M5 代码重构、React 前端构建、Docker 多阶段打包（`deploy/omni/Dockerfile` `web-build`）、CI 检查、脱敏文档规范与隔离 Edge 验收已全部就绪，待用户审批后按[交接清单](../handoff.md)执行阶段四（`<code-root>/Tuber_Studio` 构建与 `/data/business`、`staged → active` 业务卷切换）。后台文本使用 `/llm/v1/responses` 与 9B 对话，私有电话使用 Omni 原生双工语音；服务替换时按实报能力复验工具往返、长文语义、排队和取消。[迁移回执](../../evaluations/results/workstation-business-cutover-20261119.md) · [正式入口](../../evaluations/results/workstation-studio-ip-20261119.md) · [服务准入](../specs/foundation/omni-deployment.md#接入验收与切换)
+M0–M5 代码重构、React 前端构建、Docker 多阶段打包（`deploy/omni/Dockerfile` `web-build`）与工作站阶段四正式切换（`<code-root>/Tuber_Studio` 构建、`<state-root>/backups/before-1953df9.sqlite3` 离线备份及 `/data/business` 激活运行）已全部完成并复验通过。后台文本使用 `/llm/v1/responses` 与 9B 对话，私有电话使用 Omni 原生双工语音；服务替换时按实报能力复验工具往返、长文语义、排队和取消。[阶段四上线验收](../../evaluations/results/20261123-stage4-workstation-cutover.md) · [迁移回执](../../evaluations/results/workstation-business-cutover-20261119.md) · [正式入口](../../evaluations/results/workstation-studio-ip-20261119.md) · [服务准入](../specs/foundation/omni-deployment.md#接入验收与切换)
 
 ## 直播、点歌与部署验收
 
