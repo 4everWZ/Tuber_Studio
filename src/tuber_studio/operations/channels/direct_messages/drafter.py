@@ -469,13 +469,26 @@ class DirectMessagesDrafterMixin:
             source = self._source(draft["source_kind"], draft["source_id"], character)
             event = self._event(draft, character)
             handled, reply_ids = [], []
+            ambiguous_order = False
             if draft["source_kind"] == "message":
                 window = self._reply_window(draft, source)
                 refs, links = window.refs, window.links
+                ambiguous_order = window.ambiguous
                 if not refs:
-                    self.store.execute("UPDATE dm_drafts SET status='cancelled',resume_pending=0,error=? WHERE id=?",
-                        ("来信已处理，无需重复发送", identity))
+                    self.store.execute(
+                        "UPDATE dm_drafts SET status='cancelled',resume_pending=0,error=? WHERE id=?",
+                        ("来信已处理，无需重复发送", identity),
+                    )
                     return
+                if window.latest_outgoing_id and not ambiguous_order:
+                    self._settle_incoming(draft, list(refs.values()), window.latest_outgoing_id)
+                    self.store.execute(
+                        "UPDATE dm_drafts SET status='cancelled',resume_pending=0,error=?,updated_at=? WHERE id=?",
+                        ("号主已在平台手动回复，无需重复发送", time.time(), identity),
+                    )
+                    return
+                handled = list(window.prior_settled or ())
+                reply_ids = list((window.unanswered_refs or refs).values())
             relationship = self.runtime.relationships.observe(
                 character["id"],
                 draft["platform"],
@@ -506,15 +519,6 @@ class DirectMessagesDrafterMixin:
                     check = {"generation_identity": proposal_identity, "output": {
                         "needs_review": generation_requires_review(self.store, generation_id),
                     }, "reused_proposal": True}
-                elif draft["source_kind"] == "message" and (links or len(refs) > 1):
-                    decision, check = await self._reply_to_conversation(draft, character, event, relationship, refs, links)
-                    reflection = decision.public_reflection
-                    handled = [(refs[item.incoming], links[(item.incoming, item.outgoing)]) for item in decision.handled]
-                    reply_ids = [refs[ref] for ref in dict.fromkeys(decision.reply_to)]
-                    reply = OperationReply(spoken_text=decision.text) if decision.text else None
-                    check["operator_decision"] = decision.reason
-                    if set(refs.values()) != set(reply_ids) | {incoming for incoming, _ in handled}:
-                        check["output"]["needs_review"] = True
                 else:
                     generation_event = event | {"share_reflection": True} if draft["source_kind"] == "message" else event
                     if draft["source_kind"] == "comment":
@@ -531,7 +535,10 @@ class DirectMessagesDrafterMixin:
                         self.scope(draft), character, generation_event, relationship, mode="direct_message"
                     )
                     if draft["source_kind"] == "message":
-                        reply_ids = list(refs.values())
+                        if not reply_ids:
+                            reply_ids = list(refs.values())
+                        if ambiguous_order:
+                            check.setdefault("output", {})["needs_review"] = True
                         reflection = getattr(reply, "public_reflection", None)
                 selected, selection_failed = None, False
                 if (reply and not preserve_attachments and illustration_policy(self.store).use_memes and self.memes
@@ -565,11 +572,6 @@ class DirectMessagesDrafterMixin:
                     trigger["ids"] = sorted(set(trigger.get("ids", [])) | set(refs.values()))
                     self.store.db.execute("UPDATE dm_drafts SET trigger_source=? WHERE id=?",
                                           (json.dumps(trigger, ensure_ascii=False), identity))
-                    if not reply:
-                        complete = not check["output"].get("needs_review")
-                        self.store.db.execute("UPDATE dm_drafts SET status=?,resume_pending=0,answer_check=?,error=?,updated_at=? WHERE id=?",
-                            ("cancelled" if complete else "failed", json.dumps(check, ensure_ascii=False),
-                            "号主已在平台手动回复，无需重复发送" if complete else decision.reason, time.time(), identity))
                 if not reply:
                     return
             ref = row_ref(draft) if preserve_attachments else None

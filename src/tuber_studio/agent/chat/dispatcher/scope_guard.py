@@ -128,6 +128,7 @@ def save_event_memory(dispatcher, event, request_id):
     decision = MemorySuggestion(action="add", existing_id=None, headline=event["title"][:40], note=note, tags=[note[:24]])
     with ctx.store.db:
         saved = memory.save_organized(scope, source, decision, None)
+        ctx.runtime.unified_memory.add_memory(note, scope="owner", character_id=ctx.runtime.character["id"], source="operator_chat", tags=[note[:24]])
         ctx.store.db.execute(
             "INSERT OR IGNORE INTO memory_organization VALUES(?,?,?,?,?,?,?)",
             (*scope, "turn:" + request_id, request_id, "skipped", time.time()),
@@ -139,6 +140,8 @@ def save_event_memory(dispatcher, event, request_id):
 
 
 def forget_memory(dispatcher, topic):
+    unified = dispatcher.ctx.runtime.unified_memory
+    char_id = dispatcher.ctx.runtime.character["id"]
     memory = dispatcher.ctx.runtime.daily_memory
     scope = dispatcher.ctx.runtime.memory_organizer.scope()
     rows = {row["id"]: row for row in memory.organized(scope)}
@@ -162,7 +165,10 @@ def forget_memory(dispatcher, topic):
         )
         and ("直播" not in topic or row["proof"].get("scene") == "live")
     ]
+    removed_unified = unified.delete_matching(topic, scope="owner", character_id=char_id)
     if len(matches) != 1:
+        if removed_unified:
+            return {"reply_text": "已删除这条记忆。", "card": None}
         return {"reply_text": "请说一下要忘掉的那条记忆的具体内容。", "card": None}
     memory.change_organized(scope, matches[0]["id"], delete=True)
     return {"reply_text": "已删除这条记忆。", "card": None}

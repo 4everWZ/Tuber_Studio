@@ -48,8 +48,8 @@ def build_messages(
     ]
     if mode == "direct_message" and "conversation" in event:
         messages[1]["content"] += (
-            "\n会话记录中 viewer 是来信人，operator 是号主代回，oc 是你已实际发送的话。"
-            "以当前 open 来信为回复对象，先前记录用于承接话题。"
+            "\n会话记录按时间顺序排列：role_label 为“对方”(viewer)是来信人、“号主人工接管”(operator)是号主手动代回、"
+            "“小鲸鱼”(oc)是你已发出的消息。务必结合号主接管后的最新语境自然承接未回复(open)的来信，不要重复号主已经回答过的内容。"
         )
     if mode == "live" and event.get("live_outcome"):
         messages[1]["content"] += (

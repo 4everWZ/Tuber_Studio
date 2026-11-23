@@ -174,6 +174,10 @@ class ResponseEngine:
         if target.get("bvid") and target["bvid"] == video.get("bvid") and video.get("owner_uid"):
             thread["resource_author_uid"] = str(video["owner_uid"])
         root_id = (thread.get("addressing") or {}).get("source_root_comment_id") or target.get("root")
+        unified_store = getattr(self.browsing.runtime, "unified_memory", None)
+        unified = unified_store.for_prompt("public", character_id=character["id"], limit=15) if unified_store is not None else []
+        if unified:
+            bound["unified_public_memories"] = [item["content"] for item in unified]
         memory = self.browsing.runtime.daily_memory
         scope = (str(row.get("account_id") or ""), character["id"], character["version"])
         preference = memory.preference(scope)

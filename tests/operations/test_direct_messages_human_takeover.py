@@ -21,17 +21,14 @@ def platform_message(seq, author, recipient, text, sent_at):
     }
 
 
-@pytest.mark.parametrize("coverage", ["all", "partial", "unverified"])
 @pytest.mark.parametrize("clock_drift", [False, True])
-async def test_platform_sequence_orders_takeover_and_settles_only_bound_answers(messages, monkeypatch, coverage, clock_drift):
+async def test_platform_sequence_orders_takeover_and_cancels_when_operator_replied_last(messages, monkeypatch, clock_drift):
     account, viewer = "900", "123"
     messages.operations.configure({"enabled": True}, account_id=account, character=messages.runtime.character)
     await messages.configure({"enabled": True, "auto_send": True})
     await messages.resume_pending()
     now = int(time.time()) + 1
-    answer = (
-        "八点开播，节目是深海电台。" if coverage == "partial" else "八点开播，节目是深海电台，会唱三首歌。"
-    )
+    answer = "八点开播，节目是深海电台，会唱三首歌。"
     rows = [
         platform_message(3, viewer, account, "会唱几首歌？", now),
         platform_message(1, viewer, account, "几点开播？", now + 3 * clock_drift),
@@ -43,62 +40,57 @@ async def test_platform_sequence_orders_takeover_and_settles_only_bound_answers(
     identity = messages.enqueue("message", latest, automatic=True, schedule=False)
     calls = []
 
-    async def decide(packet, schema, *, max_tokens):
-        assert schema["title"] == "ConversationReply"
-        event = next(
-            json.loads(message["content"].split("：", 1)[1])
-            for message in packet
-            if message["content"].startswith("当前来信人消息：")
-        )
-        assert [item["text"] for item in event["conversation"]] == [
-            "几点开播？",
-            "今天是什么节目？",
-            "会唱几首歌？",
-            answer,
-        ]
-        assert [item["speaker"] for item in event["conversation"]] == [
-            "viewer",
-            "viewer",
-            "viewer",
-            "operator",
-        ]
-        calls.append(schema["title"])
-        covered = [1, 2] if coverage == "partial" else [1, 2, 3]
-        return {
-            "text": "本鱼这次准备了三首歌。" if coverage == "partial" else "",
-            "reply_to": [3] if coverage == "partial" else [],
-            "reason": "核对号主已经回复的项目",
-            "handled": [
-                {
-                    "incoming": ref,
-                    "outgoing": 4,
-                    "quote": "没写在原话里的回答" if coverage == "unverified" else answer,
-                }
-                for ref in covered
-            ],
+    async def fail_if_called(*_args, **_kwargs):
+        calls.append(True)
+        pytest.fail("号主已人工接管回复最新一条，不应再调用模型生成重复草稿")
+
+    monkeypatch.setattr(messages.runtime, "generate_reply", fail_if_called)
+    monkeypatch.setattr(messages.runtime.operation_llm, "generate_json", fail_if_called)
+    await messages._generate(identity, True)
+    assert not calls and not messages.adapter.sent
+    status = messages.store.one("SELECT status,error FROM dm_drafts WHERE id=?", (identity,))
+    assert status["status"] == "cancelled" and "手动回复" in status["error"]
+    settled = messages.store.all("SELECT incoming_id,outgoing_id FROM dm_incoming_settlements ORDER BY incoming_id")
+    assert len(settled) == 3 and all(row["outgoing_id"] == "1004" for row in settled)
+
+
+async def test_chronological_dm_after_operator_takeover_includes_operator_turn_and_labels(messages, monkeypatch):
+    from tuber_studio.core.models import OperationReply
+
+    account, viewer = "900", "123"
+    messages.operations.configure({"enabled": True}, account_id=account, character=messages.runtime.character)
+    await messages.configure({"enabled": True, "auto_send": True})
+    await messages.resume_pending()
+    now = int(time.time()) + 1
+    rows = [
+        platform_message(1, viewer, account, "几点开播？", now),
+        platform_message(2, account, viewer, "八点准时开播。", now + 1),
+        platform_message(3, viewer, account, "那今天主要玩什么呀？", now + 2),
+    ]
+    messages._ingest_history(rows, viewer, account, "观众")
+    latest = messages.store.one("SELECT id FROM dm_inbox WHERE message_id='1003'")["id"]
+    identity = messages.enqueue("message", latest, automatic=True, schedule=False)
+    seen_conversations = []
+
+    async def fake_reply(scope, character, event, relationship=None, mode="direct_message"):
+        seen_conversations.append(event["conversation"])
+        return OperationReply(spoken_text="今晚玩潜水员戴夫，八点见！"), {
+            "generation_identity": messages.runtime.identity_snapshot(character, event["account_id"]),
+            "output": {"needs_review": False},
         }
 
-    monkeypatch.setattr(messages.runtime.operation_llm, "generate_json", decide)
-    if coverage == "unverified":
-        with pytest.raises(GenerationInvalid, match="实际号主回复"):
-            await messages._generate(identity, True)
-        assert not messages.adapter.sent and not messages.store.all("SELECT * FROM dm_incoming_settlements")
-        return
+    monkeypatch.setattr(messages.runtime, "generate_reply", fake_reply)
     await messages._generate(identity, True)
     await messages._generate(identity, True)
-    assert calls == ["ConversationReply"]
-    status = messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"]
-    assert status == ("published" if coverage == "partial" else "cancelled")
-    assert messages.adapter.sent == ([(viewer, "本鱼这次准备了三首歌。")] if coverage == "partial" else [])
-    settled = messages.store.all(
-        "SELECT incoming_id,outgoing_id FROM dm_incoming_settlements ORDER BY incoming_id"
-    )
-    assert len(settled) == 3
-    assert [row["outgoing_id"] for row in settled] == [
-        "1004",
-        "1004",
-        "1" if coverage == "partial" else "1004",
-    ]
+    assert len(seen_conversations) == 1
+    conv = seen_conversations[0]
+    assert [item["text"] for item in conv] == ["几点开播？", "八点准时开播。", "那今天主要玩什么呀？"]
+    assert [item["speaker"] for item in conv] == ["viewer", "operator", "viewer"]
+    assert [item["role_label"] for item in conv] == ["对方", "号主人工接管", "对方"]
+    assert conv[2].get("open") is True
+    assert messages.adapter.sent == [(viewer, "今晚玩潜水员戴夫，八点见！")]
+    settled = messages.store.all("SELECT incoming_id,outgoing_id FROM dm_incoming_settlements ORDER BY incoming_id")
+    assert [row["outgoing_id"] for row in settled] == ["1002", "1"]
 
 
 async def test_history_gap_resumes_with_cursor_across_polls_without_skipping_a_page(messages):

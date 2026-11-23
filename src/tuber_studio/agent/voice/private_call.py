@@ -219,6 +219,15 @@ async def create_call_ticket(request_origin: str, root_path: str, runtime, opera
             character, operating_account=operating_account_facts(runtime.account.status())
         ),
     ]
+    unified_notes = (
+        []
+        if options.temporary
+        else runtime.unified_memory.for_prompt("owner", character_id=character["id"], limit=15)
+    )
+    if unified_notes:
+        instructions.append(
+            "号主已保存的长期记忆：\n" + "\n".join(f"- {item['content']}" for item in unified_notes)
+        )
     if notes:
         instructions.append("与本次私聊话题有关的记忆资料：" + dump(notes))
     if shared:

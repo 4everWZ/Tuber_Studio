@@ -11,6 +11,9 @@ from .models import ConversationWindow, MessageInputChanged
 from .outreach import confirmed_invitation, verified_agreement
 
 
+_ROLE_LABELS = {"viewer": "对方", "oc": "小鲸鱼", "operator": "号主人工接管"}
+
+
 class DirectMessagesWindowingMixin:
     def _queue_newest_messages(self, account_id):
         cutoff = self._inbox_cutoff(account_id)
@@ -175,7 +178,12 @@ class DirectMessagesWindowingMixin:
         refs, links, public = {}, {}, []
         pending_ids = {message["id"] for message in pending}
         for index, item in enumerate(timeline, 1):
-            ref = {"message": index, "speaker": item["origin"], "text": item["content"]}
+            ref = {
+                "message": index,
+                "speaker": item["origin"],
+                "role_label": _ROLE_LABELS.get(item["origin"], item["origin"]),
+                "text": item["content"],
+            }
             if item["origin"] == "viewer" and item["id"] in pending_ids:
                 ref["open"] = True
                 refs[index] = item["id"]
@@ -191,13 +199,41 @@ class DirectMessagesWindowingMixin:
                     response["sequence"] and incoming["sequence"]
                 ):
                     links[(i, index)] = None
+        ambiguous = any(value is None for value in links.values())
+        prior_settled = []
+        unanswered_refs = {}
+        for i, incoming_id in refs.items():
+            matched_out = [
+                (out_i, msg_id)
+                for (in_i, out_i), msg_id in links.items()
+                if in_i == i and msg_id is not None
+            ]
+            if matched_out:
+                _, outgoing_msg_id = max(matched_out, key=lambda pair: pair[0])
+                prior_settled.append((incoming_id, outgoing_msg_id))
+            else:
+                unanswered_refs[i] = incoming_id
+        latest_outgoing_id = None
+        if refs and not unanswered_refs and not ambiguous and timeline and timeline[-1]["origin"] in {"operator", "oc"}:
+            latest_outgoing_id = str(timeline[-1]["message_id"])
+        elif not ambiguous and links and not unanswered_refs and prior_settled:
+            latest_outgoing_id = prior_settled[-1][1]
         fingerprint = content_hash(
             [
                 (message["message_id"], message["sequence"], view)
                 for message, view in zip(timeline, public, strict=True)
             ]
         )
-        return ConversationWindow(public, refs, links, fingerprint)
+        return ConversationWindow(
+            public,
+            refs,
+            links,
+            fingerprint,
+            latest_outgoing_id=latest_outgoing_id,
+            unanswered_refs=unanswered_refs,
+            prior_settled=prior_settled,
+            ambiguous=ambiguous,
+        )
 
     def _settle_incoming(self, draft, incoming_ids, outgoing_id):
         self.store.db.executemany(

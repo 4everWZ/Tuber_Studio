@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { apiGet, apiPost, apiPut } from "@/shared/api/client";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/shared/api/client";
 import { useAppSession } from "@/shared/hooks/useAppSession";
 import { occupancyText, tokenCount } from "@/shared/lib/display";
 import { errorMessage } from "@/shared/lib/errors";
@@ -12,6 +12,7 @@ import type {
   PersonaContextStatus,
   RecentEventItem,
   RecentEventsResponse,
+  UnifiedMemoryItem,
 } from "./types";
 
 export function PersonalizationPage() {
@@ -37,6 +38,17 @@ export function PersonalizationPage() {
   const [ctxStatus, setCtxStatus] = useState<PersonaContextStatus | null>(null);
   const [ctxFeedback, setCtxFeedback] = useState("");
   const [ctxBusy, setCtxBusy] = useState(false);
+
+  // Unified ChatGPT-Web-style long-term memory CRUD
+  const [unifiedScope, setUnifiedScope] = useState<"all" | "owner" | "public">("all");
+  const [unifiedItems, setUnifiedItems] = useState<UnifiedMemoryItem[]>([]);
+  const [unifiedLoading, setUnifiedLoading] = useState(false);
+  const [unifiedStatus, setUnifiedStatus] = useState("");
+  const [newMemoryScope, setNewMemoryScope] = useState<"owner" | "public">("owner");
+  const [newMemoryContent, setNewMemoryContent] = useState("");
+  const [unifiedBusy, setUnifiedBusy] = useState(false);
+  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState("");
 
   const preferenceRef = useRef<MemoryPreferenceState | null>(null);
   const savingPrefRef = useRef(false);
@@ -154,10 +166,35 @@ export function PersonalizationPage() {
     [recentItems.length, refreshScope, loadPreference]
   );
 
+  const loadUnifiedMemories = useCallback(
+    async ({ background = false }: { background?: boolean } = {}) => {
+      if (!background) setUnifiedLoading(true);
+      try {
+        const res = await apiGet<
+          "/api/v1/persona/memories",
+          { character_id?: string; items?: UnifiedMemoryItem[] }
+        >("/api/v1/persona/memories", {
+          query: {
+            include_inactive: true,
+            ...(unifiedScope !== "all" ? { scope: unifiedScope } : {}),
+          },
+        });
+        setUnifiedItems(Array.isArray(res.items) ? res.items : []);
+        if (!background) setUnifiedStatus("");
+      } catch (error) {
+        if (!background) setUnifiedStatus(`读取统一记忆失败：${errorMessage(error)}`);
+      } finally {
+        if (!background) setUnifiedLoading(false);
+      }
+    },
+    [unifiedScope]
+  );
+
   // Initial load + scopeVersion reload
   useEffect(() => {
     void loadPreference({ background: false });
-  }, [scopeVersion, loadPreference]);
+    void loadUnifiedMemories({ background: false });
+  }, [scopeVersion, loadPreference, loadUnifiedMemories]);
 
   // 15s background polling matching legacy app.js
   useEffect(() => {
@@ -313,10 +350,259 @@ export function PersonalizationPage() {
   const controlsDisabled = !preference || savingPreference;
   const statementDisabled = !preference?.enabled;
 
+  const handleAddUnifiedMemory = async () => {
+    const trimmed = newMemoryContent.trim();
+    if (!trimmed || unifiedBusy) return;
+    setUnifiedBusy(true);
+    setUnifiedStatus("");
+    try {
+      await apiPost("/api/v1/persona/memories", {
+        body: { content: trimmed, scope: newMemoryScope },
+      });
+      setNewMemoryContent("");
+      setUnifiedStatus("已添加记忆");
+      await loadUnifiedMemories({ background: false });
+    } catch (err) {
+      setUnifiedStatus(err instanceof Error ? err.message : "添加记忆失败");
+    } finally {
+      setUnifiedBusy(false);
+    }
+  };
+
+  const handleToggleUnifiedActive = async (item: UnifiedMemoryItem) => {
+    if (unifiedBusy) return;
+    setUnifiedBusy(true);
+    setUnifiedStatus("");
+    try {
+      await apiPatch("/api/v1/persona/memories/{memory_id}", {
+        pathParams: { memory_id: item.id },
+        body: { active: !item.active },
+      });
+      setUnifiedStatus(item.active ? "已停用该条记忆" : "已启用该条记忆");
+      await loadUnifiedMemories({ background: false });
+    } catch (err) {
+      setUnifiedStatus(err instanceof Error ? err.message : "更新记忆状态失败");
+    } finally {
+      setUnifiedBusy(false);
+    }
+  };
+
+  const handleSaveUnifiedEdit = async (memoryId: string) => {
+    const trimmed = editingContent.trim();
+    if (!trimmed || unifiedBusy) return;
+    setUnifiedBusy(true);
+    setUnifiedStatus("");
+    try {
+      await apiPatch("/api/v1/persona/memories/{memory_id}", {
+        pathParams: { memory_id: memoryId },
+        body: { content: trimmed },
+      });
+      setEditingMemoryId(null);
+      setEditingContent("");
+      setUnifiedStatus("已更新记忆");
+      await loadUnifiedMemories({ background: false });
+    } catch (err) {
+      setUnifiedStatus(err instanceof Error ? err.message : "更新记忆失败");
+    } finally {
+      setUnifiedBusy(false);
+    }
+  };
+
+  const handleDeleteUnifiedMemory = async (memoryId: string) => {
+    if (unifiedBusy) return;
+    if (typeof window !== "undefined" && !window.confirm("确认删除这条记忆吗？")) {
+      return;
+    }
+    setUnifiedBusy(true);
+    setUnifiedStatus("");
+    try {
+      await apiDelete("/api/v1/persona/memories/{memory_id}", {
+        pathParams: { memory_id: memoryId },
+      });
+      if (editingMemoryId === memoryId) {
+        setEditingMemoryId(null);
+        setEditingContent("");
+      }
+      setUnifiedStatus("已删除记忆");
+      await loadUnifiedMemories({ background: false });
+    } catch (err) {
+      setUnifiedStatus(err instanceof Error ? err.message : "删除记忆失败");
+    } finally {
+      setUnifiedBusy(false);
+    }
+  };
+
   return (
     <section data-section="personalization" className="win-page-view">
       <div className={`personalization-settings ${styles.settingsContainer}`}>
         <h1 className={styles.settingsHeading}>个性化</h1>
+
+        <section
+          className={`personalization-rows ${styles.rowsCard}`}
+          id="unified-memories-card"
+          aria-label="统一记忆库"
+        >
+          <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "15px" }}>统一记忆库</h2>
+                <p style={{ margin: "4px 0 0", fontSize: "12px", opacity: 0.75 }}>
+                  号主私聊记忆与公开互动记忆严格隔离，支持随时增删改与启停。
+                </p>
+              </div>
+              <div role="tablist" aria-label="记忆作用域筛选" style={{ display: "flex", gap: "6px" }}>
+                {(
+                  [
+                    ["all", "全部"],
+                    ["owner", "仅号主私聊"],
+                    ["public", "公开互动"],
+                  ] as const
+                ).map(([scopeKey, label]) => (
+                  <button
+                    key={scopeKey}
+                    type="button"
+                    role="tab"
+                    aria-selected={unifiedScope === scopeKey}
+                    disabled={unifiedBusy}
+                    onClick={() => {
+                      setUnifiedScope(scopeKey);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+              <select
+                aria-label="新增记忆作用域"
+                value={newMemoryScope}
+                disabled={unifiedBusy}
+                onChange={(e) => setNewMemoryScope(e.target.value as "owner" | "public")}
+              >
+                <option value="owner">仅号主私聊 (Owner)</option>
+                <option value="public">公开互动 (Public)</option>
+              </select>
+              <input
+                type="text"
+                aria-label="新增记忆内容"
+                placeholder="输入希望小鲸鱼记住的长期事实或规则..."
+                value={newMemoryContent}
+                disabled={unifiedBusy}
+                onChange={(e) => setNewMemoryContent(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleAddUnifiedMemory();
+                  }
+                }}
+                style={{ flex: 1, minWidth: "220px" }}
+              />
+              <button
+                type="button"
+                disabled={unifiedBusy || !newMemoryContent.trim()}
+                onClick={() => void handleAddUnifiedMemory()}
+              >
+                添加记忆
+              </button>
+            </div>
+
+            {unifiedStatus ? (
+              <div role="status" style={{ fontSize: "12px", opacity: 0.85 }}>
+                {unifiedStatus}
+              </div>
+            ) : null}
+
+            {unifiedLoading ? (
+              <div style={{ fontSize: "13px", opacity: 0.7 }}>正在加载记忆...</div>
+            ) : unifiedItems.length === 0 ? (
+              <div style={{ fontSize: "13px", opacity: 0.7 }}>当前筛选下暂无记忆条目。</div>
+            ) : (
+              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
+                {unifiedItems.map((item) => {
+                  const isEditing = editingMemoryId === item.id;
+                  return (
+                    <li
+                      key={item.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "8px",
+                        padding: "8px 10px",
+                        border: "1px solid rgba(128,128,128,0.22)",
+                        borderRadius: "6px",
+                        opacity: item.active ? 1 : 0.6,
+                      }}
+                    >
+                      <span style={{ fontSize: "12px", padding: "2px 6px", borderRadius: "4px", border: "1px solid currentColor", flexShrink: 0 }}>
+                        {item.scope === "owner" ? "号主私聊" : "公开互动"}
+                      </span>
+                      {isEditing ? (
+                        <>
+                          <input
+                            type="text"
+                            aria-label="编辑记忆内容"
+                            value={editingContent}
+                            disabled={unifiedBusy}
+                            onChange={(e) => setEditingContent(e.target.value)}
+                            style={{ flex: 1 }}
+                          />
+                          <button
+                            type="button"
+                            disabled={unifiedBusy || !editingContent.trim()}
+                            onClick={() => void handleSaveUnifiedEdit(item.id)}
+                          >
+                            保存
+                          </button>
+                          <button
+                            type="button"
+                            disabled={unifiedBusy}
+                            onClick={() => {
+                              setEditingMemoryId(null);
+                              setEditingContent("");
+                            }}
+                          >
+                            取消
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ flex: 1, fontSize: "13px", wordBreak: "break-word" }}>{item.content}</span>
+                          <button
+                            type="button"
+                            disabled={unifiedBusy}
+                            onClick={() => void handleToggleUnifiedActive(item)}
+                          >
+                            {item.active ? "已启用" : "已停用"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={unifiedBusy}
+                            onClick={() => {
+                              setEditingMemoryId(item.id);
+                              setEditingContent(item.content);
+                            }}
+                          >
+                            编辑
+                          </button>
+                          <button
+                            type="button"
+                            disabled={unifiedBusy}
+                            onClick={() => void handleDeleteUnifiedMemory(item.id)}
+                          >
+                            删除
+                          </button>
+                        </>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
 
         <section
           className={`personalization-rows ${styles.rowsCard}`}

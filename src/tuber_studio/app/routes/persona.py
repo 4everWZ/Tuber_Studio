@@ -83,6 +83,20 @@ class MemeAvailability(StrictModel):
     enabled: bool
 
 
+class UnifiedMemoryCreate(StrictModel):
+    content: str = Field(min_length=1, max_length=1000)
+    scope: Literal["owner", "public"] = "owner"
+    character_id: str | None = Field(default=None, max_length=80)
+    tags: list[str] = Field(default_factory=list, max_length=10)
+
+
+class UnifiedMemoryPatch(StrictModel):
+    content: str | None = Field(default=None, min_length=1, max_length=1000)
+    scope: Literal["owner", "public"] | None = None
+    active: bool | None = None
+    tags: list[str] | None = Field(default=None, max_length=10)
+
+
 def register_persona_routes(app, settings, runtime, store, comments, memes, require_admin) -> None:
     """Register all 43 `/api/v1/persona/*` routes."""
     deps = [Depends(require_admin)]
@@ -479,6 +493,51 @@ def register_persona_routes(app, settings, runtime, store, comments, memes, requ
             current_highlight(item_id)
             runtime.daily_memory.delete_highlight(item_id)
             return {"ok": True, "id": item_id}
+
+    @app.get(prefix + "/memories", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def list_unified_memories(
+        scope: Literal["owner", "public"] | None = None,
+        include_inactive: bool = True,
+    ):
+        char = runtime.character
+        return {
+            "character_id": char["id"],
+            "items": runtime.unified_memory.list_memories(
+                scope=scope,
+                character_id=char["id"],
+                include_inactive=include_inactive,
+            ),
+        }
+
+    @app.post(prefix + "/memories", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def create_unified_memory(data: UnifiedMemoryCreate):
+        char = runtime.character
+        return runtime.unified_memory.add_memory(
+            data.content,
+            scope=data.scope,
+            character_id=char["id"] if data.character_id is None else data.character_id,
+            source="manual",
+            tags=data.tags,
+        )
+
+    @app.patch(prefix + "/memories/{memory_id}", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def update_unified_memory(memory_id: str, data: UnifiedMemoryPatch):
+        updated = runtime.unified_memory.update_memory(
+            memory_id,
+            content=data.content,
+            scope=data.scope,
+            active=data.active,
+            tags=data.tags,
+        )
+        if updated is None:
+            raise HTTPException(404, "未找到该记忆条目")
+        return updated
+
+    @app.delete(prefix + "/memories/{memory_id}", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def delete_unified_memory(memory_id: str):
+        if not runtime.unified_memory.delete_memory(memory_id):
+            raise HTTPException(404, "未找到该记忆条目")
+        return {"ok": True, "id": memory_id}
 
     @app.get(prefix + "/context/status", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
     async def context_status(video_id: str | None = None, thread_id: str | None = None):

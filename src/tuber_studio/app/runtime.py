@@ -36,6 +36,7 @@ from ..persona.context.tools import build_default_tool_registry
 from ..persona.memory.core_memory import missing_slots
 from ..persona.memory.daily import DailyMemoryService, MemoryChanged
 from ..persona.memory.relationships import Relationships
+from ..persona.memory.unified import UnifiedMemoryStore, migrate_legacy_memories
 
 
 def _comment_actor_formatter(event):
@@ -78,6 +79,8 @@ class Runtime:
         self._default_chat_llm_tracking = True
         self.voices = VoiceService(settings)
         self.daily_memory = DailyMemoryService(store)
+        self.unified_memory = UnifiedMemoryStore(store)
+        migrate_legacy_memories(store, unified=self.unified_memory)
         self.memory_organizer = MemoryOrganizer(self)
         self.live = LiveSession(
             self,
@@ -443,7 +446,7 @@ class Runtime:
         character = self.character
         voice_id = canonical_voice_id(character["voice_profile"])
         automation = None
-        if browsing := getattr(self, "browsing", None):
+        if (browsing := getattr(self, "browsing", None)) and getattr(browsing, "operations", None) is not None:
             control = browsing.operations.policy()
             effective = browsing.effective()
             account_id = browsing.account or control["account_id"]
@@ -538,6 +541,17 @@ class Runtime:
         extra = [{"role": "user", "kind": "context", "content": "与当前话题相关的记忆：" + dump([
             {"note": row["anecdote"]} for row in organized
         ])}] if organized else []
+        unified_scope = "owner" if mode == "operator_chat" else "public"
+        unified_items = self.unified_memory.for_prompt(unified_scope, character_id=character["id"], limit=15)
+        if unified_items:
+            extra.append(
+                {
+                    "role": "system",
+                    "kind": "context",
+                    "content": "已保存的长期记忆（自然承接背景即可，勿生硬复读）：\n"
+                    + "\n".join(f"- {item['content']}" for item in unified_items),
+                }
+            )
         messages = await context.prepare(
             scope, character, event, relationship, mode, evidence=evidence, extra=extra,
             daily_memory_enabled=preference["enabled"] if preference else not hasattr(self, "browsing"),

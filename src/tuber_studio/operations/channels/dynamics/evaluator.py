@@ -631,18 +631,7 @@ class DynamicsEvaluatorMixin:
                         if not authorized(include_enabled=False):
                             raise ValueError("动态取材来源或授权已变化")
 
-                    client = tasks.responses_client() if tasks else None
-                    if getattr(client, "_requires_omni_key", False) and not self.settings.provider_key("omni"):
-                        client = None
-                    if client and sources:
-                        browsing = self.runtime.browsing
-                        recall = recall_memory.RecallSession(self, private=False)
-                        recent = None if topic else recall_memory.recent_query(browsing)
-                        objective = ({"目标": "按指定话题查找适合公开分享的相关素材，供本轮动态评估。", "本次话题": topic}
-                                     if topic else {"目标": "从近期经历选话题，按话题回查相关旧记录。"
-                                                          "选择可以交给本轮动态评估的记录，日常随想可以零引用。"})
-                        sources = await recall.collect(client, objective, seed=recent, guard=guard)
-                    elif topic:
+                    if topic:
                         sources = recall_memory.search_public(self, recall_memory.RecallQuery(topic=topic))["items"]
                     originals = recall_memory.originals(sources)
                     public_sources = [recall_memory.model_material(source, comment_texts=originals) for source in sources]
@@ -652,6 +641,10 @@ class DynamicsEvaluatorMixin:
                     if not authorized():
                         raise ValueError("运营记忆来源或授权已变化")
                     payload = json.loads(messages[1]["content"])
+                    unified_store = getattr(self.runtime, "unified_memory", None)
+                    unified_public = unified_store.for_prompt("public", character_id=char["id"], limit=15) if unified_store is not None else []
+                    if unified_public:
+                        payload["unified_public_memories"] = [item["content"] for item in unified_public]
                     payload["public_sources"] = public_sources
                     account = getattr(self.account, "display_account_id", lambda: "")()
                     payload["related_posts"] = self._related_posts(char, account, sources)

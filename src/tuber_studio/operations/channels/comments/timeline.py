@@ -19,6 +19,7 @@ __all__ = [
     "comment_source",
     "comment_thread",
     "comment_thread_context",
+    "confirmed_bot_comment_ids",
     "ensure_comment_timeline",
     "merge_continuous_comments",
     "observe_thread",
@@ -64,16 +65,59 @@ def operator_reply(items, target, account):
     )), None)
 
 
-def comment_thread_context(item, items, target):
+def confirmed_bot_comment_ids(store, account_id, character_id, resource, root_id):
+    """Return confirmed OC-published reply comment IDs for a given video/dynamic floor."""
+    root = _id(root_id)
+    if not (account_id and character_id and resource and root):
+        return set()
+    ids = set()
+    if _table(store, "browsing_intents"):
+        bvid, dynamic = (None, resource.removeprefix("dynamic:")) if resource.startswith("dynamic:") else (resource, None)
+        for row in store.all(
+            "SELECT receipt FROM browsing_intents WHERE account_id=? AND character_id=? AND kind='reply_public' "
+            "AND status='published' AND CAST(json_extract(target,'$.root') AS TEXT)=? AND "
+            "((? IS NOT NULL AND json_extract(target,'$.bvid')=?) OR (? IS NOT NULL AND "
+            "COALESCE(CAST(json_extract(target,'$.dynamic_id') AS TEXT),CAST(json_extract(target,'$.oid') AS TEXT))=?))",
+            (str(account_id), character_id, root, bvid, bvid, dynamic, dynamic),
+        ):
+            if rpid := _id(_json(row["receipt"]).get("rpid") or _json(row["receipt"]).get("comment_id")):
+                ids.add(rpid)
+    if _table(store, "drafts") and _table(store, "comments"):
+        cols = {col[1] for col in store.db.execute("PRAGMA table_info(drafts)")}
+        if "account_id" in cols:
+            for row in store.all(
+                "SELECT d.receipt FROM drafts d JOIN comments c ON c.id=d.comment_id "
+                "WHERE d.account_id=? AND d.character_id=? AND c.platform='bilibili' "
+                "AND c.video_id=? AND c.thread_id=? AND d.status='published'",
+                (str(account_id), character_id, resource, root),
+            ):
+                if rpid := _id(_json(row["receipt"]).get("rpid") or _json(row["receipt"]).get("comment_id")):
+                    ids.add(rpid)
+    return ids
+
+
+def comment_thread_context(item, items, target, *, account_id=None, resource_author_uid=None, confirmed_ids=()):
     comment_id, root_id = str(item["comment_id"]), str(target["root"])
     by_id = {str(row["comment_id"]): row for row in items if row.get("comment_id")}
     actual = by_id.get(comment_id, item)
+    confirmed_set = {str(cid) for cid in (confirmed_ids or ())}
 
     def parent_of(row):
         if row.get("parent_verified") is False:
             return None
         parent = row.get("parent_comment_id")
         return str(parent) if parent not in (None, "", 0, "0") else None
+
+    def speaker_role(row):
+        uid = str(comment_source(row)["author_uid"] or "")
+        cid = str(row.get("comment_id") or "")
+        if account_id and uid == str(account_id):
+            if row.get("publication") == "confirmed" or cid in confirmed_set:
+                return "小鲸鱼"
+            return "号主人工接管"
+        if resource_author_uid and uid == str(resource_author_uid):
+            return "UP主"
+        return "评论者"
 
     def present(row, identity):
         if row is None:
@@ -91,6 +135,14 @@ def comment_thread_context(item, items, target):
     root = by_id.get(root_id, item if comment_id == root_id else None)
     parent = by_id.get(parent_id) if parent_id else None
     timeline = [row for row in items if str(row.get("thread_id") or row.get("comment_id")) == root_id]
+    if len(timeline) <= 16:
+        window = timeline
+    else:
+        head = timeline[:1]
+        tail = [r for r in timeline[-15:] if str(r["comment_id"]) != str(head[0]["comment_id"])]
+        window = head + tail
+        if actual in timeline and all(str(r["comment_id"]) != comment_id for r in window):
+            window = window[:-1] + [actual]
     return {
         "source": comment_source(item),
         "target": target,
@@ -99,7 +151,8 @@ def comment_thread_context(item, items, target):
         "timeline": [present(row, str(row["comment_id"])) | {
             "is_root": str(row["comment_id"]) == root_id,
             "is_target": str(row["comment_id"]) == comment_id,
-        } for row in timeline[:8]],
+            "speaker_role": speaker_role(row),
+        } for row in window],
         "items": timeline,
         **({"grouped_comments": [present(row, str(row["comment_id"])) for row in item["grouped_comments"]]}
            if item.get("grouped_comments") else {}),

@@ -78,6 +78,18 @@ export interface MemoryPreferenceState {
   scope: string;
 }
 
+export interface UnifiedMemoryItem {
+  id: string;
+  scope: "owner" | "public";
+  character_id: string;
+  content: string;
+  source: string;
+  tags: string[];
+  created_at: number;
+  updated_at: number;
+  active: boolean;
+}
+
 export interface MemorySourceReference {
   text: string;
   href: string;

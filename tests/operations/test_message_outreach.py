@@ -45,18 +45,12 @@ async def setup_delivery(messages, monkeypatch, *, auto_send=True):
             "output": {"needs_review": False},
         }
 
-    async def conversation(packet, schema, *, max_tokens):
-        if schema["title"] == "ConversationReply":
-            event = next(json.loads(message["content"].split("：", 1)[1]) for message in packet
-                         if message["content"].startswith("当前来信人消息："))
-            generated.append(event)
-            return {"text": "鱼鱼一起回答你刚才的两条消息。", "reason": "合并回答两条来信",
-                    "reply_to": [item["message"] for item in event["conversation"] if item.get("open")], "handled": []}
+    async def unexpected(packet, schema, *, max_tokens):
         checked.append(schema["title"])
         pytest.fail("邀请和渠道由程序绑定，不应请求模型：" + schema["title"])
 
     monkeypatch.setattr(messages.runtime, "generate_reply", generate)
-    monkeypatch.setattr(messages.runtime.operation_llm, "generate_json", conversation, raising=False)
+    monkeypatch.setattr(messages.runtime.operation_llm, "generate_json", unexpected, raising=False)
     return generated, checked
 
 

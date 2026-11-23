@@ -16,6 +16,7 @@ from ..channels.comments.scanner import category, low_context_skip_reason
 from ..channels.comments.timeline import (
     comment_source,
     comment_thread_context,
+    confirmed_bot_comment_ids,
     observe_thread,
     operator_reply,
     read_scoped_thread,
@@ -521,7 +522,18 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
         ]
         if len(grouped) > 1:
             source_row = source_row | {"grouped_comments": grouped}
-    discussion = comment_thread_context(source_row, items_list, target)
+    author_uid = thread.get("resource_author_uid") or event.get("resource_author_uid")
+    confirmed_ids = confirmed_bot_comment_ids(
+        browsing.store, row.get("account_id"), row.get("character_id"), resource, target["root"]
+    )
+    discussion = comment_thread_context(
+        source_row,
+        items_list,
+        target,
+        account_id=row.get("account_id"),
+        resource_author_uid=author_uid,
+        confirmed_ids=confirmed_ids,
+    )
     thread.update({key: value for key, value in discussion.items() if key != "source"})
     legacy_source, source = source, discussion["source"]
     if grouped := thread.get("grouped_comments"):

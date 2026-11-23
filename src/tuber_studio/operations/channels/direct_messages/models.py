@@ -57,3 +57,7 @@ class ConversationWindow:
     refs: dict[int, int]
     links: dict[tuple[int, int], str | None]
     fingerprint: str
+    latest_outgoing_id: str | None = None
+    unanswered_refs: dict[int, int] = None  # type: ignore[assignment]
+    prior_settled: list[tuple[int, str]] = ()  # type: ignore[assignment]
+    ambiguous: bool = False

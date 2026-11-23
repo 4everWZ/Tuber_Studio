@@ -17,7 +17,6 @@ def build_lifespan(runtime, comments, account, dynamics, messages, browsing, sto
             await dynamics.open()
             await messages.open()
             await browsing.open()
-            runtime.memory_organizer.start()
             runtime.tasks.start()
             yield
         finally:

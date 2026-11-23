@@ -320,4 +320,140 @@ describe("MemorySummaryDialog / PersonalizationPage", () => {
       ).toBe(true)
     );
   });
+
+  it("manages unified memories: filter by scope, add, inline edit, toggle active, and delete", async () => {
+    const user = userEvent.setup();
+    let store: Array<{
+      id: string;
+      character_id: string;
+      scope: "owner" | "public";
+      content: string;
+      active: boolean;
+      source: string;
+      tags: string[];
+    }> = [
+      {
+        id: "m-owner-1",
+        character_id: "whale",
+        scope: "owner",
+        content: "只和号主约定深夜复盘",
+        active: true,
+        source: "manual",
+        tags: [],
+      },
+      {
+        id: "m-public-1",
+        character_id: "whale",
+        scope: "public",
+        content: "公开评论区拒绝被叫大肥鱼",
+        active: true,
+        source: "manual",
+        tags: [],
+      },
+    ];
+    const calls: Array<{ url: string; method: string; body?: string }> = [];
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        const rawBody = typeof init?.body === "string" ? init.body : undefined;
+        calls.push({ url, method, body: rawBody });
+
+        if (url.includes("/api/v1/persona/daily-memory/preferences")) {
+          return Response.json({ enabled: true, statement: "", reference_chat_history: true });
+        }
+        const parsed = new URL(url, "http://localhost");
+        if (parsed.pathname === "/api/v1/persona/memories" && method === "GET") {
+          const scopeParam = parsed.searchParams.get("scope");
+          const filtered = scopeParam ? store.filter((item) => item.scope === scopeParam) : store;
+          return Response.json({ character_id: "whale", items: filtered });
+        }
+        if (parsed.pathname === "/api/v1/persona/memories" && method === "POST") {
+          const payload = JSON.parse(rawBody ?? "{}") as { content: string; scope: "owner" | "public" };
+          const created = {
+            id: "m-new-1",
+            character_id: "whale",
+            scope: payload.scope,
+            content: payload.content,
+            active: true,
+            source: "manual",
+            tags: [],
+          };
+          store = [created, ...store];
+          return Response.json(created, { status: 201 });
+        }
+        if (parsed.pathname.startsWith("/api/v1/persona/memories/") && method === "PATCH") {
+          const memId = parsed.pathname.split("/").pop() ?? "";
+          const payload = JSON.parse(rawBody ?? "{}") as { content?: string; active?: boolean };
+          let updated = store.find((item) => item.id === memId);
+          store = store.map((item) => {
+            if (item.id !== memId) return item;
+            updated = {
+              ...item,
+              ...(payload.content !== undefined ? { content: payload.content } : {}),
+              ...(payload.active !== undefined ? { active: payload.active } : {}),
+            };
+            return updated;
+          });
+          return Response.json(updated ?? {});
+        }
+        if (parsed.pathname.startsWith("/api/v1/persona/memories/") && method === "DELETE") {
+          const memId = parsed.pathname.split("/").pop() ?? "";
+          store = store.filter((item) => item.id !== memId);
+          return Response.json({ ok: true, id: memId });
+        }
+        return Response.json({});
+      })
+    );
+
+    render(
+      <AppSessionProvider value={makeSession()}>
+        <PersonalizationPage />
+      </AppSessionProvider>
+    );
+
+    await screen.findByText("只和号主约定深夜复盘");
+    expect(screen.getByText("公开评论区拒绝被叫大肥鱼")).toBeTruthy();
+
+    // Filter to public only
+    await user.click(screen.getByRole("tab", { name: "公开互动" }));
+    await waitFor(() => {
+      expect(screen.queryByText("只和号主约定深夜复盘")).toBeNull();
+    });
+    expect(screen.getByText("公开评论区拒绝被叫大肥鱼")).toBeTruthy();
+
+    // Switch back to all
+    await user.click(screen.getByRole("tab", { name: "全部" }));
+    await screen.findByText("只和号主约定深夜复盘");
+
+    // Add a new public memory
+    await user.selectOptions(screen.getByLabelText("新增记忆作用域"), "public");
+    await user.type(screen.getByLabelText("新增记忆内容"), "评论区遇到造谣直接拆穿");
+    await user.click(screen.getByRole("button", { name: "添加记忆" }));
+    await screen.findByText("评论区遇到造谣直接拆穿");
+
+    // Inline edit the newly added memory
+    const editButtons = screen.getAllByRole("button", { name: "编辑" });
+    await user.click(editButtons[0]!);
+    const editInput = screen.getByLabelText("编辑记忆内容");
+    await user.clear(editInput);
+    await user.type(editInput, "评论区遇到造谣冷静拆穿");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await screen.findByText("评论区遇到造谣冷静拆穿");
+
+    // Toggle active
+    const toggleButtons = screen.getAllByRole("button", { name: "已启用" });
+    await user.click(toggleButtons[0]!);
+    await screen.findByRole("button", { name: "已停用" });
+
+    // Delete memory
+    const deleteButtons = screen.getAllByRole("button", { name: "删除" });
+    await user.click(deleteButtons[0]!);
+    await waitFor(() => {
+      expect(screen.queryByText("评论区遇到造谣冷静拆穿")).toBeNull();
+    });
+    expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/api/v1/persona/memories/m-new-1"))).toBe(true);
+  });
 });

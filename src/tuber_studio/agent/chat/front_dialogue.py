@@ -74,8 +74,8 @@ async def _generate_plain_text(provider, messages, *, max_tokens, on_content=Non
     return generated.spoken_text.strip()
 
 
-def _thin_system_messages(char, request_id, user_text, *, notes=(), task_summaries=(), account_facts=None,
-                          temporary=False, history_enabled=True, clock_hint=""):
+def _thin_system_messages(char, request_id, user_text, *, notes=(), unified_memories=(), task_summaries=(),
+                          account_facts=None, temporary=False, history_enabled=True, clock_hint=""):
     event = {"event_id": "operator:" + request_id, "text": user_text, "sender_name": owner_address_label(char), "is_operator": True}
     role = build_messages(char, event, {}, "operator_chat", operating_account=account_facts)[:-2]
     instruction = (
@@ -89,6 +89,12 @@ def _thin_system_messages(char, request_id, user_text, *, notes=(), task_summari
     if clock_hint:
         instruction += clock_hint
     messages = [*role, {"role": "system", "content": instruction}]
+    if unified_memories:
+        messages.append({
+            "role": "system",
+            "content": "已保存的号主长期记忆（作为背景自然承接，不必逐字复述）：\n"
+            + "\n".join(f"- {item['content']}" for item in unified_memories),
+        })
     if notes:
         messages.append({
             "role": "system",
@@ -139,11 +145,17 @@ async def generate_chat_reply(context: ChatContext, char, account, request_id, d
         rendered_clock = workbench_fields(" ".join("{{" + field + "}}" for field in clock_fields), local)
         clock_hint = f"本轮查询的工坊日历值：{rendered_clock}。用角色口吻自然简短接一句，精确数值会在末尾附带。"
 
+    unified_memories = (
+        []
+        if data.temporary
+        else runtime.unified_memory.for_prompt("owner", character_id=char["id"], limit=15)
+    )
     prefix = _thin_system_messages(
         char,
         request_id,
         data.message,
         notes=notes,
+        unified_memories=unified_memories,
         task_summaries=task_summaries,
         account_facts=account_facts,
         temporary=data.temporary,

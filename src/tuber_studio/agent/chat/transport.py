@@ -417,6 +417,12 @@ class ChatTransport:
                                         "organized_memory": [mem.organized_reference(note) for note in offline_notes],
                                     }
                                     messages.insert(-1, {"role": "system", "content": "相关记忆资料：" + dump([note["anecdote"] for note in offline_notes])})
+                                unified = runtime.unified_memory.for_prompt("owner", character_id=char["id"], limit=15)
+                                if unified:
+                                    messages.insert(
+                                        -1,
+                                        {"role": "system", "content": "已记住的号主长期记忆：\n" + "\n".join(f"- {m['content']}" for m in unified)},
+                                    )
                                 reply_obj = await chat_model_provider(runtime).generate(messages, char, event["event_id"], source_text=data.message)
                             if history_policy != history_preference(runtime):
                                 raise HTTPException(409, "私聊历史设置已变化，请重新生成")
@@ -570,7 +576,6 @@ class ChatTransport:
             if not recorded:
                 with ctx.store.db as database:
                     persist_turn(database, result)
-            runtime.memory_organizer.schedule()
             return ctx.visible(result)
 
     async def clear(self):
