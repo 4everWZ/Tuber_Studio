@@ -165,6 +165,10 @@ async def run_pending(runtime, task, pending, context):
     goal = "\n".join([*task["plan"]["prior_goals"], task["goal"]])
     slots = asyncio.Semaphore(runtime.read_parallelism())
 
+    def _is_parallel(step):
+        tool = runtime.tools.get(step["tool"])
+        return bool(tool and tool.parallel_read and not tool.review)
+
     async def run(step):
         async with slots:
             if runtime.scope() != task["scope"] or step.get("due", 0) > time.time():
@@ -177,9 +181,20 @@ async def run_pending(runtime, task, pending, context):
             runtime._save(fresh, steps=[replacement if item["id"] == step["id"] else item for item in fresh["steps"]],
                           status="awaiting_approval" if status == "awaiting_approval" else "running")
 
-    async with asyncio.TaskGroup() as group:
+    if all(_is_parallel(step) for step in pending):
+        async with asyncio.TaskGroup() as group:
+            for step in pending:
+                group.create_task(run(step))
+    else:
         for step in pending:
-            group.create_task(run(step))
+            await run(step)
+            fresh = runtime.current(task["id"])
+            if (not fresh or runtime.scope() != task["scope"] or fresh["revision"] != task["revision"]
+                    or fresh["status"] == "awaiting_approval"):
+                return
+            saved_step = next((item for item in fresh["steps"] if item["id"] == step["id"]), None)
+            if saved_step and "result" not in saved_step:
+                break
     fresh = runtime.current(task["id"])
     if (not fresh or runtime.scope() != task["scope"] or fresh["revision"] != task["revision"]
             or fresh["status"] == "awaiting_approval"):
@@ -491,8 +506,6 @@ async def advance(runtime, task):
             steps.append(step | {"invalid_call": True, "result": {"error": "须在读取结束后单独提交一次完整候选或问题。"}})
             continue
         tool = allowed[call.name]
-        if len(calls) > 1 and (tool.review or not tool.parallel_read):
-            raise DelegationError("并行委派只允许独立读取。")
         try:
             arguments = tool.arguments.model_validate(call.arguments).model_dump(mode="json")
         except ValidationError as error:

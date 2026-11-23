@@ -10,6 +10,7 @@ import { ApiError, apiDelete, apiGet, apiPost } from "@/shared/api/client";
 import { streamAgentChat, subscribeAgentChatEvents } from "@/shared/api/sse";
 import { useAppSession } from "@/shared/hooks/useAppSession";
 import { useCharacterDisplay } from "@/shared/hooks/useCharacterDisplay";
+import { operationsStore } from "@/features/operations/operationsStore";
 import { errorMessage, safeMessage } from "@/shared/lib/errors";
 import {
   createRequestId,
@@ -623,6 +624,9 @@ export function useOperatorChatStream({
           } else if (scopeRef.current === null) {
             await refresh();
           }
+          if (result?.card?.type === "operation_control" || result?.task_delivery) {
+            void operationsStore.refreshStatus();
+          }
         }
       }
     },
@@ -741,6 +745,7 @@ export function useOperatorChatStream({
                 }
                 setTurns((prev) => upsertSingleTurn(prev, turn));
                 void refreshAttention();
+                void operationsStore.refreshStatus();
                 if (!pendingRef.current) {
                   void refresh();
                 }

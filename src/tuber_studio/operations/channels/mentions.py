@@ -27,14 +27,19 @@ MENTION_INSTRUCTION = (
 def mention_requests(value):
     if not isinstance(value, list):
         raise ValueError("提及须为列表")
+    normalized = []
     for item in value:
         if not isinstance(item, dict) or set(item) != {"label", "account"}:
             raise ValueError("提及须提供正文中的 @昵称和公开账号")
         label, account = item["label"], item["account"]
+        if isinstance(label, str):
+            stripped = label.strip()
+            label = f"@{stripped}" if stripped and not stripped.startswith("@") else stripped
         if not (isinstance(label, str) and 2 <= len(label) <= 101 and label.startswith("@")
                 and isinstance(account, str) and 1 <= len(account) <= 100):
             raise ValueError("提及须提供正文中的 @昵称和公开账号")
-    return value
+        normalized.append({"label": label, "account": account})
+    return normalized
 
 
 def _ranges(text, requests):
@@ -51,7 +56,7 @@ def _ranges(text, requests):
 async def bind_mentions(adapter, text, requests, participants=()):
     """Resolve explicit selections only. Keep unresolved targets on the draft."""
     bound, pending, checked = [], [], {}
-    mention_requests(requests)
+    requests = mention_requests(requests)
     if not isinstance(text, str):
         raise ValueError("正文须为字符串")
     try:

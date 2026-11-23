@@ -93,6 +93,19 @@ class OperationSends:
             (account, now - max(86400, min_interval), json.dumps(sorted(REACTION_CHANNELS))),
         )
 
+    @staticmethod
+    def _is_comment_head(item):
+        return item["channel"] == "comments" or (item["channel"] == "browsing" and not item["reaction"])
+
+    def comments_cooldown_until(self, account):
+        if not account:
+            return 0.0
+        value = self.store.get(f"operation_comments_resume:{account}", 0)
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
     def direct_reserve_block(
         self, account, *, pending_count=0, retry_seconds=60, now=None, writes=None,
     ):
@@ -193,6 +206,8 @@ class OperationSends:
                 blocks.append(SendLimitReached("已有待发动态，暂不拟稿", retry))
             if channel_attempts and (due := channel_attempts[0]["started_at"] + min_interval) > now:
                 blocks.append(SendLimitReached("尚未达到动态最小发布间隔", due))
+        if channel == "comments" and (comments_due := self.comments_cooldown_until(account)) > now:
+            blocks.append(SendLimitReached("平台评论发送上限冷却中，暂缓评论拟稿", comments_due))
         cooldown = max(policy["recipient_cooldown_seconds"], limits.get("recipient_cooldown_seconds", 0))
         if recipient and cooldown:
             if any(str(item["recipient"]) == recipient for item in pending):
@@ -325,9 +340,15 @@ class OperationSends:
                 scope = self.scope()
                 now = time.time()
                 reaction_due = self.store.get(f"operation_reactions_resume:{scope[0]}", 0)
+                comments_due = self.comments_cooldown_until(scope[0])
                 # Keep background FIFO and preserve order within each direct
                 # channel. An image wait leaves the sender free for other heads.
-                heads = [head for head in self.ready_heads(scope, now) if not head["reaction"] or reaction_due <= now]
+                heads = [
+                    head
+                    for head in self.ready_heads(scope, now)
+                    if (not head["reaction"] or reaction_due <= now)
+                    and (not self._is_comment_head(head) or comments_due <= now)
+                ]
                 reserve_block = self.direct_reserve_block(scope[0], retry_seconds=60, now=now)
                 eligible_heads = []
                 for head in heads:
@@ -352,9 +373,16 @@ class OperationSends:
                             except BilibiliAccountExpired as error:
                                 self._defer(item, error, now + 60, "login")
                             except PlatformRejected as error:
-                                if item["reaction"] and error.wait_for == "rate_limit":
-                                    self.store.set(f"operation_reactions_resume:{scope[0]}", now + 60)
-                                if item["approval"] and error.wait_for:
+                                if error.wait_for == "rate_limit":
+                                    cooldown = 900 if getattr(error, "code", None) == 12014 else 60
+                                    due = now + cooldown
+                                    if item["reaction"]:
+                                        due = now + 60
+                                        self.store.set(f"operation_reactions_resume:{scope[0]}", due)
+                                    elif self._is_comment_head(item):
+                                        self.store.set(f"operation_comments_resume:{scope[0]}", due)
+                                    self._defer(item, error, due, "rate_limit" if item["approval"] else "wait")
+                                elif item["approval"] and error.wait_for:
                                     self._defer(item, error, now + 60, error.wait_for)
                                 elif item["approval"]:
                                     self._defer(item, error, now, "review")
@@ -388,6 +416,8 @@ class OperationSends:
                     delay = max(0.05, next_item["wake_at"] - time.time())
                 if reaction_due > now:
                     delay = min(delay, reaction_due - now) if delay is not None else reaction_due - now
+                if comments_due > now:
+                    delay = min(delay, comments_due - now) if delay is not None else comments_due - now
                 if heads:
                     delay = min(0.5, delay) if delay is not None else 0.5
             try:

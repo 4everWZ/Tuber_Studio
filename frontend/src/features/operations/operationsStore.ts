@@ -103,6 +103,57 @@ class OperationsStoreImpl {
     return true;
   }
 
+  applyLiveStatus(
+    automation:
+      | {
+          state?: string;
+          enabled?: boolean;
+          emergency?: boolean;
+          epoch?: number;
+          inbox_enabled?: boolean;
+          discovery_enabled?: boolean;
+          comment_cooldown_until?: number | null;
+        }
+      | null
+      | undefined
+  ): void {
+    if (!automation) return;
+    const prev = this.state.status;
+    if (!prev) {
+      void this.refreshStatus();
+      return;
+    }
+    const prevPolicy = prev.policy || {};
+    const changed =
+      prev.state !== automation.state ||
+      Boolean(prevPolicy.enabled) !== Boolean(automation.enabled) ||
+      Boolean(prevPolicy.emergency) !== Boolean(automation.emergency) ||
+      (automation.epoch != null && prevPolicy.epoch !== automation.epoch) ||
+      Boolean(prev.inbox?.enabled) !== Boolean(automation.inbox_enabled) ||
+      Boolean(prev.discovery?.enabled) !== Boolean(automation.discovery_enabled) ||
+      (prev.comment_cooldown_until ?? null) !== (automation.comment_cooldown_until ?? null);
+    if (!changed) return;
+    const next: AutomationStatus = {
+      ...prev,
+      state: automation.state ?? prev.state,
+      comment_cooldown_until: automation.comment_cooldown_until ?? null,
+      policy: {
+        ...prevPolicy,
+        enabled: automation.enabled ?? prevPolicy.enabled,
+        emergency: automation.emergency ?? prevPolicy.emergency,
+        epoch: automation.epoch ?? prevPolicy.epoch,
+      },
+      inbox: prev.inbox ? { ...prev.inbox, enabled: automation.inbox_enabled } : prev.inbox,
+      discovery: prev.discovery
+        ? { ...prev.discovery, enabled: automation.discovery_enabled }
+        : prev.discovery,
+    };
+    this.update({ status: next });
+    if (automation.epoch != null && prevPolicy.epoch !== automation.epoch) {
+      void this.refreshStatus();
+    }
+  }
+
   async refreshStatus({ background = false }: { background?: boolean } = {}): Promise<AutomationStatus | null> {
     const now = Date.now();
     if (background && now - this.statusRequestedAt < 8000) {

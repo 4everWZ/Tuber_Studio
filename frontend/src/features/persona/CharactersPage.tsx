@@ -22,6 +22,7 @@ type OcTabId = "tab-oc-persona" | "tab-oc-style" | "tab-oc-assets" | "tab-oc-jso
 interface VisualFormState {
   name: string;
   displayName: string;
+  ownerAddress: string;
   aliases: string;
   selfDescription: string;
   speakingStyle: string;
@@ -40,6 +41,7 @@ interface VisualFormState {
 const EMPTY_VISUAL: VisualFormState = {
   name: "",
   displayName: "",
+  ownerAddress: "",
   aliases: "",
   selfDescription: "",
   speakingStyle: "",
@@ -69,6 +71,7 @@ const OC_TABS: ReadonlyArray<{
 const FIELD_ID_BY_SERVER_KEY: Record<string, string> = {
   name: "oc-name",
   display_name: "oc-display-name",
+  owner_address: "oc-owner-address",
   bilibili_owner: "oc-bilibili-owner",
   aliases: "oc-aliases",
   self_description: "oc-self-description",
@@ -111,6 +114,7 @@ function visualFromCard(card: CharacterCard): VisualFormState {
   return {
     name: card.name || "",
     displayName: card.display_name || "",
+    ownerAddress: card.owner_address || "",
     aliases: Array.isArray(card.aliases) ? card.aliases.join("、") : "",
     selfDescription: card.self_description || "",
     speakingStyle: card.speaking_style || "",
@@ -152,6 +156,12 @@ function applyVisualFieldToCard(
     case "displayName":
       next.display_name = value.trim();
       break;
+    case "ownerAddress": {
+      const trimmed = value.trim();
+      if (trimmed) next.owner_address = trimmed;
+      else delete next.owner_address;
+      break;
+    }
     case "aliases":
       next.aliases = value
         .split(/[、，,]/)
@@ -1090,6 +1100,18 @@ export function CharactersPage() {
             <p className="hint" id="oc-display-help">
               用于对话、通话和直播。留空显示角色 ID。
             </p>
+            <label>
+              对你的称呼
+              <input
+                id="oc-owner-address"
+                maxLength={40}
+                placeholder="默认使用绑定 B 站号主昵称"
+                disabled={!character}
+                aria-invalid={invalidFieldId === "oc-owner-address" ? "true" : undefined}
+                value={visual.ownerAddress}
+                onChange={(event) => handleVisualInput("ownerAddress", event.target.value)}
+              />
+            </label>
             <label>
               常用称呼
               <input

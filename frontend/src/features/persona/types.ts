@@ -25,6 +25,7 @@ export interface CharacterCard {
   id: string;
   name: string;
   display_name?: string;
+  owner_address?: string;
   aliases?: string[];
   self_description?: string;
   speaking_style?: string;

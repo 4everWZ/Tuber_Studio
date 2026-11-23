@@ -258,8 +258,8 @@ async def confirm_control(dispatcher, request_id, action, confirmation):
             return ctx.visible_turn(row)
 
         def check(expected):
-            if expected != ctx.control_binding(ctx.runtime.character):
-                raise HTTPException(409, "账号、角色或权限已经变化，请重新提出操作并确认。")
+            if expected.get("scope", [])[:3] != ctx.control_binding(ctx.runtime.character).get("scope", [])[:3]:
+                raise HTTPException(409, "账号或角色已切换，请重新操作。")
 
         check(result["binding"])
         if any(set(values[group]) - keys for group, keys in _POLICY_FIELDS.items()):
@@ -532,8 +532,27 @@ async def dispatch_action_or_control(dispatcher, intent, char, request_id, data,
             "reply_text": "已把这条视频排进优先观看队列。",
             "card": {"type": "video_browsing", "data": row | {"full_video": True, "selection": selection_dump}},
         }
+    if kind == "start_operations":
+        policy = control_policy(ctx.browsing)
+        settings_now = ctx.browsing.policy()
+        if not policy.get("enabled"):
+            if not settings_now.get("inbox_enabled") and not settings_now.get("discovery_enabled"):
+                await configure_browsing(ctx.browsing, {"inbox_enabled": True, "discovery_enabled": True})
+            try:
+                await set_browsing_enabled(ctx.browsing, True)
+            except ValueError as error:
+                return {
+                    "reply_text": f"暂未能开启自主运营：{error}",
+                    "binding": ctx.control_binding(char),
+                    "card": {"type": "operation_control", "data": {}},
+                }
+        return {
+            "reply_text": "自主运营已经开启，正在同步状态。",
+            "binding": ctx.control_binding(char),
+            "card": {"type": "operation_control", "data": {}},
+        }
     if kind in _CONTROL_ACTIONS:
-        message = "确认后开启直播会话。" if kind == "start_live" else "可以在这里确认权限、启动或停止自主运营。"
+        message = "确认后开启直播会话。" if kind == "start_live" else "可以在这里查看或调整自主运营权限。"
         return {
             "reply_text": message,
             "binding": ctx.control_binding(char),

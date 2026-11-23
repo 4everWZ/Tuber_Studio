@@ -28,7 +28,7 @@ class PlatformRejected(ValueError):
 def platform_recovery_condition(code):
     if code in {-101, -111}:
         return "login"
-    if code == -509:
+    if code in {-509, 12014}:
         return "rate_limit"
     return None
 
@@ -52,6 +52,11 @@ class UnknownPublication(PublishUncertain):
 
 
 def platform_rejection(payload, *, fallback="平台明确拒绝了本次提交"):
-    message = payload.get("message") or payload.get("msg") or fallback
-    message = message if isinstance(message, str) else fallback
-    return PlatformRejected(payload["code"], message, display_message=fallback)
+    code = payload["code"]
+    raw_message = payload.get("message") or payload.get("msg") or fallback
+    message = raw_message.strip() if isinstance(raw_message, str) and raw_message.strip() else fallback
+    if message != fallback:
+        display = f"平台拒绝（code {code}）：{message}"
+    else:
+        display = f"{fallback}（code {code}）"
+    return PlatformRejected(code, message, display_message=display)

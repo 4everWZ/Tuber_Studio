@@ -339,6 +339,30 @@ def register_browsing_routes(app, browsing, require_admin, *, messages=None) -> 
     async def automation_intents():
         return browsing.intents()
 
+    @app.post(prefix + "/intents/batch-reject", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
+    async def automation_intents_batch_reject(data: dict = Body(default={})):
+        if set(data) - {"ids", "errored_only"}:
+            raise ValueError("未知意图批量拒绝字段")
+        ids = data.get("ids")
+        errored_only = bool(data.get("errored_only"))
+        if ids is None:
+            if not errored_only:
+                raise ValueError("请指定要拒绝的意图 ID 或勾选 errored_only")
+            rows = browsing.store.all(
+                "SELECT id FROM browsing_intents WHERE status IN ('pending_review','approved') AND COALESCE(error,'')<>''"
+            )
+            ids = [row["id"] for row in rows]
+        elif not isinstance(ids, list) or any(not isinstance(item, str) or not item for item in ids):
+            raise ValueError("意图 ID 须为非空字符串列表")
+        results = []
+        for identity in dict.fromkeys(ids):
+            try:
+                browsing.review(identity, "reject")
+                results.append({"id": identity, "status": "rejected"})
+            except Exception as exc:
+                results.append({"id": identity, "status": "failed", "error": str(exc)})
+        return {"items": results}
+
     @app.post(prefix + "/intents/{identity}/review", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
     async def automation_intent_review(identity: str, data: dict = Body(...)):
         if set(data) - {"action", "text", "image_ref", "updated_at", "expected_image", "mentions"}:

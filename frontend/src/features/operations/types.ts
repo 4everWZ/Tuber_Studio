@@ -250,6 +250,7 @@ export interface AutomationStatus extends OperationCapabilityStatus {
     [key: string]: unknown;
   } | null;
   send_error?: string | null;
+  comment_cooldown_until?: number | null;
   automatic_sending_ready?: boolean;
   discovery?: DiscoveryStatus | null;
   inbox?: InboxPipelineStatus | null;

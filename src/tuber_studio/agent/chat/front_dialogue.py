@@ -9,7 +9,7 @@ import httpx
 from fastapi import HTTPException
 
 from ...core.errors import ContextWindowExceeded
-from ...core.identity import operating_account_facts, without_model_identity
+from ...core.identity import operating_account_facts, owner_address_label, without_model_identity
 from ...core.store import dump
 from ...persona.context.message_builder import build_messages
 from ..tasks.history import build_shared_task_summary as build_shared_task_summary
@@ -76,7 +76,7 @@ async def _generate_plain_text(provider, messages, *, max_tokens, on_content=Non
 
 def _thin_system_messages(char, request_id, user_text, *, notes=(), task_summaries=(), account_facts=None,
                           temporary=False, history_enabled=True, clock_hint=""):
-    event = {"event_id": "operator:" + request_id, "text": user_text, "sender_name": "号主", "is_operator": True}
+    event = {"event_id": "operator:" + request_id, "text": user_text, "sender_name": owner_address_label(char), "is_operator": True}
     role = build_messages(char, event, {}, "operator_chat", operating_account=account_facts)[:-2]
     instruction = (
         f"你是{char['name']}。只负责自然接话与角色语气陪伴，直接用第一人称纯文字回复（禁止输出 JSON 或内部标签）。"

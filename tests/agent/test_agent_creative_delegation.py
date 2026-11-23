@@ -457,8 +457,8 @@ async def test_native_admission_is_not_an_eight_step_plan(runtime, settings, sto
     await tasks._advance(tasks.current(identity))
     await tasks._advance(tasks.current(identity))
     task = tasks.current(identity)
-    if mode == "many":
-        assert task["status"] == "queued" and len(task["steps"]) == 9
+    if mode in {"many", "mixed"}:
+        assert task["status"] == "queued" and len(task["steps"]) == (10 if mode == "mixed" else 9)
     else:
         assert task["steps"] == []
         if mode == "busy":
@@ -565,3 +565,29 @@ async def test_front_chat_and_background_responses_use_distinct_http_contracts(r
         assert front_requests == ["/v1/chat/prompt_tokens", "/v1/chat/completions"]
     finally:
         await provider.close()
+
+
+async def test_non_parallel_read_multi_step_batch_runs_sequentially_in_order(runtime, settings, store, monkeypatch):
+    def model(payload):
+        outputs = [json.loads(item["output"]) for item in payload["input"] if item.get("type") == "function_call_output"]
+        if not outputs:
+            return [call("live_status", {}, "read-first"), call("live_handoff", {"text": "稍后播这句"}, "write-second")]
+        return [call("submit_materials", {"items": [], "gaps": ["已完成顺序执行"]}, "done")]
+
+    from tuber_studio.live.facade import LiveFacade
+
+    gateway(settings, monkeypatch, model)
+    monkeypatch.setitem(runtime.settings.data["features"], "live_enabled", True)
+    monkeypatch.setattr(LiveFacade, "can_accept_handoff", lambda self: (True, "live-session-1"))
+    tasks = task_tools.create_task_runtime(runtime, store, None)
+    identity = str(uuid4())
+    tasks.create(identity, "先看直播状态再安排这句台词")
+    await tasks._advance(tasks.current(identity))
+    await tasks._advance(tasks.current(identity))
+    queued = tasks.current(identity)
+    assert queued["status"] == "queued" and [step["tool"] for step in queued["steps"]] == ["live_status", "live_handoff"]
+    await tasks._advance(queued)
+    paused = tasks.current(identity)
+    assert paused["status"] == "awaiting_approval"
+    assert paused["steps"][0].get("result") is not None
+    assert paused["steps"][1].get("result") is None

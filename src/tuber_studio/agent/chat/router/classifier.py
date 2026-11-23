@@ -34,8 +34,6 @@ async def route_chat_turn(context: ChatContext, char, account, request_id, data,
                           history=(), report=None, generation_slot=None, model_caller=None) -> ChatIntent:
     """Determine what the user turn means using the background router or offline fallback."""
     runtime = context.runtime
-    if workbench_tools.requests_owner_control(data.message):
-        return ChatIntent(action="clarify", topic=workbench_tools.OWNER_CONTROL_REPLY)
     cards = list({c["id"]: c for c in [*task_context.get("recent_task_cards", []), *task_context.get("history_task_cards", [])]}.values())
     chat_with_cards = (
         data.intent is not None

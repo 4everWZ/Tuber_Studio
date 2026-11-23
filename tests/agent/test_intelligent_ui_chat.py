@@ -916,15 +916,16 @@ def test_operations_card_refreshes_permissions_and_confirmation(settings, monkey
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", model)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         path = "/api/v1/agent/chat"
-        command = {"request_id": str(uuid4()), "message": "启动自主运营", "intent": {"action": "start_operations"}}
-        control = client.post(path, json=command).json()["card"]
+        control_turn = {"request_id": str(uuid4()), "message": "调整自主运营设置", "intent": {"action": "operation_control"}}
+        control = client.post(path, json=control_turn).json()["card"]
         assert control["type"] == "operation_control" and control["data"]["policy"]["enabled"] is False
         updated = client.put("/api/v1/operations/automation/settings", json={"reply_enabled": True}).json()
-        current = client.get(path + "/turns/" + command["request_id"]).json()["card"]["data"]
+        current = client.get(path + "/turns/" + control_turn["request_id"]).json()["card"]["data"]
         assert current["permissions"] == updated["permissions"] and current["permissions"]["replies"] == "review"
-        assert client.post(path + f"/turns/{command['request_id']}/confirm/start", json={}).status_code == 409
-        assert client.post(path + f"/turns/{command['request_id']}/refresh-confirmation").status_code == 200
-        assert client.post(path + f"/turns/{command['request_id']}/confirm/save", json={}).status_code == 200
+        assert client.post(path + f"/turns/{control_turn['request_id']}/confirm/save", json={}).status_code == 200
+        assert client.post(path + f"/turns/{control_turn['request_id']}/refresh-confirmation").status_code == 200
+        started = client.post(path, json={"request_id": str(uuid4()), "message": "启动自主运营", "intent": {"action": "start_operations"}}).json()
+        assert started["card"]["type"] == "operation_control" and started["card"]["data"]["policy"]["enabled"] is True
 
 
 def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, monkeypatch):

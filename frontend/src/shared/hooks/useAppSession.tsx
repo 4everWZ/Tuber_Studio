@@ -37,6 +37,16 @@ export interface SystemStatus {
   deployment?: Record<string, unknown> | null;
   playback?: Record<string, unknown> | null;
   operations_waiting?: boolean;
+  automation?: {
+    state?: string;
+    enabled?: boolean;
+    emergency?: boolean;
+    epoch?: number;
+    inbox_enabled?: boolean;
+    discovery_enabled?: boolean;
+    comment_cooldown_until?: number | null;
+    active_agent_tasks?: number;
+  } | null;
   [key: string]: unknown;
 }
 

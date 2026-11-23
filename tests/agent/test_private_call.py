@@ -157,7 +157,8 @@ def test_ticket_instructions_follow_current_character_owner(settings, monkeypatc
             assert reference.headers["cache-control"] == "no-store"
             assert "ref_audio" not in ticket["voice"]
             participants = json.loads(instructions.split("私聊参与者：", 1)[1].splitlines()[0])
-            assert participants == {"当前交谈者": "工坊号主", "角色": runtime.character["name"], "bilibili_owner": owner,
+            expected_caller = owner["name"] if owner else "你"
+            assert participants == {"当前交谈者": expected_caller, "角色": runtime.character["name"], "bilibili_owner": owner,
                                     "operating_account": {"state": "not_configured"}}
             if owner is None:
                 assert "示例号主" not in instructions

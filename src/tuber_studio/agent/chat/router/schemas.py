@@ -287,7 +287,7 @@ def route_tools(runtime, *, cards=(), objects=(), candidates=(), read_only=False
         menu.append(
             tool(
                 "direct_action",
-                "单轮立即修改工坊设置或执行控制（仅当明确要求改变设置、切换宠物表情、保存/忘记记忆、排队看完整视频或抽帧、暂停/恢复任务或停止时使用；纯查询或假设禁止选此项）。",
+                "单轮立即修改工坊设置或执行控制（仅当明确要求开启自主运营 start_operations、改变设置、切换宠物表情、保存/忘记记忆、排队看完整视频或抽帧、暂停/恢复任务或停止 stop 时使用；纯查询或假设禁止选此项）。",
                 with_clarification(direct_props),
                 required=("action",),
             )

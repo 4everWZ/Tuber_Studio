@@ -99,11 +99,14 @@ class Comments(CommentsRepositoryMixin, CommentsScannerMixin, CommentsDrafterMix
             raise ValueError("图片变更须保存为待审草稿")
         if action not in {"approve", "reject", "edit"}:
             raise ValueError("未知审核动作")
+        supplied_text = text is not None
         text = text if text is not None else row["text"]
         if action == "approve":
             text = validate_comment_body(text, recipient_name=row["display_name"] or "")
-        else:
+        elif action != "reject" or supplied_text:
             text = validate_operation_text(text, label="回复")
+        elif not isinstance(text, str):
+            text = ""
         audit = draft_mentions(row)
         if selection is not None:
             audit.update(selection)

@@ -192,7 +192,7 @@ async def test_background_vision_limits_thinking_and_distinguishes_request_timeo
         routes.append(name)
         assert body["chat_template_kwargs"]["enable_thinking"] is True
         assert body["thinking_token_budget"] == 128
-        assert body.get("max_output_tokens", body.get("max_tokens")) == 2048
+        assert body.get("max_output_tokens", body.get("max_tokens")) == 4096
         if stalled:
             raise httpx.ReadTimeout("upstream wait", request=request)
         if name == "responses":
@@ -767,7 +767,7 @@ async def test_public_configuration_controls_outbound_thinking_timeout_and_budge
 def test_vision_defaults_remain_compatible_and_explicit_bounds_are_validated():
     defaults = VideoVisionConfig(model="visual")
     assert defaults.timeout_seconds == 60 and defaults.enable_thinking is None
-    assert defaults.max_output_tokens == 2048
+    assert defaults.max_output_tokens == 4096
     assert VideoVisionConfig(model="visual", timeout_seconds=600).timeout_seconds == 600
     assert VideoVisionConfig(model="visual", max_frames=24).max_frames == 24
     for patch in ({"timeout_seconds": 601}, {"timeout_seconds": 0}, {"enable_thinking": "on"},

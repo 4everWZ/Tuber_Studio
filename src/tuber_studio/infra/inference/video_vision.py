@@ -149,7 +149,7 @@ class VideoVisionConfig(StrictModel):
     max_frames: int = Field(default=5, ge=1, le=24, strict=True)
     max_pixels: int = Field(default=1024 * 1024, ge=1, le=4096 * 4096, strict=True)
     max_bytes: int = Field(default=1024 * 1024, ge=1, le=4 * 1024 * 1024, strict=True)
-    max_output_tokens: int = Field(default=2048, ge=256, le=65536, strict=True)
+    max_output_tokens: int = Field(default=4096, ge=256, le=65536, strict=True)
     enable_thinking: bool | None = Field(default=None, strict=True)
     timeout_seconds: float = Field(default=60, gt=0, le=600)
     image_order: Literal["text_first", "image_first"] = "text_first"
@@ -470,7 +470,7 @@ class ApiVideoEvidenceProvider:
                 identity,
                 expected,
                 repository,
-                partial(self.api.generate_json, messages, caption_schema, max_tokens=budget),
+                partial(self.api.generate_json, messages, caption_schema, max_tokens=budget, use_remaining_window=True),
             )
             expected = props
             text = text.get("caption")
@@ -527,6 +527,7 @@ class ApiVideoEvidenceProvider:
             lambda: self.api.generate_json(
                 messages, self._schema(len(captions)),
                 max_tokens=self.config.max_output_tokens,
+                use_remaining_window=True,
             ),
         )
         stages.append(stage | {"stage": "assessment"})
@@ -567,7 +568,9 @@ class ApiVideoEvidenceProvider:
             identity,
             expected,
             repository,
-            lambda: self.api.generate_json(messages, schema, max_tokens=self.config.max_output_tokens),
+            lambda: self.api.generate_json(
+                messages, schema, max_tokens=self.config.max_output_tokens, use_remaining_window=True,
+            ),
         )
         texts = value.get("captions") if isinstance(value, dict) else None
         if (

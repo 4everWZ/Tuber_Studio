@@ -180,10 +180,14 @@ def register_operations_channel_routes(app, store, account, comments, browsing, 
         video_id: str | None = None,
         comment_ids: str | None = None,
         task_id: str | None = Query(None, min_length=1, max_length=100),
+        include_unpublishable: bool = False,
+        errored_only: bool = False,
     ):
         return queue_selection(
             store,
             can_write=can_write_comments(),
+            include_unpublishable=include_unpublishable,
+            errored_only=errored_only,
             video_id=video_id,
             comment_ids=comment_ids,
             task_id=task_id,
@@ -196,7 +200,7 @@ def register_operations_channel_routes(app, store, account, comments, browsing, 
         responses=ERROR_RESPONSES,
         tags=["operations"],
     )
-    async def comment_queue_batch_review(action: Literal["preview", "save", "queue"], data: dict = Body(...)):
+    async def comment_queue_batch_review(action: Literal["preview", "save", "queue", "reject"], data: dict = Body(...)):
         selection = prepare_queue_selection(store, data)
         async with comment_batch_lock:
             return await review_queue_selection(browsing, selection, action)
@@ -348,6 +352,32 @@ def register_operations_channel_routes(app, store, account, comments, browsing, 
         return await dynamics.evaluate(manual=True, topic=topic.strip())
 
     @app.post(
+        prefix + "/dynamics/posts/batch-reject", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"]
+    )
+    async def batch_reject_dynamics(data: dict = Body(default={})):
+        if set(data) - {"ids", "errored_only"}:
+            raise ValueError("未知动态批量拒绝字段")
+        ids = data.get("ids")
+        errored_only = bool(data.get("errored_only"))
+        if ids is None:
+            if not errored_only:
+                raise ValueError("请指定要拒绝的动态 ID 或勾选 errored_only")
+            rows = store.all(
+                "SELECT id FROM dynamic_posts WHERE status IN ('pending_review','approved') AND COALESCE(error,'')<>''"
+            )
+            ids = [row["id"] for row in rows]
+        elif not isinstance(ids, list) or any(isinstance(i, bool) or not isinstance(i, int) or i < 1 for i in ids):
+            raise ValueError("动态 ID 须为正整数列表")
+        results = []
+        for post_id in dict.fromkeys(ids):
+            try:
+                dynamics.review(post_id, "reject")
+                results.append({"id": post_id, "status": "rejected"})
+            except Exception as exc:
+                results.append({"id": post_id, "status": "failed", "error": public_error(exc)})
+        return {"items": results}
+
+    @app.post(
         prefix + "/dynamics/posts/{post_id}/review", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"]
     )
     async def review_dynamic(post_id: int, data: dict = Body(...)):
@@ -431,6 +461,32 @@ def register_operations_channel_routes(app, store, account, comments, browsing, 
     )
     async def prepare_message_reply(identity: int):
         return {"draft_id": messages.enqueue("message", identity)}
+
+    @app.post(
+        prefix + "/messages/drafts/batch-reject", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"]
+    )
+    async def batch_reject_messages(data: dict = Body(default={})):
+        if set(data) - {"ids", "errored_only"}:
+            raise ValueError("未知私信批量拒绝字段")
+        ids = data.get("ids")
+        errored_only = bool(data.get("errored_only"))
+        if ids is None:
+            if not errored_only:
+                raise ValueError("请指定要拒绝的私信草稿 ID 或勾选 errored_only")
+            rows = store.all(
+                "SELECT id FROM dm_drafts WHERE status IN ('pending_review','approved','copied') AND COALESCE(error,'')<>''"
+            )
+            ids = [row["id"] for row in rows]
+        elif not isinstance(ids, list) or any(isinstance(i, bool) or not isinstance(i, int) or i < 1 for i in ids):
+            raise ValueError("私信草稿 ID 须为正整数列表")
+        results = []
+        for draft_id in dict.fromkeys(ids):
+            try:
+                messages.review(draft_id, "reject")
+                results.append({"id": draft_id, "status": "rejected"})
+            except Exception as exc:
+                results.append({"id": draft_id, "status": "failed", "error": public_error(exc)})
+        return {"items": results}
 
     @app.post(
         prefix + "/messages/drafts/{identity}/review",

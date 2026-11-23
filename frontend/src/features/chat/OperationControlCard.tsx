@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, apiGet, apiPost } from "@/shared/api/client";
 import { errorMessage, safeMessage } from "@/shared/lib/errors";
+import { operationsStore } from "@/features/operations/operationsStore";
 import type { AutomationControlStatus } from "./types";
 
 interface PolicyFieldSpec {
@@ -216,6 +217,7 @@ export function OperationControlCard({
     } finally {
       onControlsPendingChange(false);
       onReflectAutomation(result || status);
+      void operationsStore.refreshStatus();
     }
   }
 

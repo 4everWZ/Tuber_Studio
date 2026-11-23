@@ -17,7 +17,7 @@ MENTION_REQUESTS = {
         "additionalProperties": False,
         "required": ["label", "account"],
         "properties": {
-            "label": {"type": "string", "minLength": 2, "maxLength": 101},
+            "label": {"type": "string", "minLength": 2, "maxLength": 101, "pattern": "^@"},
             "account": {"type": "string", "minLength": 1, "maxLength": 100},
         },
     },

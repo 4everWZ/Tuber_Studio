@@ -647,6 +647,8 @@ class FeedbackPublication:
                         return resolved
                 raise
             except PlatformRejected as error:
+                if error.wait_for == "rate_limit":
+                    raise
                 if not getattr(error, "write_token", None):
                     raise
                 attempt = self.operations.get_attempt(error.write_token)

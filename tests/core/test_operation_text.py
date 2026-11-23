@@ -242,3 +242,11 @@ async def test_high_explicit_budgets_are_visible_without_changing_live_budget(se
             await vision._runtime_properties()
     finally:
         await vision.close()
+
+
+def test_public_mention_request_normalizes_missing_at_prefix():
+    from tuber_studio.core.models import PublicMentionRequest
+
+    mention = PublicMentionRequest(label="大肥鱼", account="100")
+    assert mention.label == "@大肥鱼"
+    assert PublicMentionRequest(label="@小鲸鱼", account="100").label == "@小鲸鱼"

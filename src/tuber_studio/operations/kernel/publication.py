@@ -275,8 +275,14 @@ class IntentPublisher:
             raise ValueError("当前候选不能审核")
         if text is not None and not isinstance(text, str):
             raise ValueError("正文须为字符串")
+        supplied_text = text is not None
         text = row["text"] if text is None else text
-        text = "" if row["kind"] in {"comment_like", "dynamic_like"} else validate_operation_text(text)
+        if row["kind"] in {"comment_like", "dynamic_like"}:
+            text = ""
+        elif action != "reject" or supplied_text:
+            text = validate_operation_text(text)
+        elif not isinstance(text, str):
+            text = ""
         issue = None
         if row["kind"] in _COMMENT_KINDS:
             recipient_name = json.loads(row["target"]).get("recipient_name") or ""

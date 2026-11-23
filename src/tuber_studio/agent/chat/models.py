@@ -56,7 +56,7 @@ _EXPERIENCE_SOURCE = (
 )
 _EVENT_ACTIONS = {"event_details", "event_author", "event_reply", "remember_event", "full_video"}
 _TASK_REFERENCE_ACTIONS = {"live_handoff", "stop", "resume_video", "video_details", "inspect_video_frame"}
-_OWNER_UI_ONLY = {"operation_control", "start_operations"}
+_OWNER_UI_ONLY = set()
 _ROUTE_READ_ACTIONS = (
     "clock", "activity", "event_details", "event_author", "event_reply",
     "video_activity", "video_details", "live_status", "game_status", "live_history",
@@ -69,7 +69,7 @@ _ROUTE_READ_ACTIONS = (
 _ROUTE_CHANGE_ACTIONS = (
     "daily_settings", "pet_settings", "remember_event", "forget_memory",
     "live_preference", "live_handoff", "game_handoff", "dynamic", "edit_dynamic",
-    "browse", "full_video", "stop", "resume_video", "inspect_video_frame",
+    "browse", "full_video", "start_operations", "stop", "resume_video", "inspect_video_frame",
     "pause_task", "resume_task", "watch_goal", "start_live",
 )
 _ORDINAL_REFERENCE = re.compile(r"第\s*([一二三两123])\s*[件条个]")

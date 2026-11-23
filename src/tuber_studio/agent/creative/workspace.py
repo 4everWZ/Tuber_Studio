@@ -4,6 +4,8 @@ import json
 import math
 import time
 
+from ...core.identity import owner_address_label
+
 
 class CreativeWorkspace:
     def __init__(self, store):
@@ -92,10 +94,23 @@ class CreativeWorkspace:
             (identity,),
         )
 
+    def _owner_label(self, task):
+        scope = task.get("scope") or ()
+        if len(scope) >= 3:
+            try:
+                char = self.store.character(scope[1], scope[2])
+                if char:
+                    label = owner_address_label(char)
+                    if label != "你":
+                        return label
+            except Exception:
+                pass
+        return "操作者"
+
     def edition_view(self, task, edition):
         if edition is None:
             return None
-        name = "工坊号主"
+        name = self._owner_label(task)
         if edition["author"] == "agent":
             name = self.store.get(f"creative_author:{task['id']}:{edition['task_revision']}")
             if name is None:

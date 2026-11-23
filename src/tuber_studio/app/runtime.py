@@ -442,6 +442,22 @@ class Runtime:
         memory = psutil.virtual_memory()
         character = self.character
         voice_id = canonical_voice_id(character["voice_profile"])
+        automation = None
+        if browsing := getattr(self, "browsing", None):
+            control = browsing.operations.policy()
+            effective = browsing.effective()
+            account_id = browsing.account or control["account_id"]
+            cooldown_until = browsing.sends.comments_cooldown_until(account_id)
+            automation = {
+                "state": browsing.control_state(control),
+                "enabled": bool(control["enabled"]),
+                "emergency": bool(control["emergency"]),
+                "epoch": int(control["epoch"]),
+                "inbox_enabled": bool(control["enabled"] and effective.get("inbox_enabled", False)),
+                "discovery_enabled": bool(control["enabled"] and effective.get("discovery_enabled", False)),
+                "comment_cooldown_until": cooldown_until if cooldown_until > time.time() else None,
+                "active_agent_tasks": len(self.tasks.activity()) if getattr(self, "tasks", None) else 0,
+            }
         return {
             "state": self.live.state,
             "muted": self.live.muted,
@@ -475,6 +491,7 @@ class Runtime:
             },
             "playback": self.live.playback,
             "operations_waiting": self.operations_waiting(),
+            "automation": automation,
         }
 
     async def generate_reply(self, scope, character, event, relationship=None, mode="live", *, context=None):

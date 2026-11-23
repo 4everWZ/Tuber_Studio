@@ -168,3 +168,41 @@ def test_batch_publish_orders_one_floor_and_keeps_partial_outcomes_and_original_
         assert platform.sent[0][2] == items[2]["text"]
         assert client.post(endpoint, json={"items": items}).raise_for_status().json()["items"][1]["status"] == "publish_uncertain"
         assert len(platform.sent) == 2
+
+
+def test_batch_reject_clears_errored_and_unpublishable_rows_across_comments_and_intents(settings):
+    app = create_app(settings, Platform())
+    with TestClient(app) as client:
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
+        store = app.state.store
+        now = time.time()
+        app.state.comments.import_items("BV1d8pU6xEZX", [{
+            "comment_id": "bad-source-comment", "thread_id": "200", "created_at": str(now), "content": "一条待拒绝评论",
+        }])
+        source = store.one("SELECT id FROM comments WHERE comment_id='bad-source-comment'")
+        draft_id = store.execute(
+            "INSERT INTO drafts(comment_id,text,status,character_id,character_version,created_at,updated_at,error) "
+            "VALUES(?,'', 'pending_review','whale',1,?,?,?)",
+            (source["id"], now, now, "正文为空"),
+        ).lastrowid
+        queue = client.get("/api/v1/operations/comments/workbench").raise_for_status().json()
+        assert queue["items"][0]["can_publish"] is False
+        rejected = client.post(
+            "/api/v1/operations/comments/workbench/batch-review/reject",
+            json={"items": [{"id": str(draft_id), "channel": "comments", "updated_at": now}]},
+        ).raise_for_status().json()
+        assert rejected["items"][0]["status"] == "rejected"
+        assert store.one("SELECT status FROM drafts WHERE id=?", (draft_id,))["status"] == "rejected"
+
+        store.execute(
+            "INSERT INTO browsing_intents(id,account_id,character_id,character_version,source_key,kind,target,"
+            "reason,text,status,error,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("err-intent-1", "100", "whale", 1, "comment_reply:BV1d8pU6xEZX:err-1", "comment_reply",
+             json.dumps({"bvid": "BV1d8pU6xEZX"}), "测试", "失败文案", "pending_review", "12002 平台来源已删除", now, now),
+        )
+        batch_intents = client.post(
+            "/api/v1/operations/intents/batch-reject",
+            json={"errored_only": True},
+        ).raise_for_status().json()
+        assert batch_intents["items"] == [{"id": "err-intent-1", "status": "rejected"}]
+        assert store.one("SELECT status FROM browsing_intents WHERE id='err-intent-1'")["status"] == "rejected"

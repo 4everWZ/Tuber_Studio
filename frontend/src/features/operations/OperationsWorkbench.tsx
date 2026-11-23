@@ -191,6 +191,34 @@ export function OperationsWorkbench({
     }
   }
 
+  async function handleBatchRejectErroredIntents() {
+    if (intentPending) return;
+    const errored = intents.filter(
+      (i) => ["pending_review", "approved"].includes(i.status) && Boolean(i.error)
+    );
+    if (!errored.length) {
+      emitNotice("当前没有报错的待审点赞或收藏。");
+      return;
+    }
+    if (!window.confirm(`确认批量拒绝 ${errored.length} 条报错的待审操作？`)) return;
+    setIntentPending(true);
+    setIntentError("");
+    try {
+      const res = await apiPost<
+        "/api/v1/operations/intents/batch-reject",
+        { items: Array<{ id: string; status: string }> },
+        { errored_only: boolean }
+      >("/api/v1/operations/intents/batch-reject", { body: { errored_only: true } });
+      const count = res.items.filter((it) => it.status === "rejected").length;
+      emitNotice(`已批量拒绝 ${count} 条报错操作。`);
+      await onRefresh();
+    } catch (err) {
+      setIntentError(errorMessage(err));
+    } finally {
+      setIntentPending(false);
+    }
+  }
+
   return (
     <div id="op-workbench-mount">
       <div className={styles.workbenchNav}>
@@ -271,6 +299,18 @@ export function OperationsWorkbench({
                     {opt.label}
                   </button>
                 ))}
+                {intents.some(
+                  (i) => ["pending_review", "approved"].includes(i.status) && Boolean(i.error)
+                ) && (
+                  <button
+                    type="button"
+                    id="op-btn-reject-errored-intents"
+                    disabled={intentPending}
+                    onClick={() => void handleBatchRejectErroredIntents()}
+                  >
+                    清理报错项
+                  </button>
+                )}
               </>
             )}
 

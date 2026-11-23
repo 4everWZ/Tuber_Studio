@@ -10,7 +10,7 @@ import httpx
 from anyio import CancelScope
 from fastapi import HTTPException
 
-from ...core.identity import operating_account_facts
+from ...core.identity import operating_account_facts, owner_address_label
 from ...core.sse import encode_event
 from ...core.store import dump
 from ...persona.context.message_builder import build_messages
@@ -266,7 +266,7 @@ class ChatTransport:
                         )
                         reply = decision._reply_markdown.strip()
                 else:
-                    event = {"event_id": request_id, "text": data.message, "is_operator": True, "sender_name": "号主"}
+                    event = {"event_id": request_id, "text": data.message, "is_operator": True, "sender_name": owner_address_label(char)}
                     history = [item.model_dump() for item in data.window]
                     messages = build_messages(
                         char, event, {}, "operator_chat", history=history,
@@ -394,7 +394,7 @@ class ChatTransport:
                     }
                 elif not routing_active:
                     scope = ctx.scope(char)
-                    event = {"event_id": "operator:" + request_id, "text": data.message, "sender_name": "号主", "is_operator": True}
+                    event = {"event_id": "operator:" + request_id, "text": data.message, "sender_name": owner_address_label(char), "is_operator": True}
                     async with self._generation_slot():
                         try:
                             history_policy = history_preference(runtime)
@@ -562,7 +562,7 @@ class ChatTransport:
 
             ctx.check_scope(char, account, account_may_resolve=True)
             if used_front_dialogue:
-                event = {"event_id": "operator:" + request_id, "text": data.message, "sender_name": "号主", "is_operator": True}
+                event = {"event_id": "operator:" + request_id, "text": data.message, "sender_name": owner_address_label(char), "is_operator": True}
                 runtime.context.record(
                     ctx.scope(char), char, event, None if audit else result["reply_text"],
                     "operator_chat", memory_kind="operator_private",

@@ -245,7 +245,7 @@ export function CommentQueueSection({
   const [selectionLoading, setSelectionLoading] = useState(false);
   const [batchProgress, setBatchProgress] = useState("");
   const [batchResults, setBatchResults] = useState<{
-    mode: "save" | "queue" | "publish";
+    mode: "save" | "queue" | "publish" | "reject";
     items: BatchResultRow[];
     submitted: Map<string, QueueRow>;
   } | null>(null);
@@ -894,7 +894,88 @@ export function CommentQueueSection({
     }
   }
 
+  async function handleBatchReject(itemsOverride?: Array<{ channel: string; id: string; updated_at?: number }>, submittedOverride?: Map<string, QueueRow>) {
+    if (busy || selectionLoading || view !== "review") return;
+    const submitted = submittedOverride || new Map(checkedDrafts);
+    const items =
+      itemsOverride ||
+      [...submitted].map(([, row]) => ({
+        channel: row.channel,
+        id: row.id,
+        updated_at: row.updated_at,
+      }));
+    if (!items.length) return;
+    if (!window.confirm(`确认批量拒绝这 ${items.length} 条草稿？拒绝后将移入历史记录，不会发送到 B 站。`)) {
+      return;
+    }
+    setBusy(true);
+    versionRef.current += 1;
+    setBatchResults(null);
+    setBatchProgress(`正在批量拒绝 ${items.length} 条草稿…`);
+    try {
+      const result = await apiPost<
+        "/api/v1/operations/comments/workbench/batch-review/{action}",
+        { items: BatchResultRow[] },
+        { items: typeof items }
+      >("/api/v1/operations/comments/workbench/batch-review/{action}", {
+        pathParams: { action: "reject" },
+        body: { items },
+      });
+      setBatchResults({ mode: "reject", items: result.items, submitted });
+      const nextEdits = new Map(draftEdits);
+      const nextChecked = new Map(checkedDrafts);
+      for (const resRow of result.items) {
+        if (resRow.status === "rejected") {
+          const k = keyOf(resRow);
+          nextEdits.delete(k);
+          nextChecked.delete(k);
+        }
+      }
+      setDraftEdits(nextEdits);
+      setCheckedDrafts(nextChecked);
+      setAllSelected(false);
+      setBatchProgress("");
+    } catch (err) {
+      setBatchProgress(errorMessage(err));
+    } finally {
+      setBusy(false);
+      await refreshQueue(true);
+    }
+  }
+
+  async function handleRejectErrored() {
+    if (busy || selectionLoading || view !== "review") return;
+    setSelectionLoading(true);
+    setBatchProgress("正在扫描报错或来源失效的待审草稿…");
+    try {
+      const query: Record<string, string> = { errored_only: "true" };
+      if (generation && !generation.existing) query.task_id = generation.id;
+      if (generation?.commentIds?.length) query.comment_ids = generation.commentIds.join(",");
+      const data = await apiGet<
+        "/api/v1/operations/comments/workbench/selection",
+        { items: QueueRow[]; total: number }
+      >("/api/v1/operations/comments/workbench/selection", { query });
+      if (!data.items.length) {
+        setBatchProgress("当前筛选没有报错的待审草稿。");
+        return;
+      }
+      const submitted = new Map<string, QueueRow>(data.items.map((row) => [keyOf(row), row]));
+      const items = data.items.map((row) => ({
+        channel: row.channel,
+        id: row.id,
+        updated_at: row.updated_at,
+      }));
+      setSelectionLoading(false);
+      await handleBatchReject(items, submitted);
+    } catch (err) {
+      setBatchProgress(`扫描报错草稿失败：${errorMessage(err)}`);
+    } finally {
+      setSelectionLoading(false);
+    }
+  }
+
   const selectedRowsList = [...checkedDrafts.values()];
+  const hasUnpublishableChecked = selectedRowsList.some((row) => !canBatchPublish(row));
   const batchDelegateDisabled =
     busy ||
     selectionLoading ||
@@ -956,6 +1037,16 @@ export function CommentQueueSection({
         </fieldset>
 
         <div className="actions">
+          {view === "review" && (
+            <button
+              id="queue-reject-errored"
+              type="button"
+              disabled={busy || selectionLoading}
+              onClick={() => void handleRejectErrored()}
+            >
+              清理报错草稿
+            </button>
+          )}
           {generation && (
             <button
               id="queue-show-all"
@@ -1038,7 +1129,7 @@ export function CommentQueueSection({
                   <button
                     id="queue-batch-save"
                     type="button"
-                    disabled={busy || selectionLoading || checkedDrafts.size === 0}
+                    disabled={busy || selectionLoading || checkedDrafts.size === 0 || hasUnpublishableChecked}
                     onClick={() => void handleFinishBatchReview("save")}
                   >
                     保存审核结果
@@ -1047,7 +1138,7 @@ export function CommentQueueSection({
                     id="queue-batch-publish"
                     className="primary"
                     type="button"
-                    disabled={busy || selectionLoading || checkedDrafts.size === 0}
+                    disabled={busy || selectionLoading || checkedDrafts.size === 0 || hasUnpublishableChecked}
                     onClick={() => void handleFinishBatchReview("queue")}
                   >
                     审核并排队发送
@@ -1055,15 +1146,23 @@ export function CommentQueueSection({
                   <button
                     id="queue-batch-stream-publish"
                     type="button"
-                    disabled={busy || selectionLoading || checkedDrafts.size === 0}
+                    disabled={busy || selectionLoading || checkedDrafts.size === 0 || hasUnpublishableChecked}
                     onClick={() => void handleBatchStreamPublish()}
                   >
                     立即逐条发布
                   </button>
                   <button
+                    id="queue-batch-reject"
+                    type="button"
+                    disabled={busy || selectionLoading || checkedDrafts.size === 0}
+                    onClick={() => void handleBatchReject()}
+                  >
+                    批量拒绝所选
+                  </button>
+                  <button
                     id="queue-batch-delegate"
                     type="button"
-                    disabled={batchDelegateDisabled}
+                    disabled={batchDelegateDisabled || hasUnpublishableChecked}
                     onClick={() => void handleBatchDelegate()}
                   >
                     交办逐条送审
@@ -1086,7 +1185,9 @@ export function CommentQueueSection({
                           ? "approved"
                           : batchResults.mode === "publish"
                             ? "published"
-                            : "send_queued";
+                            : batchResults.mode === "reject"
+                              ? "rejected"
+                              : "send_queued";
                       const done = batchResults.items.filter(
                         (r) => r.status === targetStatus
                       ).length;
@@ -1095,7 +1196,9 @@ export function CommentQueueSection({
                           ? "已保存审核"
                           : batchResults.mode === "publish"
                             ? "已直接发布"
-                            : "已入发送队列";
+                            : batchResults.mode === "reject"
+                              ? "已批量拒绝"
+                              : "已入发送队列";
                       return `${verb} ${done} 条 · 另有 ${batchResults.items.length - done} 条待处理`;
                     })()}
                   </summary>
@@ -1178,9 +1281,7 @@ export function CommentQueueSection({
                             data-queue-key={id}
                             aria-label={`选择草稿：${(row.excerpt || row.video_id || "评论草稿").slice(0, 80)}`}
                             checked={isChecked}
-                            disabled={
-                              busy || selectionLoading || (!isChecked && !canBatchPublish(row))
-                            }
+                            disabled={busy || selectionLoading}
                             onChange={(e) => {
                               if (busy || selectionLoading) return;
                               setBatchMode(true);

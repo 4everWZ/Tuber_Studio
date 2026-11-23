@@ -546,8 +546,6 @@ class ChatContext:
         return ChatIntent(action=actions.pop(), position=_ORDINALS[ordinal[1]] if ordinal else None)
 
     def bound_intent(self, data, char, context):
-        if workbench_tools.requests_owner_control(data.message):
-            return ChatIntent(action="clarify", topic=workbench_tools.OWNER_CONTROL_REPLY)
         if data.video_selection:
             return None
         message = data.message

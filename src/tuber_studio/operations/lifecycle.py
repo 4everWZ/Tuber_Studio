@@ -218,6 +218,11 @@ def status(svc):
         "active_round": rounds[0] if rounds else None,
         "active_rounds": rounds,
         "send_error": svc.operations.last_send_error,
+        "comment_cooldown_until": (
+            due
+            if (due := svc.sends.comments_cooldown_until(svc.account or control["account_id"])) > time.time()
+            else None
+        ),
         "waiting_round": svc.waiting_round(),
         "discovery": svc.discovery.status() | {
             "enabled": svc.discovery.enabled,

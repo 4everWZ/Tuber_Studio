@@ -95,8 +95,7 @@ def test_model_setting_catalog_is_an_explicit_projection(workbench):
     assert "pets_enabled" in catalog["pets"]["fields"]
     assert "cooldown_seconds" in catalog["music"]["fields"]
     actions = turn_router.direct_tool_actions()
-    assert {"workbench_capabilities", "pet_settings", "daily_settings", "forget_memory"} <= set(actions)
-    assert not {"operation_control", "start_operations"} & set(actions)
+    assert {"workbench_capabilities", "pet_settings", "daily_settings", "forget_memory", "start_operations", "operation_control"} <= set(actions)
     assert "provider_credentials" not in json.dumps(catalog)
 
 

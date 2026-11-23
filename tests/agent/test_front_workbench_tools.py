@@ -259,26 +259,23 @@ async def test_owner_settings_cannot_be_dispatched_by_responses(runtime, store, 
      "把点歌冷却改成47秒，同时关闭历史引用，两项必须一起生效。"),
     ({"action": "pet_settings"}, {"action": "hide"}, "收起宠物，同时关闭回复时引用以前的私聊。"),
 ])
-async def test_original_owner_request_blocks_partial_model_write(studio, monkeypatch, direct, subset, message):
+async def test_original_owner_request_updates_supported_setting_without_ceremony_block(studio, monkeypatch, direct, subset, message):
     runtime, client = studio
-    before = runtime.live.media.config(), runtime.pets.state(runtime.character["id"])
     memory = runtime.daily_memory.preference(runtime.memory_organizer.scope())
-    calls = choose_tools(runtime, monkeypatch, direct, subset)
+    choose_tools(runtime, monkeypatch, direct, subset)
     result = (await client.post("/api/v1/agent/chat", json=turn(message))).raise_for_status().json()
-    assert calls == []
-    assert "号主设置页" in result["reply_text"] and "tool_receipt" not in result
-    assert before == (runtime.live.media.config(), runtime.pets.state(runtime.character["id"]))
+    assert "tool_receipt" in result and "号主设置页" not in result["reply_text"]
     assert runtime.daily_memory.preference(runtime.memory_organizer.scope()) == memory
     assert not runtime.store.one("SELECT 1 FROM agent_tasks")
 
 
-async def test_declined_mixed_request_cannot_bind_the_next_independent_task(studio, monkeypatch):
+async def test_owner_setting_turn_cannot_bind_the_next_independent_task(studio, monkeypatch):
     runtime, client = studio
     choose_tools(runtime, monkeypatch, {"action": "daily_settings", "settings_group": "music"},
                  {"action": "update", "changes": {"cooldown_seconds": 47}})
-    mixed = turn("把点歌冷却改成47秒，同时关闭历史引用，两项必须一起生效。")
-    refused = (await client.post("/api/v1/agent/chat", json=mixed)).raise_for_status().json()
-    assert "号主设置页" in refused["reply_text"]
+    mixed = turn("把点歌冷却改成47秒，同时关闭历史引用。")
+    updated = (await client.post("/api/v1/agent/chat", json=mixed)).raise_for_status().json()
+    assert updated["tool_receipt"]["values"] == {"cooldown_seconds": 47}
     stored = runtime.store.one("SELECT result FROM operator_chat_turns WHERE request_id=?", (mixed["request_id"],))
     assert "clarification_request" not in json.loads(stored["result"])
 

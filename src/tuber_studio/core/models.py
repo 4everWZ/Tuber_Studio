@@ -71,6 +71,16 @@ class PublicMentionRequest(StrictModel):
     label: str = Field(min_length=2, max_length=101, pattern=r"^@")
     account: str = Field(min_length=1, max_length=100)
 
+    @field_validator("label", mode="before")
+    @classmethod
+    def normalize_label(cls, value):
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped and not stripped.startswith("@"):
+                return f"@{stripped}"
+            return stripped
+        return value
+
 
 ReflectionDirection = Literal["gratitude", "touched", "amused", "curious", "inspired", "reflective"]
 
@@ -149,6 +159,7 @@ class Character(BaseModel):
     id: str = Field(pattern=r"^[a-z0-9_-]{1,50}$")
     name: str = Field(min_length=1, max_length=60)
     display_name: str | None = Field(default=None, max_length=60, exclude_if=lambda value: value is None)
+    owner_address: str | None = Field(default=None, max_length=40, exclude_if=lambda value: not value)
     aliases: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]] | None = Field(
         default=None, max_length=12, exclude_if=lambda value: value is None
     )
@@ -187,6 +198,16 @@ class Character(BaseModel):
         value = value.strip()
         if len(value.splitlines()) > 1:
             raise ValueError("前台显示名须为一行")
+        return value
+
+    @field_validator("owner_address", mode="before")
+    @classmethod
+    def single_line_owner_address(cls, value):
+        if isinstance(value, str):
+            value = value.strip()
+            if len(value.splitlines()) > 1:
+                raise ValueError("对用户的称呼须为一行")
+            return value or None
         return value
 
     @field_validator("self_description", "speaking_style", mode="before")

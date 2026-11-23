@@ -28,7 +28,7 @@ from ....operations.facade import (
 from ...tasks.runtime import ReviewBlocked, Tool, ToolWait
 
 PUBLICATION_TOOL = "publish_dynamic_batch"
-CONFIRM_SECONDS = 15 * 60
+CONFIRM_SECONDS = 24 * 3600
 
 
 class ExistingDraft(StrictModel):
@@ -259,7 +259,6 @@ def register_dynamic_publication(tasks, dynamics):
                     character = dynamic_character(dynamics)
                     policy = control_policy(dynamics)
                     if (request.scope != tasks.scope() or policy["emergency"]
-                            or policy["epoch"] != item["policy_epoch"]
                             or fresh["attempted_at"] is not None or fresh.get("continuation")
                             or fresh["content"] != item["draft_text"]
                             or content_hash(fresh["sources"]) != item["source_version"]
@@ -394,7 +393,7 @@ def register_dynamic_publication(tasks, dynamics):
                 def check(row, *, publishing=False):
                     bound(row)
                     policy = control_policy(dynamics)
-                    if (tasks.scope() != request.scope or policy["emergency"] or policy["epoch"] != approval["policy_epoch"]
+                    if (tasks.scope() != request.scope or policy["emergency"]
                             or dynamics.account.display_account_id() != approval["binding"]["account_id"]
                             or row.get("continuation")
                             or row["id"] != args.post_id or row["content"] != approval["draft_text"]
@@ -404,7 +403,10 @@ def register_dynamic_publication(tasks, dynamics):
                                 row["status"] != approval["status"] or row["updated_at"] != approval["revision"])):
                         raise ValueError("本次审批已失效")
 
-                if review(args) != approval:
+                def _comparable(item):
+                    return {key: value for key, value in item.items() if key != "policy_epoch"}
+
+                if _comparable(review(args)) != _comparable(approval):
                     return pending("草稿版本、账号、角色或公开来源已变化，原审批无效")
                 if str(await dynamics.account.account_id()) != approval["binding"]["account_id"]:
                     return pending("无法核验原账号")

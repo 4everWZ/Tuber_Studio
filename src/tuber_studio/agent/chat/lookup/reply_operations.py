@@ -143,7 +143,7 @@ class ReplyOperations:
         row = self.store.one("SELECT * FROM agent_reply_selections WHERE id=? AND scope=?",
                              (str(args.selection_id), dump(scope)))
         policy = control_policy(self.comments)
-        if not row or policy["emergency"] or row["policy_epoch"] != policy["epoch"]:
+        if not row or policy["emergency"]:
             raise ValueError("所选范围已失效")
         return scope, row["policy_epoch"], json.loads(row["items"])
 
@@ -164,7 +164,6 @@ class ReplyOperations:
     def current(self, approval):
         policy = control_policy(self.comments)
         return (self.tasks.identity.grant_current(approval["scope"]) and not policy["emergency"]
-                and policy["epoch"] == approval["epoch"]
                 and self.store.one("SELECT 1 FROM agent_reply_selections WHERE id=? AND scope=?",
                                    (approval["selection_id"], dump(approval["scope"]))))
 

@@ -124,7 +124,7 @@ def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, t
                    'manual' AS source, CASE WHEN d.status='private_handoff' THEN NULL ELSE c.video_id END AS video_id,
                    CASE WHEN d.status='private_handoff' THEN '' ELSE substr(c.content,1,180) END AS excerpt,
                    d.updated_at,d.comment_id,d.generation_task_id,c.platform,
-                   c.comment_id AS platform_comment_id, d.image_ref,d.account_id,d.character_id,d.character_version
+                   c.comment_id AS platform_comment_id, d.image_ref,d.account_id,d.character_id,d.character_version,d.error AS row_error
               FROM drafts d JOIN comments c ON c.id=d.comment_id
             UNION ALL
             SELECT 'browsing', i.id, i.status,
@@ -135,11 +135,11 @@ def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, t
                    CASE WHEN i.kind='private_handoff' OR i.status='private_handoff' THEN ''
                         ELSE substr(coalesce(json_extract(i.target,'$.source_text'),i.text),1,180) END,
                    i.updated_at,NULL,NULL,'bilibili',
-                   json_extract(i.target,'$.parent'),json_extract(i.target,'$.image_ref'),i.account_id,i.character_id,i.character_version
+                   json_extract(i.target,'$.parent'),json_extract(i.target,'$.image_ref'),i.account_id,i.character_id,i.character_version,i.error AS row_error
               FROM browsing_intents i WHERE i.kind IN (?,?,?)
               AND i.status NOT IN ('automatic_pending','automatic_skipped','archived')
             UNION ALL
-            SELECT 'jobs', id, status, 'manual', NULL, '评论生成任务', updated_at,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL FROM comment_tasks
+            SELECT 'jobs', id, status, 'manual', NULL, '评论生成任务', updated_at,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL FROM comment_tasks
         ), queue AS (
             SELECT o.channel,o.id,CASE WHEN o.status IN ('approved','pending_review') THEN
                    CASE WHEN q.blocked='review' THEN 'send_blocked' WHEN q.wake_at>unixepoch() THEN 'send_waiting'
@@ -147,7 +147,7 @@ def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, t
                         ELSE o.status END ELSE o.status END AS status,
                    o.source,o.video_id,o.excerpt,o.updated_at,o.comment_id,o.generation_task_id,o.platform,
                    o.platform_comment_id,o.image_ref,o.account_id,o.character_id,o.character_version,
-                   COALESCE(q.error,r.error) AS send_error,q.wake_at AS send_wake_at
+                   COALESCE(q.error,r.error,o.row_error) AS send_error,o.row_error,q.wake_at AS send_wake_at
             FROM originals o LEFT JOIN """ + sends + """ q ON q.channel=o.channel AND q.source_id=o.id
             LEFT JOIN """ + rejections + """ r ON r.channel=o.channel AND r.entity_id=o.id
         ), filtered AS (SELECT * FROM queue WHERE """
@@ -186,11 +186,18 @@ def list_queue(store, view, limit, offset, *, video_id=None, comment_ids=None, t
     return result
 
 
-def queue_selection(store, *, can_write, **scope):
+def queue_selection(store, *, can_write, include_unpublishable=False, errored_only=False, **scope):
     rows = list_queue(store, "review", -1, 0, can_write=can_write, **scope)["items"]
+    fields = ("channel", "id", "comment_id", "excerpt", "updated_at", "illustration", "can_publish", "send_error")
     items = [
-        {key: row[key] for key in ("channel", "id", "comment_id", "excerpt", "updated_at", "illustration") if key in row}
-        for row in rows if row["can_publish"]
+        {key: row[key] for key in fields if key in row}
+        for row in rows
+        if row["channel"] != "jobs"
+        and (
+            bool(row.get("send_error"))
+            if errored_only
+            else (include_unpublishable or row["can_publish"])
+        )
     ]
     return {"items": items, "total": len(items)}
 
@@ -344,6 +351,18 @@ async def review_queue_selection(browsing, selection, action):
         result = {"channel": channel, "id": identity}
         results[index] = result
         try:
+            service = browsing.comments if channel == "comments" else browsing.publication
+            if action == "reject":
+                row = browsing._send_draft({"channel": channel, "source_id": identity})
+                if not row or (channel == "browsing" and row["kind"] not in {"top_level", "reply_public"}):
+                    raise ValueError("草稿不存在")
+                if row["status"] not in REVIEW_STATES:
+                    raise ValueError("草稿已处理，请刷新")
+                if "updated_at" in item and item["updated_at"] != row["updated_at"]:
+                    raise ValueError("草稿版本已变化，请刷新")
+                service.review(identity, "reject", updated_at=row["updated_at"])
+                result["status"] = "rejected"
+                continue
             row, ref = draft_for_review(browsing, item)
             if action != "save":
                 try:

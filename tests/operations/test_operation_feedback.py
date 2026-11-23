@@ -705,3 +705,70 @@ def test_video_only_generation_actions_remain_public_and_do_not_create_private_i
     assert public["original_output"] == value
     assert public.get("output_visibility") not in {"private", "unresolved"}
     assert not private_generation_views(runtime, "100", char)
+
+
+async def test_platform_rejection_12014_exposes_code_and_triggers_comment_cooldown_without_revision(
+    settings, store, runtime, monkeypatch
+):
+    from tuber_studio.core.errors import SendLimitReached, platform_rejection
+    from tuber_studio.operations.channels.direct_messages import DirectMessages
+    from tuber_studio.operations.channels.dynamics import Dynamics
+    from tuber_studio.operations.kernel.feedback import FeedbackPublication
+    from tuber_studio.operations.kernel.repository import BrowsingRepository
+    from tuber_studio.operations.kernel.sends import OperationSends
+
+    rejected = platform_rejection({"code": 12014, "message": "发送失败，已达到当前评论发送上限"})
+    assert rejected.code == 12014
+    assert rejected.wait_for == "rate_limit"
+    assert "12014" in str(rejected) and "发送上限" in str(rejected)
+
+    BrowsingRepository(store)
+    service, identity, posted, requests = await prepared_service(settings, store, runtime)
+    dm_service = DirectMessages(settings, store, runtime, service)
+    dyn_service = Dynamics(settings, store, runtime, service)
+    async def fail_on_rate_limit(item):
+        async def send(_ticket, _binding, _body_hash):
+            raise rejected
+
+        async def prepare():
+            pytest.fail("12014 rate_limit rejection must not enter revision preparation")
+
+        return await FeedbackPublication(runtime, store, service.operations).submit(
+            "comments",
+            item["source_id"],
+            prepare=prepare,
+            send=send,
+            apply_revision=lambda *_args, **_kwargs: None,
+        )
+
+    sends = OperationSends(
+        store,
+        service.operations,
+        lambda: ("100", runtime.character["id"], runtime.character["version"]),
+        fail_on_rate_limit,
+        waiting_for_image=lambda _head: False,
+    )
+    service.operations.configure(
+        {"enabled": True, "max_per_hour": 0, "max_per_day": 0, "recipient_cooldown_seconds": 0},
+        account_id="100",
+        character=runtime.character,
+    )
+    store.execute("UPDATE drafts SET status='approved',account_id='100' WHERE id=?", (identity,))
+    before = time.time()
+    sends.enqueue("comments", str(identity), approval="fixed-approval")
+    try:
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            if sends.comments_cooldown_until("100") > before + 800:
+                break
+            await __import__("asyncio").sleep(0.02)
+        assert sends.comments_cooldown_until("100") > before + 800
+        assert not requests and not posted
+        blocked = sends.preparation_block("100", "comments", {}, retry_seconds=60)
+        assert isinstance(blocked, SendLimitReached) and "冷却中" in str(blocked)
+    finally:
+        await sends.close()
+        await dyn_service.close()
+        await dm_service.close()
+        await service.close()
+        await service.account.close()

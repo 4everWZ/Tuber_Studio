@@ -10,6 +10,7 @@ import {
 import { characterDisplayStore } from "@/shared/hooks/useCharacterDisplay";
 import { hasAnyUnsavedChanges } from "@/shared/lib/dirtyRegistry";
 import { emitNotice, errorMessage, subscribeWorkspaceIssues } from "@/shared/lib/errors";
+import { operationsStore } from "@/features/operations/operationsStore";
 import styles from "@/shared/styles/workbench.module.css";
 import { ToastNotice } from "@/shared/ui/ToastNotice";
 import { LoginGate } from "./LoginGate";
@@ -151,6 +152,18 @@ export function AppShell({ renderRoute, queryClient: providedQueryClient }: AppS
     const client = new AdminWsClient({
       onStatus(next) {
         setStatus(next);
+        operationsStore.applyLiveStatus(next.automation);
+        if (next.automation) {
+          setAutomation((prev) => ({
+            ...(prev || {}),
+            state: next.automation?.state ?? prev?.state,
+            policy: {
+              ...((prev as { policy?: Record<string, unknown> } | null)?.policy || {}),
+              enabled: next.automation?.enabled,
+              emergency: next.automation?.emergency,
+            },
+          }));
+        }
       },
       onContextUpdated(context) {
         setStatus((prev) => (prev ? { ...prev, context } : prev));

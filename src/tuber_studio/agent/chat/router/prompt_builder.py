@@ -27,7 +27,7 @@ def _build_router_messages(char, data, packet, *, allow_identity_read=True):
             if allow_identity_read
             else "。"
         )
-        + "\n6. 仅明确要立即修改设置、换宠物表情（pet_settings）、排完整看视频或停止时才选 direct_action。\n"
+        + "\n6. 仅明确要立即开启自主运营（start_operations）、修改设置、换宠物表情（pet_settings）、排完整看视频或停止（stop）时才选 direct_action。\n"
         "7. 当 candidates 中存在多个同类型对象（如多条视频）且只说“那条/那个”未给出序号/标题/BV 时 -> clarify；若候选分别对应评论与回复且号主明确说“那条评论”，直接按对应 object_ref 调 recall_memory。\n"
         "8. 只针对最后一条 user JSON 中的 message 字段决策；历史对话与 clarification 仅为可选背景。若号主换了新话题（如问当前时间/日期/星期、闲聊、或问别的事），必须完全忽略 clarification，严禁填 clarification_id，也严禁重复上轮澄清问题；仅当 message 明确在回答 clarification.question 时才填 clarification_id。"
     )
