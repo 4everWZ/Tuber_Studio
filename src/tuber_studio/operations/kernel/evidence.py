@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from ...core.meter import BrowsingBudgetDeferred
 from ...core.validation import linked
+from ...infra.inference.omni_asr import AsrUnavailable, OmniAsrClient
 from ...infra.inference.providers import public_error
 from ...infra.inference.validation import validate_image
 from ...infra.inference.video_vision import VideoPartText
@@ -78,9 +79,18 @@ def storyboard_changes(parts, cid, start, end):
 
 
 class BrowsingEvidence:
-    def __init__(self, runtime, adapter, reader, visual=None):
+    def __init__(self, runtime, adapter, reader, visual=None, *, asr=None):
         self.runtime, self.store, self.adapter, self.reader = runtime, runtime.store, adapter, reader
         self.visual = visual or DisabledVideoEvidence()
+        if asr is not None:
+            self.asr = asr
+            self._owns_asr = False
+        elif getattr(runtime, "asr", None) is not None:
+            self.asr = runtime.asr
+            self._owns_asr = False
+        else:
+            self.asr = OmniAsrClient.from_settings(getattr(runtime, "settings", None))
+            self._owns_asr = self.asr is not None
         self.pending = {}
         self._waiters = {}
         self.closed = False
@@ -151,7 +161,9 @@ class BrowsingEvidence:
                     "frame_evidence",
                     "limitations",
                 )
-            } | ({"visual_text_version": part["visual_text_version"]} if not legacy and "visual_text_version" in part else {})
+            } | ({"visual_text_version": part["visual_text_version"]} if not legacy and "visual_text_version" in part else {}) | (
+                {"asr": True, "subtitle_source": part.get("subtitle_source")} if not legacy and part.get("asr") else {}
+            )
             for part in material["parts"]
         ]
         for part in stable["parts_evidence"]:
@@ -380,8 +392,18 @@ class BrowsingEvidence:
                 parts.append(await self.subtitle_part(metadata, part, config["languages"]))
             except (ValueError, TimeoutError) as error:
                 kind = getattr(error, "kind", "invalid")
-                missing.append({"cid": part["cid"], "reason": kind})
                 subtitle_error = subtitle_error or public_error(error)
+                if self.has_asr_provider() and hasattr(self.adapter, "video_stream_audio"):
+                    try:
+                        asr_result = await self.asr_part(metadata, part, config["languages"])
+                    except (AsrUnavailable, ValueError, TimeoutError, OSError) as asr_error:
+                        subtitle_error = f"{subtitle_error}；ASR回退：{public_error(asr_error)}"
+                        missing.append({"cid": part["cid"], "reason": kind})
+                    else:
+                        parts.append(asr_result)
+                        continue
+                else:
+                    missing.append({"cid": part["cid"], "reason": kind})
         sampling = config.get("frame_sampling", "baseline")
         material = {
             "metadata": metadata,
@@ -419,6 +441,53 @@ class BrowsingEvidence:
     async def prepare_light(self, video, config, *, task=None, deadline=None):
         """Share same-BV single-flight metadata/subtitle preparation without watch metering."""
         return await self.prepare(video, config, force=False, task=task, deadline=deadline, visual_source_ids=())
+
+    def has_asr_provider(self):
+        return self.asr is not None
+
+    async def asr_part(self, metadata, part, languages):
+        if not self.has_asr_provider():
+            raise AsrUnavailable("未配置语音转写服务")
+        audio_data = await self.reader(lambda: self.adapter.video_stream_audio(metadata, cid=part["cid"]))
+        preferred = next((lang.split("-", 1)[0] for lang in (languages or ()) if isinstance(lang, str) and lang), "zh")
+        if preferred == "ai":
+            preferred = "zh"
+        transcript = await self.asr.transcribe(
+            audio_data["audio"],
+            filename=audio_data.get("filename", "audio.mp3"),
+            mime_type=audio_data.get("mime_type", "audio/mpeg"),
+            language=preferred or "zh",
+        )
+        prefix = f"{part['cid']}:"
+        segments = [
+            {
+                "id": identity if (identity := str(seg["id"])).startswith(prefix) else prefix + identity,
+                "start": float(seg["start"]),
+                "end": float(seg["end"]),
+                "text": str(seg["text"]),
+            }
+            for seg in transcript["segments"]
+            if str(seg.get("text") or "").strip()
+        ]
+        if not segments:
+            raise AsrUnavailable("ASR 未产出行之有效的语音分段")
+        return {
+            "bvid": metadata["bvid"],
+            "cid": str(part["cid"]),
+            "track_id": "asr:whisper",
+            "language": transcript.get("language") or preferred or "zh",
+            "is_ai": True,
+            "asr": True,
+            "subtitle_source": "asr",
+            "segments": segments,
+            "coverage": {
+                "complete": not audio_data.get("truncated", False),
+                "start": segments[0]["start"],
+                "end": segments[-1]["end"],
+                "segment_count": len(segments),
+            },
+            "fetched_at": time.time(),
+        }
 
     async def subtitle_part(self, metadata, part, languages):
         evidence = await self.reader(self.adapter.subtitles, metadata["bvid"], part["cid"], languages)
@@ -981,3 +1050,5 @@ class BrowsingEvidence:
         self.closed = True
         await self.cancel_pending()
         await self.visual.close()
+        if getattr(self, "_owns_asr", False) and self.asr is not None and hasattr(self.asr, "close"):
+            await self.asr.close()

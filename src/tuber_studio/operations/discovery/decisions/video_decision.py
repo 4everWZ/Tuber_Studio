@@ -122,7 +122,9 @@ class VideoDecisionMixin:
                 decisions.extend(restore_stored_content_decisions(material, [stored]))
                 continue
             data, aliases = presentation.present(chunk)
-            data["allow_visual"] = can_watch and "subtitle" in data["source_kinds"]
+            data["allow_visual"] = can_watch and bool(
+                {"subtitle", "audio_transcript"} & set(data["source_kinds"])
+            )
             decision = await self._model(
                 row,
                 ContentDecision,

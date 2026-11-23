@@ -10,6 +10,7 @@ Core 使用一个外部 Omni 网关和按该地址授权的普通应用凭据。
 | 前台文字与表达 | 号主 Chats、受理承接语与 `DeliveryPacket` 角色化转述使用与后台共用的文本模型 `chat_profile(omni)`（`llm-default` 别名，经 `/llm/v1/chat/completions` 流式运行，`enable_thinking=False` 并保留参数覆写能力），挂在 `OperationTurns` 最高优 `"chat"` 车道（`chat_text_generation()`）且与 Omni 解耦。 |
 | 后台任务 | 同网关的 `POST /llm/v1/responses` 承接两类工作：(1) `turn_router` 在 `OperationTurns` 最高优 `"chat"` 车道上以 `parallel_tool_calls=False`、`temperature=0.0`、`store=False` 统一执行 Chats 7 路分流与多轮指代消歧（`route_chat_turn` 原生多轮 `recent_dialogue`，有界思考 `max_output_tokens=640`、`thinking_budget_tokens=160`）以及 `omni.asr.v1` 语音指令分流（`route_voice_utterance` `thinking=False`、`max_output_tokens=256`），并在前台生成前释放车道；(2) 后台长文、带时码的图片输入与多步工具调用，工坊先持久化 `task_id` 再回发前台受理，按 `call_id` 续交实际工具结果。 |
 | 实时语音与播报 | Omni（`omni-default`，8,192 窗口）仅负责私有电话与实时音频/播报交互（Realtime 双工听、说、打断）及通过共享 `runtime.tasks`（`delegate`）转交后台，不与文字 Chats 共享原始通话转录历史。 |
+| 离线音频转写 | 无官方 CC 字幕的视频通过 `POST /v1/audio/transcriptions` 调用独立 CPU `faster-whisper` ASR Worker（`verbose_json` 带时间戳段落），转成带时码语音转写块供后台按字幕点选故事板／关键帧；网关未启用 ASR 时自动退回原有视觉扫描，不阻塞取材。 |
 | 参考朗读 | `POST /v1/audio/speech` 接收指定台词、模型别名与授权参考音频。工坊核对原文和可播放的音频，记录实际播完。[声音与缓存](models-and-audio.md) |
 | 运营配图 | `POST /v1/images/jobs` 提交内联的角色参考与场景。按服务回包排队，完成后持久保存校验过的 PNG，渠道通过工件 ID 读取。[配图任务契约](../operations/generated-images.md) |
 | 原生双工 | Core 向 `POST /v1/browser-tickets` 换取限定路径的一次性票据。浏览器连接 `/v1/realtime?duplex=1`，按实际协商处理语音、打断和播放确认。应用凭据留在业务端。 |

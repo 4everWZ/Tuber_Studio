@@ -115,6 +115,9 @@ class BrowsingAdapter(BilibiliAdapter):
     async def video_stream_clip(self, metadata, *, cid, start, end):
         return await self._stream_reader().clip(metadata, cid, start, end)
 
+    async def video_stream_audio(self, metadata, *, cid, max_duration=600):
+        return await self._stream_reader().audio(metadata, cid, max_duration=max_duration)
+
     async def close(self):
         if self._frame_sampler is not None:
             await self._frame_sampler.close()

@@ -780,9 +780,9 @@ def bind_content_decision(decision, aliases):
     canonical_targets = []
     for target in wire.visual_targets:
         block = aliases.get(target.evidence_id)
-        sources = block.sources if block and block.part.kind == "subtitle" else ()
+        sources = block.sources if block and block.part.kind in {"subtitle", "audio_transcript"} else ()
         if not sources:
-            raise ValueError("画面时点需绑定到本次字幕")
+            raise ValueError("画面时点需绑定到本次字幕或语音转写")
         source = sources[-1] if target.position == "after" else sources[0] if target.position == "before" else sources[len(sources) // 2]
         canonical_targets.append(target.model_copy(update={"evidence_id": source.id}))
     wire = wire.model_copy(update={"visual_targets": canonical_targets})

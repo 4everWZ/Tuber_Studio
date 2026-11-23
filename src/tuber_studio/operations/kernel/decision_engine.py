@@ -601,10 +601,14 @@ class ResponseEngine:
         return (
             "interest=like表示想参与这个话题，吐槽、共情和分享也属于参与；"
             "worth_commenting表示有具体想说的话。"
+            "结合标题、简介、UP主与带时码字幕/本地语音识别理解视频全貌。"
+            "当台词提及画面、演示、图表、字幕遮挡文字或表情动作需要眼见为实时，"
+            "请主动设coverage_required=visual，并在visual_targets按字幕时码选择要补看的关键点"
+            "（了解场景概览用默认故事板，核对屏幕文字/图表/微表情用precision=stream）。"
             "evidence_ids选择相关片段的id；值得发言时至少选一项。"
             "字幕/画面按分P和材料类型列出，[id|起始时码]标记可选择的内容块；evidence_ids选择这些短id。"
-            "source_kinds和has_visual描述本次提供的材料，已有视觉观察和字幕都能作为依据。"
-            "coverage_required表示还要补充的内容：当前材料够用选provided，"
+            "source_kinds和has_visual描述本次提供的材料，已有视觉观察、字幕和语音转写都能作为依据。"
+            "coverage_required表示还要补充的内容：当前材料够用选provided，需补看画面选visual，"
             "需其它分P选unread_part；也可以不感兴趣或暂不发言。" + CONTENT_DECISION_INTENT_GLOSS
         )
 

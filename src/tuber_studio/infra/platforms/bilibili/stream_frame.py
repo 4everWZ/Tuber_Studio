@@ -16,7 +16,10 @@ from .client import PlatformReadError
 from .frames import MAX_FRAME_BYTES, MAX_SHEET_PIXELS
 
 MAX_STREAM_BYTES = 16 * 1024 * 1024
+MAX_AUDIO_BYTES = 16 * 1024 * 1024
+MAX_ASR_DURATION_SECONDS = 600
 STREAM_TIMEOUT = 8
+AUDIO_STREAM_TIMEOUT = 20
 _RANGE = re.compile(r"(\d{1,12})-(\d{1,12})")
 _CONTENT_RANGE = re.compile(r"bytes (\d{1,12})-(\d{1,12})/(\d{1,12})")
 
@@ -263,11 +266,103 @@ async def extract_clip(reader, decoder, track, start, end):
             "frames":len(kept),"audio":"visual_only","movie":movie}
 
 
+async def extract_audio(reader, decoder, track, *, max_duration=MAX_ASR_DURATION_SECONDS):
+    """Fetch bounded DASH audio segments up to max_duration and downsample when ffmpeg is available."""
+    init, segments, duration = await track_index(reader, track)
+    if not segments:
+        raise _error("音频轨没有可读取的媒体分段")
+    cap_seconds = float(max_duration) if max_duration and max_duration > 0 else float(duration)
+    selected = []
+    planned = len(init)
+    for item in segments:
+        start_time, seg_start, seg_end = item
+        if selected and float(start_time) >= cap_seconds:
+            break
+        seg_len = seg_end - seg_start + 1
+        if planned + seg_len > reader.maximum:
+            if not selected:
+                raise _error("音频分段超出单次读取预算")
+            break
+        selected.append((seg_start, seg_end))
+        planned += seg_len
+    if not selected:
+        raise _error("音频分段超出单次读取预算")
+    truncated = len(selected) < len(segments)
+
+    coalesced = []
+    for seg_start, seg_end in selected:
+        if coalesced and coalesced[-1][1] + 1 == seg_start and (seg_end - coalesced[-1][0] + 1) <= 2 * 1024 * 1024:
+            coalesced[-1] = (coalesced[-1][0], seg_end)
+        else:
+            coalesced.append((seg_start, seg_end))
+
+    chunks = [init]
+    for range_start, range_end in coalesced:
+        chunks.append(await reader.read(range_start, range_end))
+    media = b"".join(chunks)
+
+    audio_bytes, mime_type, filename = media, "audio/mp4", "audio.m4s"
+    if decoder is not None and decoder.available:
+        transcode_plans = (
+            (
+                [
+                    decoder.ffmpeg, "-nostdin", "-v", "error", "-threads", "1",
+                    "-protocol_whitelist", "pipe", "-f", "mov", "-i", "pipe:0",
+                    "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", "32k",
+                    "-f", "mp3", "pipe:1",
+                ],
+                "audio/mpeg",
+                "audio.mp3",
+            ),
+            (
+                [
+                    decoder.ffmpeg, "-nostdin", "-v", "error", "-threads", "1",
+                    "-protocol_whitelist", "pipe", "-f", "mov", "-i", "pipe:0",
+                    "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
+                    "-f", "wav", "pipe:1",
+                ],
+                "audio/wav",
+                "audio.wav",
+            ),
+        )
+        for cmd, out_mime, out_name in transcode_plans:
+            try:
+                converted = await decoder._run(cmd, media, MAX_AUDIO_BYTES)
+                if converted:
+                    audio_bytes, mime_type, filename = converted, out_mime, out_name
+                    break
+            except (PlatformReadError, OSError, TimeoutError):
+                continue
+
+    covered_duration = min(float(duration), cap_seconds) if truncated else float(duration)
+    return {
+        "audio": audio_bytes,
+        "mime_type": mime_type,
+        "filename": filename,
+        "duration": round(covered_duration, 3),
+        "truncated": truncated,
+    }
+
+
 class StreamFrameSampler:
     def __init__(self, adapter, decoder):
         self.adapter = adapter
         self.decoder = decoder
         self.gate = asyncio.Semaphore(1)
+
+    async def _playurl_dash(self, metadata, cid):
+        part = next((item for item in metadata["parts"] if str(item["cid"]) == str(cid)), None)
+        if not part:
+            raise _error("目标分 P 不属于当前视频")
+        fresh = await self.adapter.video_metadata(metadata["bvid"])
+        current = next((item for item in fresh["parts"] if str(item["cid"]) == str(cid)), None)
+        if (not current or fresh["aid"] != metadata["aid"] or current.get("page") != part.get("page")
+                or current["duration"] != part["duration"]):
+            raise _error("视频分 P 或时长已变化")
+        data = await self.adapter._get("/x/player/playurl", {
+            "bvid": metadata["bvid"], "cid": int(cid), "fnval": 16, "qn": 80,
+        })
+        return part, data.get("dash") if isinstance(data.get("dash"), dict) else {}
 
     async def _read(self, metadata, cid, target, extract):
         part = next((item for item in metadata["parts"] if str(item["cid"]) == str(cid)), None)
@@ -278,16 +373,8 @@ class StreamFrameSampler:
         started = time.monotonic()
         try:
             async with asyncio.timeout(STREAM_TIMEOUT), self.gate:
-                fresh = await self.adapter.video_metadata(metadata["bvid"])
-                current = next((item for item in fresh["parts"] if str(item["cid"]) == str(cid)), None)
-                if (not current or fresh["aid"] != metadata["aid"] or current.get("page") != part.get("page")
-                        or current["duration"] != part["duration"]):
-                    raise _error("视频分 P 或时长已变化")
-                data = await self.adapter._get("/x/player/playurl", {
-                    "bvid": metadata["bvid"], "cid": int(cid), "fnval": 16, "qn": 80,
-                })
-                dash = data.get("dash")
-                tracks = dash.get("video") if isinstance(dash, dict) else None
+                _, dash = await self._playurl_dash(metadata, cid)
+                tracks = dash.get("video")
                 tracks = tracks if isinstance(tracks, list) else []
                 compatible = [track for track in tracks if isinstance(track, dict)
                               and str(track.get("codecs", "")).startswith("avc1.")
@@ -300,7 +387,7 @@ class StreamFrameSampler:
                 result = await extract(reader, self.decoder, track)
         except TimeoutError:
             raise _error("精确取帧达到 8 秒期限") from None
-        return result | {"cid": str(cid), "bytes_read": reader.used, "elapsed_seconds": round(time.monotonic()-started,3)}
+        return result | {"cid": str(cid), "bytes_read": reader.used, "elapsed_seconds": round(time.monotonic() - started, 3)}
 
     async def frame(self, metadata, cid, target):
         frame = await self._read(metadata, cid, target, lambda reader, decoder, track: extract_frame(reader, decoder, track, target))
@@ -310,3 +397,25 @@ class StreamFrameSampler:
 
     async def clip(self, metadata, cid, start, end):
         return await self._read(metadata, cid, start, lambda reader, decoder, track: extract_clip(reader, decoder, track, start, end))
+
+    async def audio(self, metadata, cid, *, max_duration=MAX_ASR_DURATION_SECONDS):
+        started = time.monotonic()
+        try:
+            async with asyncio.timeout(AUDIO_STREAM_TIMEOUT), self.gate:
+                _, dash = await self._playurl_dash(metadata, cid)
+                tracks = dash.get("audio")
+                tracks = tracks if isinstance(tracks, list) else []
+                compatible = [
+                    track for track in tracks
+                    if isinstance(track, dict)
+                    and str(track.get("mimeType", track.get("mime_type")) or "").startswith("audio/")
+                    and (track.get("baseUrl") or track.get("base_url"))
+                ]
+                if not compatible:
+                    raise _error("当前播放授权未提供可读取的 DASH 音频轨")
+                track = min(compatible, key=lambda item: int(item.get("bandwidth") or 2**31))
+                reader = RangeReader(self.adapter, track.get("baseUrl") or track.get("base_url"), MAX_AUDIO_BYTES)
+                result = await extract_audio(reader, self.decoder, track, max_duration=max_duration)
+        except TimeoutError:
+            raise _error("读取视频音轨达到 20 秒期限") from None
+        return result | {"cid": str(cid), "bytes_read": reader.used, "elapsed_seconds": round(time.monotonic() - started, 3)}
