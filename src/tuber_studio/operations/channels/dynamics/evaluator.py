@@ -44,7 +44,8 @@ def dynamic_decision_messages(character, recent_posts, public_sources, *, curren
                 "看过的视频、读到的公开评论和自己的心情都能单独分享，也可以自然地一起聊。"
                 "几条素材在讲同一件事时可以合成一条。points 记录这次聊到的各个要点和对应的 source_ids。"
                 "参考相关待发稿和已分享记录。后来只换说法重复同一个点就先等，有新发现或进展可以接着分享。"
-                "source_ids 写实际用过的素材，随想可留空。想附具体链接才填 link_source_ids。"
+                "双轨发布：涉及具体视频、评论或事件时，将用到素材写入 source_ids 并附 link_source_ids（未填时系统自动补充最多 2 条可用链接）；"
+                "纯个人随想、独立锐评或日常感悟无关特定视频时，source_ids 可留空 []。"
                 + MENTION_INSTRUCTION +
                 "分享时选post，content写动态正文。暂缓时选wait，content留空。"
                 "reason说明决定，next_evaluation_seconds是下次评估间隔。"
@@ -436,6 +437,8 @@ class DynamicsEvaluatorMixin:
         linkable = {source["id"] for source in sources if source["id"] in ids and source_links(source)}
         if not isinstance(links, list) or any(not isinstance(item, str) or item not in linkable for item in links):
             raise ValueError("附加链接须选自用到的公开素材")
+        if data["action"] == "post" and ids and not links and linkable:
+            links = [sid for sid in ids if sid in linkable][:2]
         illustration = data.get("illustration")
         if illustration not in (None, "none", "comment_card", "picture"):
             raise ValueError("模型配图选择无效")

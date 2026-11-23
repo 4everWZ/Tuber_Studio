@@ -1194,3 +1194,106 @@ async def test_decision_with_internal_source_id_in_body_is_not_a_publishable_dra
     )
     decision = await service.evaluate(manual=True)
     assert decision["action"] == "error" and service.list_posts() == [] and service.sent == []
+
+
+async def test_dual_track_source_post_autopopulates_links_and_allows_pure_thought(service):
+    from tuber_studio.persona.memory.daily import DailyMemoryService
+
+    memory_svc = DailyMemoryService(service.store)
+    char = service._character()
+    ids = []
+    for idx in range(3):
+        identifier = memory_svc.record_public_incident(
+            char["id"],
+            char["version"],
+            incident_key=f"inc-{idx}",
+            highlight_date="2026-11-08",
+            headline=f"公开事件{idx}",
+            anecdote=f"观众在评论区提了第{idx}个梗。",
+            public_sources=[
+                {
+                    "bvid": "BV13S4i6fE82",
+                    "thread_id": str(100 + idx),
+                    "comment_id": str(200 + idx),
+                    "quote": f"原评第{idx}句",
+                }
+            ],
+        )
+        ids.append(f"incident:{identifier}")
+
+    # Track 1: citing linkable sources without explicit link_source_ids auto-fills up to 2 links
+    service.runtime.operation_llm.output = json.dumps(
+        {
+            "action": "post",
+            "reason": "整理今天评论区几个好玩的吐槽",
+            "content": "今天评论区连续几个吐槽挺有意思，顺手记一笔。",
+            "source_ids": ids,
+            "next_evaluation_seconds": 1800,
+        }
+    )
+    decision = await service.evaluate(manual=True)
+    post = service._post(decision["post_id"])
+    assert post["presentation"]["link_source_ids"] == ids[:2]
+
+    # Track 2: pure thought with source_ids=[] succeeds cleanly without links
+    service.runtime.operation_llm.output = json.dumps(
+        {
+            "action": "post",
+            "reason": "单纯发个即时感悟",
+            "content": "夜里突然想到一件事：写代码跟烧水一样，越盯着看越慢。",
+            "source_ids": [],
+            "next_evaluation_seconds": 1800,
+        }
+    )
+    thought_decision = await service.evaluate(manual=True)
+    thought_post = service._post(thought_decision["post_id"])
+    assert thought_post["source_ids"] == []
+    assert thought_post["presentation"]["link_source_ids"] == []
+
+
+async def test_zero_candidate_mention_demotes_while_ambiguous_mention_blocks_approve(service):
+    public_memory(service)
+
+    class MentionLookupAdapter:
+        async def mention_accounts(self, query):
+            if query == "同名路人":
+                return {"71": "同名路人", "81": "同名路人"}
+            return {}
+
+    service.account.adapter = MentionLookupAdapter()
+
+    # Zero-candidate unresolvable @mention is demoted cleanly and does NOT block approval
+    service.runtime.operation_llm.output = json.dumps(
+        {
+            "action": "post",
+            "reason": "顺手提到一个没查到UID的人",
+            "content": "刚才看见 @不存在的路人 说的那套说辞真是离谱。",
+            "source_ids": [],
+            "mentions": [{"label": "@不存在的路人", "account": "不存在的路人"}],
+            "next_evaluation_seconds": 1800,
+        }
+    )
+    demoted_decision = await service.evaluate(manual=True)
+    demoted_post = service._post(demoted_decision["post_id"])
+    assert demoted_post["presentation"]["pending_mentions"] == []
+    assert len(demoted_post["presentation"]["demoted_mentions"]) == 1
+    approved = service.review(demoted_post["id"], "approve")
+    assert approved["status"] == "approved"
+
+    # Candidate-bearing ambiguous @mention stays in pending_mentions and blocks approve
+    service.runtime.operation_llm.output = json.dumps(
+        {
+            "action": "post",
+            "reason": "重名候选需要号主确认",
+            "content": "点名感谢 @同名路人 的提醒。",
+            "source_ids": [],
+            "mentions": [{"label": "@同名路人", "account": "同名路人"}],
+            "next_evaluation_seconds": 1800,
+        }
+    )
+    ambiguous_decision = await service.evaluate(manual=True)
+    ambiguous_post = service._post(ambiguous_decision["post_id"])
+    assert len(ambiguous_post["presentation"]["pending_mentions"]) == 1
+    assert len(ambiguous_post["presentation"]["pending_mentions"][0]["candidates"]) == 2
+    with pytest.raises(ValueError, match="请先选择这条动态要 @ 的账号"):
+        service.review(ambiguous_post["id"], "approve")

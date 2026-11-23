@@ -1,5 +1,6 @@
 """Tests for CC-missing Bilibili ASR fallback and subtitle-guided visual target binding."""
 
+import base64
 import copy
 import time
 
@@ -11,17 +12,54 @@ from tuber_studio.infra.platforms.bilibili.browsing import PlatformReadError
 from tuber_studio.operations.kernel.evidence import BrowsingEvidence
 from tuber_studio.operations.kernel.inputs import ContentDecisionInput, bind_content_decision
 from tuber_studio.operations.kernel.models import BrowsingPolicy, ContentDecision
-from tests.operations.test_browsing_evidence import BV, PNG, PublicAdapter, TestVisual
+
+BV = "BV1d8pU6xEZX"
+PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jHtkAAAAASUVORK5CYII="
+)
 
 
-class NoCcAudioAdapter(PublicAdapter):
+class _NoCcAudioAdapter:
     def __init__(self):
-        super().__init__()
-        self.metadata = copy.deepcopy(self.metadata) | {
-            "parts": [{"cid": "456", "title": "第一P", "duration": 60}]
-        }
-        self.failures["456"] = "empty"
+        self.calls = []
         self.audio_calls = []
+        self.metadata = {
+            "bvid": BV,
+            "aid": 123,
+            "title": "实测对比",
+            "description": "硬核数据对比",
+            "tags": ["评测"],
+            "owner_uid": "77",
+            "owner": "作者",
+            "duration": 60,
+            "published_at": 200,
+            "category_id": 1,
+            "parts": [{"cid": "456", "title": "第一P", "duration": 60}],
+        }
+        self.frames = [
+            {
+                "id": "first",
+                "cid": "456",
+                "requested_time": 10,
+                "actual_time": 8,
+                "width": 1,
+                "height": 1,
+                "kind": "storyboard",
+                "image": PNG,
+            }
+        ]
+
+    async def video_metadata(self, video):
+        self.calls.append(("metadata", video))
+        return copy.deepcopy(self.metadata) | {"fetched_at": time.time()}
+
+    async def subtitles(self, video, cid, languages):
+        self.calls.append(("subtitles", video, cid, list(languages)))
+        raise PlatformReadError("empty", "无CC字幕")
+
+    async def video_frames(self, metadata, count, *, cid=None, timestamps=None, windows=None):
+        self.calls.append(("frames", count, cid, timestamps, windows))
+        return copy.deepcopy(self.frames[:count])
 
     async def video_stream_audio(self, metadata, *, cid, max_duration=600):
         self.audio_calls.append((metadata["bvid"], cid, max_duration))
@@ -35,7 +73,43 @@ class NoCcAudioAdapter(PublicAdapter):
         }
 
 
-class FakeAsr:
+class _FakeVisual:
+    def __init__(self):
+        self.calls = 0
+
+    def capabilities(self):
+        return {
+            "provider_id": "controlled-test",
+            "version": "1",
+            "available": True,
+            "images": True,
+            "multiple_images": True,
+            "admitted": True,
+            "max_frames": 6,
+            "max_bytes": 4096,
+            "max_pixels": 100,
+            "context_tokens": 4096,
+        }
+
+    async def analyze_video_evidence(self, task, metadata, frames, question, *, deadline):
+        self.calls += 1
+        return {
+            "observations": "画面展示了实测曲线截图",
+            "evidence_ids": [frame["id"] for frame in frames],
+            "frame_observations": {frame["id"]: "画面展示了实测曲线截图" for frame in frames},
+            "provider_id": "controlled-test",
+            "version": "1",
+            "limitations": ["仅抽样帧，不推断声音"],
+        }
+
+    async def cancel(self, task_id):
+        return None
+
+    async def close(self):
+        return None
+
+
+class _FakeAsr:
     def __init__(self, *, fail=False):
         self.fail = fail
         self.calls = []
@@ -74,9 +148,9 @@ async def make_evidence(runtime):
 
 
 async def test_cc_missing_triggers_asr_and_allows_visual_target_binding(make_evidence):
-    adapter = NoCcAudioAdapter()
-    visual = TestVisual()
-    asr = FakeAsr()
+    adapter = _NoCcAudioAdapter()
+    visual = _FakeVisual()
+    asr = _FakeAsr()
     svc = make_evidence(adapter, visual, asr=asr)
     config = BrowsingPolicy().model_dump() | {"visual_enabled": True}
 
@@ -114,9 +188,9 @@ async def test_cc_missing_triggers_asr_and_allows_visual_target_binding(make_evi
 
 
 async def test_asr_unavailable_falls_back_to_visual_scan(make_evidence):
-    adapter = NoCcAudioAdapter()
-    visual = TestVisual()
-    asr = FakeAsr(fail=True)
+    adapter = _NoCcAudioAdapter()
+    visual = _FakeVisual()
+    asr = _FakeAsr(fail=True)
     svc = make_evidence(adapter, visual, asr=asr)
     config = BrowsingPolicy().model_dump() | {"visual_enabled": True}
 
@@ -128,8 +202,8 @@ async def test_asr_unavailable_falls_back_to_visual_scan(make_evidence):
 
 
 async def test_empty_cc_without_asr_still_scans_visual(make_evidence):
-    adapter = NoCcAudioAdapter()
-    visual = TestVisual()
+    adapter = _NoCcAudioAdapter()
+    visual = _FakeVisual()
     svc = make_evidence(adapter, visual, asr=None)
     if svc.asr is not None and hasattr(svc.asr, "close"):
         await svc.asr.close()

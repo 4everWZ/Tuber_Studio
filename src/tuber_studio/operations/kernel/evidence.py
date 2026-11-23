@@ -14,12 +14,13 @@ from uuid import uuid4
 
 from ...core.meter import BrowsingBudgetDeferred
 from ...core.validation import linked
-from ...infra.inference.omni_asr import AsrUnavailable, OmniAsrClient
+from ...infra.inference.omni_asr import OmniAsrClient
 from ...infra.inference.providers import public_error
 from ...infra.inference.validation import validate_image
 from ...infra.inference.video_vision import VideoPartText
 from ...infra.platforms.bilibili.browsing import CREDIT
 from .context import read_round
+from .evidence_asr import collect_subtitles_or_asr, fetch_asr_subtitle_part
 from .models import DisabledVideoEvidence, browsing_filter_reason
 
 
@@ -383,27 +384,9 @@ class BrowsingEvidence:
     async def _prepare(
         self, metadata, config, *, task=None, deadline=None, visual_requests=()
     ):
-        parts, missing = [], []
-        subtitle_error = None
         # Reading all parts is allowed only within the shared read/round budget.
         # A missing P remains an explicit limitation, never an empty complete video.
-        for part in metadata["parts"]:
-            try:
-                parts.append(await self.subtitle_part(metadata, part, config["languages"]))
-            except (ValueError, TimeoutError) as error:
-                kind = getattr(error, "kind", "invalid")
-                subtitle_error = subtitle_error or public_error(error)
-                if self.has_asr_provider() and hasattr(self.adapter, "video_stream_audio"):
-                    try:
-                        asr_result = await self.asr_part(metadata, part, config["languages"])
-                    except (AsrUnavailable, ValueError, TimeoutError, OSError) as asr_error:
-                        subtitle_error = f"{subtitle_error}；ASR回退：{public_error(asr_error)}"
-                        missing.append({"cid": part["cid"], "reason": kind})
-                    else:
-                        parts.append(asr_result)
-                        continue
-                else:
-                    missing.append({"cid": part["cid"], "reason": kind})
+        parts, missing, subtitle_error = await collect_subtitles_or_asr(self, metadata, config["languages"])
         sampling = config.get("frame_sampling", "baseline")
         material = {
             "metadata": metadata,
@@ -446,48 +429,7 @@ class BrowsingEvidence:
         return self.asr is not None
 
     async def asr_part(self, metadata, part, languages):
-        if not self.has_asr_provider():
-            raise AsrUnavailable("未配置语音转写服务")
-        audio_data = await self.reader(lambda: self.adapter.video_stream_audio(metadata, cid=part["cid"]))
-        preferred = next((lang.split("-", 1)[0] for lang in (languages or ()) if isinstance(lang, str) and lang), "zh")
-        if preferred == "ai":
-            preferred = "zh"
-        transcript = await self.asr.transcribe(
-            audio_data["audio"],
-            filename=audio_data.get("filename", "audio.mp3"),
-            mime_type=audio_data.get("mime_type", "audio/mpeg"),
-            language=preferred or "zh",
-        )
-        prefix = f"{part['cid']}:"
-        segments = [
-            {
-                "id": identity if (identity := str(seg["id"])).startswith(prefix) else prefix + identity,
-                "start": float(seg["start"]),
-                "end": float(seg["end"]),
-                "text": str(seg["text"]),
-            }
-            for seg in transcript["segments"]
-            if str(seg.get("text") or "").strip()
-        ]
-        if not segments:
-            raise AsrUnavailable("ASR 未产出行之有效的语音分段")
-        return {
-            "bvid": metadata["bvid"],
-            "cid": str(part["cid"]),
-            "track_id": "asr:whisper",
-            "language": transcript.get("language") or preferred or "zh",
-            "is_ai": True,
-            "asr": True,
-            "subtitle_source": "asr",
-            "segments": segments,
-            "coverage": {
-                "complete": not audio_data.get("truncated", False),
-                "start": segments[0]["start"],
-                "end": segments[-1]["end"],
-                "segment_count": len(segments),
-            },
-            "fetched_at": time.time(),
-        }
+        return await fetch_asr_subtitle_part(self.adapter, self.reader, self.asr, metadata, part, languages)
 
     async def subtitle_part(self, metadata, part, languages):
         evidence = await self.reader(self.adapter.subtitles, metadata["bvid"], part["cid"], languages)

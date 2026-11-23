@@ -7,7 +7,7 @@
 | 长期目标的触发与主动调研 | 已有一次预约、日／周跟进、指定 UID 来信和指定评论楼入库提醒。扩展其他获准事件来源，以及由条件触发的私有调研。 | 能从活动页查到触发来源、读取范围和私有交付；重复事件只处理一次，撤权后停止后续动作。[已有跟踪入口](../guides/goal-event-tracking.md) · [任务契约](../specs/foundation/agent-runtime.md#常驻任务与恢复) |
 | 连接器与受限工作区 | 已有公开 HTTPS 阅读页接管、私有附件、授权计算和可编辑下载的成果。继续接入按来源授权的连接器，扩展受限工作区可读写的文件格式。 | 从普通任务选择获准输入，取得可读回的来源与文件；缩小授权、接管和取消后，后续步骤遵守新范围。[浏览器边界](../guides/private-browser.md) · [委派与控制](../specs/foundation/agent-runtime.md#精细化委派与控制) |
 | 通用任务与跨任务召回 | 从已有多步工具调用、独立读取委派和可溯源偏好出发，扩展自然语言任务的条件组合、跨任务主题归并与按来源召回。 | 用不同领域的普通交办核对选中的对象、条件未满足时的处理、改口后的交付和撤回后的引用。[任务控制](../specs/foundation/agent-runtime.md#精细化委派与控制) · [已有记忆实测](../../evaluations/results/owner-memory-20261119.md) |
-| 视频投稿、节目制作与游戏实机 | 视频取材、运营动态与直播素材交接已有入口。后续接创作素材到视频投稿、OBS 节目制作的流程；星露谷从单地块推进到完整游戏日，植物大战僵尸实机等待可启动的授权安装与版本。 | 投稿绑定获准作品与平台对象，节目以实际播放结算；游戏的动作读回、接管和恢复按各自实机阶段验收。[直播规范](../specs/live/live-and-media.md) · [游戏实施计划](game-livestream.md) · [已有实机记录](../../evaluations/results/stardew-device-20261119.md) |
+| 视频投稿、节目制作与游戏实机 | 视频取材、运营动态与直播素材交接已有入口。Wave 2 视频自动制片（Remotion + Code-as-Video + VRM/Blender + `/v1/audio/speech` 配音 + `biliup` CLI 投稿）方案已定稿；星露谷从单地块推进到完整游戏日，植物大战僵尸实机等待可启动的授权安装与版本。 | 投稿绑定获准作品与平台对象，支持预览审阅与自动投稿切换并以实际回执结算；游戏的动作读回、接管和恢复按各自实机阶段验收。[Wave 2 视频管线](../design/video-production-pipeline.md) · [直播规范](../specs/live/live-and-media.md) · [游戏实施计划](game-livestream.md) · [已有实机记录](../../evaluations/results/stardew-device-20261119.md) |
 
 ## 常驻 Agent 与跨端记忆
 
@@ -18,6 +18,8 @@ Chats 支持交办、改口、取消和查看工具回执。已完成全仓分�
 全仓已迁移至 `L0–L4` 单向分层架构、React 19 顶层 `frontend/` 与 `/api/v1/*` 契约，并已完成工作站阶段四切换（`1953df9`、`tuber-studio-core:1953df9`）。阶段二运营双管线——主动探索（Discovery）与消息响应（Inbox）共用 `operations/kernel/`（`operation_claims` 原子认领与楼级 Inbox 优先租约、`direct_quota_reserve` 预留保护、412/429 风控退避保消息与 `(bvid, cid)` 单飞证据池），正式库已完成停机备份、`--network none` 积压归档与 `v2` 无损迁移（默认双关等待操作者在工作台按需开启）。新链路的真实平台送达、来信及私有语音通话待用户后续在工作台启用后实机验收。[部署与三渠道验收](../../evaluations/results/operations-images-three-channels.md) · [分层与阶段二总验收](../../evaluations/results/20261122-layered-refactor-dual-pipeline-acceptance.md) · [阶段四上线验收](../../evaluations/results/20261123-stage4-workstation-cutover.md) · [调度](../../evaluations/results/operations-scheduler-20261114.md)
 
 日常看帧已接同一投稿、对应分 P 的元数据及邻近带时码文字。逐帧、联合与汇总请求由隔离传输核对。普通网关单次实读答对场景大意和两帧时码，漏答标题与简介，并把画内烧录字误报为公开字幕，整项未通过。[消息对照](../../tests/agent/test_video_frame_text.py) · [普通画面实读](../../evaluations/results/p2-ordinary-frame-reading-20261119.md)
+
+Wave 1 加固分支已完成：全渠道批量拒绝与 12014/509 风控退避透传、评论楼层与私信角色隔离/反迎合、统一可编辑 `owner`/`public` 记忆库与号主接管上下文、B 站无 CC 音轨 CPU `faster-whisper` ASR 回退（按字幕时码联动选帧）、`whale` 傲娇/拒称「大肥鱼」人设更新以及动态双轨自动补链。
 
 ## 共享推理与 Avatar API
 

@@ -21,14 +21,17 @@ _LEGACY = {
         "e9725899336b63ddea4eb1a4998a65cb6c0ddada9326b21dd62f6421ace2f4e1",
         "f25a6c06fce9d128c76ed3d69dd3de5c3d118e83893dcb06f8f0efe8e1b36c52",
         "fcee2e6ac6f43e51e044561b1e6033261f8a299555640bcf54dc86f85f711fb6",
-    },
-}
-_REPLACEMENTS = {
-    # These released seeds carry the same historical persona content upgrade.
-    "whale": {
         "3e16a9d1dfa4065b0c5545e0f29857bcedc84460594d8d127b77155364efacfe",
         "70c3f55e82c857052a32f0dcdf6b27292da07dfe5b24dd030fdf048c829b79f0",
         "dc3b07c1580c1cdd14c6eb3d8d92c1e272f0f21218176b5fcf5526933169a1dc",
+    },
+}
+_REPLACEMENTS = {
+    # These released seeds carry the polished tsundere / anti-canned-cliche persona upgrade.
+    "whale": {
+        "d4b5f856d1f7b7005a61e7b37c2acb3d035787808ccfb38daa3e93902f64e527",
+        "c23d93db1d5661ac0e4147ee61d547a2796ecc2e9f01866d3582a4bbffe6984d",
+        "ce86f9641554ea4020edbb975db8198976ea2f99e7d7834cd09f8a18dcb9cd64",
     },
 }
 # Fresh installations receive the full seed. Existing versions gain only the original upgrade fields.

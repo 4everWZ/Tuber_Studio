@@ -161,8 +161,17 @@ class DynamicsDrafterMixin:
     async def _presentation(self, data, sources):
         participants = [person for source in sources for person in source.get("participants", [])]
         mentions, pending = await bind_mentions(self.account.adapter, data["content"], data["mentions"], participants)
-        return {"link_source_ids": data["link_source_ids"], "mentions": mentions, "pending_mentions": pending,
-                "points": data["points"]}
+        ambiguous = [item for item in pending if item.get("candidates")]
+        demoted = [item for item in pending if not item.get("candidates")]
+        presentation = {
+            "link_source_ids": data["link_source_ids"],
+            "mentions": mentions,
+            "pending_mentions": ambiguous,
+            "points": data["points"],
+        }
+        if demoted:
+            presentation["demoted_mentions"] = demoted
+        return presentation
 
     async def _refresh_post_identity(self, post_id, automatic, epoch):
         refresh = getattr(self.runtime, "refresh_identity", None)

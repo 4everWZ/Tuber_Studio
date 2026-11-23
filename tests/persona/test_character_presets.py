@@ -360,3 +360,27 @@ def test_fresh_install_uses_clean_presets_without_extra_version(tmp_path):
     for field in ("self_description", "speaking_style"):
         assert store.character("whale")[field] == presets()[0][field]
     store.close()
+
+
+def test_whale_preset_rejects_dafeiyu_self_reference_and_upgrades_from_prior_seed(tmp_path):
+    role = presets()[0]
+    assert "大肥鱼" not in role["style"]["catchphrases"]
+    assert "小鲸鱼" in role["self_description"]
+    assert "大肥鱼" not in role["self_description"]
+    assert "本鲸" in role["core"]["examples"][0]["reply"]
+    for example in role["core"]["examples"]:
+        assert "大肥鱼陪" not in example["reply"] and "大肥鱼就是" not in example["reply"]
+
+    # Simulate an existing DB seeded with clean_legacy and verify upgrade to the polished whale card
+    prior_path = tmp_path / "prior-seed.sqlite3"
+    prior = clean_legacy()
+    prior[0]["voice_profile"] = "whale_reference"
+    prior_store = create_store(prior_path, prior)
+    prior_store.close()
+
+    upgraded = create_store(prior_path, presets())
+    current = upgraded.character("whale")
+    assert current["version"] == 2
+    assert current["core"] == role["core"]
+    assert current["rules"] == role["rules"]
+    upgraded.close()

@@ -18,6 +18,9 @@
   2. 已停止占着 `8089` 端口的旧静态文件进程；
   3. 已在 `--network none` 下完成停机一致性备份、完整性校验及 `telemetry --apply` 积压归档，并经 `v2` 无损升级切换运行 `tuber-studio-core:1953df9`；
   4. 已从工作站 HTTPS `/dafeiyu/` 复验 React 产物、模型卡、`v1` 接口与临时 9B 对话，真实平台写入 `0`。[阶段四上线记录](../evaluations/results/20261123-stage4-workstation-cutover.md) · [IP 入口实测](../evaluations/results/workstation-studio-ip-20261119.md) · [API 准入](specs/foundation/omni-deployment.md#接入验收与切换)
+- **Wave 1 增强分支与 Wave 2 方案（本地待合入工作站上线）：**
+  - `Tuber_Studio` 分支 `feat/wave1-ops-hardening-memory-asr` 与 `omni-avatar-api` 分支 `feat/asr-whisper-endpoint` 完成：12014 风控退避与全渠道批量拒绝、角色隔离与主动纠偏/`web_search` 统一、ChatGPT 式 `owner`/`public` 严格隔离统一记忆库（含一次性无损迁移 `unified_memories_migrated_v1`）与号主接管后私信/楼层时序上下文、B 站无 CC 音轨抽取 + CPU `faster-whisper` ASR 回退（`/v1/audio/transcriptions`，需按需在 `omni-avatar-api` 启用 `deploy/compose/asr.yml` 并设置 `OMNI_ASR_INTERNAL_TOKEN`）、`whale` 傲娇与拒称「大肥鱼」人设更新、动态双轨（自动补附最多 2 条来源链接、纯随想 `source_ids=[]` 与零候选 `@` 降级）以及 [Wave 2 视频制作管线](design/video-production-pipeline.md)。
+  - 工作站上线前提示：仍保留本地分支未推送、未动工作站正式库，上线时需在 `<code-root>/omni-avatar-api` 启用 `asr.yml` 并同步配置 `OMNI_ASR_INTERNAL_TOKEN`（及执行既有运营问题草稿的批量清理）。
 
 ## 验收缺口与业务数据
 
