@@ -81,7 +81,7 @@ async def test_owner_identity_uses_current_binding_with_stale_chat_history(studi
         assert schema["title"] == "FrontDialogueReply"
         if messages[-1]["content"] == "你住在哪里？":
             return {"reply_markdown": "我住在 Jetson 里。"}
-        existence = messages[0]["content"].split("【存在边界】", 1)[1].split("【此刻情境】", 1)[0]
+        existence = messages[0]["content"].split("【身份与账号】", 1)[1].split("【此刻情境】", 1)[0]
         assert "Jetson" not in existence
         has_owner = "绑定账号所有者：新号主 (UID:123)" in existence
         return {"reply_markdown": "我的主人是新号主呀。" if has_owner else "我还没有绑定 B 站主人呀。"}

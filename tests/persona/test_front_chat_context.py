@@ -50,10 +50,10 @@ async def test_chat_model_packet_keeps_account_out_and_uses_current_question(
         assert "工坊号主" not in dumped
         assert runtime.character["core"]["identity"] in wire[0]["content"]
         if temporary or semantic:
-            assert "【存在边界】" in wire[0]["content"]
+            assert "【身份与账号】" in wire[0]["content"]
             assert "绑定账号所有者：绑定号主 (UID:101)" in wire[0]["content"]
             assert "当前平台账号：运营频道 (UID:202)" in wire[0]["content"]
-            assert "【声音锚点与人格外壳】" in wire[0]["content"]
+            assert "【角色外壳】" in wire[0]["content"]
         else:
             assert wire[0]["content"].count(persona_instructions(runtime.character)) == 1
             identities = next(row["content"].split("私聊参与者：", 1)[1] for row in wire if "私聊参与者：" in row["content"])

@@ -91,14 +91,57 @@ def sanitize_pulse_text(text: str, *, owner_label: str = "你") -> str:
     return cleaned[:600]
 
 
+_CJK_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
+_LATIN_ENTITY_RE = re.compile(r"[A-Za-z][A-Za-z0-9._-]{2,}")
+_BVID_ONLY_RE = re.compile(r"^(?:bv[0-9a-zA-Z]{6,}|av\d+)$", re.IGNORECASE)
+_NOISE_LATIN = frozenset({"bilibili", "youtube", "hotmail", "http", "https", "www", "com", "video"})
+
+
 def _extract_research_query(topic: dict[str, Any]) -> str:
     title = str(topic.get("title") or "").strip()
     tags = [str(t).strip() for t in (topic.get("tags") or ()) if str(t).strip()]
-    clean_title = re.sub(r"【[^】]{1,24}】|\[[^\]]{1,24}\]", " ", title)
-    clean_title = " ".join(clean_title.split())[:48]
-    if tags and clean_title:
-        return f"{clean_title} {tags[0]}"[:64]
-    return clean_title or (tags[0] if tags else str(topic.get("bvid") or ""))
+    clean_title = re.sub(r"https?://\S+", " ", title)
+    clean_title = re.sub(r"【[^】]{1,24}】|\[[^\]]{1,24}\]", " ", clean_title)
+    clean_title = re.sub(r"[#｜|/\u200b-\u200d\ufe0f]+", " ", clean_title)
+    clean_title = " ".join(clean_title.split())[:48].strip()
+    if _BVID_ONLY_RE.match(clean_title):
+        clean_title = ""
+    filtered_tags = [
+        t for t in tags
+        if not _BVID_ONLY_RE.match(t) and len(t) >= 2 and t.lower() not in _NOISE_LATIN
+    ]
+    if filtered_tags and clean_title and filtered_tags[0] not in clean_title:
+        candidate = f"{clean_title} {filtered_tags[0]}"[:64].strip()
+    else:
+        candidate = clean_title or (filtered_tags[0] if filtered_tags else "")
+    return candidate if len(candidate) >= 4 else ""
+
+
+def _is_relevant_research_page(query: str, title: str, excerpt: str) -> bool:
+    """Reject unrelated foreign/spam pages whose language or keywords miss the query."""
+    page_text = f"{title} {excerpt}".strip()
+    if not page_text:
+        return False
+    page_lower = page_text.lower()
+    latin_tokens = [
+        tok.lower() for tok in _LATIN_ENTITY_RE.findall(query) if tok.lower() not in _NOISE_LATIN
+    ]
+    matched_latin = any(tok in page_lower for tok in latin_tokens)
+
+    cjk_runs = _CJK_CHAR_RE.findall(query)
+    if cjk_runs:
+        has_page_cjk = bool(_CJK_CHAR_RE.search(page_text))
+        if not has_page_cjk:
+            return matched_latin
+        query_cjk = "".join(cjk_runs)
+        if len(query_cjk) >= 2:
+            bigrams = {query_cjk[i : i + 2] for i in range(len(query_cjk) - 1)}
+            return matched_latin or any(bg in page_text for bg in bigrams)
+        return matched_latin or (query_cjk in page_text)
+
+    if latin_tokens:
+        return matched_latin
+    return True
 
 
 class HeartbeatService:
@@ -404,11 +447,15 @@ class HeartbeatService:
             except Exception:
                 continue
             if isinstance(page, dict) and page.get("excerpt"):
+                page_title = str(page.get("title") or "").strip()
+                page_excerpt = sanitize_pulse_text(str(page["excerpt"]), owner_label="你")[:260]
+                if not _is_relevant_research_page(cleaned_query, page_title, page_excerpt):
+                    continue
                 sources.append(
                     {
                         "url": str(page.get("url") or url),
-                        "title": str(page.get("title") or cleaned_query)[:120],
-                        "excerpt": sanitize_pulse_text(str(page["excerpt"]), owner_label="你")[:260],
+                        "title": (page_title or cleaned_query)[:120],
+                        "excerpt": page_excerpt,
                     }
                 )
         summary = (

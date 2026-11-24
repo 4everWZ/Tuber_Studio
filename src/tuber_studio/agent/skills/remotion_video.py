@@ -448,7 +448,7 @@ class RemotionVideoSkill:
         scene_rows = [
             ("scene_intro", "TitleCard", lead, SceneVisualProps(subtitle=args.style_note or "Aqua 公开观察速览", citation_label=sources[0].title[:60]), f"哈喽，我是 Aqua！今天带大家快速过一遍「{lead[:36]}」的核心看点。", "cheerful"),
             ("scene_main", "QuoteSpotlight", "核心看点梳理", SceneVisualProps(subtitle=sources[0].title[:80], bullets=[s.title[:60] for s in sources[:3] if s.title], citation_label=sources[0].url or sources[0].source_id), f"结合公开信息来看，最关键的一点是：{sources[0].excerpt[:80] or args.topic[:80]}。", "curious"),
-            ("scene_outro", "TimelineSummary", "总结与下期预告", SceneVisualProps(subtitle="资料均来自已核验公开来源", bullets=["来源透明可追溯", "欢迎评论区聊聊你的想法"]), "以上就是本鲸整理的重点啦，有想看的话题欢迎留在评论区。", "proud"),
+            ("scene_outro", "TimelineSummary", "总结与下期预告", SceneVisualProps(subtitle="资料均来自已核验公开来源", bullets=["来源透明可追溯", "欢迎评论区聊聊你的想法"]), "以上就是 Aqua 整理的重点啦，有想看的话题欢迎留在评论区。", "proud"),
         ]
         scenes = [
             VideoSceneSpec(scene_id=sid, template=tpl, heading=head, visual_props=vp, lines=[VideoLineSpec(line_id=f"l{i}", text=txt, avatar_cue=cue)], avatar_cue=cue)

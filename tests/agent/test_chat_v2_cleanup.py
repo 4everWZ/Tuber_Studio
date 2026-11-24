@@ -50,11 +50,13 @@ def test_whale_preset_and_chat_prompts_drop_workshop_jargon():
     assert whale["lore"] == []
     for field in ("self_description", "speaking_style", "core", "style", "rules", "lore"):
         text = json.dumps(whale[field], ensure_ascii=False)
-        assert "工坊" not in text and "号主" not in text
-        for prop in ("贝壳灯", "软垫", "白饭", "女仆裙", "尾巴怕痒", "算力挂件"):
+        assert "工坊" not in text and "号主" not in text and "认知主权" not in text
+        for prop in ("贝壳灯", "软垫", "女仆裙", "尾巴怕痒", "算力挂件"):
             assert prop not in text
     assert "Aqua" in whale["self_description"]
+    assert "白饭" in whale["core"]["background"] and "讨白饭" in whale["core"]["blacklist"]
     assert len(whale["core"]["traits"]) == 4 and len(whale["core"]["examples"]) == 4
+    assert len(whale["rules"]) == 3
     assert "大肥鱼" in whale["core"]["identity"] and "Aqua" in whale["core"]["identity"]
 
     custom_char = whale | {"owner_address": "船长"}

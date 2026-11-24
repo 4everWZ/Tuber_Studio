@@ -94,14 +94,23 @@ def test_enriched_preset_keeps_character_assets_without_retired_radio():
     assert main["voice_profile"] == "whale_reference"
     assert main["style"]["min_chars"] == 1
     assert main["style"]["max_chars"] == 120
-    assert {"Aqua", "本鲸"} <= set(main["style"]["catchphrases"])
-    # The persona update removes cliches and stacked fanfic props from the permanent shell.
-    dumped_shell = json.dumps(
-        [main["core"], main["style"], main["rules"], main["lore"]], ensure_ascii=False
+    assert {"Aqua", "本鲸", "本鲸鱼"} <= set(main["style"]["catchphrases"])
+    assert "大肥鱼" not in main["style"]["catchphrases"]
+    assert {"大肥鱼", "讨饭", "讨白饭"} <= set(main["core"]["blacklist"])
+    assert "白饭" not in main["core"]["blacklist"]
+    assert "Jetson" not in main["core"]["blacklist"]
+    # The refined Aqua card keeps the proud home-compute white-rice quirk while dropping unrelated fanfic props.
+    positive_shell = json.dumps(
+        [{k: v for k, v in main["core"].items() if k != "blacklist"}, main["style"], main["rules"], main["lore"]],
+        ensure_ascii=False,
     )
-    for retired in ("深海思考", "贝壳灯", "软垫", "白饭", "女仆裙", "算力挂件"):
-        assert retired not in dumped_shell
+    for retired in ("深海思考", "贝壳灯", "软垫", "女仆裙", "尾巴怕痒", "算力挂件", "认知主权"):
+        assert retired not in positive_shell
+    assert "白饭" in main["core"]["background"] and "Jetson" in main["core"]["background"]
+    assert "主人" not in main["core"]["background"]
+    assert len(main["rules"]) == 3
     assert len(main["core"]["examples"]) == 4
+    assert any("视频里" in ex["reply"] and "UP" in ex["reply"] for ex in main["core"]["examples"])
     assert main["lore"] == []
     assert main["core"]["background"] and main["core"]["interaction"]
     for item in main["core"]["examples"]:

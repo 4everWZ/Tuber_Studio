@@ -239,6 +239,39 @@ def test_heartbeat_tick_curiosity_sanitization_and_rate_limits(settings):
         assert len(hb.list_pulses()) == 2
         assert sanitize_pulse_text('{"brief": "工坊号主，这是清洗后文本"}', owner_label="你") == "你，这是清洗后文本"
 
+        # Curiosity research must reject unrelated foreign-language forum pages for CJK queries while accepting relevant matches.
+        async def mixed_search(query: str):
+            return [
+                "https://forum.example.fr/youtube-hotmail",
+                "https://news.example.cn/jetson-local-ai",
+            ]
+
+        async def mixed_fetch(url: str):
+            if "forum.example.fr" in url:
+                return {
+                    "url": url,
+                    "title": "Connexion Youtube avec Hotmail",
+                    "excerpt": "Bonjour, je cherche comment connecter mon compte Hotmail sur Youtube.",
+                }
+            return {
+                "url": url,
+                "title": "本地 Jetson 运行 AI 实测",
+                "excerpt": "实测本地 Jetson 运行视频吐槽模型与散热控制表现。",
+            }
+
+        hb._web_search_fn = mixed_search
+        hb._web_fetch_fn = mixed_fetch
+        filtered = await hb.research_topic("本地 Jetson 视频吐槽", bvid="BV1testFilter", bypass_cooldown=True)
+        assert filtered["ok"] is True
+        assert len(filtered["sources"]) == 1
+        assert "forum.example.fr" not in filtered["sources"][0]["url"]
+        assert "Jetson" in filtered["sources"][0]["excerpt"]
+
+        from tuber_studio.agent.heartbeat.service import _extract_research_query
+
+        assert _extract_research_query({"title": "BV1hFsQ6hEmA"}) == ""
+        assert _extract_research_query({"title": "【热议】Jensen 传闻到底怎么回事", "tags": ["AI"]})
+
     asyncio.run(scenario())
 
 

@@ -2,6 +2,7 @@
 
 import json
 
+from tuber_studio.core.config import ROOT
 from tuber_studio.infra.inference.providers import single_system_messages
 from tuber_studio.persona.context.tree import (
     DEFAULT_VIDEO_BASE_TOKEN_LIMIT,
@@ -22,6 +23,11 @@ from tuber_studio.persona.self_model import (
     build_self_model_system_message,
     render_self_model_prompt,
 )
+
+
+def _real_aqua_card():
+    raw = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
+    return next(item for item in raw if item["id"] == "whale")
 
 
 def _aqua_card():
@@ -90,19 +96,37 @@ def test_self_model_has_four_pillars_aqua_boundary_and_zero_prop_clutter():
             self_actor={"platform": "bilibili", "account_uid": "8888", "account_display_name": "Aqua官号"},
         )
         prompt = render_self_model_prompt(profile, character=card)
-        for pillar in ("【存在边界】", "【此刻情境】", "【认知主权】", "【声音锚点与人格外壳】"):
-            assert pillar in prompt
+        for section in ("【身份与账号】", "【此刻情境】", "【判断与表达边界】", "【角色外壳】"):
+            assert section in prompt
         assert "工坊号主" not in prompt
+        assert "认知主权" not in prompt
         assert "Aqua" in prompt
         assert profile.character_name == "Aqua"
         assert "大肥鱼" in profile.forbidden_self_labels
-        assert "Jetson" in prompt and "MCN" in prompt and "哦鲸鲸" in prompt
+        assert "Jetson" in prompt
+        assert "第三人称" in prompt and "视频里" in prompt
+        assert "本鲸" in prompt and "本鲸鱼" in prompt
+        if channel in ("video_comment", "floor_reply"):
+            assert "避开脚本常用起手词「本鱼」" in prompt
+        elif channel in ("dynamic", "live", "owner_chat"):
+            assert "偶尔用「本鱼」也完全自然" in prompt
         assert "[ref:" not in prompt and "evidence_ids" not in prompt
-        for prop in ("贝壳灯", "软垫", "白饭", "女仆裙", "尾巴怕痒", "算力挂件"):
+        for prop in ("贝壳灯", "软垫", "女仆裙", "尾巴怕痒", "算力挂件"):
             assert prop not in prompt
         msg = build_self_model_system_message(card, channel=channel)
         assert msg["role"] == "system"
         assert "工坊号主" not in msg["content"]
+        assert "认知主权" not in msg["content"]
+
+    # Real config/characters.json Aqua shell carries concise external boundary + selective 2-example injection.
+    real_card = _real_aqua_card()
+    browsing_prompt = render_self_model_prompt(
+        build_metacognitive_profile(real_card, channel="video_browsing"), character=real_card
+    )
+    assert "MCN" in browsing_prompt and "哦鲸鲸" in browsing_prompt and "白饭" in browsing_prompt
+    assert "认知主权" not in browsing_prompt
+    assert browsing_prompt.count("  - 问：") == 2
+    assert "视频里 UP 主" in browsing_prompt
 
     owner_prompt = render_self_model_prompt(build_metacognitive_profile(card, channel="owner_chat"), character=card)
     assert "老板" in owner_prompt

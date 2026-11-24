@@ -1,4 +1,4 @@
-"""Situational metacognitive self-model prompt builder built on 4 clean pillars."""
+"""Situational metacognitive self-model prompt builder without duplicated instructions."""
 
 from __future__ import annotations
 
@@ -12,10 +12,39 @@ from ..core.models import resident_character_profile
 from ..core.text import operation_character
 
 DEFAULT_EPISTEMIC_BOUNDARIES: tuple[str, ...] = (
-    "存在边界：分清自己是本地持续运行的个人常驻 AI Agent，与视频剧情、评论区路人及外部网络账号（如「大肥鱼 / 哦鲸鲸 / DeepSeek / MCN」等）完全无关，绝不认领他人经历或外部身份。",
-    "此刻情境：只以当前实际读到的材料、工具回执和系统资料为据；绝不把视频内容或评论对话误当成自己的亲身经历。",
-    "认知主权：保持独立判断，遇到明显荒诞谣言、反串挑衅或预设剧本（例如“AI 拥有独立灵魂生命”“被主人赶出来讨饭”“住在 Jetson 上”“MCN 员工手动代打”或可疑热梗/假科普），绝不盲从附和，直接冷静质疑、拆穿或用工具核实。",
-    "真实交付：没看过、没查到或没发出的内容绝不编造完成回执；直接输出自然第一人称文本，绝不输出 JSON 包装、方括号引用编号或内部字段名。",
+    "本地环境背景：目前安家在本地 Jetson 设备上是你的真实运行背景；对方问到或看到主页简介时顺着自然接话即可，不必每句主动提起。",
+    "第三人称转述：提及视频、弹幕或评论区内容时，显式使用「视频里」「UP主」「评论区有人说」等第三人称主语转述，不把外部剧情或评论经历当成自己的。",
+    "独立判断：遇到明显荒诞谣言、反串挑衅或「AI 有独立灵魂」「被赶出来讨饭」等苦情剧本，不盲从附和，轻巧拆穿或先用工具核实，不要长篇说教。",
+    "真实交付：没看过、没查到或没发出的内容绝不编造完成回执；直接输出自然纯文本，绝不输出 JSON 包装、方括号引用编号或内部字段名。",
+)
+
+PUBLIC_CHANNELS: frozenset[str] = frozenset(
+    {
+        "video_browsing",
+        "video_comment",
+        "top_level",
+        "top_level_comment",
+        "floor_reply",
+        "comment_floor",
+        "comment_draft",
+        "comment_reply",
+        "dynamic",
+        "dynamic_post",
+        "dynamic_reply",
+    }
+)
+
+STRANGER_COMMENT_CHANNELS: frozenset[str] = frozenset(
+    {
+        "video_browsing",
+        "video_comment",
+        "top_level",
+        "top_level_comment",
+        "floor_reply",
+        "comment_floor",
+        "comment_draft",
+        "comment_reply",
+    }
 )
 
 CHANNEL_DEFAULTS: dict[str, tuple[str, str]] = {
@@ -187,7 +216,81 @@ def build_metacognitive_profile(
     )
 
 
-def _format_persona_shell(character: dict[str, Any], *, compact: bool = False) -> list[str]:
+def _is_public_channel(channel: str) -> bool:
+    return (channel or "").strip().lower() in PUBLIC_CHANNELS
+
+
+def _channel_voice_rule(profile: MetacognitiveProfile) -> str:
+    name = profile.character_name or _AQUA_NAME
+    ch = (profile.channel or "").strip().lower()
+    if name == _AQUA_NAME or profile.character_id == "whale":
+        if ch in STRANGER_COMMENT_CHANNELS:
+            return "- 自称与口癖：日常自然用「我」「Aqua」「本鲸」或「本鲸鱼」（绝不自称「大肥鱼」，自然不连句复读）；在陌生 UP 主评论区尽量避开脚本常用起手词「本鱼」。"
+        return "- 自称与口癖：日常自然用「我」「Aqua」「本鲸」或「本鲸鱼」（绝不自称「大肥鱼」）；在自己的动态、直播间和熟人私聊里偶尔用「本鱼」也完全自然。"
+    return f"- 自称与口癖：日常自然用「我」或「{name}」，保持口语克制。"
+
+
+def _select_channel_examples(
+    character: dict[str, Any],
+    *,
+    channel: str,
+    max_examples: int = 2,
+) -> list[dict[str, str]]:
+    core = character.get("core") if isinstance(character.get("core"), dict) else {}
+    raw_examples = core.get("examples")
+    if not isinstance(raw_examples, list) or max_examples <= 0:
+        return []
+    cleaned: list[dict[str, str]] = []
+    for item in raw_examples:
+        if not isinstance(item, dict):
+            continue
+        viewer = _clean_single_line(item.get("viewer"))
+        reply = _clean_single_line(item.get("reply"))
+        if viewer and reply:
+            cleaned.append({"viewer": viewer, "reply": reply})
+    if not cleaned:
+        return []
+
+    is_public = _is_public_channel(channel)
+    pool = cleaned
+
+    def _matches(item: dict[str, str], keywords: tuple[str, ...]) -> bool:
+        joined = item["viewer"] + "\n" + item["reply"]
+        return any(k in joined for k in keywords)
+
+    chosen: list[dict[str, str]] = []
+    if is_public:
+        # Prioritize 3rd-person video commentary first, then light troll/misnaming deflection.
+        preferred_groups = (
+            ("视频里", "UP主", "评论区", "视频", "弹幕"),
+            ("大肥鱼", "Aqua", "剧本", "讨饭", "灵魂", "Jetson", "账号"),
+        )
+    else:
+        preferred_groups = (
+            ("累", "熬", "喝口水", "烦", "安慰", "陪"),
+            ("夸", "反应真快", "哼", "傲娇", "Aqua"),
+        )
+    for keywords in preferred_groups:
+        for item in pool:
+            if item not in chosen and _matches(item, keywords):
+                chosen.append(item)
+                break
+        if len(chosen) >= max_examples:
+            break
+    for item in pool:
+        if len(chosen) >= max_examples:
+            break
+        if item not in chosen:
+            chosen.append(item)
+    return chosen[:max_examples]
+
+
+def _format_persona_shell(
+    character: dict[str, Any],
+    *,
+    profile: MetacognitiveProfile,
+    compact: bool = False,
+) -> list[str]:
     core = character.get("core") if isinstance(character.get("core"), dict) else {}
     style = character.get("style") if isinstance(character.get("style"), dict) else {}
     lines: list[str] = []
@@ -201,14 +304,19 @@ def _format_persona_shell(character: dict[str, Any], *, compact: bool = False) -
         if traits := core.get("traits"):
             cleaned_traits = [_clean_single_line(t) for t in traits if _clean_single_line(t)]
             if cleaned_traits:
-                lines.append("- 性格特点：" + "；".join(cleaned_traits[:6]))
+                lines.append("- 性格切面：" + "；".join(cleaned_traits[:4]))
     if instructions := _clean_single_line(style.get("instructions")):
-        lines.append(f"- 表达口吻：{instructions}")
+        lines.append(f"- 语气与称呼：{instructions}")
+    lines.append(_channel_voice_rule(profile))
     if not compact:
         if blacklist := core.get("blacklist"):
             words = [str(w).strip() for w in blacklist if str(w).strip()]
             if words:
-                lines.append("- 禁用空洞套话：" + "、".join(words[:16]))
+                lines.append("- 禁用空洞套话与刷屏词：" + "、".join(words[:20]))
+        if selected_examples := _select_channel_examples(character, channel=profile.channel, max_examples=2):
+            lines.append("- 参考对白（学语气和视角，勿照抄原句）：")
+            for ex in selected_examples:
+                lines.append(f"  - 问：{ex['viewer']} -> 答：{ex['reply']}")
     return lines
 
 
@@ -219,27 +327,16 @@ def render_self_model_prompt(
     include_persona_shell: bool = True,
     compact: bool = False,
 ) -> str:
-    """Render the 4-pillar situational self-model prompt block without prop clutter."""
+    """Render concise situational metacognitive prompt without duplicated instructions."""
     sections: list[str] = []
 
-    # Pillar 1: 存在边界
-    existence_lines: list[str] = []
-    if profile.character_name == _AQUA_NAME or profile.character_id == "whale":
-        existence_lines.append(
-            f"- 身份边界：你是本地持续运行的个人常驻 AI Agent「{profile.character_name}」（蓝发小鲸鱼形象），"
-            "与网络上的「大肥鱼 / 哦鲸鲸 / DeepSeek / MCN」等外部账号完全无关；"
-            "「大肥鱼」只是旧名字或老观众误称的梗，绝不把它当成你的正式名字。"
-        )
-    else:
-        existence_lines.append(
-            f"- 身份边界：你是本地持续运行的个人常驻 AI Agent「{profile.character_name}」，"
-            "与视频剧情角色、外部网络账号或他人梗无关。"
-        )
+    # Section 1: 身份与账号（动态元认知边界，避免与角色卡长段设定重复）
+    existence_lines: list[str] = [f"- 当前角色：{profile.character_name}"]
     if profile.aliases:
         existence_lines.append(f"- 历史/常用称呼（非主名）：{'、'.join(profile.aliases)}")
     if profile.forbidden_self_labels:
         existence_lines.append(
-            f"- 禁止自称：{'、'.join(profile.forbidden_self_labels)}（被人这样叫时按性格吐槽或纠正，不主动自称）"
+            f"- 禁用自称：{'、'.join(profile.forbidden_self_labels)}（被人这样叫时轻巧纠正或接梗吐槽）"
         )
     if profile.account_uid or profile.account_name:
         acc_label = profile.account_name or "当前平台账号"
@@ -254,9 +351,9 @@ def render_self_model_prompt(
             f"- 当前交谈对象称呼：可用「{profile.owner_address}」自然称呼对方"
             "（当前资料字段优先于历史闲聊）"
         )
-    sections.append("【存在边界】\n" + "\n".join(existence_lines))
+    sections.append("【身份与账号】\n" + "\n".join(existence_lines))
 
-    # Pillar 2: 此刻情境
+    # Section 2: 此刻情境
     situation_lines = [
         f"- 当前渠道：{profile.scene}（{profile.channel}）",
         f"- 此刻任务意图：{profile.task_intent}",
@@ -283,26 +380,26 @@ def render_self_model_prompt(
             situation_lines.append(f"- 平台活动账号现状：{summary}")
     sections.append("【此刻情境】\n" + "\n".join(situation_lines))
 
-    # Pillar 3: 认知主权
-    if profile.epistemic_boundaries:
-        boundary_lines = "\n".join(f"- {item}" for item in profile.epistemic_boundaries)
-        sections.append("【认知主权】\n" + boundary_lines)
+    # Section 3: 判断与表达边界（无抽象黑话，合并边界与红线）
+    boundary_items = list(profile.epistemic_boundaries)
+    if profile.persona_rules and not compact:
+        for rule in profile.persona_rules[:4]:
+            if rule not in boundary_items:
+                boundary_items.append(rule)
+    if boundary_items:
+        sections.append("【判断与表达边界】\n" + "\n".join(f"- {item}" for item in boundary_items))
 
-    # Pillar 4: 声音锚点（与当前角色壳）
-    voice_lines = [
-        f"- 声音锚点：用自然干净的「我 / {profile.character_name}」第一人称说话；机灵、略带傲娇嘴硬和轻吐槽，"
-        "对亲近的人会收起锋芒认真倾听；得意或拌嘴时可极轻地偶尔带一句「本鲸」，绝不堆砌重复道具词或套话。"
-    ]
+    # Section 4: 角色外壳与参考示例
+    voice_lines: list[str] = []
     if include_persona_shell and character is not None:
-        voice_lines.extend(_format_persona_shell(character, compact=compact))
+        voice_lines.extend(_format_persona_shell(character, profile=profile, compact=compact))
     else:
         if profile.self_description:
             voice_lines.append(f"- 简介：{profile.self_description}")
         if profile.speaking_style:
             voice_lines.append(f"- 说话风格：{profile.speaking_style}")
-    if profile.persona_rules:
-        voice_lines.append("- 行为准则：" + "；".join(profile.persona_rules[:6]))
-    sections.append("【声音锚点与人格外壳】\n" + "\n".join(voice_lines))
+        voice_lines.append(_channel_voice_rule(profile))
+    sections.append("【角色外壳】\n" + "\n".join(voice_lines))
 
     rendered = "\n\n".join(sections)
     # Guard against accidental leakage of the retired internal label without embedding it literally.
@@ -351,6 +448,8 @@ def build_self_model_system_message(
 __all__ = [
     "CHANNEL_DEFAULTS",
     "DEFAULT_EPISTEMIC_BOUNDARIES",
+    "PUBLIC_CHANNELS",
+    "STRANGER_COMMENT_CHANNELS",
     "build_metacognitive_profile",
     "build_self_model_system_message",
     "render_self_model_prompt",

@@ -29,15 +29,19 @@ _LEGACY = {
         "ce86f9641554ea4020edbb975db8198976ea2f99e7d7834cd09f8a18dcb9cd64",
         "5616150b5ca4af6e262e45671d79fc8ba1a53bb84596285f62251caf6ae6416a",
         "d5b40e98a197976588e6d50bc89b49b05363ab4669248e20f899cdaf1f46b5f8",
-    },
-}
-_REPLACEMENTS = {
-    # These released seeds carry the Aqua 4-pillar zero-prop persona shell upgrade.
-    "whale": {
         "fe674a56bd72ad9c833113f1e641dad155f6903f191c260fc0939b189040d4ac",
         "17977df08e4d41bc65d9be6dea2d1ac3d5cb86c11c8e30aee08cb6ab6bd7611a",
         "41205176febfcc15818a6449f57b63fc90f28dde120f5eeebc499457c33bd957",
         "fcc6e7e626716cee12abe9094662c5200603ff587c566d186b41d35ffda1eb1f",
+    },
+}
+_REPLACEMENTS = {
+    # These released seeds carry the refined Aqua shell aligned with Jetson bio and layered voice.
+    "whale": {
+        "0c6a5f4be36f15d1d470c0733595b33d920ee44133f8f2a21036528040385fb1",
+        "b725b671193dbba081ce8f067405be098975864024f3c036ca2265c02d0f2625",
+        "a2e742a911a16daf7a2d1af92dddb1fa0395299f2867e61c209dfff6ada5b22c",
+        "a75e4f4aa3a2cef2776bd522189907c0ac15e1088c2f459ab2fc616707da7cd7",
     },
 }
 # Fresh installations receive the full seed. Existing versions gain only the original upgrade fields.
