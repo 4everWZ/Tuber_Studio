@@ -10,17 +10,20 @@ import { ApiError, apiDelete, apiGet, apiPost } from "@/shared/api/client";
 import { streamAgentChat, subscribeAgentChatEvents } from "@/shared/api/sse";
 import { useAppSession } from "@/shared/hooks/useAppSession";
 import { useCharacterDisplay } from "@/shared/hooks/useCharacterDisplay";
-import { operationsStore } from "@/features/operations/operationsStore";
 import { errorMessage, safeMessage } from "@/shared/lib/errors";
 import {
+  calmChatMessage,
   createRequestId,
+  dispatchAutomationSync,
   type AutomationControlStatus,
   type ChatHistoryResponse,
   type ChatRequestPayload,
   type ChatSubmissionPayload,
   type ChatTurn,
+  type MemoryUpdatedItem,
   type OpenedArtifactRef,
   type PetCharacterInfo,
+  type ToolActivityItem,
 } from "./types";
 
 const PAGE_SIZE = 20;
@@ -33,6 +36,7 @@ const STAGE_LABELS: Record<string, string> = {
   counting: "正在准备模型输入",
   generating: "正在回复",
   working: "正在查询或安排任务",
+  constrained: "需要调整或确认条件",
 };
 
 const ACTIVE_TASK_STATUSES = new Set([
@@ -68,6 +72,8 @@ export interface TransientTurn {
   message: string;
   stageText: string;
   partial: string;
+  toolActivities: ToolActivityItem[];
+  memoryUpdates: MemoryUpdatedItem[];
 }
 
 export interface ChatStatusMessage {
@@ -139,8 +145,13 @@ function upsertSingleTurn(prev: ChatTurn[], turn: ChatTurn): ChatTurn[] {
   }
   const index = prev.findIndex((item) => item.request_id === turn.request_id);
   if (index >= 0) {
+    const existing = prev[index];
     const next = [...prev];
-    next[index] = turn;
+    next[index] = {
+      ...turn,
+      tool_activities: turn.tool_activities ?? existing.tool_activities,
+      memory_updates: turn.memory_updates ?? existing.memory_updates,
+    };
     return next;
   }
   return [...prev, turn];
@@ -160,14 +171,80 @@ function cardNeedsRefresh(turn: ChatTurn): boolean {
   return CONTINUOUS_REFRESH_CARDS.has(card.type);
 }
 
+function parseToolActivity(raw: unknown): ToolActivityItem | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const rec = raw as Record<string, unknown>;
+  const id = typeof rec.id === "string" && rec.id ? rec.id : "";
+  const tool = typeof rec.tool === "string" && rec.tool ? rec.tool : "tool";
+  const label = typeof rec.label === "string" && rec.label ? rec.label : tool;
+  const status = typeof rec.status === "string" && rec.status ? rec.status : "running";
+  if (!id && !label) return null;
+  return {
+    id: id || `${tool}-${label}`,
+    tool,
+    action: typeof rec.action === "string" ? rec.action : undefined,
+    label,
+    status,
+    summary: typeof rec.summary === "string" ? calmChatMessage(rec.summary) : undefined,
+    detail: typeof rec.detail === "string" ? calmChatMessage(rec.detail) : undefined,
+    data: typeof rec.data === "object" && rec.data !== null ? (rec.data as Record<string, unknown>) : undefined,
+  };
+}
+
+function parseMemoryUpdated(raw: unknown): MemoryUpdatedItem | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const rec = raw as Record<string, unknown>;
+  const snippet = typeof rec.snippet === "string" ? rec.snippet.trim() : "";
+  if (!snippet) return null;
+  const action = typeof rec.action === "string" && rec.action ? rec.action : "updated";
+  const scope = typeof rec.scope === "string" && rec.scope ? rec.scope : "owner";
+  return {
+    action,
+    scope,
+    character_id: typeof rec.character_id === "string" ? rec.character_id : undefined,
+    memory_id:
+      typeof rec.memory_id === "string" || typeof rec.memory_id === "number"
+        ? rec.memory_id
+        : null,
+    snippet,
+    count: typeof rec.count === "number" ? rec.count : undefined,
+    limit: typeof rec.limit === "number" ? rec.limit : undefined,
+    soft_limit_reached: typeof rec.soft_limit_reached === "boolean" ? rec.soft_limit_reached : undefined,
+  };
+}
+
+function upsertToolActivity(
+  list: ToolActivityItem[],
+  item: ToolActivityItem
+): ToolActivityItem[] {
+  const index = list.findIndex((entry) => entry.id === item.id);
+  if (index >= 0) {
+    const next = [...list];
+    next[index] = { ...list[index], ...item };
+    return next;
+  }
+  return [...list, item];
+}
+
+function appendMemoryUpdate(
+  list: MemoryUpdatedItem[],
+  item: MemoryUpdatedItem
+): MemoryUpdatedItem[] {
+  const key = `${item.action}:${item.memory_id ?? item.snippet}`;
+  if (list.some((entry) => `${entry.action}:${entry.memory_id ?? entry.snippet}` === key)) {
+    return list;
+  }
+  return [...list, item];
+}
+
 export function useOperatorChatStream({
   timelineRef,
   controlsPending,
 }: UseOperatorChatStreamOptions) {
-  const { status, onUnauthorized } = useAppSession();
+  const { status, refreshStatus, onUnauthorized } = useAppSession();
   const display = useCharacterDisplay();
 
-  const [characterTitle, setCharacterTitle] = useState("对话");
+  const [characterTitle, setCharacterTitle] = useState("Aqua");
   const [petCharacter, setPetCharacter] = useState<PetCharacterInfo | null>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null | undefined>(null);
@@ -242,7 +319,15 @@ export function useOperatorChatStream({
       }
       timeline.scrollTop += timeline.scrollHeight - intent.prevHeight;
     }
-  }, [turns, transient?.partial, transient?.stageText, statusMessage.text, timelineRef]);
+  }, [
+    turns,
+    transient?.partial,
+    transient?.stageText,
+    transient?.toolActivities.length,
+    transient?.memoryUpdates.length,
+    statusMessage.text,
+    timelineRef,
+  ]);
 
   const setMessage = useCallback(
     (text: string, isError = false, canRetry = false) => {
@@ -259,6 +344,26 @@ export function useOperatorChatStream({
   const reflectAutomation = useCallback((value: AutomationControlStatus) => {
     setAutomationStatus(value);
   }, []);
+
+  // Keep chat automation state in lockstep with AppShell live WS / status automation snapshot
+  const liveSessionAutomation = status?.automation;
+  useEffect(() => {
+    if (!liveSessionAutomation) return;
+    setAutomationStatus((prev) => ({
+      ...(prev || {}),
+      state: liveSessionAutomation.state ?? prev?.state,
+      policy: {
+        ...(prev?.policy || {}),
+        enabled: liveSessionAutomation.enabled ?? prev?.policy?.enabled,
+        emergency: liveSessionAutomation.emergency ?? prev?.policy?.emergency,
+      },
+    }));
+  }, [
+    liveSessionAutomation,
+    liveSessionAutomation?.state,
+    liveSessionAutomation?.enabled,
+    liveSessionAutomation?.emergency,
+  ]);
 
   const refreshAttention = useCallback(async () => {
     try {
@@ -322,7 +427,7 @@ export function useOperatorChatStream({
       scopeRef.current = nextScope;
       conversationIdRef.current = result.conversation_id || null;
 
-      setCharacterTitle(result.character || "对话");
+      setCharacterTitle(result.character || "Aqua");
       setPetCharacter(
         result.character_id || result.character
           ? {
@@ -354,7 +459,7 @@ export function useOperatorChatStream({
         currentEpoch === epochRef.current &&
         request === recentRequestRef.current
       ) {
-        setHistoryNote(`对话读取失败：${safeMessage(errorMessage(error))}`);
+        setHistoryNote(`对话读取暂不可用：${calmChatMessage(errorMessage(error))}`);
       }
     }
   }, [nearEnd]);
@@ -388,7 +493,7 @@ export function useOperatorChatStream({
       setNextCursor(result.next_cursor ?? null);
     } catch (error) {
       if (mountedRef.current && currentEpoch === epochRef.current) {
-        setHistoryNote(`更早消息读取失败：${safeMessage(errorMessage(error))}`);
+        setHistoryNote(`更早消息读取暂不可用：${calmChatMessage(errorMessage(error))}`);
       }
     } finally {
       if (mountedRef.current && currentEpoch === epochRef.current) {
@@ -507,11 +612,15 @@ export function useOperatorChatStream({
         message: payload.message,
         stageText: "",
         partial: "",
+        toolActivities: [],
+        memoryUpdates: [],
       });
 
       let partial = "";
       let renderFrame = 0;
       let result: ChatTurn | undefined;
+      let collectedTools: ToolActivityItem[] = [];
+      let collectedMemories: MemoryUpdatedItem[] = [];
 
       const flushDelta = () => {
         renderFrame = 0;
@@ -558,6 +667,41 @@ export function useOperatorChatStream({
                   renderFrame = window.requestAnimationFrame(flushDelta);
                 }
               }
+            } else if (event === "tool_activity") {
+              const item = parseToolActivity(data);
+              if (item) {
+                collectedTools = upsertToolActivity(collectedTools, item);
+                if (nearEnd()) {
+                  scrollIntentRef.current = { kind: "bottom" };
+                }
+                setTransient((prev) =>
+                  prev ? { ...prev, toolActivities: collectedTools } : prev
+                );
+                const autoState = item.data?.automation_state;
+                if (typeof autoState === "string" && autoState) {
+                  const isActive = autoState === "running" || autoState === "starting";
+                  setAutomationStatus((prev) => ({
+                    ...(prev || {}),
+                    state: autoState,
+                    policy: { ...(prev?.policy || {}), enabled: isActive },
+                  }));
+                  dispatchAutomationSync({
+                    automation: { state: autoState, enabled: isActive },
+                    refresh: true,
+                  });
+                }
+              }
+            } else if (event === "memory_updated") {
+              const mem = parseMemoryUpdated(data);
+              if (mem) {
+                collectedMemories = appendMemoryUpdate(collectedMemories, mem);
+                if (nearEnd()) {
+                  scrollIntentRef.current = { kind: "bottom" };
+                }
+                setTransient((prev) =>
+                  prev ? { ...prev, memoryUpdates: collectedMemories } : prev
+                );
+              }
             }
           },
         });
@@ -586,14 +730,39 @@ export function useOperatorChatStream({
         if (nearEnd()) {
           scrollIntentRef.current = { kind: "bottom" };
         }
+        const doneTools = Array.isArray(result?.tool_activities)
+          ? result.tool_activities.map(parseToolActivity).filter((item): item is ToolActivityItem => Boolean(item))
+          : [];
+        const rawDoneMemories = result?.memory_updates ?? result?.memory_events;
+        const doneMemories = Array.isArray(rawDoneMemories)
+          ? rawDoneMemories.map(parseMemoryUpdated).filter((item): item is MemoryUpdatedItem => Boolean(item))
+          : [];
+        const finalTools = doneTools.length > 0 ? doneTools : collectedTools;
+        const finalMemories = doneMemories.length > 0 ? doneMemories : collectedMemories;
+
         const mergedTurn: ChatTurn = {
           message: payload.message,
           ...result,
           request_id: result?.request_id || request.request_id,
+          ...(finalTools.length > 0 ? { tool_activities: finalTools } : {}),
+          ...(finalMemories.length > 0 ? { memory_updates: finalMemories } : {}),
         };
         setTurns((prev) => upsertSingleTurn(prev, mergedTurn));
         setMessage("");
         setProgressText("");
+
+        if (mergedTurn.card?.type === "operation_control" && mergedTurn.card.data) {
+          const cardAuto = mergedTurn.card.data as AutomationControlStatus;
+          setAutomationStatus(cardAuto);
+          dispatchAutomationSync({
+            automation: {
+              state: cardAuto.state ?? undefined,
+              enabled: cardAuto.policy?.enabled,
+              emergency: cardAuto.policy?.emergency,
+            },
+            refresh: true,
+          });
+        }
       } catch (error) {
         if (!mountedRef.current || currentEpoch !== epochRef.current) return;
         if (request.opened_artifact && error instanceof ApiError && error.status === 409) {
@@ -607,7 +776,7 @@ export function useOperatorChatStream({
           onAccepted: options.onAccepted,
         };
         setProgressText("");
-        setMessage(safeMessage(errorMessage(error)), true, true);
+        setMessage(calmChatMessage(errorMessage(error)), true, true);
       } finally {
         if (renderFrame) {
           window.cancelAnimationFrame(renderFrame);
@@ -624,13 +793,19 @@ export function useOperatorChatStream({
           } else if (scopeRef.current === null) {
             await refresh();
           }
-          if (result?.card?.type === "operation_control" || result?.task_delivery) {
-            void operationsStore.refreshStatus();
+          if (
+            result?.card?.type === "operation_control" ||
+            result?.task_delivery ||
+            payload.intent?.action === "start_operations" ||
+            payload.intent?.action === "stop"
+          ) {
+            dispatchAutomationSync({ refresh: true });
+            void refreshStatus().catch(() => {});
           }
         }
       }
     },
-    [display, nearEnd, onUnauthorized, refresh, setMessage, updatePending]
+    [display, nearEnd, onUnauthorized, refresh, refreshStatus, setMessage, updatePending]
   );
 
   const retryLast = useCallback(() => {
@@ -658,7 +833,7 @@ export function useOperatorChatStream({
       setProgressText("当前请求正在收尾。");
     } catch (error) {
       if (inFlightRef.current === current) {
-        setMessage(`停止失败：${safeMessage(errorMessage(error))}`, true, false);
+        setMessage(`未能停止：${calmChatMessage(errorMessage(error))}`, true, false);
       }
     }
     if (inFlightRef.current === current) {
@@ -745,7 +920,7 @@ export function useOperatorChatStream({
                 }
                 setTurns((prev) => upsertSingleTurn(prev, turn));
                 void refreshAttention();
-                void operationsStore.refreshStatus();
+                dispatchAutomationSync({ refresh: true });
                 if (!pendingRef.current) {
                   void refresh();
                 }

@@ -30,19 +30,19 @@ export function StatusFooter({
   return (
     <footer className={`win-statusbar ${styles.statusbar}`} data-chat-hide="">
       <div className={`statusbar-panel panel-mode ${styles.statusbarPanel}`}>
-        <span className="sb-label">直播:</span>{" "}
+        <span className="sb-label">直播</span>{" "}
         <span id="sb-status-mode" className={`sb-val ${styles.sbVal}`}>
           {status?.state ? label(status.state) : "待读取"}
         </span>
       </div>
       <div className={`statusbar-panel panel-character ${styles.statusbarPanel}`}>
-        <span className="sb-label">角色:</span>{" "}
+        <span className="sb-label">角色</span>{" "}
         <span id="sb-status-char" className={`sb-val ${styles.sbVal}`}>
           {character || "—"}
         </span>
       </div>
       <div className={`statusbar-panel panel-engine ${styles.statusbarPanel} ${styles.statusbarEngine}`}>
-        <span className="sb-label">Omni API:</span>{" "}
+        <span className="sb-label">Omni</span>{" "}
         <InferenceStatusBadge status={status} settings={settings} />
       </div>
       <div className={`statusbar-panel panel-time ${styles.statusbarPanel}`}>

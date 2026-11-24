@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { ApiError, apiGet, apiPost } from "@/shared/api/client";
-import { errorMessage, safeMessage } from "@/shared/lib/errors";
-import { operationsStore } from "@/features/operations/operationsStore";
-import type { AutomationControlStatus } from "./types";
+import { useAppSession } from "@/shared/hooks/useAppSession";
+import { errorMessage } from "@/shared/lib/errors";
+import { StatusPill, type StatusPillTone } from "@/shared/ui/StatusPill";
+import {
+  calmChatMessage,
+  dispatchAutomationSync,
+  type AutomationControlStatus,
+} from "./types";
 
 interface PolicyFieldSpec {
   key: string;
@@ -77,9 +82,16 @@ const STATE_LABELS: Record<string, string> = {
   running: "自主运营中",
   draining: "正在收尾当前批次",
   stopping: "正在停止自主运营",
-  blocked: "自主运营受阻",
+  blocked: "暂需关注条件",
   off: "自主运营已停止",
 };
+
+function stateTone(state: string | null | undefined, enabled: boolean, emergency: boolean): StatusPillTone {
+  if (emergency || state === "blocked") return "amber";
+  if (state === "running" || (enabled && !state)) return "good";
+  if (state === "starting" || state === "draining" || state === "stopping") return "blue";
+  return "neutral";
+}
 
 function readGroup(status: AutomationControlStatus, group: PolicyFieldSpec["group"]): Record<string, unknown> {
   if (group === "browsing") return status.settings || {};
@@ -114,6 +126,7 @@ export function OperationControlCard({
   onControlsPendingChange,
   onReflectAutomation,
 }: OperationControlCardProps) {
+  const { refreshStatus } = useAppSession();
   const status = sharedStatus || initialStatus;
   const [draftModes, setDraftModes] = useState<Record<string, string>>({});
   const [lastScope, setLastScope] = useState(() => scopeOf(status));
@@ -130,7 +143,9 @@ export function OperationControlCard({
   }, [currentScope, lastScope]);
 
   const emergency = status.policy?.emergency === true;
-  const enabled = status.policy?.enabled === true;
+  const isStarting = status.state === "starting";
+  const isRunning = status.state === "running" && !emergency;
+  const enabled = status.policy?.enabled === true || isRunning;
   const pending = controlsPending || ["starting", "draining", "stopping"].includes(status.state || "");
   const dirty = POLICY_FIELDS.some(
     (field) => field.key in draftModes && draftModes[field.key] !== currentMode(status, field)
@@ -139,11 +154,12 @@ export function OperationControlCard({
   const stateText = emergency
     ? "已紧急停止"
     : (status.state && STATE_LABELS[status.state]) || (enabled ? STATE_LABELS.running : STATE_LABELS.off);
+  const pillTone = stateTone(status.state, enabled, emergency);
 
   const blockers = (status.blockers || [])
     .map((item) => (typeof item === "string" ? item : item?.message))
     .filter((item): item is string => Boolean(item));
-  const blockerText = safeMessage(blockers.join("；"));
+  const blockerText = calmChatMessage(blockers.join("；"));
 
   async function apply(action: "save" | "start" | "stop") {
     if (controlsPending) return;
@@ -203,7 +219,7 @@ export function OperationControlCard({
             : (result?.state && STATE_LABELS[result.state]) || "控制状态已更新。"
       );
     } catch (error) {
-      setNote(errorMessage(error));
+      setNote(calmChatMessage(errorMessage(error)));
       if (error instanceof ApiError && error.status === 409 && action !== "stop") {
         setShowRefresh(true);
       }
@@ -215,9 +231,18 @@ export function OperationControlCard({
         // Next status refresh will reconcile the card.
       }
     } finally {
+      const effective = result || status;
       onControlsPendingChange(false);
-      onReflectAutomation(result || status);
-      void operationsStore.refreshStatus();
+      onReflectAutomation(effective);
+      dispatchAutomationSync({
+        automation: {
+          state: effective.state ?? undefined,
+          enabled: effective.policy?.enabled,
+          emergency: effective.policy?.emergency,
+        },
+        refresh: true,
+      });
+      void refreshStatus().catch(() => {});
     }
   }
 
@@ -236,7 +261,7 @@ export function OperationControlCard({
       setNote("已更新当前权限，请核对后确认。");
       setShowRefresh(false);
     } catch (error) {
-      setNote(errorMessage(error));
+      setNote(calmChatMessage(errorMessage(error)));
     } finally {
       setRefreshing(false);
     }
@@ -244,8 +269,10 @@ export function OperationControlCard({
 
   return (
     <>
-      <h2>自主运营</h2>
-      <p className="hint">{stateText}</p>
+      <div className="chat-card-header">
+        <h2>自主运营</h2>
+        <StatusPill label={stateText} tone={pillTone} />
+      </div>
       {blockerText && <p className="hint">{blockerText}</p>}
       <details>
         <summary>查看与修改运营权限</summary>
@@ -297,15 +324,16 @@ export function OperationControlCard({
         <button
           type="button"
           className="primary"
-          hidden={enabled}
+          hidden={enabled && !isStarting}
           disabled={pending || emergency}
+          aria-busy={isStarting}
           onClick={() => void apply("start")}
         >
-          确认并启动
+          {isStarting ? "正在启动运营…" : "开始自主运营"}
         </button>
         <button
           type="button"
-          hidden={!enabled}
+          hidden={!enabled || isStarting}
           disabled={pending || emergency}
           onClick={() => void apply("stop")}
         >

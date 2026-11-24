@@ -1,3 +1,4 @@
+import { safeMessage } from "@/shared/lib/errors";
 import type { OperationCapabilityStatus } from "@/shared/ui/CapabilityStrip";
 
 export interface ChatSourceEntry {
@@ -29,6 +30,28 @@ export interface ChatCard {
   data: Record<string, unknown>;
 }
 
+export interface ToolActivityItem {
+  id: string;
+  tool: string;
+  action?: string;
+  label: string;
+  status: "running" | "completed" | "constrained" | (string & {});
+  summary?: string;
+  detail?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface MemoryUpdatedItem {
+  action: "created" | "updated" | "deleted" | "deduplicated" | (string & {});
+  scope: string;
+  character_id?: string;
+  memory_id?: string | number | null;
+  snippet: string;
+  count?: number;
+  limit?: number;
+  soft_limit_reached?: boolean;
+}
+
 export interface ChatTurn {
   request_id: string;
   message?: string;
@@ -40,6 +63,9 @@ export interface ChatTurn {
   reply_sections?: string[];
   sources?: ChatSourceGroup[];
   card?: ChatCard | null;
+  tool_activities?: ToolActivityItem[];
+  memory_updates?: MemoryUpdatedItem[];
+  memory_events?: MemoryUpdatedItem[];
   memory_dependent?: boolean;
   task_reference?: string | null;
   task_delivery?: {
@@ -365,4 +391,101 @@ export function safeHttpsUrl(value: unknown): string | null {
     // Invalid URLs stay non-clickable.
   }
   return null;
+}
+
+const INTERNAL_GUARD_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+  [
+    /并行委派只允许独立读取|并发委派只允许/,
+    "这几步不能同时改动状态，已经按顺序排好处理，这一轮先暂缓，需要的话可以换个方式再试试。",
+  ],
+  [
+    /Responses 未返回|完整、唯一的函数调用/,
+    "这轮操作指令没有完整解析出来，稍后再试一次或换个说法就好。",
+  ],
+  [
+    /同一批次存在重复委派/,
+    "刚才重复发出了同一项操作请求，已拦截避免重复执行，可以再试一次。",
+  ],
+  [
+    /超出本轮委派范围|本轮委派范围/,
+    "这一步试着调用了当前任务未开放的能力，先暂缓处理。",
+  ],
+  [
+    /没有按本轮委派提交实际材料|提交实际材料/,
+    "整理阶段还没拿到可交付的有效结果，先停在这里，需要的话可以补充说明后再继续。",
+  ],
+  [
+    /补读短窗超出当前视频读取授权/,
+    "这段补读超出了刚才指定的视频范围，需要继续的话请再指定具体片段。",
+  ],
+  [
+    /上下文容量|窗口预算|ContextWindowExceeded/,
+    "这次要处理的内容偏多，超出了当前单轮上下文容量，可以拆成小段后再试。",
+  ],
+  [
+    /自主运营正在启动/,
+    "自主运营正在检查启动条件，请稍等状态同步完成。",
+  ],
+];
+
+/**
+ * Translate raw internal delegation/guard/traceback strings and legacy jargon
+ * into calm owner-facing language matching backend `calm_constraint_message`.
+ */
+export function calmChatMessage(raw: unknown): string {
+  const sanitized = safeMessage(raw).trim();
+  if (!sanitized) return "";
+  const normalized = sanitized
+    .replace(/工坊号主/g, "对方")
+    .replace(/绑定号主/g, "绑定主人")
+    .replace(/B\s*站号主/g, "B 站主人")
+    .replace(/号主给定的来源/g, "刚才指定的来源")
+    .replace(/号主/g, "对方")
+    .replace(/工坊/g, "工作台");
+
+  for (const [pattern, calm] of INTERNAL_GUARD_PATTERNS) {
+    if (pattern.test(normalized)) {
+      return calm;
+    }
+  }
+  if (
+    normalized.startsWith("Traceback") ||
+    /ValidationError|pydantic/i.test(normalized)
+  ) {
+    return "操作参数没能匹配当前要求，可以调整说法后再试。";
+  }
+  return normalized;
+}
+
+export interface ManageMemoriesEventDetail {
+  memoryId?: string | number | null;
+  snippet?: string;
+  scope?: string;
+}
+
+export function dispatchOpenManageMemories(detail: ManageMemoriesEventDetail): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<ManageMemoriesEventDetail>("aqua:open-manage-memories", { detail })
+  );
+}
+
+export interface AutomationStatusEventDetail {
+  automation?: {
+    state?: string;
+    enabled?: boolean;
+    emergency?: boolean;
+    epoch?: number;
+    inbox_enabled?: boolean;
+    discovery_enabled?: boolean;
+    comment_cooldown_until?: number | null;
+  };
+  refresh?: boolean;
+}
+
+export function dispatchAutomationSync(detail: AutomationStatusEventDetail): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<AutomationStatusEventDetail>("aqua:automation-status", { detail })
+  );
 }

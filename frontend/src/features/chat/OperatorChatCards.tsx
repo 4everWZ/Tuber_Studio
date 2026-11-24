@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { ApiError, apiGet, apiPost, studioPath } from "@/shared/api/client";
-import { errorMessage, safeMessage } from "@/shared/lib/errors";
+import { errorMessage } from "@/shared/lib/errors";
 import { illustrationStatus, illustrationUrl, type IllustrationRef } from "@/shared/lib/operationImage";
 import { MarkdownText } from "@/shared/ui/MarkdownText";
 import { MentionLinks, type PublicMention } from "@/shared/ui/MentionLinksAndEditor";
-import { AssistantAnswer } from "./AssistantAnswer";
+import { StatusPill, type StatusPillTone } from "@/shared/ui/StatusPill";
+import { AssistantAnswer, MemoryUpdatedPill } from "./AssistantAnswer";
 import { DynamicPublicationApproval } from "./DynamicPublicationApproval";
 import { OperationControlCard } from "./OperationControlCard";
 import {
+  calmChatMessage,
   isPlatformLink,
   type AutomationControlStatus,
   type ChatTurn,
@@ -18,11 +20,11 @@ import {
 const CARD_STATUS_LABELS: Record<string, string> = {
   queued: "排队中",
   waiting: "等待资源",
-  running: "运行中",
+  running: "进行中",
   completed: "已完成",
   paused: "已暂停",
   partial: "部分完成",
-  failed: "失败",
+  failed: "未完成",
   cancelled: "已停止",
   pending_review: "待审核",
   approved: "已审核",
@@ -50,14 +52,24 @@ const MEMORY_GROUP_NAMES: Record<string, string> = {
 };
 
 const MEMORY_VISIBILITY_LABELS: Record<string, string> = {
-  owner: "仅号主",
+  owner: "仅本人",
   shared: "可跨端使用",
   live_rule: "直播规则",
 };
 
 function statusLabel(value: unknown): string {
-  if (typeof value !== "string" || !value) return "未知";
+  if (typeof value !== "string" || !value) return "待确认";
   return CARD_STATUS_LABELS[value] || value;
+}
+
+function statusTone(value: unknown): StatusPillTone {
+  if (typeof value !== "string" || !value) return "neutral";
+  if (["completed", "approved", "published", "live", "selected"].includes(value)) return "good";
+  if (["running", "reading", "publishing", "queued", "waiting"].includes(value)) return "blue";
+  if (["failed", "publish_uncertain", "pending_review", "awaiting_approval", "needs_input", "invalidated"].includes(value)) {
+    return "amber";
+  }
+  return "neutral";
 }
 
 function formatTimecode(seconds: number): string {
@@ -90,7 +102,7 @@ function ActionInteractionBlock({
   if (interaction?.kind === "login" && interaction.href === "#accounts") {
     return (
       <>
-        {interaction.target && <p>{interaction.target}</p>}
+        {interaction.target && <p>{calmChatMessage(interaction.target)}</p>}
         <a href={interaction.href}>打开 B 站账号登录</a>
       </>
     );
@@ -189,7 +201,7 @@ function HistoryArtifactCard({
         });
       }
     } catch (err) {
-      setError(errorMessage(err));
+      setError(calmChatMessage(errorMessage(err)));
     } finally {
       setLoading(false);
     }
@@ -205,7 +217,7 @@ function HistoryArtifactCard({
           <p className="hint">{error}</p>
         ) : loaded ? (
           <>
-            <small className="hint">{loaded.author === "owner" ? "号主编辑" : "角色交付"}</small>
+            <small className="hint">{loaded.author === "owner" ? "你的编辑" : "角色交付"}</small>
             <MarkdownText allowLinks text={loaded.body} />
           </>
         ) : loading ? (
@@ -276,7 +288,7 @@ function DynamicDraftCard({ initial }: { initial: DynamicDraftCardData }) {
       setDraftText(null);
       setOutcome(null);
     } catch (error) {
-      setOutcome(errorMessage(error));
+      setOutcome(calmChatMessage(errorMessage(error)));
     } finally {
       setBusy(false);
     }
@@ -284,10 +296,14 @@ function DynamicDraftCard({ initial }: { initial: DynamicDraftCardData }) {
 
   return (
     <>
-      <h2>动态草稿</h2>
-      <p className="muted" role="status">
-        {outcome || statusLabel(data.status)}
-      </p>
+      <div className="chat-card-header">
+        <h2>动态草稿</h2>
+        <StatusPill
+          label={outcome || statusLabel(data.status)}
+          tone={outcome ? "blue" : statusTone(data.status)}
+          role="status"
+        />
+      </div>
       {data.id ? (
         <>
           {editable ? (
@@ -327,7 +343,7 @@ function DynamicDraftCard({ initial }: { initial: DynamicDraftCardData }) {
             )}
             <a href="#dynamics">打开动态工作台</a>
           </div>
-          {data.error && <p className="muted">{safeMessage(data.error)}</p>}
+          {data.error && <p className="muted">{calmChatMessage(data.error)}</p>}
           {data.status === "published" && receiptId != null && /^\d+$/.test(String(receiptId)) && (
             <ExternalLink text="查看已发布动态" href={`https://t.bilibili.com/${receiptId}`} />
           )}
@@ -356,7 +372,7 @@ function DynamicEditCard({ initial }: { initial: DynamicEditData }) {
   }, [initial]);
 
   const value = override || initial;
-  const noteText = errMsg || value.error || (value.status === "applied" ? "已核对原动态更新。" : "");
+  const noteText = errMsg || calmChatMessage(value.error) || (value.status === "applied" ? "已核对原动态更新。" : "");
 
   async function applyEdit() {
     if (busy) return;
@@ -369,7 +385,7 @@ function DynamicEditCard({ initial }: { initial: DynamicEditData }) {
       );
       setOverride(updated);
     } catch (error) {
-      setErrMsg(errorMessage(error));
+      setErrMsg(calmChatMessage(errorMessage(error)));
     } finally {
       setBusy(false);
     }
@@ -484,7 +500,9 @@ function materialSummary(value: MaterialSlice | undefined): string {
   const windows = value.windows?.length
     ? `覆盖 ${value.windows.filter((w) => w.state === "sampled").length}/${value.windows.length} 段`
     : "";
-  return [state, count, track, gaps, windows, samples, safeMessage(value.reason)].filter(Boolean).join(" · ");
+  return [state, count, track, gaps, windows, samples, calmChatMessage(value.reason)]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function VideoBrowsingCard({
@@ -581,7 +599,7 @@ function VideoBrowsingCard({
       setOverride(updated.card.data);
       setActionNote("");
     } catch (error) {
-      setActionNote(errorMessage(error));
+      setActionNote(calmChatMessage(errorMessage(error)));
     } finally {
       setBusy(false);
     }
@@ -589,10 +607,10 @@ function VideoBrowsingCard({
 
   return (
     <>
-      <h2>{titleText}</h2>
-      <p className="hint" role="status">
-        {stateText}
-      </p>
+      <div className="chat-card-header">
+        <h2>{titleText}</h2>
+        <StatusPill label={stateText} tone={statusTone(data.status)} role="status" />
+      </div>
       {selectionText && <p className="hint">{selectionText}</p>}
 
       {data.inspection && (
@@ -619,12 +637,12 @@ function VideoBrowsingCard({
           )}
           <blockquote className="quoted-text">{data.inspection.text}</blockquote>
           {data.inspection.fallback_reason && (
-            <p className="hint">{safeMessage(data.inspection.fallback_reason)}</p>
+            <p className="hint">{calmChatMessage(data.inspection.fallback_reason)}</p>
           )}
         </div>
       )}
 
-      {data.excerpt?.error && <p className="hint">{data.excerpt.error}</p>}
+      {data.excerpt?.error && <p className="hint">{calmChatMessage(data.excerpt.error)}</p>}
       {isPlatformLink(data.excerpt?.source_url) && data.excerpt && (
         <div>
           <ExternalLink
@@ -707,7 +725,7 @@ function VideoBrowsingCard({
                                   return (
                                     <li key={`w-${wIdx}`}>
                                       {w.start}–{w.end} 秒 · {reason}
-                                      {w.reason ? ` · ${safeMessage(w.reason)}` : ""}
+                                      {w.reason ? ` · ${calmChatMessage(w.reason)}` : ""}
                                     </li>
                                   );
                                 })}
@@ -756,7 +774,9 @@ function VideoBrowsingCard({
           继续取材
         </button>
       </div>
-      <p className="hint">{actionNote || safeMessage(data.error)}</p>
+      {(actionNote || data.error) && (
+        <p className="hint">{actionNote || calmChatMessage(data.error)}</p>
+      )}
     </>
   );
 }
@@ -795,7 +815,7 @@ function LiveCard({ requestId, type, initial }: { requestId: string; type: strin
       setOverride(result.card.data);
       setNote("直播会话已开启。");
     } catch (error) {
-      setNote(errorMessage(error));
+      setNote(calmChatMessage(errorMessage(error)));
       if (error instanceof ApiError && error.status === 409) {
         setShowRefresh(true);
       }
@@ -818,7 +838,7 @@ function LiveCard({ requestId, type, initial }: { requestId: string; type: strin
       setShowRefresh(false);
       setNote("已更新会话状态，请核对后确认。");
     } catch (error) {
-      setNote(errorMessage(error));
+      setNote(calmChatMessage(errorMessage(error)));
     } finally {
       setBusy(false);
     }
@@ -826,18 +846,24 @@ function LiveCard({ requestId, type, initial }: { requestId: string; type: strin
 
   return (
     <>
-      <h2>直播状态</h2>
-      <p className="muted">
-        {value.enabled
-          ? `${statusLabel(value.state)}${value.muted ? " · 静音" : ""}`
-          : "当前设备尚未启用直播功能"}
-      </p>
-      <a href="#live">打开直播工作台</a>
+      <div className="chat-card-header">
+        <h2>直播状态</h2>
+        <StatusPill
+          label={
+            value.enabled
+              ? `${statusLabel(value.state)}${value.muted ? " · 静音" : ""}`
+              : "暂未启用直播"
+          }
+          tone={value.enabled ? statusTone(value.state) : "neutral"}
+        />
+      </div>
+      <a href="#live">打开直播台</a>
       {type === "live_confirmation" && (
         <>
           <div className="actions">
             <button
               type="button"
+              className="primary"
               disabled={busy || !value.enabled || value.state === "live"}
               onClick={() => void confirmLive()}
             >
@@ -852,9 +878,11 @@ function LiveCard({ requestId, type, initial }: { requestId: string; type: strin
               重新核对会话
             </button>
           </div>
-          <p className="hint" role="status">
-            {note}
-          </p>
+          {note && (
+            <p className="hint" role="status">
+              {note}
+            </p>
+          )}
         </>
       )}
     </>
@@ -905,30 +933,32 @@ export function OperatorChatCards({
       waiting: "等待工具结果",
       cancelled: "已停止",
       scheduled: "已预约",
+      failed: "暂未完成",
     };
     const statusText = statusMap[status] || statusLabel(status);
     const delivered = Boolean(data.delivered_in_chat);
-    const message = delivered ? "" : String(data.message || "");
+    const rawMessage = delivered ? "" : String(data.message || "");
+    const message = rawMessage ? calmChatMessage(rawMessage) : "";
     const steps = Array.isArray(data.steps) ? (data.steps as Array<{ result?: unknown }>) : [];
     const showReceiptHint =
       !delivered && (status === "completed" || status === "failed") && steps.some((s) => s.result);
 
     return (
       <>
-        <p className="hint" role="status">
-          {statusText}
-        </p>
-        <p className="hint" hidden={!showReceiptHint}>
-          按工具回执交付
-        </p>
+        <div className="chat-card-header">
+          <StatusPill label={statusText} tone={statusTone(status)} role="status" />
+          {showReceiptHint && <span className="hint">已整理核对记录</span>}
+        </div>
         {message && (
           <div className="chat-task-result">
             <AssistantAnswer turn={{ reply_format: "markdown", reply_text: message }} />
           </div>
         )}
-        <button type="button" onClick={() => onOpenTask(taskId)}>
-          查看任务
-        </button>
+        <div className="actions">
+          <button type="button" onClick={() => onOpenTask(taskId)}>
+            查看任务
+          </button>
+        </div>
       </>
     );
   }
@@ -1004,16 +1034,18 @@ export function OperatorChatCards({
                       </>
                     )}
                     {item.number != null && ` · 编号 ${item.number}`}
-                    {item.reason && ` · ${safeMessage(item.reason)}`}
+                    {item.reason && ` · ${calmChatMessage(item.reason)}`}
                   </li>
                 );
               })}
             </ul>
           )}
         </div>
-        <button type="button" onClick={() => onOpenTask(taskId)}>
-          查看任务
-        </button>
+        <div className="actions">
+          <button type="button" onClick={() => onOpenTask(taskId)}>
+            查看任务
+          </button>
+        </div>
       </>
     );
   }
@@ -1027,7 +1059,7 @@ export function OperatorChatCards({
   }
 
   if (type === "owner_profile" && typeof data.url === "string") {
-    return <ExternalLink text="打开绑定号主的 B 站主页" href={data.url} />;
+    return <ExternalLink text="打开已绑定的 B 站主页" href={data.url} />;
   }
 
   if (type === "dynamic_draft") {
@@ -1147,11 +1179,21 @@ export function OperatorChatCards({
   }
 
   if (type === "memory_change") {
+    const text = String(data.text || "").trim();
+    if (!text) return null;
+    if (turn.memory_updates?.length) {
+      return null;
+    }
     return (
-      <>
-        <h3>{String(data.target || "")}</h3>
-        <p>{String(data.text || "")}</p>
-      </>
+      <MemoryUpdatedPill
+        updates={[
+          {
+            action: "updated",
+            scope: "owner",
+            snippet: text,
+          },
+        ]}
+      />
     );
   }
 
@@ -1187,7 +1229,7 @@ export function OperatorChatCards({
       synthesizing: "正在合成语音",
       ready_to_play: "等待播放器",
       playing: "正在播报",
-      failed: "播报失败",
+      failed: "暂未播报",
       cancelled: "任务已取消",
       unavailable: "任务不可用",
       expired: "任务已过期",

@@ -2,9 +2,9 @@ import styles from "@/shared/styles/workbench.module.css";
 import { SUB_NAV_TABS, type PageId, type WorkspaceSection } from "./navigation";
 
 const SECTION_LABELS: Record<WorkspaceSection, string> = {
-  operations: "自主运营",
-  live: "直播工作台",
-  characters: "角色工作室",
+  operations: "渠道活动",
+  live: "直播台",
+  characters: "角色与声音",
   settings: "设置",
 };
 
