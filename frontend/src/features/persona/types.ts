@@ -75,6 +75,7 @@ export interface PersonaAssetItem {
 export interface MemoryPreferenceState {
   enabled: boolean;
   history_enabled?: boolean | null;
+  reference_chat_history?: boolean | null;
   scope: string;
 }
 
@@ -84,11 +85,47 @@ export interface UnifiedMemoryItem {
   character_id: string;
   content: string;
   source: string;
+  source_key?: string;
   tags: string[];
   created_at: number;
   updated_at: number;
   active: boolean;
 }
+
+export interface UnifiedMemoryListResponse {
+  character_id: string;
+  items: UnifiedMemoryItem[];
+  count: number;
+  total_count: number;
+  limit: number;
+  over_limit: boolean;
+  legacy_migrated_count: number;
+}
+
+export interface PurgeMigratedMemoriesResponse {
+  ok: boolean;
+  purged: number;
+  count: number;
+  limit: number;
+  legacy_migrated_count: number;
+}
+
+export interface ClearUnifiedMemoriesResponse {
+  ok: boolean;
+  deleted: number;
+  count: number;
+  limit: number;
+  legacy_migrated_count: number;
+}
+
+export interface OpenManageMemoriesDetail {
+  scope?: "all" | "owner" | "public" | string;
+  snippet?: string;
+  memoryId?: string;
+}
+
+export const OPEN_MANAGE_MEMORIES_EVENT = "aqua:open-manage-memories";
+export const MEMORIES_CHANGED_EVENT = "aqua:memories-changed";
 
 export interface MemorySourceReference {
   text: string;

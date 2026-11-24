@@ -12,8 +12,12 @@ import { errorMessage, safeMessage } from "@/shared/lib/errors";
 import { illustrationStatus, illustrationUrl } from "@/shared/lib/operationImage";
 import { commentFinished } from "./commentState";
 import { createReplyHandoff } from "./replyHandoff";
+import { VideoContextTreeCard, buildVideoContextTree } from "./VideoContextTreeCard";
 import styles from "./operations.module.css";
 import type {
+  ActivityItem,
+  BrowsingIntent,
+  BrowsingTask,
   CommentRecord,
   DiscoveryStatus,
   EvidenceSegment,
@@ -193,6 +197,7 @@ export interface CommentQueueSectionProps {
   discoveryStatus?: DiscoveryStatus | null;
   selectedSourceCount?: number;
   sourceCommentPreview?: CommentRecord | null;
+  sourceComments?: CommentRecord[];
   sourcesContent?: ReactNode;
   refreshTick?: number;
   onViewChanged?: (view: QueueViewName) => void;
@@ -200,6 +205,12 @@ export interface CommentQueueSectionProps {
   onDraftUpdated?: (draft: Record<string, unknown>, key: string) => void;
   onSelectionCleared?: () => void;
   onUnsavedChange?: (dirty: boolean) => void;
+}
+
+function toArray<T>(value: T[] | { items?: T[] } | null | undefined): T[] {
+  if (Array.isArray(value)) return value;
+  if (value && Array.isArray(value.items)) return value.items;
+  return [];
 }
 
 export function CommentQueueSection({
@@ -210,6 +221,7 @@ export function CommentQueueSection({
   discoveryStatus = null,
   selectedSourceCount = 0,
   sourceCommentPreview = null,
+  sourceComments,
   sourcesContent,
   refreshTick = 0,
   onViewChanged,
@@ -219,6 +231,7 @@ export function CommentQueueSection({
   onUnsavedChange,
 }: CommentQueueSectionProps) {
   const [view, setView] = useState<QueueViewName>(initialView);
+  const [queueDisplayMode, setQueueDisplayMode] = useState<"tree" | "flat">("tree");
   const [offset, setOffset] = useState(0);
   const [routeKey, setRouteKey] = useState<string | null>(initialRouteKey);
   const [inferRouteView, setInferRouteView] = useState(initialInferView);
@@ -228,6 +241,11 @@ export function CommentQueueSection({
   const [total, setTotal] = useState(0);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [detailRow, setDetailRow] = useState<QueueDetail | null>(null);
+  const [detailsByKey, setDetailsByKey] = useState<Record<string, QueueDetail>>({});
+  const [contextTasks, setContextTasks] = useState<BrowsingTask[]>([]);
+  const [contextIntents, setContextIntents] = useState<BrowsingIntent[]>([]);
+  const [contextActivities, setContextActivities] = useState<ActivityItem[]>([]);
+  const [contextComments, setContextComments] = useState<CommentRecord[]>([]);
   const [detailPlaceholder, setDetailPlaceholder] = useState("选择一条记录查看来源和下一步操作。");
   const [selectionCleared, setSelectionCleared] = useState(false);
 
@@ -333,13 +351,50 @@ export function CommentQueueSection({
   const fetchDetail = useCallback(async (key: string): Promise<QueueDetail> => {
     const [rawChannel, identity] = key.split("/");
     const channel = rawChannel as "comments" | "browsing" | "jobs";
-    return apiGet<
+    const detail = await apiGet<
       "/api/v1/operations/comments/workbench/{channel}/{identity}",
       QueueDetail
     >("/api/v1/operations/comments/workbench/{channel}/{identity}", {
       pathParams: { channel, identity },
     });
+    setDetailsByKey((prev) => ({ ...prev, [key]: detail }));
+    return detail;
   }, []);
+
+  const refreshTreeContext = useCallback(async () => {
+    try {
+      const results = await Promise.allSettled([
+        apiGet<"/api/v1/operations/tasks", BrowsingTask[] | { items?: BrowsingTask[] }>(
+          "/api/v1/operations/tasks"
+        ),
+        apiGet<"/api/v1/operations/intents", BrowsingIntent[] | { items?: BrowsingIntent[] }>(
+          "/api/v1/operations/intents"
+        ),
+        apiGet<"/api/v1/operations/activity", { items?: ActivityItem[] }>(
+          "/api/v1/operations/activity",
+          { query: { kind: "videos", page: 1, page_size: 50 } }
+        ),
+        ...(sourceComments
+          ? []
+          : [
+              apiGet<"/api/v1/operations/comments", CommentRecord[] | { items?: CommentRecord[] }>(
+                "/api/v1/operations/comments",
+                { query: { limit: 200 } }
+              ),
+            ]),
+      ]);
+      if (results[0].status === "fulfilled") setContextTasks(toArray(results[0].value));
+      if (results[1].status === "fulfilled") setContextIntents(toArray(results[1].value));
+      if (results[2].status === "fulfilled") {
+        setContextActivities(toArray(results[2].value as ActivityItem[] | { items?: ActivityItem[] }));
+      }
+      if (results[3] && results[3].status === "fulfilled") {
+        setContextComments(toArray(results[3].value as CommentRecord[] | { items?: CommentRecord[] }));
+      }
+    } catch {
+      // Optional enrichment never blocks queue list
+    }
+  }, [sourceComments]);
 
   const clearProcessedSelection = useCallback(() => {
     setSelectedKey(null);
@@ -424,6 +479,9 @@ export function CommentQueueSection({
         setOffset(effectiveData.offset ?? offset);
         setTotal(effectiveData.total);
         setRows(effectiveData.items);
+        if (effectiveData.items.length > 0) {
+          void refreshTreeContext();
+        }
 
         const prevKey = selectedKeyRef.current;
         const currentRow = effectiveData.items.find((r) => keyOf(r) === prevKey);
@@ -512,6 +570,7 @@ export function CommentQueueSection({
       generation,
       selectionCleared,
       fetchDetail,
+      refreshTreeContext,
       onViewChanged,
       onDraftUpdated,
       clearProcessedSelection,
@@ -627,6 +686,57 @@ export function CommentQueueSection({
       pathParams: { identity: row.id },
     }) as Promise<Record<string, unknown>>;
   }
+
+  async function handleQuickBranchReview(row: QueueRow, action: "approve" | "reject") {
+    if (busy || row.channel === "jobs") return;
+    const key = keyOf(row);
+    setBusy(true);
+    versionRef.current += 1;
+    setFeedback(action === "approve" ? "正在保存审核通过…" : "正在拒绝草稿…");
+    try {
+      const detail = detailsByKey[key] || (await fetchDetail(key));
+      const body: Record<string, unknown> =
+        action === "approve"
+          ? {
+              action: "approve",
+              text: draftEdits.get(key) ?? detail.text ?? "",
+              updated_at: detail.updated_at ?? row.updated_at,
+              expected_image: detail.illustration ?? row.illustration ?? null,
+            }
+          : { action: "reject" };
+      const result = await postRowEndpoint(detail, "review", body);
+      const updated = result && result.status ? { ...detail, ...result } : detail;
+      onDraftUpdated?.(updated as unknown as Record<string, unknown>, key);
+      setDraftEdits((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+      if (commentFinished(updated as { status?: string }) && selectedKeyRef.current === key) {
+        clearProcessedSelection();
+      }
+      setBusy(false);
+      await refreshQueue(true);
+      setFeedback(action === "approve" ? "已保存，草稿审核通过。" : "已退回，草稿已保存。");
+    } catch (err) {
+      setBusy(false);
+      await refreshQueue(true);
+      setFeedback(errorMessage(err));
+    }
+  }
+
+  const videoTree = useMemo(
+    () =>
+      buildVideoContextTree({
+        rows,
+        tasks: contextTasks,
+        intents: contextIntents,
+        activities: contextActivities,
+        comments: sourceComments ?? contextComments,
+        detailsByKey,
+      }),
+    [rows, contextTasks, contextIntents, contextActivities, sourceComments, contextComments, detailsByKey]
+  );
 
   async function runRowAction(
     labelText: string,
@@ -1044,7 +1154,7 @@ export function CommentQueueSection({
               disabled={busy || selectionLoading}
               onClick={() => void handleRejectErrored()}
             >
-              清理报错草稿
+              清理异常草稿 (仅异常)
             </button>
           )}
           {generation && (
@@ -1102,10 +1212,33 @@ export function CommentQueueSection({
                   ? "本次生成的回复"
                   : "评论草稿"}
             </h2>
-            {view === "sources" && (
+            {view === "sources" ? (
               <span id="selected-comment-count" className="hint">
                 已选 {selectedSourceCount} 条
               </span>
+            ) : (
+              <div className={styles.viewModeToggle} role="group" aria-label="列表展示模式">
+                <button
+                  type="button"
+                  className={`${styles.viewModeBtn} ${
+                    queueDisplayMode === "tree" ? styles.viewModeBtnActive : ""
+                  }`.trim()}
+                  aria-pressed={queueDisplayMode === "tree"}
+                  onClick={() => setQueueDisplayMode("tree")}
+                >
+                  树形视图
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.viewModeBtn} ${
+                    queueDisplayMode === "flat" ? styles.viewModeBtnActive : ""
+                  }`.trim()}
+                  aria-pressed={queueDisplayMode === "flat"}
+                  onClick={() => setQueueDisplayMode("flat")}
+                >
+                  平铺列表
+                </button>
+              </div>
             )}
           </div>
 
@@ -1221,87 +1354,113 @@ export function CommentQueueSection({
                 </details>
               )}
 
-              <div id="queue-list">
-                {rows.map((row) => {
-                  const id = keyOf(row);
-                  const isCurrent = id === selectedKey;
-                  const illUrl = row.illustration
-                    ? illustrationUrl(row.channel, row.id, row.illustration)
-                    : "";
-                  const excerpt =
-                    (row.excerpt || QUEUE_STATUS_LABELS[row.status] || "评论记录").slice(0, 80) +
-                    ((row.excerpt?.length || 0) > 80 ? "…" : "");
-                  const isChecked = checkedDrafts.has(id);
+              {queueDisplayMode === "tree" ? (
+                <VideoContextTreeCard
+                  tree={videoTree}
+                  view={view}
+                  selectedKey={selectedKey}
+                  checkedDrafts={checkedDrafts}
+                  busy={busy}
+                  selectionLoading={selectionLoading}
+                  onSelectRow={handleSelectRow}
+                  onToggleCheck={(row, checked) => {
+                    if (busy || selectionLoading) return;
+                    const id = keyOf(row);
+                    setBatchMode(true);
+                    setAllSelected(false);
+                    setCheckedDrafts((prev) => {
+                      const next = new Map(prev);
+                      if (checked) next.set(id, row);
+                      else next.delete(id);
+                      return next;
+                    });
+                  }}
+                  onQuickApprove={(row) => handleQuickBranchReview(row, "approve")}
+                  onQuickReject={(row) => handleQuickBranchReview(row, "reject")}
+                />
+              ) : (
+                <div id="queue-list">
+                  {rows.map((row) => {
+                    const id = keyOf(row);
+                    const isCurrent = id === selectedKey;
+                    const illUrl = row.illustration
+                      ? illustrationUrl(row.channel, row.id, row.illustration)
+                      : "";
+                    const excerpt =
+                      (row.excerpt || QUEUE_STATUS_LABELS[row.status] || "评论记录").slice(0, 80) +
+                      ((row.excerpt?.length || 0) > 80 ? "…" : "");
+                    const isChecked = checkedDrafts.has(id);
 
-                  const linkEl = (
-                    <a
-                      href={`#comments/${view}/${id}`}
-                      data-queue-key={id}
-                      className={styles.queueRow}
-                      aria-current={isCurrent ? "true" : undefined}
-                      onClick={(event) => {
-                        if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
-                          return;
-                        }
-                        event.preventDefault();
-                        void handleSelectRow(row);
-                      }}
-                    >
-                      {row.illustration &&
-                        (illUrl ? (
-                          <img src={illUrl} alt="回复配图" width={52} height={52} />
-                        ) : (
-                          <small>{illustrationStatus(row.illustration)}</small>
-                        ))}
-                      <span className="hint">
-                        {row.source ? SOURCE_LABELS[row.source] || row.source : "来源"} ·{" "}
-                        {QUEUE_STATUS_LABELS[row.status] || row.status}
-                      </span>
-                      <strong>{excerpt}</strong>
-                      <span className="hint">
-                        {row.video_id || (row.channel === "jobs" ? "生成任务" : "")}
-                      </span>
-                      {row.send_error && (
-                        <small className="hint">{safeMessage(row.send_error)}</small>
-                      )}
-                      {row.status === "send_waiting" && row.send_wake_at && (
-                        <small className="hint">
-                          预计 {new Date(row.send_wake_at * 1000).toLocaleString("zh-CN")} 恢复
-                        </small>
-                      )}
-                    </a>
-                  );
-
-                  if (view === "review" && row.channel !== "jobs") {
-                    return (
-                      <div key={id} className={styles.queueCheckRow} data-queue-key={id}>
-                        <label>
-                          <input
-                            type="checkbox"
-                            data-queue-key={id}
-                            aria-label={`选择草稿：${(row.excerpt || row.video_id || "评论草稿").slice(0, 80)}`}
-                            checked={isChecked}
-                            disabled={busy || selectionLoading}
-                            onChange={(e) => {
-                              if (busy || selectionLoading) return;
-                              setBatchMode(true);
-                              setAllSelected(false);
-                              setCheckedDrafts((prev) => {
-                                const next = new Map(prev);
-                                if (e.target.checked) next.set(id, row);
-                                else next.delete(id);
-                                return next;
-                              });
-                            }}
-                          />
-                        </label>
-                        {linkEl}
-                      </div>
+                    const linkEl = (
+                      <a
+                        href={`#comments/${view}/${id}`}
+                        data-queue-key={id}
+                        className={styles.queueRow}
+                        aria-current={isCurrent ? "true" : undefined}
+                        onClick={(event) => {
+                          if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+                            return;
+                          }
+                          event.preventDefault();
+                          void handleSelectRow(row);
+                        }}
+                      >
+                        {row.illustration &&
+                          (illUrl ? (
+                            <img src={illUrl} alt="回复配图" width={52} height={52} />
+                          ) : (
+                            <small>{illustrationStatus(row.illustration)}</small>
+                          ))}
+                        <span className="hint">
+                          {row.source ? SOURCE_LABELS[row.source] || row.source : "来源"} ·{" "}
+                          {QUEUE_STATUS_LABELS[row.status] || row.status}
+                        </span>
+                        <strong>{excerpt}</strong>
+                        <span className="hint">
+                          {row.video_id || (row.channel === "jobs" ? "生成任务" : "")}
+                        </span>
+                        {row.send_error && (
+                          <small className="hint">{safeMessage(row.send_error)}</small>
+                        )}
+                        {row.status === "send_waiting" && row.send_wake_at && (
+                          <small className="hint">
+                            预计 {new Date(row.send_wake_at * 1000).toLocaleString("zh-CN")} 恢复
+                          </small>
+                        )}
+                      </a>
                     );
-                  }
-                  return <div key={id}>{linkEl}</div>;
-                })}
-              </div>
+
+                    if (view === "review" && row.channel !== "jobs") {
+                      return (
+                        <div key={id} className={styles.queueCheckRow} data-queue-key={id}>
+                          <label>
+                            <input
+                              type="checkbox"
+                              data-queue-key={id}
+                              aria-label={`选择草稿：${(row.excerpt || row.video_id || "评论草稿").slice(0, 80)}`}
+                              checked={isChecked}
+                              disabled={busy || selectionLoading}
+                              onChange={(e) => {
+                                if (busy || selectionLoading) return;
+                                setBatchMode(true);
+                                setAllSelected(false);
+                                setCheckedDrafts((prev) => {
+                                  const next = new Map(prev);
+                                  if (e.target.checked) next.set(id, row);
+                                  else next.delete(id);
+                                  return next;
+                                });
+                              }}
+                            />
+                          </label>
+                          {linkEl}
+                        </div>
+                      );
+                    }
+                    return <div key={id}>{linkEl}</div>;
+                  })}
+                </div>
+              )}
 
               {total > PAGE_SIZE && (
                 <div className="actions" style={{ marginTop: 12 }}>
@@ -1376,10 +1535,12 @@ export function CommentQueueSection({
               const target = detailRow.target || {};
               const video = detailRow.video_id || target.bvid;
               const original = detailRow.source_text || target.source_text;
-              const metadata = [
+              const summaryMeta = [
                 video,
                 detailRow.author || target.recipient_name,
                 detailRow.thread_id && `楼 ${detailRow.thread_id}`,
+              ].filter(Boolean);
+              const traceMeta = [
                 detailRow.account_id && `账号 ${detailRow.account_id}`,
                 (detailRow.platform_user_id || target.recipient) &&
                   `对方 UID ${detailRow.platform_user_id || target.recipient}`,
@@ -1387,6 +1548,15 @@ export function CommentQueueSection({
                   `父评 ${detailRow.platform_comment_id || target.parent}`,
                 detailRow.character_id,
               ].filter(Boolean);
+              const hasDebugDetails = Boolean(
+                traceMeta.length > 0 ||
+                  detailRow.round_id ||
+                  detailRow.evidence_segments?.length ||
+                  detailRow.unavailable_materials ||
+                  detailRow.answer_check ||
+                  detailRow.receipt ||
+                  detailRow.image_uploads?.length
+              );
               const sourceUrl = safeBilibiliSourceUrl(detailRow.source_url, video);
               const illUrl = imageRef ? illustrationUrl(detailChannel, detailRow.id, imageRef) : "";
               const fieldLabel =
@@ -1413,7 +1583,7 @@ export function CommentQueueSection({
               return (
                 <>
                   <h2>{QUEUE_STATUS_LABELS[sendQueue?.status || detailStatus] || "记录详情"}</h2>
-                  {metadata.length > 0 && <p className="hint">{metadata.join(" · ")}</p>}
+                  {summaryMeta.length > 0 && <p className="hint">{summaryMeta.join(" · ")}</p>}
                   {sendQueue?.status === "send_waiting" && sendQueue.wake_at && (
                     <p className="hint">
                       预计 {new Date(sendQueue.wake_at * 1000).toLocaleString("zh-CN")} 恢复
@@ -1438,12 +1608,6 @@ export function CommentQueueSection({
                       )}
                       <small>{illustrationStatus(imageRef)}</small>
                     </div>
-                  )}
-                  {Boolean(detailRow.image_uploads?.length) && (
-                    <details className="subsection">
-                      <summary>图片上传回执</summary>
-                      <pre className="code-small">{receiptText(detailRow.image_uploads)}</pre>
-                    </details>
                   )}
 
                   <label>
@@ -1713,38 +1877,48 @@ export function CommentQueueSection({
                     onRefresh={() => refreshQueue(true)}
                   />
 
-                  {detailRow.round_id && (
-                    <p>
-                      <a href={`#automation/round/${encodeURIComponent(detailRow.round_id)}`}>
-                        查看来源轮次
-                      </a>
-                    </p>
-                  )}
-
-                  {Boolean(detailRow.evidence_segments?.length) && (
-                    <details className="subsection">
-                      <summary>引用原文（{detailRow.evidence_segments!.length}）</summary>
-                      <EvidenceListView segments={detailRow.evidence_segments!} />
-                    </details>
-                  )}
-
-                  {Boolean(detailRow.unavailable_materials) && (
-                    <p className="hint">{detailRow.unavailable_materials} 项原材料已失效或清理。</p>
-                  )}
-
-                  {Boolean(detailRow.answer_check) && (
-                    <details className="subsection">
-                      <summary>来源与完整性检查</summary>
-                      <pre className="operation-revision-text">
-                        {receiptText(detailRow.answer_check)}
-                      </pre>
-                    </details>
-                  )}
-
-                  {Boolean(detailRow.receipt) && (
-                    <details className="subsection">
-                      <summary>平台回执</summary>
-                      <pre className="operation-revision-text">{receiptText(detailRow.receipt)}</pre>
+                  {hasDebugDetails && (
+                    <details className={styles.debugDisclosure}>
+                      <summary>技术追踪与原始回执</summary>
+                      <div className={styles.debugDisclosureBody}>
+                        {traceMeta.length > 0 && <p className="hint">{traceMeta.join(" · ")}</p>}
+                        {detailRow.round_id && (
+                          <p>
+                            <a href={`#automation/round/${encodeURIComponent(detailRow.round_id)}`}>
+                              查看来源轮次
+                            </a>
+                          </p>
+                        )}
+                        {Boolean(detailRow.image_uploads?.length) && (
+                          <details className="subsection">
+                            <summary>图片上传回执</summary>
+                            <pre className="code-small">{receiptText(detailRow.image_uploads)}</pre>
+                          </details>
+                        )}
+                        {Boolean(detailRow.evidence_segments?.length) && (
+                          <details className="subsection">
+                            <summary>引用原文（{detailRow.evidence_segments!.length}）</summary>
+                            <EvidenceListView segments={detailRow.evidence_segments!} />
+                          </details>
+                        )}
+                        {Boolean(detailRow.unavailable_materials) && (
+                          <p className="hint">{detailRow.unavailable_materials} 项原材料已失效或清理。</p>
+                        )}
+                        {Boolean(detailRow.answer_check) && (
+                          <details className="subsection">
+                            <summary>来源与完整性检查</summary>
+                            <pre className="operation-revision-text">
+                              {receiptText(detailRow.answer_check)}
+                            </pre>
+                          </details>
+                        )}
+                        {Boolean(detailRow.receipt) && (
+                          <details className="subsection">
+                            <summary>平台回执</summary>
+                            <pre className="operation-revision-text">{receiptText(detailRow.receipt)}</pre>
+                          </details>
+                        )}
+                      </div>
                     </details>
                   )}
 

@@ -273,7 +273,7 @@ describe("MemorySummaryDialog / PersonalizationPage", () => {
       </AppSessionProvider>
     );
 
-    const historyToggle = await screen.findByLabelText("回复时引用以前的私聊");
+    const historyToggle = await screen.findByLabelText(/引用历史对话/);
     await waitFor(() => expect(historyToggle).not.toBeDisabled());
     await user.click(historyToggle);
     await waitFor(() =>
@@ -287,6 +287,7 @@ describe("MemorySummaryDialog / PersonalizationPage", () => {
       ).toBe(true)
     );
 
+    await user.click(screen.getByText("高级上下文与历史工具"));
     await user.click(document.getElementById("open-memory-summary")!);
     await within(document.getElementById("memory-summary-list")!).findAllByText(/汇报先写结论/);
 
@@ -414,18 +415,24 @@ describe("MemorySummaryDialog / PersonalizationPage", () => {
       </AppSessionProvider>
     );
 
+    // Raw memory list must NEVER appear inline on the slimmed PersonalizationPage
+    const manageButton = await screen.findByRole("button", { name: "管理记忆 (2 / 100)" });
+    expect(screen.queryByText("只和号主约定深夜复盘")).toBeNull();
+    expect(screen.queryByText("公开评论区拒绝被叫大肥鱼")).toBeNull();
+
+    await user.click(manageButton);
     await screen.findByText("只和号主约定深夜复盘");
     expect(screen.getByText("公开评论区拒绝被叫大肥鱼")).toBeTruthy();
 
     // Filter to public only
-    await user.click(screen.getByRole("tab", { name: "公开互动" }));
+    await user.click(screen.getByRole("tab", { name: /^公开互动/ }));
     await waitFor(() => {
       expect(screen.queryByText("只和号主约定深夜复盘")).toBeNull();
     });
     expect(screen.getByText("公开评论区拒绝被叫大肥鱼")).toBeTruthy();
 
     // Switch back to all
-    await user.click(screen.getByRole("tab", { name: "全部" }));
+    await user.click(screen.getByRole("tab", { name: /^全部/ }));
     await screen.findByText("只和号主约定深夜复盘");
 
     // Add a new public memory

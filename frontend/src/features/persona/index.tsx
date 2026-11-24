@@ -6,11 +6,13 @@ import { VoicesPage } from "./VoicesPage";
 
 export { AssetsPage } from "./AssetsPage";
 export { CharactersPage } from "./CharactersPage";
+export { ManageMemoriesModal } from "./ManageMemoriesModal";
 export { MemeGallery } from "./MemeGallery";
 export { MemorySummaryDialog } from "./MemorySummaryDialog";
 export { PersonalizationPage } from "./PersonalizationPage";
 export { RecentEventsDialog } from "./RecentEventsDialog";
 export { VoicesPage } from "./VoicesPage";
+export type { OpenManageMemoriesDetail } from "./types";
 
 export function PersonaFeature({ route }: { route: ParsedRoute }) {
   switch (route.page) {

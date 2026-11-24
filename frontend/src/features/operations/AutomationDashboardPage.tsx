@@ -6,7 +6,7 @@ import type { ParsedRoute } from "@/shell/navigation";
 import { DiscoveryProgressDetails } from "./DiscoveryPanel";
 import { IssuesPanel } from "./IssuesPage";
 import { OperationsActivityFeed } from "./OperationsActivityFeed";
-import { OperationsQuickBar } from "./OperationsQuickBar";
+import { OperationsQuickBar, automationHomeStateLabel } from "./OperationsQuickBar";
 import { useOperationsControl } from "./operationsStore";
 import { Stage2PipelineCards } from "./Stage2PipelineCards";
 import styles from "./operations.module.css";
@@ -20,6 +20,8 @@ const ACCOUNT_STATE_LABELS: Record<string, { label: string; tone: "good" | "bad"
   restricted: { label: "受限", tone: "amber" },
   error: { label: "异常", tone: "bad" },
 };
+
+const TRANSITIONING_STATES = new Set(["starting", "draining", "stopping"]);
 
 export function AutomationDashboardPage({ route }: { route: ParsedRoute }) {
   const { status: sysStatus } = useAppSession();
@@ -43,20 +45,42 @@ export function AutomationDashboardPage({ route }: { route: ParsedRoute }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.page, route.routeKind, route.routeId]);
 
+  // Sync chat-triggered or WS-pushed automation state transitions immediately
+  const sysAutomationState = sysStatus?.automation?.state;
+  const sysAutomationEnabled = sysStatus?.automation?.enabled;
+  const sysAutomationEmergency = sysStatus?.automation?.emergency;
+  const sysAutomationEpoch = sysStatus?.automation?.epoch;
   useEffect(() => {
+    if (!sysStatus?.automation) return;
+    if (
+      control.status &&
+      (control.status.state !== sysAutomationState ||
+        Boolean(control.status.policy?.enabled) !== Boolean(sysAutomationEnabled) ||
+        Boolean(control.status.policy?.emergency) !== Boolean(sysAutomationEmergency))
+    ) {
+      void control.refreshStatus({ background: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sysAutomationState, sysAutomationEnabled, sysAutomationEmergency, sysAutomationEpoch]);
+
+  const effectiveState = control.status?.state || sysAutomationState || "";
+  const isTransitioning = TRANSITIONING_STATES.has(effectiveState);
+
+  useEffect(() => {
+    const intervalMs = isTransitioning ? 1500 : 5000;
     const timer = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
-      void control.refreshStatus({ background: true });
+      void control.refreshStatus({ background: !isTransitioning });
       void control.refreshQuotas();
       void control.refreshInbox();
       void control.refreshClaims();
       setRefreshTick((t) => t + 1);
-    }, 5000);
+    }, intervalMs);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isTransitioning]);
 
-  const emergency = Boolean(control.status?.policy?.emergency);
+  const emergency = Boolean(control.status?.policy?.emergency ?? sysAutomationEmergency);
   const acctState = control.account?.state || "not_configured";
   const acctMeta = ACCOUNT_STATE_LABELS[acctState] || {
     label: acctState,
@@ -65,12 +89,43 @@ export function AutomationDashboardPage({ route }: { route: ParsedRoute }) {
   const charDisplay =
     webCharacterName(control.status?.character) ||
     webCharacterName(sysStatus?.character) ||
-    "角色待确认";
+    "Aqua";
+
+  const syncedStatus = control.status
+    ? sysStatus?.automation?.state &&
+      control.status.state !== sysStatus.automation.state &&
+      (TRANSITIONING_STATES.has(sysStatus.automation.state) ||
+        TRANSITIONING_STATES.has(control.status.state ?? ""))
+      ? {
+          ...control.status,
+          state: sysStatus.automation.state,
+          policy: {
+            ...(control.status.policy || {}),
+            enabled: sysStatus.automation.enabled ?? control.status.policy?.enabled,
+            emergency: sysStatus.automation.emergency ?? control.status.policy?.emergency,
+          },
+        }
+      : control.status
+    : null;
+
+  const masterTone: "good" | "bad" | "amber" | "neutral" = emergency || effectiveState === "blocked"
+    ? "bad"
+    : effectiveState === "running"
+      ? "good"
+      : isTransitioning
+        ? "amber"
+        : "neutral";
 
   return (
     <section data-section="automation" className="win-page-view">
       <div className="page-heading win-heading">
-        <h1 id="operation-page-title">自主运营</h1>
+        <div className="actions">
+          <h1 id="operation-page-title">自主运营</h1>
+          <StatusPill
+            label={automationHomeStateLabel(syncedStatus)}
+            tone={masterTone}
+          />
+        </div>
         <div className="actions">
           <a href="#automation-settings" className="button quiet">
             运营设置
@@ -129,13 +184,13 @@ export function AutomationDashboardPage({ route }: { route: ParsedRoute }) {
       )}
 
       <OperationsQuickBar
-        status={control.status}
+        status={syncedStatus}
         controlPending={control.controlPending}
         onToggleMaster={() => void control.toggleMasterAutomation()}
       />
 
       <Stage2PipelineCards
-        status={control.status}
+        status={syncedStatus}
         account={control.account}
         discovery={control.discovery}
         quotas={control.quotas}

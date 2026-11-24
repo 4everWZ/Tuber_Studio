@@ -1,54 +1,74 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/shared/api/client";
+import { apiGet, apiPost, apiPut } from "@/shared/api/client";
 import { useAppSession } from "@/shared/hooks/useAppSession";
+import { useUnsavedGuard } from "@/shared/hooks/useUnsavedGuard";
 import { occupancyText, tokenCount } from "@/shared/lib/display";
 import { errorMessage } from "@/shared/lib/errors";
 import { RememberButton } from "@/shared/ui/RememberButton";
+import { ManageMemoriesModal } from "./ManageMemoriesModal";
 import { MemorySummaryDialog } from "./MemorySummaryDialog";
 import styles from "./Personalization.module.css";
 import { RecentEventsDialog } from "./RecentEventsDialog";
-import type {
-  MemoryPreferenceState,
-  PersonaContextStatus,
-  RecentEventItem,
-  RecentEventsResponse,
-  UnifiedMemoryItem,
+import {
+  editableCard,
+  MEMORIES_CHANGED_EVENT,
+  OPEN_MANAGE_MEMORIES_EVENT,
+  type CharacterCard,
+  type MemoryPreferenceState,
+  type PersonaContextStatus,
+  type RecentEventItem,
+  type RecentEventsResponse,
+  type UnifiedMemoryListResponse,
 } from "./types";
+
+const DEFAULT_MEMORY_LIMIT = 100;
+
+function instructionsTextFromCard(card: CharacterCard): string {
+  const raw = card.style?.instructions;
+  if (Array.isArray(raw)) {
+    return raw.map((item) => String(item ?? "").trim()).filter(Boolean).join("\n");
+  }
+  return typeof raw === "string" ? raw : "";
+}
 
 export function PersonalizationPage() {
   const { status, refreshStatus } = useAppSession();
+  const activeCharacterId = status?.character?.id ?? "";
+
   const [preference, setPreference] = useState<MemoryPreferenceState | null>(null);
   const [preferenceFailed, setPreferenceFailed] = useState(false);
   const [switchStatus, setSwitchStatus] = useState("");
-  const [statement, setStatement] = useState("");
   const [savingPreference, setSavingPreference] = useState(false);
 
+  // Compact capacity stats for the "管理记忆 (N / 100)" entry button only (never inline list!)
+  const [memoryCount, setMemoryCount] = useState(0);
+  const [memoryLimit, setMemoryLimit] = useState(DEFAULT_MEMORY_LIMIT);
+  const [overLimit, setOverLimit] = useState(false);
+  const [legacyMigratedCount, setLegacyMigratedCount] = useState(0);
+  const [fallbackModalOpen, setFallbackModalOpen] = useState(false);
+
+  // Custom instructions & owner address preference on active character card
+  const [characterCard, setCharacterCard] = useState<CharacterCard | null>(null);
+  const [ownerAddress, setOwnerAddress] = useState("");
+  const [customInstructions, setCustomInstructions] = useState("");
+  const [savingInstructions, setSavingInstructions] = useState(false);
+  const [instructionsStatus, setInstructionsStatus] = useState("");
+
+  // Collapsed legacy / advanced context & memory tools
+  const [statement, setStatement] = useState("");
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
   const [scopeVersion, setScopeVersion] = useState(0);
   const [pollGeneration, setPollGeneration] = useState(0);
-
   const [recentLoading, setRecentLoading] = useState(false);
   const [recentError, setRecentError] = useState("");
   const [recentItems, setRecentItems] = useState<RecentEventItem[]>([]);
 
-  // Context status / rebuild / compact tools (collapsed by default)
   const [ctxVideoId, setCtxVideoId] = useState("");
   const [ctxThreadId, setCtxThreadId] = useState("");
   const [ctxStatus, setCtxStatus] = useState<PersonaContextStatus | null>(null);
   const [ctxFeedback, setCtxFeedback] = useState("");
   const [ctxBusy, setCtxBusy] = useState(false);
-
-  // Unified ChatGPT-Web-style long-term memory CRUD
-  const [unifiedScope, setUnifiedScope] = useState<"all" | "owner" | "public">("all");
-  const [unifiedItems, setUnifiedItems] = useState<UnifiedMemoryItem[]>([]);
-  const [unifiedLoading, setUnifiedLoading] = useState(false);
-  const [unifiedStatus, setUnifiedStatus] = useState("");
-  const [newMemoryScope, setNewMemoryScope] = useState<"owner" | "public">("owner");
-  const [newMemoryContent, setNewMemoryContent] = useState("");
-  const [unifiedBusy, setUnifiedBusy] = useState(false);
-  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
-  const [editingContent, setEditingContent] = useState("");
 
   const preferenceRef = useRef<MemoryPreferenceState | null>(null);
   const savingPrefRef = useRef(false);
@@ -58,7 +78,9 @@ export function PersonalizationPage() {
   const pendingDraftRef = useRef<{ scope: string; text: string } | undefined>(undefined);
   const statementRef = useRef("");
   const scopeVersionRef = useRef(0);
+  const cardReqSeqRef = useRef(0);
 
+  const manageOpenerRef = useRef<HTMLButtonElement | null>(null);
   const summaryOpenerRef = useRef<HTMLButtonElement | null>(null);
   const recentOpenerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -66,6 +88,14 @@ export function PersonalizationPage() {
   savingPrefRef.current = savingPreference;
   statementRef.current = statement;
   scopeVersionRef.current = scopeVersion;
+
+  const baselineOwnerAddress = characterCard?.owner_address || "";
+  const baselineInstructions = characterCard ? instructionsTextFromCard(characterCard) : "";
+  const instructionsDirty = Boolean(
+    characterCard &&
+      (ownerAddress !== baselineOwnerAddress || customInstructions !== baselineInstructions)
+  );
+  useUnsavedGuard("personalization-instructions", instructionsDirty);
 
   const applyPreference = useCallback((value: MemoryPreferenceState) => {
     preferenceRef.current = value;
@@ -81,26 +111,23 @@ export function PersonalizationPage() {
     }
   }, []);
 
-  const refreshScope = useCallback(
-    (restoreSameScope = true) => {
-      const currentPref = preferenceRef.current;
-      if (!restoreSameScope) {
-        pendingDraftRef.current = undefined;
-      } else if (currentPref) {
-        pendingDraftRef.current = { scope: currentPref.scope, text: statementRef.current };
-      }
-      readingPrefSeqRef.current += 1;
-      readingRecentSeqRef.current += 1;
-      preferenceRef.current = null;
-      recentScopeRef.current = null;
-      statementRef.current = "";
-      setStatement("");
-      setPreference(null);
-      setSwitchStatus("");
-      setScopeVersion((prev) => prev + 1);
-    },
-    []
-  );
+  const refreshScope = useCallback((restoreSameScope = true) => {
+    const currentPref = preferenceRef.current;
+    if (!restoreSameScope) {
+      pendingDraftRef.current = undefined;
+    } else if (currentPref) {
+      pendingDraftRef.current = { scope: currentPref.scope, text: statementRef.current };
+    }
+    readingPrefSeqRef.current += 1;
+    readingRecentSeqRef.current += 1;
+    preferenceRef.current = null;
+    recentScopeRef.current = null;
+    statementRef.current = "";
+    setStatement("");
+    setPreference(null);
+    setSwitchStatus("");
+    setScopeVersion((prev) => prev + 1);
+  }, []);
 
   const loadPreference = useCallback(
     async ({ background = false }: { background?: boolean } = {}) => {
@@ -129,6 +156,55 @@ export function PersonalizationPage() {
     },
     [applyPreference, refreshScope]
   );
+
+  const loadMemoryStats = useCallback(async () => {
+    try {
+      const res = await apiGet<"/api/v1/persona/memories", Partial<UnifiedMemoryListResponse>>(
+        "/api/v1/persona/memories",
+        { query: { include_inactive: true } }
+      );
+      const items = Array.isArray(res.items) ? res.items : [];
+      const nextCount =
+        typeof res.count === "number" ? res.count : items.filter((item) => item.active).length;
+      const nextLimit =
+        typeof res.limit === "number" && res.limit > 0 ? res.limit : DEFAULT_MEMORY_LIMIT;
+      setMemoryCount(nextCount);
+      setMemoryLimit(nextLimit);
+      setOverLimit(typeof res.over_limit === "boolean" ? res.over_limit : nextCount > nextLimit);
+      setLegacyMigratedCount(
+        typeof res.legacy_migrated_count === "number" ? res.legacy_migrated_count : 0
+      );
+    } catch {
+      // Non-blocking: button remains clickable even if initial count lookup fails
+    }
+  }, []);
+
+  const loadCharacterPreferences = useCallback(async (charId: string) => {
+    if (!charId) {
+      setCharacterCard(null);
+      return;
+    }
+    const seq = ++cardReqSeqRef.current;
+    try {
+      const card = await apiGet<"/api/v1/persona/characters/{character_id}", CharacterCard>(
+        "/api/v1/persona/characters/{character_id}",
+        { pathParams: { character_id: charId } }
+      );
+      if (seq !== cardReqSeqRef.current) return;
+      if (!card || !card.id || !card.name) {
+        setCharacterCard(null);
+        return;
+      }
+      setCharacterCard(card);
+      setOwnerAddress(card.owner_address || "");
+      setCustomInstructions(instructionsTextFromCard(card));
+      setInstructionsStatus("");
+    } catch {
+      if (seq === cardReqSeqRef.current) {
+        setCharacterCard(null);
+      }
+    }
+  }, []);
 
   const loadRecent = useCallback(
     async ({ background = false }: { background?: boolean } = {}) => {
@@ -166,37 +242,17 @@ export function PersonalizationPage() {
     [recentItems.length, refreshScope, loadPreference]
   );
 
-  const loadUnifiedMemories = useCallback(
-    async ({ background = false }: { background?: boolean } = {}) => {
-      if (!background) setUnifiedLoading(true);
-      try {
-        const res = await apiGet<
-          "/api/v1/persona/memories",
-          { character_id?: string; items?: UnifiedMemoryItem[] }
-        >("/api/v1/persona/memories", {
-          query: {
-            include_inactive: true,
-            ...(unifiedScope !== "all" ? { scope: unifiedScope } : {}),
-          },
-        });
-        setUnifiedItems(Array.isArray(res.items) ? res.items : []);
-        if (!background) setUnifiedStatus("");
-      } catch (error) {
-        if (!background) setUnifiedStatus(`读取统一记忆失败：${errorMessage(error)}`);
-      } finally {
-        if (!background) setUnifiedLoading(false);
-      }
-    },
-    [unifiedScope]
-  );
-
   // Initial load + scopeVersion reload
   useEffect(() => {
     void loadPreference({ background: false });
-    void loadUnifiedMemories({ background: false });
-  }, [scopeVersion, loadPreference, loadUnifiedMemories]);
+    void loadMemoryStats();
+  }, [scopeVersion, loadPreference, loadMemoryStats]);
 
-  // 15s background polling matching legacy app.js
+  useEffect(() => {
+    void loadCharacterPreferences(activeCharacterId);
+  }, [activeCharacterId, scopeVersion, loadCharacterPreferences]);
+
+  // 15s background polling
   useEffect(() => {
     const interval = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
@@ -207,7 +263,7 @@ export function PersonalizationPage() {
     return () => clearInterval(interval);
   }, [loadPreference, loadRecent, recentOpen, memoryOpen]);
 
-  // Refresh scope when character changes or owner memory changes
+  // Refresh scope when character changes or memory updates globally
   const activeCharKey = status?.character ? `${status.character.id ?? ""}:${status.character.version ?? ""}` : "";
   const prevCharKeyRef = useRef(activeCharKey);
   useEffect(() => {
@@ -222,15 +278,38 @@ export function PersonalizationPage() {
     const onMemoryChanged = () => {
       if (memoryOpen) setPollGeneration((prev) => prev + 1);
       void loadPreference({ background: true });
+      void loadMemoryStats();
     };
     const onCharChanged = () => refreshScope(true);
+    const onStatsChanged = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          count?: number;
+          limit?: number;
+          over_limit?: boolean;
+          legacy_migrated_count?: number;
+        }>
+      ).detail;
+      if (detail && typeof detail.count === "number") {
+        setMemoryCount(detail.count);
+        if (typeof detail.limit === "number") setMemoryLimit(detail.limit);
+        if (typeof detail.over_limit === "boolean") setOverLimit(detail.over_limit);
+        if (typeof detail.legacy_migrated_count === "number") {
+          setLegacyMigratedCount(detail.legacy_migrated_count);
+        }
+      } else {
+        void loadMemoryStats();
+      }
+    };
     document.addEventListener("owner-memory-changed", onMemoryChanged);
     document.addEventListener("studio-character-change", onCharChanged);
+    window.addEventListener(MEMORIES_CHANGED_EVENT, onStatsChanged);
     return () => {
       document.removeEventListener("owner-memory-changed", onMemoryChanged);
       document.removeEventListener("studio-character-change", onCharChanged);
+      window.removeEventListener(MEMORIES_CHANGED_EVENT, onStatsChanged);
     };
-  }, [memoryOpen, loadPreference, refreshScope]);
+  }, [memoryOpen, loadPreference, loadMemoryStats, refreshScope]);
 
   const handleScopeConflict = useCallback(() => {
     refreshScope(true);
@@ -244,7 +323,6 @@ export function PersonalizationPage() {
     setSavingPreference(true);
     setSwitchStatus("正在保存…");
 
-    // Optimistic checkbox feedback
     setPreference({ ...old, enabled: nextEnabled, history_enabled: nextHistoryEnabled });
 
     let failure: unknown = null;
@@ -284,6 +362,64 @@ export function PersonalizationPage() {
     } else if (memoryOpen) {
       setPollGeneration((prev) => prev + 1);
     }
+  }
+
+  async function handleSaveInstructions(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!characterCard || savingInstructions) return;
+    const cleanAddress = ownerAddress.trim();
+    if (cleanAddress.includes("\n")) {
+      setInstructionsStatus("对你的称呼须为单行。");
+      return;
+    }
+    setSavingInstructions(true);
+    setInstructionsStatus("正在保存个性化指令…");
+    try {
+      const nextCard: CharacterCard = {
+        ...editableCard(characterCard),
+        style: {
+          ...(characterCard.style || {}),
+          instructions: customInstructions.trim(),
+        },
+      };
+      if (cleanAddress) {
+        nextCard.owner_address = cleanAddress;
+      } else {
+        delete nextCard.owner_address;
+      }
+      const saved = await apiPut<
+        "/api/v1/persona/characters/{character_id}",
+        CharacterCard,
+        CharacterCard
+      >("/api/v1/persona/characters/{character_id}", {
+        pathParams: { character_id: characterCard.id },
+        body: nextCard,
+      });
+      setCharacterCard(saved);
+      setOwnerAddress(saved.owner_address || "");
+      setCustomInstructions(instructionsTextFromCard(saved));
+      setInstructionsStatus("已保存个性化偏好。");
+      await refreshStatus();
+    } catch (error) {
+      setInstructionsStatus(`保存失败：${errorMessage(error)}`);
+    } finally {
+      setSavingInstructions(false);
+    }
+  }
+
+  function handleOpenManageMemories() {
+    if (typeof window !== "undefined") {
+      const evt = new CustomEvent(OPEN_MANAGE_MEMORIES_EVENT, {
+        cancelable: true,
+        detail: { scope: "all" },
+      });
+      const unhandled = window.dispatchEvent(evt);
+      if (unhandled) {
+        setFallbackModalOpen(true);
+      }
+      return;
+    }
+    setFallbackModalOpen(true);
   }
 
   async function runContextAction(action: "status" | "rebuild" | "compact_live" | "compact_comments") {
@@ -349,261 +485,21 @@ export function PersonalizationPage() {
 
   const controlsDisabled = !preference || savingPreference;
   const statementDisabled = !preference?.enabled;
-
-  const handleAddUnifiedMemory = async () => {
-    const trimmed = newMemoryContent.trim();
-    if (!trimmed || unifiedBusy) return;
-    setUnifiedBusy(true);
-    setUnifiedStatus("");
-    try {
-      await apiPost("/api/v1/persona/memories", {
-        body: { content: trimmed, scope: newMemoryScope },
-      });
-      setNewMemoryContent("");
-      setUnifiedStatus("已添加记忆");
-      await loadUnifiedMemories({ background: false });
-    } catch (err) {
-      setUnifiedStatus(err instanceof Error ? err.message : "添加记忆失败");
-    } finally {
-      setUnifiedBusy(false);
-    }
-  };
-
-  const handleToggleUnifiedActive = async (item: UnifiedMemoryItem) => {
-    if (unifiedBusy) return;
-    setUnifiedBusy(true);
-    setUnifiedStatus("");
-    try {
-      await apiPatch("/api/v1/persona/memories/{memory_id}", {
-        pathParams: { memory_id: item.id },
-        body: { active: !item.active },
-      });
-      setUnifiedStatus(item.active ? "已停用该条记忆" : "已启用该条记忆");
-      await loadUnifiedMemories({ background: false });
-    } catch (err) {
-      setUnifiedStatus(err instanceof Error ? err.message : "更新记忆状态失败");
-    } finally {
-      setUnifiedBusy(false);
-    }
-  };
-
-  const handleSaveUnifiedEdit = async (memoryId: string) => {
-    const trimmed = editingContent.trim();
-    if (!trimmed || unifiedBusy) return;
-    setUnifiedBusy(true);
-    setUnifiedStatus("");
-    try {
-      await apiPatch("/api/v1/persona/memories/{memory_id}", {
-        pathParams: { memory_id: memoryId },
-        body: { content: trimmed },
-      });
-      setEditingMemoryId(null);
-      setEditingContent("");
-      setUnifiedStatus("已更新记忆");
-      await loadUnifiedMemories({ background: false });
-    } catch (err) {
-      setUnifiedStatus(err instanceof Error ? err.message : "更新记忆失败");
-    } finally {
-      setUnifiedBusy(false);
-    }
-  };
-
-  const handleDeleteUnifiedMemory = async (memoryId: string) => {
-    if (unifiedBusy) return;
-    if (typeof window !== "undefined" && !window.confirm("确认删除这条记忆吗？")) {
-      return;
-    }
-    setUnifiedBusy(true);
-    setUnifiedStatus("");
-    try {
-      await apiDelete("/api/v1/persona/memories/{memory_id}", {
-        pathParams: { memory_id: memoryId },
-      });
-      if (editingMemoryId === memoryId) {
-        setEditingMemoryId(null);
-        setEditingContent("");
-      }
-      setUnifiedStatus("已删除记忆");
-      await loadUnifiedMemories({ background: false });
-    } catch (err) {
-      setUnifiedStatus(err instanceof Error ? err.message : "删除记忆失败");
-    } finally {
-      setUnifiedBusy(false);
-    }
-  };
+  const historyEnabled = preference
+    ? preference.history_enabled !== false && preference.reference_chat_history !== false
+    : false;
 
   return (
     <section data-section="personalization" className="win-page-view">
       <div className={`personalization-settings ${styles.settingsContainer}`}>
-        <h1 className={styles.settingsHeading}>个性化</h1>
+        <header className={styles.settingsHeader}>
+          <h1 className={styles.settingsHeading}>个性化</h1>
+          <p className={styles.settingsLead}>
+            决定 Aqua 如何称呼你、如何回应，以及可以记住哪些长期信息。
+          </p>
+        </header>
 
-        <section
-          className={`personalization-rows ${styles.rowsCard}`}
-          id="unified-memories-card"
-          aria-label="统一记忆库"
-        >
-          <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: "15px" }}>统一记忆库</h2>
-                <p style={{ margin: "4px 0 0", fontSize: "12px", opacity: 0.75 }}>
-                  号主私聊记忆与公开互动记忆严格隔离，支持随时增删改与启停。
-                </p>
-              </div>
-              <div role="tablist" aria-label="记忆作用域筛选" style={{ display: "flex", gap: "6px" }}>
-                {(
-                  [
-                    ["all", "全部"],
-                    ["owner", "仅号主私聊"],
-                    ["public", "公开互动"],
-                  ] as const
-                ).map(([scopeKey, label]) => (
-                  <button
-                    key={scopeKey}
-                    type="button"
-                    role="tab"
-                    aria-selected={unifiedScope === scopeKey}
-                    disabled={unifiedBusy}
-                    onClick={() => {
-                      setUnifiedScope(scopeKey);
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-              <select
-                aria-label="新增记忆作用域"
-                value={newMemoryScope}
-                disabled={unifiedBusy}
-                onChange={(e) => setNewMemoryScope(e.target.value as "owner" | "public")}
-              >
-                <option value="owner">仅号主私聊 (Owner)</option>
-                <option value="public">公开互动 (Public)</option>
-              </select>
-              <input
-                type="text"
-                aria-label="新增记忆内容"
-                placeholder="输入希望小鲸鱼记住的长期事实或规则..."
-                value={newMemoryContent}
-                disabled={unifiedBusy}
-                onChange={(e) => setNewMemoryContent(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void handleAddUnifiedMemory();
-                  }
-                }}
-                style={{ flex: 1, minWidth: "220px" }}
-              />
-              <button
-                type="button"
-                disabled={unifiedBusy || !newMemoryContent.trim()}
-                onClick={() => void handleAddUnifiedMemory()}
-              >
-                添加记忆
-              </button>
-            </div>
-
-            {unifiedStatus ? (
-              <div role="status" style={{ fontSize: "12px", opacity: 0.85 }}>
-                {unifiedStatus}
-              </div>
-            ) : null}
-
-            {unifiedLoading ? (
-              <div style={{ fontSize: "13px", opacity: 0.7 }}>正在加载记忆...</div>
-            ) : unifiedItems.length === 0 ? (
-              <div style={{ fontSize: "13px", opacity: 0.7 }}>当前筛选下暂无记忆条目。</div>
-            ) : (
-              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
-                {unifiedItems.map((item) => {
-                  const isEditing = editingMemoryId === item.id;
-                  return (
-                    <li
-                      key={item.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: "8px",
-                        padding: "8px 10px",
-                        border: "1px solid rgba(128,128,128,0.22)",
-                        borderRadius: "6px",
-                        opacity: item.active ? 1 : 0.6,
-                      }}
-                    >
-                      <span style={{ fontSize: "12px", padding: "2px 6px", borderRadius: "4px", border: "1px solid currentColor", flexShrink: 0 }}>
-                        {item.scope === "owner" ? "号主私聊" : "公开互动"}
-                      </span>
-                      {isEditing ? (
-                        <>
-                          <input
-                            type="text"
-                            aria-label="编辑记忆内容"
-                            value={editingContent}
-                            disabled={unifiedBusy}
-                            onChange={(e) => setEditingContent(e.target.value)}
-                            style={{ flex: 1 }}
-                          />
-                          <button
-                            type="button"
-                            disabled={unifiedBusy || !editingContent.trim()}
-                            onClick={() => void handleSaveUnifiedEdit(item.id)}
-                          >
-                            保存
-                          </button>
-                          <button
-                            type="button"
-                            disabled={unifiedBusy}
-                            onClick={() => {
-                              setEditingMemoryId(null);
-                              setEditingContent("");
-                            }}
-                          >
-                            取消
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <span style={{ flex: 1, fontSize: "13px", wordBreak: "break-word" }}>{item.content}</span>
-                          <button
-                            type="button"
-                            disabled={unifiedBusy}
-                            onClick={() => void handleToggleUnifiedActive(item)}
-                          >
-                            {item.active ? "已启用" : "已停用"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={unifiedBusy}
-                            onClick={() => {
-                              setEditingMemoryId(item.id);
-                              setEditingContent(item.content);
-                            }}
-                          >
-                            编辑
-                          </button>
-                          <button
-                            type="button"
-                            disabled={unifiedBusy}
-                            onClick={() => void handleDeleteUnifiedMemory(item.id)}
-                          >
-                            删除
-                          </button>
-                        </>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </section>
-
+        {/* Primary Memory Toggles + Single Manage Memories Entry */}
         <section
           className={`personalization-rows ${styles.rowsCard}`}
           id="daily-memory-card"
@@ -612,8 +508,10 @@ export function PersonalizationPage() {
         >
           <label className={`personalization-row ${styles.row}`} htmlFor="memory-enabled">
             <span>
-              <strong id="memory-toggle-label">启用记忆</strong>
-              <small id="memory-toggle-description">为当前账号和角色自动整理并取用长期记忆。</small>
+              <strong id="memory-toggle-label">引用已保存记忆</strong>
+              <small id="memory-toggle-description">
+                让 Aqua 在对话与互动中使用并自动保存长期偏好与事实。
+              </small>
             </span>
             <input
               id="memory-enabled"
@@ -625,96 +523,59 @@ export function PersonalizationPage() {
               disabled={controlsDisabled}
               checked={Boolean(preference?.enabled)}
               onChange={(event) => {
-                void handlePreferenceToggle(
-                  event.target.checked,
-                  preference?.history_enabled !== false
-                );
+                void handlePreferenceToggle(event.target.checked, historyEnabled);
+              }}
+            />
+          </label>
+
+          <label className={`personalization-row ${styles.row}`} htmlFor="memory-history-enabled">
+            <span>
+              <strong id="history-toggle-label">引用历史对话</strong>
+              <small id="history-toggle-description">
+                在私聊回复中参考过往聊天上下文（公开互动不会读取私聊历史）。
+              </small>
+            </span>
+            <input
+              id="memory-history-enabled"
+              type="checkbox"
+              role="switch"
+              className={styles.switchInput}
+              aria-labelledby="history-toggle-label"
+              aria-describedby="history-toggle-description"
+              disabled={controlsDisabled}
+              checked={historyEnabled}
+              onChange={(event) => {
+                void handlePreferenceToggle(Boolean(preference?.enabled), event.target.checked);
               }}
             />
           </label>
 
           <div className={`personalization-row ${styles.row}`}>
-            <label htmlFor="memory-history-enabled">回复时引用以前的私聊</label>
-            <input
-              id="memory-history-enabled"
-              type="checkbox"
-              role="switch"
-              disabled={controlsDisabled}
-              checked={preference ? preference.history_enabled !== false : false}
-              onChange={(event) => {
-                void handlePreferenceToggle(Boolean(preference?.enabled), event.target.checked);
-              }}
-            />
-          </div>
-
-          <div className={`personalization-row ${styles.row}`}>
             <span>
-              <strong>记忆摘要</strong>
-              <small>查看、更正或删除已记住的内容。</small>
+              <strong>已保存的记忆</strong>
+              <small>
+                查看、搜索、增删或清理号主私聊与公开互动记忆。
+                {legacyMigratedCount > 0 ? ` 检测到 ${legacyMigratedCount} 条历史遗留迁移记录待清理。` : ""}
+              </small>
             </span>
-            <button
-              ref={summaryOpenerRef}
-              type="button"
-              className={`personalization-button ${styles.pillButton}`}
-              id="open-memory-summary"
-              onClick={() => setMemoryOpen(true)}
-            >
-              管理
-            </button>
-          </div>
-
-          <div className={`personalization-row ${styles.row}`}>
-            <span>
-              <strong>近期趣事</strong>
-              <small>查看近期观看、评论互动和回复结果。</small>
-            </span>
-            <button
-              ref={recentOpenerRef}
-              type="button"
-              className={`personalization-button ${styles.pillButton}`}
-              id="open-recent-events"
-              onClick={() => {
-                setRecentOpen(true);
-                void loadRecent({ background: false });
-              }}
-            >
-              查看
-            </button>
+            <div className={styles.entryActions}>
+              {overLimit && <span className={styles.warningPill}>已超限</span>}
+              <button
+                ref={manageOpenerRef}
+                type="button"
+                id="open-manage-memories"
+                className={styles.manageMemoriesBtn}
+                onClick={handleOpenManageMemories}
+              >
+                {`管理记忆 (${memoryCount} / ${memoryLimit})`}
+              </button>
+            </div>
           </div>
         </section>
 
         <p id="memory-switch-status" className={`hint ${styles.statusMessage}`} role="status">
           {switchStatus}
         </p>
-
-        <div className={`personalization-row ${styles.row}`}>
-          <label className={styles.statementBox}>
-            要明确记住的原话
-            <input
-              id="owner-memory-statement"
-              maxLength={150}
-              disabled={statementDisabled}
-              value={statement}
-              onChange={(event) => {
-                statementRef.current = event.target.value;
-                setStatement(event.target.value);
-              }}
-            />
-          </label>
-          <span id="owner-memory-save" inert={statementDisabled ? true : undefined}>
-            <RememberButton
-              label="保存私有记忆"
-              disabled={statementDisabled}
-              propose={() => ({
-                source: "settings",
-                text: statementRef.current.trim(),
-              })}
-              onConfirmed={() => {
-                if (memoryOpen) setPollGeneration((prev) => prev + 1);
-              }}
-            />
-          </span>
-        </div>
 
         <button
           type="button"
@@ -726,81 +587,212 @@ export function PersonalizationPage() {
           重新读取记忆设置
         </button>
 
-        <details className={`personalization-rows ${styles.contextTools}`}>
-          <summary>上下文状态、重建与压缩工具</summary>
-          <form
-            onSubmit={(event: FormEvent) => {
-              event.preventDefault();
-              void runContextAction("status");
-            }}
-          >
-            <div className="form-grid" style={{ marginTop: 10 }}>
-              <label>
-                评论视频 ID（可选）
+        {/* Custom Instructions & Owner Address Preference */}
+        {characterCard && (
+          <section className={styles.rowsCard} aria-label="自定义指令与称呼">
+            <div className={styles.cardHeader}>
+              <h2 className={styles.cardTitle}>
+                自定义指令 · {characterCard.display_name || characterCard.name}
+              </h2>
+            </div>
+            <form className={styles.instructionsForm} onSubmit={(e) => void handleSaveInstructions(e)}>
+              <label className={styles.fieldLabel}>
+                Aqua 应该如何称呼你
                 <input
-                  id="persona-context-video-id"
-                  placeholder="BV…"
-                  value={ctxVideoId}
-                  onChange={(event) => setCtxVideoId(event.target.value)}
+                  id="personalization-owner-address"
+                  type="text"
+                  maxLength={40}
+                  disabled={savingInstructions}
+                  placeholder="例如：船长、老板（留空则默认称呼「你」）"
+                  value={ownerAddress}
+                  onChange={(event) => {
+                    setOwnerAddress(event.target.value);
+                    setInstructionsStatus("");
+                  }}
+                />
+                <span className={styles.fieldHint}>私聊和实时通话中会优先使用这里设定的称呼。</span>
+              </label>
+
+              <label className={styles.fieldLabel}>
+                表达风格与自定义指令
+                <textarea
+                  id="personalization-custom-instructions"
+                  rows={3}
+                  disabled={savingInstructions}
+                  placeholder="描述你希望 Aqua 保持的语气、回复习惯或交互偏好…"
+                  value={customInstructions}
+                  onChange={(event) => {
+                    setCustomInstructions(event.target.value);
+                    setInstructionsStatus("");
+                  }}
                 />
               </label>
-              <label>
-                楼ID（可选）
+
+              <div className={styles.instructionsFooter}>
+                <span className="hint" role="status">
+                  {instructionsStatus}
+                </span>
+                <button
+                  type="submit"
+                  className="primary"
+                  id="save-personalization-instructions"
+                  disabled={savingInstructions || !instructionsDirty}
+                >
+                  {savingInstructions ? "正在保存…" : "保存指令"}
+                </button>
+              </div>
+            </form>
+          </section>
+        )}
+
+        {/* Collapsed Advanced Context & Legacy Tools Drawer */}
+        <details className={styles.contextTools}>
+          <summary>高级上下文与历史工具</summary>
+          <div className={styles.advancedBody}>
+            <div className={styles.advancedQuickRow}>
+              <button
+                ref={summaryOpenerRef}
+                type="button"
+                className={styles.pillButton}
+                id="open-memory-summary"
+                onClick={() => setMemoryOpen(true)}
+              >
+                旧版摘要与归档
+              </button>
+              <button
+                ref={recentOpenerRef}
+                type="button"
+                className={styles.pillButton}
+                id="open-recent-events"
+                onClick={() => {
+                  setRecentOpen(true);
+                  void loadRecent({ background: false });
+                }}
+              >
+                近期趣事
+              </button>
+            </div>
+
+            <div className={styles.statementRow}>
+              <label className={styles.statementBox}>
+                要明确记住的原话
                 <input
-                  id="persona-context-thread-id"
-                  placeholder="楼ID"
-                  value={ctxThreadId}
-                  onChange={(event) => setCtxThreadId(event.target.value)}
+                  id="owner-memory-statement"
+                  maxLength={150}
+                  disabled={statementDisabled}
+                  value={statement}
+                  onChange={(event) => {
+                    statementRef.current = event.target.value;
+                    setStatement(event.target.value);
+                  }}
                 />
               </label>
+              <span id="owner-memory-save" inert={statementDisabled ? true : undefined}>
+                <RememberButton
+                  label="保存私有记忆"
+                  disabled={statementDisabled}
+                  propose={() => ({
+                    source: "settings",
+                    text: statementRef.current.trim(),
+                  })}
+                  onConfirmed={() => {
+                    if (memoryOpen) setPollGeneration((prev) => prev + 1);
+                    void loadMemoryStats();
+                  }}
+                />
+              </span>
             </div>
-            <div className="actions" style={{ marginTop: 10 }}>
-              <button type="submit" className="win-btn" disabled={ctxBusy}>
-                查看上下文状态
-              </button>
-              <button
-                type="button"
-                className="win-btn"
-                disabled={ctxBusy}
-                onClick={() => void runContextAction("rebuild")}
-              >
-                重建评论上下文
-              </button>
-              <button
-                type="button"
-                className="win-btn"
-                disabled={ctxBusy}
-                onClick={() => void runContextAction("compact_live")}
-              >
-                压缩直播上下文
-              </button>
-              <button
-                type="button"
-                className="win-btn"
-                disabled={ctxBusy}
-                onClick={() => void runContextAction("compact_comments")}
-              >
-                压缩评论上下文
-              </button>
-            </div>
-          </form>
-          {ctxStatus && (
-            <dl className="description-list" style={{ marginTop: 10 }}>
-              <dt>活动范围</dt>
-              <dd>{ctxStatus.scope || "暂无活动历史"}</dd>
-              <dt>完整输入占用</dt>
-              <dd>{`${tokenCount(ctxStatus.active_tokens ?? 0)}（${occupancyText(ctxStatus)}）`}</dd>
-              <dt>累计压缩轮数</dt>
-              <dd>{ctxStatus.compact_count ?? 0}</dd>
-            </dl>
-          )}
-          {ctxFeedback && (
-            <p className="hint" role="status">
-              {ctxFeedback}
-            </p>
-          )}
+
+            <form
+              onSubmit={(event: FormEvent) => {
+                event.preventDefault();
+                void runContextAction("status");
+              }}
+            >
+              <div className="form-grid">
+                <label>
+                  评论视频 ID（可选）
+                  <input
+                    id="persona-context-video-id"
+                    placeholder="BV…"
+                    value={ctxVideoId}
+                    onChange={(event) => setCtxVideoId(event.target.value)}
+                  />
+                </label>
+                <label>
+                  楼ID（可选）
+                  <input
+                    id="persona-context-thread-id"
+                    placeholder="楼ID"
+                    value={ctxThreadId}
+                    onChange={(event) => setCtxThreadId(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="actions" style={{ marginTop: 10 }}>
+                <button type="submit" className="win-btn" disabled={ctxBusy}>
+                  查看上下文状态
+                </button>
+                <button
+                  type="button"
+                  className="win-btn"
+                  disabled={ctxBusy}
+                  onClick={() => void runContextAction("rebuild")}
+                >
+                  重建评论上下文
+                </button>
+                <button
+                  type="button"
+                  className="win-btn"
+                  disabled={ctxBusy}
+                  onClick={() => void runContextAction("compact_live")}
+                >
+                  压缩直播上下文
+                </button>
+                <button
+                  type="button"
+                  className="win-btn"
+                  disabled={ctxBusy}
+                  onClick={() => void runContextAction("compact_comments")}
+                >
+                  压缩评论上下文
+                </button>
+              </div>
+            </form>
+
+            {ctxStatus && (
+              <dl className="description-list">
+                <dt>活动范围</dt>
+                <dd>{ctxStatus.scope || "暂无活动历史"}</dd>
+                <dt>完整输入占用</dt>
+                <dd>{`${tokenCount(ctxStatus.active_tokens ?? 0)}（${occupancyText(ctxStatus)}）`}</dd>
+                <dt>累计压缩轮数</dt>
+                <dd>{ctxStatus.compact_count ?? 0}</dd>
+              </dl>
+            )}
+            {ctxFeedback && (
+              <p className="hint" role="status">
+                {ctxFeedback}
+              </p>
+            )}
+          </div>
         </details>
       </div>
+
+      {/* Standalone fallback when PersonalizationPage is rendered without routes.tsx ManageMemoriesHost */}
+      <ManageMemoriesModal
+        open={fallbackModalOpen}
+        onClose={() => {
+          setFallbackModalOpen(false);
+          manageOpenerRef.current?.focus({ preventScroll: true });
+        }}
+        onChanged={(nextStats) => {
+          setMemoryCount(nextStats.count);
+          setMemoryLimit(nextStats.limit);
+          setOverLimit(nextStats.over_limit);
+          setLegacyMigratedCount(nextStats.legacy_migrated_count);
+        }}
+      />
 
       <MemorySummaryDialog
         open={memoryOpen}
