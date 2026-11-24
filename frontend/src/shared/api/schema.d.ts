@@ -3143,6 +3143,41 @@ export interface paths {
         put?: never;
         /** Create Unified Memory */
         post: operations["create_unified_memory_api_v1_persona_memories_post"];
+        /** Clear Unified Memories */
+        delete: operations["clear_unified_memories_api_v1_persona_memories_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/persona/memories/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear Unified Memories Post */
+        post: operations["clear_unified_memories_post_api_v1_persona_memories_clear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/persona/memories/purge-migrated": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Purge Migrated Unified Memories */
+        post: operations["purge_migrated_unified_memories_api_v1_persona_memories_purge_migrated_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3623,7 +3658,7 @@ export interface components {
         Arrangement: {
             /**
              * After Reply
-             * @description 仅在号主明确交代来信后的私有文本工作时，逐字摘录该交付要求。
+             * @description 仅在对方明确交代来信后的私有文本工作时，逐字摘录该交付要求。
              */
             after_reply?: string | null;
             /**
@@ -3734,7 +3769,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "chat" | "clarify" | "identity_read" | "clock" | "activity" | "event_details" | "event_author" | "event_reply" | "video_activity" | "dynamic" | "edit_dynamic" | "browse" | "full_video" | "public_experiences" | "remember_event" | "operation_control" | "start_operations" | "live_status" | "start_live" | "stop" | "resume_video" | "video_details" | "recall_experience" | "inspect_video_frame" | "live_handoff" | "live_preference" | "forget_memory" | "memory_summary" | "game_status" | "game_handoff" | "live_history" | "owner_profile" | "owner_binding" | "operating_account" | "operation_status" | "web_lookup" | "task_status" | "agent_task" | "steer_task" | "cancel_task" | "pause_task" | "resume_task" | "watch_goal" | "workbench_capabilities" | "pet_settings" | "daily_settings" | "outgoing_queue" | "prepare_publication" | "workshop_lookup" | "recall_memory";
+            action: "chat" | "clarify" | "identity_read" | "clock" | "activity" | "event_details" | "event_author" | "event_reply" | "video_activity" | "dynamic" | "edit_dynamic" | "browse" | "full_video" | "public_experiences" | "remember_event" | "operation_control" | "start_operations" | "live_status" | "start_live" | "stop" | "resume_video" | "video_details" | "recall_experience" | "inspect_video_frame" | "live_handoff" | "live_preference" | "forget_memory" | "save_memory" | "update_memory" | "delete_memory" | "memory_summary" | "game_status" | "game_handoff" | "live_history" | "owner_profile" | "owner_binding" | "operating_account" | "operation_status" | "web_lookup" | "task_status" | "agent_task" | "steer_task" | "cancel_task" | "pause_task" | "resume_task" | "watch_goal" | "workbench_capabilities" | "pet_settings" | "daily_settings" | "outgoing_queue" | "prepare_publication" | "workshop_lookup" | "recall_memory";
             arrangement?: components["schemas"]["Arrangement"] | null;
             brief?: components["schemas"]["DelegationBrief"] | null;
             /** Clarification Id */
@@ -3747,6 +3782,10 @@ export interface components {
             game_action?: ("step" | "water_crops" | "chop_wood" | "go_fishing" | "eat_snack" | "harvest" | "sleep_day" | "plant_sunflower" | "plant_peashooter" | "plant_wallnut" | "use_cherry_bomb") | null;
             /** Identities */
             identities?: components["schemas"]["IdentityRead"][];
+            /** Memory Content */
+            memory_content?: string | null;
+            /** Memory Tags */
+            memory_tags?: string[];
             /** Part */
             part?: number | null;
             /** Position */
@@ -25222,6 +25261,293 @@ export interface operations {
                 "application/json": components["schemas"]["UnifiedMemoryCreate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    clear_unified_memories_api_v1_persona_memories_delete: {
+        parameters: {
+            query?: {
+                scope?: ("owner" | "public") | null;
+                character_id?: string | null;
+                all_characters?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    clear_unified_memories_post_api_v1_persona_memories_clear_post: {
+        parameters: {
+            query?: {
+                scope?: ("owner" | "public") | null;
+                character_id?: string | null;
+                all_characters?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    purge_migrated_unified_memories_api_v1_persona_memories_purge_migrated_post: {
+        parameters: {
+            query?: {
+                scope?: ("owner" | "public") | null;
+                character_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

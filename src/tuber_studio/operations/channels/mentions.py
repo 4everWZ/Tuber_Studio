@@ -1,6 +1,7 @@
 """Bind an explicit public mention to both a Bilibili account and caption text."""
 
 import json
+import re
 
 import httpx
 
@@ -11,6 +12,7 @@ __all__ = [
     "MENTION_INSTRUCTION",
     "MENTION_REQUESTS",
     "bind_mentions",
+    "detect_plain_mentions",
     "draft_mentions",
     "mention_participants",
     "mention_requests",
@@ -122,3 +124,25 @@ def mention_participants(thread, video=None):
     if video:
         participants.append({"uid": video.get("owner_uid"), "name": video.get("owner")})
     return participants
+
+
+def detect_plain_mentions(text, participants):
+    """Extract @name mentions matching known participants in text appearance order."""
+    if not isinstance(text, str) or not text:
+        return []
+    matches = []
+    seen = set()
+    for person in participants or ():
+        if not isinstance(person, dict):
+            continue
+        name = str(person.get("name") or "").strip()
+        if not name or name in seen:
+            continue
+        match = re.search(rf"@{re.escape(name)}(?=\s|$|[，。！？、])", text)
+        if not match:
+            continue
+        seen.add(name)
+        uid = str(person.get("uid") or person.get("account") or "").strip()
+        matches.append((match.start(), {"label": f"@{name}", "account": uid or name}))
+    matches.sort(key=lambda entry: entry[0])
+    return [item for _, item in matches]

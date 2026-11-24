@@ -81,7 +81,8 @@
 ## 4. 资源治理与分阶段验收标准
 
 1. **磁盘与缓存预算：** 渲染中间帧与成片输出写入独立缓存分类 `video_renders`，接入现有 `CacheManager` 定期清理过期中间工件，已发布成片仅保留摘要元数据、时间轴 Manifest 与平台 `bvid` 回执。
-2. **分阶段验收：**
+2. **核心实现入口：** `src/tuber_studio/agent/skills/remotion_video.py` 已实现受控技能编排与 4 路 `TaskRuntime` (`responses_only=True`) OpenAI 函数工具（`plan_video_script`、`generate_remotion_project`、`render_remotion_video`、`stage_or_publish_bilibili_video`），强制 `public`-only 来源检查、静态 TSX 模板 + JSON props 校验、并发渲染信号量、FFprobe 音画对齐检验与 `operations/facade.py` 幂等投稿，并已通过离线／Mock 单测（`tests/agent/test_heartbeat_and_remotion.py`）。
+3. **分阶段验收：**
    - **Stage 1（离线成片）：** Mock 数据 + 真实 `/v1/audio/speech` WAV -> `remotion render` -> 输出 1080p MP4 并通过 FFprobe 音画对齐检验；
    - **Stage 2（工作台审阅流）：** 选题生成 -> 后台队列渲染 -> 前端预览/编辑元数据/驳回重制 -> `account_writes` 增量保持 `0`；
    - **Stage 3（受控实投）：** 在号主授权的单支测试稿件上验证 `biliup` 凭据注入、投稿成功回执写回及断网重连幂等防重发。

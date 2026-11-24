@@ -73,6 +73,15 @@ class CapabilityDispatcher:
     def forget_memory(self, topic):
         return scope_guard.forget_memory(self, topic)
 
+    def save_direct_memory(self, intent, request_text):
+        return scope_guard.save_direct_memory(self, intent, request_text)
+
+    def update_direct_memory(self, intent, request_text):
+        return scope_guard.update_direct_memory(self, intent, request_text)
+
+    def delete_direct_memory(self, intent, request_text):
+        return scope_guard.delete_direct_memory(self, intent, request_text)
+
     def game_action(self, intent, request_id):
         return action_handlers.game_action(self, intent, request_id)
 

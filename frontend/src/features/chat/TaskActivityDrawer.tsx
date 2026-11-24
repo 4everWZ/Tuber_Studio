@@ -5,12 +5,14 @@ import { illustrationUrl } from "@/shared/lib/operationImage";
 import { CapabilityStrip, type OperationCapabilityStatus } from "@/shared/ui/CapabilityStrip";
 import { MarkdownText } from "@/shared/ui/MarkdownText";
 import { MentionLinks, type PublicMention } from "@/shared/ui/MentionLinksAndEditor";
+import { StatusPill, type StatusPillTone } from "@/shared/ui/StatusPill";
 import styles from "./ChatPage.module.css";
 import { DynamicPublicationApproval } from "./DynamicPublicationApproval";
 import { GoalEventsList } from "./GoalEventsList";
 import { GoalFollowupForm } from "./GoalFollowupForm";
 import { BrowserTaskCreateForm, TaskBrowserPanel } from "./TaskBrowserPanel";
 import {
+  calmChatMessage,
   createRequestId,
   safeHttpsUrl,
   type AgentTask,
@@ -48,7 +50,7 @@ const TASK_STATES: Record<string, string> = {
 const TOOL_LABELS: Record<string, string> = {
   web_search: "搜索网页",
   web_page: "打开来源",
-  bilibili_owner: "查号主主页",
+  bilibili_owner: "查看绑定主页",
   operation_status: "查看运营",
   today_activity: "查看当日活动",
   inspect_video: "读取视频",
@@ -60,16 +62,23 @@ const TOOL_LABELS: Record<string, string> = {
   publish_dynamic_draft: "发布指定动态",
   publish_dynamic_batch: "批量发布动态",
   delegate_text: "委派文本工作",
-  owner_attachment: "号主提供的私有附件",
+  owner_attachment: "上传的私有附件",
   owner_code_grant: "已允许本次隔离计算",
   private_code: "处理私有文件",
   private_browser: "阅读浏览器",
   recall_memory: "检索记忆",
-  workshop_lookup: "查询工坊记录",
+  workshop_lookup: "查询历史记录",
   authorized_inbox_text: "授权读取的来信",
   inbox_received: "来信入库回执",
   comment_received: "评论楼事件",
 };
+
+function drawerStatusTone(status: string): StatusPillTone {
+  if (status === "completed") return "good";
+  if (["running", "queued", "waiting", "scheduled"].includes(status)) return "blue";
+  if (["failed", "awaiting_approval", "needs_input"].includes(status)) return "amber";
+  return "neutral";
+}
 
 const STOPPABLE_STATES = new Set([
   "queued",
@@ -157,18 +166,19 @@ const TaskStepItem = memo(
     const result = step.result || null;
     const observation = observedStatus(step.tool, result);
     const summary =
-      observation || (result ? (result.error ? "工具返回错误" : "已取得结果") : "等待结果");
+      observation || (result ? (result.error ? "暂未取得有效结果" : "已取得结果") : "等待结果");
 
     const clip = (result?.clip as
       | { bvid: string; cid: string; part: number; start: number; end: number; frames: number }
       | undefined);
-    const description =
+    const rawDescription =
       result &&
       (result.error ||
         result.spoken ||
         result.message ||
         result.excerpt ||
         (result.state as { summary?: string } | undefined)?.summary);
+    const description = typeof rawDescription === "string" ? calmChatMessage(rawDescription) : "";
     const links = Array.isArray(result?.links) ? (result.links as string[]) : [];
 
     return (
@@ -217,7 +227,7 @@ const TaskStepItem = memo(
           )}
         <details>
           <summary>{`${label} · ${summary}`}</summary>
-          {typeof description === "string" && description && <p>{description}</p>}
+          {description && <p>{description}</p>}
           {result?.url != null && (
             <SafeExternalAnchor
               url={result.url}
@@ -228,7 +238,7 @@ const TaskStepItem = memo(
             <SafeExternalAnchor key={`${url}-${idx}`} url={url} />
           ))}
           <details>
-            <summary>工具记录</summary>
+            <summary>原始参数与回执</summary>
             <pre>{JSON.stringify(result || step.arguments, null, 2)}</pre>
           </details>
         </details>
@@ -825,7 +835,7 @@ export function TaskActivityDrawer({
             用浏览器交办
           </button>
 
-          {notices.length > 0 && <h3 className="chat-activity-group">给号主的更新</h3>}
+          {notices.length > 0 && <h3 className="chat-activity-group">待你确认的更新</h3>}
           {notices.map((item) => (
             <button
               key={`notice-${item.id}`}
@@ -996,20 +1006,24 @@ export function TaskActivityDrawer({
           全部活动
         </button>
         <h3>{task.goal}</h3>
-        <p className="hint" role="status">
-          {task.status === "scheduled"
-            ? `已预约 · ${formatTimeLabel(task.due)}`
-            : TASK_STATES[task.status] || task.status}
-        </p>
+        <div className="chat-card-header">
+          <StatusPill
+            label={
+              task.status === "scheduled"
+                ? `已预约 · ${formatTimeLabel(task.due)}`
+                : TASK_STATES[task.status] || task.status
+            }
+            tone={drawerStatusTone(task.status)}
+            role="status"
+          />
+          {(task.status === "completed" || task.status === "failed") &&
+            task.steps.some((step) => step.result) && (
+              <span className="hint">已核对执行结果</span>
+            )}
+        </div>
         <div className="chat-task-result">
           {task.message && (!artifact || task.status !== "completed") && (
-            <>
-              {(task.status === "completed" || task.status === "failed") &&
-                task.steps.some((step) => step.result) && (
-                  <p className="hint">按工具回执交付</p>
-                )}
-              <MarkdownText text={task.message} />
-            </>
+            <MarkdownText text={calmChatMessage(task.message)} />
           )}
         </div>
         <ol className="chat-task-steps">
@@ -1157,7 +1171,7 @@ export function TaskActivityDrawer({
               type="button"
               onClick={() =>
                 downloadText(
-                  `工坊成果-${task.id}-r${artifact.task_revision}-v${artifact.edition}.md`,
+                  `Aqua成果-${task.id}-r${artifact.task_revision}-v${artifact.edition}.md`,
                   artifact.body,
                   "text/markdown;charset=utf-8"
                 )
@@ -1321,7 +1335,7 @@ export function TaskActivityDrawer({
       }}
     >
       <header className="chat-activity-header">
-        <h2 id="chat-activity-title">工坊面板</h2>
+        <h2 id="chat-activity-title">任务与权限</h2>
         <a href="#accounts" id="chat-account-badge" className="account-badge" aria-label="B站账号">
           <span className="account-avatar">
             {profile?.avatar_url ? (
@@ -1352,7 +1366,7 @@ export function TaskActivityDrawer({
           ×
         </button>
       </header>
-      <nav className="chat-panel-sections" aria-label="工坊面板">
+      <nav className="chat-panel-sections" aria-label="任务与权限">
         <button
           type="button"
           id="chat-panel-permissions"

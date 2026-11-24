@@ -39,7 +39,7 @@ _PRIMARY_READ_ACTIONS = (
 
 _COMPACT_ARRANGEMENT_SCHEMA = {
     "type": "object",
-    "description": "仅在号主明确预约未来日期时间（必须填 local_date 或 local_time）或周期/来信事件触发时填写；立即执行的普通任务不要填此项。",
+    "description": "仅在对方明确预约未来日期时间（必须填 local_date 或 local_time）或周期/来信事件触发时填写；立即执行的普通任务不要填此项。",
     "properties": {
         "kind": {"type": "string", "enum": ["once", "daily", "weekly", "inbox", "comment"]},
         "quote": {"type": "string", "minLength": 2, "maxLength": 300},
@@ -77,9 +77,9 @@ def _as_str_list(value) -> list[str]:
     return []
 
 _VOICE_ROUTING_PROMPT = (
-    "判断当前这句号主来话是否明确交给工坊处理一项工作。只作分流。"
-    "原话里的「我」是号主，「你」是工坊。由号主指定工坊去做时才交办。"
-    "号主说自己要去做、把结果发给听者、或者复述他人的吩咐，属于 conversation。"
+    "判断当前这句来话是否明确交给后台处理一项工作。只作分流。"
+    "原话里的「我」是说话人，「你」是助手。由对方明确交给你去做时才交办。"
+    "对方说自己要去做、把结果发给听者、或者复述他人的吩咐，属于 conversation。"
     "普通接话、事实问答、讨论、转述、否定和假设归 conversation。"
     "要求接下来查找并交付资料、制作成果或稍后执行具体工作，可以交办。"
     "新交办选 delegate，目标和交付动作都须明确。改口选 revise，停止选 cancel，这两类都须指向本次通话里的唯一任务。"
@@ -174,7 +174,7 @@ def route_tools(runtime, *, cards=(), objects=(), candidates=(), read_only=False
             "reference": {
                 "type": "string",
                 "enum": task_enum,
-                "description": "仅当号主明确提及或讨论某项已有任务或成果时填 task_id；普通闲聊不要填此项。",
+                "description": "仅当对方明确提及或讨论某项已有任务或成果时填 task_id；普通闲聊不要填此项。",
             },
             "read_original": {"type": "boolean"},
             "recall_reason": {"type": "boolean"},
@@ -191,7 +191,7 @@ def route_tools(runtime, *, cards=(), objects=(), candidates=(), read_only=False
         menu.append(
             tool(
                 "delegate_task",
-                "只要号主要求留下持久产物（留份便笺/交接记录/笔记/总结/报告/提纲）、稍后交付（等我回来再看）、交给后台处理或定时预约，就必须选此项——即使句中同时提到核实直播/运营状态也选 delegate_task 而非 instant_read。否定措辞（先别/别接新活）禁止选此项。",
+                "只要对方要求留下持久产物（留份便笺/交接记录/笔记/总结/报告/提纲）、稍后交付（等我回来再看）、交给后台处理或定时预约，就必须选此项——即使句中同时提到核实直播/运营状态也选 delegate_task 而非 instant_read。否定措辞（先别/别接新活）禁止选此项。",
                 with_clarification({
                     "goal": {"type": "string", "minLength": 1, "maxLength": 400},
                     "deliverable": {"type": "string", "minLength": 1, "maxLength": 400},
@@ -231,10 +231,10 @@ def route_tools(runtime, *, cards=(), objects=(), candidates=(), read_only=False
                 "operation_status=当场问自主运营状态；live_status=当场问直播间开播状态；"
                 f"daily_settings=查当前设置（可选 {group_hints}，必填 settings_group 与 settings_read_only=true，具体字段填 setting_fields）；"
                 "pet_settings=查当前宠物设置；workbench_capabilities=问能调哪些设置或工具；"
-                "owner_profile=去B站联网核验/去看绑定号主的最新B站主页资料；"
-                "owner_binding=查本地记录的绑定号主B站主页链接和UID（不联网，用于问号主/他的主页、链接、UID）；"
-                "operating_account=查工坊当前登录的B站运营账号昵称和UID；"
-                "identity_read=同时查号主与运营账号（填 identity_subject=bilibili_owner|operating_account|both）；"
+                "owner_profile=去B站联网核验/去看绑定主人的最新B站主页资料；"
+                "owner_binding=查本地记录的绑定主人B站主页链接和UID（不联网，用于问主人/他的主页、链接、UID）；"
+                "operating_account=查当前登录的B站运营账号昵称和UID；"
+                "identity_read=同时查绑定主人与运营账号（填 identity_subject=bilibili_owner|operating_account|both）；"
                 "web_lookup=联网搜新闻或公开网页；outgoing_queue=查待发队列；task_status=查已有交办进度；activity=今日趣事；game_status=游戏状态。",
                 {
                     "action": {"type": "string", "enum": read_actions},
@@ -266,6 +266,8 @@ def route_tools(runtime, *, cards=(), objects=(), candidates=(), read_only=False
         direct_props = {
             "action": {"type": "string", "enum": change_actions},
             "topic": {"type": "string", "maxLength": 200},
+            "memory_content": {"type": "string", "maxLength": 1000},
+            "memory_tags": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 40}},
             "object_ref": object_schema,
             "reference": {"type": "string", "maxLength": 90},
             "settings_group": {"type": "string", "enum": list(groups)} if groups else {"type": "string", "maxLength": 40},
@@ -287,7 +289,7 @@ def route_tools(runtime, *, cards=(), objects=(), candidates=(), read_only=False
         menu.append(
             tool(
                 "direct_action",
-                "单轮立即修改工坊设置或执行控制（仅当明确要求开启自主运营 start_operations、改变设置、切换宠物表情、保存/忘记记忆、排队看完整视频或抽帧、暂停/恢复任务或停止 stop 时使用；纯查询或假设禁止选此项）。",
+                "单轮立即修改设置、长期记忆或执行控制（仅当明确要求开启自主运营 start_operations、改变设置、切换宠物表情、保存/更新/忘记记忆 save_memory|update_memory|delete_memory|forget_memory、排队看完整视频或抽帧、暂停/恢复任务或停止 stop 时使用；纯查询或假设禁止选此项）。",
                 with_clarification(direct_props),
                 required=("action",),
             )
@@ -297,15 +299,15 @@ def route_tools(runtime, *, cards=(), objects=(), candidates=(), read_only=False
             menu.append(
                 tool(
                     "steer_task",
-                    "号主对已有任务卡提出改口、换重点、补充要求或取消执行时使用；与已有任务无关的日常闲聊必须选 chat 而非 steer_task。"
-                    "task_effect=revise/cancel 时必须填 change_quote，逐字原样摘录号主原话中表达新要求或停止的那一段，禁止改写。",
+                    "对方对已有任务卡提出改口、换重点、补充要求或取消执行时使用；与已有任务无关的日常闲聊必须选 chat 而非 steer_task。"
+                    "task_effect=revise/cancel 时必须填 change_quote，逐字原样摘录对方原话中表达新要求或停止的那一段，禁止改写。",
                     with_clarification({
                         "task_id": {"type": "string", "enum": task_enum},
                         "task_effect": {"type": "string", "enum": ["revise", "cancel", "keep_current", "discuss"]},
                         "change_quote": {
                             "type": "string",
                             "maxLength": 400,
-                            "description": "逐字原样复制号主消息里表示具体改动或停止的子句（必须原样出现在 message 中，不得改写）。",
+                            "description": "逐字原样复制对方消息里表示具体改动或停止的子句（必须原样出现在 message 中，不得改写）。",
                         },
                         "replacement_goal": {
                             "type": "string",
@@ -327,7 +329,7 @@ def route_tools(runtime, *, cards=(), objects=(), candidates=(), read_only=False
         menu.append(
             tool(
                 "prepare_publication",
-                "号主要求把已有待发动态、评论回复或私信整理送审/确认发布时必须选此项（操作待发草稿队列，不要误用前文视频或观看历史候选，也不要选 clarify）。",
+                "对方要求把已有待发动态、评论回复或私信整理送审/确认发布时必须选此项（操作待发草稿队列，不要误用前文视频或观看历史候选，也不要选 clarify）。",
                 with_clarification({
                     "publication_channel": {"type": "string", "enum": ["dynamics", "comments", "messages"]},
                     "topic": {"type": "string", "maxLength": 200},
@@ -339,7 +341,7 @@ def route_tools(runtime, *, cards=(), objects=(), candidates=(), read_only=False
     menu.append(
         tool(
             "clarify",
-            "仅当 candidates 中存在多个同类对象（如多条视频）且号主只用“那条/那个”等单数模糊指代未给序号/标题/BV，或缺少关键目标无法执行时使用。若号主换了新话题（闲聊/问当前日期时间/问别的事），严禁选 clarify 或重复上轮澄清。",
+            "仅当 candidates 中存在多个同类对象（如多条视频）且对方只用“那条/那个”等单数模糊指代未给序号/标题/BV，或缺少关键目标无法执行时使用。若对方换了新话题（闲聊/问当前日期时间/问别的事），严禁选 clarify 或重复上轮澄清。",
             with_clarification({
                 "question": {"type": "string", "minLength": 1, "maxLength": 200},
             }),

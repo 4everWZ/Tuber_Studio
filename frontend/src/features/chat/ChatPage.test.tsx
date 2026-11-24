@@ -26,7 +26,7 @@ function makeSession(overrides: Partial<AppSessionValue> = {}): AppSessionValue 
     localAccess: true,
     wsConnected: true,
     status: {
-      character: { id: "whale", version: 1, name: "大肥鱼" },
+      character: { id: "whale", version: 1, name: "Aqua" },
       context: { capacity_source: "model_card", verified: true },
     },
     settings: { omni: { model: "qwen3-omni" } },
@@ -79,7 +79,7 @@ describe("ChatPage", () => {
       if (url.startsWith("/api/v1/agent/chat?limit=")) {
         return new Response(
           JSON.stringify({
-            character: "大肥鱼",
+            character: "Aqua",
             character_id: "whale",
             character_version: 1,
             avatar: "/assets/whale/idle.gif",
@@ -224,6 +224,410 @@ describe("ChatPage", () => {
     expect(retried[0].request_id).toBe(retried[1].request_id);
   });
 
+  it("renders tool_activity capsules, clickable memory_updated pill dispatching aqua:open-manage-memories, and calm delegation statuses", async () => {
+    const memoryEvents: Array<Record<string, unknown>> = [];
+    const onMemoryOpen = (event: Event) => {
+      memoryEvents.push((event as CustomEvent<Record<string, unknown>>).detail);
+    };
+    window.addEventListener("aqua:open-manage-memories", onMemoryOpen);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.startsWith("/api/v1/agent/chat?limit=")) {
+          return new Response(
+            JSON.stringify({
+              character: "Aqua",
+              character_id: "whale",
+              turns: [
+                {
+                  request_id: "calm-task-1",
+                  message: "整理一下材料",
+                  reply_text: "先停在这里。",
+                  reply_format: "plain",
+                  card: {
+                    type: "agent_task",
+                    data: {
+                      id: "task-calm",
+                      status: "failed",
+                      message: "并行委派只允许独立读取。工坊号主请补充说明。",
+                      steps: [],
+                    },
+                  },
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (url === "/api/v1/agent/attention") {
+          return new Response(JSON.stringify({ count: 0 }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/api/v1/agent/private-call") {
+          return new Response(JSON.stringify({ configured: false }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/api/v1/agent/chat/events") {
+          return new Response("{}", { status: 404, headers: { "Content-Type": "application/json" } });
+        }
+        if (url === "/api/v1/agent/chat/stream") {
+          const body = JSON.parse(String(init?.body)) as { request_id: string };
+          return sseResponse([
+            'event: stage\ndata: "working"\n\n',
+            `event: tool_activity\ndata: ${JSON.stringify({
+              id: `act:${body.request_id}:save_memory`,
+              tool: "save_memory",
+              action: "save_memory",
+              label: "更新长期记忆",
+              status: "running",
+            })}\n\n`,
+            `event: memory_updated\ndata: ${JSON.stringify({
+              action: "created",
+              scope: "owner",
+              character_id: "whale",
+              memory_id: 42,
+              snippet: "喜欢喝无糖乌龙茶",
+              count: 12,
+              limit: 100,
+              soft_limit_reached: false,
+            })}\n\n`,
+            `event: tool_activity\ndata: ${JSON.stringify({
+              id: `act:${body.request_id}:save_memory`,
+              tool: "save_memory",
+              action: "save_memory",
+              label: "更新长期记忆",
+              status: "completed",
+              summary: "好，这件事我已经记下来了。",
+            })}\n\n`,
+            `event: done\ndata: ${JSON.stringify({
+              request_id: body.request_id,
+              reply_text: "好，我已经记下你喜欢无糖乌龙茶啦。",
+              reply_format: "markdown",
+              card: {
+                type: "memory_change",
+                data: { target: "已保存记忆", text: "喜欢喝无糖乌龙茶" },
+              },
+            })}\n\n`,
+          ]);
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      })
+    );
+
+    try {
+      const { container } = render(
+        <AppSessionProvider value={makeSession()}>
+          <ChatPage />
+        </AppSessionProvider>
+      );
+
+      // Calm task card sanitizes raw internal guard & "工坊号主" and never shows raw "失败"
+      await waitFor(() => {
+        expect(container.querySelector('[data-request-id="calm-task-1"]')).not.toBeNull();
+      });
+      const calmCard = container.querySelector('[data-request-id="calm-task-1"] .operator-chat-card')!;
+      expect(calmCard.textContent).toContain("暂未完成");
+      expect(calmCard.textContent).toContain("这几步不能同时改动状态");
+      expect(calmCard.textContent).not.toContain("工坊号主");
+      expect(calmCard.textContent).not.toContain("失败");
+
+      // Stream turn with tool_activity + memory_updated
+      const input = container.querySelector<HTMLTextAreaElement>("#operator-chat-input")!;
+      fireEvent.change(input, { target: { value: "记住我喜欢无糖乌龙茶" } });
+      fireEvent.submit(container.querySelector<HTMLFormElement>("#operator-chat-form")!);
+
+      await waitFor(() => {
+        expect(screen.getByText("好，我已经记下你喜欢无糖乌龙茶啦。")).toBeInTheDocument();
+      });
+
+      // Progressive disclosure "思考与工具" capsule
+      expect(screen.getByText(/思考与工具 · 更新长期记忆/)).toBeInTheDocument();
+      expect(screen.getByText("更新长期记忆")).toBeInTheDocument();
+
+      // Clickable "已更新记忆" pill under assistant message (and suppressed duplicate memory_change card)
+      const memPill = screen.getByRole("button", { name: "已更新记忆" });
+      expect(memPill.getAttribute("title")).toContain("喜欢喝无糖乌龙茶");
+      expect(document.querySelectorAll(".chat-memory-pill")).toHaveLength(1);
+      expect(document.querySelector(".chat-memory-fallback-link")?.getAttribute("href")).toBe("#personalization");
+
+      fireEvent.click(memPill);
+      expect(memoryEvents).toEqual([
+        {
+          memoryId: 42,
+          snippet: "喜欢喝无糖乌龙茶",
+          scope: "owner",
+        },
+      ]);
+    } finally {
+      window.removeEventListener("aqua:open-manage-memories", onMemoryOpen);
+    }
+  });
+
+  it("syncs 开始/停止运营 quick controls cleanly with live starting and running states", async () => {
+    const submittedActions: string[] = [];
+    const syncEvents: Array<Record<string, unknown>> = [];
+    const onSync = (event: Event) => {
+      syncEvents.push((event as CustomEvent<Record<string, unknown>>).detail);
+    };
+    window.addEventListener("aqua:automation-status", onSync);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.startsWith("/api/v1/agent/chat?limit=")) {
+          return new Response(
+            JSON.stringify({ character: "Aqua", character_id: "whale", turns: [] }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (url === "/api/v1/agent/attention") {
+          return new Response(JSON.stringify({ count: 0 }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/api/v1/agent/private-call") {
+          return new Response(JSON.stringify({ configured: false }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/api/v1/agent/chat/events") {
+          return new Response("{}", { status: 404, headers: { "Content-Type": "application/json" } });
+        }
+        if (url === "/api/v1/agent/chat/stream") {
+          const body = JSON.parse(String(init?.body)) as {
+            request_id: string;
+            intent?: { action?: string };
+          };
+          const action = body.intent?.action || "";
+          submittedActions.push(action);
+          if (action === "start_operations") {
+            return sseResponse([
+              `event: tool_activity\ndata: ${JSON.stringify({
+                id: `act:${body.request_id}:start_operations`,
+                tool: "start_operations",
+                label: "开启自主运营",
+                status: "completed",
+                data: { automation_state: "running" },
+              })}\n\n`,
+              `event: done\ndata: ${JSON.stringify({
+                request_id: body.request_id,
+                reply_text: "自主运营已经开启，状态已同步。",
+                card: {
+                  type: "operation_control",
+                  data: { state: "running", policy: { enabled: true } },
+                },
+              })}\n\n`,
+            ]);
+          }
+          return sseResponse([
+            `event: done\ndata: ${JSON.stringify({
+              request_id: body.request_id,
+              reply_text: "已请求自主运营收尾。",
+              card: {
+                type: "operation_control",
+                data: { state: "off", policy: { enabled: false } },
+              },
+            })}\n\n`,
+          ]);
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      })
+    );
+
+    try {
+      const { container, rerender } = render(
+        <AppSessionProvider
+          value={makeSession({
+            status: {
+              character: { id: "whale", version: 1, name: "Aqua" },
+              context: { capacity_source: "model_card", verified: true },
+              automation: { state: "starting", enabled: false },
+            },
+          })}
+        >
+          <ChatPage />
+        </AppSessionProvider>
+      );
+
+      // While automation is "starting", quick control shows "运营启动中…" and stays disabled
+      const quickBtn = container.querySelector<HTMLButtonElement>("#operator-chat-ops-quick")!;
+      await waitFor(() => {
+        expect(quickBtn.textContent).toBe("运营启动中…");
+      });
+      expect(quickBtn.disabled).toBe(true);
+      expect(quickBtn.dataset.state).toBe("starting");
+
+      // When live session updates to "off", quick control offers "开始运营"
+      rerender(
+        <AppSessionProvider
+          value={makeSession({
+            status: {
+              character: { id: "whale", version: 1, name: "Aqua" },
+              context: { capacity_source: "model_card", verified: true },
+              automation: { state: "off", enabled: false },
+            },
+          })}
+        >
+          <ChatPage />
+        </AppSessionProvider>
+      );
+
+      await waitFor(() => {
+        expect(quickBtn.textContent).toBe("开始运营");
+        expect(quickBtn.disabled).toBe(false);
+      });
+
+      fireEvent.click(quickBtn);
+      await waitFor(() => {
+        expect(quickBtn.textContent).toBe("停止运营");
+      });
+      expect(submittedActions).toEqual(["start_operations"]);
+      expect(syncEvents.some((d) => (d.automation as { state?: string })?.state === "running")).toBe(true);
+      expect(screen.getByRole("button", { name: "停止自主运营" })).toBeInTheDocument();
+
+      // Clicking "停止运营" sends stop intent
+      fireEvent.click(quickBtn);
+      await waitFor(() => {
+        expect(quickBtn.textContent).toBe("开始运营");
+      });
+      expect(submittedActions).toEqual(["start_operations", "stop"]);
+    } finally {
+      window.removeEventListener("aqua:automation-status", onSync);
+    }
+  });
+
+  it("renders calm constrained tool_activity and sanitizes TaskActivityDrawer step errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.startsWith("/api/v1/agent/chat?limit=")) {
+          return new Response(
+            JSON.stringify({ character: "Aqua", character_id: "whale", turns: [] }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (url === "/api/v1/agent/attention") {
+          return new Response(JSON.stringify({ count: 0 }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/api/v1/agent/private-call") {
+          return new Response(JSON.stringify({ configured: false }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url === "/api/v1/agent/chat/events") {
+          return new Response("{}", { status: 404, headers: { "Content-Type": "application/json" } });
+        }
+        if (url === "/api/v1/agent/chat/stream") {
+          const body = JSON.parse(String(init?.body)) as { request_id: string };
+          return sseResponse([
+            'event: stage\ndata: "constrained"\n\n',
+            `event: tool_activity\ndata: ${JSON.stringify({
+              id: `act:${body.request_id}:web_lookup`,
+              tool: "web_search",
+              label: "联网检索",
+              status: "constrained",
+              summary: "ValidationError: pydantic schema mismatch",
+            })}\n\n`,
+            `event: done\ndata: ${JSON.stringify({
+              request_id: body.request_id,
+              reply_text: "这一步需要调整条件，请补充说明后再试。",
+              reply_format: "plain",
+            })}\n\n`,
+          ]);
+        }
+        if (url === "/api/v1/agent/tasks") {
+          return new Response(
+            JSON.stringify({
+              tasks: [
+                {
+                  id: "task-drawer-1",
+                  goal: "检查视频片段",
+                  status: "failed",
+                  revision: 1,
+                  steps: [],
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (url === "/api/v1/agent/tasks/task-drawer-1") {
+          return new Response(
+            JSON.stringify({
+              id: "task-drawer-1",
+              goal: "检查视频片段",
+              status: "failed",
+              revision: 1,
+              message: "Traceback (most recent call last): internal",
+              steps: [
+                {
+                  id: "step-1",
+                  tool: "workshop_lookup",
+                  result: { error: "工坊号主请求超出本轮委派范围" },
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (url === "/api/v1/operations/account/bilibili") {
+          return new Response(JSON.stringify({ state: "logged_in", profile: { name: "测试" } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      })
+    );
+
+    const { container } = render(
+      <AppSessionProvider value={makeSession()}>
+        <ChatPage />
+      </AppSessionProvider>
+    );
+
+    const input = container.querySelector<HTMLTextAreaElement>("#operator-chat-input")!;
+    fireEvent.change(input, { target: { value: "查一下今天新闻" } });
+    fireEvent.submit(container.querySelector<HTMLFormElement>("#operator-chat-form")!);
+
+    await waitFor(() => {
+      expect(screen.getByText("这一步需要调整条件，请补充说明后再试。")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/思考与工具 · 联网检索/)).toBeInTheDocument();
+    expect(screen.getByText("已暂缓")).toBeInTheDocument();
+    expect(screen.getByText("操作参数没能匹配当前要求，可以调整说法后再试。")).toBeInTheDocument();
+    expect(container.textContent).not.toContain("ValidationError");
+
+    fireEvent.click(container.querySelector("#chat-activity-toggle")!);
+    await waitFor(() => {
+      expect(screen.getByText("任务与权限")).toBeInTheDocument();
+      expect(screen.getByText("检查视频片段")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("检查视频片段"));
+    await waitFor(() => {
+      expect(screen.getByText("查询历史记录 · 暂未取得有效结果")).toBeInTheDocument();
+    });
+    const drawer = container.querySelector("#chat-activity")!;
+    expect(drawer.textContent).toContain("未完成");
+    expect(drawer.textContent).toContain("操作参数没能匹配当前要求，可以调整说法后再试。");
+    expect(drawer.textContent).not.toContain("工坊面板");
+    expect(drawer.textContent).not.toContain("Traceback");
+  });
+
   it("stops generation on demand via stop-generation endpoint", async () => {
     let finishStream: (() => void) | null = null;
     let stoppedRequestId: string | null = null;
@@ -234,7 +638,7 @@ describe("ChatPage", () => {
         const url = String(input);
         if (url.startsWith("/api/v1/agent/chat?limit=")) {
           return new Response(
-            JSON.stringify({ character: "大肥鱼", character_id: "whale", turns: [] }),
+            JSON.stringify({ character: "Aqua", character_id: "whale", turns: [] }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
@@ -289,7 +693,7 @@ describe("ChatPage", () => {
     );
 
     await waitFor(() => {
-      expect(container.querySelector("#operator-chat-title")!.textContent).toBe("大肥鱼");
+      expect(container.querySelector("#operator-chat-title")!.textContent).toBe("Aqua");
     });
 
     const input = container.querySelector<HTMLTextAreaElement>("#operator-chat-input")!;
@@ -319,7 +723,7 @@ describe("ChatPage", () => {
         const url = String(input);
         if (url.startsWith("/api/v1/agent/chat?limit=")) {
           return new Response(
-            JSON.stringify({ character: "大肥鱼", character_id: "whale", turns: [] }),
+            JSON.stringify({ character: "Aqua", character_id: "whale", turns: [] }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
@@ -372,7 +776,7 @@ describe("ChatPage", () => {
           );
         }
         if (url === "/api/v1/operations/account/bilibili") {
-          return new Response(JSON.stringify({ state: "logged_in", profile: { name: "号主" } }), {
+          return new Response(JSON.stringify({ state: "logged_in", profile: { name: "主人" } }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });
@@ -444,7 +848,7 @@ describe("ChatPage", () => {
         if (url.startsWith("/api/v1/agent/chat?limit=")) {
           return new Response(
             JSON.stringify({
-              character: "大肥鱼",
+              character: "Aqua",
               character_id: "whale",
               avatar: "/assets/whale/idle.gif",
               turns: [],
@@ -462,7 +866,7 @@ describe("ChatPage", () => {
           return new Response("{}", { status: 404, headers: { "Content-Type": "application/json" } });
         }
         if (url === "/api/v1/agent/private-call") {
-          return new Response(JSON.stringify({ configured: true, character: "大肥鱼" }), {
+          return new Response(JSON.stringify({ configured: true, character: "Aqua" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });
@@ -498,7 +902,7 @@ describe("ChatPage", () => {
     });
 
     expect(openCallBtn.getAttribute("aria-label")).toBe("私有语音通话");
-    expect(container.querySelector("#private-call-title")!.textContent).toBe("与 大肥鱼 通话");
+    expect(container.querySelector("#private-call-title")!.textContent).toBe("与 Aqua 通话");
     expect(container.querySelector("#private-call-start")!.textContent).toBe("开始通话");
     expect(container.querySelector("#private-call-review summary")!.textContent).toBe("查看通话转写");
     expect(container.querySelector("#private-call-pet-slot #chat-pet")).not.toBeNull();

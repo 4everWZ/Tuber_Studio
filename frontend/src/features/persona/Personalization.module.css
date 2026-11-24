@@ -1,16 +1,50 @@
 .settingsContainer {
-  max-width: 940px;
+  max-width: 760px;
   margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settingsHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .settingsHeading {
-  margin: 8px 0 22px;
+  margin: 4px 0 0;
+  font-size: 1.45rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.settingsLead {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
 .rowsCard {
   border: 1px solid var(--win-border-light);
-  border-radius: 17px;
+  border-radius: 14px;
   background: var(--panel);
+  overflow: hidden;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 20px 10px;
+  border-bottom: 1px solid var(--win-border-light);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 620;
 }
 
 .row {
@@ -18,8 +52,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 19px;
+  padding: 15px 20px;
   margin: 0;
+  font-weight: 500;
 }
 
 .row + .row {
@@ -36,75 +71,197 @@
   overflow-wrap: anywhere;
 }
 
+.row strong {
+  font-weight: 580;
+  font-size: 0.95rem;
+}
+
 .row small {
   color: var(--muted);
   font-weight: 400;
+  font-size: 0.86rem;
   margin-top: 3px;
 }
 
+.entryActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .pillButton {
-  border: 0;
+  border: 1px solid var(--win-border-light);
   border-radius: 999px;
-  background: #ededed;
+  background: var(--win-bg);
   color: var(--ink);
+  font-weight: 550;
+  padding: 6px 14px;
+  min-height: 36px;
   flex-shrink: 0;
 }
 
 .pillButton:hover:not(:disabled) {
-  background: #e3e3e3;
+  background: #ececec;
 }
 
-.switchInput {
+.manageMemoriesBtn {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 580;
+  padding: 7px 15px;
+  min-height: 36px;
+  flex-shrink: 0;
+}
+
+.manageMemoriesBtn:hover:not(:disabled) {
+  background: var(--win-bg);
+}
+
+.warningPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--win-warning-bg);
+  border: 1px solid var(--win-warning-border);
+  color: var(--win-warning);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+input[type="checkbox"].switchInput {
   appearance: none;
   flex: 0 0 42px;
   width: 42px;
-  height: 25px;
+  min-width: 42px;
+  height: 24px;
   border: 0;
   border-radius: 999px;
-  padding: 3px;
+  padding: 2px;
   margin: 0;
-  background: #777;
+  background: #c8c8cc;
   cursor: pointer;
   transition: background-color 0.15s ease;
 }
 
-.switchInput::before {
+input[type="checkbox"].switchInput::before {
   display: block;
-  width: 19px;
-  height: 19px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
   content: "";
   transition: transform 0.15s ease;
 }
 
-.switchInput:checked {
-  background: #3564bd;
+input[type="checkbox"].switchInput:checked {
+  background: #10a37f;
 }
 
-.switchInput:checked::before {
-  transform: translateX(17px);
+input[type="checkbox"].switchInput:checked::before {
+  transform: translateX(18px);
 }
 
-.switchInput:disabled {
+input[type="checkbox"].switchInput:disabled {
   cursor: default;
-  opacity: 0.65;
+  opacity: 0.6;
+}
+
+.instructionsForm {
+  padding: 16px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 560;
+}
+
+.fieldHint {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.82rem;
+}
+
+.instructionsFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.statusMessage {
+  margin: 0;
 }
 
 .statusMessage:empty {
   display: none;
 }
 
+.contextTools {
+  border: 1px solid var(--win-border-light);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 14px 20px;
+}
+
+.contextTools > summary {
+  cursor: pointer;
+  font-weight: 580;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.advancedBody {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.advancedQuickRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.statementRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.statementBox {
+  flex: 1 1 240px;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+/* Shared / Legacy Dialogs */
 .dialog {
   box-sizing: border-box;
   width: min(calc(100% - 28px), 650px);
   max-height: min(calc(100dvh - 28px), 720px);
   padding: 0;
   border: 1px solid var(--win-border-light);
-  border-radius: 21px;
+  border-radius: 18px;
   background: var(--panel);
   color: var(--ink);
-  box-shadow: 0 12px 36px #0002;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.14);
   overflow: hidden;
 }
 
@@ -114,7 +271,7 @@
 }
 
 .dialog::backdrop {
-  background: #0003;
+  background: rgba(0, 0, 0, 0.36);
 }
 
 .dialogHeader {
@@ -122,24 +279,33 @@
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  padding: 12px 20px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--win-border-light);
 }
 
 .dialogTitle {
   margin: 0;
-  font-size: 1.14rem;
+  font-size: 1.12rem;
   font-weight: 650;
 }
 
 .closeButton {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
   border: 0;
   border-radius: 50%;
   padding: 0;
-  font-size: 1.35rem;
+  font-size: 1.3rem;
+  line-height: 1;
   background: transparent;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.closeButton:hover:not(:disabled) {
+  background: var(--win-bg);
+  color: var(--ink);
 }
 
 .dialogBody {
@@ -148,6 +314,434 @@
   overscroll-behavior: contain;
 }
 
+/* ChatGPT-Style Manage Memories Modal */
+.memoryModal {
+  box-sizing: border-box;
+  width: min(calc(100% - 28px), 680px);
+  max-height: min(calc(100dvh - 32px), 760px);
+  padding: 0;
+  border: 1px solid var(--win-border-light);
+  border-radius: 18px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+}
+
+.memoryModal[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.memoryModal::backdrop {
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.memoryModalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--win-border-light);
+  flex-shrink: 0;
+}
+
+.modalSubtitle {
+  margin: 4px 0 0;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.memoryModalBody {
+  overflow-y: auto;
+  padding: 16px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overscroll-behavior: contain;
+}
+
+.capacityCard {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--win-border-light);
+  background: var(--win-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.capacityCardWarning {
+  background: var(--win-warning-bg);
+  border-color: var(--win-warning-border);
+}
+
+.capacityHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.86rem;
+}
+
+.capacityLabel {
+  color: var(--muted);
+}
+
+.capacityCount {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.capacityCountWarning {
+  font-variant-numeric: tabular-nums;
+  color: var(--win-danger);
+}
+
+.capacityTrack {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(120, 120, 128, 0.16);
+  overflow: hidden;
+}
+
+.capacityFill {
+  height: 100%;
+  border-radius: 999px;
+  background: #10a37f;
+  transition: width 0.2s ease;
+}
+
+.capacityFillWarn {
+  background: #d97706;
+}
+
+.capacityFillDanger {
+  background: var(--win-danger);
+}
+
+.capacityWarningText {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--win-danger);
+}
+
+.legacyBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--win-warning-bg);
+  border: 1px solid var(--win-warning-border);
+}
+
+.legacyBannerText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.legacyBannerText strong {
+  font-size: 0.88rem;
+  color: var(--win-warning);
+}
+
+.legacyBannerText small {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.legacyPurgeButton {
+  border-color: var(--win-warning-border);
+  background: var(--panel);
+  color: var(--win-warning);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.legacyPurgeButton:hover:not(:disabled) {
+  background: #fef3c7;
+}
+
+.modalControlsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pillTabList {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--win-bg);
+  border: 1px solid var(--win-border-light);
+}
+
+.pillTab {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 520;
+  min-height: 30px;
+  padding: 4px 12px;
+}
+
+.pillTab:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--ink);
+}
+
+.pillTabActive {
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.searchInput {
+  flex: 1 1 190px;
+  min-width: 160px;
+  max-width: 280px;
+  border-radius: 999px;
+  padding: 6px 13px;
+  font-size: 0.88rem;
+}
+
+.addMemoryForm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.scopeSelect {
+  width: auto;
+  min-width: 108px;
+  flex-shrink: 0;
+  font-size: 0.88rem;
+}
+
+.addMemoryInput {
+  flex: 1 1 220px;
+  min-width: 0;
+  font-size: 0.9rem;
+}
+
+.highlightHint {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--soft);
+  font-size: 0.84rem;
+  color: var(--ink);
+}
+
+.modalStatus {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--win-green);
+}
+
+.emptyState {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  border: 1px dashed var(--win-border-light);
+  border-radius: 12px;
+}
+
+.memoryList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.memoryItem {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--win-border-light);
+  border-radius: 12px;
+  background: var(--panel);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.memoryItemInactive {
+  opacity: 0.62;
+  background: var(--win-bg);
+}
+
+.memoryItemHighlighted {
+  border-color: var(--accent);
+  background: var(--soft);
+}
+
+.memoryItemMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.memoryItemBadges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.scopeBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.scopeBadgeOwner {
+  background: var(--soft);
+  color: var(--accent);
+}
+
+.scopeBadgePublic {
+  background: var(--win-green-bg);
+  color: var(--win-green);
+}
+
+.recentBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.memoryMeta {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.memoryContent {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.tagRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.memoryTag {
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: var(--win-bg);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+.editRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.editRow input {
+  flex: 1 1 200px;
+}
+
+.memoryItemActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.subtleActionBtn {
+  min-height: 30px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  border-radius: 8px;
+}
+
+.subtleActionBtn:hover:not(:disabled) {
+  background: var(--win-bg);
+  color: var(--ink);
+  border-color: var(--win-border-light);
+}
+
+.deleteActionBtn:hover:not(:disabled) {
+  background: var(--win-danger-bg);
+  color: var(--win-danger);
+  border-color: var(--win-danger-border);
+}
+
+.memoryModalFooter {
+  padding: 12px 22px;
+  border-top: 1px solid var(--win-border-light);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+
+.footerBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.clearConfirmBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--win-danger-bg);
+  border: 1px solid var(--win-danger-border);
+  font-size: 0.86rem;
+  color: var(--win-danger);
+}
+
+.clearConfirmActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Legacy MemorySummaryDialog & RecentEventsDialog classes */
 .summaryHeading {
   display: flex;
   align-items: baseline;
@@ -237,37 +831,31 @@
   margin-top: 14px;
 }
 
-.contextTools {
-  margin-top: 16px;
-  padding: 14px 19px;
-}
-
-.contextTools > summary {
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.statementBox {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin-top: 0;
-}
-
-@media (max-width: 520px) {
+@media (max-width: 600px) {
   .row,
   .dialogHeader,
-  .dialogBody {
-    padding-inline: 13px;
+  .dialogBody,
+  .memoryModalHeader,
+  .memoryModalBody,
+  .memoryModalFooter {
+    padding-inline: 14px;
   }
 
-  .row {
+  .row,
+  .memoryItem {
     flex-wrap: wrap;
+  }
+
+  .searchInput {
+    max-width: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .switchInput,
-  .switchInput::before {
+  .switchInput::before,
+  .capacityFill,
+  .memoryItem {
     transition: none;
   }
 }

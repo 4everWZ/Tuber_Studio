@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { apiPost } from "@/shared/api/client";
 import { errorMessage } from "@/shared/lib/errors";
 import styles from "@/shared/styles/workbench.module.css";
+import { AquaBrandMark } from "./Sidebar";
 
 export interface LoginGateProps {
   initialError?: string;
@@ -36,11 +37,9 @@ export function LoginGate({ initialError = "", onAuthenticated }: LoginGateProps
   return (
     <main id="login" className={styles.loginShell}>
       <form id="login-form" className={styles.loginPanel} onSubmit={(e) => void handleSubmit(e)}>
-        <div className={styles.brandMark} aria-hidden="true">
-          TS
-        </div>
-        <h1>Tuber Studio</h1>
-        <p className="muted">角色创作、运营与直播工坊</p>
+        <AquaBrandMark />
+        <h1>Aqua Studio</h1>
+        <p className="muted">Aqua · Personal Agent</p>
         <label>
           管理令牌
           <input
@@ -54,7 +53,7 @@ export function LoginGate({ initialError = "", onAuthenticated }: LoginGateProps
             disabled={submitting}
           />
         </label>
-        <p className="hint">使用工坊的管理令牌登录，这个浏览器会保留登录状态。</p>
+        <p className="hint">使用 Aqua Studio 的管理令牌登录，这个浏览器会保留登录状态。</p>
         <button className="primary" type="submit" disabled={submitting} aria-busy={submitting}>
           登录工作台
         </button>

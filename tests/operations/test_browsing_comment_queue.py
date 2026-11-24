@@ -139,7 +139,7 @@ async def test_invalid_comment_does_not_block_other_floors_or_retry_its_model(br
         if schema["title"] == "ResponseDecision":
             calls.append(schema["title"])
             if len(calls) == 1:
-                value["evidence_ids"] = ["ref:999"]
+                value["text"] = "先看看 ref:1。"
         browsing.runtime.operation_llm.last_content = json.dumps(value, ensure_ascii=False)
         return value
 

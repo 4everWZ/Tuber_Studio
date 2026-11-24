@@ -30,6 +30,7 @@ from .repository import (
     _has_legacy_chat_lineage,
     _json,
 )
+from .turns import evaluate_native_dynamic, should_use_native_dynamic_turns
 
 
 def dynamic_decision_messages(character, recent_posts, public_sources, *, current_time):
@@ -643,61 +644,81 @@ class DynamicsEvaluatorMixin:
                         return self._save_decision(char, manual, base, [])
                     if not authorized():
                         raise ValueError("运营记忆来源或授权已变化")
-                    payload = json.loads(messages[1]["content"])
-                    unified_store = getattr(self.runtime, "unified_memory", None)
-                    unified_public = unified_store.for_prompt("public", character_id=char["id"], limit=15) if unified_store is not None else []
-                    if unified_public:
-                        payload["unified_public_memories"] = [item["content"] for item in unified_public]
-                    payload["public_sources"] = public_sources
-                    account = getattr(self.account, "display_account_id", lambda: "")()
-                    payload["related_posts"] = self._related_posts(char, account, sources)
-                    for post in payload["related_posts"] + payload["recent_public_posts"]:
-                        post["content"] = recall_memory.trim_repeated_quotes(post["content"], originals)
-                        for point in post.get("points", []):
-                            point["text"] = recall_memory.trim_repeated_quotes(point["text"], originals)
-                    messages[1]["content"] = _json(payload)
-                    maximum = self.settings.data["omni"].get("operations_max_tokens", 8192)
-                    binding = {
-                        "task": "generation",
-                        "character": {"id": char["id"], "version": char["version"]},
-                        "source_sha256": content_hash(public_sources),
-                        "self_identity": generation_identity,
-                        "evaluation_slot": current_time if manual else policy["next_evaluation_at"],
-                        "epoch": self.operations.policy()["epoch"],
-                    }
-
-                    async def invoke_model(packet, schema):
-                        return await budgeted_json(self.runtime.operation_llm, packet, schema, max_tokens=maximum)
-
-                    async def invoke(packet, *, web_fetch=None):
-                        schema = self.decision_schema(public_sources)
-                        if web_fetch is not None:
-                            return await web_fetch.complete(packet, schema, invoke_model)
-                        return await invoke_model(packet, schema)
-
-                    def diagnose(value):
-                        return (
-                            "正文包含大量重复内容，保留原文待审"
-                            if value["action"] == "post"
-                            and operation_output_diagnostics(value["content"])["needs_review"]
-                            else None
+                    if should_use_native_dynamic_turns(self):
+                        data, generation_continuation = await evaluate_native_dynamic(
+                            self,
+                            char=char,
+                            evaluation_account=evaluation_account,
+                            recent_posts=self._recent_public_posts(char),
+                            related_posts=self._related_posts(char, getattr(self.account, "display_account_id", lambda: "")(), sources),
+                            public_sources=public_sources,
+                            unified_public=list(
+                                getattr(self.runtime, "unified_memory", None).for_prompt("public", character_id=char["id"], limit=15)
+                                if getattr(self.runtime, "unified_memory", None) is not None
+                                else ()
+                            ),
+                            current_time=current_time,
+                            topic=topic,
+                            manual=manual,
+                            default_interval=policy["evaluate_interval_seconds"],
+                            guard=guard,
                         )
+                    else:
+                        payload = json.loads(messages[1]["content"])
+                        unified_store = getattr(self.runtime, "unified_memory", None)
+                        unified_public = unified_store.for_prompt("public", character_id=char["id"], limit=15) if unified_store is not None else []
+                        if unified_public:
+                            payload["unified_public_memories"] = [item["content"] for item in unified_public]
+                        payload["public_sources"] = public_sources
+                        account = getattr(self.account, "display_account_id", lambda: "")()
+                        payload["related_posts"] = self._related_posts(char, account, sources)
+                        for post in payload["related_posts"] + payload["recent_public_posts"]:
+                            post["content"] = recall_memory.trim_repeated_quotes(post["content"], originals)
+                            for point in post.get("points", []):
+                                point["text"] = recall_memory.trim_repeated_quotes(point["text"], originals)
+                        messages[1]["content"] = _json(payload)
+                        maximum = self.settings.data["omni"].get("operations_max_tokens", 8192)
+                        binding = {
+                            "task": "generation",
+                            "character": {"id": char["id"], "version": char["version"]},
+                            "source_sha256": content_hash(public_sources),
+                            "self_identity": generation_identity,
+                            "evaluation_slot": current_time if manual else policy["next_evaluation_at"],
+                            "epoch": self.operations.policy()["epoch"],
+                        }
 
-                    data, generation_continuation = await generate_with_recovery(
-                        self.runtime,
-                        channel="generation.dynamics",
-                        identity=content_hash(binding),
-                        binding=binding,
-                        character=char,
-                        messages=messages,
-                        generate=invoke,
-                        validate=lambda value: self._parse(value, public_sources),
-                        max_tokens=maximum,
-                        guard=guard,
-                        diagnose=diagnose,
-                        context_data={"public_sources": sources},
-                        allow_web_fetch=True,
-                    )
+                        async def invoke_model(packet, schema):
+                            return await budgeted_json(self.runtime.operation_llm, packet, schema, max_tokens=maximum)
+
+                        async def invoke(packet, *, web_fetch=None):
+                            schema = self.decision_schema(public_sources)
+                            if web_fetch is not None:
+                                return await web_fetch.complete(packet, schema, invoke_model)
+                            return await invoke_model(packet, schema)
+
+                        def diagnose(value):
+                            return (
+                                "正文包含大量重复内容，保留原文待审"
+                                if value["action"] == "post"
+                                and operation_output_diagnostics(value["content"])["needs_review"]
+                                else None
+                            )
+
+                        data, generation_continuation = await generate_with_recovery(
+                            self.runtime,
+                            channel="generation.dynamics",
+                            identity=content_hash(binding),
+                            binding=binding,
+                            character=char,
+                            messages=messages,
+                            generate=invoke,
+                            validate=lambda value: self._parse(value, public_sources),
+                            max_tokens=maximum,
+                            guard=guard,
+                            diagnose=diagnose,
+                            context_data={"public_sources": sources},
+                            allow_web_fetch=True,
+                        )
                     data["presentation"] = await self._presentation(data, public_sources)
                     if not authorized(include_enabled=False):
                         raise ValueError("动态素材或账号已变化")

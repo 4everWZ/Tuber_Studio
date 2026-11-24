@@ -364,6 +364,7 @@ export function CommentsPage({ route }: { route: ParsedRoute }) {
         discoveryStatus={control.discovery}
         selectedSourceCount={reconcileCommentSelection(comments, selectedComments).size}
         sourceCommentPreview={selectedComment}
+        sourceComments={comments}
         refreshTick={queueRefreshTick}
         onViewChanged={(nextView) => {
           setQueueView(nextView);
@@ -540,33 +541,38 @@ export function CommentsPage({ route }: { route: ParsedRoute }) {
             onRefresh={() => refreshComments()}
           />
 
-          <p id="thread-context-state" className="hint" style={{ marginTop: 8 }}>
-            {threadContextState}
-          </p>
-
-          <div className="actions">
-            <button
-              id="compact-comments"
-              type="button"
-              disabled={contextBusy}
-              onClick={() => void handleCompactContext()}
-            >
-              压缩当前楼
-            </button>
-            <button
-              id="rebuild-comments"
-              type="button"
-              disabled={contextBusy}
-              onClick={() => void handleRebuildContext()}
-            >
-              重建上下文
-            </button>
-          </div>
-          {threadRebuildState && (
-            <p id="thread-rebuild-state" className="hint" role="status">
-              {threadRebuildState}
+          <details style={{ marginTop: 10 }}>
+            <summary style={{ cursor: "pointer", color: "var(--muted)" }}>
+              上下文调试与重建维护
+            </summary>
+            <p id="thread-context-state" className="hint" style={{ marginTop: 8 }}>
+              {threadContextState}
             </p>
-          )}
+
+            <div className="actions">
+              <button
+                id="compact-comments"
+                type="button"
+                disabled={contextBusy}
+                onClick={() => void handleCompactContext()}
+              >
+                压缩当前楼
+              </button>
+              <button
+                id="rebuild-comments"
+                type="button"
+                disabled={contextBusy}
+                onClick={() => void handleRebuildContext()}
+              >
+                重建上下文
+              </button>
+            </div>
+            {threadRebuildState && (
+              <p id="thread-rebuild-state" className="hint" role="status">
+                {threadRebuildState}
+              </p>
+            )}
+          </details>
         </div>
       </details>
 

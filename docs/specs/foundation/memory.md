@@ -2,7 +2,12 @@
 
 ## 用户身份与长期记忆
 
-长期记忆和历史引用开关由号主在「设置 → 个性化」管理。前台聊天与后台委派均无权修改这两项配置。号主可以在私聊中更正或忘记一条具体偏好，应用按来源和当前身份处理；临时对话关闭长期读写。日常设置工具的完整范围见[前台日常设置](agent-runtime.md#前台日常设置)。
+记忆系统采用严格隔离的**双层结构**：
+
+- **Layer 1（常驻精炼记忆，`UnifiedMemoryStore` / `memories` 表）：** 保存经筛选的长期核心事实与偏好，默认软上限 `DEFAULT_MEMORY_LIMIT = 100` 条（超限时界面提示，保留 `1–1000` 字符与防凭据校验）。每条强制绑定 `scope`（`owner` 仅号主私聊／私有任务可读，绝不进入评论、私信、动态或 Remotion 公开制片；`public` 仅公开互动与公开作品可读）及 `character_id`。支持模型通过原生工具（`save_memory` / `update_memory` / `delete_memory`）与前端「管理记忆」弹窗（`ManageMemoriesModal`，提供 `/api/v1/persona/memories` 列表、`N / 100` 容量条、作用域筛选、增改停删、`POST /api/v1/persona/memories/clear` 与 `POST /api/v1/persona/memories/purge-migrated`）管理。启动时不自动迁移旧表，遗留 `mig:*` 条目仅在历史库存在时展示「清理历史遗留迁移记录」按钮。
+- **Layer 2（按需情景回查，`persona/memory/recall.py`）：** 保存高容量情景与运行原文表（`browsing_comment_timeline`、`dynamic_posts`、`daily_highlights`、`operator_chat_turns` 等），不灌入常驻提示前缀，仅在模型显式调用 `recall_history` / `recall_memory` 时按当前 `scope`、日期、BV 或楼层按需检出。
+
+长期记忆和历史引用开关由号主在「设置 → 个性化」（精简开关、自定义指令与「管理记忆 (N / 100)」入口，不内联平铺记忆列表）管理。前台聊天与后台委派均无权修改这两项配置。号主可以在私聊中更正或忘记一条具体偏好，应用按来源和当前身份处理；临时对话关闭长期读写。日常设置工具的完整范围见[前台日常设置](agent-runtime.md#前台日常设置)。
 
 「清空私聊」会移除当前角色在各运营登录账号下的私聊消息和对话上下文，并从一段新对话开始。已保存的长期记忆、独立任务和平台记录仍可在各自入口查阅。原聊天被清空后，未完成的任务继续在活动里交付。
 

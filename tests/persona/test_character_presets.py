@@ -85,20 +85,24 @@ def test_enriched_preset_keeps_character_assets_without_retired_radio():
     assert _fingerprint(before[0]) == "c502c1ff0d81547625a819dd59aec9f2073a3610a51c86a4b75ddebd070df598"
     for item in after:
         Character.model_validate(item)
-    for field in ("id", "name", "avatar_manifest", "license_status"):
+    for field in ("id", "avatar_manifest", "license_status"):
         assert after[0][field] == before[0][field]
     assert [item["id"] for item in after] == ["whale"]
     main = after[0]
+    assert main["name"] == "Aqua"
+    assert main["display_name"] == "Aqua"
     assert main["voice_profile"] == "whale_reference"
     assert main["style"]["min_chars"] == 1
     assert main["style"]["max_chars"] == 120
-    assert {"本鱼", "本鲸", "鱼鱼", "鲸鲸", "小鲸鱼", "白饭"} <= set(main["style"]["catchphrases"])
-    # The persona update removes the cliche from both instructions and examples.
-    assert "深海思考" not in json.dumps(
-        [main["style"]["catchphrases"], main["core"]["examples"], main["lore"]], ensure_ascii=False
+    assert {"Aqua", "本鲸"} <= set(main["style"]["catchphrases"])
+    # The persona update removes cliches and stacked fanfic props from the permanent shell.
+    dumped_shell = json.dumps(
+        [main["core"], main["style"], main["rules"], main["lore"]], ensure_ascii=False
     )
-    assert len(main["core"]["examples"]) == 8
-    assert 4 <= len(main["lore"]) <= 6
+    for retired in ("深海思考", "贝壳灯", "软垫", "白饭", "女仆裙", "算力挂件"):
+        assert retired not in dumped_shell
+    assert len(main["core"]["examples"]) == 4
+    assert main["lore"] == []
     assert main["core"]["background"] and main["core"]["interaction"]
     for item in main["core"]["examples"]:
         assert item["viewer"]
@@ -116,10 +120,18 @@ def test_character_sources_stay_out_of_prompt_and_lore_is_bounded():
     fixed = json.loads(messages[0]["content"].split("角色设定：", 1)[1])
     assert fixed["core"] == role["core"]
     assert "\n".join(msg["content"] for msg in messages).count(role["core"]["examples"][0]["reply"]) == 1
-    event["text"] = " ".join(item["keywords"][0] for item in role["lore"])
-    messages = build_messages(role, event, {})
+    role_with_lore = role | {
+        "lore": [
+            {"keywords": ["珊瑚"], "text": "珊瑚故事一"},
+            {"keywords": ["潮汐"], "text": "潮汐故事二"},
+            {"keywords": ["气泡"], "text": "气泡故事三"},
+            {"keywords": ["星光"], "text": "星光故事四"},
+        ]
+    }
+    event["text"] = " ".join(item["keywords"][0] for item in role_with_lore["lore"])
+    messages = build_messages(role_with_lore, event, {})
     context = json.loads(messages[2]["content"].removeprefix("上下文数据："))
-    assert context["active_lore"] == [item["text"] for item in role["lore"][:3]]
+    assert context["active_lore"] == [item["text"] for item in role_with_lore["lore"][:3]]
 
 
 @pytest.mark.parametrize(
@@ -364,10 +376,14 @@ def test_fresh_install_uses_clean_presets_without_extra_version(tmp_path):
 
 def test_whale_preset_rejects_dafeiyu_self_reference_and_upgrades_from_prior_seed(tmp_path):
     role = presets()[0]
+    assert role["name"] == "Aqua" and role["display_name"] == "Aqua"
     assert "大肥鱼" not in role["style"]["catchphrases"]
-    assert "小鲸鱼" in role["self_description"]
+    assert "Aqua" in role["self_description"]
     assert "大肥鱼" not in role["self_description"]
-    assert "本鲸" in role["core"]["examples"][0]["reply"]
+    assert any(
+        "Aqua" in example["reply"] or "本鲸" in example["reply"] or "我" in example["reply"]
+        for example in role["core"]["examples"]
+    )
     for example in role["core"]["examples"]:
         assert "大肥鱼陪" not in example["reply"] and "大肥鱼就是" not in example["reply"]
 

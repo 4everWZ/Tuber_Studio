@@ -30,6 +30,7 @@ from ...agent.memory_organizer.owner_memory import (
     private_rows,
 )
 from ...agent.memory_organizer.writer import connect_private_writer
+from ...agent.skills import register_remotion_tools
 from ...agent.voice import avatar as voice_avatar
 from ...agent.voice import origin as voice_origin
 from ...agent.voice import private_call as voice_private_call
@@ -66,6 +67,7 @@ def register_agent_routes(
     voice_origin.install(runtime.store.db)
     operator_chat = OperatorChat(runtime, store, browsing, dynamics)
     reply_ops = attach_reply_operations(runtime.tasks, comments, messages)
+    register_remotion_tools(runtime.tasks, runtime=runtime, store=store, browsing=browsing)
     register_task_routes(app, runtime.tasks, require_admin)
 
     # --- Operator Chat (13) ---

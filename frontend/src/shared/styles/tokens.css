@@ -1,41 +1,41 @@
 :root {
   color-scheme: light;
 
-  /* Desktop Workbench Palette */
-  --win-bg: #f8f8f8;
+  /* Aqua Studio Neutral Palette (OpenAI-inspired light & calm neutral tokens) */
+  --win-bg: #f7f7f8;
   --win-surface: #ffffff;
-  --win-panel-header: #fafafa;
-  --win-border: #d9d9d9;
-  --win-border-light: #e9e9e9;
-  --win-border-focus: #1760bb;
-  --win-ink: #171717;
-  --win-ink-secondary: #363636;
-  --win-muted: #595959;
-  --win-subtle: #676767;
-  --win-accent: #195fac;
-  --win-accent-hover: #134d8d;
-  --win-accent-active: #113e71;
-  --win-accent-soft: #eef5fc;
-  --win-green: #1d6b4c;
-  --win-green-bg: #eef8f2;
-  --win-green-border: #b4d9c4;
-  --win-danger: #a92323;
-  --win-danger-bg: #fff1f0;
-  --win-danger-border: #e9b4b1;
-  --win-warning: #884709;
-  --win-warning-bg: #fff7e8;
-  --win-warning-border: #e9ce95;
+  --win-panel-header: #f9f9fb;
+  --win-border: #e2e4e9;
+  --win-border-light: #ededf1;
+  --win-border-focus: #0e7490;
+  --win-ink: #0d0d0d;
+  --win-ink-secondary: #343741;
+  --win-muted: #6e6e80;
+  --win-subtle: #8e8ea0;
+  --win-accent: #0e7490;
+  --win-accent-hover: #155e75;
+  --win-accent-active: #164e63;
+  --win-accent-soft: #eef7f9;
+  --win-green: #10a37f;
+  --win-green-bg: #ecfdf5;
+  --win-green-border: #a7f3d0;
+  --win-danger: #b42318;
+  --win-danger-bg: #fef3f2;
+  --win-danger-border: #fecdca;
+  --win-warning: #9a5b13;
+  --win-warning-bg: #fffaeb;
+  --win-warning-border: #fedf89;
 
   /* Oceanic Live Studio Tokens */
-  --ocean-bg: #f5f8f5;
-  --ocean-surface: #fffefb;
-  --ocean-topbar: #fffdf9;
-  --ocean-ink: #264c5a;
-  --ocean-muted: #738d96;
-  --ocean-line: #dae9e8;
-  --ocean-accent: #287f88;
-  --ocean-accent-strong: #2e858a;
-  --ocean-soft: #edf6f3;
+  --ocean-bg: #f5f8f7;
+  --ocean-surface: #ffffff;
+  --ocean-topbar: #ffffff;
+  --ocean-ink: #1f4451;
+  --ocean-muted: #647d87;
+  --ocean-line: #dce8e8;
+  --ocean-accent: #0e7490;
+  --ocean-accent-strong: #155e75;
+  --ocean-soft: #eef7f8;
   --ocean-pink: #f0bcb9;
   --ocean-canvas-deep: #083d64;
   --ocean-canvas-mid: #174d69;
@@ -44,7 +44,7 @@
   /* Semantic Aliases */
   --bg: var(--win-bg);
   --panel: var(--win-surface);
-  --surface: #f3f6fb;
+  --surface: #f7f7f8;
   --line: var(--win-border);
   --ink: var(--win-ink);
   --muted: var(--win-muted);
@@ -55,10 +55,23 @@
   --green: var(--win-green);
   --ok: var(--win-green);
 
+  /* Aqua Surface, Elevation & Radius Tokens */
+  --aqua-sidebar-bg: #f9f9f9;
+  --aqua-sidebar-hover: #ececf1;
+  --aqua-sidebar-active: #e6e7ec;
+  --aqua-user-bubble: #f4f4f6;
+  --aqua-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --aqua-shadow-sm: 0 2px 12px rgba(15, 23, 42, 0.06);
+  --aqua-shadow-md: 0 12px 36px rgba(15, 23, 42, 0.1);
+  --aqua-radius-sm: 8px;
+  --aqua-radius-md: 12px;
+  --aqua-radius-lg: 16px;
+
   /* Typography */
-  --font-sans: system-ui, "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
-  --font-mono: Consolas, "Cascadia Code", "Courier New", monospace;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, monospace;
   font-family: var(--font-sans);
   font-size: 15px;
-  line-height: 1.62;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
 }

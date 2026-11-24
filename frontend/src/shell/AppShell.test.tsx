@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiGet } from "@/shared/api/client";
 import { registerDirtySource, clearDirtyRegistry } from "@/shared/lib/dirtyRegistry";
@@ -23,18 +23,36 @@ class FakeWebSocket {
 describe("AppShell", () => {
   beforeEach(() => {
     window.location.hash = "#chat";
+    localStorage.removeItem("aqua.sidebarCollapsed");
     clearDirtyRegistry();
     vi.stubGlobal("WebSocket", FakeWebSocket);
     window.scrollTo = vi.fn();
   });
 
   afterEach(() => {
+    localStorage.removeItem("aqua.sidebarCollapsed");
     clearDirtyRegistry();
     vi.unstubAllGlobals();
   });
 
-  it("authenticates into workspace, shows status pills, enforces beforeunload dirty guard, and falls back to LoginGate on 401", async () => {
+  it("authenticates into Aqua Studio workspace, toggles collapsible sidebar, forwards automation events, enforces dirty guard, and falls back to LoginGate on 401", async () => {
     let return401 = false;
+    let lastSocket: FakeWebSocket | null = null;
+    class TrackingWebSocket extends FakeWebSocket {
+      constructor(url: string) {
+        super(url);
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        lastSocket = this;
+      }
+    }
+    vi.stubGlobal("WebSocket", TrackingWebSocket);
+
+    const automationEvents: Array<Record<string, unknown>> = [];
+    const onAutoEvent = (event: Event) => {
+      automationEvents.push((event as CustomEvent<Record<string, unknown>>).detail);
+    };
+    window.addEventListener("aqua:automation-status", onAutoEvent);
+
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
@@ -51,7 +69,7 @@ describe("AppShell", () => {
         if (url.endsWith("/api/v1/system/status")) {
           return Response.json({
             state: "stopped",
-            character: { id: "dafeiyu", display_name: "大肥鱼" },
+            character: { id: "whale", display_name: "Aqua" },
             context: { capacity_source: "model_card", verified: true },
           });
         }
@@ -71,35 +89,72 @@ describe("AppShell", () => {
       })
     );
 
-    render(<AppShell renderRoute={(route) => <div data-testid="route-slot">{route.page}</div>} />);
+    try {
+      render(<AppShell renderRoute={(route) => <div data-testid="route-slot">{route.page}</div>} />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId("route-slot")).toHaveTextContent("chat");
-    });
+      await waitFor(() => {
+        expect(screen.getByTestId("route-slot")).toHaveTextContent("chat");
+      });
 
-    expect(document.getElementById("workspace-character")?.textContent).toBe("大肥鱼");
-    expect(document.getElementById("service-status-capsule")?.textContent).toContain("已连接");
+      expect(document.title).toBe("对话与脉冲 · Aqua Studio");
+      expect(document.getElementById("workspace-character")?.textContent).toBe("Aqua");
+      expect(document.getElementById("service-status-capsule")?.textContent).toContain("已连接");
+      expect(document.getElementById("workspace-sidebar")?.className).not.toContain("win-explorer-tree");
 
-    // Verify beforeunload dirty registry protection
-    const unregister = registerDirtySource("test-form", () => true);
-    const dirtyEvent = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(dirtyEvent);
-    expect(dirtyEvent.defaultPrevented).toBe(true);
+      // Desktop sidebar collapse & expand toggle
+      const workspace = document.getElementById("workspace")!;
+      expect(workspace.dataset.sidebarCollapsed).toBe("false");
+      fireEvent.click(document.getElementById("collapse-workspace-sidebar")!);
+      expect(workspace.dataset.sidebarCollapsed).toBe("true");
+      expect(localStorage.getItem("aqua.sidebarCollapsed")).toBe("1");
 
-    unregister();
-    const cleanEvent = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(cleanEvent);
-    expect(cleanEvent.defaultPrevented).toBe(false);
+      const expandBtn = document.getElementById("expand-workspace-sidebar")!;
+      expect(expandBtn).not.toBeNull();
+      fireEvent.click(expandBtn);
+      expect(workspace.dataset.sidebarCollapsed).toBe("false");
 
-    // 401 from any API call transitions back to LoginGate
-    return401 = true;
-    await act(async () => {
-      await expect(apiGet("/api/v1/system/status")).rejects.toMatchObject({ status: 401 });
-    });
+      // WS status push dispatches aqua:automation-status without cross-feature imports
+      act(() => {
+        lastSocket?.onmessage?.(
+          new MessageEvent("message", {
+            data: JSON.stringify({
+              type: "status",
+              data: {
+                state: "stopped",
+                character: { id: "whale", display_name: "Aqua" },
+                automation: { state: "starting", enabled: true },
+                context: { capacity_source: "model_card", verified: true },
+              },
+            }),
+          })
+        );
+      });
+      expect(automationEvents.some((d) => (d.automation as { state?: string })?.state === "starting")).toBe(true);
 
-    await waitFor(() => {
-      expect(document.getElementById("login-form")).not.toBeNull();
-    });
+      // Verify beforeunload dirty registry protection
+      const unregister = registerDirtySource("test-form", () => true);
+      const dirtyEvent = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(dirtyEvent);
+      expect(dirtyEvent.defaultPrevented).toBe(true);
+
+      unregister();
+      const cleanEvent = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(cleanEvent);
+      expect(cleanEvent.defaultPrevented).toBe(false);
+
+      // 401 from any API call transitions back to Aqua Studio LoginGate
+      return401 = true;
+      await act(async () => {
+        await expect(apiGet("/api/v1/system/status")).rejects.toMatchObject({ status: 401 });
+      });
+
+      await waitFor(() => {
+        expect(document.getElementById("login-form")).not.toBeNull();
+      });
+      expect(screen.getByText("Aqua Studio")).toBeInTheDocument();
+    } finally {
+      window.removeEventListener("aqua:automation-status", onAutoEvent);
+    }
   });
 
   it("keeps polling characterDisplayStore even when WS status pushes arrive every second", async () => {
@@ -124,7 +179,7 @@ describe("AppShell", () => {
         if (url.endsWith("/api/v1/system/status")) {
           return Response.json({
             state: "stopped",
-            character: { id: "dafeiyu", display_name: "大肥鱼" },
+            character: { id: "whale", display_name: "Aqua" },
             context: { capacity_source: "model_card", verified: true },
           });
         }
@@ -153,7 +208,7 @@ describe("AppShell", () => {
                 type: "status",
                 data: {
                   state: "stopped",
-                  character: { id: "dafeiyu", display_name: "大肥鱼" },
+                  character: { id: "whale", display_name: "Aqua" },
                   context: { capacity_source: "model_card", verified: true },
                 },
               }),

@@ -173,7 +173,7 @@ async def test_direct_read_binds_a_current_workshop_object_when_model_paraphrase
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", model, raising=False)
     result = await turn(client, "请帮我查 Ｂ 站登录账号", stream=True)
     assert result["tool_receipt"] == {"action": "read", "group": "account", "values": {"state": "not_configured"}}
-    assert result["reply_text"] == "工坊还没连接 B 站运营账号。"
+    assert result["reply_text"] == "还没连接 B 站运营账号。"
     assert calls == ["TurnRoute"]
 
 

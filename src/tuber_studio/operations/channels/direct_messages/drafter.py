@@ -35,6 +35,7 @@ from .outreach import (
     invitation_key,
     verified_agreement,
 )
+from .turns import generate_native_dm_reply, should_use_native_dm_turns
 
 
 class DirectMessagesDrafterMixin:
@@ -472,7 +473,7 @@ class DirectMessagesDrafterMixin:
             ambiguous_order = False
             if draft["source_kind"] == "message":
                 window = self._reply_window(draft, source)
-                refs, links = window.refs, window.links
+                refs = window.refs
                 ambiguous_order = window.ambiguous
                 if not refs:
                     self.store.execute(
@@ -646,6 +647,8 @@ class DirectMessagesDrafterMixin:
         return parent
 
     async def _reply_to_conversation(self, draft, character, event, relationship, refs, links):
+        if should_use_native_dm_turns(self):
+            return await generate_native_dm_reply(self, draft, character, event, relationship, refs, links)
         config = self.settings.data["omni"]
         maximum = config.get("operations_max_tokens", 8192)
         scope = self.scope(draft)

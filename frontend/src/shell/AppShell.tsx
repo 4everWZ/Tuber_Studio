@@ -10,7 +10,6 @@ import {
 import { characterDisplayStore } from "@/shared/hooks/useCharacterDisplay";
 import { hasAnyUnsavedChanges } from "@/shared/lib/dirtyRegistry";
 import { emitNotice, errorMessage, subscribeWorkspaceIssues } from "@/shared/lib/errors";
-import { operationsStore } from "@/features/operations/operationsStore";
 import styles from "@/shared/styles/workbench.module.css";
 import { ToastNotice } from "@/shared/ui/ToastNotice";
 import { LoginGate } from "./LoginGate";
@@ -21,7 +20,7 @@ import {
   type ParsedRoute,
 } from "./navigation";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
-import { Sidebar } from "./Sidebar";
+import { AquaBrandMark, Sidebar, SidebarToggleGlyph } from "./Sidebar";
 import { StatusFooter } from "./StatusFooter";
 import { SubNav } from "./SubNav";
 import {
@@ -30,6 +29,8 @@ import {
   type BilibiliAccountSummary,
 } from "./TopStatusBar";
 import { AdminWsClient } from "./ws/adminClient";
+
+const SIDEBAR_COLLAPSE_STORAGE_KEY = "aqua.sidebarCollapsed";
 
 export interface AppShellProps {
   renderRoute: (route: ParsedRoute) => ReactNode;
@@ -47,12 +48,31 @@ function createDefaultQueryClient(): QueryClient {
   });
 }
 
+function readStoredSidebarCollapsed(): boolean {
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem(SIDEBAR_COLLAPSE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeStoredSidebarCollapsed(collapsed: boolean): void {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(SIDEBAR_COLLAPSE_STORAGE_KEY, collapsed ? "1" : "0");
+    }
+  } catch {
+    // Ignore storage errors in restricted contexts.
+  }
+}
+
 export function AppShell({ renderRoute, queryClient: providedQueryClient }: AppShellProps) {
   const [queryClient] = useState(() => providedQueryClient ?? createDefaultQueryClient());
   const [authenticated, setAuthenticated] = useState(false);
   const [booting, setBooting] = useState(true);
   const [bootError, setBootError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(readStoredSidebarCollapsed);
   const [wsConnected, setWsConnected] = useState(false);
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
@@ -92,6 +112,17 @@ export function AppShell({ renderRoute, queryClient: providedQueryClient }: AppS
   const refreshStatus = useCallback(async (): Promise<SystemStatus | null> => {
     const next = await apiGet<"/api/v1/system/status", SystemStatus>("/api/v1/system/status");
     setStatus(next);
+    if (next?.automation) {
+      setAutomation((prev) => ({
+        ...(prev || {}),
+        state: next.automation?.state ?? prev?.state,
+        policy: {
+          ...((prev as { policy?: Record<string, unknown> } | null)?.policy || {}),
+          enabled: next.automation?.enabled,
+          emergency: next.automation?.emergency,
+        },
+      }));
+    }
     return next;
   }, []);
 
@@ -152,8 +183,12 @@ export function AppShell({ renderRoute, queryClient: providedQueryClient }: AppS
     const client = new AdminWsClient({
       onStatus(next) {
         setStatus(next);
-        operationsStore.applyLiveStatus(next.automation);
         if (next.automation) {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("aqua:automation-status", { detail: { automation: next.automation } })
+            );
+          }
           setAutomation((prev) => ({
             ...(prev || {}),
             state: next.automation?.state ?? prev?.state,
@@ -232,7 +267,7 @@ export function AppShell({ renderRoute, queryClient: providedQueryClient }: AppS
   // Page title, scroll restoration, anchor target scrolling
   useEffect(() => {
     if (typeof document !== "undefined") {
-      document.title = `${PAGE_TITLES[route.page]} · 大肥鱼工坊`;
+      document.title = `${PAGE_TITLES[route.page]} · Aqua Studio`;
     }
     if (typeof window === "undefined") return;
 
@@ -306,6 +341,16 @@ export function AppShell({ renderRoute, queryClient: providedQueryClient }: AppS
     });
   }, []);
 
+  const setDesktopSidebarCollapsed = useCallback((next: boolean) => {
+    setSidebarCollapsed(next);
+    writeStoredSidebarCollapsed(next);
+    if (typeof document !== "undefined") {
+      setTimeout(() => {
+        document.getElementById(next ? "expand-workspace-sidebar" : "collapse-workspace-sidebar")?.focus();
+      }, 0);
+    }
+  }, []);
+
   const localAccess = settings?.local_access === true;
 
   const sessionValue = useMemo<AppSessionValue>(
@@ -342,11 +387,9 @@ export function AppShell({ renderRoute, queryClient: providedQueryClient }: AppS
           booting ? (
             <main id="login" className={styles.loginShell} aria-busy="true">
               <div className={styles.loginPanel}>
-                <div className={styles.brandMark} aria-hidden="true">
-                  TS
-                </div>
-                <h1>Tuber Studio</h1>
-                <p className="muted">正在连接工作台…</p>
+                <AquaBrandMark />
+                <h1>Aqua Studio</h1>
+                <p className="muted">Aqua · Personal Agent · 正在连接…</p>
               </div>
             </main>
           ) : (
@@ -355,10 +398,12 @@ export function AppShell({ renderRoute, queryClient: providedQueryClient }: AppS
         ) : (
           <div
             id="workspace"
+            data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
             className={[
               "workspace win-layout",
               styles.layout,
               menuOpen ? `nav-open ${styles.navOpen}` : "",
+              sidebarCollapsed ? `sidebar-collapsed ${styles.sidebarCollapsed}` : "",
               route.page === "chat" ? styles.chatMode : "",
             ]
               .filter(Boolean)
@@ -369,14 +414,35 @@ export function AppShell({ renderRoute, queryClient: providedQueryClient }: AppS
               currentSection={route.section}
               localAccess={localAccess}
               menuOpen={menuOpen}
+              sidebarCollapsed={sidebarCollapsed}
+              onToggleCollapse={() => setDesktopSidebarCollapsed(!sidebarCollapsed)}
               onCloseMenu={closeMenu}
               onLogout={() => void logout().catch((err) => emitNotice(errorMessage(err), true))}
             />
 
             <div ref={mainShellRef} className={`main-shell win-main-shell ${styles.mainShell}`}>
+              {sidebarCollapsed && route.page === "chat" && (
+                <div className={styles.floatingExpandWrap}>
+                  <button
+                    type="button"
+                    id="expand-workspace-sidebar"
+                    className={styles.expandSidebarBtn}
+                    aria-label="展开侧边栏"
+                    aria-expanded={false}
+                    aria-controls="workspace-sidebar"
+                    title="展开侧边栏"
+                    onClick={() => setDesktopSidebarCollapsed(false)}
+                  >
+                    <SidebarToggleGlyph />
+                  </button>
+                </div>
+              )}
+
               <TopStatusBar
                 menuOpen={menuOpen}
                 onToggleMenu={() => setMenuOpen((prev) => !prev)}
+                sidebarCollapsed={sidebarCollapsed}
+                onExpandSidebar={route.page === "chat" ? undefined : () => setDesktopSidebarCollapsed(false)}
                 status={status}
                 settings={settings}
                 automation={automation}

@@ -7,10 +7,9 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useAppSession } from "@/shared/hooks/useAppSession";
-import { safeMessage } from "@/shared/lib/errors";
 import { MarkdownText } from "@/shared/ui/MarkdownText";
 import { inferenceDisplay } from "@/shell/InferenceStatusBadge";
-import { AssistantAnswer } from "./AssistantAnswer";
+import { AssistantAnswer, MemoryUpdatedPill, ToolActivityDisclosure } from "./AssistantAnswer";
 import { ChatHeaderMenu, focusMenuButtonByKey } from "./ChatHeaderMenu";
 import styles from "./ChatPage.module.css";
 import { ChatPetFloat } from "./ChatPetFloat";
@@ -19,7 +18,12 @@ import { TaskActivityDrawer, type ActivitySection } from "./TaskActivityDrawer";
 import { TemporaryChatDialog } from "./TemporaryChatDialog";
 import { PrivateCallDialog } from "./call/PrivateCallDialog";
 import { usePrivateCallSession } from "./call/usePrivateCallSession";
-import type { ChatSubmissionPayload, VideoRangeInput, VideoSelectionInput } from "./types";
+import {
+  calmChatMessage,
+  type ChatSubmissionPayload,
+  type VideoRangeInput,
+  type VideoSelectionInput,
+} from "./types";
 import { useOperatorChatStream } from "./useOperatorChatStream";
 
 type ShortcutInputAction = "agent_task" | "dynamic" | "browse" | "full_video";
@@ -46,6 +50,12 @@ const SHORTCUT_QUERIES: Record<string, string> = {
   activity: "查看运营动态",
 };
 
+const EMPTY_STARTER_PROMPTS: ReadonlyArray<{ label: string; prompt: string }> = [
+  { label: "看看今天渠道动态", prompt: "今天有什么运营动态？" },
+  { label: "帮我记住偏好", prompt: "记住我的沟通偏好：回答保持简洁清晰" },
+  { label: "安排一次视频阅读", prompt: "去刷一个最近值得看的技术视频" },
+];
+
 interface VideoRangeDraft {
   id: number;
   part: string;
@@ -53,7 +63,7 @@ interface VideoRangeDraft {
   end: string;
 }
 
-const DEFAULT_INPUT_PLACEHOLDER = "发消息";
+const DEFAULT_INPUT_PLACEHOLDER = "给 Aqua 发消息…";
 
 function parseVideoSelection(bvidInput: string, ranges: VideoRangeDraft[]): VideoSelectionInput {
   const bvid = /^(?:https:\/\/www\.bilibili\.com\/video\/)?(BV[0-9A-Za-z]{10})(?:\/?(?:[?#].*)?)$/.exec(
@@ -283,7 +293,7 @@ export function ChatPage() {
     try {
       payload = buildSubmission();
     } catch (error) {
-      chat.setMessage(safeMessage(error instanceof Error ? error.message : String(error)), true);
+      chat.setMessage(calmChatMessage(error instanceof Error ? error.message : String(error)), true);
       return;
     }
 
@@ -320,9 +330,72 @@ export function ChatPage() {
     }
   };
 
+  const liveAuto = chat.automationStatus ?? (status?.automation
+    ? {
+        state: status.automation.state,
+        policy: {
+          enabled: status.automation.enabled,
+          emergency: status.automation.emergency,
+        },
+      }
+    : null);
+  const liveAutoState = liveAuto?.state || "";
+  const liveAutoEmergency = liveAuto?.policy?.emergency === true;
+  const liveAutoStarting = liveAutoState === "starting";
+  const liveAutoDraining = liveAutoState === "draining" || liveAutoState === "stopping";
+  const liveAutoRunning =
+    !liveAutoEmergency &&
+    (liveAutoState === "running" ||
+      (liveAuto?.policy?.enabled === true &&
+        !liveAutoStarting &&
+        !liveAutoDraining &&
+        liveAutoState !== "off" &&
+        liveAutoState !== "blocked"));
+
+  const quickOpsDisabled =
+    chat.pending || controlsPending || liveAutoStarting || liveAutoDraining || liveAutoEmergency;
+  const quickOpsLabel = liveAutoEmergency
+    ? "运营已紧停"
+    : liveAutoStarting
+      ? "运营启动中…"
+      : liveAutoDraining
+        ? "运营收尾中…"
+        : liveAutoRunning
+          ? "停止运营"
+          : "开始运营";
+  const quickOpsState = liveAutoEmergency
+    ? "emergency"
+    : liveAutoStarting
+      ? "starting"
+      : liveAutoDraining
+        ? "stopping"
+        : liveAutoRunning
+          ? "running"
+          : "off";
+
+  const handleQuickOperationsToggle = () => {
+    if (quickOpsDisabled) return;
+    setOpenMenu(null);
+    if (liveAutoRunning) {
+      void chat.submit(
+        { message: "停止自主运营", intent: { action: "stop" } },
+        { fromComposer: false }
+      );
+    } else {
+      void chat.submit(
+        { message: "开始自主运营", intent: { action: "start_operations" } },
+        { fromComposer: false }
+      );
+    }
+  };
+
   const handleShortcutClick = (action: string) => {
     if (chat.pending) return;
     setOpenMenu(null);
+    if (action === "toggle_operations") {
+      handleQuickOperationsToggle();
+      return;
+    }
     if (Object.hasOwn(SHORTCUT_QUERIES, action)) {
       focusComposer();
       void chat.submit(
@@ -353,7 +426,7 @@ export function ChatPage() {
   const modelInfo = inferenceDisplay(status, settings);
   const modelFailed = modelInfo.connected === false;
   const modelDetail = modelFailed
-    ? safeMessage(status?.context?.profile_error || "Omni API 连接失败")
+    ? calmChatMessage(status?.context?.profile_error || "Omni API 暂未连接")
     : "";
 
   const videoMode = selectedAction === "full_video";
@@ -363,6 +436,8 @@ export function ChatPage() {
   const hasComposerInput = videoMode
     ? Boolean(videoId.trim())
     : Boolean(inputValue.trim() || selectedAction);
+  const showEmptyState =
+    chat.turns.length === 0 && !chat.transient && !chat.nextCursor && !chat.historyNote;
 
   return (
     <section
@@ -373,6 +448,18 @@ export function ChatPage() {
       <header className="operator-chat-heading">
         <h1 id="operator-chat-title">{chat.characterTitle}</h1>
         <div className="operator-chat-heading-actions">
+          <button
+            type="button"
+            id="operator-chat-ops-quick"
+            className="chat-ops-quick"
+            data-state={quickOpsState}
+            disabled={quickOpsDisabled}
+            aria-busy={liveAutoStarting || liveAutoDraining}
+            onClick={handleQuickOperationsToggle}
+          >
+            <span className="chat-ops-dot" aria-hidden="true" />
+            <span>{quickOpsLabel}</span>
+          </button>
           <ChatHeaderMenu
             open={openMenu === "more"}
             pending={chat.pending}
@@ -474,11 +561,33 @@ export function ChatPage() {
           </p>
         </div>
 
+        {showEmptyState && (
+          <div className="operator-chat-empty">
+            <p className="operator-chat-empty-title">有什么可以帮你的？</p>
+            <div className="operator-chat-starters">
+              {EMPTY_STARTER_PROMPTS.map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  className="operator-chat-starter"
+                  onClick={() => {
+                    setInputValue(item.prompt);
+                    focusComposer();
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div id="operator-chat-feed" className="operator-chat-feed" role="log" aria-label="私聊消息">
           {chat.turns.map((turn) => {
             const suppressCard = Boolean(
-              turn.sources?.length &&
-                ["operation_events", "operation_event"].includes(turn.card?.type || "")
+              (turn.sources?.length &&
+                ["operation_events", "operation_event"].includes(turn.card?.type || "")) ||
+                (turn.memory_updates?.length && turn.card?.type === "memory_change")
             );
             return (
               <article
@@ -519,11 +628,28 @@ export function ChatPage() {
             <article className="operator-chat-turn" data-request-id={chat.transient.request_id}>
               <p className="operator-chat-user">{chat.transient.message}</p>
               <div className="operator-chat-reply">
+                {chat.transient.toolActivities.length > 0 && (
+                  <ToolActivityDisclosure
+                    activities={chat.transient.toolActivities}
+                    defaultOpen
+                  />
+                )}
                 {chat.transient.partial ? (
                   <MarkdownText allowLinks={false} text={chat.transient.partial} />
                 ) : chat.transient.stageText ? (
-                  <span className="hint">{chat.transient.stageText}</span>
+                  <span className="chat-thinking-stage">
+                    <span className="chat-thinking-dot" aria-hidden="true" />
+                    <span>{chat.transient.stageText}</span>
+                  </span>
+                ) : chat.transient.toolActivities.length === 0 ? (
+                  <span className="chat-thinking-stage">
+                    <span className="chat-thinking-dot" aria-hidden="true" />
+                    <span>思考中…</span>
+                  </span>
                 ) : null}
+                {chat.transient.memoryUpdates.length > 0 && (
+                  <MemoryUpdatedPill updates={chat.transient.memoryUpdates} />
+                )}
               </div>
             </article>
           )}
@@ -723,10 +849,18 @@ export function ChatPage() {
               </button>
               <button
                 type="button"
+                data-chat-action="toggle_operations"
+                disabled={quickOpsDisabled}
+                onClick={() => handleShortcutClick("toggle_operations")}
+              >
+                {quickOpsLabel}
+              </button>
+              <button
+                type="button"
                 data-chat-action="operation_control"
                 onClick={() => handleShortcutClick("operation_control")}
               >
-                自主运营
+                自主运营设置
               </button>
               <button type="button" data-chat-action="live_status" onClick={() => handleShortcutClick("live_status")}>
                 直播状态

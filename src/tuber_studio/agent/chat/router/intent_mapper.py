@@ -106,6 +106,8 @@ def _route_from_tool_call(call_name: str, args: dict) -> TurnRoute:
             route="direct_action",
             action=args["action"],
             topic=args.get("topic", ""),
+            memory_content=args.get("memory_content", ""),
+            memory_tags=_as_str_list(args.get("memory_tags")),
             object_ref=args.get("object_ref"),
             reference=args.get("reference"),
             settings_group=args.get("settings_group"),
@@ -198,7 +200,7 @@ def _workshop_decision(route: TurnRoute, context: dict, message: str = "") -> Ch
         elif len(mentioned := _MENTIONED_BV.findall(message)) == 1:
             args = WorkshopLookup(collection="video", identity=mentioned[0])
         else:
-            return ChatIntent(action="clarify", topic="你想查哪条工坊记录？")
+            return ChatIntent(action="clarify", topic="你想查哪条历史记录？")
     if args.collection == "video" and not args.identity and not ref:
         if len(mentioned := _MENTIONED_BV.findall(message)) == 1:
             args = args.model_copy(update={"identity": mentioned[0], "terms": []})
@@ -392,7 +394,7 @@ async def route_to_chat_intent(context: ChatContext, route: TurnRoute, data, cha
     # instant_read or direct_action
     action = route.action
     if action in _OWNER_UI_ONLY:
-        raise HTTPException(422, "这项控制仅供号主在设置界面操作")
+        raise HTTPException(422, "这项控制需要在设置界面操作")
     if (
         action == "owner_binding"
         or (
@@ -433,6 +435,8 @@ async def route_to_chat_intent(context: ChatContext, route: TurnRoute, data, cha
     decision = ChatIntent(
         action=action,
         topic=route.topic,
+        memory_content=route.memory_content or None,
+        memory_tags=route.memory_tags,
         reference=route.reference,
         clarification_id=route.clarification_id,
         position=route.position,

@@ -9,6 +9,27 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
+from .agent_types import (
+    VALID_MEMORY_SCOPES as VALID_MEMORY_SCOPES,
+)
+from .agent_types import (
+    ContextNode as ContextNode,
+)
+from .agent_types import (
+    ContextTree as ContextTree,
+)
+from .agent_types import (
+    MemoryItem as MemoryItem,
+)
+from .agent_types import (
+    MemoryScope as MemoryScope,
+)
+from .agent_types import (
+    MetacognitiveProfile as MetacognitiveProfile,
+)
+from .agent_types import (
+    parse_memory_scope as parse_memory_scope,
+)
 from .text import validate_operation_text
 from .validation import endpoint
 

@@ -202,13 +202,12 @@ async def test_comment_like_after_reply_quota_is_full_is_single_and_reconcilable
 
     async def choose(messages, schema, *, max_tokens):
         if schema["title"] == "ResponseDecision":
-            data = model_packet(messages[-1]["content"])
+            model_packet(messages[-1]["content"])
             actions = {branch["properties"]["action"]["enum"][0] for branch in schema["oneOf"]}
             offered.append(actions)
             if "reply_public" not in actions:
                 return {"action": "like_comment", "text": "", "reason": "light_interaction",
-                        "explanation": "三勺盐的结果值得记一下",
-                        "evidence_ids": [data["reply_target"]["evidence_ref"]]}
+                        "explanation": "三勺盐的结果值得记一下"}
         return await generate(messages, schema, max_tokens=max_tokens)
 
     monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", choose)

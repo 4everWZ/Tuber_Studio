@@ -245,7 +245,7 @@ async def test_omni_chat_keeps_clock_readout_and_bound_sources_in_their_turn(stu
         calls.append("FrontText")
         assert "可用能力" not in dump(messages)
         utterance = messages[-1]["content"]
-        if any("这次工坊读取已经完成" in row["content"] for row in messages if row["role"] == "system"):
+        if any("这次查询已经完成" in row["content"] for row in messages if row["role"] == "system"):
             return "我想聊这一条。"
         assert all("{{local_time}}" not in row["content"] for row in messages)
         if utterance == "讲点你想讲的吧":

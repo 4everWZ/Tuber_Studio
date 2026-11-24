@@ -90,9 +90,9 @@ async def test_manual_comment_keeps_real_mentions_and_speaking_account_through_g
     wire_context = captured[0]
     assert "comment_context" not in wire_context
     thread = wire_context["thread"]
-    assert thread["root"]["text_ref"] == thread["parent"]["text_ref"] == "thread.comments[0].text"
-    assert thread["comments"][0]["text"] == rows[0]["content"]
-    assert thread["source"]["text_ref"] == "当前观众消息.text"
+    assert "text_ref" not in thread["root"] and "text_ref" not in thread["source"]
+    assert thread["root"]["text"] == rows[0]["content"]
+    assert thread["source"]["text"] == rows[1]["content"]
     # Wire naming changes no event/draft source fields or original body.
     original_event = json.loads(store.one("SELECT input_summary FROM drafts")["input_summary"])
     assert original_event["comment_context"]["source"]["text"] == rows[1]["content"]

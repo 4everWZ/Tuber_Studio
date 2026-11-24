@@ -45,13 +45,21 @@ async def test_chat_model_packet_keeps_account_out_and_uses_current_question(
     def capture(messages):
         wire = single_system_messages(provider_identity_messages(provider, messages))
         calls.append(wire)
-        assert "运营账号探针" not in json.dumps(wire, ensure_ascii=False)
-        assert wire[0]["content"].count(persona_instructions(runtime.character)) == 1
+        dumped = json.dumps(wire, ensure_ascii=False)
+        assert "运营账号探针" not in dumped
+        assert "工坊号主" not in dumped
         assert runtime.character["core"]["identity"] in wire[0]["content"]
-        identities = next(row["content"].split("私聊参与者：", 1)[1] for row in wire if "私聊参与者：" in row["content"])
-        facts = json.loads(identities.splitlines()[0])
-        assert facts["bilibili_owner"] == {"uid": "101", "name": "绑定号主"}
-        assert (facts["operating_account"]["uid"], facts["operating_account"]["name"]) == ("202", "运营频道")
+        if temporary or semantic:
+            assert "【存在边界】" in wire[0]["content"]
+            assert "绑定账号所有者：绑定号主 (UID:101)" in wire[0]["content"]
+            assert "当前平台账号：运营频道 (UID:202)" in wire[0]["content"]
+            assert "【声音锚点与人格外壳】" in wire[0]["content"]
+        else:
+            assert wire[0]["content"].count(persona_instructions(runtime.character)) == 1
+            identities = next(row["content"].split("私聊参与者：", 1)[1] for row in wire if "私聊参与者：" in row["content"])
+            facts = json.loads(identities.splitlines()[0])
+            assert facts["bilibili_owner"] == {"uid": "101", "name": "绑定号主"}
+            assert (facts["operating_account"]["uid"], facts["operating_account"]["name"]) == ("202", "运营频道")
 
     question = "帮我数一下有几个字。"
     if semantic:

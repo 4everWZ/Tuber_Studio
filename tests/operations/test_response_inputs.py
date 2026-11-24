@@ -2,7 +2,6 @@
 
 import copy
 import json
-import re
 from pathlib import Path
 
 import pytest
@@ -38,12 +37,12 @@ def packet(count=2):
     }
 
 
-def reply(refs):
+def reply(refs=()):
     return ResponseDecision(
         action="reply_public",
         reason="specific_detail",
         text="鱼鱼接住这个话题，顺着往下聊。" * 50,
-        evidence_ids=refs,
+        evidence_ids=list(refs),
     )
 
 
@@ -80,10 +79,11 @@ def test_response_actors_keep_real_addressees_distinct_from_oc_and_source(
     assert bound["thread"]["root"]["relation_to_self"] == "other"
     assert bound["thread"]["items"][0]["relation_to_self"] == "other"
     assert bound["reply_target"]["text"] == source["text"]
-    header, body = ResponseDecisionInput(bound).format().split("\n\n所选材料：\n", 1)
+    header, body = ResponseDecisionInput(bound).format().split("\n\n", 1)
     assert list(json.loads(header))[:2] == ["self_actor", "reply_target"]
     assert source["text"] in header and original["evidence"][0]["text"] in body
-    assert ResponseDecisionInput(bound).resolve(reply(["ref:1"])).evidence_ids == [original["evidence"][0]["id"]]
+    assert "[ref:" not in body
+    assert ResponseDecisionInput(bound).resolve(reply()).evidence_ids == [original["evidence"][0]["id"]]
 
 
 def test_missing_account_or_parent_identity_stays_unknown_despite_matching_names():
@@ -113,7 +113,7 @@ async def test_video_main_reply_uses_video_material_without_unrelated_comment_fl
 
     async def generate(messages, schema, *, max_tokens):
         captured.append(model_packet(messages[-1]["content"]))
-        return ResponseDecision(action="reply_public", reason="specific_detail", explanation="想聊鸡蛋浮起来的细节", text="盐水还能托住鸡蛋，鱼鱼想试试。", evidence_ids=["ref:1"], video_preference="like", preference_reason="这个实验挺有意思").model_dump()
+        return ResponseDecision(action="reply_public", reason="specific_detail", explanation="想聊鸡蛋浮起来的细节", text="盐水还能托住鸡蛋，鱼鱼想试试。", video_preference="like", preference_reason="这个实验挺有意思").model_dump()
 
     browsing.runtime.operation_llm.generate_json = generate
     result = await browsing.decisions._response(row, material, context, {source_id}, "top_level", {"lock_wait_seconds": 0}, video_actions=True)
@@ -139,13 +139,13 @@ async def test_live_response_packet_binds_current_account_before_reference_forma
 
     async def generate(messages, schema, *, max_tokens):
         calls.append(copy.deepcopy(messages))
-        return reply(["ref:1"]).model_dump()
+        return reply().model_dump()
 
     browsing.runtime.operation_llm.generate_json = generate
     result = await browsing.decisions._model(
         row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
     )
-    header = json.loads(calls[0][-1]["content"].removeprefix("公开来源材料：").split("\n\n所选材料：\n")[0])
+    header = json.loads(calls[0][-1]["content"].removeprefix("公开来源材料：").split("\n\n")[0])
     assert {key: header["self_actor"][key] for key in (
         "platform", "account_uid", "account_display_name", "character_id", "character_name",
     )} == {
@@ -194,14 +194,16 @@ def test_real_public_thread_mentions_remain_third_party_in_response_input(case):
     assert [entry["uid"] for entry in mentioned] == [entry["uid"] for entry in case["expected_mentions"]]
     assert all(entry["relation_to_self"] == "other" for entry in mentioned)
     wire = ResponseDecisionInput(bound).format()
-    assert wire.count(json.dumps(source["content"], ensure_ascii=False)[1:-1]) == 1
-    header = json.loads(wire.split("\n\n所选材料：\n")[0])
-    assert "items" not in header["thread"] and header["thread"]["source"]["text_ref"] == "reply_target.text"
+    header = json.loads(wire.split("\n\n")[0])
+    assert "items" not in header["thread"]
+    for ref_key in ("text_ref", "quote_ref", "public_text_ref", "evidence_ref"):
+        assert ref_key not in wire
     assert header["reply_target"]["text"] == source["content"]
+    assert source["content"] in header["reply_target"]["text"]
     assert bound["thread"] == bind_response_actors(data, bound["self_actor"])["thread"]
 
 
-def test_compact_thread_preserves_each_other_comment_once_including_raw_rows_beyond_timeline():
+def test_compact_thread_preserves_each_other_comment_once_without_synthetic_ref_keys():
     source = {"comment_id": "2", "author_uid": "200", "text": "当前评论的原文"}
     root = {"comment_id": "1", "author_uid": "300", "text": "根楼的完整原文"}
     rows = [root, source] + [
@@ -213,22 +215,18 @@ def test_compact_thread_preserves_each_other_comment_once_including_raw_rows_bey
                    "timeline": rows[:8], "items": rows, "public_text": source["text"]},
     }, {"account_uid": "100"})
     original = copy.deepcopy(bound)
-    compact = compact_actor_context(bound, "r1")
-    assert bound == original and compact["reply_target"]["evidence_ref"] == "r1"
-    assert compact["thread"]["root"]["text_ref"] == compact["thread"]["parent"]["text_ref"]
-    assert compact["thread"]["public_text_ref"] == "reply_target.text"
+    compact = compact_actor_context(bound)
+    assert bound == original
     assert "items" not in compact["thread"] and "public_text" not in compact["thread"]
     serialized = json.dumps(compact, ensure_ascii=False)
+    for ref_key in ("text_ref", "evidence_ref", "public_text_ref", "quote_ref"):
+        assert ref_key not in serialized
     for row in rows:
-        assert serialized.count(row.get("text") or row["content"]) == 1
-    assert compact_actor_context(compact, "r1") == compact
-    external = compact_actor_context(bound, current_text_ref="当前观众消息.text")
-    assert "text" not in external["reply_target"]
-    assert external["reply_target"]["text_ref"] == external["thread"]["source"]["text_ref"] == "当前观众消息.text"
-    assert source["text"] not in json.dumps(external, ensure_ascii=False)
+        assert (row.get("text") or row["content"]) in serialized
+    assert compact_actor_context(compact) == compact
 
 
-def test_compact_public_experience_references_only_exact_same_source_quote():
+def test_compact_public_experience_retains_clean_quote_without_quote_ref():
     source = {"comment_id": "2", "author_uid": "200", "text": "观众正在吐槽我刚才接错话"}
     reference = {"bvid": "BV1RLH367EQN", "thread_id": "1", "comment_id": "2", "quote": source["text"]}
     bound = bind_response_actors({
@@ -238,17 +236,8 @@ def test_compact_public_experience_references_only_exact_same_source_quote():
     original = copy.deepcopy(bound)
     compact = compact_actor_context(bound)
     citation = compact["own_public_experiences"][0]["public_sources"][0]
-    assert citation == {key: value for key, value in reference.items() if key != "quote"} | {
-        "quote_ref": "reply_target.text"
-    }
-    assert json.dumps(compact, ensure_ascii=False).count(source["text"]) == 1
+    assert citation == reference and "quote_ref" not in citation
     assert bound == original
-    external = compact_actor_context(bound, current_text_ref="当前观众消息.text")
-    assert external["own_public_experiences"][0]["public_sources"][0]["quote_ref"] == "当前观众消息.text"
-    for changed in (reference | {"comment_id": "3"}, reference | {"quote": "同一楼另一段话"}):
-        unrelated = copy.deepcopy(bound)
-        unrelated["own_public_experiences"][0]["public_sources"] = [changed]
-        assert compact_actor_context(unrelated)["own_public_experiences"][0]["public_sources"] == [changed]
 
 
 @pytest.mark.parametrize("lookup", [False, True])
@@ -267,9 +256,9 @@ async def test_video_comment_uses_cached_video_only_after_quoting_the_request(br
     async def generate(messages, schema, *, max_tokens):
         calls.append(copy.deepcopy(messages))
         content = messages[-1]["content"]
-        alias = re.search(r"\[(ref:\d+)\] 当前评论原文", content)[1]
+        assert "当前评论原文：" in content and source["content"] in content
+        assert "[ref:" not in content
         actions = {b["properties"]["action"]["enum"][0] for b in schema["oneOf"]}
-        evidence = [alias]
         if len(calls) == 1:
             assert "加盐之后" not in content and "盐水实验" not in content
             assert "read_more" in actions
@@ -280,11 +269,9 @@ async def test_video_comment_uses_cached_video_only_after_quoting_the_request(br
             assert "read_more" not in actions
             assert "video_lookup_quote" in content
             assert content.rindex("当前评论原文") > content.index("加盐之后")
-            evidence.append(re.search(r"\[(ref:\d+)\|[^]]+\]P1 字幕 加盐之后", content)[1])
         return {
             "action": "reply_public", "reason": "specific_detail", "explanation": "接观众问鸡蛋的事",
             "text": "加了盐，鸡蛋就浮起来啦。" if lookup else "你指的是鸡蛋浮起来前刚倒下去的东西吗？",
-            "evidence_ids": evidence,
         }
 
     async def read_reply(target):
@@ -297,12 +284,12 @@ async def test_video_comment_uses_cached_video_only_after_quoting_the_request(br
         row, material, key, {segment["id"] for segment in browsing._segments(material)},
         source, [source], {"lock_wait_seconds": 0},
     )
-    expected = ["11:0", "public:501"] if lookup else ["public:501"]
-    assert len(calls) == (2 if lookup else 1) and result["evidence"] == expected
+    expected = {"11:0", "public:501"} if lookup else {"public:501"}
+    assert len(calls) == (2 if lookup else 1) and set(result["evidence"]) == expected
     assert result["material_keys"] == [key] and not browsing.adapter.sent
     browsing.review(result["id"], "approve")
     sent = await browsing.publish(result["id"])
-    assert sent["status"] == "published" and sent["evidence"] == expected
+    assert sent["status"] == "published" and set(sent["evidence"]) == expected
     assert browsing.adapter.sent == [(result["target"], result["text"])]
 
 
@@ -323,10 +310,10 @@ async def test_automatic_comment_uses_search_receipt_to_gate_publication(browsin
 
     async def generate(messages, schema, *, max_tokens):
         if not queries:
-            return {"web_search": ["工具 单声道导出"], "source_quote": "[ref:1] 能导出单声道吗"}
+            return {"web_search": ["工具 单声道导出"], "source_quote": "能导出单声道吗"}
         assert ("导出只支持单声道" in messages[-1]["content"]) == readable
         return {"action": "reply_public", "reason": "specific_detail", "explanation": "回答导出格式",
-                "evidence_ids": ["ref:1"], "text": "它支持单声道导出。"}
+                "text": "它支持单声道导出。"}
 
     monkeypatch.setattr(web_fetch, "search_public_web", discover)
     monkeypatch.setattr(web_fetch, "fetch_excerpt", read)
@@ -359,7 +346,7 @@ async def test_response_recalls_own_public_incident_from_this_floor_without_keyw
             "thread": {"source": {"comment_id": "502", "author_uid": "200", "text": "哈哈"},
                        "target": {"bvid": BV, "root": "501", "parent": "502"}}}
     _, messages, _ = browsing.decisions._model_input(row, ResponseDecision, data, RESPONSE_INSTRUCTION)
-    header = json.loads(messages[-1]["content"].removeprefix("公开来源材料：").split("\n\n所选材料：\n")[0])
+    header = json.loads(messages[-1]["content"].removeprefix("公开来源材料：").split("\n\n")[0])
     assert [item["incident_key"] for item in header["own_public_experiences"]] == ["this-floor"]
     assert header["own_public_experiences"][0]["fictional"] is False
 
@@ -368,14 +355,18 @@ def test_response_presentation_keeps_all_text_thread_recent_and_exact_times():
     data = packet()
     original = copy.deepcopy(data)
     view = ResponseDecisionInput(data)
-    header, body = view.format().split("\n\n所选材料：\n", 1)
-    assert json.loads(header) == {
-        k: v for k, v in original.items() if k not in {"evidence", "allowed_evidence_ids"}
+    header, body = view.format().split("\n\n", 1)
+    parsed_header = json.loads(header)
+    assert {k: v for k, v in parsed_header.items() if k != "thread"} == {
+        k: v for k, v in original.items() if k not in {"evidence", "allowed_evidence_ids", "thread"}
     }
+    assert "items" not in parsed_header["thread"]
+    assert original["thread"]["items"][0]["text"] in json.dumps(parsed_header["thread"], ensure_ascii=False)
     for segment in original["evidence"]:
         assert segment["text"] in body
         assert segment["id"] not in body and segment["cid"] not in body
         assert str(segment["start"]) in body and str(segment["end"]) in body
+    assert "[ref:" not in body
     assert body.count("材料1") == 1 and len(view.references) == 2
     assert view.references[0].source() == original["evidence"][0]
     fresh = view.references[0].source()
@@ -383,37 +374,30 @@ def test_response_presentation_keeps_all_text_thread_recent_and_exact_times():
     data["evidence"][0]["id"] = "mutated original"
     data["thread"]["source"]["text"] = "mutated thread"
     assert view.references[0].source() == original["evidence"][0]
-    assert json.loads(view.format().split("\n\n所选材料：\n")[0])["thread"] == original["thread"]
-    bound = view.resolve(reply(["ref:1", "ref:2"]))
+    assert json.loads(view.format().split("\n\n")[0])["thread"] == parsed_header["thread"]
+    bound = view.resolve(reply())
     assert bound.evidence_ids == [s["id"] for s in original["evidence"]]
-    assert bound.text == reply(["ref:1"]).text
+    assert bound.text == reply().text
 
 
-def test_one_to_one_29_segments_still_allow_only_eight_original_references():
+def test_all_29_segments_retained_in_python_provenance_without_ref_aliases():
     data = packet(29)
     view = ResponseDecisionInput(data)
     assert len(view.references) == 29
-    result = view.resolve(reply([f"ref:{i}" for i in range(1, 9)]))
-    assert len(result.evidence_ids) == 8 and result.evidence_ids == [s["id"] for s in data["evidence"][:8]]
-    invalid = reply(["ref:1"]).model_copy(update={"evidence_ids": [f"ref:{i}" for i in range(1, 10)]})
-    with pytest.raises(ValueError):
-        view.resolve(invalid)
-    with pytest.raises(ValueError, match="短编号"):
-        view.resolve(reply(["ref:30"]))
+    assert "[ref:" not in view.format()
+    result = view.resolve(reply())
+    assert len(result.evidence_ids) == 29 and result.evidence_ids == [s["id"] for s in data["evidence"]]
 
 
-@pytest.mark.parametrize("canonical_id,wire_ref", [("r1", "ref:1"), ("ref:1", "ref:2")])
-def test_aliases_do_not_collide_with_original_ids_and_are_invocation_local(canonical_id, wire_ref):
+def test_canonical_ids_remain_internal_without_wire_ref_aliases():
     first = packet()
-    first["evidence"][0]["id"] = canonical_id
+    first["evidence"][0]["id"] = "r1"
     view = ResponseDecisionInput(first)
-    assert view.references[0].alias == wire_ref
-    for bad in [canonical_id, first["evidence"][1]["id"], "unknown"]:
-        with pytest.raises(ValueError, match="短编号"):
-            view.resolve(reply([bad]))
+    assert [ref.canonical_id for ref in view.references] == ["r1", first["evidence"][1]["id"]]
+    assert "[ref:" not in view.format()
+    assert view.resolve(reply(), provenance=["r1"]).evidence_ids == ["r1"]
     another = ResponseDecisionInput(packet())
-    assert another.resolve(reply(["ref:1"])).evidence_ids == ["canonical-track:segment:0"]
-    assert view.resolve(reply([wire_ref])).evidence_ids == [canonical_id]
+    assert another.resolve(reply()).evidence_ids == ["canonical-track:segment:0", "canonical-track:segment:1"]
 
 
 def test_public_text_reference_is_bound_without_inventing_video_segments():
@@ -426,27 +410,25 @@ def test_public_text_reference_is_bound_without_inventing_video_segments():
         "coverage": "public_text",
     }
     view = ResponseDecisionInput(data)
-    assert "[ref:1] 当前公开来源" in view.format()
+    assert "[ref:" not in view.format()
     assert "public:123" not in view.format()
     assert view.references[0].source() is None
-    assert view.resolve(reply(["ref:1"])).evidence_ids == ["public:123"]
+    assert view.resolve(reply()).evidence_ids == ["public:123"]
     skip = ResponseDecision(action="skip", reason="no_interest", evidence_ids=[])
     assert view.resolve(skip) == skip
-    with pytest.raises(ValueError, match="为空"):
-        view.resolve(reply([]))
 
 
-def test_current_comment_text_is_readable_at_its_reference_without_losing_thread_context():
+def test_current_comment_text_is_readable_without_ref_prefix_or_losing_thread_context():
     source = {"comment_id": "322901117856", "author_uid": "200", "text": "钱给够能肘赢360吗？\n  原来的空白也保留。"}
     data = {"kind": "reply_public", "evidence": [], "thread": {"source": source, "root": source},
             "allowed_evidence_ids": ["public:" + source["comment_id"]], "coverage": "public_text"}
     before = copy.deepcopy(data)
     view = ResponseDecisionInput(data)
-    header, body = view.format().split("\n\n所选材料：\n", 1)
-    assert body == "[ref:1] 当前评论原文：\n" + source["text"]
+    header, body = view.format().split("\n\n", 1)
+    assert body == "当前评论原文：\n" + source["text"]
     assert json.loads(header)["thread"] == before["thread"]
     assert data == before and view.references[0].source() is None
-    assert view.resolve(reply(["ref:1"])).evidence_ids == ["public:" + source["comment_id"]]
+    assert view.resolve(reply()).evidence_ids == ["public:" + source["comment_id"]]
 
 
 @pytest.mark.parametrize("change", [{"start": -1}, {"end": False}, {"start": 9, "end": 1}, {"text": None}])
@@ -463,14 +445,14 @@ async def prepared_row(browsing):
     return row
 
 
-async def test_canonical_id_in_wire_is_invalid_without_an_automatic_repair_call(browsing):
+async def test_leaked_ref_in_speech_is_invalid_without_an_automatic_repair_call(browsing):
     from tuber_studio.operations.kernel.generation import GenerationInvalid
 
     browsing.store.set("browsing_policy", browsing.policy() | {"max_output_tokens": 32768})
     row = await prepared_row(browsing)
     data = packet(1)
     calls = []
-    bad = reply([data["evidence"][0]["id"]]).model_dump()
+    bad = reply().model_copy(update={"text": "先看[ref:1]这段。"}).model_dump()
 
     async def generate(messages, schema, *, max_tokens):
         calls.append((schema["title"], copy.deepcopy(messages), copy.deepcopy(schema)))
@@ -484,17 +466,14 @@ async def test_canonical_id_in_wire_is_invalid_without_an_automatic_repair_call(
     assert [title for title, _, _ in calls] == ["ResponseDecision"]
     for title, messages, schema in calls:
         if title == "ResponseDecision":
-            assert (
-                "[ref:1|" in messages[2]["content"] and data["evidence"][0]["id"] not in messages[2]["content"]
-            )
-            assert schema["$defs"]["evidence_id"]["enum"] == ["ref:1"]
-            assert all(b["properties"]["evidence_ids"]["items"] == {"$ref": "#/$defs/evidence_id"}
-                       for b in schema["oneOf"])
+            assert "[ref:1|" not in messages[2]["content"] and data["evidence"][0]["id"] not in messages[2]["content"]
+            assert "$defs" not in schema
+            assert all("evidence_ids" not in b["properties"] for b in schema["oneOf"] if "action" in b["properties"])
     saved = browsing.store.one("SELECT id FROM operation_continuations WHERE channel='generation.browsing'")
     episode = browsing.runtime.continuations.get(saved["id"])
     assert episode["binding"]["input_format"] == ResponseDecisionInput.FORMAT_VERSION
     assert episode["state"] == "invalid" and episode["original_output"] == bad
-    assert any("回应引用不属于本次短编号" in str(step["feedback"]) for step in episode["revisions"])
+    assert any("ref:N" in str(step["feedback"]) for step in episode["revisions"])
     assert not browsing.adapter.sent and not browsing.intents()
 
 
@@ -505,7 +484,7 @@ async def test_format_version_change_does_not_reuse_previous_wire_checkpoint(bro
 
     async def generate(messages, schema, *, max_tokens):
         calls.append(schema["title"])
-        return reply(["ref:1"]).model_dump()
+        return reply().model_dump()
 
     browsing.runtime.operation_llm.generate_json = generate
     first = await browsing.decisions._model(
@@ -530,7 +509,8 @@ async def test_format_version_change_does_not_reuse_previous_wire_checkpoint(bro
         first_format,
         "test-response-v2",
     }
-    assert all(r["current_output"]["evidence_ids"] == ["ref:1"] for r in episodes)
+    assert all(r["current_output"]["evidence_ids"] == [] for r in episodes)
+    assert first.evidence_ids == [data["evidence"][0]["id"]]
     assert not browsing.adapter.sent
 
 
@@ -577,7 +557,6 @@ async def test_top_level_and_comment_reply_allow_web_search_without_source_quote
             reason="specific_detail",
             explanation="核实传闻后再评论",
             text="刚才查了公开新闻，这事早辟谣了，别听风就是雨。",
-            evidence_ids=["ref:1"],
             video_preference="neutral",
             preference_reason="核对消息真伪",
         ).model_dump()

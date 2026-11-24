@@ -232,8 +232,8 @@ async def test_invalid_comment_keeps_model_selection_reason_and_separate_validat
     async def pause(messages, schema, *, max_tokens):
         calls.append(schema["title"])
         if schema["title"] == "ResponseDecision":
-            return {"action": "reply_public", "reason": "specific_detail", "text": "盐水浓度有多少？",
-                    "evidence_ids": ["missing-reference"], "explanation": "想问清楚这层用的比例"}
+            return {"action": "reply_public", "reason": "specific_detail", "text": "先看 ref:1 盐水浓度有多少？",
+                    "explanation": "想问清楚这层用的比例"}
         return await original(messages, schema, max_tokens=max_tokens)
 
     monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", pause)
@@ -243,7 +243,7 @@ async def test_invalid_comment_keeps_model_selection_reason_and_separate_validat
     assert task["reason"] == "先看看评论里大家用了多少盐，再接着聊"
     diagnostic, = task["repetition_decisions"]
     assert diagnostic["state"] == "invalid" and diagnostic["continuation_id"]
-    assert "回应引用不属于本次短编号" in diagnostic["feedback"]["message"]
+    assert "ref:N" in diagnostic["feedback"]["message"]
     assert calls == ["CandidateBatchPlan", "ResponseDecision"]
     assert not browsing.intents() and not browsing.adapter.sent
     assert not browsing.store.all("SELECT * FROM browsing_video_progress")

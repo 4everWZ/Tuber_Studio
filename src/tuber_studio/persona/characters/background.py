@@ -86,11 +86,14 @@ def _last_topic(history):
             break
         if turn.get("kind") not in {None, "viewer", "reply"}:
             break
-        if turn.get("kind") == "viewer" and content.startswith("当前号主消息："):
-            try:
-                content = json.loads(content.removeprefix("当前号主消息："))["text"]
-            except (ValueError, KeyError, TypeError):
-                break
+        if turn.get("kind") == "viewer":
+            for prefix in ("当前对话者消息：", "当前号主消息："):
+                if content.startswith(prefix):
+                    try:
+                        content = json.loads(content.removeprefix(prefix))["text"]
+                    except (ValueError, KeyError, TypeError):
+                        return " ".join(reversed(parts))
+                    break
         parts.append(content)
         if role == "user" or len(parts) == 2:
             break

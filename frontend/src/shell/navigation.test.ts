@@ -13,8 +13,15 @@ import {
 } from "./navigation";
 
 describe("shell workspace navigation", () => {
-  it("offers chat and four parent workspaces with reachable local tabs and issues link", () => {
+  it("offers chat and four parent workspaces with refined Aqua labels, reachable local tabs, and issues link", () => {
     expect(TOP_NAV_ITEMS).toHaveLength(5);
+    expect(TOP_NAV_ITEMS.map((item) => item.label)).toEqual([
+      "对话与脉冲",
+      "渠道活动",
+      "直播台",
+      "角色与声音",
+      "设置",
+    ]);
     expect(TOP_NAV_ITEMS[0].href).toBe("#chat");
     expect(TOP_NAV_ITEMS.map((item) => item.parentPage).filter(Boolean)).toEqual([
       "operations",
@@ -32,6 +39,7 @@ describe("shell workspace navigation", () => {
       "voices",
       "assets",
       "settings",
+      "personalization",
       "accounts",
       "overview",
       "issues",
@@ -39,6 +47,7 @@ describe("shell workspace navigation", () => {
       expect(allSubTabs.some((t) => t.page === expectedRoute)).toBe(true);
     }
 
+    const onToggleCollapse = vi.fn();
     render(
       createElement(
         Fragment,
@@ -48,6 +57,8 @@ describe("shell workspace navigation", () => {
           currentSection: "settings",
           localAccess: false,
           menuOpen: false,
+          sidebarCollapsed: false,
+          onToggleCollapse,
           onCloseMenu: vi.fn(),
           onLogout: vi.fn(),
         }),
@@ -62,6 +73,16 @@ describe("shell workspace navigation", () => {
         })
       )
     );
+
+    const sidebarEl = document.getElementById("workspace-sidebar");
+    expect(sidebarEl).not.toBeNull();
+    expect(sidebarEl?.className).not.toContain("win-explorer-tree");
+    expect(screen.getByText("Aqua Studio")).toBeInTheDocument();
+    expect(screen.getByText("Aqua · Personal Agent")).toBeInTheDocument();
+
+    const collapseBtn = document.getElementById("collapse-workspace-sidebar");
+    expect(collapseBtn).not.toBeNull();
+    expect(collapseBtn?.getAttribute("aria-expanded")).toBe("true");
 
     const issuesLink = document.getElementById("workspace-issues");
     expect(issuesLink).not.toBeNull();

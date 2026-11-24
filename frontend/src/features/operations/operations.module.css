@@ -761,6 +761,270 @@
   margin-inline-start: 10px;
 }
 
+/* Video Base -> Floor Branch Tree View */
+.viewModeToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--win-bg);
+  border: 1px solid var(--win-border-light);
+}
+
+.viewModeBtn {
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 520;
+}
+
+.viewModeBtnActive {
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.videoTreeList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.videoBaseCard {
+  border: 1px solid var(--win-border-light);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.videoBaseHeader {
+  padding: 11px 13px;
+  background: var(--win-panel-header);
+  border-bottom: 1px solid var(--win-border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.videoBaseTitleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.videoTreeToggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  justify-content: flex-start;
+  text-align: left;
+  gap: 6px;
+  font-size: 0.94rem;
+}
+
+.videoTreeToggle:hover:not(:disabled) {
+  background: transparent;
+  color: var(--accent);
+}
+
+.videoBaseMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+}
+
+.uploaderMeta {
+  color: var(--muted);
+}
+
+.coverageBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.branchCountBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: var(--win-ink-secondary);
+}
+
+.impressionSummary {
+  margin: 2px 0 0;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--win-border-light);
+  font-size: 0.82rem;
+  color: var(--win-ink-secondary);
+  line-height: 1.45;
+}
+
+.floorBranchList {
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.floorBranchNode {
+  border: 1px solid var(--win-border-light);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.floorBranchHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #fafafa;
+  border-bottom: 1px solid var(--win-border-light);
+  font-size: 0.79rem;
+}
+
+.floorBranchLabel {
+  font-weight: 600;
+  color: var(--win-ink-secondary);
+}
+
+.takeoverBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--win-warning-bg);
+  border: 1px solid var(--win-warning-border);
+  color: var(--win-warning);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.floorTurnTimeline {
+  list-style: none;
+  margin: 0;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--win-border-light);
+  background: #fcfcfd;
+}
+
+.floorTurnItem {
+  padding: 5px 8px;
+  border-radius: 7px;
+  border-left: 2px solid var(--win-border);
+  background: var(--panel);
+  font-size: 0.82rem;
+}
+
+.floorTurnTakeover {
+  border-left-color: #d97706;
+  background: var(--win-warning-bg);
+}
+
+.floorTurnDraft {
+  border-left-color: #10a37f;
+  background: var(--win-green-bg);
+}
+
+.floorTurnRole {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.floorTurnText {
+  margin: 2px 0 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.floorBranchRows {
+  display: flex;
+  flex-direction: column;
+}
+
+.branchRowWrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.branchRowWrap + .branchRowWrap {
+  border-top: 1px solid var(--line);
+}
+
+.branchQuickActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 10px 8px;
+}
+
+.branchActionBtn {
+  min-height: 26px;
+  padding: 2px 9px;
+  font-size: 0.78rem;
+  border-radius: 7px;
+}
+
+.orphanFallbackSection {
+  border: 1px solid var(--win-border-light);
+  border-radius: 10px;
+  padding: 6px 0;
+}
+
+.orphanHeading {
+  margin: 4px 12px 6px;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.debugDisclosure {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--win-border-light);
+  border-radius: 10px;
+  background: var(--win-panel-header);
+  font-size: 0.85rem;
+}
+
+.debugDisclosure > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 560;
+}
+
+.debugDisclosureBody {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 @media (max-width: 950px) {
   .pipelineGrid,
   .reviewLayout,

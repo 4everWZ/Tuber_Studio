@@ -14,7 +14,6 @@ from ...persona.context.subtitles import (
     SourcePart,
     SourceSegment,
     paragraph_sources,
-    render_blocks,
     validate_time,
 )
 from .caption_corrections import corrected_caption
@@ -23,7 +22,7 @@ from .models import MAX_DECISION_REASON_CHARACTERS, ContentDecision, ResponseDec
 
 RESPONSE_ACTOR_INSTRUCTION = (
     "self_actor是你的账号。addressed_to列出原话所指的人。接reply_target里的话，楼内对话和视频用作背景。"
-    "分清self_actor（你自己）、video_source的UP主、reply_target当前说话人及第三方或二创/官方角色，绝不把别人或视频里的大肥鱼当成你自己。"
+    "分清self_actor（你自己）、video_source的UP主、reply_target当前说话人及第三方或二创/官方角色，绝不把别人当成你自己。"
 )
 
 
@@ -46,7 +45,7 @@ def bind_response_actors(data, self_actor):
         "self_account": {
             "uid": own_uid or None,
             "name": self_actor.get("account_display_name") or self_actor.get("character_name") or "",
-            "role": "你自己（本工坊小鲸鱼）",
+            "role": "你自己（当前账号）",
         }
     }
     if isinstance(result.get("video_source"), dict):
@@ -135,74 +134,51 @@ def bind_response_actors(data, self_actor):
 
 
 def compact_actor_context(bound, current_reference=None, *, current_text_ref=None):
-    """Present each comment once; retain actor/reply metadata as text references."""
+    """Keep actor and thread context readable without synthetic *_ref pointer ceremony."""
     result = deepcopy(bound)
     thread = result.get("thread")
-    current = result.get("reply_target")
-    if not isinstance(thread, dict) or not isinstance(current, dict) or not isinstance(current.get("text"), str):
+    if not isinstance(thread, dict):
         return result
-    if current_reference:
-        current["evidence_ref"] = current_reference
-    current_text = current["text"]
-    definitions, comments = {}, []
-
-    def body(row):
-        return row.get("text") if isinstance(row.get("text"), str) else row.get("content")
-
-    def key(row, text):
-        identity = row.get("comment_id") or row.get("id")
-        return (str(identity), text) if identity is not None else (
-            None, row.get("author_uid") or row.get("platform_user_id") or row.get("user_id"), text
-        )
-
-    definitions[key(current, current_text)] = current_text_ref or "reply_target.text"
-    if current_text_ref:
-        current.pop("text")
-        current["text_ref"] = current_text_ref
-
-    def reference(row):
-        if not isinstance(row, dict):
-            return row
-        text = body(row)
-        if not isinstance(text, str) or not text:
-            return deepcopy(row)
-        identity = key(row, text)
-        if identity not in definitions:
-            definitions[identity] = f"thread.comments[{len(comments)}].text"
-            definition = {name: deepcopy(value) for name, value in row.items() if name not in {"text", "content"}}
-            definition["text"] = text
-            comments.append(definition)
-        return {name: deepcopy(value) for name, value in row.items() if name not in {"text", "content"}} | {
-            "text_ref": definitions[identity]
-        }
-
-    for name in ("source", "root", "parent"):
-        if name in thread:
-            thread[name] = reference(thread[name])
-    if "timeline" in thread:
-        thread["timeline"] = [reference(row) for row in thread["timeline"]]
-    if "grouped_comments" in thread:
-        thread["grouped_comments"] = [reference(row) for row in thread["grouped_comments"]]
-    # Raw rows stay in backend data for diagnostics/hash bindings. Include all
-    # their unique bodies here even when the compact timeline shows only eight.
-    for row in thread.pop("items", []):
-        reference(row)
-    if comments:
-        thread["comments"] = comments
-    public_text = thread.get("public_text")
-    if isinstance(public_text, str) and public_text:
-        match = next((ref for identity, ref in definitions.items() if identity[-1] == public_text), None)
-        if match:
-            thread.pop("public_text")
-            thread["public_text_ref"] = match
-    for experience in result.get("own_public_experiences", []):
-        for source in experience.get("public_sources", []):
-            if (
-                str(source.get("comment_id")) == str(current.get("comment_id"))
-                and source.get("quote") == current_text
-            ):
-                source.pop("quote")
-                source["quote_ref"] = current_text_ref or "reply_target.text"
+    thread.pop("public_text", None)
+    items = thread.pop("items", None)
+    if isinstance(items, list) and items:
+        seen_ids: set[str] = set()
+        seen_texts: set[str] = set()
+        for existing_key in ("source", "root", "parent"):
+            row = thread.get(existing_key)
+            if isinstance(row, dict):
+                cid = row.get("comment_id") or row.get("id")
+                if cid is not None:
+                    seen_ids.add(str(cid))
+                txt = row.get("text") if isinstance(row.get("text"), str) else row.get("content")
+                if isinstance(txt, str) and txt:
+                    seen_texts.add(txt)
+        for seq_key in ("timeline", "grouped_comments", "comments"):
+            for row in thread.get(seq_key) or ():
+                if isinstance(row, dict):
+                    cid = row.get("comment_id") or row.get("id")
+                    if cid is not None:
+                        seen_ids.add(str(cid))
+                    txt = row.get("text") if isinstance(row.get("text"), str) else row.get("content")
+                    if isinstance(txt, str) and txt:
+                        seen_texts.add(txt)
+        extras = []
+        for row in items:
+            if not isinstance(row, dict):
+                continue
+            cid = row.get("comment_id") or row.get("id")
+            txt = row.get("text") if isinstance(row.get("text"), str) else row.get("content")
+            if cid is not None and str(cid) in seen_ids:
+                continue
+            if isinstance(txt, str) and txt in seen_texts:
+                continue
+            if cid is not None:
+                seen_ids.add(str(cid))
+            if isinstance(txt, str) and txt:
+                seen_texts.add(txt)
+            extras.append(row)
+        if extras:
+            thread["comments"] = list(thread.get("comments") or ()) + extras
     return result
 
 
@@ -214,14 +190,13 @@ def format_content_input(data):
     return json.dumps(header, ensure_ascii=False, separators=(",", ":")) + "\n\n内容：\n" + data["content"]
 
 
-CLASSIFICATION_INPUT_VERSION = "content-c6i-v1"
+CLASSIFICATION_INPUT_VERSION = "content-c6i-v2"
 CLASSIFICATION_INSTRUCTION = (
     "explanation结合本条标题或材料写出这次行动的具体理由。"
     "按角色兴趣决定是否准备回应，本阶段不选公私信。interest=like表示想参与，worth_commenting表示有具体想说的话；吐槽、共情、轻互动与分享都算。"
     "reason：specific_detail有回应点；no_interest无兴趣；nothing_to_add读懂无补充；insufficient_evidence想回应的内容缺材料；visual_required想回应的内容需新画面；unsafe_interaction涉及骚扰、伤害他人或公开隐私而略过。"
     "各字段表达同一意图。准备回应：interest=like,worth_commenting=true,reason=specific_detail；想补读：interest=need_more,worth_commenting=false；不发言worth_commenting=false。"
     "source_kinds与has_visual描述已有材料，字幕和画面观察均可作为依据。coverage_required表示还需补充什么：provided当前够用，unread_part需其它分P。"
-    "evidence_ids选相关[eN|起始时码]块，准备回应选1–8项；字幕/画面按分P与类型区分。"
 )
 
 
@@ -430,10 +405,10 @@ class ResponseReference:
 
 
 class ResponseDecisionInput:
-    """One invocation-local alias per original reference; never merge citations."""
+    """Structure readable context and resolve Python-side provenance cleanly without ref aliases."""
 
-    FORMAT_VERSION = "public-response-reference-lines-v8"
-    COMMENT_FORMAT_VERSION = "comment-response-source-first-v1"
+    FORMAT_VERSION = "response-v3"
+    COMMENT_FORMAT_VERSION = "comment-v3"
 
     def __init__(self, data):
         records = deepcopy(data.get("evidence", []))
@@ -459,21 +434,18 @@ class ResponseDecisionInput:
                 raise ValueError("回应来源引用无效")
             canonical.setdefault(identity, None)
 
-        refs, number = [], 1
-        for identity, segment in canonical.items():
-            while f"ref:{number}" in canonical:
-                number += 1
-            refs.append(
-                ResponseReference(
-                    f"ref:{number}",
-                    identity,
-                    json.dumps(segment, ensure_ascii=False) if segment is not None else None,
-                )
+        refs = [
+            ResponseReference(
+                identity,
+                identity,
+                json.dumps(segment, ensure_ascii=False) if segment is not None else None,
             )
-            number += 1
+            for identity, segment in canonical.items()
+        ]
         self.references = tuple(refs)
-        self.allowed_aliases = frozenset(ref.alias for ref in refs)
+        self.allowed_aliases = frozenset(canonical)
         self._by_alias = {ref.alias: ref for ref in refs}
+        self._canonical_segments = canonical
         thread = data.get("thread") or {}
         source = thread.get("source") or {}
         self.comment_reply = data.get("kind") == "reply_public"
@@ -482,56 +454,36 @@ class ResponseDecisionInput:
         self.recipient_name = source.get("author_name") or ""
         self.allow_public = data.get("allow_public", True)
         self.allow_comment_like = data.get("allow_comment_like", False)
-        self.dynamic_ref = next((ref.alias for ref in refs if data.get("dynamic_evidence") == ref.canonical_id), None)
+        self.dynamic_ref = data.get("dynamic_evidence") if data.get("dynamic_evidence") in canonical else None
         group = {"public:" + str(item["comment_id"]) for item in thread.get("grouped_comments", [])}
-        self.grouped_comment_refs = frozenset(ref.alias for ref in refs if ref.canonical_id in group)
-        self.anchor_alias = next((ref.alias for ref in refs if ref.canonical_id ==
-            "public:" + str(source.get("comment_id"))), None)
+        self.grouped_comment_refs = frozenset(cid for cid in canonical if cid in group)
+        source_cid = "public:" + str(source.get("comment_id")) if source.get("comment_id") else None
+        self.anchor_alias = source_cid if source_cid and source_cid in canonical else None
+
         header = deepcopy(
             {key: value for key, value in data.items() if key not in {"evidence", "allowed_evidence_ids"}}
         )
-        anchor_heading = f"[{self.anchor_alias}] 当前评论原文" if self.comment_reply and self.anchor_alias else None
-        header = compact_actor_context(header, current_text_ref=anchor_heading)
+        header = compact_actor_context(header)
         if "self_actor" in header:
             header = {
                 **{key: header[key] for key in ("self_actor", "reply_target") if key in header},
                 **header,
             }
-        lines, comment_lines, source_numbers = [], [], {}
+        lines, source_numbers = [], {}
         previous_source = object()
         for ref in refs:
             segment = ref.source()
             if segment is None:
-                if ref.canonical_id == "public:" + str(source.get("comment_id")) and isinstance(
-                    source.get("text"), str
-                ):
-                    if header.get("reply_target"):
-                        header["reply_target"]["evidence_ref"] = ref.alias
-                        if not anchor_heading:
-                            comment_lines.append(f"[{ref.alias}] 当前评论原文：见reply_target.text")
-                    else:
-                        comment_lines.append(f"[{ref.alias}] 当前评论原文：\n{source['text']}")
-                elif ref.alias in self.grouped_comment_refs:
-                    grouped = next(item for item in header["thread"]["grouped_comments"]
-                                   if "public:" + str(item["comment_id"]) == ref.canonical_id)
-                    comment_lines.append(f"[{ref.alias}] 连续来评原文：见{grouped['text_ref']}")
-                else:
-                    comment_lines.append(f"[{ref.alias}] 当前公开来源（原文见thread）")
                 continue
             cid = segment.get("cid")
             if cid is not None and cid != previous_source:
                 source_numbers.setdefault(str(cid), len(source_numbers) + 1)
                 lines.append(f"材料{source_numbers[str(cid)]}")
                 previous_source = cid
-            times = []
-            for key in ("start", "end"):
-                if key in segment:
-                    times.append(str(segment[key]) if segment[key] is not None else "?")
-            time_label = "|" + "–".join(times) + "s" if times else ""
+            times = [str(segment[k]) if segment[k] is not None else "?" for k in ("start", "end") if k in segment]
+            time_label = "[" + "–".join(times) + "s] " if times else ""
             source_label = segment.get("source_label")
-            lines.append(
-                f"[{ref.alias}{time_label}]" + (f"{source_label} " if source_label else "") + segment["text"]
-            )
+            lines.append(time_label + (f"{source_label} " if source_label else "") + segment["text"])
             extra = {
                 key: value
                 for key, value in segment.items()
@@ -539,26 +491,43 @@ class ResponseDecisionInput:
             }
             if extra:
                 lines.append("补充：" + json.dumps(extra, ensure_ascii=False, separators=(",", ":")))
-        if anchor_heading and header.get("reply_target"):
-            lines.append(f"{anchor_heading}：\n{self.source_text}")
-        self._presentation = (
-            json.dumps(header, ensure_ascii=False, separators=(",", ":"))
-            + "\n\n所选材料：\n"
-            + "\n".join(comment_lines + lines)
-        )
+        if self.comment_reply and self.source_text:
+            lines.append(f"当前评论原文：\n{self.source_text}")
+        body_block = ("\n\n" + "\n".join(lines)) if lines else ""
+        self._presentation = json.dumps(header, ensure_ascii=False, separators=(",", ":")) + body_block
 
     def format(self):
         return self._presentation
 
+    def default_provenance(self, action: str) -> list[str]:
+        """Compute canonical Python-side provenance without requiring model citation IDs."""
+        if action in {"skip", "wait", "finish", "read_comments"}:
+            return []
+        if action == "like_dynamic":
+            return [self.dynamic_ref] if self.dynamic_ref else []
+        if action in {"like_comment", "handoff_private"}:
+            return [self.anchor_alias] if self.anchor_alias else []
+        ordered = []
+        if self.anchor_alias:
+            ordered.append(self.anchor_alias)
+        for ref in self.references:
+            if ref.canonical_id not in ordered and (ref.source_json is not None or ref.canonical_id == self.anchor_alias):
+                ordered.append(ref.canonical_id)
+        if not ordered:
+            ordered = [ref.canonical_id for ref in self.references]
+        return ordered
+
     def validate_wire(self, value):
-        value = ResponseDecision.model_validate(value.model_dump() if hasattr(value, "model_dump") else value)
+        from .tools import detect_internal_protocol_leak
+
+        raw = dict(value.model_dump() if hasattr(value, "model_dump") else value)
+        raw.setdefault("evidence_ids", [])
+        value = ResponseDecision.model_validate(raw)
         for field in ("explanation", "preference_reason", "contact_purpose"):
             if len(getattr(value, field)) > MAX_DECISION_REASON_CHARACTERS:
                 raise ValueError(f"{field}须概括具体原因，单次最多{MAX_DECISION_REASON_CHARACTERS}字符")
-        if not set(value.evidence_ids) <= self.allowed_aliases:
-            raise ValueError("回应引用不属于本次短编号")
-        if any(target.evidence_id not in self.allowed_aliases for target in value.visual_targets):
-            raise ValueError("画面时点不属于本次短编号")
+        if leak := detect_internal_protocol_leak(value.text):
+            raise ValueError(leak)
         if self.comment_reply and value.action == "read_more":
             quote = verified_comment_quote(self.source_text, value.source_quote)
             if not self.comment_video_available or not quote:
@@ -566,48 +535,53 @@ class ResponseDecisionInput:
             value.source_quote = quote
         elif value.source_quote:
             raise ValueError("仅评论补查接受原话定位")
-        if value.action in {"reply_public", "handoff_private"} and not value.evidence_ids:
-            raise ValueError("回应引用为空")
         if value.action == "reply_public" and not self.allow_public:
             raise ValueError("当前任务未提供公开回复")
-        if value.action == "like_comment" and (
-            not self.allow_comment_like or self.anchor_alias not in value.evidence_ids or value.text
-        ):
+        if value.action == "like_comment" and (not self.allow_comment_like or not self.anchor_alias or value.text):
             raise ValueError("点赞只接受本次已核验的目标评论")
-        if value.action == "like_dynamic" and (not self.dynamic_ref or value.evidence_ids != [self.dynamic_ref] or value.text):
+        if value.action == "like_dynamic" and (not self.dynamic_ref or value.text):
             raise ValueError("动态点赞须引用本次已读的原动态")
-        if value.action == "reply_public" and self.grouped_comment_refs:
-            covered = set(value.covered_comments)
-            if self.anchor_alias not in covered or not covered <= self.grouped_comment_refs:
-                raise ValueError("覆盖来评必须包含当前回复目标，且只限本次分组")
-        elif value.covered_comments:
+        if value.covered_comments and not (self.action_allows_covered(value.action) and self.grouped_comment_refs):
             raise ValueError("当前动作不接受连续来评覆盖")
         return value
 
+    @staticmethod
+    def action_allows_covered(action):
+        return action == "reply_public"
+
     def diagnose(self, value):
         """Keep a defective body editable without admitting it to automatic send."""
+        from .tools import detect_internal_protocol_leak
+
         if value.action == "reply_public":
             hold_comment_body(value, value.text, recipient_name=self.recipient_name)
-            if self.comment_reply and self.anchor_alias not in value.evidence_ids:
-                return "回复只引用了背景材料，缺少当前评论的引用"
-        aliases = {alias.casefold() for alias in re.findall(
-            r"(?<![A-Za-z0-9_])ref:[1-9][0-9]*(?![A-Za-z0-9_])", value.text, re.IGNORECASE,
-        )}
-        if aliases:
-            return "正文含内部引用标识：" + ", ".join(sorted(aliases, key=lambda alias: int(alias[4:])))
+        if leak := detect_internal_protocol_leak(value.text):
+            return leak
         return None
 
-    def resolve(self, value):
+    def resolve(self, value, *, provenance: list[str] | None = None):
         wire = self.validate_wire(value)
+        resolved_ids = list(provenance) if provenance is not None else [
+            self._by_alias[cid].canonical_id if cid in self._by_alias else cid
+            for cid in (wire.evidence_ids or self.default_provenance(wire.action))
+        ]
+        resolved_targets = [
+            target.model_dump()
+            | {"evidence_id": self._by_alias[target.evidence_id].canonical_id if target.evidence_id in self._by_alias else target.evidence_id}
+            for target in wire.visual_targets
+        ]
+        covered = [
+            cid.split(":", 1)[1] if ":" in cid else cid
+            for cid in wire.covered_comments
+        ]
+        if not covered and wire.action == "reply_public" and self.grouped_comment_refs:
+            covered = [cid.split(":", 1)[1] for cid in sorted(self.grouped_comment_refs)]
         return ResponseDecision.model_validate(
             wire.model_dump()
             | {
-                "evidence_ids": [self._by_alias[alias].canonical_id for alias in wire.evidence_ids],
-                "visual_targets": [target.model_dump() | {
-                    "evidence_id": self._by_alias[target.evidence_id].canonical_id,
-                } for target in wire.visual_targets],
-                "covered_comments": list(dict.fromkeys(self._by_alias[alias].canonical_id.split(":", 1)[1]
-                    for alias in wire.covered_comments)),
+                "evidence_ids": resolved_ids,
+                "visual_targets": resolved_targets,
+                "covered_comments": list(dict.fromkeys(covered)),
             }
         )
 
@@ -719,7 +693,9 @@ class ContentDecisionInput:
         return self.text_renderer(display) if self.text_renderer else display.text
 
     def present(self, chunk):
-        """Return short text and bindings; structured source IDs stay private."""
+        """Return readable source text and bindings without [eN|...] citation ceremony."""
+        from ...persona.context.subtitles import timestamp as _ts
+
         selected, seen, previous = [], set(), None
         for segment in chunk:
             key = str(segment["cid"]), segment["id"]
@@ -737,11 +713,24 @@ class ContentDecisionInput:
             seen.add(key)
             selected.append(source)
         blocks = tuple(
-            CitationBlock(f"e{index}", group) for index, group in enumerate(self.source_grouper(selected), 1)
+            CitationBlock(f"b{index}", group) for index, group in enumerate(self.source_grouper(selected), 1)
         )
         used_parts = sorted({block.part.index for block in blocks})
         kinds = sorted({self.parts[index].kind for index in used_parts})
-        # Do not redact numeric facts or IDs occurring naturally in source text.
+        lines, last_part = [], None
+        for block in blocks:
+            part = block.part
+            if part != last_part:
+                header = f"视频第{part.page}部分（P{part.page}）"
+                if part.title:
+                    header += f" {part.title}"
+                if part.kind == "visual_observation":
+                    header += " [画面观察]"
+                elif part.kind == "audio_transcript":
+                    header += " [音频转写]"
+                lines.append(header)
+                last_part = part
+            lines.append(f"[{_ts(block.sources[0].start)}] {self.render_source(block)}")
         metadata = {
             key: deepcopy(value)
             for key, value in self.metadata.items()
@@ -760,7 +749,7 @@ class ContentDecisionInput:
             )
         return {
             "metadata": metadata,
-            "content": render_blocks(blocks, text_renderer=self.render_source),
+            "content": "\n".join(lines),
             "segments": [{"id": block.alias, "part": block.part.index} for block in blocks],
             "parts": [self.parts[index].wire() for index in used_parts],
             "missing_parts": missing,
@@ -770,16 +759,17 @@ class ContentDecisionInput:
         }, {block.alias: block for block in blocks}
 
 
-def bind_content_decision(decision, aliases):
-    """Validate the wire limit, then resolve this exact invocation's blocks."""
+def bind_content_decision(decision, aliases, *, provenance=None):
+    """Resolve presented segment provenance deterministically inside Python boundaries."""
     wire = ContentDecision.model_validate(decision.model_dump())
-    if any(reference not in aliases for reference in wire.evidence_ids) or (
-        wire.worth_commenting and not wire.evidence_ids
-    ):
-        raise ValueError("内容判断引用不存在或为空")
     canonical_targets = []
     for target in wire.visual_targets:
         block = aliases.get(target.evidence_id)
+        if block is None and target.evidence_id:
+            for candidate in aliases.values():
+                if any(source.id == target.evidence_id for source in candidate.sources):
+                    block = candidate
+                    break
         sources = block.sources if block and block.part.kind in {"subtitle", "audio_transcript"} else ()
         if not sources:
             raise ValueError("画面时点需绑定到本次字幕或语音转写")
@@ -787,12 +777,27 @@ def bind_content_decision(decision, aliases):
         canonical_targets.append(target.model_copy(update={"evidence_id": source.id}))
     wire = wire.model_copy(update={"visual_targets": canonical_targets})
     selected, sources, seen = [], [], set()
-    for reference in dict.fromkeys(wire.evidence_ids):
-        block = aliases[reference]
-        if not isinstance(block, CitationBlock) or block.alias != reference:
-            raise ValueError("内容判断引用绑定无效")
-        selected.append(block)
+    chosen_blocks = []
+    wanted = set(provenance) if provenance is not None else None
+    if wanted:
+        chosen_blocks = [b for b in aliases.values() if any(s.id in wanted for s in b.sources)]
+    elif wire.evidence_ids:
+        for ref in dict.fromkeys(wire.evidence_ids):
+            if ref in aliases:
+                chosen_blocks.append(aliases[ref])
+            else:
+                for block in aliases.values():
+                    if any(s.id == ref for s in block.sources):
+                        chosen_blocks.append(block)
+                        break
+    elif wire.worth_commenting:
+        chosen_blocks = list(aliases.values())
+    for block in chosen_blocks:
+        if block not in selected:
+            selected.append(block)
         for source in block.sources:
+            if wanted is not None and source.id not in wanted:
+                continue
             if source.id not in seen:
                 seen.add(source.id)
                 sources.append(source)
@@ -800,26 +805,21 @@ def bind_content_decision(decision, aliases):
 
 
 def restore_stored_content_decisions(material, values):
-    """Restore canonical source bindings, independently of the model's wire cap.
+    """Restore canonical source bindings for stored content decisions.
 
-    Stored results already contain original IDs, potentially many per model
-    citation block. Their invocation-local aliases cannot be reconstructed; only
-    sources present in the retained, exact material are admitted here.
+    Stored records may hold canonical segment IDs from earlier turns or empty
+    structural metadata when no citation selection was needed.
     """
     sources = {source.id: source for source in ContentDecisionInput(material).sources.values()}
     restored = []
     for value in values:
-        references = value.get("evidence_ids")
-        if (
-            not isinstance(references, list)
-            or any(not isinstance(ref, str) or ref not in sources for ref in references)
-            or len(references) != len(set(references))
-            or value.get("worth_commenting")
-            and not references
+        references = value.get("evidence_ids") or []
+        if not isinstance(references, list) or any(
+            not isinstance(ref, str) or ref not in sources for ref in references
         ):
-            raise ValueError("已存内容判断缺少有效的原始材料引用")
+            raise ValueError("已存内容判断包含无效的原始材料引用")
         fields = ContentDecision.model_validate(value | {"evidence_ids": []})
         if any(target.evidence_id not in sources for target in fields.visual_targets):
             raise ValueError("已存画面时点缺少有效的原始材料引用")
-        restored.append(ResolvedContentDecision(fields, (), tuple(sources[ref] for ref in references)))
+        restored.append(ResolvedContentDecision(fields, (), tuple(dict.fromkeys(sources[ref] for ref in references))))
     return restored

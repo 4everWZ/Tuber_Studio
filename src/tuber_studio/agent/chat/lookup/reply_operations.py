@@ -262,7 +262,7 @@ class ReplyOperations:
             if approval["channel"] == "comments":
                 result = await self.comments.publish(approval["draft_id"], submission=submission)
                 if result.get("status") == "operator_replied":
-                    return {"status": "operator_replied", "target": approval["target"], "message": "已核实号主回复，跳过本条。"}
+                    return {"status": "operator_replied", "target": approval["target"], "message": "已核实对方此前已回复，跳过本条。"}
             else:
                 await self.messages.send(approval["draft_id"], submission=submission)
         except ValueError as error:
@@ -318,7 +318,7 @@ def attach_reply_operations(tasks, comments, messages) -> ReplyOperations:
     tasks.register(
         "inspect_reply_selection",
         Tool(
-            "查看号主在目标中提供的回复选择编号和条目范围。",
+            "查看目标中提供的回复选择编号和条目范围。",
             SelectionRef,
             operations.inspect,
             accepts_goal=named,
@@ -328,7 +328,7 @@ def attach_reply_operations(tasks, comments, messages) -> ReplyOperations:
     tasks.register(
         "submit_selected_reply",
         Tool(
-            "仅提交号主选择集合中的一条评论或私信，审批显示对象和实际正文。",
+            "仅提交选择集合中的一条评论或私信，审批显示对象和实际正文。",
             SelectedReply,
             operations.run,
             operations.stop,

@@ -26,15 +26,16 @@ async def test_long_video_keeps_all_sources_and_actions_through_optional_web_fet
         for index in range(count)
     ]
     response_input = ResponseDecisionInput({"evidence": evidence})
-    aliases = [reference.alias for reference in response_input.references]
-    assert len(aliases) == 691
-    schema = response_schema(aliases, video_actions=True)
+    assert len(response_input.references) == 691
+    assert all(ref.alias == ref.canonical_id for ref in response_input.references)
+    assert len(response_input.allowed_aliases) == 691
+    assert "[ref:" not in response_input.format()
+    schema = response_schema((), video_actions=True)
     candidate = {
         "action": "reply_public",
         "reason": "specific_detail",
         "explanation": "就这段字幕里的细节接话",
         "text": "这段对白有点意思。",
-        "evidence_ids": aliases[-8:],
         "video_preference": "neutral",
         "preference_reason": "有可以接话的细节",
     }
@@ -49,8 +50,7 @@ async def test_long_video_keeps_all_sources_and_actions_through_optional_web_fet
     assert result == candidate
     assert len(captured) == 1
     wire_schema = captured[0]
-    assert wire_schema["$defs"] == schema["$defs"]
-    assert set(wire_schema["$defs"]["evidence_id"]["enum"]) == set(aliases)
+    assert "$defs" not in wire_schema
     actions = set()
     for branch in wire_schema["oneOf"]:
         properties = branch["properties"]
@@ -60,13 +60,8 @@ async def test_long_video_keeps_all_sources_and_actions_through_optional_web_fet
             continue
         action = properties["action"]["enum"][0]
         actions.add(action)
-        references = properties["evidence_ids"]
-        assert references["items"] == {"$ref": "#/$defs/evidence_id"}
-        assert references["maxItems"] == 8
-        assert references["minItems"] == (1 if action == "reply_public" else 0)
+        assert "evidence_ids" not in properties
     assert actions == {"reply_public", "skip", "wait", "read_comments", "watch_frames", "read_more", "finish"}
-    assert response_input.resolve(candidate).evidence_ids == [segment["id"] for segment in evidence[-8:]]
-    with pytest.raises(ValueError, match="本次短编号"):
-        response_input.validate_wire(candidate | {"evidence_ids": ["ref:692"]})
-    with pytest.raises(ValueError):
-        response_input.validate_wire(candidate | {"evidence_ids": aliases[-9:]})
+    resolved = response_input.resolve(candidate, provenance=[s["id"] for s in evidence])
+    assert resolved.evidence_ids == [segment["id"] for segment in evidence]
+    assert len(resolved.evidence_ids) == 691

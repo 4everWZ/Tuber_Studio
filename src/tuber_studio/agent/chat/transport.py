@@ -13,14 +13,16 @@ from fastapi import HTTPException
 from ...core.identity import operating_account_facts, owner_address_label
 from ...core.sse import encode_event
 from ...core.store import dump
-from ...persona.context.message_builder import build_messages
 from ..memory_organizer.owner_memory import private_rows
+from ..tasks.delivery import DelegationError
 from ..tasks.history import history_preference, reason_reply, select_reason_lines
 from . import front_dialogue
 from . import router as turn_router
 from .context import ChatContext
 from .delivery import delivery_turn_id, record_chat_delivery
 from .dispatcher import CapabilityDispatcher, build_delivery_packet
+from .heartbeat_feed import record_heartbeat_pulse
+from .l2_bridge import build_owner_chat_context
 from .lookup.personal_agent import object_scope
 from .models import (
     _CURRENT_SCOPE_READS,
@@ -35,6 +37,7 @@ from .models import (
     chat_model_provider,
     verify_call,
 )
+from .sse_events import calm_constraint_message, emit_tool_activity
 
 logger = logging.getLogger("uvicorn.error").getChild("chat_transport")
 
@@ -55,6 +58,20 @@ class ChatTransport:
             self.notify_delivery(identity, task["id"], status)
 
         self.ctx.runtime.tasks.record_chat_delivery = handle_chat_delivery
+        heartbeat = getattr(self.ctx.runtime, "heartbeat", None)
+        if heartbeat is not None and callable(getattr(heartbeat, "tick", None)):
+            prev_hook = getattr(heartbeat, "on_pulse", None)
+            if not getattr(prev_hook, "_chat_heartbeat_hook", False):
+                def handle_heartbeat_pulse(pulse):
+                    request_id = record_heartbeat_pulse(self.ctx.store, self.ctx, pulse)
+                    if request_id:
+                        self.notify_heartbeat_pulse(request_id, str(pulse.get("kind") or "pulse"))
+                    if callable(prev_hook):
+                        return prev_hook(pulse)
+                    return None
+
+                handle_heartbeat_pulse._chat_heartbeat_hook = True
+                heartbeat.on_pulse = handle_heartbeat_pulse
 
     def subscribe_deliveries(self) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue()
@@ -66,6 +83,11 @@ class ChatTransport:
 
     def notify_delivery(self, request_id: str, task_id: str, status: str) -> None:
         event = {"request_id": request_id, "task_id": task_id, "status": status}
+        for queue in list(self._subscribers):
+            queue.put_nowait(event)
+
+    def notify_heartbeat_pulse(self, pulse_id: str, kind: str) -> None:
+        event = {"request_id": pulse_id, "pulse_id": pulse_id, "kind": kind}
         for queue in list(self._subscribers):
             queue.put_nowait(event)
 
@@ -268,11 +290,12 @@ class ChatTransport:
                 else:
                     event = {"event_id": request_id, "text": data.message, "is_operator": True, "sender_name": owner_address_label(char)}
                     history = [item.model_dump() for item in data.window]
-                    messages = build_messages(
-                        char, event, {}, "operator_chat", history=history,
-                        operating_account=operating_account_facts(runtime.account.status()),
+                    messages = build_owner_chat_context(
+                        char,
+                        event,
+                        account_facts=operating_account_facts(runtime.account.status()),
+                        history=history,
                     )
-                    messages[-2:-2] = history
                     async with self._generation_slot():
                         generated = await chat_model_provider(runtime).generate(messages, char, request_id, source_text=data.message)
                     reply = generated.spoken_text
@@ -401,12 +424,9 @@ class ChatTransport:
                             if history_policy["history_enabled"]:
                                 reply_obj, offline_audit = await runtime.generate_reply(scope, char, event, mode="operator_chat")
                             else:
-                                messages = build_messages(
-                                    char, event, {}, "operator_chat",
-                                    operating_account=operating_account_facts(runtime.account.status()),
-                                )
                                 offline_notes = private_rows(runtime, data.message)
                                 offline_audit = {}
+                                memory_notes = ()
                                 if offline_notes:
                                     mem = runtime.daily_memory
                                     binding = runtime.memory_organizer.scope()
@@ -416,13 +436,15 @@ class ChatTransport:
                                         "memory_preference_revision": mem.preference(binding)["revision"],
                                         "organized_memory": [mem.organized_reference(note) for note in offline_notes],
                                     }
-                                    messages.insert(-1, {"role": "system", "content": "相关记忆资料：" + dump([note["anecdote"] for note in offline_notes])})
+                                    memory_notes = (dump([note["anecdote"] for note in offline_notes]),)
                                 unified = runtime.unified_memory.for_prompt("owner", character_id=char["id"], limit=15)
-                                if unified:
-                                    messages.insert(
-                                        -1,
-                                        {"role": "system", "content": "已记住的号主长期记忆：\n" + "\n".join(f"- {m['content']}" for m in unified)},
-                                    )
+                                messages = build_owner_chat_context(
+                                    char,
+                                    event,
+                                    account_facts=operating_account_facts(runtime.account.status()),
+                                    memories=unified,
+                                    memory_notes=memory_notes,
+                                )
                                 reply_obj = await chat_model_provider(runtime).generate(messages, char, event["event_id"], source_text=data.message)
                             if history_policy != history_preference(runtime):
                                 raise HTTPException(409, "私聊历史设置已变化，请重新生成")
@@ -522,13 +544,42 @@ class ChatTransport:
                 )
                 permission = (object_scope(runtime), history_preference(runtime)) if present else None
                 runner = action_runner or self.dispatcher.execute
+                activity_id = f"act:{request_id}:{intent.action}"
+                track_tool = intent.action != "clarify"
+                if track_tool:
+                    emit_tool_activity(emit, activity_id, intent.action, status="running")
                 try:
                     result = await runner(
                         intent, char, request_id, data, events, tasks, focus, task_context,
                         persist_turn=persist_task_origin, **source,
                     )
                 except PermissionError:
+                    if track_tool:
+                        emit_tool_activity(emit, activity_id, intent.action, status="constrained",
+                                           summary="读取权限已变化，请重新查询。")
                     raise HTTPException(409, "读取权限已变化，请重新查询") from None
+                except DelegationError as error:
+                    calm = calm_constraint_message(error)
+                    if track_tool:
+                        emit_tool_activity(emit, activity_id, intent.action, status="constrained", summary=calm)
+                    if emit:
+                        emit("stage", "constrained")
+                    result = {"reply_text": calm, "card": None}
+                else:
+                    for mem_evt in result.pop("memory_events", ()) or ():
+                        if callable(emit):
+                            emit("memory_updated", mem_evt)
+                    if track_tool:
+                        card_data = (result.get("card") or {}).get("data") or {}
+                        tool_data = {"automation_state": card_data["state"]} if "state" in card_data else None
+                        emit_tool_activity(
+                            emit,
+                            activity_id,
+                            intent.action,
+                            status="completed",
+                            summary=str(result.get("reply_text") or "")[:120],
+                            data=tool_data,
+                        )
 
                 packet = build_delivery_packet(intent, result)
                 if routing_active and packet.kind == "task_accepted" and not call_origin:

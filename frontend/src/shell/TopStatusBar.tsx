@@ -3,6 +3,7 @@ import type { SystemSettings, SystemStatus } from "@/shared/hooks/useAppSession"
 import { webCharacterName } from "@/shared/lib/errors";
 import styles from "@/shared/styles/workbench.module.css";
 import { ServiceStatusCapsule } from "./ServiceStatusCapsule";
+import { SidebarToggleGlyph } from "./Sidebar";
 
 export interface AutomationSummary {
   state?: string;
@@ -23,6 +24,8 @@ export interface BilibiliAccountSummary {
 export interface TopStatusBarProps {
   menuOpen: boolean;
   onToggleMenu: () => void;
+  sidebarCollapsed?: boolean;
+  onExpandSidebar?: () => void;
   status: SystemStatus | null;
   settings: SystemSettings | null;
   automation: AutomationSummary | null;
@@ -31,18 +34,18 @@ export interface TopStatusBarProps {
 }
 
 const AUTOMATION_LABELS: Record<string, string> = {
-  starting: "正在检查启动条件",
-  draining: "正在收尾当前动作",
-  stopping: "正在停止自主运营",
-  blocked: "自主运营受阻",
+  starting: "启动检查中",
+  draining: "收尾中",
+  stopping: "停止中",
+  blocked: "暂需关注",
   running: "自主运营中",
-  off: "自主运营已停止",
+  off: "自主运营已暂停",
   emergency: "已紧急停止",
 };
 
 const ACCOUNT_STATE_LABELS: Record<string, string> = {
   not_configured: "未配置",
-  unverified: "未验证",
+  unverified: "待验证",
   logged_in: "已登录",
   expired: "已过期",
   restricted: "受限",
@@ -50,7 +53,7 @@ const ACCOUNT_STATE_LABELS: Record<string, string> = {
 };
 
 export function automationStateLabel(automation: AutomationSummary | null | undefined): string {
-  if (!automation) return "自主运营 · 读取中";
+  if (!automation) return "自主运营 · 同步中";
   if (automation.policy?.emergency) return AUTOMATION_LABELS.emergency;
   if (automation.state && AUTOMATION_LABELS[automation.state]) {
     return AUTOMATION_LABELS[automation.state];
@@ -61,13 +64,15 @@ export function automationStateLabel(automation: AutomationSummary | null | unde
 export function TopStatusBar({
   menuOpen,
   onToggleMenu,
+  sidebarCollapsed = false,
+  onExpandSidebar,
   status,
   settings,
   automation,
   account,
   unreadIssuesCount,
 }: TopStatusBarProps) {
-  const charName = webCharacterName(status?.character) || "角色待确认";
+  const charName = webCharacterName(status?.character) || "Aqua";
   const autoText = automationStateLabel(automation);
   const autoRunning = automation?.state === "running" && !automation.policy?.emergency;
   const profile = account?.profile;
@@ -77,6 +82,21 @@ export function TopStatusBar({
   return (
     <header className={`topbar win-command-bar ${styles.topbar}`} data-chat-hide="">
       <div className={`command-bar-left ${styles.topbarLeft}`}>
+        {sidebarCollapsed && onExpandSidebar && (
+          <button
+            type="button"
+            id="expand-workspace-sidebar"
+            className={styles.expandSidebarBtn}
+            aria-label="展开侧边栏"
+            aria-expanded={false}
+            aria-controls="workspace-sidebar"
+            title="展开侧边栏"
+            onClick={onExpandSidebar}
+          >
+            <SidebarToggleGlyph />
+          </button>
+        )}
+
         <button
           type="button"
           id="workspace-menu"

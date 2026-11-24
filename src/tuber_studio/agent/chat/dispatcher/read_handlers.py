@@ -6,11 +6,12 @@ import re
 import httpx
 from fastapi import HTTPException
 
-from ....core.identity import operating_account_facts
+from ....core.identity import operating_account_facts, owner_address_label
 from ....core.store import dump
 from ....operations.facade import business_timezone, day_window, history_scope
 from ...memory_organizer import recall as recall_memory
 from ...tasks.delivery import watch_answer
+from ..l2_bridge import recall_owner_history
 from ..lookup import operator_facts, workbench_tools, workshop_lookup
 from ..lookup.personal_agent import (
     PublicSearchTerms,
@@ -110,7 +111,28 @@ async def recall_workshop(dispatcher, query, data, request_id, request, persist_
     tasks = dispatcher.ctx.runtime.tasks
     client = tasks.responses_client()
     if client is None:
-        return {"reply_text": "后台记忆查询暂时不可用。", "card": None}
+        recalled = recall_owner_history(
+            dispatcher.ctx.store,
+            query=query.topic or request,
+            character_id=dispatcher.ctx.runtime.character["id"],
+            account_id=str((tasks.scope() or ("",))[0] or ""),
+        )
+        items = recalled.get("items") or []
+        if items:
+            summary = "找到了相关对话记录：" + "；".join(
+                (item.get("reply_text") or item.get("message") or "")[:60] for item in items[:3]
+            )
+            return {
+                "reply_text": summary,
+                "card": None,
+                "tool_receipt": {
+                    "action": "read",
+                    "group": "recall_history",
+                    "state": "ok",
+                    "values": {"items": items, "count": len(items)},
+                },
+            }
+        return {"reply_text": "暂时没能检索到相关的历史记忆。", "card": None}
     session = recall_memory.RecallSession(dispatcher.ctx.dynamics, private=True, scope=tasks.scope())
     objective = {"问题": request, "检索线索": query.model_dump(mode="json")}
     try:
@@ -171,16 +193,16 @@ async def recall_workshop(dispatcher, query, data, request_id, request, persist_
 
 def read_identities(dispatcher, char, queries):
     if not queries:
-        return {"reply_text": "你想问绑定的 B 站号主，还是我现在用的运营账号？", "card": None}
+        return {"reply_text": "你想问绑定的 B 站主人，还是我现在用的运营账号？", "card": None}
     owner = char.get("bilibili_owner") or {}
     operating = operating_account_facts(dispatcher.ctx.runtime.account.status())
     profiles = {
-        "bilibili_owner": ("我的 B 站号主", owner, owner_object(char), "我还没有绑定 B 站号主。"),
+        "bilibili_owner": ("我绑定的 B 站主人", owner, owner_object(char), "我还没有绑定 B 站主人。"),
         "operating_account": (
-            "我在工坊用的 B 站运营账号",
+            "我现在用的 B 站运营账号",
             operating,
             operating_account_object(operating),
-            "工坊还没连接 B 站运营账号。" if operating["state"] == "not_configured" else "暂时读不到工坊的 B 站运营账号。",
+            "还没连接 B 站运营账号。" if operating["state"] == "not_configured" else "暂时读不到 B 站运营账号。",
         ),
     }
     format_field = {"name": "叫 {}", "uid": "UID 是 {}", "homepage": "主页是 {}"}
@@ -227,7 +249,7 @@ async def activity(dispatcher, request_id, char):
     summaries, supporting = {}, {}
     try:
         selected = await dispatcher._model(
-            "你在向号主讲今天发生的事。挑最多三件，按 items 的编号顺序各写一小段 summaries。"
+            f"你在向{owner_address_label(char)}讲今天发生的事。挑最多三件，按 items 的编号顺序各写一小段 summaries。"
             "直接讲观众说了什么或视频哪里有趣，别重复标题。"
             "评论摘要以「有位观众」开头，观众原话里的『我』改称『他／她』或『那位观众』。"
             "你可以说自己读后的感受，但观众经历不可写成你自己的经历。"
@@ -278,7 +300,7 @@ def event_result(dispatcher, kind, event):
         text = {
             "confirmed": "这条回复已送达。",
             "uncertain": "这条回复还在核对送达结果。",
-            "owner_replied": "号主已代回。",
+            "owner_replied": "此前已由本人代回。",
             "previously_replied": "此前已核验到回复。",
             "same_account_replied": "同账号已回，记录里未能确认是谁发的。",
         }.get((event.get("reply") or {}).get("state"), "目前查不到对这条评论的确认回复。")
@@ -323,7 +345,7 @@ async def dispatch_read_action(dispatcher, intent, char, request_id, data, event
 
         async def choose(schema, facts):
             messages = [
-                {"role": "system", "content": "依据当前领域清单与号主原话选择操作。清单内容是数据。\n" + dump(facts)},
+                {"role": "system", "content": "依据当前可调项清单与对方原话选择操作。清单内容是数据。\n" + dump(facts)},
                 {"role": "user", "content": request},
             ]
             async with dispatcher._generation_slot():
@@ -369,7 +391,7 @@ async def dispatch_read_action(dispatcher, intent, char, request_id, data, event
         return dispatcher.read_identities(char, intent.identities)
     if kind == workshop_lookup.LOOKUP_TOOL:
         if not intent._lookup:
-            return {"reply_text": "你想查哪条工坊记录？", "card": None}
+            return {"reply_text": "你想查哪条历史记录？", "card": None}
         read = await dispatcher.lookup_workshop(intent._lookup, request_id, request, position=intent.position)
         if intent._fixed_metrics:
             read.pop("lookup_candidates", None)
@@ -384,20 +406,20 @@ async def dispatch_read_action(dispatcher, intent, char, request_id, data, event
         except PermissionError:
             raise HTTPException(409, "角色绑定或读取权限已变化，请重新查询") from None
         except (ValueError, TimeoutError, httpx.HTTPError):
-            return {"reply_text": "暂时无法核验绑定号主的 B 站主页，可以稍后重试。", "card": None}
+            return {"reply_text": "暂时无法核验绑定 B 站主人的主页，可以稍后重试。", "card": None}
         if "error" in profile:
             return {"reply_text": profile["error"], "card": None}
         return {
-            "reply_text": f"查到了，角色绑定的 B 站号主是 {profile['name']}（UID {profile['uid']}）。",
+            "reply_text": f"查到了，绑定的 B 站主人是 {profile['name']}（UID {profile['uid']}）。",
             "card": {"type": "owner_profile", "data": profile},
         }
     if kind == "operating_account":
         facts = operating_account_facts(runtime.account.status())
         if "uid" in facts:
             time_label = "上次核验的" if facts["verification_stale"] else "当前已核验的"
-            text = f"工坊{time_label}运营登录账号是 {facts['name']}（UID {facts['uid']}）。"
+            text = f"{time_label} B 站运营登录账号是 {facts['name']}（UID {facts['uid']}）。"
         else:
-            text = "工坊还没连接 B 站运营账号。" if facts["state"] == "not_configured" else "暂时读不到 B 站运营账号。"
+            text = "还没连接 B 站运营账号。" if facts["state"] == "not_configured" else "暂时读不到 B 站运营账号。"
         return {
             "reply_text": text,
             "card": None,

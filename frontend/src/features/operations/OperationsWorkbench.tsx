@@ -308,7 +308,7 @@ export function OperationsWorkbench({
                     disabled={intentPending}
                     onClick={() => void handleBatchRejectErroredIntents()}
                   >
-                    清理报错项
+                    清理异常草稿 (仅异常)
                   </button>
                 )}
               </>
@@ -838,22 +838,29 @@ export function OperationsWorkbench({
                     <p className="error-text" data-intent-error="" role="status">
                       {intentError || selectedIntent.error || ""}
                     </p>
-                    {selectedIntent.receipt && (
-                      <details className="subsection">
-                        <summary>
-                          {(selectedIntent.receipt as { observed?: unknown }).observed
-                            ? "平台核对结果"
-                            : "平台回执"}
-                        </summary>
-                        <pre className="operation-revision-text">
-                          {JSON.stringify(selectedIntent.receipt, null, 2)}
-                        </pre>
+                    {(selectedIntent.receipt || selectedIntent.round_id) && (
+                      <details className={styles.debugDisclosure}>
+                        <summary>技术追踪与平台回执</summary>
+                        <div className={styles.debugDisclosureBody}>
+                          {selectedIntent.round_id && (
+                            <a href={`#automation/round/${encodeURIComponent(selectedIntent.round_id)}`}>
+                              查看来源轮次 ({selectedIntent.round_id})
+                            </a>
+                          )}
+                          {selectedIntent.receipt && (
+                            <details className="subsection">
+                              <summary>
+                                {(selectedIntent.receipt as { observed?: unknown }).observed
+                                  ? "平台核对结果"
+                                  : "平台回执"}
+                              </summary>
+                              <pre className="operation-revision-text">
+                                {JSON.stringify(selectedIntent.receipt, null, 2)}
+                              </pre>
+                            </details>
+                          )}
+                        </div>
                       </details>
-                    )}
-                    {selectedIntent.round_id && (
-                      <a href={`#automation/round/${encodeURIComponent(selectedIntent.round_id)}`}>
-                        查看来源轮次
-                      </a>
                     )}
                     <OperationContinuationCard
                       value={selectedIntent.continuation}

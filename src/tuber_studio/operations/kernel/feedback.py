@@ -348,8 +348,13 @@ class FeedbackModel:
         if not isinstance(value, dict) or set(value) != {"text"}:
             raise GenerationFeedback("修订结果需要唯一text正文", original_output=value)
         try:
+            from .tools import detect_internal_protocol_leak, sanitize_spoken_text
+
+            cleaned = sanitize_spoken_text(value["text"])
+            if leak := detect_internal_protocol_leak(cleaned):
+                raise ValueError(leak)
             validate_body = validate_comment_body if row["binding"].get("channel") == "comments" else validate_operation_text
-            text = validate_body(value["text"])
+            text = validate_body(cleaned)
         except ValueError as error:
             raise GenerationFeedback(str(error), original_output=value) from None
         if row["trigger_feedback"].get("content_hash") == content_hash({"text": text}):

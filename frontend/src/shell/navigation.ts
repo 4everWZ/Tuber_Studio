@@ -62,33 +62,33 @@ export const WORKSPACE_SECTIONS: Record<WorkspaceSection, readonly PageId[]> = {
 };
 
 export const PAGE_TITLES: Record<PageId, string> = {
-  chat: "对话",
+  chat: "对话与脉冲",
   comments: "评论与草稿",
-  automation: "自主运营",
+  automation: "渠道活动",
   messages: "私信",
   dynamics: "动态",
   "automation-records": "运行记录",
   "automation-settings": "刷视频与运营设置",
   issues: "告警与错误",
-  live: "直播工作台",
+  live: "直播台",
   "live-scene": "场景编排",
   "live-music": "曲库与点歌",
   "live-settings": "直播设置",
   "live-interaction": "互动与游戏",
-  characters: "角色工作室",
+  characters: "角色与声音",
   voices: "语音",
   assets: "素材与表情包",
-  settings: "工坊设置",
+  settings: "设置",
   personalization: "个性化",
   accounts: "账号与权限",
   overview: "存储与维护",
 };
 
 export const TOP_NAV_ITEMS: readonly TopNavItem[] = [
-  { page: "chat", href: "#chat", label: "对话" },
-  { page: "automation", parentPage: "operations", href: "#automation", label: "自主运营" },
-  { page: "live", parentPage: "live", href: "#live", label: "直播工作台" },
-  { page: "characters", parentPage: "characters", href: "#characters", label: "角色工作室" },
+  { page: "chat", href: "#chat", label: "对话与脉冲" },
+  { page: "automation", parentPage: "operations", href: "#automation", label: "渠道活动" },
+  { page: "live", parentPage: "live", href: "#live", label: "直播台" },
+  { page: "characters", parentPage: "characters", href: "#characters", label: "角色与声音" },
   { page: "settings", parentPage: "settings", href: "#settings", label: "设置" },
 ];
 
@@ -126,7 +126,7 @@ export const SUB_NAV_TABS: Record<WorkspaceSection, readonly SubNavTab[]> = {
     { tab: "assets", page: "assets", href: "#assets", label: "素材与表情包" },
   ],
   settings: [
-    { tab: "settings", page: "settings", href: "#settings", label: "工坊设置" },
+    { tab: "settings", page: "settings", href: "#settings", label: "基础设置" },
     { tab: "personalization", page: "personalization", href: "#personalization", label: "个性化" },
     { tab: "accounts", page: "accounts", href: "#accounts", label: "账号与登录" },
     { tab: "overview", page: "overview", href: "#overview", label: "存储与维护" },

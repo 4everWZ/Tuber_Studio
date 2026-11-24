@@ -4,7 +4,6 @@ import json
 from copy import deepcopy
 
 import pytest
-from pydantic import ValidationError
 
 from tuber_studio.infra.platforms.bilibili.subtitles import clean_stutter, deduplicate_subtitles
 from tuber_studio.operations.kernel.inputs import (
@@ -74,7 +73,7 @@ def test_filler_repeated_text_english_whitespace_and_originals_survive_grouping(
     for text in ["啊", "笑一下", "hello", " world"]:
         assert text in data["content"]
     assert data["content"].count("又笑了。") == 2
-    bound = bind_content_decision(decision(["e1"]), aliases)
+    bound = bind_content_decision(decision(["b1"]), aliases)
     assert [source.text for source in bound.sources] == [s["text"] for s in segments(value)]
     assert bound.evidence_ids == [s["id"] for s in segments(value)]
     assert value == snapshot
@@ -83,20 +82,18 @@ def test_filler_repeated_text_english_whitespace_and_originals_survive_grouping(
 def test_one_model_selection_can_resolve_thirty_original_segments_without_bypassing_wire_cap():
     value = material(["啊"] * 30)
     _, aliases = ContentDecisionInput(value).present(segments(value))
-    resolved = bind_content_decision(decision(["e1"]), aliases)
+    resolved = bind_content_decision(decision(["b1"]), aliases)
     assert isinstance(resolved, ResolvedContentDecision)
-    assert resolved.wire_decision.evidence_ids == ["e1"]
+    assert resolved.wire_decision.evidence_ids == ["b1"]
     assert len(resolved.evidence_ids) == 30
     assert resolved.model_dump()["evidence_ids"] == [s["id"] for s in segments(value)]
     assert resolved.sources[0].part.cid == "101"
     assert resolved.sources[0].part.metadata()["content_hash"] == "source-version-1"
-    # Internal expanded evidence is intentionally not a new model-output schema.
-    with pytest.raises(ValidationError):
-        ContentDecision.model_validate(resolved.model_dump())
-    with pytest.raises(ValidationError):
-        bind_content_decision(decision(["e1"]).model_copy(update={"evidence_ids": ["e1"] * 9}), aliases)
+    # Native protocol retires model-output evidence_ids and resolves provenance on the Python side.
+    resolved_native = bind_content_decision(decision([]), aliases)
+    assert len(resolved_native.evidence_ids) == 30
     assert all(
-        branch["properties"]["evidence_ids"]["maxItems"] == 8
+        "evidence_ids" not in branch["properties"] and "visual_targets" not in branch["properties"]
         for branch in content_decision_schema(set(aliases))["oneOf"]
     )
 
@@ -117,10 +114,11 @@ def test_track_versions_and_visual_frames_never_join_even_with_identical_text():
     }
     value["parts"].extend([second, visual])
     data, aliases = ContentDecisionInput(value).present(segments(value))
-    assert len(aliases) == 4 and data["content"].count("视频第1部分（P1） 原理") == 1
-    assert aliases["e1"].part.metadata()["track_id"] == "human-track-v1"
-    assert aliases["e2"].part.metadata()["content_hash"] == "source-version-2"
-    assert aliases["e3"].part.metadata()["visual_provider"] == {"provider_id": "vision", "version": "v3"}
+    assert len(aliases) == 4 and data["content"].count("视频第1部分（P1） 原理") == 3
+    assert "[画面观察]" in data["content"]
+    assert aliases["b1"].part.metadata()["track_id"] == "human-track-v1"
+    assert aliases["b2"].part.metadata()["content_hash"] == "source-version-2"
+    assert aliases["b3"].part.metadata()["visual_provider"] == {"provider_id": "vision", "version": "v3"}
     assert [source.id for block in aliases.values() for source in block.sources] == [
         s["id"] for s in segments(value)
     ]
@@ -141,7 +139,7 @@ def test_long_single_segment_is_not_truncated_or_summarized():
     value = material([original])
     data, aliases = ContentDecisionInput(value).present(segments(value))
     assert original in data["content"]
-    assert aliases["e1"].sources[0].text == original
+    assert aliases["b1"].sources[0].text == original
 
 
 def test_many_short_segments_keep_every_original_without_repeating_transport_ids():
@@ -203,10 +201,10 @@ def test_model_text_has_one_reference_and_no_structured_ids_but_numeric_source_f
     rendered = format_content_input(data)
     header, _, body = rendered.partition("\n\n内容：\n")
     assert "segments" not in json.loads(header) and "parts" not in json.loads(header)
-    assert rendered.count("e1") == 1
+    assert "[e1|" not in rendered and "[00:00]" in body
     assert "human-track-v1" not in rendered and "9988" not in rendered and "777" not in rendered
     assert value["parts"][0]["segments"][0]["text"] in body
-    assert aliases["e1"].part.metadata()["track_id"] == "human-track-v1"
+    assert aliases["b1"].part.metadata()["track_id"] == "human-track-v1"
 
 
 def test_blank_only_source_kept_backend_and_timestamp_rounding_does_not_change_original_times():
@@ -218,9 +216,9 @@ def test_blank_only_source_kept_backend_and_timestamp_rounding_does_not_change_o
     value = material(["实际秒保留"])
     value["parts"][0]["segments"][0].update(start=59.999999, end=61.234567)
     data, aliases = ContentDecisionInput(value).present(segments(value))
-    assert "[e1|01:00]" in data["content"]
-    assert aliases["e1"].sources[0].start == 59.999999
-    assert aliases["e1"].sources[0].end == 61.234567
+    assert "[01:00]" in data["content"] and "[e1|" not in data["content"]
+    assert aliases["b1"].sources[0].start == 59.999999
+    assert aliases["b1"].sources[0].end == 61.234567
     assert timestamp(3600) == "01:00:00"
 
 

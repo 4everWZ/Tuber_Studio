@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from ...memory_organizer import MemorySuggestion
 from ..context import ChatContext
+from ..l2_bridge import delete_owner_memory, save_owner_memory, update_owner_memory
 from ..lookup import operator_facts
 from ..lookup.handoff import LIVE_STYLE, LIVE_STYLE_GROUP
 from ..models import (
@@ -19,6 +20,7 @@ from ..models import (
     LivePreferenceSelection,
     VideoSelection,
 )
+from ..sse_events import calm_constraint_message, memory_updated_payload
 
 
 def prepare_dispatch_inputs(ctx: ChatContext, intent, char, request_id, data, events, tasks, focus, task_context):
@@ -54,7 +56,7 @@ def prepare_dispatch_inputs(ctx: ChatContext, intent, char, request_id, data, ev
         prior = task_context.get("clarification", {})
         if prior.get("id") != str(intent.clarification_id):
             raise HTTPException(409, "引用的澄清已变化，请重新说明要求。")
-        request = prior["request"] + "\n号主补充：" + request
+        request = prior["request"] + "\n补充说明：" + request
         if selection is None and kind in {"agent_task", "steer_task", "clarify"}:
             saved = json.loads(ctx.turn(prior["id"])["result"])
             if original := saved.get("clarification_video_selection") or saved.get("submission", {}).get("video_selection"):
@@ -74,7 +76,7 @@ async def save_live_preference(dispatcher, char, request_id, request):
     if not memory.preference(scope)["enabled"]:
         return {"reply_text": "记忆已关闭，可在个性化设置启用。", "card": None}
     result = await dispatcher._model(
-        "识别号主明确要求的长期直播表达规则。先讲结果选 result_first，先讲过程选 process_first，"
+        "识别对方明确要求的长期直播表达规则。先讲结果选 result_first，先讲过程选 process_first，"
         "要求简洁选 concise，需要展开选 detailed。一次性要求或无法对应时填 null。",
         request,
         LivePreferenceSelection,
@@ -128,15 +130,25 @@ def save_event_memory(dispatcher, event, request_id):
     decision = MemorySuggestion(action="add", existing_id=None, headline=event["title"][:40], note=note, tags=[note[:24]])
     with ctx.store.db:
         saved = memory.save_organized(scope, source, decision, None)
-        ctx.runtime.unified_memory.add_memory(note, scope="owner", character_id=ctx.runtime.character["id"], source="operator_chat", tags=[note[:24]])
+        receipt = save_owner_memory(
+            ctx.runtime.unified_memory,
+            content=note,
+            character_id=ctx.runtime.character["id"],
+            source="operator_chat",
+            tags=(note[:24],),
+        )
         ctx.store.db.execute(
             "INSERT OR IGNORE INTO memory_organization VALUES(?,?,?,?,?,?,?)",
             (*scope, "turn:" + request_id, request_id, "skipped", time.time()),
         )
-    return {
+    events = [evt] if (evt := memory_updated_payload(receipt)) else []
+    payload = {
         "reply_text": "已记下这件事。" if saved else "这条记忆保持原设置。",
         "card": {"type": "memory_change", "data": {"text": note, "target": "已保存记忆"}} if saved else None,
     }
+    if events:
+        payload["memory_events"] = events
+    return payload
 
 
 def forget_memory(dispatcher, topic):
@@ -165,13 +177,95 @@ def forget_memory(dispatcher, topic):
         )
         and ("直播" not in topic or row["proof"].get("scene") == "live")
     ]
-    removed_unified = unified.delete_matching(topic, scope="owner", character_id=char_id)
+    receipt = delete_owner_memory(unified, query=topic, character_id=char_id)
+    events = [evt] if (evt := memory_updated_payload(receipt)) else []
     if len(matches) != 1:
-        if removed_unified:
-            return {"reply_text": "已删除这条记忆。", "card": None}
+        if receipt.get("ok"):
+            out = {"reply_text": "已删除这条记忆。", "card": None}
+            if events:
+                out["memory_events"] = events
+            return out
         return {"reply_text": "请说一下要忘掉的那条记忆的具体内容。", "card": None}
     memory.change_organized(scope, matches[0]["id"], delete=True)
-    return {"reply_text": "已删除这条记忆。", "card": None}
+    out = {"reply_text": "已删除这条记忆。", "card": None}
+    if events:
+        out["memory_events"] = events
+    return out
+
+
+def save_direct_memory(dispatcher, intent, request_text):
+    ctx = dispatcher.ctx
+    content = (intent.memory_content or intent.topic or request_text or "").strip()
+    if not content:
+        return {"reply_text": "告诉我你想让我记住什么内容就好。", "card": None}
+    try:
+        receipt = save_owner_memory(
+            ctx.runtime.unified_memory,
+            content=content,
+            character_id=ctx.runtime.character["id"],
+            source="operator_chat",
+            tags=tuple(intent.memory_tags),
+        )
+    except ValueError as error:
+        return {"reply_text": calm_constraint_message(error), "card": None}
+    events = [evt] if (evt := memory_updated_payload(receipt)) else []
+    action = receipt.get("action")
+    if not receipt.get("ok"):
+        return {"reply_text": "这条记忆暂时没能记下，换个简洁的说法试试。", "card": None}
+    reply = "好，这件事我已经记下来了。" if action == "created" else "这条之前已经记过了，内容还保留着。"
+    out = {
+        "reply_text": reply,
+        "card": {"type": "memory_change", "data": {"text": receipt.get("snippet") or content, "target": "已保存记忆"}},
+    }
+    if events:
+        out["memory_events"] = events
+    return out
+
+
+def update_direct_memory(dispatcher, intent, request_text):
+    ctx = dispatcher.ctx
+    content = (intent.memory_content or request_text or "").strip()
+    try:
+        receipt = update_owner_memory(
+            ctx.runtime.unified_memory,
+            memory_id=intent.reference,
+            match_query=intent.topic or None,
+            content=content or None,
+            tags=intent.memory_tags or None,
+            character_id=ctx.runtime.character["id"],
+        )
+    except ValueError as error:
+        return {"reply_text": calm_constraint_message(error), "card": None}
+    if not receipt.get("ok"):
+        if receipt.get("action") == "ambiguous":
+            return {"reply_text": "找到好几条相近的记忆，告诉我具体要改哪一条？", "card": None}
+        return {"reply_text": "没找到对应的记忆条目，你可以直接说出原内容或让我重新记一条。", "card": None}
+    events = [evt] if (evt := memory_updated_payload(receipt)) else []
+    out = {
+        "reply_text": "已经帮你把这条记忆更新好了。",
+        "card": {"type": "memory_change", "data": {"text": receipt.get("snippet") or content, "target": "已保存记忆"}},
+    }
+    if events:
+        out["memory_events"] = events
+    return out
+
+
+def delete_direct_memory(dispatcher, intent, request_text):
+    ctx = dispatcher.ctx
+    query = (intent.topic or intent.memory_content or request_text or "").strip()
+    receipt = delete_owner_memory(
+        ctx.runtime.unified_memory,
+        memory_id=intent.reference,
+        query=query or None,
+        character_id=ctx.runtime.character["id"],
+    )
+    if receipt.get("ok"):
+        events = [evt] if (evt := memory_updated_payload(receipt)) else []
+        out = {"reply_text": "好，这条记忆我已经忘掉了。", "card": None}
+        if events:
+            out["memory_events"] = events
+        return out
+    return forget_memory(dispatcher, query)
 
 
 def build_delivery_packet(intent, result) -> DeliveryPacket:
@@ -192,7 +286,8 @@ def build_delivery_packet(intent, result) -> DeliveryPacket:
         | _CONTROL_ACTIONS
         | {
             "dynamic", "edit_dynamic", "browse", "full_video", "inspect_video_frame", "stop", "resume_video",
-            "live_handoff", "live_preference", "forget_memory", "remember_event", "game_handoff",
+            "live_handoff", "live_preference", "forget_memory", "remember_event",
+            "save_memory", "update_memory", "delete_memory", "game_handoff",
             "pause_task", "resume_task", "watch_goal",
         }
     ):

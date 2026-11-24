@@ -1,6 +1,7 @@
 """Compose the business runtime and coordinate shared generation."""
 
 import asyncio
+import inspect
 import json
 import socket
 import time
@@ -8,7 +9,9 @@ from contextlib import asynccontextmanager
 
 import psutil
 
+from ..agent.heartbeat import HeartbeatService
 from ..agent.memory_organizer import MemoryOrganizer
+from ..agent.skills import RemotionVideoSkill
 from ..core.identity import identity_messages, identity_snapshot, operating_account_facts
 from ..core.meter import budgeted_call
 from ..core.models import OperationReply, Reply, canonical_voice_id, content_hash
@@ -36,21 +39,19 @@ from ..persona.context.tools import build_default_tool_registry
 from ..persona.memory.core_memory import missing_slots
 from ..persona.memory.daily import DailyMemoryService, MemoryChanged
 from ..persona.memory.relationships import Relationships
-from ..persona.memory.unified import UnifiedMemoryStore, migrate_legacy_memories
+from ..persona.memory.unified import UnifiedMemoryStore
 
 
 def _comment_actor_formatter(event):
-    from ..operations.kernel.inputs import (
-        RESPONSE_ACTOR_INSTRUCTION,
-        bind_response_actors,
-        compact_actor_context,
-    )
+    from ..operations.kernel import inputs as kernel_inputs
 
-    actors = compact_actor_context(
-        bind_response_actors({"thread": event.get("comment_context", {})}, event["self_actor"]),
-        current_text_ref="当前观众消息.text",
-    )
-    return actors, RESPONSE_ACTOR_INSTRUCTION
+    bound = kernel_inputs.bind_response_actors({"thread": event.get("comment_context", {})}, event["self_actor"])
+    compact_fn = getattr(kernel_inputs, "compact_actor_context", None)
+    if compact_fn is not None and "current_text_ref" in inspect.signature(compact_fn).parameters:
+        actors = compact_fn(bound, current_text_ref="当前观众消息.text")
+    else:
+        actors = bound
+    return actors, getattr(kernel_inputs, "RESPONSE_ACTOR_INSTRUCTION", "")
 
 
 class Runtime:
@@ -80,8 +81,11 @@ class Runtime:
         self.voices = VoiceService(settings)
         self.daily_memory = DailyMemoryService(store)
         self.unified_memory = UnifiedMemoryStore(store)
-        migrate_legacy_memories(store, unified=self.unified_memory)
+        # Startup auto-migration of legacy daily_highlights/grounded_memory rows is disabled
+        # so Layer 1 Saved Memories stay distilled and legacy tables are queried via Layer 2 recall.
         self.memory_organizer = MemoryOrganizer(self)
+        self.heartbeat = HeartbeatService(self, store)
+        self.remotion_skill = RemotionVideoSkill(self, store)
         self.live = LiveSession(
             self,
             singing_provider=singing_provider,
@@ -363,6 +367,7 @@ class Runtime:
         await self.cleanup_retention(automatic=True)
         self.retention_worker = asyncio.create_task(self._retention_loop())
         self.live.start_worker()
+        self.heartbeat.start(initial_delay=self.heartbeat.policy().tick_interval_seconds)
 
     @staticmethod
     async def _probe_foreground(provider):
@@ -398,6 +403,7 @@ class Runtime:
             pass
 
     async def close(self):
+        await self.heartbeat.close()
         await self.operation_images.close()
         tasks = [task for task in (self.connection_probe, self.admission_restore) if task is not None]
         for task in tasks:
@@ -495,6 +501,8 @@ class Runtime:
             "playback": self.live.playback,
             "operations_waiting": self.operations_waiting(),
             "automation": automation,
+            "heartbeat": self.heartbeat.status(),
+            "video_production": self.remotion_skill.status(),
         }
 
     async def generate_reply(self, scope, character, event, relationship=None, mode="live", *, context=None):

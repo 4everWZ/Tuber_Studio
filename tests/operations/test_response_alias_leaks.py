@@ -11,7 +11,7 @@ from tuber_studio.operations.kernel.inputs import ResponseDecisionInput
 def response(text):
     return {
         "action": "reply_public", "reason": "specific_detail", "explanation": "接着当前材料回应",
-        "text": text, "evidence_ids": ["ref:1"],
+        "text": text,
     }
 
 
@@ -23,12 +23,10 @@ def source_input(extra=None):
 
 
 @pytest.mark.parametrize("text", ["start with ref:84.", "先看ref:84吧", "先看REF:84吧", "读[ref:1]再答", "先ref:84后ref:2。", "再看ref:999。"])
-def test_prose_reference_is_diagnostic_while_citations_remain_valid(text):
+def test_prose_reference_leak_is_rejected_while_python_provenance_remains_clean(text):
     packet = source_input()
-    value = packet.validate_wire(response(text))
-    assert packet.diagnose(value).startswith("正文含内部引用标识：")
-    assert packet.resolve(value).evidence_ids == ["source:0"]
-    assert packet.resolve(value).text == text
+    with pytest.raises(ValueError, match="ref:N"):
+        packet.validate_wire(response(text))
 
 
 @pytest.mark.parametrize("text", [
@@ -36,22 +34,22 @@ def test_prose_reference_is_diagnostic_while_citations_remain_valid(text):
     "r999还挺有意思。", "br84和r84_model是产品型号。",
 ])
 def test_product_names_are_not_internal_references_with_or_without_source_occurrences(text):
-    # The text namespace is independent of the reference transport. No source
-    # scanning, web-page exemption or restore-time whitelist is necessary.
+    # Product identifiers are never flagged as internal protocol leaks.
     for extra in ({}, {"video_source": {"title": text}}, {"thread": {"source": {"text": text}}}):
         packet = source_input(extra)
         value = packet.validate_wire(response(text))
         assert packet.diagnose(value) is None and value.text == text
 
 
-def test_reference_namespace_has_exact_token_boundaries_and_invocation_local_citations():
+def test_reference_namespace_has_exact_token_boundaries_without_wire_aliases():
     packet = source_input()
     for text in ("pref:84", "ref:84_model"):
         assert packet.diagnose(packet.validate_wire(response(text))) is None
-    assert packet.allowed_aliases == {f"ref:{i}" for i in range(1, 85)}
-    for invalid in ("r1", "ref:999", "source:0"):
-        with pytest.raises(ValueError, match="本次短编号"):
-            packet.validate_wire(response("继续聊这个细节。") | {"evidence_ids": [invalid]})
+    assert all(ref.alias == ref.canonical_id for ref in packet.references)
+    assert "[ref:" not in packet.format()
+    assert packet.allowed_aliases == {f"source:{i}" for i in range(84)}
+    resolved = packet.resolve(response("继续聊这个细节。"), provenance=["source:0"])
+    assert resolved.evidence_ids == ["source:0"]
 
 
 @pytest.mark.parametrize("fetch_ok", [False, True])
@@ -107,7 +105,7 @@ async def test_web_product_keeps_its_name_when_reusing_a_comment_decision(browsi
     assert not browsing.intents() and not browsing.adapter.sent
 
 
-async def test_reference_in_speech_keeps_candidate_for_review_without_repair_or_automatic_send(browsing, monkeypatch):
+async def test_reference_in_speech_is_rejected_without_creating_candidate_or_automatic_send(browsing, monkeypatch):
     from tests.support.operations_helpers import BV, finished
 
     browsing.bilibili_account.credentials = {"sessdata": "test", "csrf": "test"}
@@ -125,17 +123,16 @@ async def test_reference_in_speech_keeps_candidate_for_review_without_repair_or_
 
     monkeypatch.setattr(browsing.runtime.operation_llm, "generate_json", generate)
     row = await finished(browsing, automatic=True, video_only=True)
-    assert row["status"] == "completed"
+    assert row["status"] == "partial"
     assert calls == ["CandidateBatchPlan", "ResponseDecision"]
-    intent, = browsing.intents()
-    assert intent["status"] == "pending_review" and not intent["auto_authorized"]
-    assert "ref:1" in intent["text"] and intent["evidence"] == ["11:0"]
+    assert not browsing.intents()
     episode = browsing.runtime.continuations.get(browsing.store.one(
         "SELECT id FROM operation_continuations WHERE channel='generation.browsing' "
         "AND json_extract(binding,'$.schema')='ResponseDecision'",
     )["id"])
-    assert episode["state"] == "awaiting_review"
-    assert "内部引用标识" in episode["feedback"]["message"]
-    assert episode["current_output"]["text"] == intent["text"]
-    assert episode["current_output"]["evidence_ids"] == ["ref:1"]
+    assert episode["state"] == "invalid"
+    assert any(
+        step["phase"] == "feedback" and "ref:N" in (step.get("feedback") or {}).get("message", "")
+        for step in episode["revisions"]
+    )
     assert not browsing.adapter.sent

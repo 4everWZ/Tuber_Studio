@@ -305,7 +305,7 @@ def test_ticket_is_admin_only_fixed_upstream_and_contains_no_service_credential(
         assert browser.post(path).status_code == 401
         assert browser.get("/api/v1/agent/private-call/reference").status_code == 401
         assert browser.post(path, headers=auth | {"Origin": "https://elsewhere.example"}).status_code == 403
-        assert browser.get("/api/v1/agent/private-call", headers=auth).json() == {"configured": True, "character": "大肥鱼"}
+        assert browser.get("/api/v1/agent/private-call", headers=auth).json() == {"configured": True, "character": "Aqua"}
         assert not issued
         reply = browser.post(path, headers=auth, json={"path": "/api/mode", "origin": "https://elsewhere.example"})
         assert reply.status_code == 200

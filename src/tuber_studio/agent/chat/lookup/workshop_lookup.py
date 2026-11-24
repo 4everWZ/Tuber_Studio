@@ -26,7 +26,7 @@ def period(browsing, day=None):
 
 LOOKUP_TOOL = "workshop_lookup"
 LOOKUP_DESCRIPTION = (
-    "按对象检索工坊记录。video 查已读视频和片段；"
+    "按对象检索历史记录。video 查已读视频和片段；"
     "comment 查公开评论；dynamic 查动态草稿和平台记录。"
     "day 是业务日，查今天填 today；不指定日期则查跨日材料。"
     "terms 从当前要求或讨论的标题、对象和原话提取，优先用具体名称。"

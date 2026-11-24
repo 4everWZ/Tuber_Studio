@@ -2,7 +2,14 @@
 
 ## 分层和真实窗口
 
-本规范维护每个会话的活动窗口和压缩。跨会话长期记忆从[记忆服务](memory.md#用户身份与长期记忆)按当前授权取用，进行中的任务从[持久检查点](agent-runtime.md#常驻任务与恢复)恢复。窗口摘要仍绑定原会话与来源。
+本规范维护通用上下文树（`ContextNode Base -> Branches`）、每个会话的活动窗口和压缩。跨会话长期记忆从[记忆服务](memory.md#用户身份与长期记忆)按当前作用域（`owner` / `public`）与上限（`100`）取用，进行中的任务从[持久检查点](agent-runtime.md#常驻任务与恢复)恢复。窗口摘要仍绑定原会话与来源。
+
+### ContextNode Base → Branches 通用上下文树
+
+`src/tuber_studio/persona/context/tree.py` 为私聊、视频主评、评论楼层与平台私信统一构建标准 OpenAI 多轮消息树（支持直接渲染为 Chat Completions `messages` 或 `Responses` `input`）：
+
+- **不可变 `Base` 节点（`build_base_node`）：** 固定包含 4 支柱元认知 `self_model` 系统消息（`persona/self_model.py`）、当前作用域获准的 Layer 1 记忆列表以及渠道共享基座材料（如刷视频场景下的 `Video Base`：投稿元数据、UP 主、覆盖标识、首观印象与有界字幕／帧观察摘要，默认基础文本上限 `DEFAULT_VIDEO_BASE_TOKEN_LIMIT = 24_000`）。`Base` 节点创建后不可直接追加对话轮次，确保同视频下多个分支共享完全一致的稳定前缀。
+- **轻量 `Branch` 分支（`fork_owner_chat_branch` / `fork_top_level_comment_branch` / `fork_comment_floor_branch` / `fork_dm_session_branch`）：** 从 `Base` 分叉出独立对话线，保留按真实时间顺序排列的楼内／私信／私聊消息（并将 `[人工接管 · ...]` 作为 `user` 轮次明确保留）、当前任务目标，以及轮内原生 `assistant` `tool_calls` 与 `tool` 执行结果（`append_assistant_tool_calls` / `append_tool_result`）。
 
 | ID | 原优先级 | 要求 |
 | --- | --- | --- |

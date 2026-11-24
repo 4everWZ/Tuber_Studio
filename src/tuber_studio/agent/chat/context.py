@@ -107,7 +107,7 @@ class ChatContext:
             raise HTTPException(404, "找不到当前角色的这段对话")
         saved = json.loads(row["result"])
         if saved.get("owner_source", self.private_owner) != self.private_owner:
-            raise HTTPException(404, "找不到当前号主的这段对话")
+            raise HTTPException(404, "找不到这段对话记录")
         if read_only and saved.get("private_owner") == self.private_owner:
             return row
         if row["character_version"] != char["version"]:
@@ -583,7 +583,7 @@ class ChatContext:
     @staticmethod
     def identity_reply(char):
         owner = char.get("bilibili_owner")
-        reply = f"我的主人是{owner['name']}呀。" if owner else "我还没有绑定 B 站号主呀。"
+        reply = f"我的主人是{owner['name']}呀。" if owner else "我还没有绑定 B 站主人呀。"
         decision = ChatIntent(action="chat")
         decision._identity_reply = True
         decision._reply_markdown = reply
