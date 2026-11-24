@@ -7,7 +7,7 @@ import { AutomationRecordsPage } from "./AutomationRecordsPage";
 import { issueLogStore } from "./IssueLogStore";
 import { IssuesPage } from "./IssuesPage";
 import { OperationsQuickBar } from "./OperationsQuickBar";
-import { operationsStore } from "./operationsStore";
+import { operationsStore } from "@/shared/operations/operationsStore";
 import type { AutomationStatus } from "./types";
 
 function jsonResponse(body: unknown, status = 200): Response {

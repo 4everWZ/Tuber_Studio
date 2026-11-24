@@ -10,7 +10,7 @@ import {
 import { characterDisplayStore } from "@/shared/hooks/useCharacterDisplay";
 import { hasAnyUnsavedChanges } from "@/shared/lib/dirtyRegistry";
 import { emitNotice, errorMessage, subscribeWorkspaceIssues } from "@/shared/lib/errors";
-import { operationsStore } from "@/features/operations/operationsStore";
+import { operationsStore } from "@/shared/operations/operationsStore";
 import styles from "@/shared/styles/workbench.module.css";
 import { ToastNotice } from "@/shared/ui/ToastNotice";
 import { LoginGate } from "./LoginGate";

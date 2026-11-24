@@ -7,8 +7,8 @@ import time
 from ....core.models import content_hash
 from ....core.store import dump
 from ....infra.inference.providers import public_error
-from .admission import claims_manager
 from ...channels.comments.scanner import low_context_skip_reason
+from .admission import claims_manager
 from .timeline import _extract_timestamp, comment_source, merge_continuous_comments, observe_thread
 
 PENDING_VISITS = "'received','source_verified','context_ready','reply_deferred'"

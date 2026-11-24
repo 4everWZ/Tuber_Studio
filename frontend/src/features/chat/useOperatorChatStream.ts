@@ -10,7 +10,7 @@ import { ApiError, apiDelete, apiGet, apiPost } from "@/shared/api/client";
 import { streamAgentChat, subscribeAgentChatEvents } from "@/shared/api/sse";
 import { useAppSession } from "@/shared/hooks/useAppSession";
 import { useCharacterDisplay } from "@/shared/hooks/useCharacterDisplay";
-import { operationsStore } from "@/features/operations/operationsStore";
+import { operationsStore } from "@/shared/operations/operationsStore";
 import { errorMessage, safeMessage } from "@/shared/lib/errors";
 import {
   createRequestId,
