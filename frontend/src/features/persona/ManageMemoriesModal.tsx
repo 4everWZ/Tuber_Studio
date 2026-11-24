@@ -33,7 +33,13 @@ const SOURCE_LABELS: Record<string, string> = {
   manual: "手动添加",
   tool: "对话记住",
   chat: "对话记住",
+  operator_chat: "对话记住",
+  private_call: "实时通话",
   operation: "互动记住",
+  direct_message: "互动记住",
+  comments: "互动记住",
+  legacy_daily_highlights: "历史迁移",
+  legacy_grounded_memory: "历史迁移",
 };
 
 function normalizeScopeFilter(value: string | null | undefined): MemoryScopeFilter {

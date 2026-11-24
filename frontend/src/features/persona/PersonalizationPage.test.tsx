@@ -125,11 +125,12 @@ describe("PersonalizationPage (Minimal ChatGPT-Style Settings)", () => {
     expect(savedMemorySwitch.checked).toBe(true);
     expect(chatHistorySwitch.checked).toBe(true);
 
-    // Single entry button with live counter and legacy hint, NO inline raw memory list
+    // Single entry button with live counter and legacy hint, NO inline raw memory list or hidden duplicate dialog
     const manageBtn = await screen.findByRole("button", { name: "管理记忆 (14 / 100)" });
     expect(manageBtn).toBeTruthy();
     expect(screen.getByText(/检测到 3 条历史遗留迁移记录待清理/)).toBeTruthy();
     expect(screen.queryByText("绝对不应直接展开在设置页上的原条记忆")).toBeNull();
+    expect(document.querySelectorAll("#manage-memories-dialog").length).toBe(0);
 
     // Collapsed drawer starts closed
     const drawer = screen.getByText("高级上下文与历史工具").closest("details")!;

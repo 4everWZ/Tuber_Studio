@@ -46,7 +46,7 @@ describe("ManageMemoriesModal", () => {
       makeMemory("m-public-1", {
         scope: "public",
         content: "评论区喜欢聊海洋冷知识",
-        source: "tool",
+        source: "operator_chat",
         tags: ["科普"],
       }),
     ];
@@ -166,10 +166,12 @@ describe("ManageMemoriesModal", () => {
       legacy_migrated_count: 0,
     });
 
-    // Pill tabs filter and sync default add scope
+    // Pill tabs filter and sync default add scope; operator_chat displays localized source label
     await user.click(screen.getByRole("tab", { name: "公开互动 (1)" }));
     expect(screen.queryByText("晚上十点后不催进度")).toBeNull();
-    expect(screen.getByText("评论区喜欢聊海洋冷知识")).toBeTruthy();
+    const publicRow = screen.getByText("评论区喜欢聊海洋冷知识").closest("li")!;
+    expect(within(publicRow).getByText(/对话记住/)).toBeTruthy();
+    expect(within(publicRow).queryByText(/operator_chat/)).toBeNull();
     expect((screen.getByLabelText("新增记忆作用域") as HTMLSelectElement).value).toBe("public");
 
     // Back to all and search by tag/content

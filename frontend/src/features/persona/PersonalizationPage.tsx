@@ -780,19 +780,21 @@ export function PersonalizationPage() {
       </div>
 
       {/* Standalone fallback when PersonalizationPage is rendered without routes.tsx ManageMemoriesHost */}
-      <ManageMemoriesModal
-        open={fallbackModalOpen}
-        onClose={() => {
-          setFallbackModalOpen(false);
-          manageOpenerRef.current?.focus({ preventScroll: true });
-        }}
-        onChanged={(nextStats) => {
-          setMemoryCount(nextStats.count);
-          setMemoryLimit(nextStats.limit);
-          setOverLimit(nextStats.over_limit);
-          setLegacyMigratedCount(nextStats.legacy_migrated_count);
-        }}
-      />
+      {fallbackModalOpen && (
+        <ManageMemoriesModal
+          open
+          onClose={() => {
+            setFallbackModalOpen(false);
+            manageOpenerRef.current?.focus({ preventScroll: true });
+          }}
+          onChanged={(nextStats) => {
+            setMemoryCount(nextStats.count);
+            setMemoryLimit(nextStats.limit);
+            setOverLimit(nextStats.over_limit);
+            setLegacyMigratedCount(nextStats.legacy_migrated_count);
+          }}
+        />
+      )}
 
       <MemorySummaryDialog
         open={memoryOpen}

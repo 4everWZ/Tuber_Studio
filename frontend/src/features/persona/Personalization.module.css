@@ -132,10 +132,11 @@
   font-weight: 600;
 }
 
-.switchInput {
+input[type="checkbox"].switchInput {
   appearance: none;
   flex: 0 0 42px;
   width: 42px;
+  min-width: 42px;
   height: 24px;
   border: 0;
   border-radius: 999px;
@@ -146,7 +147,7 @@
   transition: background-color 0.15s ease;
 }
 
-.switchInput::before {
+input[type="checkbox"].switchInput::before {
   display: block;
   width: 20px;
   height: 20px;
@@ -157,15 +158,15 @@
   transition: transform 0.15s ease;
 }
 
-.switchInput:checked {
+input[type="checkbox"].switchInput:checked {
   background: #10a37f;
 }
 
-.switchInput:checked::before {
+input[type="checkbox"].switchInput:checked::before {
   transform: translateX(18px);
 }
 
-.switchInput:disabled {
+input[type="checkbox"].switchInput:disabled {
   cursor: default;
   opacity: 0.6;
 }
