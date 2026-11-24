@@ -105,7 +105,7 @@ def schema_branch_matches(branch, value):
 
 def test_content_decoder_accepts_exactly_the_existing_144_intent_combinations():
     properties = ContentDecision.model_json_schema()["properties"]
-    schema = content_decision_schema({"e1"})
+    schema = content_decision_schema({"b1"})
     combinations = list(
         product(
             properties["interest"]["enum"],
@@ -122,7 +122,6 @@ def test_content_decoder_accepts_exactly_the_existing_144_intent_combinations():
             "worth_commenting": worth,
             "reason": reason,
             "coverage_required": coverage,
-            "evidence_ids": ["e1"],
         }
         try:
             ContentDecision.model_validate(value)
@@ -133,21 +132,17 @@ def test_content_decoder_accepts_exactly_the_existing_144_intent_combinations():
         assert matches == int(accepted), value
 
 
-def test_content_decoder_preserves_reference_bounds_and_empty_source_behavior():
+def test_content_decoder_retires_evidence_ids_and_preserves_empty_source_behavior():
     value = {
         "explanation": "想接着聊盐水实验的具体结果",
         "interest": "like",
         "worth_commenting": True,
         "reason": "specific_detail",
         "coverage_required": "provided",
-        "evidence_ids": ["e1"],
     }
-    schema = content_decision_schema({"e1"})
-    for refs, expected in ((["e1"], True), ([], False), (["unknown"], False), (["e1"] * 9, False)):
-        assert (
-            any(schema_branch_matches(branch, value | {"evidence_ids": refs}) for branch in schema["oneOf"])
-            is expected
-        )
+    schema = content_decision_schema({"b1"})
+    assert any(schema_branch_matches(branch, value) for branch in schema["oneOf"])
+    assert all("evidence_ids" not in branch["properties"] for branch in schema["oneOf"])
     no_sources = content_decision_schema(set())
     assert len(no_sources["oneOf"]) == 1
     assert not schema_branch_matches(no_sources["oneOf"][0], value)
@@ -155,7 +150,6 @@ def test_content_decoder_preserves_reference_bounds_and_empty_source_behavior():
         "interest": "skip",
         "worth_commenting": False,
         "reason": "no_interest",
-        "evidence_ids": [],
     }
     assert schema_branch_matches(no_sources["oneOf"][0], declined)
 
@@ -264,7 +258,7 @@ def test_compact_packet_keeps_every_text_time_part_track_and_current_visual_sour
     presentation = ContentDecisionInput(value)
     assert presentation.missing_parts == value["missing_parts"]
     assert data["coverage"] == value["coverage"]
-    assert data["segments"] == [{"id": "e1", "part": 1}, {"id": "e2", "part": 2}, {"id": "e3", "part": 3}]
+    assert data["segments"] == [{"id": "b1", "part": 1}, {"id": "b2", "part": 2}, {"id": "b3", "part": 3}]
     bound = [source for block in aliases.values() for source in block.sources]
     assert [source.text for source in bound] == [s["text"] for s in chunk]
     assert [(source.part.index, source.start, source.end) for source in bound] == [
@@ -279,22 +273,23 @@ def test_compact_packet_keeps_every_text_time_part_track_and_current_visual_sour
         ("202", 2, "演示"),
         ("202", 2, "演示"),
     ]
-    assert aliases["e1"].part.metadata()["track_id"] == "human-track"
+    assert aliases["b1"].part.metadata()["track_id"] == "human-track"
     assert data["parts"][0]["is_ai"] is False
     assert data["parts"][1]["is_ai"] is True
-    assert aliases["e3"].part.metadata()["visual_provider"] == {
+    assert aliases["b3"].part.metadata()["visual_provider"] == {
         "provider_id": "current-model",
         "version": "2",
     }
     assert data["source_kinds"] == ["subtitle", "visual_observation"] and data["has_visual"] is True
     assert [source.id for source in bound] == [s["id"] for s in chunk]
-    assert data["content"].count("视频第2部分（P2） 演示") == 1
-    assert "[e1|00:00]第一段\n原文与空白  全部保留。 第二段。" in data["content"]
-    assert "[e3|00:04]手拿着透明杯。" in data["content"]
+    assert data["content"].count("视频第2部分（P2） 演示") == 2
+    assert data["content"].count("[画面观察]") == 1
+    assert "[00:00] 第一段\n原文与空白  全部保留。 第二段。" in data["content"]
+    assert "[00:04] 手拿着透明杯。" in data["content"]
     assert all(s["text"] in format_content_input(data) for s in chunk)
     assert value == snapshot and chunk == original_chunk
     data["metadata"]["title"] = "presentation edit"
-    aliases["e3"].part.metadata()["visual_provider"]["version"] = "presentation edit"
+    aliases["b3"].part.metadata()["visual_provider"]["version"] = "presentation edit"
     assert value == snapshot
 
 
@@ -348,17 +343,21 @@ def test_wider_classification_groups_expand_back_to_exact_individual_response_so
     assert [s for block in grouped.values() for s in block.sources] == [
         s for block in regular.values() for s in block.sources
     ]
-    bound = bind_content_decision(decision(["e1"]), grouped)
+    bound = bind_content_decision(decision(["b1"]), grouped)
     selected = [segment for segment in chunk if segment["id"] in set(bound.evidence_ids)]
     response = ResponseDecisionInput({"kind": "top_level", "evidence": selected})
     assert len(response.references) == len(selected) > 8
+    assert all(ref.alias == ref.canonical_id for ref in response.references)
+    assert "[ref:" not in response.format()
     wire = {
         "action": "reply_public",
         "text": "鱼鱼也想听听这盏灯下的故事。",
         "reason": "specific_detail",
-        "evidence_ids": [response.references[0].alias, response.references[-1].alias],
     }
-    assert response.resolve(wire).evidence_ids == [selected[0]["id"], selected[-1]["id"]]
+    assert response.resolve(wire, provenance=[selected[0]["id"], selected[-1]["id"]]).evidence_ids == [
+        selected[0]["id"],
+        selected[-1]["id"],
+    ]
     assert value == source
 
     restored = restore_stored_content_decisions(value, [bound.model_dump()])
@@ -494,25 +493,21 @@ def test_runtime_generation_uses_selected_card_on_gateway(browsing):
     assert "原始素材" in reply[-1]["content"] and schema["title"] == "ResponseDecision"
 
 
-def test_chunk_local_aliases_bind_to_different_originals_and_reject_other_chunk_refs():
+def test_chunk_local_blocks_bind_to_chunk_sources_and_resolve_provenance():
     value = material()
     presentation = ContentDecisionInput(value)
     first, first_refs = presentation.present(segments(value)[:2])
     second, second_refs = presentation.present(segments(value)[2:3])
-    assert first["segments"][0]["id"] == second["segments"][0]["id"] == "e1"
-    assert bind_content_decision(decision(["e1"]), first_refs).evidence_ids == ["101:human:0", "101:human:1"]
-    assert bind_content_decision(decision(["e1"]), second_refs).evidence_ids == ["202:ai:0"]
+    assert first["segments"][0]["id"] == second["segments"][0]["id"] == "b1"
+    assert bind_content_decision(decision(["b1"]), first_refs).evidence_ids == ["101:human:0", "101:human:1"]
+    assert bind_content_decision(decision(["b1"]), second_refs).evidence_ids == ["202:ai:0"]
+    assert bind_content_decision(decision([]), first_refs, provenance=["101:human:0"]).evidence_ids == ["101:human:0"]
     assert second["segments"][0]["part"] == 2
     assert second["source_kinds"] == ["subtitle"] and second["has_visual"] is False
-    for ref in ["e2", "e999", "101:human:0", "202:ai:0", "E1"]:
-        with pytest.raises(ValueError, match="引用"):
-            bind_content_decision(decision([ref]), second_refs)
-    with pytest.raises(ValueError, match="为空"):
-        bind_content_decision(decision([]), second_refs)
 
 
 @pytest.mark.parametrize("use_web_fetch", [False, True])
-async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_real_ids(
+async def test_native_http_schema_retires_refs_and_database_keeps_real_ids(
     browsing, monkeypatch, use_web_fetch
 ):
     from tuber_studio.infra.web_client import fetch as web_fetch
@@ -534,11 +529,8 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
         assert request.url.path == "/v1/chat/completions"
         body = json.loads(request.content)
         bodies.append(body)
-        data = model_packet(
-            next(item["content"] for item in body["messages"] if item["content"].startswith("公开来源材料："))
-        )
         if body["response_format"]["json_schema"]["schema"]["title"] == "ContentDecision":
-            result = decision(["e1"]).model_dump()
+            result = decision([]).model_dump()
         elif use_web_fetch and not fetched:
             result = {"web_fetch": "https://example.org/float"}
         else:
@@ -546,7 +538,6 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
                 "action": "reply_public",
                 "text": "盐水托起鸡蛋，好有意思！",
                 "reason": "specific_detail",
-                "evidence_ids": [data["evidence"][0]["id"]],
             }
         return httpx.Response(
             200,
@@ -571,24 +562,25 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
         row = await finished(browsing, preview=True)
         assert row["status"] == "completed"
         schema = bodies[0]["response_format"]["json_schema"]["schema"]
-        assert all(b["properties"]["evidence_ids"]["items"]["enum"] == ["e1"] for b in schema["oneOf"])
+        assert all("evidence_ids" not in b["properties"] for b in schema["oneOf"])
         packet = model_packet(bodies[0]["messages"][-1]["content"])
-        assert packet["segments"][0] == {"id": "e1"}
-        assert "[e1|00:00]加盐之后，鸡蛋浮了起来。" in packet["content"]
+        assert packet["segments"][0] == {"id": "b1"}
+        assert "[00:00] 加盐之后，鸡蛋浮了起来。" in packet["content"]
+        assert "[e1|" not in packet["content"]
         assert "parts" not in packet
         assert bodies[0]["chat_template_kwargs"]["enable_thinking"] is True
         response_body = next(
             body for body in bodies if body["response_format"]["json_schema"]["schema"]["title"] == "ResponseDecision"
         )
+        assert "$defs" not in response_body["response_format"]["json_schema"]["schema"]
         assert all(
-            branch["properties"]["evidence_ids"]["items"] == {"$ref": "#/$defs/evidence_id"}
+            "evidence_ids" not in branch["properties"]
             for branch in response_body["response_format"]["json_schema"]["schema"]["oneOf"]
-            if "evidence_ids" in branch["properties"]
+            if "action" in branch["properties"]
         )
-        assert response_body["response_format"]["json_schema"]["schema"]["$defs"]["evidence_id"]["enum"] == ["ref:1"]
-        assert response_body["response_format"]["json_schema"]["schema"]["oneOf"][-1]["required"] == ["web_fetch"]
+        assert response_body["response_format"]["json_schema"]["schema"]["oneOf"][-1]["required"] == ["web_search"]
         response_user = response_body["messages"][-1]["content"]
-        assert "[ref:1|" in response_user and "11:0" not in response_user
+        assert "[ref:" not in response_user and "11:0" not in response_user
         assert browsing.tasks()[0]["decisions"][0]["evidence_ids"] == ["11:0"]
         assert browsing.intents()[0]["evidence"] == ["11:0"]
         assert browsing.intents()[0]["status"] == "pending_review" and not browsing.adapter.sent
@@ -606,14 +598,20 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
         await native.close()
 
 
-@pytest.mark.parametrize("bad_ref", ["e99", "11:0"])
-async def test_invalid_or_original_model_ref_is_retained_without_repair_or_adoption(browsing, bad_ref):
+async def test_invalid_visual_target_is_retained_without_repair_or_adoption(browsing):
     calls = []
+    bad = ContentDecision(
+        interest="need_more",
+        worth_commenting=False,
+        reason="visual_required",
+        coverage_required="visual",
+        visual_targets=[{"evidence_id": "missing", "position": "after", "fraction": None}],
+    ).model_dump()
 
     async def generate(messages, schema, *, max_tokens):
         calls.append(schema["title"])
         assert schema["title"] == "ContentDecision"
-        return decision([bad_ref]).model_dump()
+        return copy.deepcopy(bad)
 
     browsing.runtime.operation_llm.generate_json = generate
     row = await finished(browsing, preview=True)
@@ -624,17 +622,17 @@ async def test_invalid_or_original_model_ref_is_retained_without_repair_or_adopt
     episode = browsing.runtime.continuations.get(task["continuation"]["id"])
     assert episode["binding"]["schema"] == "ContentDecision"
     assert episode["state"] == "invalid"
-    assert episode["original_output"] == decision([bad_ref]).model_dump()
+    assert episode["original_output"] == bad
     assert any(
         step["phase"] == "feedback"
-        and "内容判断引用不存在或为空" in (step.get("feedback") or {}).get("message", "")
+        and "内容判断画面时点无效" in (step.get("feedback") or {}).get("message", "")
         for step in episode["revisions"]
     )
     assert task["decisions"] == []
     assert not browsing.intents() and not browsing.adapter.sent
 
 
-async def test_two_real_model_invocations_reuse_alias_but_keep_chunk_ownership(browsing):
+async def test_two_real_model_invocations_reuse_block_ids_and_keep_chunk_ownership(browsing):
     value = material()
     chunks = [segments(value)[:2], segments(value)[2:]]
 
@@ -647,7 +645,7 @@ async def test_two_real_model_invocations_reuse_alias_but_keep_chunk_ownership(b
     decisions = await browsing.decisions._content_decisions(value, row, {"lock_wait_seconds": 0})
     assert [d.evidence_ids for d in decisions] == [["101:human:0", "101:human:1"], ["202:ai:0"]]
     calls = [data for kind, data in browsing.runtime.operation_llm.calls if kind == "ContentDecision"]
-    assert [data["segments"][0]["id"] for data in calls] == ["e1", "e1"]
+    assert [data["segments"][0]["id"] for data in calls] == ["b1", "b1"]
     assert row["config"]["max_model_calls"] >= 2
 
 
@@ -687,7 +685,7 @@ async def test_interrupted_read_resumes_at_unfinished_chunk(browsing):
     assert len([kind for kind, _ in browsing.runtime.operation_llm.calls if kind == "ContentDecision"]) == 2
 
 
-async def test_one_group_expands_to_twelve_segments_but_intent_keeps_only_reply_citations(browsing):
+async def test_one_group_expands_to_twelve_segments_and_keeps_python_provenance(browsing):
     async def subtitles(bvid, cid, languages):
         return {
             "bvid": bvid,
@@ -706,15 +704,15 @@ async def test_one_group_expands_to_twelve_segments_but_intent_keeps_only_reply_
     expected = [f"11:{i}" for i in range(12)]
     task = browsing.tasks()[0]
     assert task["decisions"][0]["evidence_ids"] == expected
-    assert browsing.intents()[0]["evidence"] == [expected[0]]
+    assert set(browsing.intents()[0]["evidence"]) == set(expected)
     assert browsing.intents()[0]["status"] == "pending_review"
     cached = browsing.evidence.load(browsing.intents()[0]["material_keys"][0])
     assert [segment["id"] for segment in cached["parts"][0]["segments"]] == expected
     assert cached["parts"][0]["content_hash"] == "unchanged-subtitle-version"
     model_calls = [packet for kind, packet in browsing.runtime.operation_llm.calls if kind == "ContentDecision"]
-    assert model_calls[0]["segments"] == [{"id": "e1"}]
+    assert model_calls[0]["segments"] == [{"id": "b1"}]
     response = next(packet for kind, packet in browsing.runtime.operation_llm.calls if kind == "ResponseDecision")
-    assert [item["id"] for item in response["evidence"]] == [f"ref:{i}" for i in range(1, 13)]
+    assert "[ref:" not in json.dumps(response, ensure_ascii=False)
     assert not browsing.adapter.sent
 
 

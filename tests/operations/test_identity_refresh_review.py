@@ -89,6 +89,8 @@ async def test_dynamic_identity_replacement_requires_new_review_for_diagnostic_t
     assert len(service.sent) == 1 and service.sent[0][1] == text
     version = json.loads(service._post(post_id)["generation_identity"])["identity_version"]
     assert version == service.runtime.identity_snapshot(character)["identity_version"] != old_version
-    generation_calls = [packet for packet in service.runtime.operation_llm.calls
-                        if json.loads(packet[1]["content"]).get("task") != "operations_memory_summary"]
+    generation_calls = [
+        packet for packet in service.runtime.operation_llm.calls
+        if not (packet[1]["content"].lstrip().startswith("{") and json.loads(packet[1]["content"]).get("task") == "operations_memory_summary")
+    ]
     assert len(generation_calls) == 2  # Initial draft and one identity replacement.

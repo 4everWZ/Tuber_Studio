@@ -216,7 +216,8 @@ async def test_auto_rebuild_excludes_current_comment_and_uses_generation_prefill
     calls = [body for path, body in requests if path == "/v1/chat/completions"]
     assert len(calls) == 1 and calls[0]["max_tokens"] != 1
     content = json.dumps(calls[0]["messages"], ensure_ascii=False)
-    assert content.count("现在补充的问题如何解释？") == 1
+    assert "现在补充的问题如何解释？" in content
+    assert "text_ref" not in content
     assert (
         "本楼此前的原始问题" in content
         and "旧草稿的虚构经历" not in content

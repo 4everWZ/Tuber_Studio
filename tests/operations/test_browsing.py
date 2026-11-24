@@ -19,27 +19,28 @@ BV = "BV1d8pU6xEZX"
 
 
 def model_packet(source):
-    body = source.split("：", 1)[1]
+    body = source.split("：", 1)[1] if "：" in source else source
     if not body.startswith("{"):
         header, content = body.split("\n内容:\n", 1)
         value = json.loads(header.rsplit("\n", 1)[-1])
         value["metadata"] = {"title": header.split("\n", 1)[0].removeprefix("标题:")}
         value["content"] = content
-        value["segments"] = [{"id": reference} for reference in re.findall(r"(?m)^\[(e\d+)\|", content)]
+        value["segments"] = [{"id": reference} for reference in re.findall(r"(?m)^\[([^\|\]]+)\|", content)]
         return value
-    if "\n\n所选材料：\n" in body:
-        header, content = body.split("\n\n所选材料：\n", 1)
-        value = json.loads(header)
-        value["evidence"] = [
-            {"id": reference} for reference in re.findall(r"(?m)^\[(ref:\d+)(?:\||\])", content)
-        ]
-        value["content"] = content
-        return value
+    if "\n\n" in body and body.startswith("{"):
+        header, content = body.split("\n\n", 1)
+        try:
+            value = json.loads(header)
+            value["evidence"] = value.get("evidence") or []
+            value["content"] = content
+            return value
+        except ValueError:
+            pass
     header, separator, content = body.partition("\n\n内容：\n")
     value = json.loads(header)
     if separator:
         value["content"] = content
-        value["segments"] = [{"id": reference} for reference in re.findall(r"(?m)^\[(e\d+)\|", content)]
+        value["segments"] = [{"id": reference} for reference in re.findall(r"(?m)^\[([^\|\]]+)\|", content)]
     return value
 
 
@@ -219,7 +220,7 @@ class ControlledModel:
                     "explanation": "加盐后鸡蛋浮起来这个细节想聊聊"
                     if self.worth
                     else "盐水实验看明白了，暂时没有补充",
-                    "evidence_ids": ["missing"] if self.bad_ref else [data["segments"][0]["id"]],
+                    "evidence_ids": [data["segments"][0]["id"]] if data.get("segments") else [],
                     "coverage_required": "provided",
                 }
             if schema["title"] == "VideoEngagementDecision":
@@ -234,10 +235,16 @@ class ControlledModel:
                 action = "finish"
             return {
                 "action": action,
-                "text": "盐水把鸡蛋托起来这段好有意思，鱼鱼也想试试！" if action != "finish" else "",
+                "text": (
+                    "先看 [ref:1]，盐水把鸡蛋托起来好有意思！"
+                    if (self.bad_ref and action != "finish")
+                    else "盐水把鸡蛋托起来这段好有意思，鱼鱼也想试试！"
+                    if action != "finish"
+                    else ""
+                ),
                 "reason": "specific_detail" if action in {"reply_public", "finish"} else "user_requested",
                 "explanation": "想接着聊盐水如何把鸡蛋托起来",
-                "evidence_ids": [data["evidence"][0]["id"]],
+                "evidence_ids": [data["evidence"][0]["id"]] if data.get("evidence") else [],
                 **({"contact_purpose": "讨论盐水鸡蛋实验", "contact_trigger": "invitation"} if action == "handoff_private" else {}),
                 **(
                     {
@@ -868,10 +875,8 @@ async def test_content_decision_requests_required_sources_before_generation(brow
     assert row["status"] == "completed" and browsing.intents()
     branches = {branch["properties"]["worth_commenting"]["const"]: branch for branch in captured[0]["oneOf"]}
     for branch in branches.values():
-        assert "evidence_ids" in branch["required"]
-        assert branch["properties"]["evidence_ids"]["items"]["enum"] == ["e1"]
-    assert branches[True]["properties"]["evidence_ids"]["minItems"] == 1
-    assert branches[False]["properties"]["evidence_ids"]["minItems"] == 0
+        assert "evidence_ids" not in branch.get("required", [])
+        assert "evidence_ids" not in branch["properties"]
 
 
 @pytest.mark.parametrize("entrypoint", ["video", "comment"])

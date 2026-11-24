@@ -14,6 +14,7 @@ from ...core.store import dump
 from ...core.text import operation_character, operation_output_diagnostics
 from ...persona.characters.front_persona import expressive_persona
 from ...persona.context.message_builder import SYSTEM_RULES
+from .browsing_turns import run_native_browsing_response
 from .generation import generate_with_recovery
 from .inputs import (
     CLASSIFICATION_INPUT_VERSION,
@@ -28,7 +29,6 @@ from .inputs import (
 from .models import (
     CONTENT_DECISION_INTENT_GLOSS,
     RESPONSE_INSTRUCTION,
-    RESPONSE_REFERENCE_INSTRUCTION,
     CandidateBatchPlan,
     ContentDecision,
     ResponseDecision,
@@ -38,6 +38,7 @@ from .models import (
     content_decision_schema,
     response_schema,
 )
+from .session import should_use_native_turns
 
 
 def normalized(text):
@@ -255,25 +256,24 @@ class ResponseEngine:
             response_input = response_input or ResponseDecisionInput(data)
             if data.get("kind") == "top_level" and data.get("coverage") == "sampled_visual":
                 instruction += (
-                    "按材料类型和时码区分字幕与画面。台词如果提到两者，就分别引用能支持它们的编号。"
-                    "只看到了片段，可以就那个细节接话。"
+                    "按材料类型和时码区分字幕与画面。"
+                    "只看到了片段，可以就那个细节自然接话。"
                 )
             mention_instruction = self.channels.get("mention_instruction", "")
-            instruction += RESPONSE_ACTOR_INSTRUCTION + RESPONSE_REFERENCE_INSTRUCTION + mention_instruction
+            instruction += RESPONSE_ACTOR_INSTRUCTION + mention_instruction
             if response_input.comment_reply:
                 instruction += (
-                    " 先接当前评论实际问的事，回复引用当前评论。"
+                    " 先接当前评论实际问的事，再结合楼内上下文。"
                     "视频投稿者、画面里的人和来评者各按所给身份；信息不足可以问清楚或略过。"
-                    "自己的作品、经历或收藏以记录为准，平台会显示回复对象，text直接写要说的话。"
+                    "自己的作品、经历或收藏以记录为准，直接写要发给对方的自然话语。"
                 )
                 if response_input.comment_video_available:
                     instruction += (
-                        " 只有当前原话指向视频细节且需要核查时，选read_more，"
-                        "在source_quote照抄需要核查的原句或短语。原话用本视频指代某个项目时，"
-                        "这一步可先查项目和作者提供的链接；已有信息够用就直接回应。"
+                        " 只有当前原话指向视频细节且需要核查时才读取视频分段，"
+                        "已有信息够用就直接回应。"
                     )
                 if data.get("video_lookup_quote"):
-                    instruction += " 补到的视频材料仅用于核查video_lookup_quote所指的细节，引用实际支持的字幕或画面。"
+                    instruction += " 补到的视频材料仅用于核查当前原话所指的细节。"
             if data.get("bilibili_owner"):
                 instruction += "\n" + BILIBILI_OWNER_INSTRUCTION
         content = (
@@ -288,12 +288,20 @@ class ResponseEngine:
             content = compact_content_input(data)
             role = "角色：" + view["brief"]
             instruction = CLASSIFICATION_INSTRUCTION
+        elif schema is ContentDecision:
+            core = character.get("core") or {}
+            compact_persona = {
+                "name": character.get("display_name") or character.get("name") or "",
+                "identity": core.get("identity", ""),
+                "traits": core.get("traits", []),
+                "rules": character.get("rules", []),
+            }
+            role = "角色：" + dump(compact_persona)
         allow_visual = data.get("allow_visual", self.browsing.evidence.has_visual_provider())
         if schema is ContentDecision:
             instruction += (
-                "需要补看时选visual。visual_targets引用字幕编号并选before（之前）、during（当时）、"
-                "after（之后）或within（段内，fraction填0到1）；其它位置fraction为null。"
-                "需要看瞬间动作或读屏幕小字时设precision=stream，其余用storyboard。"
+                "需要补看时选visual。说明要补看的分P或时码片段"
+                "（需要看瞬间动作或读屏幕小字时设precision=stream，其余用storyboard）。"
                 if allow_visual
                 else "本次取样画面已到齐。请用现有材料判断，材料仍不足时可以暂不发言。"
             )
@@ -445,13 +453,8 @@ class ResponseEngine:
                     raise ValueError("批次计划须从本批候选选择视频，并遵守设置的并发上限")
             elif schema is ContentDecision:
                 allowed = {segment["id"] for segment in data["segments"]}
-                if (
-                    not set(value.evidence_ids) <= allowed
-                    or any(target.evidence_id not in allowed for target in value.visual_targets)
-                    or value.worth_commenting
-                    and not value.evidence_ids
-                ):
-                    raise ValueError("内容判断引用不存在或为空")
+                if any(target.evidence_id not in allowed for target in value.visual_targets):
+                    raise ValueError("内容判断画面时点无效")
             elif schema is ResponseDecision:
                 if data.get("video_actions") and (
                     value.video_preference is None or not value.preference_reason.strip()
@@ -461,8 +464,8 @@ class ResponseEngine:
                     raise ValueError("本次未开放视频主评，可结束观看或补充材料")
                 if value.action == "handoff_private":
                     raise ValueError("私信由原评论邀请创建，当前输出为公开回应")
-                if value.action == "reply_public" and (not value.evidence_ids or not value.text):
-                    raise ValueError("回应缺少有效正文或来源引用")
+                if value.action == "reply_public" and not value.text:
+                    raise ValueError("回应缺少有效正文")
                 if value.action == "reply_public" and value.reason not in {
                     "specific_detail",
                     "light_interaction",
@@ -603,10 +606,8 @@ class ResponseEngine:
             "worth_commenting表示有具体想说的话。"
             "结合标题、简介、UP主与带时码字幕/本地语音识别理解视频全貌。"
             "当台词提及画面、演示、图表、字幕遮挡文字或表情动作需要眼见为实时，"
-            "请主动设coverage_required=visual，并在visual_targets按字幕时码选择要补看的关键点"
+            "请主动设coverage_required=visual，并说明要补看的关键时点"
             "（了解场景概览用默认故事板，核对屏幕文字/图表/微表情用precision=stream）。"
-            "evidence_ids选择相关片段的id；值得发言时至少选一项。"
-            "字幕/画面按分P和材料类型列出，[id|起始时码]标记可选择的内容块；evidence_ids选择这些短id。"
             "source_kinds和has_visual描述本次提供的材料，已有视觉观察、字幕和语音转写都能作为依据。"
             "coverage_required表示还要补充的内容：当前材料够用选provided，需补看画面选visual，"
             "需其它分P选unread_part；也可以不感兴趣或暂不发言。" + CONTENT_DECISION_INTENT_GLOSS
@@ -630,6 +631,11 @@ class ResponseEngine:
                 "classification_instruction": CLASSIFICATION_INSTRUCTION,
             }
         )
+
+    def _use_native_multiturn(self):
+        if "_model" in getattr(self, "__dict__", {}):
+            return False
+        return should_use_native_turns(self.browsing.runtime, llm_override_attrs=("generate_json",))
 
     async def _response(self, row, material, context, allowed, kind, metrics, *, video_actions=False):
         context = dict(context)
@@ -700,7 +706,7 @@ class ResponseEngine:
                 "sample_frames": data["allow_visual"],
             }
         if followup.get("status") == "completed":
-            data["completed_actions"] = [{"action": "sample_frames", "result": "已补看所引用时码附近的画面"}]
+            data["completed_actions"] = [{"action": "sample_frames", "result": "已补看附近画面"}]
         if not material:
             data["allowed_evidence_ids"] = list(allowed)
         source_links = ()
@@ -730,25 +736,43 @@ class ResponseEngine:
                 "resource": target.get("bvid") or "dynamic:" + str(target["oid"]),
                 "comment_id": str(context["source"]["comment_id"]),
             }
+        if self._use_native_multiturn() and not (allow_comment_like or dynamic_source):
+            bound = self._response_actor_data(row, data)
+            return await run_native_browsing_response(
+                self,
+                row,
+                material,
+                context,
+                allowed,
+                kind,
+                metrics,
+                data=data,
+                bound=bound,
+                recent=recent,
+                comment_materials=comment_materials,
+                allow_public=data.get("allow_public", allow_public),
+                allow_comment_like=allow_comment_like,
+                dynamic_source=dynamic_source,
+                video_actions=video_actions,
+                source_links=source_links,
+            )
         instruction = (
             RESPONSE_INSTRUCTION
             + (
-                " comment_materials仅是当前原评的专栏摘录或图片抽样观察，"
-                "用当前原评编号引用，依据实际读到的内容。"
+                " comment_materials仅是当前原评的专栏摘录或图片抽样观察，依据实际读到的内容回应。"
                 if comment_materials
                 else ""
             )
-            + (" 想给当前评论点个赞时选like_comment，引用该评论，正文留空。" if allow_comment_like else "")
-            + (" 想给原动态点赞时选like_dynamic，引用原动态，正文留空。" if dynamic_source else "")
+            + (" 想给当前评论点个赞时选like_comment，正文留空。" if allow_comment_like else "")
+            + (" 想给原动态点赞时选like_dynamic，正文留空。" if dynamic_source else "")
             + (
                 " grouped_comments是同一用户对同一对象的连续来评。若一并公开回答，"
-                "covered_comments列当前回复目标和正文一并回答的其他来评编号。"
+                "covered_comments列当前回复目标和正文一并回答的其他来评。"
                 if context.get("grouped_comments")
                 else ""
             )
             + (
                 "想发主评选reply_public并写正文。翻评论选read_comments，补看画面选watch_frames；"
-                "visual_targets引用字幕并选before、during、after或within（段内比例fraction为0到1，其它为null）。"
                 "瞬间动作或屏幕小字用precision=stream，其余用storyboard。"
                 "补读选read_more，结束观看选finish，略过选skip，稍后处理选wait。"
                 "video_preference填like/not_interested/neutral，preference_reason说说视频里具体哪点影响了你的偏好。"

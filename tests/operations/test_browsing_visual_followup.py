@@ -2,7 +2,6 @@
 
 import asyncio
 import base64
-import re
 
 import pytest
 
@@ -88,11 +87,7 @@ def install_visual(service, *, ask=True, ask_again=False, initial_time=8):
 
     async def generate(messages, schema, *, max_tokens):
         if schema["title"] == "ResponseDecision":
-            result = await original(messages, schema, max_tokens=max_tokens)
-            latest_frame = re.findall(r"(?m)^\[(ref:\d+)\|[^\]]+\]P\d+ 画面", messages[-1]["content"])
-            if latest_frame:
-                result["evidence_ids"] = latest_frame[-1:]
-            return result
+            return await original(messages, schema, max_tokens=max_tokens)
         if schema["title"] != "ContentDecision":
             return await original(messages, schema, max_tokens=max_tokens)
         data = model_packet(messages[-1]["content"])
@@ -105,23 +100,22 @@ def install_visual(service, *, ask=True, ask_again=False, initial_time=8):
             if len(inputs) > 1:
                 assert "visual" not in fields["coverage_required"]["enum"]
                 assert "visual_required" not in fields["reason"]["enum"]
-        visual_text = data["content"].partition("画面观察\n")[2]
-        visual_ids = re.findall(r"(?m)^\[(e\d+)\|", visual_text)
+        has_obs = "[画面观察]\n" in data["content"]
         if ask and (len(inputs) == 1 or ask_again):
             return {
                 "interest": "need_more",
                 "worth_commenting": False,
                 "reason": "visual_required",
                 "coverage_required": "visual",
-                "evidence_ids": [data["segments"][0]["id"]],
+                "evidence_ids": [data["segments"][0]["id"]] if data.get("segments") else [],
             }
-        if visual_ids:
+        if has_obs:
             return {
                 "interest": "like",
                 "worth_commenting": True,
                 "reason": "specific_detail",
                 "coverage_required": "provided",
-                "evidence_ids": visual_ids,
+                "evidence_ids": [data["segments"][-1]["id"]] if data.get("segments") else [],
             }
         return await original(messages, schema, max_tokens=max_tokens)
 
@@ -138,12 +132,12 @@ async def test_cc_visual_request_adds_once_then_rejudges_same_task(browsing, ask
     row = await finished(browsing, preview=True)
     task = browsing.tasks()[0]
     assert row["status"] == "completed" and visual.generated == 1 and len(inputs) == 2
-    assert [segment["id"] for segment in inputs[0]["segments"]] == ["e1"]
-    assert "[e1|00:00]加盐之后，鸡蛋浮了起来。" in inputs[0]["content"]
-    assert [segment["id"] for segment in inputs[1]["segments"]] == ["e1", "e2"]
+    assert [segment["id"] for segment in inputs[0]["segments"]] == ["b1"]
+    assert "[00:00] 加盐之后，鸡蛋浮了起来。" in inputs[0]["content"]
+    assert [segment["id"] for segment in inputs[1]["segments"]] == ["b1", "b2"]
     assert inputs[1]["segments"][0] == inputs[0]["segments"][0]
-    assert "[e2|00:05]" in inputs[1]["content"]
-    assert inputs[1]["content"].count("P1") == 1
+    assert "[00:05] " in inputs[1]["content"]
+    assert inputs[1]["content"].count("[画面观察]") == 1
     assert "parts" not in inputs[1]
     assert not inputs[0]["has_visual"] and inputs[0]["source_kinds"] == ["subtitle"]
     assert inputs[1]["has_visual"] is True
@@ -214,12 +208,12 @@ async def test_followup_uses_the_cited_part_and_preserves_only_reply_citations(b
     async def cite_second_part(messages, schema, *, max_tokens):
         result = await generate(messages, schema, max_tokens=max_tokens)
         if schema["title"] == "ContentDecision" and result["coverage_required"] == "visual":
-            result["evidence_ids"] = ["e2"]
-            result["visual_targets"] = [{"evidence_id": "e2", "position": "after", "fraction": None}]
+            result["evidence_ids"] = ["b2"]
+            result["visual_targets"] = [{"evidence_id": "b2", "position": "after", "fraction": None}]
         if schema["title"] == "ResponseDecision":
             data = model_packet(messages[-1]["content"])
             response_inputs.append(data["content"])
-            result["evidence_ids"] = re.findall(r"(?m)^\[(ref:\d+)\|[^\]]+\]P2 画面", data["content"])
+            result["evidence_ids"] = []
         return result
 
     browsing.adapter.video_metadata = two_parts

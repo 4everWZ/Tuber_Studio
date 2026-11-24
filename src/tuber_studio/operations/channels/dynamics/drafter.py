@@ -14,6 +14,7 @@ from ...kernel.generation import generate_with_recovery
 from ..mentions import MENTION_INSTRUCTION, MENTION_REQUESTS, bind_mentions, rebase_mentions
 from .evaluator import dynamic_decision_messages
 from .repository import _content_hash, _has_legacy_chat_lineage, _json
+from .turns import evaluate_native_dynamic, revise_native_dynamic_caption, should_use_native_dynamic_turns
 
 
 class DynamicsDrafterMixin:
@@ -72,27 +73,51 @@ class DynamicsDrafterMixin:
             if str(scope()[0] or "") != account:
                 raise ValueError("账号已切换，请重新交接动态素材")
             identity = runtime_identity(self.runtime, character, account or None)
-            messages = dynamic_decision_messages(
-                character, [], sources, current_time=datetime.now().astimezone().isoformat()
-            )
-            messages.append({
-                "role": "system",
-                "content": ("根据 operator_topic 写一条动态草稿，选 post 并引用这项来源。" if topic else
-                            "从你自己感兴趣的话题写一条动态草稿，选 post。"),
-            })
-            async with self.runtime.offline_generation("background"):
-                result = await budgeted_json(
-                    self.runtime.operation_llm, identity_messages(messages, identity), self.decision_schema(sources),
-                    max_tokens=512,
+            if should_use_native_dynamic_turns(self):
+                async with self.runtime.offline_generation("background"):
+                    data, _ = await evaluate_native_dynamic(
+                        self,
+                        char=character,
+                        evaluation_account=account,
+                        recent_posts=[],
+                        related_posts=[],
+                        public_sources=sources,
+                        unified_public=[],
+                        current_time=datetime.now().astimezone().isoformat(),
+                        topic=topic or "选一个你自己想分享的话题",
+                        manual=True,
+                    )
+                current = self._character()
+                if (current["id"], current["version"]) != (character["id"], character["version"]) or (
+                    runtime_identity(self.runtime, current, account or None) != identity
+                ) or str(scope()[0] or "") != account:
+                    raise ValueError("生成期间账号或角色已变化")
+                if data["action"] != "post":
+                    raise ValueError("本次没有可保存的动态正文")
+                if source["id"] not in data["source_ids"]:
+                    data["source_ids"] = [source["id"], *data["source_ids"]]
+            else:
+                messages = dynamic_decision_messages(
+                    character, [], sources, current_time=datetime.now().astimezone().isoformat()
                 )
-            current = self._character()
-            if (current["id"], current["version"]) != (character["id"], character["version"]) or (
-                runtime_identity(self.runtime, current, account or None) != identity
-            ) or str(scope()[0] or "") != account:
-                raise ValueError("生成期间账号或角色已变化")
-            data = self._parse(result, sources)
-            if data["action"] != "post" or data["source_ids"] != [source["id"]]:
-                raise ValueError("本次没有可保存的动态正文")
+                messages.append({
+                    "role": "system",
+                    "content": ("根据 operator_topic 写一条动态草稿，选 post 并引用这项来源。" if topic else
+                                "从你自己感兴趣的话题写一条动态草稿，选 post。"),
+                })
+                async with self.runtime.offline_generation("background"):
+                    result = await budgeted_json(
+                        self.runtime.operation_llm, identity_messages(messages, identity), self.decision_schema(sources),
+                        max_tokens=512,
+                    )
+                current = self._character()
+                if (current["id"], current["version"]) != (character["id"], character["version"]) or (
+                    runtime_identity(self.runtime, current, account or None) != identity
+                ) or str(scope()[0] or "") != account:
+                    raise ValueError("生成期间账号或角色已变化")
+                data = self._parse(result, sources)
+                if data["action"] != "post" or data["source_ids"] != [source["id"]]:
+                    raise ValueError("本次没有可保存的动态正文")
             data["presentation"] = await self._presentation(data, sources)
             if str(scope()[0] or "") != account or self._character() != current:
                 raise ValueError("核对提及期间账号或角色已变化")
@@ -119,35 +144,46 @@ class DynamicsDrafterMixin:
         original = await read_dynamic_caption(adapter, identifier, account)
         if not self._valid_sources(row):
             raise ValueError("原动态的公开来源已变化")
-        async with self.runtime.offline_generation("background"):
-            result = await budgeted_json(self.runtime.operation_llm, [
-                {"role": "system", "content": (
-                    "按号主的要求改写一条已经发布的动态。只输出可直接使用的正文。"
-                    "原来的 @ 保留正文中的写法。只有号主要求改提及时才填 mentions，空列表表示全部移除。"
-                    + MENTION_INSTRUCTION
-                )},
-                {"role": "user", "content": _json({
-                    "instruction": instruction, "original": original["text"], "original_mentions": original.get("mentions", []),
-                    "public_sources": [
-                        {key: value for key, value in source.items() if key != "memory_dependencies"}
-                        for source in row["sources"]
-                    ],
-                })},
-            ], {
-                "type": "object", "additionalProperties": False, "required": ["caption"],
-                "properties": {"caption": {"type": "string", "minLength": 1}, "mentions": MENTION_REQUESTS},
-            }, max_tokens=1024)
-        if not isinstance(result, dict) or "caption" not in result or set(result) - {"caption", "mentions"}:
-            raise ValueError("模型未返回完整的动态修订")
-        if adapter is not self.account.adapter or self._post(row["id"]) != row or not self._valid_sources(row):
-            raise ValueError("账号、动态或公开来源已变化")
-        caption = self._edit_caption(row, result["caption"])
-        if "mentions" in result:
-            mentions, pending = await bind_mentions(adapter, caption, result["mentions"], original.get("mentions", []))
+        if should_use_native_dynamic_turns(self):
+            async with self.runtime.offline_generation("background"):
+                raw_caption, mentions, pending = await revise_native_dynamic_caption(self, row, original, instruction)
+            if adapter is not self.account.adapter or self._post(row["id"]) != row or not self._valid_sources(row):
+                raise ValueError("账号、动态或公开来源已变化")
+            caption = self._edit_caption(row, raw_caption)
             if pending:
                 raise ValueError("请在编辑要求中提供要 @ 的 B 站 UID 和当前昵称")
+            if not mentions and original.get("mentions"):
+                mentions = rebase_mentions(caption, original.get("mentions", []))
         else:
-            mentions = rebase_mentions(caption, original.get("mentions", []))
+            async with self.runtime.offline_generation("background"):
+                result = await budgeted_json(self.runtime.operation_llm, [
+                    {"role": "system", "content": (
+                        "按号主的要求改写一条已经发布的动态。只输出可直接使用的正文。"
+                        "原来的 @ 保留正文中的写法。只有号主要求改提及时才填 mentions，空列表表示全部移除。"
+                        + MENTION_INSTRUCTION
+                    )},
+                    {"role": "user", "content": _json({
+                        "instruction": instruction, "original": original["text"], "original_mentions": original.get("mentions", []),
+                        "public_sources": [
+                            {key: value for key, value in source.items() if key != "memory_dependencies"}
+                            for source in row["sources"]
+                        ],
+                    })},
+                ], {
+                    "type": "object", "additionalProperties": False, "required": ["caption"],
+                    "properties": {"caption": {"type": "string", "minLength": 1}, "mentions": MENTION_REQUESTS},
+                }, max_tokens=1024)
+            if not isinstance(result, dict) or "caption" not in result or set(result) - {"caption", "mentions"}:
+                raise ValueError("模型未返回完整的动态修订")
+            if adapter is not self.account.adapter or self._post(row["id"]) != row or not self._valid_sources(row):
+                raise ValueError("账号、动态或公开来源已变化")
+            caption = self._edit_caption(row, result["caption"])
+            if "mentions" in result:
+                mentions, pending = await bind_mentions(adapter, caption, result["mentions"], original.get("mentions", []))
+                if pending:
+                    raise ValueError("请在编辑要求中提供要 @ 的 B 站 UID 和当前昵称")
+            else:
+                mentions = rebase_mentions(caption, original.get("mentions", []))
         if adapter is not self.account.adapter or self._post(row["id"]) != row:
             raise ValueError("核对提及期间账号或动态已变化")
         self.store.execute(

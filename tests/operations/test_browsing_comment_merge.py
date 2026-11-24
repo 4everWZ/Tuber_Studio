@@ -71,7 +71,6 @@ async def test_group_owns_only_covered_sources_and_new_followup_uses_its_real_ta
             "text": "问的那一步可以单独看一下。",
             "reason": "specific_detail",
             "explanation": "接着讨论实验步骤",
-            "evidence_ids": [target["evidence_ref"]],
         }
         branch = next(
             branch for branch in schema["oneOf"] if branch["properties"]["action"]["enum"] == ["reply_public"]

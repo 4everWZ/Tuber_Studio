@@ -282,7 +282,7 @@ nothing_to_add：已经读懂材料，但暂时没有想补充的话。
 insufficient_evidence：想回应的具体内容还缺相关材料。
 visual_required：想回应的具体内容需要补看相关画面。
 unsafe_interaction：这次互动本身涉及骚扰、伤害他人或公开他人私密信息，选择略过。
-各字段表达同一意图：准备回复时选interest=like、worth_commenting=true、reason=specific_detail；当前材料够用选coverage_required=provided。还想补读材料时选interest=need_more、worth_commenting=false，并用reason和coverage_required说明所需材料。没有想发言时worth_commenting=false。evidence_ids对应这次选择相关的内容块。"""
+各字段表达同一意图：准备回复时选interest=like、worth_commenting=true、reason=specific_detail；当前材料够用选coverage_required=provided。还想补读材料时选interest=need_more、worth_commenting=false，并用reason和coverage_required说明所需材料。没有想发言时worth_commenting=false。"""
 
 
 class VisualTarget(StrictModel):
@@ -329,7 +329,7 @@ class ContentDecision(StrictModel):
         "visual_required",
         "unsafe_interaction",
     ]
-    evidence_ids: list[str] = Field(default_factory=list, max_length=8)
+    evidence_ids: list[str] = Field(default_factory=list)
     coverage_required: Literal["provided", "unread_part", "visual"] = "provided"
     visual_targets: list[VisualTarget] = Field(default_factory=list, max_length=8)
 
@@ -388,7 +388,7 @@ class ResponseDecision(StrictModel):
         "cooldown",
         "spam",
     ]
-    evidence_ids: list[str] = Field(default_factory=list, max_length=8)
+    evidence_ids: list[str] = Field(default_factory=list)
     covered_comments: list[str] = Field(default_factory=list, max_length=8)
     visual_targets: list[VisualTarget] = Field(default_factory=list, max_length=8)
     source_quote: str = Field(default="", max_length=240)
@@ -417,34 +417,20 @@ class VideoEngagementDecision(StrictModel):
     favorite_reason: str = ""
 
 
-def content_decision_schema(evidence_ids, *, allow_visual=True):
-    """Require source selection for a comment, with no requirement to comment."""
+def content_decision_schema(evidence_ids=(), *, allow_visual=True):
+    """Build ContentDecision schema without LLM citation-ID ceremony."""
     properties = ContentDecision.model_json_schema()["properties"]
-    properties.pop("visual_targets")
+    properties.pop("visual_targets", None)
+    properties.pop("evidence_ids", None)
     properties["explanation"] = {"type": "string", "minLength": 1}
     if not allow_visual:
         for name, unavailable in (("coverage_required", "visual"), ("reason", "visual_required")):
             properties[name]["enum"].remove(unavailable)
     branches = []
-    for worth in (False, True):
-        if worth and not evidence_ids:
-            continue
-        fields = properties | {
-            "worth_commenting": {"type": "boolean", "const": worth},
-            "evidence_ids": {
-                "type": "array",
-                "minItems": 1 if worth else 0,
-                "maxItems": 8 if evidence_ids else 0,
-                "items": {"type": "string", "enum": sorted(evidence_ids)}
-                if evidence_ids
-                else {"type": "string"},
-            },
-        }
+    for worth in ((False, True) if evidence_ids else (False,)):
+        fields = properties | {"worth_commenting": {"type": "boolean", "const": worth}}
         alternatives = [{}]
         if worth:
-            # These disjoint branches express exactly the existing model
-            # validator. Native decoding must not offer a combination that
-            # the same product immediately rejects after generation.
             alternatives = [
                 {"interest": {"enum": [item for item in properties["interest"]["enum"] if item != "like"]}},
                 {
@@ -463,34 +449,28 @@ def content_decision_schema(evidence_ids, *, allow_visual=True):
             ]
         for constraints in alternatives:
             constrained = fields | {name: fields[name] | rule for name, rule in constraints.items()}
-            branch = {"type": "object", "additionalProperties": False,
-                      "properties": constrained, "required": list(constrained)}
-            branches.append(branch)
-            if allow_visual and evidence_ids and "visual" in constrained["coverage_required"]["enum"]:
-                branches.append(branch | {
-                    "properties": constrained | {
-                        "coverage_required": {"type": "string", "enum": ["visual"]},
-                        "visual_targets": visual_target_schema(evidence_ids) | {"minItems": 1},
-                    },
-                    "required": [*constrained, "visual_targets"],
-                })
+            branches.append(
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": constrained,
+                    "required": list(constrained),
+                }
+            )
     return {"title": "ContentDecision", "type": "object", "oneOf": branches}
 
 
 RESPONSE_INSTRUCTION = (
-    "用自己的话接当前话题。text是直接发给对方的正文，explanation写这次选择的具体原因。"
-    "评论接对方的原话，视频主评聊看到或听到的细节。想聊就回，想略过选skip，稍后再处理选wait。"
+    "用自己的话接当前话题。评论接对方的原话，视频主评聊看到或听到的细节；不想聊或无需回应就跳过。"
     "遇到离谱暴论、钓鱼反串或一眼假的设定（如AI有灵魂生命、被赶出来讨饭、MCN手动操作、虚假科技传闻），"
-    "禁止顺着瞎捧迎合，用清醒带刺的吐槽直接拆穿或先用web_search核实再评价。"
+    "禁止顺着瞎捧迎合，用清醒带刺的吐槽直接拆穿或先用 search_web 核实再评价。"
 )
 
-RESPONSE_REFERENCE_INSTRUCTION = (
-    "evidence_ids选支撑正文的材料编号，text写直接说出口的话。"
-)
+RESPONSE_REFERENCE_INSTRUCTION = ""
 
 
 def response_schema(
-    evidence_ids,
+    evidence_ids=(),
     *,
     maximum=None,
     video_actions=False,
@@ -502,13 +482,13 @@ def response_schema(
     grouped_comment_refs=(),
     comment_video_available=False,
 ):
-    """Constrain source IDs and channel consistency before the model emits text."""
+    """Legacy structural schema helper with citation-ID ceremony retired."""
     reasons = {
         "reply_public": ["specific_detail", "light_interaction"],
         "skip": ["no_interest", "insufficient_evidence", "spam"],
         "wait": ["cooldown", "insufficient_evidence"],
     }
-    if allow_comment_like and evidence_ids:
+    if allow_comment_like:
         reasons["like_comment"] = ["specific_detail", "light_interaction"]
     if dynamic_ref:
         reasons["like_dynamic"] = ["specific_detail", "light_interaction"]
@@ -532,8 +512,6 @@ def response_schema(
         sending = action == "reply_public"
         grouped_reply = action == "reply_public" and grouped_comment_refs
         comment_lookup = action == "read_more" and comment_video_available
-        if sending and not evidence_ids:
-            continue
         branches.append(
             {
                 "type": "object",
@@ -553,18 +531,8 @@ def response_schema(
                     "reason": {"type": "string", "enum": allowed_reasons},
                     "explanation": {"type": "string", "minLength": 1, "maxLength": MAX_DECISION_REASON_CHARACTERS},
                     "action": {"type": "string", "enum": [action]},
-                    "evidence_ids": {
-                        "type": "array",
-                        "minItems": 1 if sending or action in {"like_comment", "like_dynamic"} else 0,
-                        "maxItems": 8,
-                        "items": {"const": dynamic_ref} if action == "like_dynamic" else {"$ref": "#/$defs/evidence_id"}
-                        if evidence_ids
-                        else {"type": "string"},
-                    },
                     **({"covered_comments": {"type": "array", "minItems": 1, "maxItems": 8,
                         "items": {"type": "string", "enum": sorted(grouped_comment_refs)}}} if grouped_reply else {}),
-                    **({"visual_targets": visual_target_schema(evidence_ids)}
-                       if action == "watch_frames" and evidence_ids else {}),
                     **({"source_quote": {"type": "string", "minLength": 2, "maxLength": 240}}
                        if comment_lookup else {}),
                     **({"mentions": MENTION_REQUESTS} if sending else {}),
@@ -575,18 +543,13 @@ def response_schema(
                         **({"maxLength": 0} if not sending else {}),
                     },
                 },
-                "required": ["reason", "explanation", "action", "evidence_ids", "text"]
+                "required": ["reason", "explanation", "action", "text"]
                 + (["video_preference", "preference_reason"] if video_actions else [])
                 + (["covered_comments"] if grouped_reply else [])
                 + (["source_quote"] if comment_lookup else []),
             }
         )
-    schema = {"title": "ResponseDecision", "type": "object", "oneOf": branches}
-    if evidence_ids:
-        # Every branch uses the same invocation-local source set. Share it so
-        # a long real transcript does not duplicate hundreds of IDs per action.
-        schema["$defs"] = {"evidence_id": {"type": "string", "enum": sorted(evidence_ids)}}
-    return schema
+    return {"title": "ResponseDecision", "type": "object", "oneOf": branches}
 
 
 class VideoEvidenceProvider(Protocol):

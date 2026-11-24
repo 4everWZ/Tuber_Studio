@@ -160,12 +160,10 @@ async def isolated_output_limit_provider(browsing, *, comments=False, network=Fa
                     if fault["pending"] and network:
                         raise httpx.ReadTimeout("isolated network interruption", request=request)
                     packet = model_packet(next(m["content"] for m in body["messages"] if m["role"] == "user"))
-                    reference = packet["evidence"][0]["id"]
                     value = {
                         "action": "reply_public",
                         "text": "这句还没说完的草稿" if fault["pending"] else "慢慢加盐就能看出鸡蛋浮起来，盐水密度的变化很直观。",
                         "reason": "specific_detail", "explanation": "接着回答鸡蛋浮起来需要多少盐",
-                        "evidence_ids": [reference],
                     }
                     if packet.get("video_actions"):
                         value.update(video_preference="neutral", preference_reason="想先看完实验再决定")

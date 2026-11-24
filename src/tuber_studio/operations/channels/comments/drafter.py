@@ -11,6 +11,7 @@ from ...kernel.control import canonical_intent
 from ..mentions import bind_mentions, draft_mentions, mention_participants, rebase_mentions
 from .materials import model_comment_materials, prepare_comment_materials
 from .timeline import comment_source, comment_thread_context
+from .turns import generate_native_comment_reply, should_use_native_comment_turns
 
 
 class CommentsDrafterMixin:
@@ -178,21 +179,34 @@ class CommentsDrafterMixin:
                         account_id=account_id,
                     )
                     generation_identity = runtime_identity(self.runtime, character, account_id or None)
-                    reply, check = await self.runtime.generate_reply(
-                        scope,
-                        character,
-                        event,
-                        relationship=relationship,
-                        mode="comment_draft",
-                        **({"context": candidate} if candidate else {}),
-                    )
-                    check.setdefault("generation_identity", generation_identity)
-                    mentions = getattr(reply, "mentions", [])
-                    if mentions:
-                        bound, pending = await bind_mentions(self.account.adapter, reply.spoken_text,
-                            [item.model_dump() for item in mentions],
-                            mention_participants({"source": comment_source(row)}))
-                        check.update(mentions=bound, pending_mentions=pending)
+                    if should_use_native_comment_turns(self):
+                        reply, check = await generate_native_comment_reply(
+                            self,
+                            row,
+                            character,
+                            event,
+                            relationship,
+                            account_id,
+                            materials=materials,
+                        )
+                        if reply is None:
+                            break
+                    else:
+                        reply, check = await self.runtime.generate_reply(
+                            scope,
+                            character,
+                            event,
+                            relationship=relationship,
+                            mode="comment_draft",
+                            **({"context": candidate} if candidate else {}),
+                        )
+                        check.setdefault("generation_identity", generation_identity)
+                        mentions = getattr(reply, "mentions", [])
+                        if mentions:
+                            bound, pending = await bind_mentions(self.account.adapter, reply.spoken_text,
+                                [item.model_dump() for item in mentions],
+                                mention_participants({"source": comment_source(row)}))
+                            check.update(mentions=bound, pending_mentions=pending)
                     if materials:
                         check["comment_materials"] = materials
                     if candidate:
@@ -249,6 +263,8 @@ class CommentsDrafterMixin:
                     if candidate:
                         candidate.store.close()
                 break
+        if reply is None:
+            return
         # Independent threads may prepare/publish concurrently; all model calls
         # above stay serialized, and publish() owns its one-shot write lock.
         if automatic and self.policy()["auto_reply"] and not (

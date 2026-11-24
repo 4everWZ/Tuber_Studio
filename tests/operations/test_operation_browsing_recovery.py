@@ -5,7 +5,7 @@ import json
 from copy import deepcopy
 
 from tests.support.operations_helpers import browsing as browsing
-from tests.support.operations_helpers import finished, model_packet
+from tests.support.operations_helpers import finished
 from tuber_studio.operations.kernel.models import BrowsingPolicy
 
 
@@ -23,13 +23,18 @@ async def test_invalid_generation_requires_explicit_resume_with_original_materia
         if title == "ContinuationDecision":
             return {"action": "revise" if repairing else "wait", "reason": "继续核对本次原文引用", "read": ""}
         if title == "ContentDecision":
-            source = next(message["content"] for message in messages if message["role"] == "user")
-            data = model_packet(source)
+            if not repairing:
+                return {
+                    "interest": "need_more",
+                    "worth_commenting": False,
+                    "reason": "visual_required",
+                    "coverage_required": "visual",
+                    "visual_targets": [{"evidence_id": "wrong", "position": "after", "fraction": None}],
+                }
             return {
                 "interest": "like",
                 "worth_commenting": True,
                 "reason": "specific_detail",
-                "evidence_ids": [data["segments"][0]["id"] if repairing else "wrong"],
                 "coverage_required": "provided",
             }
         return await original(messages, schema, max_tokens=max_tokens)
@@ -75,7 +80,6 @@ async def test_private_failed_response_is_redacted_from_public_task_and_visible_
                 "action": "handoff_private",
                 "text": private_body,
                 "reason": "user_requested",
-                "evidence_ids": ["wrong"],
             }
         return await original(messages, schema, max_tokens=max_tokens)
 
