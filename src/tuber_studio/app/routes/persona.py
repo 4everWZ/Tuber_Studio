@@ -500,6 +500,7 @@ def register_persona_routes(app, settings, runtime, store, comments, memes, requ
         include_inactive: bool = True,
     ):
         char = runtime.character
+        stats = runtime.unified_memory.stats(scope=scope, character_id=char["id"])
         return {
             "character_id": char["id"],
             "items": runtime.unified_memory.list_memories(
@@ -507,6 +508,11 @@ def register_persona_routes(app, settings, runtime, store, comments, memes, requ
                 character_id=char["id"],
                 include_inactive=include_inactive,
             ),
+            "count": stats["count"],
+            "total_count": stats["total_count"],
+            "limit": stats["limit"],
+            "over_limit": stats["over_limit"],
+            "legacy_migrated_count": stats["legacy_migrated_count"],
         }
 
     @app.post(prefix + "/memories", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
@@ -519,6 +525,53 @@ def register_persona_routes(app, settings, runtime, store, comments, memes, requ
             source="manual",
             tags=data.tags,
         )
+
+    @app.post(prefix + "/memories/purge-migrated", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def purge_migrated_unified_memories(
+        scope: Literal["owner", "public"] | None = None,
+        character_id: str | None = None,
+    ):
+        purged = runtime.unified_memory.purge_migrated_memories(scope=scope, character_id=character_id)
+        stats = runtime.unified_memory.stats(scope=scope, character_id=character_id or runtime.character["id"])
+        return {
+            "ok": True,
+            "purged": purged,
+            "count": stats["count"],
+            "limit": stats["limit"],
+            "legacy_migrated_count": stats["legacy_migrated_count"],
+        }
+
+    async def _clear_unified_memories(
+        scope: Literal["owner", "public"] | None = None,
+        character_id: str | None = None,
+        all_characters: bool = False,
+    ):
+        target_char = None if all_characters else (character_id or runtime.character["id"])
+        deleted = runtime.unified_memory.clear_all(scope=scope, character_id=target_char)
+        stats = runtime.unified_memory.stats(scope=scope, character_id=target_char or runtime.character["id"])
+        return {
+            "ok": True,
+            "deleted": deleted,
+            "count": stats["count"],
+            "limit": stats["limit"],
+            "legacy_migrated_count": stats["legacy_migrated_count"],
+        }
+
+    @app.post(prefix + "/memories/clear", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def clear_unified_memories_post(
+        scope: Literal["owner", "public"] | None = None,
+        character_id: str | None = None,
+        all_characters: bool = False,
+    ):
+        return await _clear_unified_memories(scope=scope, character_id=character_id, all_characters=all_characters)
+
+    @app.delete(prefix + "/memories", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def clear_unified_memories(
+        scope: Literal["owner", "public"] | None = None,
+        character_id: str | None = None,
+        all_characters: bool = False,
+    ):
+        return await _clear_unified_memories(scope=scope, character_id=character_id, all_characters=all_characters)
 
     @app.patch(prefix + "/memories/{memory_id}", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
     async def update_unified_memory(memory_id: str, data: UnifiedMemoryPatch):

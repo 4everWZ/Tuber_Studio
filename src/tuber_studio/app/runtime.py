@@ -1,6 +1,7 @@
 """Compose the business runtime and coordinate shared generation."""
 
 import asyncio
+import inspect
 import json
 import socket
 import time
@@ -36,21 +37,19 @@ from ..persona.context.tools import build_default_tool_registry
 from ..persona.memory.core_memory import missing_slots
 from ..persona.memory.daily import DailyMemoryService, MemoryChanged
 from ..persona.memory.relationships import Relationships
-from ..persona.memory.unified import UnifiedMemoryStore, migrate_legacy_memories
+from ..persona.memory.unified import UnifiedMemoryStore
 
 
 def _comment_actor_formatter(event):
-    from ..operations.kernel.inputs import (
-        RESPONSE_ACTOR_INSTRUCTION,
-        bind_response_actors,
-        compact_actor_context,
-    )
+    from ..operations.kernel import inputs as kernel_inputs
 
-    actors = compact_actor_context(
-        bind_response_actors({"thread": event.get("comment_context", {})}, event["self_actor"]),
-        current_text_ref="当前观众消息.text",
-    )
-    return actors, RESPONSE_ACTOR_INSTRUCTION
+    bound = kernel_inputs.bind_response_actors({"thread": event.get("comment_context", {})}, event["self_actor"])
+    compact_fn = getattr(kernel_inputs, "compact_actor_context", None)
+    if compact_fn is not None and "current_text_ref" in inspect.signature(compact_fn).parameters:
+        actors = compact_fn(bound, current_text_ref="当前观众消息.text")
+    else:
+        actors = bound
+    return actors, getattr(kernel_inputs, "RESPONSE_ACTOR_INSTRUCTION", "")
 
 
 class Runtime:
@@ -80,7 +79,8 @@ class Runtime:
         self.voices = VoiceService(settings)
         self.daily_memory = DailyMemoryService(store)
         self.unified_memory = UnifiedMemoryStore(store)
-        migrate_legacy_memories(store, unified=self.unified_memory)
+        # Startup auto-migration of legacy daily_highlights/grounded_memory rows is disabled
+        # so Layer 1 Saved Memories stay distilled and legacy tables are queried via Layer 2 recall.
         self.memory_organizer = MemoryOrganizer(self)
         self.live = LiveSession(
             self,
