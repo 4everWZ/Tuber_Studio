@@ -4,7 +4,6 @@ import time
 import pytest
 
 from tests.support.operations_helpers import messages as messages
-from tuber_studio.operations.kernel.generation import GenerationInvalid
 
 
 def platform_message(seq, author, recipient, text, sent_at):

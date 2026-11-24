@@ -65,9 +65,9 @@ def test_whale_preset_and_chat_prompts_drop_workshop_jargon():
         unified_memories=[{"content": "喜欢乌龙茶"}],
         history_enabled=False,
     )
-    joined = "\n".join(msg["content"] for msg in sys_msgs[3:])
-    assert "工坊" not in joined and "号主" not in joined
-    assert "船长" in sys_msgs[2]["content"] or "船长" in joined
+    all_sys = "\n".join(msg["content"] for msg in sys_msgs)
+    assert "工坊" not in all_sys and "号主" not in all_sys
+    assert "船长" in sys_msgs[0]["content"] and "船长" in sys_msgs[1]["content"]
 
     router_msgs = turn_router._build_router_messages(
         custom_char,

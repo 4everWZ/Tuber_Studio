@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
 from ....core.identity import runtime_identity
 from ....core.models import content_hash
 from ....core.text import operation_output_diagnostics, validate_operation_text
 from ...kernel.generation import generate_with_recovery
 from ...kernel.l2_bridge import (
+    ContextNode,
     append_branch_turn,
     build_base_node,
     create_context_tree,
@@ -185,7 +187,17 @@ async def evaluate_native_dynamic(
         "- 也可以纯分享独立思考、心情随感或日常观察（不必强行牵扯视频）；\n"
         "- 如果觉得当下不适合发或会撞车，请调用 skip_reply。"
     )
-    branch = append_branch_turn(tree, base.node_id, {"role": "user", "content": "\n\n".join(parts)})
+    branch = tree.add_node(
+        ContextNode(
+            node_id=f"branch:dynamic_post:{uuid4().hex[:12]}",
+            kind="branch",
+            parent_id=base.node_id,
+            scope="dynamic_post",
+            channel="dynamic_post",
+            title="公开动态分支",
+        )
+    )
+    branch = append_branch_turn(tree, branch.node_id, {"role": "user", "content": "\n\n".join(parts)})
 
     tool_session = OperationToolSession(
         channel="dynamic_post",
@@ -306,7 +318,17 @@ async def revise_native_dynamic_caption(
         f"修改要求：{instruction}\n\n"
         "请直接输出修改后的完整动态正文（自然中文，不用 JSON 包裹）。原本有用的 @ 昵称请保留。"
     )
-    branch = append_branch_turn(tree, base.node_id, {"role": "user", "content": prompt})
+    branch = tree.add_node(
+        ContextNode(
+            node_id=f"branch:dynamic_revise:{uuid4().hex[:12]}",
+            kind="branch",
+            parent_id=base.node_id,
+            scope="dynamic_post",
+            channel="dynamic_post",
+            title="修改动态分支",
+        )
+    )
+    branch = append_branch_turn(tree, branch.node_id, {"role": "user", "content": prompt})
     tool_session = OperationToolSession(
         channel="dynamic_post",
         character=char,

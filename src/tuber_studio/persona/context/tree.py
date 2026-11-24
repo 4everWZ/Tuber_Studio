@@ -29,6 +29,7 @@ class VideoSegmentRef:
     start: float
     end: float
     text: str
+    segment_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +148,7 @@ def normalize_video_segments(material: dict[str, Any]) -> list[VideoSegmentRef]:
                 continue
             start = _safe_float(seg.get("start"), 0.0)
             end = max(start, _safe_float(seg.get("end"), start))
+            seg_id = str(seg.get("id") or "").strip()
             segments.append(
                 VideoSegmentRef(
                     part=part_num,
@@ -156,6 +158,7 @@ def normalize_video_segments(material: dict[str, Any]) -> list[VideoSegmentRef]:
                     start=start,
                     end=end,
                     text=text,
+                    segment_id=seg_id,
                 )
             )
     kind_order = {"subtitle": 0, "audio_transcript": 1, "visual_observation": 2}
@@ -323,16 +326,17 @@ def slice_video_segments(
             last_part = seg.part
         lines.append(line)
         used += len(line) + 1
-        returned.append(
-            {
-                "part": seg.part,
-                "cid": seg.cid,
-                "kind": seg.kind,
-                "start": seg.start,
-                "end": seg.end,
-                "text": seg.text,
-            }
-        )
+        seg_entry: dict[str, Any] = {
+            "part": seg.part,
+            "cid": seg.cid,
+            "kind": seg.kind,
+            "start": seg.start,
+            "end": seg.end,
+            "text": seg.text,
+        }
+        if seg.segment_id:
+            seg_entry["id"] = seg.segment_id
+        returned.append(seg_entry)
         if not returned and idx == len(filtered) - 1:
             break
 

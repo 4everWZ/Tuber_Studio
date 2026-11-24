@@ -32,6 +32,7 @@ from tuber_studio.operations.kernel.tools import (
     sanitize_spoken_text,
     validate_spoken_output,
 )
+from tuber_studio.persona.memory.recall import recall_history as l2_recall_history
 from tuber_studio.persona.memory.unified import UnifiedMemoryStore
 
 
@@ -227,9 +228,36 @@ async def test_multi_turn_video_tools_segment_read_frames_and_like_video(browsin
 
 
 async def test_memory_tools_strictly_isolate_public_and_owner_scopes(browsing):
+    now = time.time()
     unified = UnifiedMemoryStore(browsing.store)
     unified.add_memory("号主私人部署密码在本地env", scope="owner", character_id="whale", source="owner_chat")
     unified.add_memory("之前公开讨论过盐水密度实验", scope="public", character_id="whale", source="comments")
+
+    # Seed Layer 2 episodic tables (owner-only chat archive vs public comment timeline).
+    browsing.store.execute(
+        "CREATE TABLE IF NOT EXISTS operator_chat_turns ("
+        "request_id TEXT PRIMARY KEY, character_id TEXT NOT NULL, character_version INTEGER NOT NULL, "
+        "message TEXT NOT NULL, result TEXT NOT NULL, created_at REAL NOT NULL)"
+    )
+    browsing.store.execute(
+        "INSERT INTO operator_chat_turns(request_id, character_id, character_version, message, result, created_at) "
+        "VALUES(?,?,?,?,?,?)",
+        (
+            "req-owner-secret",
+            "whale",
+            1,
+            "号主私人部署密码在本地env",
+            json.dumps({"reply_text": "收到，这个只在本地保密。", "account_id": "100"}, ensure_ascii=False),
+            now,
+        ),
+    )
+    browsing.store.execute(
+        "INSERT INTO browsing_comment_timeline("
+        "account_id, character_id, resource, root_id, comment_id, parent_comment_id, "
+        "author_uid, author_name, text, created_at, resource_author_uid) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        ("100", "whale", BV, "601", "601", None, "300", "盐水观众", "之前公开讨论过盐水密度实验", now, "200"),
+    )
 
     session = OperationToolSession(
         channel="comment_reply",
@@ -246,12 +274,21 @@ async def test_memory_tools_strictly_isolate_public_and_owner_scopes(browsing):
     owner_rows = browsing.store.all("SELECT content FROM memories WHERE scope='owner' AND character_id='whale'")
     assert [r["content"] for r in owner_rows] == ["号主私人部署密码在本地env"]
 
+    # Owner-scoped Layer 2 recall can read operator_chat_turns...
+    owner_recall = l2_recall_history(
+        browsing.store, query="部署密码", scope="owner", character_id="whale", account_id="100"
+    )
+    assert any("部署密码" in item["text"] and item["scope"] == "owner" for item in owner_recall["items"])
+
+    # ...while public operations tools are strictly pinned to public scope and never see owner turns.
     recalled_secret = await session.execute("recall_history", {"query": "部署密码", "scope": "owner"})
     assert recalled_secret["scope"] == "public"
     assert recalled_secret["items"] == []
 
     recalled_public = await session.execute("recall_history", {"query": "盐水", "scope": "owner"})
-    assert any("盐水" in item["content"] for item in recalled_public["items"])
+    assert recalled_public["scope"] == "public"
+    assert any("盐水" in item["text"] for item in recalled_public["items"])
+    assert all(item["scope"] == "public" for item in recalled_public["items"])
 
 
 async def test_queue_dm_handoff_enforces_confirmed_invitation_boundary():

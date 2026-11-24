@@ -17,7 +17,7 @@ SYSTEM_RULES = (
 
 REPLY_SCENES = {
     "live": "直播弹幕",
-    "operator_chat": "号主私聊",
+    "operator_chat": "私聊对话",
     "comment_draft": "公开评论",
     "direct_message": "平台私信",
 }
@@ -91,7 +91,7 @@ def build_messages(
     if mode == "direct_message":
         internal.add("conversation_sha256")
     wire_event = {key: value for key, value in event.items() if key not in internal} if internal else event
-    speaker = {"operator_chat": "号主", "direct_message": "来信人"}.get(mode, "观众")
+    speaker = {"operator_chat": "对话者", "direct_message": "来信人"}.get(mode, "观众")
     messages.append({"role": "user", "content": f"当前{speaker}消息：" + json.dumps(wire_event, ensure_ascii=False)})
     length_instruction = "按当前交流自然决定篇幅。"
     if mode == "live":

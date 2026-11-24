@@ -30,7 +30,7 @@ def reply_output_budget(config, mode):
 def operation_character(character):
     return character | {
         "style": {
-            key: value for key, value in character["style"].items() if key not in {"min_chars", "max_chars"}
+            key: value for key, value in (character.get("style") or {}).items() if key not in {"min_chars", "max_chars"}
         }
     }
 

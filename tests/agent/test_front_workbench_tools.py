@@ -81,10 +81,10 @@ async def test_owner_identity_uses_current_binding_with_stale_chat_history(studi
         assert schema["title"] == "FrontDialogueReply"
         if messages[-1]["content"] == "你住在哪里？":
             return {"reply_markdown": "我住在 Jetson 里。"}
-        facts = next(row["content"] for row in messages if "私聊参与者：" in row["content"])
-        assert "Jetson" not in facts
-        owner = json.loads(facts.split("私聊参与者：", 1)[1])["bilibili_owner"]
-        return {"reply_markdown": "我的主人是新号主呀。" if owner else "我还没有绑定 B 站主人呀。"}
+        existence = messages[0]["content"].split("【存在边界】", 1)[1].split("【此刻情境】", 1)[0]
+        assert "Jetson" not in existence
+        has_owner = "绑定账号所有者：新号主 (UID:123)" in existence
+        return {"reply_markdown": "我的主人是新号主呀。" if has_owner else "我还没有绑定 B 站主人呀。"}
 
     monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
     old = turn("你住在哪里？")

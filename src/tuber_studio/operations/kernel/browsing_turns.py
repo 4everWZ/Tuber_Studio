@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from typing import Any
+from uuid import uuid4
 
 from ...core.identity import captured_identity
 from ...core.meter import GenerationMeter
@@ -12,6 +13,7 @@ from ...core.models import content_hash
 from ...core.text import operation_output_diagnostics
 from .generation import generate_with_recovery, hold_comment_body
 from .l2_bridge import (
+    ContextNode,
     append_branch_turn,
     build_base_node,
     create_context_tree,
@@ -141,7 +143,17 @@ def _build_browsing_tree(
             "请判断这条动态是否值得互动。你可以调用 search_web / recall_history / save_memory，"
             "如果想回复，请直接自然写出公开回复；如果觉得不合适发言，请调用 skip_reply。",
         ]
-        branch = append_branch_turn(tree, base.node_id, {"role": "user", "content": "\n\n".join(lines)})
+        branch = tree.add_node(
+            ContextNode(
+                node_id=f"branch:dynamic_reply:{uuid4().hex[:12]}",
+                kind="branch",
+                parent_id=base.node_id,
+                scope=f"dynamic:{dynamic_source.get('dynamic_id') or ''}",
+                channel="dynamic_reply",
+                title="动态互动分支",
+            )
+        )
+        branch = append_branch_turn(tree, branch.node_id, {"role": "user", "content": "\n\n".join(lines)})
         return tree, branch.node_id
 
     if comment_reply:
