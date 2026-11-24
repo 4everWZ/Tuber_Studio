@@ -191,5 +191,9 @@ async def _submit(adapter, action, params, body, *, before_send):
     # Only an explicit platform rejection is a definite failure. Malformed success
     # or missing receipt could follow an accepted write and must stay uncertain.
     if isinstance(payload, dict) and type(payload.get("code")) is int and payload["code"] != 0:
-        raise platform_rejection(payload, fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次动态"))
+        raise platform_rejection(
+            payload,
+            fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次动态"),
+            secret_values=(adapter._sessdata, adapter._csrf),
+        )
     return payload

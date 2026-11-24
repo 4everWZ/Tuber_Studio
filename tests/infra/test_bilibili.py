@@ -422,6 +422,11 @@ async def test_publish_sends_once_and_distinguishes_rejection_uncertainty_and_re
             await adapter.publish(BV, "11", "你好")
         assert isinstance(caught.value, PublishUncertain) is uncertain
         assert_no_secrets(caught.value)
+        if case == "rejected":
+            feedback = caught.value.feedback()
+            assert feedback["code"] == 12015
+            assert "平台要求验证码" in feedback["message"]
+            assert_no_secrets(feedback)
     assert len(posts) == 1
 
 
