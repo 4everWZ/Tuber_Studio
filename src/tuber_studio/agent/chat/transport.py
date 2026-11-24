@@ -21,6 +21,7 @@ from . import router as turn_router
 from .context import ChatContext
 from .delivery import delivery_turn_id, record_chat_delivery
 from .dispatcher import CapabilityDispatcher, build_delivery_packet
+from .heartbeat_feed import record_heartbeat_pulse
 from .l2_bridge import build_owner_chat_context
 from .lookup.personal_agent import object_scope
 from .models import (
@@ -57,6 +58,20 @@ class ChatTransport:
             self.notify_delivery(identity, task["id"], status)
 
         self.ctx.runtime.tasks.record_chat_delivery = handle_chat_delivery
+        heartbeat = getattr(self.ctx.runtime, "heartbeat", None)
+        if heartbeat is not None and callable(getattr(heartbeat, "tick", None)):
+            prev_hook = getattr(heartbeat, "on_pulse", None)
+            if not getattr(prev_hook, "_chat_heartbeat_hook", False):
+                def handle_heartbeat_pulse(pulse):
+                    request_id = record_heartbeat_pulse(self.ctx.store, self.ctx, pulse)
+                    if request_id:
+                        self.notify_heartbeat_pulse(request_id, str(pulse.get("kind") or "pulse"))
+                    if callable(prev_hook):
+                        return prev_hook(pulse)
+                    return None
+
+                handle_heartbeat_pulse._chat_heartbeat_hook = True
+                heartbeat.on_pulse = handle_heartbeat_pulse
 
     def subscribe_deliveries(self) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue()
@@ -68,6 +83,11 @@ class ChatTransport:
 
     def notify_delivery(self, request_id: str, task_id: str, status: str) -> None:
         event = {"request_id": request_id, "task_id": task_id, "status": status}
+        for queue in list(self._subscribers):
+            queue.put_nowait(event)
+
+    def notify_heartbeat_pulse(self, pulse_id: str, kind: str) -> None:
+        event = {"request_id": pulse_id, "pulse_id": pulse_id, "kind": kind}
         for queue in list(self._subscribers):
             queue.put_nowait(event)
 

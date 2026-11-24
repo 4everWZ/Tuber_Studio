@@ -9,7 +9,9 @@ from contextlib import asynccontextmanager
 
 import psutil
 
+from ..agent.heartbeat import HeartbeatService
 from ..agent.memory_organizer import MemoryOrganizer
+from ..agent.skills import RemotionVideoSkill
 from ..core.identity import identity_messages, identity_snapshot, operating_account_facts
 from ..core.meter import budgeted_call
 from ..core.models import OperationReply, Reply, canonical_voice_id, content_hash
@@ -82,6 +84,8 @@ class Runtime:
         # Startup auto-migration of legacy daily_highlights/grounded_memory rows is disabled
         # so Layer 1 Saved Memories stay distilled and legacy tables are queried via Layer 2 recall.
         self.memory_organizer = MemoryOrganizer(self)
+        self.heartbeat = HeartbeatService(self, store)
+        self.remotion_skill = RemotionVideoSkill(self, store)
         self.live = LiveSession(
             self,
             singing_provider=singing_provider,
@@ -363,6 +367,7 @@ class Runtime:
         await self.cleanup_retention(automatic=True)
         self.retention_worker = asyncio.create_task(self._retention_loop())
         self.live.start_worker()
+        self.heartbeat.start(initial_delay=self.heartbeat.policy().tick_interval_seconds)
 
     @staticmethod
     async def _probe_foreground(provider):
@@ -398,6 +403,7 @@ class Runtime:
             pass
 
     async def close(self):
+        await self.heartbeat.close()
         await self.operation_images.close()
         tasks = [task for task in (self.connection_probe, self.admission_restore) if task is not None]
         for task in tasks:
@@ -495,6 +501,8 @@ class Runtime:
             "playback": self.live.playback,
             "operations_waiting": self.operations_waiting(),
             "automation": automation,
+            "heartbeat": self.heartbeat.status(),
+            "video_production": self.remotion_skill.status(),
         }
 
     async def generate_reply(self, scope, character, event, relationship=None, mode="live", *, context=None):

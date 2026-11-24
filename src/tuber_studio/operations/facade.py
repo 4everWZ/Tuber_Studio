@@ -25,6 +25,7 @@ from .channels.comments.timeline import (
 )
 from .channels.direct_messages import MessagePolicy
 from .kernel.caption_corrections import CORRECTED_VIDEOS, corrected_caption
+from .kernel.control import canonical_intent
 from .kernel.feedback import FeedbackPublication
 from .kernel.models import BrowsingPolicy
 from .kernel.quotas import day_window
@@ -400,6 +401,295 @@ def comments_display_account_id(comments) -> str | None:
     return messages.display_account_id() if messages else raw.account.display_account_id()
 
 
+def _facade_table_exists(store, table: str) -> bool:
+    if store is None:
+        return False
+    return (
+        store.one("SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name=?", (table,))
+        is not None
+    )
+
+
+def _operations_host(target):
+    if target is None:
+        return None
+    raw = _raw_browsing(target)
+    return getattr(raw, "operations", raw)
+
+
+def reserve_write_attempt(
+    target,
+    *,
+    account_id: str,
+    character: dict,
+    intent: str,
+    channel: str,
+    recipient: str = "",
+    automatic: bool = False,
+    limits: dict | None = None,
+    epoch: int | None = None,
+    binding: dict | None = None,
+    content_hash: str | None = None,
+) -> str:
+    """Reserve an idempotent platform write attempt through OperationsControl."""
+    ops = _operations_host(target)
+    if ops is None or not hasattr(ops, "reserve"):
+        raise ValueError("OperationsControl 未就绪，无法预约平台投稿")
+    return ops.reserve(
+        account_id,
+        character,
+        intent,
+        channel,
+        recipient=recipient,
+        automatic=automatic,
+        limits=limits,
+        epoch=epoch,
+        binding=binding,
+        content_hash=content_hash,
+    )
+
+
+def finish_write_attempt(
+    target,
+    token: str,
+    status: str,
+    *,
+    receipt: dict | None = None,
+    error: str | None = None,
+) -> None:
+    """Settle a reserved platform write attempt through OperationsControl."""
+    ops = _operations_host(target)
+    if ops is None or not hasattr(ops, "finish"):
+        raise ValueError("OperationsControl 未就绪，无法结算投稿回执")
+    ops.finish(token, status, receipt=receipt, error=error)
+
+
+def find_write_attempt_by_intent(target, *, account_id: str, character_id: str, intent: str) -> dict | None:
+    """Look up the latest write attempt matching `(account_id, character_id, intent)`."""
+    ops = _operations_host(target)
+    store = getattr(ops, "store", None) or getattr(_raw_browsing(target), "store", None)
+    if not _facade_table_exists(store, "operation_write_attempts"):
+        return None
+    row = store.one(
+        "SELECT token, status, resolved_status, receipt, error, started_at FROM operation_write_attempts "
+        "WHERE account_id=? AND character_id=? AND intent=? ORDER BY started_at DESC LIMIT 1",
+        (str(account_id or ""), str(character_id or ""), intent),
+    )
+    if row is None:
+        return None
+    if isinstance(row.get("receipt"), str):
+        row["receipt"] = decode_target_json(row["receipt"])
+    return row
+
+
+def _extract_video_candidate(row: dict, *, source_kind: str) -> dict | None:
+    material = decode_target_json(row.get("material"))
+    payload = decode_target_json(row.get("payload"))
+    meta = material.get("metadata") if isinstance(material.get("metadata"), dict) else {}
+    if not meta and isinstance(payload.get("metadata"), dict):
+        meta = payload["metadata"]
+    bvid = str(row.get("bvid") or meta.get("bvid") or "").strip()
+    if not bvid:
+        return None
+    title = str(meta.get("title") or payload.get("title") or bvid).strip()
+    owner = str(meta.get("owner") or payload.get("owner") or "").strip()
+    owner_uid = str(meta.get("owner_uid") or payload.get("owner_uid") or "").strip()
+    duration = float(meta.get("duration") or payload.get("duration") or 0.0)
+    tags = [str(t).strip() for t in (meta.get("tags") or payload.get("tags") or ()) if str(t).strip()][:10]
+    excerpts: list[str] = []
+    for part in material.get("parts") or ():
+        if not isinstance(part, dict):
+            continue
+        for seg in (part.get("segments") or ())[:6]:
+            if isinstance(seg, dict) and seg.get("text"):
+                excerpts.append(" ".join(str(seg["text"]).split())[:180])
+            if len(excerpts) >= 6:
+                break
+        if len(excerpts) >= 6:
+            break
+    summary = str(meta.get("description") or payload.get("explanation") or "").strip()[:300]
+    if not summary and excerpts:
+        summary = " / ".join(excerpts[:3])[:300]
+    sources_meta = payload.get("sources") if isinstance(payload.get("sources"), list) else []
+    popular = any(isinstance(s, dict) and s.get("source") in {"popular", "recommend", "search"} for s in sources_meta)
+    return {
+        "bvid": bvid,
+        "title": title,
+        "owner": owner,
+        "owner_uid": owner_uid,
+        "duration": duration,
+        "tags": tags,
+        "url": f"https://www.bilibili.com/video/{bvid}",
+        "summary": summary,
+        "segments_preview": excerpts,
+        "popular": popular,
+        "read_state": str(row.get("read_state") or row.get("status") or ("watched" if row.get("decisions") is not None else "")),
+        "source_kind": source_kind,
+        "scope": "public",
+        "updated_at": float(row.get("updated_at") or row.get("created_at") or 0.0),
+    }
+
+
+def select_video_candidates(
+    browsing,
+    *,
+    store=None,
+    limit: int = 8,
+    query: str | None = None,
+) -> list[dict]:
+    """Return strictly public watched/discovered Bilibili video candidates for content production."""
+    raw = _raw_browsing(browsing) if browsing is not None else None
+    db_store = store or getattr(raw, "store", None)
+    if db_store is None:
+        return []
+    account_id = ""
+    character_id = ""
+    if raw is not None and hasattr(raw, "discovery"):
+        scope = raw.discovery.history_scope()
+        account_id, character_id = str(scope[0] or ""), str(scope[1] or "")
+    candidates: dict[str, dict] = {}
+    needle = " ".join((query or "").split()).casefold()
+
+    if _facade_table_exists(db_store, "browsing_video_progress"):
+        clauses, params = [], []
+        if account_id:
+            clauses.append("account_id=?")
+            params.append(account_id)
+        if character_id:
+            clauses.append("character_id=?")
+            params.append(character_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = db_store.all(
+            f"SELECT bvid, material, decisions, updated_at FROM browsing_video_progress {where} "
+            "ORDER BY updated_at DESC LIMIT 40",
+            tuple(params),
+        )
+        for row in rows:
+            item = _extract_video_candidate(row, source_kind="watched_video")
+            if item is not None:
+                candidates.setdefault(item["bvid"], item)
+
+    if _facade_table_exists(db_store, "browsing_tasks"):
+        rows = db_store.all(
+            "SELECT bvid, status, payload, updated_at, created_at FROM browsing_tasks "
+            "WHERE bvid IS NOT NULL AND status IN ('selected','viewed_without_comment','evidence_ready','comments_checked') "
+            "ORDER BY updated_at DESC LIMIT 40"
+        )
+        for row in rows:
+            item = _extract_video_candidate(row, source_kind="discovered_video")
+            if item is not None and item["bvid"] not in candidates:
+                candidates[item["bvid"]] = item
+
+    ordered = list(candidates.values())
+    if needle:
+        filtered = [
+            item
+            for item in ordered
+            if needle in f"{item['bvid']} {item['title']} {' '.join(item['tags'])} {item['summary']}".casefold()
+        ]
+        ordered = filtered
+    ordered.sort(key=lambda item: (bool(item["popular"]), item["updated_at"]), reverse=True)
+    return ordered[: max(1, min(int(limit), 30))]
+
+
+def heartbeat_pulse_snapshot(browsing, *, store=None, hot_limit: int = 6) -> dict:
+    """Collect read-only local health & hot-topic signals across Discovery, Inbox, DM, and Dynamics."""
+    raw = _raw_browsing(browsing) if browsing is not None else None
+    db_store = store or getattr(raw, "store", None)
+    if raw is None:
+        return {
+            "account_id": "",
+            "character_id": "",
+            "control_state": "off",
+            "automatic_ready": False,
+            "discovery": {"state": "off", "enabled": False, "error": None, "attention": []},
+            "inbox": {"state": "off", "enabled": False, "pending_events": 0, "dm_enabled": False, "dm_error": None, "dm_pending": 0},
+            "dynamics": {"enabled": False, "auto_publish": False, "pending_review": 0, "uncertain": 0, "error": None},
+            "writes": {"uncertain_count": 0},
+            "hot_topics": select_video_candidates(None, store=db_store, limit=hot_limit),
+        }
+
+    ops_policy = raw.operations.policy() if hasattr(raw, "operations") else {}
+    discovery_obj = getattr(raw, "discovery", None)
+    scoped_account = str(discovery_obj.history_scope()[0] or "") if discovery_obj is not None else ""
+    account_id = str(getattr(raw, "account", None) or ops_policy.get("account_id") or scoped_account or "")
+    character_id = str((getattr(getattr(raw, "runtime", None), "character", None) or {}).get("id") or "")
+    control_state = raw.control_state(ops_policy) if hasattr(raw, "control_state") else "off"
+    disc_state = discovery_obj.state if discovery_obj is not None else "off"
+    disc_enabled = bool(getattr(discovery_obj, "enabled", False))
+    disc_error = getattr(raw, "last_error", None) or getattr(discovery_obj, "error", None)
+    disc_attention = getattr(discovery_obj, "attention", None)
+    read_gate = getattr(raw, "read_gate", None)
+    disc_cooldown = None
+    if read_gate is not None:
+        gate_info = read_gate.status(account_id).get("discovery_backoff") or {}
+        disc_cooldown = gate_info.get("until")
+
+    inbox_info = raw.inbox_status() if hasattr(raw, "inbox_status") else {"enabled": False, "state": "off", "pending_events": 0, "dm_enabled": False}
+    messages_svc = getattr(raw, "messages", None)
+    dm_error = getattr(messages_svc, "error", None)
+    dm_pending = 0
+    if db_store is not None and _facade_table_exists(db_store, "dm_drafts"):
+        row = db_store.one(
+            "SELECT COUNT(*) AS n FROM dm_drafts WHERE status IN ('pending_review','queued','publish_uncertain')"
+        )
+        dm_pending = int(row["n"]) if row else 0
+
+    dynamics_svc = getattr(raw, "dynamics", None)
+    dyn_policy = dynamics_svc.policy() if dynamics_svc is not None and hasattr(dynamics_svc, "policy") else {}
+    dyn_error = getattr(dynamics_svc, "error", None)
+    dyn_pending = dyn_uncertain = 0
+    if db_store is not None and _facade_table_exists(db_store, "dynamic_posts"):
+        p_row = db_store.one("SELECT COUNT(*) AS n FROM dynamic_posts WHERE status IN ('pending_review','approved')")
+        u_row = db_store.one("SELECT COUNT(*) AS n FROM dynamic_posts WHERE status='publish_uncertain'")
+        dyn_pending = int(p_row["n"]) if p_row else 0
+        dyn_uncertain = int(u_row["n"]) if u_row else 0
+
+    uncertain_writes = 0
+    if db_store is not None and _facade_table_exists(db_store, "operation_write_attempts"):
+        u_row = db_store.one(
+            "SELECT COUNT(*) AS n FROM operation_write_attempts WHERE resolved_status='uncertain'"
+        )
+        uncertain_writes = int(u_row["n"]) if u_row else 0
+
+    acct_svc = getattr(raw, "bilibili_account", None)
+    creds_ok = bool(getattr(acct_svc, "credentials_configured", False))
+    blockers = list(getattr(raw, "blockers", ()) or ())
+    return {
+        "account_id": account_id,
+        "character_id": character_id,
+        "control_state": control_state,
+        "automatic_ready": bool(creds_ok and not blockers and not uncertain_writes),
+        "blockers": blockers,
+        "discovery": {
+            "state": disc_state,
+            "enabled": disc_enabled,
+            "error": disc_error,
+            "attention": [disc_attention] if disc_attention else [],
+            "read_cooldown_until": disc_cooldown,
+        },
+        "inbox": {
+            "state": inbox_info.get("state", "off"),
+            "enabled": bool(inbox_info.get("enabled")),
+            "pending_events": int(inbox_info.get("pending_events") or 0),
+            "dm_enabled": bool(inbox_info.get("dm_enabled")),
+            "dm_error": dm_error,
+            "dm_pending": dm_pending,
+        },
+        "dynamics": {
+            "enabled": bool(dyn_policy.get("enabled", False)),
+            "auto_publish": bool(dyn_policy.get("auto_publish", False)),
+            "pending_review": dyn_pending,
+            "uncertain": dyn_uncertain,
+            "error": dyn_error,
+        },
+        "writes": {
+            "uncertain_count": uncertain_writes,
+        },
+        "hot_topics": select_video_candidates(raw, store=db_store, limit=hot_limit),
+    }
+
+
 __all__ = [
     "BrowsingPolicy",
     "COMMENT_ID",
@@ -415,6 +705,7 @@ __all__ = [
     "browsing_status",
     "browsing_visual_provider",
     "business_timezone",
+    "canonical_intent",
     "clear_issues",
     "comment_context_scope",
     "comment_draft_source",
@@ -445,10 +736,13 @@ __all__ = [
     "dynamic_valid_sources",
     "ensure_comment_timeline",
     "find_dynamic_edit",
+    "find_write_attempt_by_intent",
+    "finish_write_attempt",
     "full_video_status",
     "get_attempt",
     "get_dynamic_edit",
     "get_dynamic_post",
+    "heartbeat_pulse_snapshot",
     "history",
     "history_scope",
     "illustration_for_row",
@@ -463,9 +757,11 @@ __all__ = [
     "reconcile_channel_draft",
     "reconcile_dynamic_post",
     "requested_preview_row",
+    "reserve_write_attempt",
     "resource_key",
     "restore_history_scope",
     "run_preview_browse",
+    "select_video_candidates",
     "set_browsing_enabled",
     "set_dynamics_policy",
     "stop_browsing",
