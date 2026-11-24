@@ -4,7 +4,7 @@ import { apiGet, apiPost, apiPut } from "@/shared/api/client";
 import { emitNotice, errorMessage, safeMessage } from "@/shared/lib/errors";
 import { DiscoverySourceForm } from "./DiscoveryPanel";
 import { OperationRecoveryPolicyForm } from "./OperationRecoveryPolicyForm";
-import { useOperationsControl } from "./operationsStore";
+import { useOperationsControl } from "@/shared/operations/operationsStore";
 import { deriveAutomaticSendingWarning, PermissionMatrix } from "./PermissionMatrix";
 import { DynamicPolicyForm, MessagePolicyForm } from "./PolicyForms";
 import styles from "./operations.module.css";

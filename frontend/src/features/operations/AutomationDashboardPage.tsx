@@ -7,7 +7,7 @@ import { DiscoveryProgressDetails } from "./DiscoveryPanel";
 import { IssuesPanel } from "./IssuesPage";
 import { OperationsActivityFeed } from "./OperationsActivityFeed";
 import { OperationsQuickBar, automationHomeStateLabel } from "./OperationsQuickBar";
-import { useOperationsControl } from "./operationsStore";
+import { useOperationsControl } from "@/shared/operations/operationsStore";
 import { Stage2PipelineCards } from "./Stage2PipelineCards";
 import styles from "./operations.module.css";
 import type { ActivityKindFilter } from "./types";

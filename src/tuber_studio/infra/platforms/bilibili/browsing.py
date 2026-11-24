@@ -335,7 +335,11 @@ class BrowsingAdapter(BilibiliAdapter):
         if not isinstance(payload, dict) or type(payload.get("code")) is not int:
             raise PublishUncertain("B 站返回的动态点赞回执格式无效")
         if payload["code"] != 0:
-            raise platform_rejection(payload, fallback="平台明确拒绝了本次动态点赞")
+            raise platform_rejection(
+                payload,
+                fallback="平台明确拒绝了本次动态点赞",
+                secret_values=(self._sessdata, self._csrf),
+            )
         return {"platform": "bilibili", "code": 0, "action": "dynamic_like", "dynamic_id": identifier}
 
     async def fetch_dynamic_comments(self, target):
@@ -917,7 +921,11 @@ class BrowsingAdapter(BilibiliAdapter):
         if not isinstance(payload, dict) or type(payload.get("code")) is not int:
             raise PublishUncertain("B 站返回的评论回执格式无效")
         if payload["code"] != 0:
-            raise platform_rejection(payload, fallback="平台明确拒绝了本次评论")
+            raise platform_rejection(
+                payload,
+                fallback="平台明确拒绝了本次评论",
+                secret_values=(self._sessdata, self._csrf),
+            )
         try:
             data = payload["data"]
             rpid = _identifier(data.get("rpid_str") or data.get("rpid"))
@@ -959,7 +967,11 @@ class BrowsingAdapter(BilibiliAdapter):
         if not isinstance(payload, dict) or type(payload.get("code")) is not int:
             raise PublishUncertain("B 站返回的点赞回执格式无效")
         if payload["code"] != 0:
-            raise platform_rejection(payload, fallback="平台明确拒绝了本次评论点赞")
+            raise platform_rejection(
+                payload,
+                fallback="平台明确拒绝了本次评论点赞",
+                secret_values=(self._sessdata, self._csrf),
+            )
         return {"platform": "bilibili", "code": 0, "action": "comment_like", "oid": target["oid"],
                 "type": target["type"], "rpid": target["parent"]}
 

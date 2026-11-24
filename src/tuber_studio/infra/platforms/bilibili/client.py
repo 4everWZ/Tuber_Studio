@@ -456,7 +456,11 @@ class BilibiliAdapter:
         if not isinstance(payload, dict) or type(payload.get("code")) is not int:
             raise PublishUncertain("发布响应无有效回执，请到 B 站核对；不会自动重试")
         if payload["code"] != 0:
-            raise platform_rejection(payload, fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次评论"))
+            raise platform_rejection(
+                payload,
+                fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次评论"),
+                secret_values=(self._sessdata, self._csrf),
+            )
         data = payload.get("data")
         try:
             if not isinstance(data, dict):
@@ -496,7 +500,11 @@ class BilibiliAdapter:
         if not isinstance(payload, dict) or type(payload.get("code")) is not int:
             raise PublishUncertain("点赞响应无有效回执，请到 B 站核对；不会自动重试")
         if payload["code"] != 0 and payload["code"] != 65006:
-            raise platform_rejection(payload, fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次点赞"))
+            raise platform_rejection(
+                payload,
+                fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次点赞"),
+                secret_values=(self._sessdata, self._csrf),
+            )
         return {
             "platform": "bilibili",
             "code": 0,
@@ -550,7 +558,11 @@ class BilibiliAdapter:
         if not isinstance(payload, dict) or type(payload.get("code")) is not int:
             raise PublishUncertain("收藏响应无有效回执，请到 B 站核对；不会自动重试")
         if payload["code"] != 0 and payload["code"] != 11201:
-            raise platform_rejection(payload, fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次收藏"))
+            raise platform_rejection(
+                payload,
+                fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次收藏"),
+                secret_values=(self._sessdata, self._csrf),
+            )
         return {
             "platform": "bilibili",
             "code": 0,

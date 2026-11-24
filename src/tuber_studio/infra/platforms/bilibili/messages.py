@@ -143,7 +143,11 @@ class BilibiliMessagesAdapter(BilibiliAdapter):
         if not isinstance(payload, dict) or type(payload.get("code")) is not int:
             raise PublishUncertain("B 站未返回有效的私信回执")
         if payload["code"] != 0:
-            raise platform_rejection(payload, fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次私信"))
+            raise platform_rejection(
+                payload,
+                fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次私信"),
+                secret_values=(self._sessdata, self._csrf),
+            )
         try:
             key = _positive_id(payload["data"]["msg_key"])
         except (KeyError, TypeError, ValueError):

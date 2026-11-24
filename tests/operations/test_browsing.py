@@ -1160,7 +1160,9 @@ async def test_cache_pins_drafts_and_clear_does_not_clear_audit(browsing):
 
 async def test_long_cc_chunks_use_provider_tokens_and_keep_every_reference(browsing):
     await browsing.preflight()
-    browsing.settings.data["omni"]["context_tokens"] = 4096
+    # The role prompt and schema themselves consume part of the input window.
+    # Keep enough space for an original segment, but not for the full transcript.
+    browsing.settings.data["omni"]["context_tokens"] = 8192
     browsing.store.set("browsing_policy", browsing.policy() | {"decision_max_tokens": 1024})
     segments = [{"id": str(i), "start": i, "end": i + 1, "text": "盐水实验浮力测试" * 70} for i in range(30)]
     material = {
@@ -1173,16 +1175,15 @@ async def test_long_cc_chunks_use_provider_tokens_and_keep_every_reference(brows
     chunks = await browsing.decisions._chunks(material, row)
     assert len(chunks) > 1
     assert [s["id"] for chunk in chunks for s in chunk] == [s["id"] for s in segments]
-    from tuber_studio.operations.kernel.inputs import ContentDecisionInput
+    from tuber_studio.operations.kernel.models import ContentDecision
 
-    presentation = ContentDecisionInput(material)
+    presentation = browsing.decisions._content_presentation(material, row)
     for chunk in chunks:
-        assert (
-            await browsing.runtime.operation_llm.count_tokens(
-                [{"role": "user", "content": json.dumps(presentation.present(chunk)[0], ensure_ascii=False)}]
-            )
-            <= 2048
+        data, _ = presentation.present(chunk)
+        _, messages, _ = browsing.decisions._model_input(
+            row, ContentDecision, data, browsing.decisions._content_instruction()
         )
+        assert await browsing.runtime.operation_llm.count_tokens(messages) <= 4096
 
 
 async def test_restart_never_replays_or_restores_publishing(browsing):

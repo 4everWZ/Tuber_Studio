@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearDirtyRegistry, hasAnyUnsavedChanges } from "@/shared/lib/dirtyRegistry";
 import { AutomationSettingsPage } from "./AutomationSettingsPage";
 import { OperationRecoveryPolicyForm } from "./OperationRecoveryPolicyForm";
-import { operationsStore } from "./operationsStore";
+import { operationsStore } from "@/shared/operations/operationsStore";
 import { deriveAutomaticSendingWarning, PermissionMatrix } from "./PermissionMatrix";
 import type { AutomationStatus, BilibiliAccountSnapshot } from "./types";
 

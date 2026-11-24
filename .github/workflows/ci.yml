@@ -98,9 +98,20 @@ jobs:
           pnpm --dir frontend run check:openapi
           pnpm --dir frontend run build
       - name: Image decoder and Chinese fonts for rendering contracts
+        timeout-minutes: 6
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk
+          # Some hosted runners select an EC2 mirror whose downloads can fill
+          # the whole job budget. Use Ubuntu's signed archive for this step.
+          sources="$(mktemp)"
+          cat > "$sources" <<'EOF'
+          deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu noble main restricted universe multiverse
+          deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse
+          deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse
+          EOF
+          apt_options=(-o "Dir::Etc::sourcelist=$sources" -o "Dir::Etc::sourceparts=-"
+                       -o Acquire::Retries=2 -o Acquire::https::Timeout=25)
+          sudo apt-get "${apt_options[@]}" update --error-on=any
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends ffmpeg fonts-noto-cjk
       - name: Ruff lint
         run: uv run --locked ruff check src tests evaluations tools deploy
       - name: Workbench tests

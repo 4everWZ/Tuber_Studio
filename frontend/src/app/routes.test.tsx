@@ -23,7 +23,7 @@ vi.mock("@/features/persona", async (importOriginal) => {
   };
 });
 
-import { operationsStore } from "@/features/operations/operationsStore";
+import { operationsStore } from "@/shared/operations/operationsStore";
 import { AutomationStatusBridge, ManageMemoriesHost, renderWorkbenchRoute } from "./routes";
 
 describe("routes.tsx ManageMemoriesHost & AutomationStatusBridge", () => {

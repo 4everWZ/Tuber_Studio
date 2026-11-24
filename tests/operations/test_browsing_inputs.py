@@ -578,7 +578,11 @@ async def test_native_http_schema_retires_refs_and_database_keeps_real_ids(
             for branch in response_body["response_format"]["json_schema"]["schema"]["oneOf"]
             if "action" in branch["properties"]
         )
-        assert response_body["response_format"]["json_schema"]["schema"]["oneOf"][-1]["required"] == ["web_search"]
+        tool_keys = {"web_fetch", "web_search"}
+        branches = response_body["response_format"]["json_schema"]["schema"]["oneOf"]
+        assert {
+            key for branch in branches for key in branch["required"] if key in tool_keys
+        } == tool_keys
         response_user = response_body["messages"][-1]["content"]
         assert "[ref:" not in response_user and "11:0" not in response_user
         assert browsing.tasks()[0]["decisions"][0]["evidence_ids"] == ["11:0"]
@@ -590,7 +594,7 @@ async def test_native_http_schema_retires_refs_and_database_keeps_real_ids(
         if use_web_fetch:
             assert any("盐水密度较高。" in message["content"] for message in responses[-1]["messages"])
             assert all(
-                "web_fetch" not in branch["properties"]
+                tool_keys.isdisjoint(branch["properties"])
                 for branch in responses[-1]["response_format"]["json_schema"]["schema"]["oneOf"]
             )
     finally:
