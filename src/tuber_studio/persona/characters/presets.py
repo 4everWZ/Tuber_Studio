@@ -27,13 +27,17 @@ _LEGACY = {
         "d4b5f856d1f7b7005a61e7b37c2acb3d035787808ccfb38daa3e93902f64e527",
         "c23d93db1d5661ac0e4147ee61d547a2796ecc2e9f01866d3582a4bbffe6984d",
         "ce86f9641554ea4020edbb975db8198976ea2f99e7d7834cd09f8a18dcb9cd64",
+        "5616150b5ca4af6e262e45671d79fc8ba1a53bb84596285f62251caf6ae6416a",
+        "d5b40e98a197976588e6d50bc89b49b05363ab4669248e20f899cdaf1f46b5f8",
     },
 }
 _REPLACEMENTS = {
-    # These released seeds carry the personal-agent natural-address / anti-jargon whale update.
+    # These released seeds carry the Aqua 4-pillar zero-prop persona shell upgrade.
     "whale": {
-        "5616150b5ca4af6e262e45671d79fc8ba1a53bb84596285f62251caf6ae6416a",
-        "d5b40e98a197976588e6d50bc89b49b05363ab4669248e20f899cdaf1f46b5f8",
+        "fe674a56bd72ad9c833113f1e641dad155f6903f191c260fc0939b189040d4ac",
+        "17977df08e4d41bc65d9be6dea2d1ac3d5cb86c11c8e30aee08cb6ab6bd7611a",
+        "41205176febfcc15818a6449f57b63fc90f28dde120f5eeebc499457c33bd957",
+        "fcc6e7e626716cee12abe9094662c5200603ff587c566d186b41d35ffda1eb1f",
     },
 }
 # Fresh installations receive the full seed. Existing versions gain only the original upgrade fields.

@@ -661,10 +661,10 @@ def _classify_floor_speaker(
     uid = item["author_uid"]
     explicit_role = str(item.get("speaker_role") or "").strip()
 
-    if explicit_role in {"oc", "assistant", "小鲸鱼"} or item.get("publication") == "confirmed" or (
+    if explicit_role in {"oc", "assistant", "Aqua", "小鲸鱼"} or item.get("publication") == "confirmed" or (
         cid and cid in confirmed_ids
     ):
-        return "assistant", "小鲸鱼"
+        return "assistant", "Aqua"
     if (
         item.get("is_owner_takeover")
         or explicit_role in {"operator", "号主人工接管", "人工接管"}

@@ -104,9 +104,9 @@ def test_web_display_name_does_not_edit_character_or_operator_grant(settings):
         runtime.operations.configure({"enabled": True}, account_id="100", character=before)
         path = "/api/v1/persona/characters/whale"
         card = client.get(path, headers=headers).raise_for_status().json()
-        assert card["display_name"] == "大肥鱼"
+        assert card["display_name"] == "Aqua"
         updated = client.put(path, json=card | {"display_name": " 戏台署名 "}, headers=headers).raise_for_status().json()
-        assert updated["display_name"] == "戏台署名" and updated["name"] == "大肥鱼"
+        assert updated["display_name"] == "戏台署名" and updated["name"] == "Aqua"
         assert store.character() == before and "display_name" not in runtime.character
         assert runtime.operations.policy()["enabled"] is True
         assert client.get("/api/v1/agent/chat", headers=headers).json()["character"] == "戏台署名"

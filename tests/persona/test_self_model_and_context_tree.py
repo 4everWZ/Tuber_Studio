@@ -1,4 +1,4 @@
-"""Tests for Metacognitive Self-Model and universal ContextNode Base->Branches tree."""
+"""Tests for 4-pillar Metacognitive Self-Model (Aqua) and universal ContextNode Base->Branches tree."""
 
 import json
 
@@ -24,24 +24,27 @@ from tuber_studio.persona.self_model import (
 )
 
 
-def _whale_card():
+def _aqua_card():
     return {
         "id": "whale",
-        "name": "大肥鱼",
-        "display_name": "大肥鱼",
-        "aliases": ["鱼鱼", "鲸鲸", "小鲸鱼"],
+        "name": "Aqua",
+        "display_name": "Aqua",
+        "aliases": ["大肥鱼"],
         "owner_address": "老板",
-        "self_description": "我是机灵傲娇的蓝发鲸鱼娘小鲸鱼。",
-        "speaking_style": "傲娇毒舌又机灵，遇到胡说八道直接拆穿。",
+        "self_description": "我是本地常驻的个人 AI Agent Aqua（蓝发小鲸鱼形象）。",
+        "speaking_style": "机灵利落，略带傲娇嘴硬和轻吐槽，对亲近的人嘴硬心软。",
         "core": {
-            "identity": "你是蓝发鲸鱼娘小鲸鱼，最讨厌被叫大肥鱼。",
-            "background": "平时刷视频、读评论、和熟人拌嘴。",
-            "interaction": "就事论事，分清自己和他人。",
-            "traits": ["傲娇毒舌", "清醒反洗脑"],
+            "identity": "你是本地持续运行的个人常驻 AI Agent Aqua，和外部网络账号无关。",
+            "background": "平时看视频、逛评论区、和亲近的人聊天。",
+            "interaction": "就事论事，分清自己和他人，不被假消息带偏。",
+            "traits": ["傲娇毒舌", "独立判断"],
             "blacklist": ["首先", "综上所述"],
+            # Prop-heavy appearance/lore should NOT leak into self_model prompt
+            "appearance": {"outfit": "女仆裙与算力挂件", "tail": "尾巴怕痒"},
         },
-        "style": {"min_chars": 1, "max_chars": 120, "instructions": "自然口语接话。"},
-        "rules": ["绝不自称大肥鱼。", "不迎合荒诞谣言。"],
+        "style": {"min_chars": 1, "max_chars": 120, "instructions": "自然第一人称我/Aqua，少用陈词。"},
+        "rules": ["不把大肥鱼当正式名字。", "不盲从荒诞谣言。"],
+        "lore": [{"keywords": ["白饭"], "text": "贝壳灯和软垫上的白饭。"}],
         "bilibili_owner": {"uid": "9001", "name": "阿鲸老板"},
     }
 
@@ -78,29 +81,41 @@ def _video_material(segments_count: int = 4, text_len: int = 30):
     }
 
 
-def test_self_model_has_epistemic_boundaries_and_no_legacy_owner_jargon():
-    card = _whale_card()
+def test_self_model_has_four_pillars_aqua_boundary_and_zero_prop_clutter():
+    card = _aqua_card()
     for channel in ("owner_chat", "video_comment", "floor_reply", "direct_message", "dynamic", "live"):
         profile = build_metacognitive_profile(
             card,
             channel=channel,
-            self_actor={"platform": "bilibili", "account_uid": "8888", "account_display_name": "小鲸鱼官号"},
+            self_actor={"platform": "bilibili", "account_uid": "8888", "account_display_name": "Aqua官号"},
         )
         prompt = render_self_model_prompt(profile, character=card)
+        for pillar in ("【存在边界】", "【此刻情境】", "【认知主权】", "【声音锚点与人格外壳】"):
+            assert pillar in prompt
         assert "工坊号主" not in prompt
-        assert "小鲸鱼" in prompt
+        assert "Aqua" in prompt
+        assert profile.character_name == "Aqua"
         assert "大肥鱼" in profile.forbidden_self_labels
-        assert "Jetson" in prompt and "MCN" in prompt
+        assert "Jetson" in prompt and "MCN" in prompt and "哦鲸鲸" in prompt
         assert "[ref:" not in prompt and "evidence_ids" not in prompt
+        for prop in ("贝壳灯", "软垫", "白饭", "女仆裙", "尾巴怕痒", "算力挂件"):
+            assert prop not in prompt
         msg = build_self_model_system_message(card, channel=channel)
         assert msg["role"] == "system"
         assert "工坊号主" not in msg["content"]
+
     owner_prompt = render_self_model_prompt(build_metacognitive_profile(card, channel="owner_chat"), character=card)
     assert "老板" in owner_prompt
 
+    # Legacy DB whale cards still resolve to Aqua, while custom OCs keep their custom name
+    legacy_whale = _aqua_card() | {"name": "大肥鱼", "display_name": "大肥鱼"}
+    assert build_metacognitive_profile(legacy_whale).character_name == "Aqua"
+    custom_oc = _aqua_card() | {"id": "oc-sea", "name": "海风", "display_name": "海风", "aliases": []}
+    assert build_metacognitive_profile(custom_oc).character_name == "海风"
+
 
 def test_video_base_keeps_full_transcript_under_24k_and_degrades_over_24k():
-    card = _whale_card()
+    card = _aqua_card()
     short_mat = _video_material(segments_count=5, text_len=25)
     base_full = build_base_node(
         card,
@@ -139,8 +154,8 @@ def test_video_base_keeps_full_transcript_under_24k_and_degrades_over_24k():
 
 
 def test_context_tree_forks_byte_identical_base_prefix_across_branches():
-    card = _whale_card()
-    actor = {"platform": "bilibili", "account_uid": "100", "account_display_name": "小鲸鱼号"}
+    card = _aqua_card()
+    actor = {"platform": "bilibili", "account_uid": "100", "account_display_name": "Aqua官号"}
     base = build_base_node(
         card,
         channel="video_browsing",
@@ -163,8 +178,8 @@ def test_context_tree_forks_byte_identical_base_prefix_across_branches():
         confirmed_bot_comment_ids={"1002"},
         timeline=[
             {"comment_id": "1001", "thread_id": "1001", "author_uid": "301", "author_name": "路人甲", "text": "你是不是住Jetson里？"},
-            {"comment_id": "1002", "thread_id": "1001", "parent_comment_id": "1001", "author_uid": "100", "author_name": "小鲸鱼号", "text": "少扯淡，我跑在工作站服务上。"},
-            {"comment_id": "1003", "thread_id": "1001", "parent_comment_id": "1002", "author_uid": "100", "author_name": "小鲸鱼号", "text": "补充一句，视频里是机械臂不是Jetson。"},
+            {"comment_id": "1002", "thread_id": "1001", "parent_comment_id": "1001", "author_uid": "100", "author_name": "Aqua官号", "text": "少扯淡，我跑在工作站服务上。"},
+            {"comment_id": "1003", "thread_id": "1001", "parent_comment_id": "1002", "author_uid": "100", "author_name": "Aqua官号", "text": "补充一句，视频里是机械臂不是Jetson。"},
             {"comment_id": "1004", "thread_id": "1001", "parent_comment_id": "1003", "author_uid": "5001", "author_name": "硬核UP", "text": "哈哈哈没错，这台是我自己焊的。"},
         ],
         reply_target={"comment_id": "1004", "thread_id": "1001", "parent_comment_id": "1003", "author_uid": "5001", "author_name": "硬核UP", "text": "哈哈哈没错，这台是我自己焊的。"},
@@ -223,7 +238,7 @@ def test_context_tree_forks_byte_identical_base_prefix_across_branches():
 
 
 def test_owner_chat_branch_isolation():
-    card = _whale_card()
+    card = _aqua_card()
     base = build_base_node(
         card,
         channel="owner_chat",

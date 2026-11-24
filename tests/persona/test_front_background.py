@@ -28,7 +28,13 @@ def test_ordinary_questions_leave_card_background_out(question):
 
 
 def test_preset_and_readonly_legacy_fields_are_verbatim():
-    card = preset()
+    bundled = preset()
+    assert isinstance(front_background(bundled, "你平时做什么？"), list)
+    card = {
+        "name": "Aqua",
+        "core": {"background": "平时看视频、逛评论区，桌边亮着一盏小小的贝壳灯。"},
+        "lore": [{"keywords": ["摸鱼"], "text": "偶尔摸鱼放空看气泡，被抓包会嘴硬。"}],
+    }
     result = front_background(card, "你的小屋里有贝壳灯吗？")
     assert result and result[0] in card["core"]["background"] and "贝壳灯" in result[0]
     assert front_background(card, "你是谁？你的小屋里有贝壳灯吗？") == result

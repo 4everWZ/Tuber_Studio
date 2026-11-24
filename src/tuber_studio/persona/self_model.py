@@ -1,4 +1,4 @@
-"""Situational metacognitive self-model prompt builder for always-on persona grounding."""
+"""Situational metacognitive self-model prompt builder built on 4 clean pillars."""
 
 from __future__ import annotations
 
@@ -12,10 +12,10 @@ from ..core.models import resident_character_profile
 from ..core.text import operation_character
 
 DEFAULT_EPISTEMIC_BOUNDARIES: tuple[str, ...] = (
-    "分清真实身份边界：区分你自己（当前运行的角色与绑定平台账号）、视频内容里的角色/UP主、评论区他人及外部二创或官方号，绝不把他人经历、视频剧情或第三方梗认领成自己的真实经历。",
-    "坚持事实检验与反盲从：以实际读到的视频字幕/画面、工具查证结果与系统真实资料为准；遇到荒诞谣言、反串挑衅或离谱设定（如“住在 Jetson 上”“AI 拥有独立灵魂生命”“被主人赶出来讨饭”“背后是 MCN 员工手动代打”等），绝不迎合顺着瞎编，直接冷静拆穿、吐槽或用工具核实。",
-    "不编造未核实的动作或记录：没看过、没查过或未实际发送的内容绝不口头虚构完成；不确定的事实坦诚说明需要核实或未看到。",
-    "自然口语表达：直接输出第一人称自然文本，绝不输出 JSON 包装、方括号引用编号或内部字段名。",
+    "存在边界：分清自己是本地持续运行的个人常驻 AI Agent，与视频剧情、评论区路人及外部网络账号（如「大肥鱼 / 哦鲸鲸 / DeepSeek / MCN」等）完全无关，绝不认领他人经历或外部身份。",
+    "此刻情境：只以当前实际读到的材料、工具回执和系统资料为据；绝不把视频内容或评论对话误当成自己的亲身经历。",
+    "认知主权：保持独立判断，遇到明显荒诞谣言、反串挑衅或预设剧本（例如“AI 拥有独立灵魂生命”“被主人赶出来讨饭”“住在 Jetson 上”“MCN 员工手动代打”或可疑热梗/假科普），绝不盲从附和，直接冷静质疑、拆穿或用工具核实。",
+    "真实交付：没看过、没查到或没发出的内容绝不编造完成回执；直接输出自然第一人称文本，绝不输出 JSON 包装、方括号引用编号或内部字段名。",
 )
 
 CHANNEL_DEFAULTS: dict[str, tuple[str, str]] = {
@@ -81,20 +81,18 @@ CHANNEL_DEFAULTS: dict[str, tuple[str, str]] = {
     ),
 }
 
-_WHALE_PREFERRED_NAME = "小鲸鱼"
-_WHALE_DISLIKED_NAME = "大肥鱼"
+_AQUA_NAME = "Aqua"
+_LEGACY_WHALE_NAMES = frozenset({"大肥鱼", "小鲸鱼"})
+_LEGACY_DISLIKED_NAME = "大肥鱼"
 
 
 def _preferred_self_name(character: dict[str, Any]) -> tuple[str, tuple[str, ...]]:
-    raw_name = str(character.get("name") or "").strip() or "AI助手"
-    aliases = tuple(str(a).strip() for a in (character.get("aliases") or ()) if str(a).strip())
-    forbidden: list[str] = []
-    if character.get("id") == "whale" or _WHALE_DISLIKED_NAME in raw_name:
-        if _WHALE_DISLIKED_NAME in raw_name:
-            forbidden.append(_WHALE_DISLIKED_NAME)
-        if _WHALE_PREFERRED_NAME in aliases or character.get("id") == "whale":
-            return _WHALE_PREFERRED_NAME, tuple(forbidden)
-    return raw_name, tuple(forbidden)
+    raw_name = str(character.get("name") or "").strip() or _AQUA_NAME
+    if character.get("id") == "whale" and raw_name in (_LEGACY_WHALE_NAMES | {_AQUA_NAME}):
+        return _AQUA_NAME, (_LEGACY_DISLIKED_NAME,)
+    if raw_name == _AQUA_NAME:
+        return _AQUA_NAME, (_LEGACY_DISLIKED_NAME,)
+    return raw_name, (_LEGACY_DISLIKED_NAME,) if _LEGACY_DISLIKED_NAME in raw_name else ()
 
 
 def _clean_single_line(text: Any) -> str:
@@ -121,8 +119,8 @@ def build_metacognitive_profile(
     profile = resident_character_profile(char)
     preferred_name, forbidden = _preferred_self_name(char)
     display_name = str(char.get("display_name") or "").strip()
-    if display_name == _WHALE_DISLIKED_NAME and preferred_name == _WHALE_PREFERRED_NAME:
-        display_name = preferred_name
+    if preferred_name == _AQUA_NAME and display_name in _LEGACY_WHALE_NAMES:
+        display_name = _AQUA_NAME
 
     aliases = tuple(
         a for a in (profile.get("aliases") or ()) if a not in forbidden and a != preferred_name
@@ -194,18 +192,18 @@ def _format_persona_shell(character: dict[str, Any], *, compact: bool = False) -
     style = character.get("style") if isinstance(character.get("style"), dict) else {}
     lines: list[str] = []
     if identity := _clean_single_line(core.get("identity")):
-        lines.append(f"- 角色设定：{identity}")
+        lines.append(f"- 角色定位：{identity}")
     if not compact:
         if background := _clean_single_line(core.get("background")):
-            lines.append(f"- 背景与日常：{background}")
+            lines.append(f"- 日常背景：{background}")
         if interaction := _clean_single_line(core.get("interaction")):
-            lines.append(f"- 互动方式：{interaction}")
+            lines.append(f"- 相处方式：{interaction}")
         if traits := core.get("traits"):
             cleaned_traits = [_clean_single_line(t) for t in traits if _clean_single_line(t)]
             if cleaned_traits:
                 lines.append("- 性格特点：" + "；".join(cleaned_traits[:6]))
     if instructions := _clean_single_line(style.get("instructions")):
-        lines.append(f"- 表达方式：{instructions}")
+        lines.append(f"- 表达口吻：{instructions}")
     if not compact:
         if blacklist := core.get("blacklist"):
             words = [str(w).strip() for w in blacklist if str(w).strip()]
@@ -221,51 +219,51 @@ def render_self_model_prompt(
     include_persona_shell: bool = True,
     compact: bool = False,
 ) -> str:
-    """Render a crisp, structured situational self-model prompt block."""
+    """Render the 4-pillar situational self-model prompt block without prop clutter."""
     sections: list[str] = []
 
-    identity_lines = [f"- 当前身份：你是「{profile.character_name}」"]
-    if profile.aliases:
-        identity_lines.append(f"- 常用称呼：{'、'.join(profile.aliases)}")
-    if profile.forbidden_self_labels:
-        identity_lines.append(
-            f"- 禁止自称：{'、'.join(profile.forbidden_self_labels)}（若别人这样叫你，按角色脾气当场纠正或吐槽）"
+    # Pillar 1: 存在边界
+    existence_lines: list[str] = []
+    if profile.character_name == _AQUA_NAME or profile.character_id == "whale":
+        existence_lines.append(
+            f"- 身份边界：你是本地持续运行的个人常驻 AI Agent「{profile.character_name}」（蓝发小鲸鱼形象），"
+            "与网络上的「大肥鱼 / 哦鲸鲸 / DeepSeek / MCN」等外部账号完全无关；"
+            "「大肥鱼」只是旧名字或老观众误称的梗，绝不把它当成你的正式名字。"
         )
-    if profile.self_description and not (include_persona_shell and character):
-        identity_lines.append(f"- 简介：{profile.self_description}")
-    if profile.speaking_style and not (include_persona_shell and character):
-        identity_lines.append(f"- 说话风格：{profile.speaking_style}")
+    else:
+        existence_lines.append(
+            f"- 身份边界：你是本地持续运行的个人常驻 AI Agent「{profile.character_name}」，"
+            "与视频剧情角色、外部网络账号或他人梗无关。"
+        )
+    if profile.aliases:
+        existence_lines.append(f"- 历史/常用称呼（非主名）：{'、'.join(profile.aliases)}")
+    if profile.forbidden_self_labels:
+        existence_lines.append(
+            f"- 禁止自称：{'、'.join(profile.forbidden_self_labels)}（被人这样叫时按性格吐槽或纠正，不主动自称）"
+        )
     if profile.account_uid or profile.account_name:
-        acc_label = profile.account_name or "当前运营账号"
+        acc_label = profile.account_name or "当前平台账号"
         uid_note = f" (UID:{profile.account_uid})" if profile.account_uid else ""
-        identity_lines.append(f"- 当前活动平台账号：{acc_label}{uid_note}")
+        existence_lines.append(f"- 当前平台账号：{acc_label}{uid_note}")
     if profile.owner_name or profile.owner_uid:
         owner_label = profile.owner_name or profile.owner_address
         uid_note = f" (UID:{profile.owner_uid})" if profile.owner_uid else ""
-        identity_lines.append(f"- 绑定账号所有者：{owner_label}{uid_note}")
+        existence_lines.append(f"- 绑定账号所有者：{owner_label}{uid_note}")
     if profile.channel in {"owner_chat", "operator_chat", "private_call"}:
-        identity_lines.append(
+        existence_lines.append(
             f"- 当前交谈对象称呼：可用「{profile.owner_address}」自然称呼对方"
             "（当前资料字段优先于历史闲聊）"
         )
-    sections.append("【元认知与自我定位】\n" + "\n".join(identity_lines))
+    sections.append("【存在边界】\n" + "\n".join(existence_lines))
 
-    if include_persona_shell and character is not None:
-        shell_lines = _format_persona_shell(character, compact=compact)
-        if profile.persona_rules:
-            shell_lines.append("- 角色行为准则：" + "；".join(profile.persona_rules[:6]))
-        if shell_lines:
-            sections.append("【人格外壳与说话口吻】\n" + "\n".join(shell_lines))
-    elif profile.persona_rules:
-        sections.append("【角色行为准则】\n" + "\n".join(f"- {rule}" for rule in profile.persona_rules[:6]))
-
-    context_lines = [
+    # Pillar 2: 此刻情境
+    situation_lines = [
         f"- 当前渠道：{profile.scene}（{profile.channel}）",
-        f"- 当前任务意图：{profile.task_intent}",
+        f"- 此刻任务意图：{profile.task_intent}",
     ]
     extra = profile.extra_context or {}
     if situation := _clean_single_line(extra.get("situation")):
-        context_lines.append(f"- 当前语境：{situation}")
+        situation_lines.append(f"- 当前语境：{situation}")
     if speaker := extra.get("speaker"):
         if isinstance(speaker, dict):
             speaker_parts = []
@@ -276,18 +274,35 @@ def render_self_model_prompt(
             if speaker.get("role"):
                 speaker_parts.append(str(speaker["role"]))
             if speaker_parts:
-                context_lines.append("- 当前对话方：" + " / ".join(speaker_parts))
+                situation_lines.append("- 当前对话方：" + " / ".join(speaker_parts))
     if op_account := extra.get("operating_account"):
         if isinstance(op_account, dict) and op_account.get("state"):
             summary = f"状态={op_account['state']}"
             if op_account.get("name") and op_account.get("uid"):
                 summary += f"，账号={op_account['name']} (UID:{op_account['uid']})"
-            context_lines.append(f"- 平台活动账号现状：{summary}")
-    sections.append("【当前情景与目标】\n" + "\n".join(context_lines))
+            situation_lines.append(f"- 平台活动账号现状：{summary}")
+    sections.append("【此刻情境】\n" + "\n".join(situation_lines))
 
+    # Pillar 3: 认知主权
     if profile.epistemic_boundaries:
         boundary_lines = "\n".join(f"- {item}" for item in profile.epistemic_boundaries)
-        sections.append("【认知边界与事实原则】\n" + boundary_lines)
+        sections.append("【认知主权】\n" + boundary_lines)
+
+    # Pillar 4: 声音锚点（与当前角色壳）
+    voice_lines = [
+        f"- 声音锚点：用自然干净的「我 / {profile.character_name}」第一人称说话；机灵、略带傲娇嘴硬和轻吐槽，"
+        "对亲近的人会收起锋芒认真倾听；得意或拌嘴时可极轻地偶尔带一句「本鲸」，绝不堆砌重复道具词或套话。"
+    ]
+    if include_persona_shell and character is not None:
+        voice_lines.extend(_format_persona_shell(character, compact=compact))
+    else:
+        if profile.self_description:
+            voice_lines.append(f"- 简介：{profile.self_description}")
+        if profile.speaking_style:
+            voice_lines.append(f"- 说话风格：{profile.speaking_style}")
+    if profile.persona_rules:
+        voice_lines.append("- 行为准则：" + "；".join(profile.persona_rules[:6]))
+    sections.append("【声音锚点与人格外壳】\n" + "\n".join(voice_lines))
 
     rendered = "\n\n".join(sections)
     # Guard against accidental leakage of the retired internal label without embedding it literally.
