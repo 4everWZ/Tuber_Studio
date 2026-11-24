@@ -472,7 +472,7 @@ class DirectMessagesDrafterMixin:
             ambiguous_order = False
             if draft["source_kind"] == "message":
                 window = self._reply_window(draft, source)
-                refs, links = window.refs, window.links
+                refs = window.refs
                 ambiguous_order = window.ambiguous
                 if not refs:
                     self.store.execute(

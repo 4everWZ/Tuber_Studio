@@ -5,7 +5,7 @@ import { clearDirtyRegistry } from "@/shared/lib/dirtyRegistry";
 import { parseHashRoute } from "@/shell/navigation";
 import { AutomationDashboardPage } from "./AutomationDashboardPage";
 import { OperationsFeature } from "./index";
-import { operationsStore } from "./operationsStore";
+import { operationsStore } from "@/shared/operations/operationsStore";
 import { Stage2PipelineCards } from "./Stage2PipelineCards";
 import type {
   AutomationStatus,

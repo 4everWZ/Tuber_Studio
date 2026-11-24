@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearDirtyRegistry } from "@/shared/lib/dirtyRegistry";
 import { parseHashRoute } from "@/shell/navigation";
 import { DynamicsPage } from "./DynamicsPage";
-import { operationsStore } from "./operationsStore";
+import { operationsStore } from "@/shared/operations/operationsStore";
 import type { DynamicPost } from "./types";
 
 function jsonResponse(body: unknown, status = 200): Response {

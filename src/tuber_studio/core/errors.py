@@ -51,10 +51,12 @@ class UnknownPublication(PublishUncertain):
         self.write_token = token
 
 
-def platform_rejection(payload, *, fallback="平台明确拒绝了本次提交"):
+def platform_rejection(payload, *, fallback="平台明确拒绝了本次提交", secret_values=()):
     code = payload["code"]
     raw_message = payload.get("message") or payload.get("msg") or fallback
     message = raw_message.strip() if isinstance(raw_message, str) and raw_message.strip() else fallback
+    if any(secret and secret in message for secret in secret_values):
+        message = fallback
     if message != fallback:
         display = f"平台拒绝（code {code}）：{message}"
     else:

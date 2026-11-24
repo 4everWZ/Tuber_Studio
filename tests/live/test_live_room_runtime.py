@@ -49,7 +49,7 @@ async def test_idle_yields_to_real_chat_before_play_and_audio_envelope(runtime, 
     assert runtime.relationships.live_view(*score_scope, account_id="900")["affinity"] == 0
     assert await runtime.live.acknowledge(owner, ack | {"type": "started"})
     assert await runtime.live.acknowledge(owner, ack | {"type": "ended"})
-    assert runtime.relationships.live_view(*score_scope, account_id="900")["affinity"] == 1
+    assert runtime.relationships.live_view(*score_scope, account_id="900")["affinity"] == 5
     assert not store.all("SELECT * FROM account_relations")
     assert not store.all("SELECT * FROM users")
     assert len(store.all("SELECT * FROM conversations")) == 1

@@ -10,7 +10,6 @@ from ....infra.inference.providers import public_error
 from .models import ConversationWindow, MessageInputChanged
 from .outreach import confirmed_invitation, verified_agreement
 
-
 _ROLE_LABELS = {"viewer": "对方", "oc": "小鲸鱼", "operator": "号主人工接管"}
 
 

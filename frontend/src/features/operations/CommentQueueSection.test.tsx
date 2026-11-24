@@ -8,7 +8,7 @@ import { CommentsImportForm } from "./CommentsImportForm";
 import { CommentsPage } from "./CommentsPage";
 import { CommentsSourcesSection } from "./CommentsSourcesSection";
 import { commentCanGenerate, commentFinished, reconcileCommentSelection } from "./commentState";
-import { operationsStore } from "./operationsStore";
+import { operationsStore } from "@/shared/operations/operationsStore";
 import type { CommentRecord, QueueDetail, QueueRow } from "./types";
 
 function jsonResponse(body: unknown, status = 200): Response {

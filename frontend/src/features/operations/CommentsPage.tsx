@@ -19,7 +19,7 @@ import {
 import { CommentsImportForm } from "./CommentsImportForm";
 import { CommentsSourcesSection, type SourceFilters } from "./CommentsSourcesSection";
 import { commentFinished, reconcileCommentSelection } from "./commentState";
-import { useOperationsControl } from "./operationsStore";
+import { useOperationsControl } from "@/shared/operations/operationsStore";
 import type { CommentRecord, CommentTaskRecord } from "./types";
 import { UserMemoryModal, type UserMemoryTarget } from "./UserMemoryModal";
 

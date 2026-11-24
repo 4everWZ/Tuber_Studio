@@ -14,7 +14,7 @@ import { emitNotice, errorMessage } from "@/shared/lib/errors";
 import { illustrationStatus, illustrationUrl } from "@/shared/lib/operationImage";
 import { defaultMemePreviewUrl } from "@/shared/ui/MemePickerModal";
 import type { ParsedRoute } from "@/shell/navigation";
-import { useOperationsControl } from "./operationsStore";
+import { useOperationsControl } from "@/shared/operations/operationsStore";
 import { DynamicPolicyForm } from "./PolicyForms";
 import styles from "./operations.module.css";
 import type {

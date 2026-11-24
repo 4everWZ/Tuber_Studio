@@ -4,7 +4,6 @@ import base64
 import copy
 import time
 
-import pytest
 import pytest_asyncio
 
 from tuber_studio.infra.inference.omni_asr import AsrUnavailable
