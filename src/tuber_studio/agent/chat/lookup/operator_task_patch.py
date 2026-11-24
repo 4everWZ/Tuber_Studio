@@ -11,8 +11,8 @@ from ....core.store import dump
 class TaskPatch(StrictModel):
     _item_states: dict[str, str] = PrivateAttr(default_factory=dict)
     field: str = Field(description="选该卡 editable 中的键")
-    subject: str = Field(description="逐字摘取号主所指的工作、条件或项目")
-    requirement: str = Field(description="逐字摘取号主要求实际执行的新内容或停止指令")
+    subject: str = Field(description="逐字摘取对方所指的工作、条件或项目")
+    requirement: str = Field(description="逐字摘取对方要求实际执行的新内容或停止指令")
     replacement_goal: str = Field(default="", description="仅在整项目标被替换时逐字摘取完整的新委托。局部改动、补充或依赖原要求时留空。")
 
 
@@ -178,7 +178,7 @@ async def review_change(client, message, card, proposal, choices, bindings):
     data = {"owner_message": message, "existing_work": card.get("goal"), "editable": card.get("editable", {}),
             "owner_clauses": bindings, "omni_proposal": proposal}
     reply = await client(input=[{"role": "user", "content": dump(data)}], instructions=(
-        "独立核对号主是否现在委托工坊改变业务状态。只聊天、满意、否决、询问未来后果或纯假设都 answer。"
+        "独立核对对方是否现在要求改变任务或业务状态。只聊天、满意、否决、询问未来后果或纯假设都 answer。"
         "只查过去选择的理由才 past_reason。局部保留而另一项要改是 edit_existing，逐项判断当前内容是沿用还是实际调整。"
         + ("现在要求加入条件是 edit_existing；将条件记入任务，不提前执行条件的后果。" if set(operands) == {"goal"}
            else "附带条件的实际委托保留完整条件。") +

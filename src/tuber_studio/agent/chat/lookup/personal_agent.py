@@ -28,9 +28,9 @@ class Capability:
 
 
 CAPABILITIES = {
-    "identity": Capability("当前角色、绑定号主、运营登录账号", "身份、UID、主页、已核验公开资料",
+    "identity": Capability("当前角色、绑定主人、运营登录账号", "身份、UID、主页、已核验公开资料",
                            read_actions=("owner_binding", "owner_profile", "operating_account")),
-    "settings": Capability("工坊设置、画布、点歌、宠物", "当前字段、可用选项", "按权限保存指定字段",
+    "settings": Capability("日常设置、画布、点歌与宠物", "当前字段、可用选项", "按权限保存指定字段",
                            ("workbench_capabilities", "daily_settings", "pet_settings"), ("daily_settings", "pet_settings")),
     "operations": Capability("运营、公开活动和平台回执", "运行状态、经历、来源、作者、送达", "开启、调整或停止自主运营",
                              ("activity", "event_details", "event_author", "event_reply", "video_activity", "operation_status"),
@@ -44,12 +44,13 @@ CAPABILITIES = {
     "live": Capability("直播和点歌播放", "场次、节目、播放和回执", "交接台词、调整直播习惯或停止直播",
                        ("live_status", "live_history"), ("start_live", "live_handoff", "live_preference", "stop")),
     "game": Capability("当前游戏会话", "局面与控制权", "由场景授权控制", ("game_status",), ("game_handoff",)),
-    "memory": Capability("号主私有记忆", "可见偏好、来源、公开经历", "保存或忘记指定记忆",
-                         ("public_experiences", "recall_experience", "memory_summary"), ("remember_event", "forget_memory")),
+    "memory": Capability("长期记忆与经历", "可见偏好、来源、公开经历", "保存、更新或忘记指定记忆",
+                         ("public_experiences", "recall_experience", "memory_summary"),
+                         ("remember_event", "forget_memory", "save_memory", "update_memory", "delete_memory")),
     "task": Capability("交办、长期目标和成果", "进度、计划、等待原因、版本", "修改、暂停、停止或安排跟进",
                        ("task_status",), ("pause_task", "resume_task", "watch_goal")),
     "web": Capability("公开网页与当下外部事实", "搜索并打开来源，核对发布日期", read_actions=("web_lookup",)),
-    "clock": Capability("工坊时钟", "本地日期与时间", read_actions=("clock",)),
+    "clock": Capability("本地时钟", "本地日期与时间", read_actions=("clock",)),
 }
 
 class ConversationObject(StrictModel):
@@ -79,7 +80,7 @@ class Arrangement(StrictModel):
     resource: str | None = Field(default=None, max_length=32)
     root_id: str | None = Field(default=None, pattern=r"^[1-9]\d{0,19}$")
     after_reply: str | None = Field(default=None, min_length=1, max_length=400,
-                                    description="仅在号主明确交代来信后的私有文本工作时，逐字摘录该交付要求。")
+                                    description="仅在对方明确交代来信后的私有文本工作时，逐字摘录该交付要求。")
 
     def due(self, message, now):
         if (self.quote not in message or not self.local_date or not self.local_time
@@ -89,7 +90,7 @@ class Arrangement(StrictModel):
         local = wall.replace(tzinfo=now.tzinfo)
         if (local <= now or (local.date() - now.date()).days > 366
                 or datetime.fromtimestamp(local.timestamp(), now.tzinfo).replace(tzinfo=None) != wall):
-            raise ValueError("请提供工坊时区内一年内的有效未来时间。")
+            raise ValueError("请提供本地时区内一年内的有效未来时间。")
         return local.timestamp()
 
     def configure(self, tasks, goal_id, message, now):
@@ -110,7 +111,7 @@ class Arrangement(StrictModel):
             source_words = {"live_status": "直播|节目", "game_status": "游戏|局面",
                             "operation_status": "运营", "today_activity": "活动|经历|观看记录"}
             if any(not re.search(source_words[name], self.quote) for name in self.states):
-                raise ValueError("请明确指定要持续读取的工坊来源。")
+                raise ValueError("请明确指定要持续关注的状态或来源。")
             pages = tasks.unread_web_addresses(self.quote, ())
             grant = FollowupGrant(epoch=epoch, cadence=self.kind, local_time=self.local_time or "",
                                   timezone=now.tzinfo.key, weekday=self.weekday, states=self.states, pages=pages)
@@ -142,7 +143,7 @@ def object_scope(runtime):
 def owner_object(character):
     binding = character.get("bilibili_owner") or {}
     if uid := binding.get("uid"):
-        return ConversationObject(kind="owner", identity=str(uid), label="角色绑定的 B 站号主",
+        return ConversationObject(kind="owner", identity=str(uid), label="绑定的 B 站主人",
                                   revision=content_hash(binding))
     return None
 
@@ -153,7 +154,7 @@ def binding_matches(subject, character):
 
 def operating_account_object(facts):
     if uid := facts.get("uid"):
-        return ConversationObject(kind="account", identity=uid, label="工坊运营登录账号",
+        return ConversationObject(kind="account", identity=uid, label="B 站运营登录账号",
                                   revision=content_hash(facts))
     return None
 
@@ -161,10 +162,10 @@ def operating_account_object(facts):
 def owner_binding(character):
     binding = character.get("bilibili_owner") or {}
     if not binding.get("uid"):
-        return {"reply_text": "这个角色尚未绑定 B 站号主。", "card": None}
+        return {"reply_text": "还没有绑定 B 站主人呀。", "card": None}
     uid = str(binding["uid"])
     profile = {"name": binding["name"], "uid": uid, "url": f"https://space.bilibili.com/{uid}"}
-    return {"reply_text": f"我的 B 站号主是{binding['name']}，UID 是 {uid}。",
+    return {"reply_text": f"我绑定的 B 站主人是{binding['name']}，UID 是 {uid}。",
             "card": {"type": "owner_profile", "data": profile},
             "tool_receipt": {"action": "read", "group": "identity", "values": profile}}
 

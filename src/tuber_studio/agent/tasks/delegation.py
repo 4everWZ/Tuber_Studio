@@ -85,15 +85,15 @@ def visible_steps(runtime, task):
 def model_input(task, context):
     evidence = evidence_index(context)
     video_guidance = (
-        "按号主指定的分 P、时段和对象推进。每项视频选材用 primary_frame 指定一个画面；"
+        "按对方指定的分 P、时段和对象推进。每项视频选材用 primary_frame 指定一个画面；"
         "sources 可另引独立出处或有同窗回执的采样点。单帧只支持该时点的画面，音轨和连续性要有各自的观察依据。"
         "inspect_video 采用左闭右开区间，按交付时长分别取短片，end=start+所需秒数。"
     ) if video_binding(task) else ""
     history = [{"role": "system", "content": (
-        "在后台完成号主交办的目标。按最新要求选择获准工具，独立读取可同轮并发。"
+        "在后台完成对方交办的目标。按最新要求选择获准工具；多个独立读取会自动并发，涉及写入或提交的步骤会自动顺序排好执行。"
         "复用仍适用的来源，打开搜索结果正文后再引用。"
         "取材结束调用 submit_materials，按真实 evidence ID 提交候选、建议和缺口，由前台角色决定交付。"
-        "已拿到足够回执时提交成果。只有当前目标缺少必须由号主提供的材料时才调用 ask_owner。"
+        "已拿到足够回执时提交成果。只有当前目标缺少必须由对方补充的材料时才调用 ask_owner。"
         + video_guidance
     )}, {"role": "user", "content": dump({"prior_goals": task["plan"]["prior_goals"], "goal": task["goal"],
                                            **({"delegation_brief": task["plan"]["delegation_brief"]}
@@ -212,7 +212,7 @@ async def advance(runtime, task):
     if browser and any(s["tool"] == "owner_browser_grant" for s in task["steps"]):
         state = browser.state(task["id"])
         if state["mode"] == "owner":
-            runtime._save(task, status="waiting", due=time.time() + 2, message="号主正在接管阅读页。")
+            runtime._save(task, status="waiting", due=time.time() + 2, message="你正在接管阅读页，先等你完成。")
             return
     current = runtime._current_steps(task)
     context = visible_steps(runtime, task)
@@ -342,7 +342,7 @@ async def advance(runtime, task):
     if pending:
         bound = video_binding(task)
         if any(step["tool"] == "inspect_video" and not permits(bound, step["arguments"]) for step in pending):
-            raise DelegationError("视频、分P或时段超出了号主给定的来源。")
+            raise DelegationError("视频、分 P 或时段超出了刚才指定的来源。")
         await run_pending(runtime, task, pending, context)
         return
     # A single official catalogue match completes the foreground's source lookup by opening the actual document.
@@ -388,7 +388,7 @@ async def advance(runtime, task):
         else:
             tools.remove(page)
             allowed.pop("web_page")
-    submission = function("submit_materials", "向前台 Omni 提交候选证据与缺口，不直接向号主交付。", PrivateDelivery)
+    submission = function("submit_materials", "向前台提交候选证据与缺口，不直接向对话方交付。", PrivateDelivery)
     items = submission["parameters"]["properties"]["items"]
     evidence = evidence_index(context)
     bind_delivery_schema(items, items["items"], evidence)
@@ -416,7 +416,7 @@ async def advance(runtime, task):
         for tool in tools:
             if tool["name"] == "delegate_text":
                 tool["parameters"]["properties"]["sources"]["items"]["enum"] = list(evidence)
-    tools.extend([submission, function("ask_owner", "向号主询问完成委派所缺的资料。", Clarification)])
+    tools.extend([submission, function("ask_owner", "向对方询问完成任务还缺少的资料。", Clarification)])
     history = nomination_input(task, evidence, context) if nominate else model_input(task, context)
     if runtime.scope() != task["scope"]:
         return
@@ -447,13 +447,30 @@ async def advance(runtime, task):
     calls = reply.calls
     ids = {call.call_id for call in calls}
     if not calls or len(ids) != len(calls) or ids.intersection(step.get("call_id") for step in current):
-        raise DelegationError("Responses 未返回完整、唯一的函数调用。")
+        raise DelegationError("工具调用指令未能完整解析，请稍后再试。")
     name = calls[0].name
     if nominate and (len(calls) != 1 or name != "submit_materials"):
-        raise DelegationError("后台没有按本轮委派提交实际材料。")
+        raise DelegationError("整理环节未能按本轮要求提交有效材料。")
     offered = {item["name"] for item in options}
     if any(call.name not in offered for call in calls):
-        raise DelegationError("后台请求的工具超出本轮委派范围。")
+        if not any(s.get("invalid_call") for s in current):
+            invalid_steps = [
+                {
+                    "id": str(uuid5(UUID(task["id"]), f"{task['revision']}:{call.call_id}")),
+                    "call_id": call.call_id,
+                    "response_id": reply.id,
+                    "revision": task["revision"],
+                    "tool": call.name,
+                    "arguments": call.arguments,
+                    "invalid_call": True,
+                    "result": {"error": "该工具不在本轮可用范围内，请改用其他允许的工具。"},
+                }
+                for call in calls
+                if call.name not in offered
+            ]
+            runtime._save(task, steps=[*task["steps"], *invalid_steps], status="queued", due=time.time())
+            return
+        raise DelegationError("这一步请求了当前任务未开放的工具。")
     if len(calls) == 1 and name == "ask_owner":
         question = Clarification.model_validate(calls[0].arguments).question
         if (evidence.points and "inspect_video" in allowed and getattr(runtime, "can_nominate_video", None)
@@ -515,9 +532,9 @@ async def advance(runtime, task):
             steps.append(step | {"invalid_call": True, "result": feedback})
             continue
         if call.name == "inspect_video" and not permits(video_binding(task), arguments):
-            raise DelegationError("视频、分P或时段超出了号主给定的来源。")
+            raise DelegationError("视频、分 P 或时段超出了刚才指定的来源。")
         if any(step["tool"] == call.name and step["arguments"] == arguments for step in steps):
-            raise DelegationError("同一批次存在重复委派。")
+            continue
         cached = next((step for step in reversed(context) if tool.reusable and step["tool"] == call.name
                        and step["arguments"] == arguments and step.get("result") and not step["result"].get("error")
                        and step["result"].get("status", "completed") == "completed"), None)
@@ -537,6 +554,32 @@ async def advance(runtime, task):
            s.get("invalid_call") and (s["tool"], s["arguments"]) in previous_invalid for s in steps):
         invalid = any(s.get("invalid_call") for s in steps)
         runtime._save(task, steps=[*task["steps"], *steps], status="failed" if invalid else "needs_input",
-                      message="后台重复返回无效参数，已保存各项诊断。" if invalid else "本轮已有相同取材回执；请补充其他来源或调整目标。")
+                      message="这一步没能按预期执行，需要补充说明或换个方式再试试。" if invalid else "本轮已有相同取材回执；请补充其他来源或调整目标。")
     else:
         runtime._save(task, steps=[*task["steps"], *steps], status="queued", due=time.time())
+
+
+def calm_task_failure(error: Exception | str) -> str:
+    """Translate internal delegation or inference budget errors into calm owner text."""
+    text = str(error or "").strip()
+    if not text:
+        return "这项任务暂时没能完成，可以稍后再试。"
+    text = (
+        text.replace("工坊号主", "对方")
+        .replace("号主给定的来源", "刚才指定的来源")
+        .replace("号主", "对方")
+        .replace("工坊", "当前环境")
+    )
+    for token, calm in (
+        ("并行委派只允许独立读取", "这几步不能同时改动状态，已经排好顺序处理，这一轮先暂缓。"),
+        ("Responses 未返回", "这轮步骤未能完整解析出来，可以稍后再试。"),
+        ("同一批次存在重复委派", "这一步刚才重复触发了，已先拦住避免重复执行。"),
+        ("本轮委派范围", "这一步请求了当前任务未开放的能力，先暂缓处理。"),
+        ("当前任务未开放的工具", "这一步请求了当前任务未开放的能力，先暂缓处理。"),
+        ("提交实际材料", "整理阶段还没拿到可交付的有效结果，先停在这里。"),
+        ("窗口预算", "这次处理的内容较多，超出了当前单轮容量，可以拆分范围再试。"),
+        ("ContextWindowExceeded", "这次处理的内容较多，超出了当前单轮容量，可以拆分范围再试。"),
+    ):
+        if token in text:
+            return calm
+    return text

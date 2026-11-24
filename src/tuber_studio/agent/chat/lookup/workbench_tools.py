@@ -10,7 +10,7 @@ from ....core.models import StrictModel
 from ....persona.characters.front_persona import character_names
 from .workshop_settings import read_settings, settings_catalog, update_settings
 
-OWNER_CONTROL_REPLY = "这项权限可在号主设置页管理。"
+OWNER_CONTROL_REPLY = "这项权限可在设置页管理。"
 
 # This checks authority against the original request, independently of the subset emitted by the model.
 _CONTROL_NAME = re.compile(
@@ -73,7 +73,7 @@ def named_setting_fields(group, source):
 def setting_target(group, source, *, character, read_only):
     """Require the quoted object to name a setting domain or one of its fields."""
     if group == "pets":
-        labels = ("宠物", "形象", "表情", "皮肤")
+        labels = ("宠物", "形象", "表情", "皮肤", "鱼鱼", "小鲸鱼")
         if not read_only:
             labels += character_names(character)
         return any(label in source for label in labels)
@@ -192,7 +192,7 @@ async def pet_settings(runtime, character_id, choose, check_scope, *, source, re
         result = PetChoice.model_validate(await choose(schema, {
             "可选择的已有形象与表情": options, "显示中": before["pets_enabled"],
             "当前形象": (before.get("selected") or {}).get("title", "默认形象"),
-            "操作": "列出或查看选 list；切换形象选 select，choice 填符合号主描述的清单序号；恢复默认选 default；"
+            "操作": "列出或查看选 list；切换形象选 select，choice 填符合对方描述的清单序号；恢复默认选 default；"
                     "打开、关闭显示分别选 show、hide。选择形象与显示是独立操作；请求超出清单或不明确选 clarify。",
         }))
     check_scope()

@@ -11,11 +11,11 @@ from fastapi import HTTPException
 from ...core.errors import ContextWindowExceeded
 from ...core.identity import operating_account_facts, owner_address_label, without_model_identity
 from ...core.store import dump
-from ...persona.context.message_builder import build_messages
 from ..tasks.history import build_shared_task_summary as build_shared_task_summary
 from ..tasks.history import history_preference
 from .assistant_output import AssistantTextStream, assistant_markdown, clock_readout, workbench_fields
 from .context import ChatContext
+from .l2_bridge import build_owner_system_prefix
 from .lookup import operator_facts, workshop_lookup
 from .lookup.personal_agent import object_scope
 from .models import ChatIntent, DeliveryPacket, chat_model_provider, text_generation_slot
@@ -76,23 +76,24 @@ async def _generate_plain_text(provider, messages, *, max_tokens, on_content=Non
 
 def _thin_system_messages(char, request_id, user_text, *, notes=(), unified_memories=(), task_summaries=(),
                           account_facts=None, temporary=False, history_enabled=True, clock_hint=""):
-    event = {"event_id": "operator:" + request_id, "text": user_text, "sender_name": owner_address_label(char), "is_operator": True}
-    role = build_messages(char, event, {}, "operator_chat", operating_account=account_facts)[:-2]
+    owner = owner_address_label(char)
+    ref = owner if owner != "你" else "对方"
+    role = build_owner_system_prefix(char, request_id, user_text, account_facts=account_facts)
     instruction = (
         f"你是{char['name']}。只负责自然接话与角色语气陪伴，直接用第一人称纯文字回复（禁止输出 JSON 或内部标签）。"
         "只用中文自然口吻回复，不要附带英文说明或元注释。"
         "闲聊、感想、玩笑和假设直接接话。"
-        "你没有直接操作工具的权限；需要查工坊、写文章或后台执行的事均由后台处理并异步交付，切勿口头虚构已完成发送、查库或操作回执。"
+        "你当前没有直接执行后台操作的权限；需要查记录、写材料或后台处理的事会交给后台异步回交，切勿口头虚构已完成发送、查库或操作回执。"
     )
     if not temporary and not history_enabled:
-        instruction += "本轮只提供当前对话；若号主问及早先私聊记录而未附带上下文，请直接请号主点名或复述相关内容。"
+        instruction += f"本轮只提供当前对话；若{ref}问及早先私聊记录而未附带上下文，请直接请{ref}点名或复述相关内容。"
     if clock_hint:
         instruction += clock_hint
     messages = [*role, {"role": "system", "content": instruction}]
     if unified_memories:
         messages.append({
             "role": "system",
-            "content": "已保存的号主长期记忆（作为背景自然承接，不必逐字复述）：\n"
+            "content": "已记住的长期记忆（自然记在心里作为背景即可，不必刻意背诵或逐字复述）：\n"
             + "\n".join(f"- {item['content']}" for item in unified_memories),
         })
     if notes:
@@ -143,7 +144,7 @@ async def generate_chat_reply(context: ChatContext, char, account, request_id, d
     clock_hint = ""
     if clock_fields:
         rendered_clock = workbench_fields(" ".join("{{" + field + "}}" for field in clock_fields), local)
-        clock_hint = f"本轮查询的工坊日历值：{rendered_clock}。用角色口吻自然简短接一句，精确数值会在末尾附带。"
+        clock_hint = f"本轮参考的当前本地时间：{rendered_clock}。用角色口吻自然简短接一句，精确数值会在末尾附带。"
 
     unified_memories = (
         []
@@ -167,7 +168,7 @@ async def generate_chat_reply(context: ChatContext, char, account, request_id, d
             "role": "system",
             "content": (
                 "这是只读交谈，本轮没有新交办或修改，请严格按下面附带版本回答。"
-                "选材理由只引用记录中的真实理由，区分号主原话与编辑说明；记录没写时坦诚说明。"
+                "选材理由只引用记录中的真实理由，区分对方原话与补充说明；记录没写时坦诚说明。"
             ),
         })
         current_content = dump({"task": discussed_facts, "message": data.message})
@@ -275,8 +276,8 @@ async def acknowledge_delegation(context: ChatContext, char, request_id, user_me
         {
             "role": "system",
             "content": (
-                f"后台已正式立项并开始处理号主的这项交办（基础受理回执：{packet.summary}）。"
-                "请你用角色口吻说一两句简短、自然的受理承接语，明确告诉号主你已经接下交给后台去做、做好后会在当前对话回交，不要编造进度或提前给结论。"
+                f"后台已正式立项并开始处理{owner_address_label(char)}交办的这件事（受理信息：{packet.summary}）。"
+                f"请你用角色口吻说一两句简短、自然的承接语，明确告诉{owner_address_label(char)}已经交给后台去做、做好后会在当前对话回交，不要编造进度或提前给结论。"
             ),
         },
         {"role": "user", "content": user_message},
@@ -321,8 +322,8 @@ async def paraphrase_delivery(context: ChatContext, char, account, request_id, d
                 {
                     "role": "system",
                     "content": (
-                        "这次工坊读取已经完成。请用角色口吻写一句简短自然的开场感想或接话（纯文字 1 句话，不超过 60 字）；"
-                        "具体视频标题、评论原话、编号、时码与链接由工坊在下方直接渲染，禁止你自己拼链接或复读完整条目：\n"
+                        "这次查询已经完成。请用角色口吻写一句简短自然的开场感想或接话（纯文字 1 句话，不超过 60 字）；"
+                        "具体视频标题、评论原话、编号、时码与链接会在下方直接展示，禁止你自己拼链接或复读完整条目：\n"
                         + dump(summary_items)
                     ),
                 },
@@ -353,7 +354,7 @@ async def paraphrase_delivery(context: ChatContext, char, account, request_id, d
     messages.extend([
         {
             "role": "system",
-            "content": "这次读取已经结束。只用中文自然口吻把查到的答案告诉号主，严格以回执为准，不要附带英文注释或额外解释。以下是本轮已经取得的读取回执："
+            "content": f"这次读取已经结束。只用中文自然口吻把查到的答案告诉{owner_address_label(char)}，严格以回执为准，不要附带英文注释或额外解释。以下是本轮已经取得的读取回执："
             + dump({"summary": packet.summary, "receipt": packet.tool_receipt, "sources": packet.sources[:4]}),
         },
         {"role": "user", "content": data.message},
@@ -381,15 +382,16 @@ async def paraphrase_task_delivery(runtime, char, packet: DeliveryPacket) -> str
         return packet.summary
     status_label = {
         "task_completed": "已完成并交回成果",
-        "task_waiting_approval": "待号主确认下一步发布或操作",
+        "task_waiting_approval": "待确认下一步发布或操作",
         "task_failed": "未能顺利完成",
     }.get(packet.kind, "已有进展更新")
     messages = _thin_system_messages(char, "delivery", "同步后台任务交付")
+    owner = owner_address_label(char)
     messages.extend([
         {
             "role": "system",
             "content": (
-                f"后台任务当前{status_label}。请用角色口吻简短转述下面这份核验回执给号主，忠于原结论、状态与限制，不编造链接、文件或额外细节："
+                f"后台任务当前{status_label}。请用角色口吻简短转述下面这份核验回执给{owner}，忠于原结论、状态与限制，不编造链接、文件或额外细节："
                 + dump({"status": status_label, "summary": packet.summary, "facts": packet.facts})
             ),
         },

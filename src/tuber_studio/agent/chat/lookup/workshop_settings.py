@@ -86,7 +86,7 @@ async def update_settings(runtime, group, changes, *, scope):
     if not isinstance(changes, dict) or not changes or changes.keys() - fields.keys():
         raise ValueError("本次修改含有不支持的字段或缺少明确设置，未保存")
     if read_settings(runtime, group)["scope"] != scope:
-        raise ValueError("设置或当前号主、账号、角色已变化，请重新读取")
+        raise ValueError("设置或当前账号、角色已变化，请重新读取")
     try:
         patch = {key: _adapter(model, key).validate_python(value, strict=True) for key, value in changes.items()}
     except ValidationError:

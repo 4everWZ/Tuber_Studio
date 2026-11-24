@@ -150,7 +150,7 @@ async def route_chat_turn(context: ChatContext, char, account, request_id, data,
         schema=schema,
     )
     if intent.action in _OWNER_UI_ONLY:
-        raise HTTPException(422, "这项控制仅供号主在设置界面操作")
+        raise HTTPException(422, "这项控制需要在设置界面操作")
     return intent
 
 
@@ -174,13 +174,13 @@ async def route_voice_utterance(chat, words: str, tasks: list[dict]) -> VoiceRou
 
     menu = [
         voice_tool("conversation", "继续当前语音对话。", {}),
-        voice_tool("delegate", "号主明确交办新工作并说明目标。", {"quote": quote}),
+        voice_tool("delegate", "对方明确交办新工作并说明目标。", {"quote": quote}),
     ]
     if tasks:
         target = {"quote": quote, "task_id": {"type": "string", "enum": [item["id"] for item in tasks]}}
         menu.extend([
-            voice_tool("revise", "号主明确修改指定交办的要求。", target),
-            voice_tool("cancel", "号主明确停止指定交办。", target),
+            voice_tool("revise", "对方明确修改指定交办的要求。", target),
+            voice_tool("cancel", "对方明确停止指定交办。", target),
         ])
     slot = getattr(runtime, "chat_routing_generation", None)
     slot_ctx = slot() if callable(slot) else chat._generation_slot()

@@ -719,7 +719,7 @@ class TaskRuntime:
                     return
                 reason = "任务未完成。"
                 if isinstance(error, (DelegationError, InferenceBudgetExceeded)):
-                    reason = str(error)
+                    reason = task_delegation.calm_task_failure(error)
                 elif task_delegation.uses_responses(fresh) and "candidate" in fresh["plan"]:
                     reason = "后台未能完成选材；已保留候选材料，尚未交付。"
                 if task_delegation.uses_responses(fresh):

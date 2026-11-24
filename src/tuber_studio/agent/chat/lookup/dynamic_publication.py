@@ -432,9 +432,9 @@ def register_dynamic_publication(tasks, dynamics):
             raise ValueError("原提交尚待核对")
         return result
 
-    tasks.register("inspect_dynamic_draft", Tool("只读号主明确指定 ID 的现有动态草稿、目标及公开出处。",
+    tasks.register("inspect_dynamic_draft", Tool("只读指定 ID 的现有动态草稿、目标及公开出处。",
                    ExistingDraft, inspect, responses_only=True, accepts_goal=named_in_goal))
-    tasks.register("publish_dynamic_draft", Tool("提议发布号主明确指定 ID 的现有动态草稿，须审批实际正文和账号。",
+    tasks.register("publish_dynamic_draft", Tool("提议发布指定 ID 的现有动态草稿，须审批实际正文和账号。",
                    ExistingDraft, publish, stop, review, responses_only=True, accepts_goal=named_in_goal,
                    checkpoint_submission=True))
     tasks.register(PUBLICATION_TOOL, Tool("从已绑定的草稿快照逐条发布",

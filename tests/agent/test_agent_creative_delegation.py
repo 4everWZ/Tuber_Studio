@@ -279,7 +279,7 @@ async def test_responses_parallel_checkpoint_child_isolation_and_steering(runtim
     async def edit(messages, schema, *, max_tokens):
         brief = json.loads(messages[1]["content"])
         editor_calls.append(brief)
-        assert "大肥鱼" in messages[0]["content"] and chosen["opening"] in brief["evidence"]
+        assert "Aqua" in messages[0]["content"] and chosen["opening"] in brief["evidence"]
         assert chosen["opening"] in schema["$defs"]["CreativeItem"]["properties"]["sources"]["items"]["enum"]
         product = brief["candidate"]
         product["items"][0]["rationale"] = "大肥鱼的选材：" + product["items"][0]["rationale"]
@@ -538,7 +538,7 @@ async def test_front_chat_and_background_responses_use_distinct_http_contracts(r
         assert body["model"] == "omni-front" and "input" not in body and "tools" not in body
         if request.url.path == "/v1/chat/prompt_tokens":
             return httpx.Response(200, json={"count": 64})
-        assert request.url.path == "/v1/chat/completions" and "大肥鱼" in body["messages"][0]["content"]
+        assert request.url.path == "/v1/chat/completions" and "Aqua" in body["messages"][0]["content"]
         brief = json.loads(next(item["content"] for item in body["messages"] if item["role"] == "user"))
         evidence_id = next(iter(brief["evidence"]))
         schema = body["response_format"]["json_schema"]["schema"]

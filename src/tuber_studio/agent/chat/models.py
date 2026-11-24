@@ -68,6 +68,7 @@ _ROUTE_READ_ACTIONS = (
 )
 _ROUTE_CHANGE_ACTIONS = (
     "daily_settings", "pet_settings", "remember_event", "forget_memory",
+    "save_memory", "update_memory", "delete_memory",
     "live_preference", "live_handoff", "game_handoff", "dynamic", "edit_dynamic",
     "browse", "full_video", "start_operations", "stop", "resume_video", "inspect_video_frame",
     "pause_task", "resume_task", "watch_goal", "start_live",
@@ -88,13 +89,13 @@ _TASK_ROUTING = (
     "不需执行操作即可直接回答时选 chat。需要持续推进、分头处理或稍后交付的新目标选 delegate_task。"
     "对已有交办改口、补充要求、暂停或停止选 steer_task，从候选任务卡选对应 task_id；其他动作不得捏造任务卡。"
     "明确准备发动态、评区回复或发私信前用 prepare_publication；准备发布动态即使前文提到过视频或对象，也仍用 prepare_publication。"
-    "多候选对象下出现“那条/那个/这个/前面那个”等单数指代且未唯一指定序号、标题、BV 或 ID 时，必须用 clarify 请号主点名，禁止猜选或全选。"
-    "若号主正在回答上轮澄清，clarification_id 填该轮 id，保留原要求；换话题时不填。"
+    "多候选对象下出现“那条/那个/这个/前面那个”等单数指代且未唯一指定序号、标题、BV 或 ID 时，必须用 clarify 请对方点名，禁止猜选或全选。"
+    "若对方正在回答上轮澄清，clarification_id 填该轮 id，保留原要求；换话题时不填。"
 )
 
 _LIVE_TOOL_CONTEXT = (
-    "工坊可即时读取时钟、运营活动、视频进度、账号、记忆、直播与游戏状态、已送达和已播回执。"
-    "号主说起或改口自己的日常协作习惯时用 chat 自然接话，偏好由后台整理。请求查看已保存的记忆摘要才需查询摘要。"
+    "可即时读取时钟、运营活动、视频进度、账号、记忆、直播与游戏状态、已送达和已播回执。"
+    "普通闲聊用 chat 自然接话；当对方明确要求记住、修改或忘掉长期偏好/事实时，使用记忆工具直接保存或更新；请求查看已保存的记忆摘要才需查询摘要。"
     "回答当前状态时读取相应对象，以最新结果为准。"
 )
 
@@ -141,9 +142,9 @@ _TASK_CONTROLS = {"pause_task", "resume_task", "watch_goal"}
 _WORKSHOP_OBJECTS = {"watched_video": "video", "public_comment": "comment", "dynamic_post": "dynamic"}
 
 _WORKBENCH_TOOL_CONTEXT = (
-    "即时工具可列出工坊能力和当前可调项目、读设置、在已有宠物形象与表情中选择、"
-    "按号主要求调整日常业务设置。询问能力或选项先读目录；明确要求改变才执行。"
-    "后台任务承接持续运营、研究、取材和交付。权限策略由号主管理。"
+    "即时工具可列出当前可用能力和可调项目、读设置、在已有桌面形象与表情中选择、"
+    "按对方要求调整日常业务设置。询问能力或选项先读目录；明确要求改变才执行。"
+    "后台任务承接持续运营、研究、取材和交付。权限策略可在设置页管理。"
 )
 
 _POLICY_FIELDS = {
@@ -161,7 +162,8 @@ _ACTIVE_VIDEO_STATES = {"waiting", "queued", "running"}
 _NONCANCELLABLE_ACTIONS = {
     "agent_task", "steer_task", "cancel_task", *_TASK_CONTROLS,
     "browse", "full_video", "inspect_video_frame", "stop", "resume_video", "game_handoff",
-    "dynamic", "edit_dynamic", "remember_event", "forget_memory", "live_preference", "live_handoff",
+    "dynamic", "edit_dynamic", "remember_event", "forget_memory",
+    "save_memory", "update_memory", "delete_memory", "live_preference", "live_handoff",
     "daily_settings", "pet_settings",
 }
 
@@ -244,7 +246,8 @@ class ChatIntent(StrictModel):
         "chat", "clarify", "identity_read", "clock", "activity", "event_details", "event_author", "event_reply",
         "video_activity", "dynamic", "edit_dynamic", "browse", "full_video", "public_experiences", "remember_event",
         "operation_control", "start_operations", "live_status", "start_live", "stop", "resume_video", "video_details",
-        "recall_experience", "inspect_video_frame", "live_handoff", "live_preference", "forget_memory", "memory_summary",
+        "recall_experience", "inspect_video_frame", "live_handoff", "live_preference", "forget_memory",
+        "save_memory", "update_memory", "delete_memory", "memory_summary",
         "game_status", "game_handoff", "live_history", "owner_profile", "owner_binding", "operating_account",
         "operation_status", "web_lookup", "task_status", "agent_task", "steer_task", "cancel_task",
         "pause_task", "resume_task", "watch_goal",
@@ -255,6 +258,10 @@ class ChatIntent(StrictModel):
         default=None, exclude_if=lambda value: value is None,
     )
     topic: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
+    memory_content: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
+    memory_tags: list[str] = Field(default_factory=list, max_length=10, exclude_if=lambda value: not value)
     reference: Annotated[str, StringConstraints(max_length=90)] | None = None
     clarification_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
     position: int | None = Field(default=None, ge=1, le=3, strict=True)
@@ -300,7 +307,7 @@ class ChatTurn(StrictModel):
     @model_validator(mode="after")
     def private_window(self):
         if self.intent and self.intent.action in {"pet_settings", "daily_settings"}:
-            raise ValueError("请通过号主本轮话语选择日常设置")
+            raise ValueError("请通过对话直接说明要修改的日常设置")
         if self.window and not self.temporary:
             raise ValueError("本轮窗口只用于临时对话")
         if self.call_context and not self.call_scope:
@@ -379,6 +386,8 @@ class TurnRoute(StrictModel):
     ]
     action: str = "chat"
     topic: str = ""
+    memory_content: str = ""
+    memory_tags: list[str] = Field(default_factory=list)
     question: str = ""
     object_ref: str | None = None
     reference: str | None = None
