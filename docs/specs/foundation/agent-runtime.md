@@ -1,14 +1,14 @@
 # 常驻 Agent 底座契约
 
-本规范维护创作工坊的常驻 Agent、任务授权和成果交付。Agent 可以独立配置、启动和验收。大肥鱼作为应用层角色，通过配置、事件和工具接口接入。已部署能力见[当前计划](../../plans/current.md#常驻-agent-与跨端记忆)，记忆数据语义和大肥鱼的记忆投影见[记忆规范](memory.md#用户身份与长期记忆)。
+本规范维护创作工坊的常驻 Agent、主动心跳与技能执行、任务授权和成果交付。Agent 可以独立配置、启动和验收。默认个人 AI 搭档 **Aqua**（稳定角色卡 `id="whale"`、`persona/self_model.py` 四支柱元认知人设；「大肥鱼」仅保留为旧外号与历史别名）通过配置、事件和工具接口接入。已部署能力见[当前计划](../../plans/current.md#常驻-agent-与跨端记忆)，双层记忆语义见[记忆规范](memory.md#用户身份与长期记忆)。
 
 ## Chats 的事实、工具与对象
 
-已认证号主可以用自然语言查询工坊事实、执行获准操作或交办。Chats 与 `omni.asr.v1` 签名的语音通话采用角色分工与严格单向分层结构（`chat/{models,context,front_dialogue,router/*,dispatcher/*,transport,service}`、`voice/*` 与 `tasks/*`）：
+已认证号主可以用自然语言在 `Aqua Studio`（OpenAI 风格可折叠侧栏工作台，一级入口为 `对话与脉冲`、`渠道活动`、`直播台`、`角色与声音`、`设置`）中查询事实、执行获准操作或交办。Chats 与 `omni.asr.v1` 签名的语音通话采用角色分工与严格单向分层结构（`chat/{models,context,front_dialogue,l2_bridge,sse_events,heartbeat_feed,router/*,dispatcher/*,transport,service}`、`heartbeat/*`、`skills/*`、`voice/*` 与 `tasks/*`）：
 
 - **后台路由脑（`llm-default / Responses`，`agent/chat/router/`）：** 在 `OperationTurns` 最高优 `"chat"` 车道（对排队的 `"chat"` 严格抢占所有运营后台车道）上使用平坦 7 路工具（`chat` / `delegate_task` / `instant_read` / `direct_action` / `steer_task` / `prepare_publication` / `clarify`，配合 `temperature=0.0`、`parallel_tool_calls=False` 与原生多轮 `recent_dialogue`）统一承接文字分流、多轮指代消歧与语音指令分流；结合最近对话与编号候选清单，单数模糊指代（「那条」「那个」）跨越同类多候选且未唯一点名时返回 `clarify`（换题时自动忽略上轮 `clarification`），禁止猜选或全选；前文绑定视频或历史对象时不裁剪 `prepare_publication` 等核心路由工具；并在进入前台生成前释放 `"chat"` 路由车道。
-- **前台文字表达与 Omni 语音分工（`agent/chat/front_dialogue.py`、`agent/voice/`）：** Chats 前台文字接话、受理承接语与 `DeliveryPacket` 转述通过 `chat_profile(omni)` 运行在 `llm-default`（`/llm/v1/chat/completions`，`enable_thinking=False`）最高优 `"chat"` 车道（`chat_text_generation()`）上，彻底与 Omni 音频生成解耦；`omni-default` 仅用于 `agent/voice/` 私有语音通话（听、说、打断），通过同一套 `runtime.tasks` 交办与共享摘要协同工作，挂断后后台任务继续推进，但不向文字 Chats 泄露原始通话转录全文。
-- **执行与推流层（`agent/chat/dispatcher/`、`agent/chat/transport.py`）：** `delegate_task` 须先在 `runtime.tasks` 落盘并获得真实 `task_id` 后才发送前台「已开始」承接语；校验授权、作用域、记忆撤销与任务版本后执行即时读取／控制／立项，通过 `/api/chat/intelligent/stream` 流式返回当前轮次，并通过 `GET /api/chat/intelligent/events` 主动推送后台完成或待审批回执，后台中间工具日志不灌入文字聊天上下文。钟点与日期取工坊本地时钟。即时工具按当前原话和可见对象执行；写入另核对目标、权限和当前版本。
+- **前台文字表达与 Omni 语音分工（`agent/chat/front_dialogue.py`、`agent/chat/l2_bridge.py`、`agent/voice/`）：** Chats 前台文字接话通过 `persona/context/tree.py`（`owner_chat` `Base -> Branch` + 4 支柱 `self_model` + 严格 `scope="owner"` Layer 1 记忆）与 `chat_profile(omni)` 运行在 `llm-default`（`/llm/v1/chat/completions`，`enable_thinking=False`）最高优 `"chat"` 车道（`chat_text_generation()`）上，彻底与 Omni 音频生成解耦；`omni-default` 仅用于 `agent/voice/` 私有语音通话（听、说、打断），通过同一套 `runtime.tasks` 交办与共享摘要协同工作，挂断后后台任务继续推进，但不向文字 Chats 泄露原始通话转录全文。
+- **执行、平静反馈与 SSE 推流层（`agent/chat/dispatcher/`、`agent/chat/sse_events.py`、`agent/chat/transport.py`）：** `delegate_task` 须先在 `runtime.tasks` 落盘并获得真实 `task_id` 后才发送前台「已开始」承接语；校验授权、作用域、记忆撤销与任务版本后执行即时读取／控制／立项，通过 `/api/v1/agent/chat/stream` 流式返回当前轮次（发出 `tool_activity` 供前端渲染折叠「思考与工具」胶囊、`memory_updated` 供渲染可点击「已更新记忆」胶囊直达 `ManageMemoriesModal`、`stage` 标识当前阶段），并通过 `calm_constraint_message` 将内部委派／校验约束转译为平静自然语言（不泄露异常堆栈或退役称呼「工坊号主」）；后台完成、待审批回执与主动脉冲经 `GET /api/v1/agent/chat/events` 主动推送，后台中间工具日志不灌入文字聊天上下文。钟点与日期取工坊本地时钟。即时工具按当前原话和可见对象执行；写入另核对目标、权限和当前版本。
 
 观看统计、已读视频及片段、公开评论和动态记录通过 `workshop_lookup` 接入 Chats 与后台任务。业务日以工坊时区为准，观看数按 BV 去重，分别读回已取得内容、完整覆盖和正在读取。统计用观看账本与已保存结果，具体内容回到字幕、转写、采样画面或评论原文。标题相同时保留 BV 与作者供选，链接由真实 BV、分 P、时码或平台编号生成。动态草稿可以查阅，发布状态和链接来自已确认的提交记录。后台从聊天接手时，已关联的材料可按当前授权重新读取，并把这次读取作为任务证据保存。
 
@@ -110,6 +110,21 @@ Dots 的持续运行和跨入口接续对应工坊同一份任务、活动和版
 独立任务可并行。会话和各适配器声明的控制资源按键保序，例如同楼回复、同一私信会话和同一游戏会话。当前交互优先使用闲置生成机会，同时保障后台推进并遵守已接入的运营公平规则和直播时限。后台任务达到单步预算时保存进度并报告等待或失败原因。委派继承父任务的身份、可见范围和更窄的能力，带独立预算及回传产物。纠偏更新目标版本，已受理的改变从下一可中断边界生效，尚未提交的旧动作失效。停止区分当前生成、指定任务和后台计划，各适配器另提供急停及接管。取消未执行动作，已发出但未知的副作用进入核对。重启、网络断开和客户端重发按原 ID 查询。已确认动作可被续接使用，未知结果先核对，按工具语义再决定重试。
 
 允许号主安排一次或重复事项、订阅获准来源的事件和监控条件。任务可提出有明确目的的下次检查时间或等待条件，调度器按既有权限和时限保存。主动调研可读取获准来源并准备私有材料，后台事件按既有授权启动领域任务。安静时段内非紧急通知留在活动页，重复发现合并。扩大受众、改变权限、公开发送和游戏输入依各自的授权和控制权完成。客户端通过活动、状态快照及可重连续读的事件查看进行中、等待、完成、失败、取消和待核对。任务视图展示本轮交付与可展开的原始回执，运营和直播状态直接显示在各自的工具步骤上。
+
+### 统一常驻心跳与主动脉冲（`agent/heartbeat/`）
+
+`Runtime` 装配 `HeartbeatService` 与进程内去重冷却总线 `AgentEventBus`（`src/tuber_studio/agent/heartbeat/`）：
+
+- **统一事件总线（`AgentEventBus`）：** 收敛周期后台信号（`tick`、`discovery_health`、`inbox_health`、`dm_health`、`dynamics_health`、`hot_topic`、`video_candidate`）与观看热门话题触发的好奇心公开联网调研（`curiosity_research`），按事件指纹（`dedup_window_seconds=3600`）与同键冷却（`event_cooldown_seconds=900`）防刷屏。
+- **冷静主动简报（`HeartbeatService`）：** 遵循 `HeartbeatPolicy`（默认 `tick_interval_seconds=300`、`pulse_cooldown_seconds=1800`、`max_pulses_per_day=12`、`curiosity_max_queries_per_tick=2`），通过 L2 `self_model` 以 `Aqua` 第一人称自然口吻生成简短脉冲，经 `sanitize_pulse_text` 过滤堆栈、凭据及退役标签「工坊号主」，落盘 `agent_heartbeat_pulses` 并经 `agent/chat/heartbeat_feed.py` 幂等写入聊天流及 `GET /api/v1/agent/chat/events`。
+
+### Remotion 自动制片技能（`agent/skills/remotion_video.py`）
+
+`register_remotion_tools` 在 `TaskRuntime` 注册 4 个受 Schema 约束的 `responses_only` 工具（`plan_video_script` → `generate_remotion_project` → `render_remotion_video` → `stage_or_publish_bilibili_video`），对应[Wave 2 视频管线](../../design/video-production-pipeline.md)：
+
+- **严格公开来源隔离：** `assert_public_video_sources` 仅允许 `watched_video`、`public_incident`、`operator_topic`、`web_research`、`public_memory`、`public_comment`，显式拒绝 `owner:`、`private:`、`dm:`、`chat:` 等私域前缀与凭据片段。
+- **固定 TSX 模板与受控渲染：** 仅把校验通过的 JSON props 注入预置 React/Remotion 模板（不执行模型生成的任意代码），经并发信号量（默认 `max_render_concurrency=2`）与 `ffprobe` 校验音画同步（漂移 `<= 0.5s`）。
+- **审阅闸门与幂等投稿：** 默认策略 `publish_mode="preview_review"` 停留在待审核队列；显式开启 `auto_publish` 或人工批准后通过 `operations/facade.py` 复用 `canonical_intent("bilibili", "video_publish", content_hash, character_id)` 与单次写入预留完成 `biliup` 投稿及回执结算。
 
 ## 工具、身份与交付边界
 
