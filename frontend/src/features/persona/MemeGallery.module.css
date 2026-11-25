@@ -153,3 +153,163 @@
     grid-template-columns: 1fr;
   }
 }
+
+.tabBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--win-border-light, #e2e8f0);
+}
+
+.tabBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tabBtnActive {
+  background: var(--soft, #eef4fa);
+  border-color: var(--accent, #376f91);
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.filterBar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0 12px;
+}
+
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+}
+
+.tagPills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.pillBtn {
+  font-size: 12px;
+  padding: 4px 10px;
+  min-height: 28px;
+}
+
+.pillBtnActive {
+  background: var(--soft, #eef4fa);
+  border-color: var(--accent, #376f91);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.batchToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--win-border-light, #e2e8f0);
+  border-radius: 10px;
+  background: var(--surface, #f8fafc);
+}
+
+.inboxGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin: 14px 0;
+}
+
+.inboxCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inboxCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.inboxCheckboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.inboxFormFields {
+  display: grid;
+  gap: 8px;
+}
+
+.inboxFormFields label {
+  margin-top: 0;
+  font-size: 12px;
+}
+
+.inboxFormFields input,
+.inboxFormFields textarea,
+.inboxFormFields select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.sourcesSection {
+  display: grid;
+  gap: 16px;
+}
+
+.subSection {
+  border: 1px solid var(--win-border-light, #e2e8f0);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.subSection h3 {
+  margin-bottom: 10px;
+}
+
+.sourceList {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.sourceCard {
+  border: 1px solid var(--win-border-light, #e2e8f0);
+  border-radius: 10px;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.sourceCardHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}

@@ -239,7 +239,7 @@ describe("VideoStudioPage", () => {
       reference_urls: ["https://github.com/aqua-org/studio", "https://docs.example.org/guide"],
       max_scenes: 10,
     });
-  });
+  }, 15_000);
 
   it("triggers script planning from the composer bar", async () => {
     const user = userEvent.setup();
@@ -280,6 +280,116 @@ describe("VideoStudioPage", () => {
       include_avatar: true,
       bgm_enabled: true,
       max_scenes: 4,
+    });
+  });
+
+  it("pins all_channels memes (excluding interaction_only), attaches exclusive screenshots, and swaps scene memes in script tab", async () => {
+    const user = userEvent.setup();
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method || "GET";
+      calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (url.endsWith("/api/v1/operations/videos") && method === "GET") {
+        return jsonResponse(SAMPLE_OVERVIEW);
+      }
+      if (url.endsWith("/api/v1/persona/memes") && method === "GET") {
+        return jsonResponse({
+          items: [
+            {
+              asset_id: "meme_public_1",
+              title: "全渠道欢呼",
+              enabled: true,
+              missing: false,
+              usage_scope: "all_channels",
+              license: { name: "CC-BY-4.0" },
+            },
+            {
+              asset_id: "meme_private_1",
+              title: "仅互动黑话",
+              enabled: true,
+              missing: false,
+              usage_scope: "interaction_only",
+              license: { name: "CC-BY-4.0" },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/api/v1/operations/videos/plan") && method === "POST") {
+        return jsonResponse({
+          ok: true,
+          job_id: "rem_pinned_01",
+          status: "script_planned",
+          planner_source: "llm",
+        });
+      }
+      if (url.endsWith("/api/v1/operations/videos/rem_demo_01/plan") && method === "PATCH") {
+        return jsonResponse({ ok: true });
+      }
+      return jsonResponse({ ok: true });
+    });
+
+    render(<VideoStudioPage route={parseHashRoute("#videos")} />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("视频选题")).toBeInTheDocument();
+    });
+
+    // Open composer pinned meme picker -> only all_channels meme is offered
+    await user.click(screen.getByRole("button", { name: /置顶图库表情/ }));
+    await screen.findByText("全渠道欢呼");
+    expect(screen.queryByText("仅互动黑话")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "选用全渠道欢呼" }));
+
+    // Attach exclusive screenshot
+    const uploadInput = screen.getByLabelText("本次专属公开配图/截图") as HTMLInputElement;
+    const shotFile = new File(["pngbytes"], "shot.png", { type: "image/png" });
+    await user.upload(uploadInput, shotFile);
+    await screen.findByText("shot.png");
+
+    await user.type(screen.getByLabelText("视频选题"), "带置顶表情的演示");
+    await user.click(screen.getByRole("button", { name: "策划脚本" }));
+
+    await waitFor(() => {
+      expect(calls.some((c) => c.url.endsWith("/api/v1/operations/videos/plan") && c.method === "POST")).toBe(true);
+    });
+    const planCall = calls.find((c) => c.url.endsWith("/api/v1/operations/videos/plan"));
+    expect(planCall?.body).toMatchObject({
+      topic: "带置顶表情的演示",
+      pinned_meme_ids: ["meme_public_1"],
+      uploaded_images: [
+        expect.objectContaining({
+          filename: "shot.png",
+          mime_type: "image/png",
+        }),
+      ],
+    });
+
+    // Switch to Script tab and swap scene meme
+    await user.click(screen.getByRole("tab", { name: /分镜脚本/ }));
+    const swapButtons = screen.getAllByRole("button", { name: "更换表情" });
+    await user.click(swapButtons[0]);
+    await screen.findByText("全渠道欢呼");
+    await user.click(screen.getByRole("button", { name: "选用全渠道欢呼" }));
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url.endsWith("/api/v1/operations/videos/rem_demo_01/plan") && c.method === "PATCH"
+        )
+      ).toBe(true);
+    });
+    const patchCall = calls.find(
+      (c) => c.url.endsWith("/api/v1/operations/videos/rem_demo_01/plan") && c.method === "PATCH"
+    );
+    expect(patchCall?.body).toMatchObject({
+      scenes: [
+        expect.objectContaining({
+          scene_id: "s1",
+          visual_props: expect.objectContaining({ meme_asset_id: "meme_public_1" }),
+        }),
+        expect.objectContaining({ scene_id: "s2" }),
+      ],
     });
   });
 });

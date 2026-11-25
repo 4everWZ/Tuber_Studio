@@ -1,4 +1,5 @@
 import type { ApiComponents } from "@/shared/api/client";
+import type { MemeLicenseInfo, MemeSourceInfo, MemeUsageScope } from "@/shared/ui/MemePickerModal";
 
 export interface BilibiliOwnerProfile {
   uid: string;
@@ -240,7 +241,97 @@ export interface PersonaContextStatus {
 }
 
 export type OrganizedMemoryChange = ApiComponents["schemas"]["OrganizedMemoryChange"];
-export type MemeUploadPayload = ApiComponents["schemas"]["MemeUpload"];
+export type MemeUploadPayload = ApiComponents["schemas"]["MemeUpload"] & {
+  usage_scope?: MemeUsageScope;
+};
+
+export interface MemeInboxImageInfo {
+  width?: number;
+  height?: number;
+  frames?: number;
+  animated?: boolean;
+  mime_type?: string;
+}
+
+export interface MemeInboxItem {
+  item_id: string;
+  sha256: string;
+  dhash?: string;
+  blob_name?: string;
+  bytes?: number;
+  width?: number;
+  height?: number;
+  frames?: number;
+  animated?: boolean;
+  mime_type?: string;
+  image_info?: MemeInboxImageInfo;
+  title: string;
+  emotions: string[];
+  tags: string[];
+  description: string;
+  usage_scope: MemeUsageScope;
+  confidence?: number;
+  ai_tagged?: boolean | number;
+  status?: string;
+  source?: MemeSourceInfo | null;
+  license?: MemeLicenseInfo | null;
+  subscription_id?: string;
+  created_at?: number;
+  preview_url?: string;
+}
+
+export interface MemeInboxCacheStats {
+  bytes?: number;
+  files?: number;
+  limit_bytes?: number;
+  max_items?: number;
+  unlimited?: boolean;
+  reclaimable_bytes?: number;
+  protected_bytes?: number;
+}
+
+export interface MemeInboxResponse {
+  items?: MemeInboxItem[];
+  pending_count?: number;
+  pending_vision_count?: number;
+  cache?: MemeInboxCacheStats;
+}
+
+export type MemeSubscriptionKind = "remote_feed" | "bilibili_creator";
+
+export interface MemeSubscription {
+  source_id: string;
+  kind: MemeSubscriptionKind | string;
+  target_kind: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  auto_approve?: boolean;
+  sync_interval_hours: number;
+  license_name?: string;
+  license_url?: string;
+  license_note?: string;
+  last_etag?: string;
+  last_cursor?: string;
+  last_synced_at?: number | null;
+  last_status?: string;
+  last_error?: string;
+  created_at?: number;
+  updated_at?: number;
+}
+
+export interface MemeHarvesterConfig {
+  comment_harvest_enabled: boolean;
+  default_sync_interval_hours: number;
+  meme_inbox_limit_mib: number;
+  meme_inbox_max_items: number;
+}
+
+export interface MemeSourcesResponse {
+  items?: MemeSubscription[];
+  sources?: MemeSubscription[];
+  config?: MemeHarvesterConfig;
+}
 
 /**
  * Resolve web character label following legacy `core.js`:

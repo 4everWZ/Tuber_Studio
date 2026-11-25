@@ -76,11 +76,23 @@ export interface CacheCategoryStats {
   reclaimable_bytes: number;
   protected_bytes: number;
   writing?: boolean;
+  unlimited?: boolean;
+  max_items?: number;
 }
 
-export type CachePolicy = ApiComponents["schemas"]["CachePolicy"];
+export type CachePolicy = ApiComponents["schemas"]["CachePolicy"] & {
+  meme_inbox_limit_mib?: number;
+  meme_inbox_max_items?: number;
+};
 
-export type CacheCategoryKey = "video" | "music" | "speech" | "browsing" | "temporary" | "assets";
+export type CacheCategoryKey =
+  | "video"
+  | "music"
+  | "speech"
+  | "browsing"
+  | "temporary"
+  | "assets"
+  | "meme_inbox";
 
 export interface CacheSummaryStats {
   bytes: number;
@@ -88,6 +100,7 @@ export interface CacheSummaryStats {
   protected_bytes: number;
   reclaimable_bytes: number;
   limit_bytes: number;
+  unlimited?: boolean;
 }
 
 export interface CacheStatusResponse {

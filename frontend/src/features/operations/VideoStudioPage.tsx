@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StatusPill, type StatusPillTone } from "@/shared";
+import { MemePickerModal, StatusPill, type MemeAsset, type StatusPillTone } from "@/shared";
 import { apiRequest, studioPath } from "@/shared/api/client";
 import { emitNotice, errorMessage } from "@/shared/lib/errors";
 import { formatRelativeTime } from "@/shared/lib/formatters";
+import { defaultMemePreviewUrl } from "@/shared/ui/MemePickerModal";
 import type { ParsedRoute } from "@/shell/navigation";
 import styles from "./operations.module.css";
 
@@ -213,6 +214,39 @@ const FETCH_STATUS_META: Record<string, { label: string; tone: StatusPillTone }>
   manual: { label: "手动资料", tone: "neutral" },
 };
 
+const ACCEPT_ALL_CHANNELS_MEMES = (asset: MemeAsset) =>
+  (asset.usage_scope || "all_channels") === "all_channels";
+
+interface ComposerUploadItem {
+  id: string;
+  filename: string;
+  mime_type: "image/png" | "image/jpeg" | "image/webp";
+  image_base64: string;
+  preview_url: string;
+  size_bytes: number;
+}
+
+type MemePickerTarget =
+  | { mode: "composer" }
+  | { mode: "scene"; job: VideoJobRecord; sceneId: string; currentAssetId?: string | null };
+
+function readImageDataUrl(file: File): Promise<{ dataUrl: string; base64: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || "");
+      const base64 = dataUrl.includes(",") ? dataUrl.split(",", 2)[1] : dataUrl;
+      if (!base64) {
+        reject(new Error("读取本地图片失败"));
+        return;
+      }
+      resolve({ dataUrl, base64 });
+    };
+    reader.onerror = () => reject(new Error("读取本地图片失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function safeHttpsUrl(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
@@ -271,6 +305,9 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
   const [ttsMode, setTtsMode] = useState<"omni_speech" | "dry_run">("omni_speech");
   const [includeAvatar, setIncludeAvatar] = useState(true);
   const [bgmEnabled, setBgmEnabled] = useState(true);
+  const [pinnedMemes, setPinnedMemes] = useState<MemeAsset[]>([]);
+  const [composerUploads, setComposerUploads] = useState<ComposerUploadItem[]>([]);
+  const [memePickerTarget, setMemePickerTarget] = useState<MemePickerTarget | null>(null);
 
   // Action busy flags
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -432,6 +469,16 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
           include_avatar: includeAvatar,
           bgm_enabled: bgmEnabled,
           max_scenes: maxScenes,
+          ...(pinnedMemes.length > 0 ? { pinned_meme_ids: pinnedMemes.map((m) => m.asset_id) } : {}),
+          ...(composerUploads.length > 0
+            ? {
+                uploaded_images: composerUploads.map((item) => ({
+                  filename: item.filename,
+                  image_base64: item.image_base64,
+                  mime_type: item.mime_type,
+                })),
+              }
+            : {}),
         },
       });
       const jobId = planned.job_id;
@@ -473,6 +520,70 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
       setBriefText("");
       setReferenceUrlsText("");
       setSelectedBvids([]);
+      setPinnedMemes([]);
+      setComposerUploads([]);
+      await fetchOverview(true);
+    } catch (err) {
+      const msg = errorMessage(err);
+      setActionError(msg);
+      emitNotice(msg, true);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleComposerUploadFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const remaining = 3 - composerUploads.length;
+    if (remaining <= 0) {
+      setActionError("专属公开配图/截图最多添加 3 张。");
+      return;
+    }
+    const picked = Array.from(files).slice(0, remaining);
+    const added: ComposerUploadItem[] = [];
+    for (const file of picked) {
+      if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+        setActionError("仅支持上传 PNG、JPEG 或 WebP 格式的公开图片。");
+        return;
+      }
+      try {
+        const { dataUrl, base64 } = await readImageDataUrl(file);
+        added.push({
+          id: `${file.name}-${file.size}-${Math.random().toString(36).slice(2, 8)}`,
+          filename: file.name,
+          mime_type: file.type as "image/png" | "image/jpeg" | "image/webp",
+          image_base64: base64,
+          preview_url: dataUrl,
+          size_bytes: file.size,
+        });
+      } catch (err) {
+        setActionError(errorMessage(err));
+        return;
+      }
+    }
+    setActionError("");
+    setComposerUploads((prev) => [...prev, ...added].slice(0, 3));
+  }
+
+  async function handleSetSceneMeme(job: VideoJobRecord, sceneId: string, memeAssetId: string | null) {
+    const scenes = job.plan?.scenes;
+    if (!scenes) return;
+    setBusyAction("scene_meme");
+    setActionError("");
+    try {
+      const updatedScenes = scenes.map((scene) =>
+        scene.scene_id === sceneId
+          ? {
+              ...scene,
+              visual_props: { ...(scene.visual_props || {}), meme_asset_id: memeAssetId },
+            }
+          : scene
+      );
+      await videoRequest(`/api/v1/operations/videos/${encodeURIComponent(job.id)}/plan`, {
+        method: "PATCH",
+        body: { scenes: updatedScenes },
+      });
+      emitNotice(memeAssetId ? `已更新分镜表情：${memeAssetId}` : "已清除该分镜的表情配图。");
       await fetchOverview(true);
     } catch (err) {
       const msg = errorMessage(err);
@@ -492,13 +603,7 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
     setBusyAction("upload");
     setActionError("");
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("读取本地图片失败"));
-        reader.readAsDataURL(file);
-      });
-      const base64 = dataUrl.includes(",") ? dataUrl.split(",", 2)[1] : dataUrl;
+      const { base64 } = await readImageDataUrl(file);
       await videoRequest(`/api/v1/operations/videos/${encodeURIComponent(job.id)}/uploads`, {
         method: "POST",
         body: {
@@ -852,6 +957,83 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
               })}
             </div>
           )}
+
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+              <button
+                type="button"
+                data-pin-meme-btn=""
+                disabled={busyAction !== null || pinnedMemes.length >= 3}
+                onClick={() => setMemePickerTarget({ mode: "composer" })}
+              >
+                {`置顶图库表情（0–3 张）${pinnedMemes.length > 0 ? ` (${pinnedMemes.length}/3)` : ""}`}
+              </button>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginTop: 0 }}>
+                <span className="hint">本次专属公开配图/截图（0–3 张）</span>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/png,image/jpeg,image/webp"
+                  aria-label="本次专属公开配图/截图"
+                  disabled={busyAction !== null || composerUploads.length >= 3}
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    void handleComposerUploadFiles(files);
+                    e.target.value = "";
+                  }}
+                />
+                <span className="hint">{composerUploads.length} / 3</span>
+              </label>
+            </div>
+
+            {pinnedMemes.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }} data-pinned-memes="">
+                {pinnedMemes.map((meme) => (
+                  <span key={meme.asset_id} className={styles.claimChip}>
+                    <img
+                      src={defaultMemePreviewUrl(meme)}
+                      alt={meme.title || meme.asset_id}
+                      style={{ width: 24, height: 24, objectFit: "cover", borderRadius: 4 }}
+                    />
+                    <span>{meme.title || meme.asset_id}</span>
+                    <button
+                      type="button"
+                      aria-label={`移除置顶表情 ${meme.title || meme.asset_id}`}
+                      onClick={() =>
+                        setPinnedMemes((prev) => prev.filter((item) => item.asset_id !== meme.asset_id))
+                      }
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {composerUploads.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }} data-composer-uploads="">
+                {composerUploads.map((item) => (
+                  <span key={item.id} className={styles.claimChip}>
+                    <img
+                      src={item.preview_url}
+                      alt={item.filename}
+                      style={{ width: 24, height: 24, objectFit: "cover", borderRadius: 4 }}
+                    />
+                    <span>{item.filename}</span>
+                    <button
+                      type="button"
+                      aria-label={`移除配图 ${item.filename}`}
+                      onClick={() =>
+                        setComposerUploads((prev) => prev.filter((existing) => existing.id !== item.id))
+                      }
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
             <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -1473,6 +1655,26 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                             <StatusPill tone="amber" label={`表情: ${scene.visual_props.meme_asset_id}`} />
                           )}
                           {scene.avatar_cue && <StatusPill tone="neutral" label={scene.avatar_cue} />}
+                          <button
+                            type="button"
+                            data-scene-change-meme={scene.scene_id}
+                            disabled={
+                              busyAction !== null ||
+                              selectedJob.status === "published" ||
+                              selectedJob.status === "publish_uncertain" ||
+                              selectedJob.status === "rendering"
+                            }
+                            onClick={() =>
+                              setMemePickerTarget({
+                                mode: "scene",
+                                job: selectedJob,
+                                sceneId: scene.scene_id,
+                                currentAssetId: scene.visual_props?.meme_asset_id,
+                              })
+                            }
+                          >
+                            更换表情
+                          </button>
                         </div>
                       </div>
                       {scene.visual_props?.subtitle && (
@@ -1597,6 +1799,32 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
           )}
         </div>
       </div>
+
+      {memePickerTarget !== null && (
+        <MemePickerModal
+          open
+          selectedAssetId={
+            memePickerTarget.mode === "scene" ? memePickerTarget.currentAssetId : undefined
+          }
+          title={memePickerTarget.mode === "scene" ? "更换分镜表情" : "置顶图库表情（0–3 张）"}
+          description="仅显示允许用于全渠道（含动态与视频）的已启用表情图片。"
+          resetLabel={memePickerTarget.mode === "scene" ? "清除场景表情" : undefined}
+          accept={ACCEPT_ALL_CHANNELS_MEMES}
+          onClose={() => setMemePickerTarget(null)}
+          onSelect={async (assetId, asset) => {
+            if (memePickerTarget.mode === "composer") {
+              if (!asset || !assetId) return;
+              setPinnedMemes((prev) => {
+                if (prev.some((item) => item.asset_id === assetId)) return prev;
+                if (prev.length >= 3) return prev;
+                return [...prev, asset];
+              });
+              return;
+            }
+            await handleSetSceneMeme(memePickerTarget.job, memePickerTarget.sceneId, assetId);
+          }}
+        />
+      )}
     </section>
   );
 }

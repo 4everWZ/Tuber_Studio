@@ -5,6 +5,7 @@ import { errorMessage } from "../lib/errors";
 export interface MemeSourceInfo {
   kind?: string | null;
   author?: string | null;
+  author_id?: string | null;
   url?: string | null;
   revision?: string | null;
   note?: string | null;
@@ -16,6 +17,8 @@ export interface MemeLicenseInfo {
   note?: string | null;
 }
 
+export type MemeUsageScope = "all_channels" | "interaction_only";
+
 export interface MemeAsset {
   asset_id: string;
   title?: string;
@@ -23,6 +26,8 @@ export interface MemeAsset {
   missing?: boolean;
   animated?: boolean;
   manifest_owned?: boolean;
+  usage_scope?: MemeUsageScope;
+  dhash?: string;
   preview_url?: string | null;
   width?: number;
   height?: number;
@@ -54,20 +59,21 @@ export interface MemePickerModalProps {
   onClose: () => void;
 }
 
-const SOURCE_KIND_LABELS: Record<string, string> = {
+export const SOURCE_KIND_LABELS: Record<string, string> = {
   existing_user_assets: "已有素材",
   user_upload: "用户导入",
   licensed_pack: "许可素材包",
   generated: "生成图片",
+  remote_feed: "远程订阅源",
+  bilibili_comment: "B站评论区",
+  bilibili_creator: "B站二创追踪",
 };
 
-const DEFAULT_ACCEPT = () => true;
-
-export function defaultMemePreviewUrl(asset: MemeAsset): string {
-  return studioPath(`/api/v1/persona/memes/${encodeURIComponent(asset.asset_id)}/preview`);
+export function usageScopeLabel(scope?: string | null): string {
+  return scope === "interaction_only" ? "仅互动" : "全渠道";
 }
 
-function safeExternalUrl(value: string | null | undefined): string | null {
+export function safeExternalUrl(value: string | null | undefined): string | null {
   if (!value) return null;
   try {
     const parsed = new URL(value);
@@ -75,6 +81,12 @@ function safeExternalUrl(value: string | null | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+const DEFAULT_ACCEPT = () => true;
+
+export function defaultMemePreviewUrl(asset: MemeAsset): string {
+  return studioPath(`/api/v1/persona/memes/${encodeURIComponent(asset.asset_id)}/preview`);
 }
 
 export function MemeMetadataDetails({ asset }: { asset: MemeAsset }) {
@@ -88,7 +100,11 @@ export function MemeMetadataDetails({ asset }: { asset: MemeAsset }) {
     <details className="meme-metadata">
       <summary>来源与许可</summary>
       <p>
+        适用范围：{usageScopeLabel(asset.usage_scope)}
+      </p>
+      <p>
         来源：{source.author || "未提供"}
+        {source.author_id ? ` (${source.author_id})` : ""}
         {sourceKind ? ` · ${sourceKind}` : ""}
         {sourceUrl && (
           <>
@@ -282,6 +298,12 @@ export function MemePickerModal({
             >
               <MemePreviewBox asset={asset} url={previewUrl(asset)} />
               <strong>{asset.title || asset.asset_id}</strong>
+              <span
+                className={asset.usage_scope === "interaction_only" ? "badge amber" : "badge"}
+                data-usage-scope={asset.usage_scope || "all_channels"}
+              >
+                {usageScopeLabel(asset.usage_scope)}
+              </span>
               <small>{asset.license?.name || "许可未提供"}</small>
             </button>
           );

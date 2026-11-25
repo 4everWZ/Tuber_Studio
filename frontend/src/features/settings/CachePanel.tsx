@@ -66,6 +66,14 @@ const CACHE_CATEGORIES: ReadonlyArray<{
     min: 16,
     max: 8192,
   },
+  {
+    key: "meme_inbox",
+    field: "meme_inbox_limit_mib",
+    label: "表情包收件箱缓存",
+    desc: "自动采集的待审表情包候选图；按容量与条数上限自动回收，0 表示不限",
+    min: 0,
+    max: 8192,
+  },
 ];
 
 const DEFAULT_POLICY: CachePolicy = {
@@ -75,7 +83,14 @@ const DEFAULT_POLICY: CachePolicy = {
   browsing_limit_mib: 512,
   temporary_limit_mib: 1024,
   assets_limit_mib: 512,
+  meme_inbox_limit_mib: 512,
+  meme_inbox_max_items: 200,
 };
+
+function formatCacheLimit(limitBytes: number, unlimited?: boolean): string {
+  if (unlimited || limitBytes === 0) return "不限";
+  return formatCacheBytes(limitBytes);
+}
 
 export function CachePanel({ className }: { className?: string }) {
   const [data, setData] = useState<CacheStatusResponse | null>(null);
@@ -203,7 +218,7 @@ export function CachePanel({ className }: { className?: string }) {
       </p>
       {summary && (
         <p data-cache-summary="" className="hint" style={{ fontWeight: 500 }}>
-          {`总占用 ${formatCacheBytes(summary.bytes)} / 总上限 ${formatCacheBytes(summary.limit_bytes)} · 可回收总计 ${formatCacheBytes(summary.reclaimable_bytes)} · 受保护总计 ${formatCacheBytes(summary.protected_bytes)} · 文件总数 ${summary.files}`}
+          {`总占用 ${formatCacheBytes(summary.bytes)} / 总上限 ${formatCacheLimit(summary.limit_bytes, summary.unlimited)} · 可回收总计 ${formatCacheBytes(summary.reclaimable_bytes)} · 受保护总计 ${formatCacheBytes(summary.protected_bytes)} · 文件总数 ${summary.files}`}
         </p>
       )}
       <form onSubmit={(event) => void handleSaveLimits(event)}>
@@ -218,11 +233,15 @@ export function CachePanel({ className }: { className?: string }) {
                 </p>
                 <p data-stats="" className="hint">
                   {stats
-                    ? `已用 ${formatCacheBytes(stats.bytes)} / ${formatCacheBytes(stats.limit_bytes)} · 文件 ${stats.files ?? 0} · 可回收 ${formatCacheBytes(stats.reclaimable_bytes)} · 受保护 ${formatCacheBytes(stats.protected_bytes)}${stats.writing ? " · 正在写入" : ""}`
+                    ? `已用 ${formatCacheBytes(stats.bytes)} / ${formatCacheLimit(stats.limit_bytes, stats.unlimited)} · 文件 ${stats.files ?? 0}${
+                        key === "meme_inbox" && typeof stats.max_items === "number"
+                          ? `（上限 ${stats.max_items === 0 ? "不限" : `${stats.max_items} 条`}）`
+                          : ""
+                      } · 可回收 ${formatCacheBytes(stats.reclaimable_bytes)} · 受保护 ${formatCacheBytes(stats.protected_bytes)}${stats.writing ? " · 正在写入" : ""}`
                     : ""}
                 </p>
                 <label>
-                  {`${label}最大缓存（MiB，${min}–${max}）`}
+                  {`${label}最大缓存（MiB，${min}–${max}${min === 0 ? "，0 表示不限" : ""}）`}
                   <input
                     type="number"
                     min={min}
@@ -241,6 +260,31 @@ export function CachePanel({ className }: { className?: string }) {
                     }}
                   />
                 </label>
+                {key === "meme_inbox" && (
+                  <label style={{ marginTop: 8 }}>
+                    {"表情包收件箱最大条数（0–10000，0 表示不限）"}
+                    <input
+                      type="number"
+                      min={0}
+                      max={10000}
+                      step={1}
+                      required
+                      name="meme_inbox_max_items"
+                      value={limits.meme_inbox_max_items ?? DEFAULT_POLICY.meme_inbox_max_items}
+                      onChange={(event) => {
+                        dirtyRef.current = true;
+                        setDirty(true);
+                        setLimits((prev) => ({
+                          ...prev,
+                          meme_inbox_max_items:
+                            event.target.value === ""
+                              ? prev.meme_inbox_max_items
+                              : Number(event.target.value),
+                        }));
+                      }}
+                    />
+                  </label>
+                )}
                 <button
                   type="button"
                   style={{ marginTop: 8 }}

@@ -51,7 +51,8 @@ const DECISION_STATUS_LABELS: Record<string, string> = {
 const TERMINAL_POST_STATUSES = new Set(["published", "rejected", "invalidated"]);
 const MEME_CACHE_TTL_MS = 30_000;
 const BG_REFRESH_THROTTLE_MS = 8_000;
-const ACCEPT_ALL_MEMES = () => true;
+const ACCEPT_ALL_CHANNELS_MEMES = (asset: MemeAsset) =>
+  (asset.usage_scope || "all_channels") === "all_channels";
 
 interface MemeCacheEntry {
   fetchedAt: number;
@@ -1308,7 +1309,7 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
         selectedAssetId={activePost?.meme_id}
         title="选择动态配图"
         description="从共享表情/插画图库中选择一张图片附带在当前动态草稿中。"
-        accept={ACCEPT_ALL_MEMES}
+        accept={ACCEPT_ALL_CHANNELS_MEMES}
         onClose={() => setMemePickerOpen(false)}
         onSelect={(assetId) => {
           setMemePickerOpen(false);
