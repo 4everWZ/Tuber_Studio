@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusPill, type StatusPillTone } from "@/shared";
-import {
-  notifyUnauthorized,
-  parseResponseError,
-  prepareRequestInit,
-  studioPath,
-} from "@/shared/api/client";
+import { apiRequest, studioPath } from "@/shared/api/client";
 import { emitNotice, errorMessage } from "@/shared/lib/errors";
 import { formatRelativeTime } from "@/shared/lib/formatters";
 import type { ParsedRoute } from "@/shell/navigation";
@@ -212,22 +207,11 @@ async function videoRequest<T>(
   path: string,
   options: { method?: string; body?: unknown; responseType?: "json" | "text" } = {}
 ): Promise<T> {
-  const init = prepareRequestInit({
+  return apiRequest<T>(path, {
     method: options.method || "GET",
     body: options.body,
+    responseType: options.responseType,
   });
-  const response = await fetch(studioPath(path), init);
-  if (response.status === 401) {
-    notifyUnauthorized();
-    throw await parseResponseError(response);
-  }
-  if (!response.ok) {
-    throw await parseResponseError(response);
-  }
-  if (options.responseType === "text") {
-    return (await response.text()) as T;
-  }
-  return (await response.json()) as T;
 }
 
 export function VideoStudioPage({ route }: { route: ParsedRoute }) {
