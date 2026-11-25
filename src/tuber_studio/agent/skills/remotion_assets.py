@@ -107,66 +107,132 @@ class PublicSourceRef(StrictModel):
 
 AVATAR_STATES: tuple[str, ...] = ("idle", "talking", "cheerful", "confused", "angry", "gift")
 AVATAR_MEME_STATES: dict[str, str] = {
-    "hum": "story-hum.gif",
-    "meal": "story-meal.gif",
-    "tail": "story-tail.gif",
-    "token": "story-token.gif",
-    "turn": "motion-turn.gif",
-    "dance": "motion-dance.gif",
-    "jump": "motion-jump.gif",
-    "eat": "motion-eat.gif",
-    "sleep": "motion-sleep.gif",
+    "hum": "story-hum.gif", "meal": "story-meal.gif", "tail": "story-tail.gif",
+    "token": "story-token.gif", "turn": "motion-turn.gif", "dance": "motion-dance.gif",
+    "jump": "motion-jump.gif", "eat": "motion-eat.gif", "sleep": "motion-sleep.gif",
 }
 DEFAULT_MEME_BY_CUE: dict[str, str] = {
-    "idle": "archive-flat-whale",
-    "cheerful": "archive-megaphone",
-    "curious": "archive-thinking-whale",
-    "thinking": "story-token",
-    "surprised": "archive-laptop-rage",
-    "proud": "story-tail",
-    "calm": "story-meal",
-    "angry": "archive-annoyed-poke",
+    "idle": "archive-flat-whale", "cheerful": "archive-megaphone", "curious": "archive-thinking-whale",
+    "thinking": "story-token", "surprised": "archive-laptop-rage", "proud": "story-tail",
+    "calm": "story-meal", "angry": "archive-annoyed-poke",
 }
 DEFAULT_LINE_PAUSE_SECONDS = 0.45
 DEFAULT_SCENE_PAUSE_SECONDS = 0.75
 DEFAULT_OUTRO_HOLD_SECONDS = 0.60
 
 
-def load_whale_meme_catalog(assets_root: Path) -> list[dict[str, Any]]:
-    """Load public whale meme metadata from `assets/whale/memes/manifest.json`."""
+def _blocked_bundled_memes(meme_catalog) -> tuple[set[str], set[str]]:
+    store = getattr(meme_catalog, "store", None)
+    if store is None or not hasattr(store, "all"):
+        return set(), set()
+    try:
+        cols = {col["name"] for col in store.all("PRAGMA table_info(meme_assets)")}
+        cond = "(enabled=0 OR usage_scope='interaction_only')" if "usage_scope" in cols else "enabled=0"
+        rows = store.all(f"SELECT blob_name, sha256 FROM meme_assets WHERE storage_kind='existing_user_assets' AND deleted=0 AND {cond}")
+        return (
+            {str(r["blob_name"]) for r in rows if r.get("blob_name")},
+            {str(r["sha256"]) for r in rows if r.get("sha256")},
+        )
+    except Exception:
+        return set(), set()
+
+
+def _resolve_catalog_item_path(meme_catalog, item: dict[str, Any], asset_id: str, char_key: str) -> Path | None:
+    raw_path = item.get("file_path") or item.get("path")
+    if raw_path is None and hasattr(meme_catalog, "resolve"):
+        try:
+            raw_path = meme_catalog.resolve(asset_id, char_key, allow_disabled=False).get("path")
+        except (ValueError, OSError):
+            return None
+    if raw_path is None and hasattr(meme_catalog, "_row") and hasattr(meme_catalog, "_path"):
+        try:
+            raw_path = meme_catalog._path(meme_catalog._row(asset_id))
+        except (ValueError, OSError):
+            return None
+    if raw_path is None:
+        return None
+    resolved = Path(raw_path)
+    return resolved if resolved.is_file() else None
+
+
+def load_whale_meme_catalog(assets_root: Path, *, meme_catalog=None, character_id: str = "whale") -> list[dict[str, Any]]:
+    """Load public whale meme metadata from `assets/whale/memes/manifest.json` merged with MemeCatalog."""
     memes_dir = Path(assets_root) / "assets/whale/memes"
     manifest_path = memes_dir / "manifest.json"
-    if not manifest_path.is_file():
-        return []
-    try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except ValueError:
-        return []
-    entries = payload.get("entries") if isinstance(payload, dict) else None
-    if not isinstance(entries, list):
-        return []
     catalog: list[dict[str, Any]] = []
-    for raw in entries:
-        if not isinstance(raw, dict):
-            continue
-        item_id = str(raw.get("id") or "").strip()
-        rel_path = str(raw.get("path") or "").strip()
-        if not item_id or not rel_path or "/" in rel_path or "\\" in rel_path or ".." in rel_path:
-            continue
-        file_path = memes_dir / rel_path
-        if not file_path.is_file():
-            continue
-        catalog.append(
-            {
-                "id": item_id,
-                "title": str(raw.get("title") or item_id),
-                "tags": [str(t) for t in (raw.get("tags") or [])[:5]],
-                "emotions": [str(e) for e in (raw.get("emotions") or [])[:4]],
-                "path": rel_path,
+    if manifest_path.is_file():
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except ValueError:
+            payload = None
+        entries = payload.get("entries") if isinstance(payload, dict) else None
+        for raw in (entries if isinstance(entries, list) else ()):
+            if not isinstance(raw, dict):
+                continue
+            item_id, rel_path = str(raw.get("id") or "").strip(), str(raw.get("path") or "").strip()
+            if not item_id or not rel_path or "/" in rel_path or "\\" in rel_path or ".." in rel_path:
+                continue
+            file_path = memes_dir / rel_path
+            if not file_path.is_file():
+                continue
+            catalog.append({
+                "id": item_id, "title": str(raw.get("title") or item_id),
+                "tags": [str(t) for t in (raw.get("tags") or [])[:8]], "emotions": [str(e) for e in (raw.get("emotions") or [])[:4]],
+                "path": rel_path, "source_path": file_path, "file_path": file_path,
+                "sha256": hashlib.sha256(file_path.read_bytes()).hexdigest(), "alias_ids": [item_id],
                 "description": str(raw.get("description") or "")[:120],
-            }
-        )
+            })
+    if meme_catalog is None:
+        return catalog
+    blocked_blobs, blocked_shas = _blocked_bundled_memes(meme_catalog)
+    if blocked_blobs or blocked_shas:
+        catalog = [e for e in catalog if e["path"] not in blocked_blobs and e.get("sha256") not in blocked_shas]
+    by_rel_path, by_sha256 = {e["path"]: e for e in catalog}, {e["sha256"]: e for e in catalog if e.get("sha256")}
+    char_key = str(character_id or "whale").strip() or "whale"
+    for item in meme_catalog.list(char_key, include_disabled=False, usage_scope="all_channels"):
+        if not isinstance(item, dict) or item.get("missing") or not item.get("enabled", True) or item.get("usage_scope") == "interaction_only":
+            continue
+        asset_id = str(item.get("asset_id") or "").strip()
+        if not asset_id or (resolved_path := _resolve_catalog_item_path(meme_catalog, item, asset_id, char_key)) is None:
+            continue
+        blob_name, item_sha = str(item.get("blob_name") or resolved_path.name), str(item.get("sha256") or "")
+        bundled = (by_rel_path.get(blob_name) or (by_sha256.get(item_sha) if item_sha else None)) if item.get("storage_kind") == "existing_user_assets" else None
+        if bundled is not None:
+            if asset_id not in bundled["alias_ids"]:
+                bundled["alias_ids"].append(asset_id)
+            if item.get("title"):
+                bundled["title"] = str(item["title"])
+            if isinstance(item.get("tags"), list):
+                bundled["tags"] = [str(t) for t in item["tags"][:8]]
+            if isinstance(item.get("emotions"), list):
+                bundled["emotions"] = [str(e) for e in item["emotions"][:4]]
+            if "description" in item and item["description"] is not None:
+                bundled["description"] = str(item["description"])[:120]
+            if item_sha and not bundled.get("sha256"):
+                bundled["sha256"] = item_sha
+        else:
+            catalog.append({
+                "id": asset_id, "title": str(item.get("title") or asset_id),
+                "tags": [str(t) for t in (item.get("tags") or [])[:8]], "emotions": [str(e) for e in (item.get("emotions") or [])[:4]],
+                "path": blob_name, "source_path": resolved_path, "file_path": resolved_path,
+                "sha256": item_sha, "alias_ids": [asset_id], "description": str(item.get("description") or "")[:120],
+                "storage_kind": str(item.get("storage_kind") or "library"),
+            })
     return catalog
+
+
+def resolve_catalog_meme_id(catalog: Sequence[dict[str, Any]], meme_id: str | None) -> str | None:
+    """Resolve a canonical short ID or MemeCatalog `asset_id` (via `alias_ids`) to canonical ID."""
+    clean = str(meme_id or "").strip()
+    if not clean:
+        return None
+    for entry in catalog:
+        canonical = str(entry.get("id") or "").strip()
+        if not canonical:
+            continue
+        if clean == canonical or clean in (entry.get("alias_ids") or ()):
+            return canonical
+    return None
 
 
 def _extract_gif_frames(src_path: Path, frames_dir: Path, rel_prefix: str) -> tuple[list[str], int]:
@@ -205,27 +271,15 @@ def _stage_gif_or_file_entry(src_file: Path, pub_dir: Path, state_or_id: str, re
 
 
 def pick_distinct_scene_meme_id(
-    cue: str,
-    used_ids: set[str],
-    available_ids: set[str],
-    preferred_id: str | None = None,
+    cue: str, used_ids: set[str], available_ids: set[str], preferred_id: str | None = None
 ) -> str | None:
     """Pick a distinct whale sticker ID per scene so adjacent cards never repeat the same art."""
     if preferred_id and preferred_id in available_ids and preferred_id not in used_ids:
         return preferred_id
     ordered = [
         DEFAULT_MEME_BY_CUE.get(str(cue or "").strip(), "archive-megaphone"),
-        "archive-megaphone",
-        "story-token",
-        "archive-laptop-rage",
-        "story-meal",
-        "archive-flat-whale",
-        "story-tail",
-        "motion-turn",
-        "story-hum",
-        "archive-craving-cake",
-        "archive-thinking-whale",
-        *sorted(available_ids),
+        "archive-megaphone", "story-token", "archive-laptop-rage", "story-meal", "archive-flat-whale",
+        "story-tail", "motion-turn", "story-hum", "archive-craving-cake", "archive-thinking-whale", *sorted(available_ids),
     ]
     for candidate in ordered:
         if candidate in available_ids and candidate not in used_ids:
@@ -236,12 +290,8 @@ def pick_distinct_scene_meme_id(
 
 
 def stage_whale_visual_assets(
-    assets_root: Path,
-    public_dir: Path,
-    *,
-    include_avatar: bool,
-    requested_meme_ids: list[str],
-    scene_cues: list[str],
+    assets_root: Path, public_dir: Path, *, include_avatar: bool, requested_meme_ids: list[str],
+    scene_cues: list[str], meme_catalog=None, character_id: str = "whale",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Copy real Aqua avatar GIFs and whale meme stickers into `public/` and extract GIF frames."""
     whale_dir = Path(assets_root) / "assets/whale"
@@ -249,30 +299,21 @@ def stage_whale_visual_assets(
     avatar_assets: dict[str, Any] = {}
     if include_avatar and whale_dir.is_dir():
         avatar_pub = public_dir / "avatar"
-        for state in AVATAR_STATES:
-            src_gif = whale_dir / f"{state}.gif"
-            if not src_gif.is_file():
-                continue
-            rel_file, frames, avg_ms = _stage_gif_or_file_entry(src_gif, avatar_pub, state, "avatar")
-            avatar_assets[state] = {"file": rel_file, "frames": frames, "frameDurationMs": avg_ms}
-        for state, fname in AVATAR_MEME_STATES.items():
-            src_gif = memes_src_dir / fname
-            if not src_gif.is_file():
-                continue
-            rel_file, frames, avg_ms = _stage_gif_or_file_entry(src_gif, avatar_pub, state, "avatar")
-            avatar_assets[state] = {"file": rel_file, "frames": frames, "frameDurationMs": avg_ms}
+        for state, src_gif in [(s, whale_dir / f"{s}.gif") for s in AVATAR_STATES] + [(s, memes_src_dir / fn) for s, fn in AVATAR_MEME_STATES.items()]:
+            if src_gif.is_file():
+                rel_file, frames, avg_ms = _stage_gif_or_file_entry(src_gif, avatar_pub, state, "avatar")
+                avatar_assets[state] = {"file": rel_file, "frames": frames, "frameDurationMs": avg_ms}
 
-    catalog = load_whale_meme_catalog(assets_root)
+    catalog = load_whale_meme_catalog(assets_root, meme_catalog=meme_catalog, character_id=character_id)
     by_id = {entry["id"]: entry for entry in catalog}
+    alias_to_canonical = {str(alias): entry["id"] for entry in catalog for alias in (entry.get("alias_ids") or (entry["id"],))}
     wanted_ids: list[str] = []
     for raw_id in requested_meme_ids:
-        clean = str(raw_id or "").strip()
-        if clean and clean in by_id and clean not in wanted_ids:
-            wanted_ids.append(clean)
+        if (canonical := alias_to_canonical.get(str(raw_id or "").strip())) and canonical in by_id and canonical not in wanted_ids:
+            wanted_ids.append(canonical)
     for cue in scene_cues:
-        fallback_id = DEFAULT_MEME_BY_CUE.get(str(cue or "").strip(), "archive-thinking-whale")
-        if fallback_id in by_id and fallback_id not in wanted_ids:
-            wanted_ids.append(fallback_id)
+        if (fid := DEFAULT_MEME_BY_CUE.get(str(cue or "").strip(), "archive-thinking-whale")) in by_id and fid not in wanted_ids:
+            wanted_ids.append(fid)
     for extra in ("archive-megaphone", "archive-laptop-rage", "story-meal", "story-tail", "story-token", "archive-flat-whale"):
         if extra in by_id and extra not in wanted_ids:
             wanted_ids.append(extra)
@@ -282,17 +323,11 @@ def stage_whale_visual_assets(
         memes_pub = public_dir / "memes"
         for meme_id in wanted_ids[:14]:
             entry = by_id[meme_id]
-            src_file = memes_src_dir / entry["path"]
+            src_file = Path(entry.get("file_path") or entry.get("source_path") or (memes_src_dir / entry["path"]))
             if not src_file.is_file():
                 continue
             rel_file, frames, avg_ms = _stage_gif_or_file_entry(src_file, memes_pub, meme_id, "memes")
-            meme_assets[meme_id] = {
-                "id": meme_id,
-                "title": entry["title"],
-                "file": rel_file,
-                "frames": frames,
-                "frameDurationMs": avg_ms,
-            }
+            meme_assets[meme_id] = {"id": meme_id, "title": entry["title"], "file": rel_file, "frames": frames, "frameDurationMs": avg_ms}
     return avatar_assets, meme_assets
 
 
@@ -393,9 +428,25 @@ _MODE_PLANNER_STRUCTURES: dict[str, str] = {
 }
 
 
-def build_aqua_video_planner_intent(video_mode: VideoMode = "commentary") -> str:
+def build_aqua_video_planner_intent(
+    video_mode: VideoMode = "commentary",
+    pinned_meme_ids: Sequence[str] = (),
+    uploaded_image_files: Sequence[str] = (),
+) -> str:
     """Return the 80/20 Aqua Bilibili video script planner instruction parameterized by mode."""
     mode_block = _MODE_PLANNER_STRUCTURES.get(video_mode, _MODE_PLANNER_STRUCTURES["commentary"])
+    extra_lines: list[str] = []
+    clean_pins = [str(p).strip() for p in pinned_meme_ids if str(p).strip()]
+    clean_uploads = [str(u).strip() for u in uploaded_image_files if str(u).strip()]
+    if clean_pins:
+        extra_lines.append(
+            f"- 用户已置顶图库表情 {clean_pins}，请优先将它们分配到不同分镜的 visual_props.meme_asset_id（相邻分镜禁止重复同一表情）；\n"
+        )
+    if clean_uploads:
+        extra_lines.append(
+            f"- 用户上传了本次专属公开配图/截图 {clean_uploads}，请依次绑定到 QuoteSpotlight / MemeCutaway / CodeWalkthrough 分镜的 visual_props.uploaded_image_file；\n"
+        )
+    extra_block = "".join(extra_lines)
     return (
         "只基于传入的公开来源、brief_text 与 reference_pages 生成结构化 VideoScriptPlan JSON，并将 video_mode 原样设为传入模式。"
         "视觉风格是「浅海手账 / 清爽二次元杂谈桌 + Aqua 右下角虚拟主播小窗」，"
@@ -405,6 +456,7 @@ def build_aqua_video_planner_intent(video_mode: VideoMode = "commentary") -> str
         "- 每条口播台词 lines[].text 控制在 10~22 个字左右的短促口语，一句只讲一个爆点，少用生僻英文缩写堆砌；\n"
         "- 关键台词可在 emphasis 填入 1~2 个必须直接出自该句 text 原文的亮眼关键词（如「先跑起来」「一锅粥」「低功耗保鲜」），用于 B 站综艺花字高亮；\n"
         "- 请为每一镜的 visual_props.meme_asset_id 从 available_memes 中挑选【互不重复】的鲸鱼表情包/动图（如 archive-megaphone、archive-laptop-rage、story-meal、story-hum、story-tail、story-token、motion-turn、archive-flat-whale 等），并给每句分配丰富的 avatar_cue（curious/thinking/surprised/cheerful/proud/calm）；\n"
+        f"{extra_block}"
         "- 可用模板严格限于 TitleCard、CodeWalkthrough、ChartCompare、MemeCutaway、QuoteSpotlight、TimelineSummary；严禁写可执行代码或引用私人记忆与私信。"
     )
 
@@ -431,24 +483,21 @@ def _preferred_showcase_url(sources: list[Any]) -> str:
 
 
 def build_fallback_aqua_scenes(
-    *,
-    topic: str,
-    style_note: str,
-    sources: list[Any],
-    max_scenes: int,
-    available_memes: list[dict[str, Any]],
-    video_mode: VideoMode = "commentary",
-    brief_text: str = "",
+    *, topic: str, style_note: str, sources: list[Any], max_scenes: int, available_memes: list[dict[str, Any]],
+    video_mode: VideoMode = "commentary", brief_text: str = "", pinned_meme_ids: Sequence[str] = (), uploaded_image_files: Sequence[str] = (),
 ) -> tuple[str, list[dict[str, Any]]]:
     """Construct lively 80/20 Aqua fallback scenes supporting 4 video modes and 2-10 scenes."""
-    lead = topic[:48]
-    meme_ids = {m["id"] for m in available_memes}
-    used_memes: set[str] = set()
+    lead, meme_ids, used_memes = topic[:48], {m["id"] for m in available_memes}, set()
+    pinned_queue = list(dict.fromkeys(
+        c for pid in pinned_meme_ids if (c := resolve_catalog_meme_id(available_memes, pid)) and c in meme_ids
+    ))
     points = _extract_brief_points(brief_text, sources, topic)
     excerpt = (sources[0].excerpt[:90] if sources and getattr(sources[0], "excerpt", "") else "") or points[0][:90]
     showcase_url = _preferred_showcase_url(sources)
 
     def _take_meme(cue: str, preferred: str | None = None) -> str | None:
+        if pinned_queue:
+            preferred = pinned_queue.pop(0)
         picked = pick_distinct_scene_meme_id(cue, used_memes, meme_ids, preferred_id=preferred)
         if picked:
             used_memes.add(picked)
@@ -462,22 +511,15 @@ def build_fallback_aqua_scenes(
     }[video_mode]
     outro_copy = {
         "self_intro": ("想一起折腾创作和代码，记得在评论区叫我！", "以后工坊日常和直播都靠大家多多关照啦。", ["评论区", "关照"]),
-        "project_showcase": (
-            "仓库地址放在卡片上，欢迎亲自上手试试看！",
-            "觉得顺手就点个 Star，有想法评论区直接开聊。",
-            ["仓库地址", "评论区"],
-        ),
+        "project_showcase": ("仓库地址放在卡片上，欢迎亲自上手试试看！", "觉得顺手就点个 Star，有想法评论区直接开聊。", ["仓库地址", "评论区"]),
         "explainer": ("记住这一条主线，原理其实一点都不玄学。", "还有想拆解的技术点，评论区随时点单！", ["一点都不玄学", "评论区"]),
         "commentary": ("行了，本鲸要切回低功耗模式摸鱼了。", "有更好玩的槽点，记得在评论区叫我。", ["低功耗模式", "评论区"]),
     }[video_mode]
 
     hook_scene = {
-        "scene_id": "scene_hook",
-        "template": "TitleCard",
-        "heading": lead,
+        "scene_id": "scene_hook", "template": "TitleCard", "heading": lead, "avatar_cue": "cheerful",
         "visual_props": {
-            "subtitle": style_note or points[0][:140],
-            "bullets": [p[:48] for p in points[:3]],
+            "subtitle": style_note or points[0][:140], "bullets": [p[:48] for p in points[:3]],
             "meme_asset_id": _take_meme("cheerful", "archive-megaphone"),
             "citation_label": (sources[0].title[:60] if sources and getattr(sources[0], "title", "") else "公开观察"),
         },
@@ -485,9 +527,7 @@ def build_fallback_aqua_scenes(
             {"line_id": "l1", "text": hook_copy[0], "avatar_cue": "surprised", "emphasis": [hook_copy[2][0]]},
             {"line_id": "l2", "text": hook_copy[1], "avatar_cue": "cheerful", "emphasis": [hook_copy[2][1]]},
         ],
-        "avatar_cue": "cheerful",
     }
-
     target_count = max(1, min(10, int(max_scenes)))
     if target_count == 1:
         return lead, [hook_scene]
@@ -499,64 +539,52 @@ def build_fallback_aqua_scenes(
         "explainer": ("TimelineSummary", "QuoteSpotlight", "CodeWalkthrough", "ChartCompare", "MemeCutaway"),
     }
     middle_templates = middle_templates_by_mode[video_mode]
-    middle_count = max(0, target_count - 2)
     middle_scenes: list[dict[str, Any]] = []
     line_idx = 3
-    for idx in range(middle_count):
-        tpl = middle_templates[idx % len(middle_templates)]
-        point = points[idx % len(points)]
-        next_point = points[(idx + 1) % len(points)]
+    for idx in range(max(0, target_count - 2)):
+        tpl, point, next_point = middle_templates[idx % len(middle_templates)], points[idx % len(points)], points[(idx + 1) % len(points)]
         src = sources[idx % len(sources)] if sources else None
         citation = (getattr(src, "url", None) or getattr(src, "title", None) or "公开来源") if src else "公开来源"
         cue = ("curious", "thinking", "proud", "surprised")[idx % 4]
-        vp: dict[str, Any] = {
-            "subtitle": point[:180],
-            "bullets": [point[:48], *( [next_point[:48]] if next_point != point else [] )],
-            "meme_asset_id": _take_meme(cue),
-            "citation_label": str(citation)[:120],
-        }
+        vp: dict[str, Any] = {"subtitle": point[:180], "bullets": [point[:48], *([next_point[:48]] if next_point != point else [])], "meme_asset_id": _take_meme(cue), "citation_label": str(citation)[:120]}
         if tpl == "CodeWalkthrough":
-            vp["language"] = "text"
-            vp["code_snippet"] = "\n".join(points[:4])[:1200]
+            vp |= {"language": "text", "code_snippet": "\n".join(points[:4])[:1200]}
         elif tpl == "ChartCompare":
-            vp["chart_items"] = [
-                {"label": "关键点 A", "value": 80 + idx * 5, "unit": "%"},
-                {"label": "对比项 B", "value": 45 + idx * 4, "unit": "%"},
-            ]
-        middle_scenes.append(
-            {
-                "scene_id": f"scene_detail_{idx + 1}",
-                "template": tpl,
-                "heading": f"第 {idx + 1} 块重点：{point[:20]}",
-                "visual_props": vp,
-                "lines": [
-                    {"line_id": f"l{line_idx}", "text": f"先看第{idx + 1}点，重点其实非常直接。", "avatar_cue": cue, "emphasis": ["非常直接"]},
-                    {"line_id": f"l{line_idx + 1}", "text": f"把{point[:10]}拎出来看就全明白。", "avatar_cue": "thinking", "emphasis": ["全明白"]},
-                ],
-                "avatar_cue": cue,
-            }
-        )
+            vp["chart_items"] = [{"label": "关键点 A", "value": 80 + idx * 5, "unit": "%"}, {"label": "对比项 B", "value": 45 + idx * 4, "unit": "%"}]
+        middle_scenes.append({
+            "scene_id": f"scene_detail_{idx + 1}", "template": tpl, "heading": f"第 {idx + 1} 块重点：{point[:20]}", "visual_props": vp, "avatar_cue": cue,
+            "lines": [
+                {"line_id": f"l{line_idx}", "text": f"先看第{idx + 1}点，重点其实非常直接。", "avatar_cue": cue, "emphasis": ["非常直接"]},
+                {"line_id": f"l{line_idx + 1}", "text": f"把{point[:10]}拎出来看就全明白。", "avatar_cue": "thinking", "emphasis": ["全明白"]},
+            ],
+        })
         line_idx += 2
 
-    outro_citation = showcase_url[:120] if video_mode == "project_showcase" and showcase_url else (
-        str((sources[0].url or sources[0].title) if sources else "Aqua 浅海手账")[:120]
-    )
+    outro_citation = showcase_url[:120] if video_mode == "project_showcase" and showcase_url else str((sources[0].url or sources[0].title) if sources else "Aqua 浅海手账")[:120]
     outro_scene = {
-        "scene_id": "scene_outro",
-        "template": "TimelineSummary" if video_mode in {"project_showcase", "explainer"} else "MemeCutaway",
+        "scene_id": "scene_outro", "template": "TimelineSummary" if video_mode in {"project_showcase", "explainer"} else "MemeCutaway",
         "heading": "开源地址与适用场景" if video_mode == "project_showcase" else ("一句话带走核心结论" if video_mode == "explainer" else "讲完收工，去干一碗热白饭"),
-        "visual_props": {
-            "subtitle": showcase_url or excerpt or "听完别光点赞，评论区交出你的看法",
-            "bullets": [p[:48] for p in points[:2]] or ["本鲸低功耗保鲜中", "欢迎评论区接梗"],
-            "meme_asset_id": _take_meme("proud", "story-meal"),
-            "citation_label": outro_citation,
-        },
+        "visual_props": {"subtitle": showcase_url or excerpt or "听完别光点赞，评论区交出你的看法", "bullets": [p[:48] for p in points[:2]] or ["本鲸低功耗保鲜中", "欢迎评论区接梗"], "meme_asset_id": _take_meme("proud", "story-meal"), "citation_label": outro_citation},
         "lines": [
             {"line_id": f"l{line_idx}", "text": outro_copy[0], "avatar_cue": "proud", "emphasis": [outro_copy[2][0]]},
             {"line_id": f"l{line_idx + 1}", "text": outro_copy[1], "avatar_cue": "cheerful", "emphasis": [outro_copy[2][1]]},
         ],
         "avatar_cue": "proud",
     }
+    if upload_queue := [str(u).strip() for u in uploaded_image_files if str(u).strip()]:
+        image_templates, candidates = {"QuoteSpotlight", "MemeCutaway", "CodeWalkthrough"}, [*middle_scenes, outro_scene]
+        picked = [s for s in candidates if s["template"] in image_templates]
+        for s in candidates:
+            if len(picked) >= len(upload_queue):
+                break
+            if s not in picked:
+                s["template"] = "MemeCutaway" if s is outro_scene else "QuoteSpotlight"
+                s["visual_props"].pop("chart_items", None)
+                picked.append(s)
+        chosen = {id(s) for s in picked[:len(upload_queue)]}
+        for s in candidates:
+            if id(s) in chosen and upload_queue:
+                s["visual_props"]["uploaded_image_file"] = upload_queue.pop(0)
     return lead, [hook_scene, *middle_scenes, outro_scene]
 
 
@@ -855,18 +883,9 @@ def list_job_upload_entries(project_dir: Path, job_id: str) -> list[dict[str, An
         return []
     entries: list[dict[str, Any]] = []
     for item in sorted(uploads_dir.iterdir(), key=lambda p: p.name):
-        if linked(item) or not item.is_file() or ".." in item.name:
+        if linked(item) or not item.is_file() or ".." in item.name or not re.fullmatch(r"[a-zA-Z0-9._-]{1,80}", item.name) or item.suffix.lower() not in UPLOAD_EXT_MIMES:
             continue
-        if not re.fullmatch(r"[a-zA-Z0-9._-]{1,80}", item.name) or item.suffix.lower() not in UPLOAD_EXT_MIMES:
-            continue
-        entries.append(
-            {
-                "filename": item.name,
-                "rel_path": f"uploads/{item.name}",
-                "url": f"/api/v1/operations/videos/{job_id}/uploads/{item.name}",
-                "size_bytes": item.stat().st_size,
-            }
-        )
+        entries.append({"filename": item.name, "rel_path": f"uploads/{item.name}", "url": f"/api/v1/operations/videos/{job_id}/uploads/{item.name}", "size_bytes": item.stat().st_size})
     return entries[:MAX_JOB_UPLOADS]
 
 

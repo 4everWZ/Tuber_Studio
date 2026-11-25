@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 from urllib.parse import urlsplit
 
@@ -17,6 +18,8 @@ from .errors import error_response
 from .web_mount import route_path
 
 MAX_MEME_REQUEST = ((MAX_MEME_BYTES + 2) // 3) * 4 + 65536
+MAX_VIDEO_PLAN_REQUEST = 36 * 1024 * 1024
+VIDEO_JOB_UPLOAD_PATH = re.compile(r"^/api/v1/operations/videos/[^/]+/uploads$")
 DEFAULT_JSON_LIMIT = 2_100_000
 AUTH_COOKIE_EXEMPT_ROUTES = frozenset(
     {
@@ -112,7 +115,17 @@ def register_http_middleware(app, auth: AuthContext, sessions, *, call_guards=No
                 return error_response(403, code="CROSS_ORIGIN_FORBIDDEN", message="跨站写入被拒绝")
             uploading = path == "/api/v1/live/uploads" and request.method == "POST"
             meme_upload = path == "/api/v1/persona/memes" and request.method == "POST"
-            limit = MAX_UPLOAD if uploading else MAX_MEME_REQUEST if meme_upload else DEFAULT_JSON_LIMIT
+            video_job_upload = request.method == "POST" and bool(VIDEO_JOB_UPLOAD_PATH.fullmatch(path))
+            video_plan_upload = request.method == "POST" and path == "/api/v1/operations/videos/plan"
+            limit = (
+                MAX_UPLOAD
+                if uploading
+                else MAX_VIDEO_PLAN_REQUEST
+                if video_plan_upload
+                else MAX_MEME_REQUEST
+                if (meme_upload or video_job_upload)
+                else DEFAULT_JSON_LIMIT
+            )
             reference_upload = request.method == "PUT" and path.startswith(REFERENCE_PREFIX + "/")
             if reference_upload:
                 limit = MAX_REFERENCE_BYTES

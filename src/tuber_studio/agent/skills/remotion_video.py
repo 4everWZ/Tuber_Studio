@@ -25,34 +25,20 @@ from ...core.store import dump
 from ...core.validation import linked
 from ...infra.web_client.fetch import fetch_excerpt
 from ...operations.facade import (
-    canonical_intent,
-    control_policy,
-    find_write_attempt_by_intent,
-    finish_write_attempt,
-    heartbeat_pulse_snapshot,
-    reserve_write_attempt,
-    select_video_candidates,
+    canonical_intent, control_policy, find_write_attempt_by_intent, finish_write_attempt,
+    heartbeat_pulse_snapshot, reserve_write_attempt, select_video_candidates,
 )
 from ...persona.memory.daily.models import contains_memory_credential
 from ...persona.self_model import build_self_model_system_message
 from . import remotion_assets as _ra
 from .remotion_assets import (
-    DEFAULT_LINE_PAUSE_SECONDS,
-    DEFAULT_OUTRO_HOLD_SECONDS,
-    DEFAULT_SCENE_PAUSE_SECONDS,
-    AvatarCue,
-    ChartPoint,
-    PublicSourceRef,
-    SceneVisualProps,
-    TemplateId,
-    VideoLineSpec,
-    VideoMode,
-    VideoSceneSpec,
+    DEFAULT_LINE_PAUSE_SECONDS, DEFAULT_OUTRO_HOLD_SECONDS, DEFAULT_SCENE_PAUSE_SECONDS,
+    AvatarCue, ChartPoint, PublicSourceRef, SceneVisualProps, TemplateId, VideoLineSpec, VideoMode, VideoSceneSpec,
 )
 
 __all__ = [
     "DEFAULT_VIDEO_PRODUCTION_POLICY", "MAX_DURATION_DRIFT_SECONDS", "MAX_RENDERED_VIDEO_BYTES", "VIDEO_PRODUCTION_POLICY_KEY",
-    "AvatarCue", "ChartPoint", "GenerateRemotionProjectArgs", "PlanVideoScriptArgs", "PublicSourceRef",
+    "AvatarCue", "ChartPoint", "GenerateRemotionProjectArgs", "PlanUploadedImage", "PlanVideoScriptArgs", "PublicSourceRef",
     "RemotionVideoSkill", "RenderRemotionVideoArgs", "SceneVisualProps", "StageOrPublishVideoArgs",
     "TemplateId", "VideoLineSpec", "VideoMode", "VideoProductionPolicy", "VideoSceneSpec", "VideoScriptPlan",
     "assert_public_video_sources", "execute_remotion_tool", "generate_remotion_project", "plan_video_script",
@@ -111,6 +97,12 @@ class VideoProductionPolicy(StrictModel):
     upload_timeout_seconds: float = Field(default=600.0, ge=5.0, le=3600.0)
 
 
+class PlanUploadedImage(StrictModel):
+    filename: str = Field(min_length=1, max_length=80)
+    image_base64: str = Field(min_length=1, max_length=12_000_000)
+    mime_type: Literal["image/png", "image/jpeg", "image/webp"]
+
+
 class PlanVideoScriptArgs(StrictModel):
     topic: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=400)] = Field(description="公开视频选题、热点话题或 BV 号说明。")
     brief_text: str = Field(default="", max_length=8000, description="可选参考资料、产品说明或原始大纲（最多 8000 字）。")
@@ -124,6 +116,8 @@ class PlanVideoScriptArgs(StrictModel):
     line_pause_seconds: float = Field(default=DEFAULT_LINE_PAUSE_SECONDS, ge=0.0, le=2.0, description="同一镜内相邻台词句间气口停顿（秒）。")
     scene_pause_seconds: float = Field(default=DEFAULT_SCENE_PAUSE_SECONDS, ge=0.0, le=3.0, description="分镜切换时的停顿留白时长（秒）。")
     max_scenes: int = Field(default=4, ge=1, le=10, description="目标分镜数量。")
+    pinned_meme_ids: list[str] = Field(default_factory=list, max_length=3, description="可选置顶图库表情 ID（0-3 张，仅限全渠道可用表情）。")
+    uploaded_images: list[PlanUploadedImage] = Field(default_factory=list, max_length=3, description="可选本次视频专属公开配图/截图（0-3 张）。")
 
     @field_validator("reference_urls", mode="before")
     @classmethod
@@ -314,54 +308,72 @@ class RemotionVideoSkill:
         root = getattr(getattr(self.runtime, "settings", None), "root", None)
         return Path(root) if root else Path(__file__).resolve().parents[4]
 
+    def _meme_catalog(self):
+        return getattr(getattr(self.runtime, "pets", None), "catalog", None)
+
+    @staticmethod
+    def _validate_and_normalize_scene_memes(plan: VideoScriptPlan, catalog: list[dict[str, Any]]) -> VideoScriptPlan:
+        updated_scenes: list[VideoSceneSpec] = []
+        changed = False
+        for scene in plan.scenes:
+            if (raw_id := scene.visual_props.meme_asset_id) is not None:
+                if (canonical := _ra.resolve_catalog_meme_id(catalog, raw_id)) is None:
+                    raise ValueError(f"表情 {raw_id} 不存在、未启用或仅限互动使用")
+                if canonical != raw_id:
+                    scene = scene.model_copy(update={"visual_props": scene.visual_props.model_copy(update={"meme_asset_id": canonical})})
+                    changed = True
+            updated_scenes.append(scene)
+        return plan.model_copy(update={"scenes": updated_scenes}) if changed else plan
+
+    def _stage_plan_uploads(self, job_id: str, uploaded_images: Sequence[PlanUploadedImage]) -> tuple[str, list[str], Path | None]:
+        if not uploaded_images:
+            return "", [], None
+        self.renders_root.mkdir(parents=True, exist_ok=True)
+        if linked(self.renders_root):
+            raise ValueError("渲染目录不能使用符号链接")
+        project_dir = _ra.safe_child_path(self.renders_root, job_id)
+        existed_before = project_dir.exists()
+        uploaded_files: list[str] = []
+        try:
+            uploads_dir = _ra.safe_child_path(project_dir, "public/uploads")
+            for img in uploaded_images:
+                safe_name, _ = _ra.save_job_upload_image(uploads_dir, filename=img.filename, image_base64=img.image_base64, mime_type=img.mime_type)
+                if (rel := f"uploads/{safe_name}") not in uploaded_files:
+                    uploaded_files.append(rel)
+            self._touch_video_cache(project_dir)
+            return str(project_dir), uploaded_files, (None if existed_before else project_dir)
+        except BaseException:
+            if not existed_before and project_dir.exists() and not linked(project_dir):
+                shutil.rmtree(project_dir, ignore_errors=True)
+            raise
+
     def _fallback_script_plan(
-        self,
-        args: PlanVideoScriptArgs,
-        candidates: list[dict[str, Any]],
-        public_memories: list[dict[str, Any]],
-        ref_sources: list[PublicSourceRef] | None = None,
+        self, args: PlanVideoScriptArgs, candidates: list[dict[str, Any]], public_memories: list[dict[str, Any]],
+        ref_sources: list[PublicSourceRef] | None = None, *, available_memes: list[dict[str, Any]] | None = None,
+        pinned_meme_ids: Sequence[str] = (), uploaded_image_files: Sequence[str] = (),
     ) -> VideoScriptPlan:
         sources: list[PublicSourceRef] = list(ref_sources or [])
         sources.extend(
-            PublicSourceRef(
-                source_id=f"video:{item['bvid']}", kind="watched_video", scope="public",
-                title=str(item.get("title") or item["bvid"])[:160],
-                url=item.get("url") or f"https://www.bilibili.com/video/{item['bvid']}",
-                bvid=item["bvid"], excerpt=str(item.get("summary") or "")[:300],
-            )
+            PublicSourceRef(source_id=f"video:{item['bvid']}", kind="watched_video", scope="public", title=str(item.get("title") or item["bvid"])[:160], url=item.get("url") or f"https://www.bilibili.com/video/{item['bvid']}", bvid=item["bvid"], excerpt=str(item.get("summary") or "")[:300])
             for item in candidates[:3]
         )
         if args.brief_text.strip():
             sources.append(PublicSourceRef(source_id=f"brief:{content_hash(args.brief_text)[:12]}", kind="operator_topic", scope="public", title=args.topic[:120], excerpt=args.brief_text.strip()[:480], fetch_status="manual"))
         elif not sources:
             sources.append(PublicSourceRef(source_id=f"topic:{content_hash(args.topic)[:12]}", kind="operator_topic", scope="public", title=args.topic[:80], excerpt=args.topic[:300]))
-        sources.extend(
-            PublicSourceRef(source_id=str(m["id"]), kind="public_memory", scope="public", title="公开印象参考", excerpt=str(m.get("content") or "")[:200])
-            for m in public_memories[:2]
-        )
+        sources.extend(PublicSourceRef(source_id=str(m["id"]), kind="public_memory", scope="public", title="公开印象参考", excerpt=str(m.get("content") or "")[:200]) for m in public_memories[:2])
         sources = sources[:12]
+        if available_memes is None:
+            available_memes = _ra.load_whale_meme_catalog(self._assets_root(), meme_catalog=self._meme_catalog(), character_id=str(self._current_character().get("id") or "") or "whale")
         lead, raw_scenes = _ra.build_fallback_aqua_scenes(
-            topic=args.topic,
-            style_note=args.style_note,
-            sources=sources,
-            max_scenes=args.max_scenes,
-            available_memes=_ra.load_whale_meme_catalog(self._assets_root()),
-            video_mode=args.video_mode,
-            brief_text=args.brief_text,
+            topic=args.topic, style_note=args.style_note, sources=sources, max_scenes=args.max_scenes, available_memes=available_memes,
+            video_mode=args.video_mode, brief_text=args.brief_text, pinned_meme_ids=pinned_meme_ids, uploaded_image_files=uploaded_image_files,
         )
-        scenes = [VideoSceneSpec.model_validate(item) for item in raw_scenes]
         return VideoScriptPlan(
-            title=lead,
-            summary=f"Aqua 围绕「{args.topic[:100]}」的浅海手账创作。引用来源：" + "；".join(s.url or s.title for s in sources[:3]),
-            tags=["Aqua", "杂谈吐槽", "浅海手账"],
-            video_mode=args.video_mode,
-            fps=args.fps,
-            include_avatar=args.include_avatar,
-            bgm_enabled=args.bgm_enabled,
-            line_pause_seconds=args.line_pause_seconds,
-            scene_pause_seconds=args.scene_pause_seconds,
-            scenes=scenes,
-            sources=sources,
+            title=lead, summary=f"Aqua 围绕「{args.topic[:100]}」的浅海手账创作。引用来源：" + "；".join(s.url or s.title for s in sources[:3]),
+            tags=["Aqua", "杂谈吐槽", "浅海手账"], video_mode=args.video_mode, fps=args.fps, include_avatar=args.include_avatar,
+            bgm_enabled=args.bgm_enabled, line_pause_seconds=args.line_pause_seconds, scene_pause_seconds=args.scene_pause_seconds,
+            scenes=[VideoSceneSpec.model_validate(item) for item in raw_scenes], sources=sources,
         )
 
     async def plan_video_script(self, arguments: PlanVideoScriptArgs | dict[str, Any]) -> dict[str, Any]:
@@ -369,47 +381,61 @@ class RemotionVideoSkill:
         args = arguments if isinstance(arguments, PlanVideoScriptArgs) else PlanVideoScriptArgs.model_validate(arguments)
         char = self._current_character()
         char_id, unified = str(char.get("id") or ""), getattr(self.runtime, "unified_memory", None)
+        effective_char_id = char_id or "whale"
         _ra.assert_public_texts([args.topic, args.style_note, args.brief_text], contains_credential_fn=contains_memory_credential, store=self.store, unified_memory=unified, character_id=char_id)
+        available_memes = _ra.load_whale_meme_catalog(self._assets_root(), meme_catalog=self._meme_catalog(), character_id=effective_char_id)
+        pinned_meme_ids: list[str] = []
+        for raw_id in args.pinned_meme_ids:
+            if (canonical := _ra.resolve_catalog_meme_id(available_memes, raw_id)) is None:
+                raise ValueError(f"置顶表情 {raw_id} 不存在、未启用或仅限互动使用")
+            if canonical not in pinned_meme_ids:
+                pinned_meme_ids.append(canonical)
         ref_sources, ref_pages, ref_diagnostics = await _ra.fetch_reference_urls(args.reference_urls, fetch_fn=self.web_fetch_fn or fetch_excerpt)
         if ref_pages:
             _ra.assert_public_texts([str(p.get("excerpt") or "") for p in ref_pages], contains_credential_fn=contains_memory_credential, store=self.store, unified_memory=unified, character_id=char_id)
         candidates, public_memories = self._public_candidates_and_memories(topic=args.topic, candidate_bvids=args.candidate_bvids, character_id=char_id)
-        available_memes = _ra.load_whale_meme_catalog(self._assets_root())
-        sys_msg = build_self_model_system_message(char, channel="dynamic", scene="公开视频脚本与分镜策划", task_intent=_ra.build_aqua_video_planner_intent(args.video_mode))
-        packet = {
-            "topic": args.topic, "video_mode": args.video_mode, "brief_text": args.brief_text,
-            "reference_pages": ref_pages, "reference_diagnostics": ref_diagnostics, "style_note": args.style_note,
-            "fps": args.fps, "include_avatar": args.include_avatar, "bgm_enabled": args.bgm_enabled,
-            "line_pause_seconds": args.line_pause_seconds, "scene_pause_seconds": args.scene_pause_seconds, "max_scenes": args.max_scenes,
-            "available_templates": ["TitleCard", "CodeWalkthrough", "ChartCompare", "MemeCutaway", "QuoteSpotlight", "TimelineSummary"],
-            "available_avatar_cues": ["idle", "cheerful", "curious", "proud", "thinking", "surprised", "calm"],
-            "available_memes": [{"id": m["id"], "title": m["title"], "emotions": m["emotions"], "tags": m["tags"]} for m in available_memes],
-            "public_candidates": candidates[:6], "public_memories": [{"id": m["id"], "content": m["content"]} for m in public_memories[:6]],
-        }
-        messages = [sys_msg, {"role": "user", "content": dump(packet)}]
-        plan, planner_source, planner_error = None, "fallback", None
-        if callable(self.planner_fn):
-            raw_plan = await self.planner_fn(messages, VideoScriptPlan.model_json_schema(), packet)
-            plan, planner_source = (raw_plan if isinstance(raw_plan, VideoScriptPlan) else VideoScriptPlan.model_validate(raw_plan)), "custom_planner"
-        elif (op_llm := getattr(self.runtime, "operation_llm", None)) is not None and callable(getattr(op_llm, "generate_json", None)):
-            try:
-                slot = self.runtime.offline_generation("background") if callable(getattr(self.runtime, "offline_generation", None)) else asyncio.Lock()
-                async with asyncio.timeout(90), slot:
-                    with without_model_identity():
-                        raw_plan = await op_llm.generate_json(messages, VideoScriptPlan.model_json_schema(), max_tokens=6144)
-                plan, planner_source = VideoScriptPlan.model_validate(raw_plan), "llm"
-            except Exception as exc:
-                plan, planner_error = None, _ra._sanitize_diagnostic(f"{type(exc).__name__}: {exc}")
-        if plan is None:
-            plan, planner_source = self._fallback_script_plan(args, candidates, public_memories, ref_sources=ref_sources), "fallback"
-        plan = _ra.finalize_rich_plan_fields(plan, topic=args.topic, brief_text=args.brief_text, reference_urls=args.reference_urls, video_mode=args.video_mode, ref_sources=ref_sources)
-        validated = assert_public_video_sources(plan, store=self.store, unified_memory=unified, character_id=char_id, extra_texts=[args.brief_text, *(str(p.get("excerpt") or "") for p in ref_pages)])
-        job_id, now, plan_hash = f"rem_{uuid4().hex[:16]}", time.time(), content_hash(validated.model_dump(mode="json"))
-        with self.store.db:
-            self.store.db.execute(
-                "INSERT INTO remotion_video_jobs(id,account_id,character_id,character_version,status,publish_mode,title,content_hash,plan_json,planner_source,planner_error,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (job_id, self._account_id(), char_id, int(char.get("version") or 1), "script_planned", self.policy().publish_mode, validated.title, plan_hash, validated.model_dump_json(), planner_source, planner_error, now, now),
-            )
+        job_id = f"rem_{uuid4().hex[:16]}"
+        project_dir_str, uploaded_image_files, created_project_dir = self._stage_plan_uploads(job_id, args.uploaded_images)
+        try:
+            sys_msg = build_self_model_system_message(char, channel="dynamic", scene="公开视频脚本与分镜策划", task_intent=_ra.build_aqua_video_planner_intent(args.video_mode, pinned_meme_ids=pinned_meme_ids, uploaded_image_files=uploaded_image_files))
+            packet = {
+                "topic": args.topic, "video_mode": args.video_mode, "brief_text": args.brief_text, "reference_pages": ref_pages,
+                "reference_diagnostics": ref_diagnostics, "style_note": args.style_note, "fps": args.fps, "include_avatar": args.include_avatar,
+                "bgm_enabled": args.bgm_enabled, "line_pause_seconds": args.line_pause_seconds, "scene_pause_seconds": args.scene_pause_seconds,
+                "max_scenes": args.max_scenes, "pinned_meme_ids": pinned_meme_ids, "uploaded_image_files": uploaded_image_files,
+                "available_templates": ["TitleCard", "CodeWalkthrough", "ChartCompare", "MemeCutaway", "QuoteSpotlight", "TimelineSummary"],
+                "available_avatar_cues": ["idle", "cheerful", "curious", "proud", "thinking", "surprised", "calm"],
+                "available_memes": [{"id": m["id"], "title": m["title"], "emotions": m["emotions"], "tags": m["tags"], "description": m.get("description", "")} for m in available_memes],
+                "public_candidates": candidates[:6], "public_memories": [{"id": m["id"], "content": m["content"]} for m in public_memories[:6]],
+            }
+            messages, plan, planner_source, planner_error = [sys_msg, {"role": "user", "content": dump(packet)}], None, "fallback", None
+            if callable(self.planner_fn):
+                raw_plan = await self.planner_fn(messages, VideoScriptPlan.model_json_schema(), packet)
+                parsed_plan = raw_plan if isinstance(raw_plan, VideoScriptPlan) else VideoScriptPlan.model_validate(raw_plan)
+                plan, planner_source = self._validate_and_normalize_scene_memes(parsed_plan, available_memes), "custom_planner"
+            elif (op_llm := getattr(self.runtime, "operation_llm", None)) is not None and callable(getattr(op_llm, "generate_json", None)):
+                try:
+                    slot = self.runtime.offline_generation("background") if callable(getattr(self.runtime, "offline_generation", None)) else asyncio.Lock()
+                    async with asyncio.timeout(90), slot:
+                        with without_model_identity():
+                            raw_plan = await op_llm.generate_json(messages, VideoScriptPlan.model_json_schema(), max_tokens=6144)
+                    plan, planner_source = self._validate_and_normalize_scene_memes(VideoScriptPlan.model_validate(raw_plan), available_memes), "llm"
+                except Exception as exc:
+                    plan, planner_error = None, _ra._sanitize_diagnostic(f"{type(exc).__name__}: {exc}")
+            if plan is None:
+                plan, planner_source = self._fallback_script_plan(args, candidates, public_memories, ref_sources=ref_sources, available_memes=available_memes, pinned_meme_ids=pinned_meme_ids, uploaded_image_files=uploaded_image_files), "fallback"
+            plan = _ra.finalize_rich_plan_fields(plan, topic=args.topic, brief_text=args.brief_text, reference_urls=args.reference_urls, video_mode=args.video_mode, ref_sources=ref_sources)
+            validated = assert_public_video_sources(plan, store=self.store, unified_memory=unified, character_id=char_id, extra_texts=[args.brief_text, *(str(p.get("excerpt") or "") for p in ref_pages)])
+            now, plan_hash = time.time(), content_hash(validated.model_dump(mode="json"))
+            with self.store.db:
+                self.store.db.execute(
+                    "INSERT INTO remotion_video_jobs(id,account_id,character_id,character_version,status,publish_mode,title,content_hash,plan_json,project_dir,planner_source,planner_error,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (job_id, self._account_id(), char_id, int(char.get("version") or 1), "script_planned", self.policy().publish_mode, validated.title, plan_hash, validated.model_dump_json(), project_dir_str, planner_source, planner_error, now, now),
+                )
+        except BaseException:
+            if created_project_dir is not None and created_project_dir.exists() and not linked(created_project_dir):
+                shutil.rmtree(created_project_dir, ignore_errors=True)
+            raise
         return {"ok": True, "job_id": job_id, "status": "script_planned", "content_hash": plan_hash, "planner_source": planner_source, "planner_error": planner_error, "reference_diagnostics": ref_diagnostics, "plan": validated.model_dump(mode="json")}
 
     def list_job_uploads(self, job_or_id: dict[str, Any] | str) -> list[dict[str, Any]]:
@@ -453,7 +479,9 @@ class RemotionVideoSkill:
             raise ValueError(f"当前状态（{job['status']}）不允许修改脚本")
         if not isinstance(patch, dict) or not patch or (set(patch) - set(VideoScriptPlan.model_fields)):
             raise ValueError("脚本更新内容为空或包含未知字段")
-        validated = assert_public_video_sources(dict(job["plan"]) | patch, store=self.store, unified_memory=getattr(self.runtime, "unified_memory", None), character_id=str(self._current_character().get("id") or ""))
+        char_id = str(self._current_character().get("id") or "")
+        validated = assert_public_video_sources(dict(job["plan"]) | patch, store=self.store, unified_memory=getattr(self.runtime, "unified_memory", None), character_id=char_id)
+        validated = self._validate_and_normalize_scene_memes(validated, _ra.load_whale_meme_catalog(self._assets_root(), meme_catalog=self._meme_catalog(), character_id=char_id or "whale"))
         dumped = validated.model_dump(mode="json")
         structural = any(f in patch and dumped.get(f) != job["plan"].get(f) for f in ("scenes", "fps", "width", "height", "include_avatar", "bgm_enabled", "line_pause_seconds", "scene_pause_seconds"))
         updates: dict[str, Any] = {"title": validated.title, "plan_json": validated.model_dump_json(), "status": "script_planned" if structural else job["status"], "error": None}
@@ -529,6 +557,9 @@ class RemotionVideoSkill:
         if raw_plan is None:
             raise ValueError("需要提供有效的 job_id 或 plan")
         plan = assert_public_video_sources(raw_plan, store=self.store, unified_memory=getattr(self.runtime, "unified_memory", None), character_id=char_id)
+        effective_char_id = char_id or "whale"
+        catalog = _ra.load_whale_meme_catalog(self._assets_root(), meme_catalog=self._meme_catalog(), character_id=effective_char_id)
+        plan = self._validate_and_normalize_scene_memes(plan, catalog)
 
         job_id = job["id"] if job is not None else f"rem_{uuid4().hex[:16]}"
         self.renders_root.mkdir(parents=True, exist_ok=True)
@@ -548,7 +579,7 @@ class RemotionVideoSkill:
             scene_gap_frames = max(0, int(round(plan.scene_pause_seconds * plan.fps)))
             lead_in_target = max(0, int(round(min(0.25, plan.scene_pause_seconds * 0.35) * plan.fps))) if scene_gap_frames > 0 else 0
             outro_frames = max(0, int(round(min(DEFAULT_OUTRO_HOLD_SECONDS, max(plan.line_pause_seconds, plan.scene_pause_seconds)) * plan.fps)))
-            catalog_ids = {m["id"] for m in _ra.load_whale_meme_catalog(self._assets_root())}
+            catalog_ids = {m["id"] for m in catalog}
             used_meme_ids: set[str] = set()
             resolved_scene_memes: list[str] = []
 
@@ -613,11 +644,8 @@ class RemotionVideoSkill:
             srt_path.write_text("\n".join(srt_lines), encoding="utf-8")
             vtt_path.write_text("\n".join(vtt_lines), encoding="utf-8")
             avatar_assets, meme_assets = _ra.stage_whale_visual_assets(
-                self._assets_root(),
-                public_dir,
-                include_avatar=plan.include_avatar,
-                requested_meme_ids=resolved_scene_memes,
-                scene_cues=[s.avatar_cue for s in plan.scenes],
+                self._assets_root(), public_dir, include_avatar=plan.include_avatar, requested_meme_ids=resolved_scene_memes,
+                scene_cues=[s.avatar_cue for s in plan.scenes], meme_catalog=self._meme_catalog(), character_id=effective_char_id,
             )
             bgm_file, transition_sfx_file = (
                 _ra.synthesize_bgm_and_sfx(audio_dir, duration_seconds=cursor_seconds) if plan.bgm_enabled else (None, None)
