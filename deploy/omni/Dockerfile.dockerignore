@@ -12,6 +12,11 @@ src/tuber_studio/web_dist/**
 frontend/node_modules
 frontend/**/node_modules
 frontend/dist
+!remotion-studio
+!remotion-studio/**
+remotion-studio/node_modules
+remotion-studio/**/node_modules
+remotion-studio/out
 !config
 !config/characters.json
 !config/operations-persona-views.json

@@ -13,10 +13,16 @@ WORKDIR /songs
 COPY components/song_requests/package.json components/song_requests/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
+FROM node:24-bookworm-slim AS remotion-studio
+WORKDIR /remotion-studio
+COPY remotion-studio/package.json remotion-studio/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY remotion-studio ./
+
 FROM python:3.12-slim-bookworm AS core
 COPY --from=uv /uv /usr/local/bin/uv
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
+    && apt-get install -y --no-install-recommends ca-certificates ffmpeg chromium fonts-wqy-zenhei \
     && rm -rf /var/lib/apt/lists/* \
     && install -d -o 65532 -g 65532 -m 0700 /data
 
@@ -29,8 +35,12 @@ COPY --from=web-build /build/src/tuber_studio/web_dist ./src/tuber_studio/web_di
 COPY config ./config
 COPY assets ./assets
 COPY components/song_requests/helper.cjs components/song_requests/matching.cjs ./components/song_requests/
-COPY --from=songs /usr/local/bin/node /usr/local/bin/node
+COPY --from=remotion-studio /usr/local/bin/node /usr/local/bin/node
+COPY --from=remotion-studio /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 COPY --from=songs /songs/node_modules ./components/song_requests/node_modules
+COPY --from=remotion-studio /remotion-studio ./remotion-studio
 COPY deploy/omni/core_entrypoint.py deploy/omni/check_batch.py ./
 
 ENV PATH="/opt/tuber/.venv/bin:$PATH" \
@@ -38,7 +48,8 @@ ENV PATH="/opt/tuber/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     TUBER_RUNTIME=/data \
-    HOME=/data
+    HOME=/data \
+    REMOTION_BROWSER_EXECUTABLE=/usr/bin/chromium
 EXPOSE 9020
 USER 65532:65532
 CMD ["python", "/opt/tuber/core_entrypoint.py"]
