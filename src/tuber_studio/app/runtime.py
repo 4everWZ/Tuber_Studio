@@ -132,6 +132,7 @@ class Runtime:
             music_ids_provider=self._protected_music_ids,
             active_speech_provider=self._protected_speech_files,
             browsing_protected_provider=self.browsing_repository.protected_materials,
+            video_protected_provider=self._protected_video_jobs,
             song_blob_resolver=self.live.media.blob,
         )
         self.live.media.cache = self.cache
@@ -250,6 +251,15 @@ class Runtime:
             if job and job.get("audio_ref"):
                 speech.add(job["audio_ref"].rsplit("/", 1)[-1])
         return speech
+
+    def _protected_video_jobs(self):
+        protected = set(getattr(getattr(self, "remotion_skill", None), "active_job_ids", ()))
+        if self.store.one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='remotion_video_jobs'"):
+            rows = self.store.all(
+                "SELECT id FROM remotion_video_jobs WHERE status IN ('rendering', 'publishing')"
+            )
+            protected.update(str(row["id"]) for row in rows if row.get("id"))
+        return protected
 
     def identity_snapshot(self, character=None, account_id=None):
         from ..infra.platforms.bilibili.account import cached_account_actor

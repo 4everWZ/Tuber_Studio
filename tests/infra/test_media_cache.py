@@ -192,3 +192,95 @@ def test_directory_links_are_rejected_before_following_or_filtering(runtime, dir
     with pytest.raises(ValueError, match="不能使用链接"):
         runtime.cache.enforce(category, clear=True)
     assert sentinel.exists() and sentinel.stat().st_size == 29
+
+
+async def test_video_renders_atomic_lru_protection_and_preserves_job_rows(runtime, directory_link):
+    root = runtime.settings.runtime
+    renders = root / "video_renders"
+    j1 = put(renders / "rem_old", "output.mp4", 8 * MIB)
+    put(renders / "rem_old" / "public", "narration.wav", 4 * MIB)
+    j2 = put(renders / "rem_mid", "output.mp4", 8 * MIB)
+    j3_active = put(renders / "rem_active", "output.mp4", 60 * MIB)
+    os.utime(j1, (10, 10))
+    os.utime(j2, (20, 20))
+
+    now = time.time()
+    with runtime.store.db:
+        runtime.store.db.executemany(
+            "INSERT INTO remotion_video_jobs(id,status,plan_json,created_at,updated_at) VALUES(?,?,?,?,?)",
+            [
+                ("rem_old", "published", "{}", now, now),
+                ("rem_mid", "ready_for_review", "{}", now, now),
+                ("rem_active", "rendering", "{}", now, now),
+            ],
+        )
+
+    runtime.cache.touch(j2.parent)
+    status = runtime.cache.status()
+    assert status["categories"]["video"]["protected_bytes"] == 60 * MIB
+    assert status["categories"]["video"]["reclaimable_bytes"] == 20 * MIB
+    assert status["summary"]["bytes"] >= 80 * MIB
+
+    # Protected rendering job (60 MiB) > 64 MiB fails? Wait: 60 MiB < 64 MiB -> lowering to 64 MiB evicts LRU rem_old + rem_mid?
+    # Let's test setting video_limit_mib to 70 MiB -> rem_old (12 MiB) evicted, rem_mid (8 MiB) & rem_active (60 MiB) kept (total 68 MiB <= 70 MiB).
+    await runtime.cache.configure({"video_limit_mib": 70, "speech_limit_mib": 320})
+    assert not (renders / "rem_old").exists()
+    assert (renders / "rem_mid").exists()
+    assert j3_active.exists()
+    # Partial configure preserves video_limit_mib when only speech_limit_mib is updated later:
+    await runtime.cache.configure({"speech_limit_mib": 256})
+    assert runtime.cache.policy()["video_limit_mib"] == 70
+    assert runtime.cache.policy()["speech_limit_mib"] == 256
+    # SQLite job row & receipt metadata stay intact after cache eviction:
+    assert runtime.store.one("SELECT status FROM remotion_video_jobs WHERE id='rem_old'")["status"] == "published"
+
+    # Clear video removes remaining reclaimable job dirs while protecting rendering job:
+    res = await runtime.cache.clear("video")
+    assert not (renders / "rem_mid").exists()
+    assert j3_active.exists() and res["freed_bytes"] == 8 * MIB
+
+    # Symlink rejection inside video_renders:
+    sentinel = put(root / "unmanaged_vid", "secret.mp4", 42)
+    directory_link(renders / "rem_link", sentinel.parent)
+    with pytest.raises(ValueError, match="不能使用链接"):
+        runtime.cache.usage("video")
+
+
+async def test_browsing_clips_and_assets_preview_cleanup_and_clear_all(settings, runtime, directory_link):
+    root = runtime.settings.runtime
+    clip = put(root / "browsing/private-clips", "12345678-1234-5678-1234-567812345678.mp4", 2048)
+    preview = put(root / "private-call-previews/whale", "mature.mp4", 4096)
+    speech = put(runtime.settings.audio, "c" * 64 + ".wav", 1024)
+    # Durable assets that MUST NEVER be touched by clear_all:
+    model = put(root / "models", "weights.bin", 512)
+    meme_lib = put(root / "memes", "a" * 64 + ".png", 256)
+    art_ref = put(root / "private-artifacts/artwork-references/whale/q", "ref.png", 128)
+
+    status = runtime.cache.status()
+    assert status["categories"]["browsing"]["bytes"] == 2048
+    assert status["categories"]["assets"]["bytes"] == 4096
+    assert status["summary"]["reclaimable_bytes"] == 2048 + 4096 + 1024
+
+    cleared = await runtime.cache.clear_all()
+    assert cleared["freed_bytes"] == 2048 + 4096 + 1024
+    assert not clip.exists() and not preview.exists() and not speech.exists()
+    assert model.exists() and meme_lib.exists() and art_ref.exists()
+
+    # HTTP API smoke for 6-category cache & clear-all:
+    with TestClient(create_app(settings)) as client:
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
+        got = client.get("/api/v1/system/cache").json()
+        assert set(got["categories"]) == {"video", "music", "speech", "browsing", "temporary", "assets"}
+        assert "summary" in got
+        put_res = client.put("/api/v1/system/cache", json={"video_limit_mib": 2048, "assets_limit_mib": 256})
+        assert put_res.status_code == 200
+        assert put_res.json()["settings"]["video_limit_mib"] == 2048
+        assert put_res.json()["settings"]["assets_limit_mib"] == 256
+        clear_all_res = client.post("/api/v1/system/cache/clear-all")
+        assert clear_all_res.status_code == 200 and "result" in clear_all_res.json()
+
+    # Symlink rejection inside private-call-previews:
+    sentinel = put(root / "unmanaged_asset", "keep.mp4", 64)
+    directory_link(root / "private-call-previews/link", sentinel.parent)
+    with pytest.raises(ValueError, match="不能使用链接"):
+        runtime.cache.usage("assets")

@@ -3,7 +3,6 @@ import { apiGet, apiPost, apiPut } from "@/shared/api/client";
 import { characterDisplayStore, useCharacterDisplay } from "@/shared/hooks/useCharacterDisplay";
 import { useUnsavedGuard } from "@/shared/hooks/useUnsavedGuard";
 import { errorMessage } from "@/shared/lib/errors";
-import { CachePanel } from "./CachePanel";
 import styles from "./LiveWorkbench.module.css";
 import type { LiveOptionsData, LiveViewData } from "./types";
 
@@ -384,7 +383,17 @@ export function LiveSettingsPage({ visible = true, onFeedback }: LiveSettingsPag
         </details>
       </section>
 
-      <CachePanel visible={visible} />
+      <section className={`panel ${styles.onlineSection}`} data-live-page="settings">
+        <div className="panel-heading">
+          <h2>媒体与资产缓存</h2>
+          <a href="#cache-panel" className="win-link-btn">
+            前往统一缓存设置 →
+          </a>
+        </div>
+        <p className="hint">
+          视频创作、音乐点歌、语音合成、浏览片段与其他预览资产的缓存上限和清理已统一收口到「设置 → 存储与维护」。
+        </p>
+      </section>
     </div>
   );
 }

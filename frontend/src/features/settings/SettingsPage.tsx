@@ -7,9 +7,14 @@ export function SettingsPage() {
     <section data-section="settings" className="win-page-view">
       <div className="page-heading win-heading">
         <h1>工坊设置</h1>
-        <a href="#voices" className="win-link-btn">
-          角色音色试听 →
-        </a>
+        <div className="actions">
+          <a href="#cache-panel" className="win-link-btn">
+            媒体与资产缓存 →
+          </a>
+          <a href="#voices" className="win-link-btn">
+            角色音色试听 →
+          </a>
+        </div>
       </div>
 
       <CharacterDisplayPanel />

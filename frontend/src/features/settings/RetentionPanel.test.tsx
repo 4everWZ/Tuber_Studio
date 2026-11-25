@@ -39,14 +39,32 @@ function makeSession(overrides: Partial<AppSessionValue> = {}): AppSessionValue 
 function makeCacheStatus(overrides: Partial<CacheStatusResponse> = {}): CacheStatusResponse {
   return {
     settings: {
+      video_limit_mib: 4096,
       music_limit_mib: 1024,
       speech_limit_mib: 256,
       temporary_limit_mib: 512,
       browsing_limit_mib: 256,
+      assets_limit_mib: 512,
+    },
+    summary: {
+      bytes: 17825792,
+      files: 12,
+      protected_bytes: 9961472,
+      reclaimable_bytes: 7864320,
+      limit_bytes: 6979321856,
     },
     categories: {
+      video: {
+        bytes: 4194304,
+        files: 4,
+        limit_bytes: 4294967296,
+        reclaimable_bytes: 4194304,
+        protected_bytes: 0,
+        writing: false,
+      },
       music: {
         bytes: 10485760,
+        files: 3,
         limit_bytes: 1073741824,
         reclaimable_bytes: 2097152,
         protected_bytes: 8388608,
@@ -54,6 +72,7 @@ function makeCacheStatus(overrides: Partial<CacheStatusResponse> = {}): CacheSta
       },
       speech: {
         bytes: 1048576,
+        files: 2,
         limit_bytes: 268435456,
         reclaimable_bytes: 524288,
         protected_bytes: 524288,
@@ -61,6 +80,7 @@ function makeCacheStatus(overrides: Partial<CacheStatusResponse> = {}): CacheSta
       },
       temporary: {
         bytes: 0,
+        files: 0,
         limit_bytes: 536870912,
         reclaimable_bytes: 0,
         protected_bytes: 0,
@@ -68,9 +88,18 @@ function makeCacheStatus(overrides: Partial<CacheStatusResponse> = {}): CacheSta
       },
       browsing: {
         bytes: 2097152,
+        files: 2,
         limit_bytes: 268435456,
         reclaimable_bytes: 1048576,
         protected_bytes: 1048576,
+        writing: false,
+      },
+      assets: {
+        bytes: 0,
+        files: 1,
+        limit_bytes: 536870912,
+        reclaimable_bytes: 0,
+        protected_bytes: 0,
         writing: false,
       },
     },
@@ -230,6 +259,12 @@ describe("RetentionPanel, CachePanel & OverviewPage", () => {
           result: { freed_bytes: 2097152, removed_files: 3 },
         });
       }
+      if (url === "/api/v1/system/cache/clear-all" && method === "POST") {
+        return jsonResponse({
+          ...cacheState,
+          result: { freed_bytes: 7864320, removed_files: 8 },
+        });
+      }
       if (url === "/api/v1/system/cache" && method === "PUT") {
         const body = JSON.parse(String(init?.body || "{}"));
         cacheState = makeCacheStatus({ settings: body });
@@ -242,9 +277,13 @@ describe("RetentionPanel, CachePanel & OverviewPage", () => {
     const { container } = render(<CachePanel />);
 
     const speechLimit = container.querySelector<HTMLInputElement>('input[name="speech_limit_mib"]')!;
+    const videoLimit = container.querySelector<HTMLInputElement>('input[name="video_limit_mib"]')!;
     await waitFor(() => {
       expect(speechLimit.value).toBe("256");
+      expect(videoLimit.value).toBe("4096");
     });
+    expect(container.querySelector("[data-cache-summary]")?.textContent).toContain("文件总数 12");
+    expect(container.querySelector('[data-category="assets"] [data-stats]')?.textContent).toContain("文件 1");
 
     // Clear music cache
     fireEvent.click(screen.getByRole("button", { name: "清理音乐可回收缓存" }));
@@ -252,9 +291,23 @@ describe("RetentionPanel, CachePanel & OverviewPage", () => {
       expect(container.querySelector('[data-state]')?.textContent).toContain("已回收 2.0 MiB，清理 3 个文件");
     });
 
+    // Bulk clear-all requires confirmation checkbox
+    const clearAllConfirm = container.querySelector<HTMLInputElement>("#cache-clear-all-confirm")!;
+    const clearAllBtn = container.querySelector<HTMLButtonElement>("#cache-clear-all-btn")!;
+    expect(clearAllBtn.disabled).toBe(true);
+    fireEvent.click(clearAllConfirm);
+    expect(clearAllBtn.disabled).toBe(false);
+    fireEvent.click(clearAllBtn);
+    await waitFor(() => {
+      expect(container.querySelector('[data-state]')?.textContent).toContain("全部可回收缓存已清理");
+    });
+    expect(clearAllConfirm.checked).toBe(false);
+
     // Edit speech limit -> mark dirty
     fireEvent.change(speechLimit, { target: { value: "384" } });
+    fireEvent.change(videoLimit, { target: { value: "2048" } });
     expect(speechLimit.value).toBe("384");
+    expect(videoLimit.value).toBe("2048");
     expect(hasAnyUnsavedChanges()).toBe(true);
 
     // 5s background poll returns server value 256, must NOT clobber dirty edit 384

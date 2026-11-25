@@ -61,6 +61,9 @@ export function AssetsPage() {
           <p className="eyebrow">角色动态表情与预录音效库</p>
           <h1>素材与表情包图库</h1>
         </div>
+        <a href="#cache-panel" className="win-link-btn">
+          媒体与资产缓存 →
+        </a>
       </div>
 
       <div className="win-group-box">

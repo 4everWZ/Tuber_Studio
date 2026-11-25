@@ -3,31 +3,86 @@ import { apiGet, apiPost, apiPut } from "@/shared/api/client";
 import { useUnsavedGuard } from "@/shared/hooks/useUnsavedGuard";
 import { errorMessage } from "@/shared/lib/errors";
 import styles from "./OverviewPage.module.css";
-import { formatCacheBytes, type CachePolicy, type CacheStatusResponse } from "./types";
+import {
+  formatCacheBytes,
+  type CacheCategoryKey,
+  type CachePolicy,
+  type CacheStatusResponse,
+} from "./types";
 
 const CACHE_CATEGORIES: ReadonlyArray<{
-  key: keyof CacheStatusResponse["categories"];
+  key: CacheCategoryKey;
   field: keyof CachePolicy;
   label: string;
+  desc: string;
   min: number;
   max: number;
 }> = [
-  { key: "music", field: "music_limit_mib", label: "音乐", min: 96, max: 15360 },
-  { key: "speech", field: "speech_limit_mib", label: "语音", min: 16, max: 15360 },
-  { key: "temporary", field: "temporary_limit_mib", label: "临时产物", min: 16, max: 4096 },
-  { key: "browsing", field: "browsing_limit_mib", label: "浏览材料", min: 16, max: 4096 },
+  {
+    key: "video",
+    field: "video_limit_mib",
+    label: "视频创作产物",
+    desc: "Remotion 成片 MP4、封面、逐句配音与帧缓存；渲染/发布中受保护，清理保留任务记录与回执",
+    min: 64,
+    max: 51200,
+  },
+  {
+    key: "music",
+    field: "music_limit_mib",
+    label: "音乐",
+    desc: "点歌、本地曲库与翻唱音频缓存；曲库与待播受保护",
+    min: 96,
+    max: 15360,
+  },
+  {
+    key: "speech",
+    field: "speech_limit_mib",
+    label: "语音",
+    desc: "TTS 合成语音缓存；当前与待播语音受保护",
+    min: 16,
+    max: 15360,
+  },
+  {
+    key: "browsing",
+    field: "browsing_limit_mib",
+    label: "浏览材料",
+    desc: "B 站观察记录与裁切视频片段；进行中与待审核证据受保护",
+    min: 16,
+    max: 8192,
+  },
+  {
+    key: "temporary",
+    field: "temporary_limit_mib",
+    label: "临时产物",
+    desc: "翻唱与临时处理输出目录；写入中的任务受保护",
+    min: 16,
+    max: 8192,
+  },
+  {
+    key: "assets",
+    field: "assets_limit_mib",
+    label: "预览与其他资产",
+    desc: "私聊预览录像等可再生媒体缓存；原始立绘、上传表情包库与模型永不清理",
+    min: 16,
+    max: 8192,
+  },
 ];
+
+const DEFAULT_POLICY: CachePolicy = {
+  video_limit_mib: 4096,
+  music_limit_mib: 15360,
+  speech_limit_mib: 512,
+  browsing_limit_mib: 512,
+  temporary_limit_mib: 1024,
+  assets_limit_mib: 512,
+};
 
 export function CachePanel({ className }: { className?: string }) {
   const [data, setData] = useState<CacheStatusResponse | null>(null);
-  const [limits, setLimits] = useState<CachePolicy>({
-    music_limit_mib: 15360,
-    speech_limit_mib: 512,
-    temporary_limit_mib: 1024,
-    browsing_limit_mib: 512,
-  });
+  const [limits, setLimits] = useState<CachePolicy>(DEFAULT_POLICY);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [clearAllConfirm, setClearAllConfirm] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ text: string; error: boolean }>({ text: "", error: false });
 
   const busyRef = useRef(false);
@@ -43,7 +98,7 @@ export function CachePanel({ className }: { className?: string }) {
     hasLoadedRef.current = true;
     setData(next);
     if (first || overwriteFields || !dirtyRef.current) {
-      setLimits(next.settings);
+      setLimits((prev) => ({ ...prev, ...next.settings }));
       if (overwriteFields) {
         dirtyRef.current = false;
         setDirty(false);
@@ -84,7 +139,7 @@ export function CachePanel({ className }: { className?: string }) {
     }
   }
 
-  async function handleClearCategory(category: keyof CacheStatusResponse["categories"]) {
+  async function handleClearCategory(category: CacheCategoryKey) {
     await runAction(async () => {
       const next = await apiPost<"/api/v1/system/cache/{category}/clear", CacheStatusResponse>(
         "/api/v1/system/cache/{category}/clear",
@@ -95,6 +150,23 @@ export function CachePanel({ className }: { className?: string }) {
       const removed = next.result?.removed_files ?? 0;
       setStatusMsg({
         text: `已回收 ${formatCacheBytes(freed)}，清理 ${removed} 个文件。`,
+        error: false,
+      });
+    });
+  }
+
+  async function handleClearAll() {
+    if (!clearAllConfirm) return;
+    await runAction(async () => {
+      const next = await apiPost<"/api/v1/system/cache/clear-all", CacheStatusResponse>(
+        "/api/v1/system/cache/clear-all"
+      );
+      applyCacheResponse(next, false);
+      setClearAllConfirm(false);
+      const freed = next.result?.freed_bytes ?? 0;
+      const removed = next.result?.removed_files ?? 0;
+      setStatusMsg({
+        text: `全部可回收缓存已清理：释放 ${formatCacheBytes(freed)}，共移除 ${removed} 个文件。`,
         error: false,
       });
     });
@@ -112,6 +184,8 @@ export function CachePanel({ className }: { className?: string }) {
     });
   }
 
+  const summary = data?.summary;
+
   return (
     <section
       className={["win-group-box", className].filter(Boolean).join(" ")}
@@ -119,28 +193,36 @@ export function CachePanel({ className }: { className?: string }) {
       data-workspace-anchor=""
     >
       <div className="panel-heading">
-        <h2>媒体缓存</h2>
+        <h2>媒体与资产缓存管理</h2>
         <button type="button" data-refresh="" disabled={busy} onClick={() => void refresh()}>
           刷新容量
         </button>
       </div>
       <p className="hint">
-        点歌音乐（最高15 GiB）与生成的语音音频均有独立缓存上限与自动 LRU 淘汰机制，可以在此统一查看与清理。曲库、当前／待播、进行中的浏览任务与待审核证据受保护。模型、音色包、账号、审计、关系和私信原文不在此清理。
+        视频创作、音乐点歌、TTS 语音、浏览片段、临时产物与预览资产均在此统一设置缓存上限、查看占用并执行 LRU 回收。模型权重、原始角色立绘、上传表情包库、账号凭证及已发回执永不清理。
       </p>
+      {summary && (
+        <p data-cache-summary="" className="hint" style={{ fontWeight: 500 }}>
+          {`总占用 ${formatCacheBytes(summary.bytes)} / 总上限 ${formatCacheBytes(summary.limit_bytes)} · 可回收总计 ${formatCacheBytes(summary.reclaimable_bytes)} · 受保护总计 ${formatCacheBytes(summary.protected_bytes)} · 文件总数 ${summary.files}`}
+        </p>
+      )}
       <form onSubmit={(event) => void handleSaveLimits(event)}>
         <div className={`cache-groups ${styles.cacheGroups}`}>
-          {CACHE_CATEGORIES.map(({ key, field, label, min, max }) => {
+          {CACHE_CATEGORIES.map(({ key, field, label, desc, min, max }) => {
             const stats = data?.categories?.[key];
             return (
               <div key={key} className={`cache-group ${styles.cacheGroup}`} data-category={key} hidden={!stats}>
                 <h3>{label}</h3>
+                <p className="hint" style={{ marginTop: 0, marginBottom: 6 }}>
+                  {desc}
+                </p>
                 <p data-stats="" className="hint">
                   {stats
-                    ? `已用 ${formatCacheBytes(stats.bytes)} / ${formatCacheBytes(stats.limit_bytes)} · 可回收 ${formatCacheBytes(stats.reclaimable_bytes)} · 受保护 ${formatCacheBytes(stats.protected_bytes)}${stats.writing ? " · 正在写入" : ""}`
+                    ? `已用 ${formatCacheBytes(stats.bytes)} / ${formatCacheBytes(stats.limit_bytes)} · 文件 ${stats.files ?? 0} · 可回收 ${formatCacheBytes(stats.reclaimable_bytes)} · 受保护 ${formatCacheBytes(stats.protected_bytes)}${stats.writing ? " · 正在写入" : ""}`
                     : ""}
                 </p>
                 <label>
-                  {`${label}最大缓存（MiB，最高${max}）`}
+                  {`${label}最大缓存（MiB，${min}–${max}）`}
                   <input
                     type="number"
                     min={min}
@@ -148,7 +230,7 @@ export function CachePanel({ className }: { className?: string }) {
                     step={1}
                     required
                     name={field}
-                    value={limits[field]}
+                    value={limits[field] ?? DEFAULT_POLICY[field]}
                     onChange={(event) => {
                       dirtyRef.current = true;
                       setDirty(true);
@@ -172,9 +254,29 @@ export function CachePanel({ className }: { className?: string }) {
             );
           })}
         </div>
-        <button type="submit" disabled={busy}>
-          保存缓存上限
-        </button>
+        <div className="actions" style={{ marginTop: 8, flexWrap: "wrap", gap: 12 }}>
+          <button type="submit" disabled={busy}>
+            保存缓存上限
+          </button>
+          <label className={styles.inlineField}>
+            <input
+              id="cache-clear-all-confirm"
+              type="checkbox"
+              checked={clearAllConfirm}
+              disabled={busy}
+              onChange={(event) => setClearAllConfirm(event.target.checked)}
+            />
+            确认清理全部可回收媒体与资产缓存
+          </label>
+          <button
+            id="cache-clear-all-btn"
+            type="button"
+            disabled={busy || !clearAllConfirm}
+            onClick={() => void handleClearAll()}
+          >
+            一键清理全部可回收缓存
+          </button>
+        </div>
         <p data-state="" className={statusMsg.error ? "hint error-text" : "hint"} role="status">
           {statusMsg.text}
         </p>

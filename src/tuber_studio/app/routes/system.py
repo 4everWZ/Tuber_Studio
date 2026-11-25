@@ -244,7 +244,11 @@ def register_system_routes(app, settings, runtime, comments, dynamics, auth, log
 
     @app.put(prefix + "/cache", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["system"])
     async def cache_policy(data: CachePolicy):
-        return await runtime.cache.configure(data.model_dump())
+        return await runtime.cache.configure(data.model_dump(exclude_unset=True))
+
+    @app.post(prefix + "/cache/clear-all", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["system"])
+    async def clear_all_cache():
+        return {"result": await runtime.cache.clear_all(), **runtime.cache.status()}
 
     @app.post(prefix + "/cache/{category}/clear", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["system"])
     async def clear_cache(category: str):

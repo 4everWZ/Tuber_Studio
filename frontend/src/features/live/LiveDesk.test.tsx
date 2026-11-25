@@ -384,7 +384,7 @@ describe("LiveMusicPage and LiveSettingsPage", () => {
       expect(petsCheckbox.checked).toBe(true);
       expect((document.getElementById("live-timezone") as HTMLInputElement).value).toBe("Asia/Shanghai");
       expect(document.getElementById("live-poll-state")?.textContent).toBe("夜宵选择 · 泡面胜出");
-      expect(document.querySelector('[data-category="music"] [data-stats]')?.textContent).toContain("已用");
+      expect(document.querySelector('a[href="#cache-panel"]')?.textContent).toContain("前往统一缓存设置");
     });
 
     const avatarCheckbox = screen.getByLabelText("直播 Avatar（TBD／暂不可用）") as HTMLInputElement;

@@ -71,6 +71,7 @@ export interface ArtworkReferencesResponse {
 
 export interface CacheCategoryStats {
   bytes: number;
+  files?: number;
   limit_bytes: number;
   reclaimable_bytes: number;
   protected_bytes: number;
@@ -79,12 +80,24 @@ export interface CacheCategoryStats {
 
 export type CachePolicy = ApiComponents["schemas"]["CachePolicy"];
 
+export type CacheCategoryKey = "video" | "music" | "speech" | "browsing" | "temporary" | "assets";
+
+export interface CacheSummaryStats {
+  bytes: number;
+  files: number;
+  protected_bytes: number;
+  reclaimable_bytes: number;
+  limit_bytes: number;
+}
+
 export interface CacheStatusResponse {
-  categories: Partial<Record<"music" | "speech" | "temporary" | "browsing", CacheCategoryStats>>;
+  categories: Partial<Record<CacheCategoryKey, CacheCategoryStats>>;
   settings: CachePolicy;
+  summary?: CacheSummaryStats;
   result?: {
     freed_bytes: number;
     removed_files: number;
+    protected_bytes?: number;
   };
 }
 

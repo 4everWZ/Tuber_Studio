@@ -3530,6 +3530,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/cache/clear-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear All Cache */
+        post: operations["clear_all_cache_api_v1_system_cache_clear_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/cache/{category}/clear": {
         parameters: {
             query?: never;
@@ -3884,6 +3901,11 @@ export interface components {
         /** CachePolicy */
         CachePolicy: {
             /**
+             * Assets Limit Mib
+             * @default 512
+             */
+            assets_limit_mib: number;
+            /**
              * Browsing Limit Mib
              * @default 512
              */
@@ -3903,6 +3925,11 @@ export interface components {
              * @default 1024
              */
             temporary_limit_mib: number;
+            /**
+             * Video Limit Mib
+             * @default 4096
+             */
+            video_limit_mib: number;
         };
         /** CallOptions */
         CallOptions: {
@@ -4551,6 +4578,12 @@ export interface components {
         /** PlanVideoScriptArgs */
         PlanVideoScriptArgs: {
             /**
+             * Bgm Enabled
+             * @description 是否开启浅海轻量 BGM 与转场音效混音。
+             * @default true
+             */
+            bgm_enabled: boolean;
+            /**
              * Candidate Bvids
              * @description 可选关联的公开视频 BV 号。
              */
@@ -4564,16 +4597,28 @@ export interface components {
             fps: 30 | 60;
             /**
              * Include Avatar
-             * @description 是否附带虚拟形象口型/动作时间轴。
-             * @default false
+             * @description 是否附带 Aqua 虚拟主播演出小窗与动作时间轴。
+             * @default true
              */
             include_avatar: boolean;
+            /**
+             * Line Pause Seconds
+             * @description 同一镜内相邻台词句间气口停顿（秒）。
+             * @default 0.45
+             */
+            line_pause_seconds: number;
             /**
              * Max Scenes
              * @description 目标分镜数量。
              * @default 4
              */
             max_scenes: number;
+            /**
+             * Scene Pause Seconds
+             * @description 分镜切换时的停顿留白时长（秒）。
+             * @default 0.75
+             */
+            scene_pause_seconds: number;
             /**
              * Style Note
              * @description 可选节奏或风格提示。
@@ -4894,6 +4939,8 @@ export interface components {
          * @description Editable fields on a planned VideoScriptPlan prior to publishing.
          */
         VideoPlanPatch: {
+            /** Bgm Enabled */
+            bgm_enabled?: boolean | null;
             /** Category Tid */
             category_tid?: number | null;
             /** Fps */
@@ -4902,6 +4949,10 @@ export interface components {
             height?: (1080 | 720) | null;
             /** Include Avatar */
             include_avatar?: boolean | null;
+            /** Line Pause Seconds */
+            line_pause_seconds?: number | null;
+            /** Scene Pause Seconds */
+            scene_pause_seconds?: number | null;
             /** Scenes */
             scenes?: {
                 [key: string]: unknown;
@@ -4926,10 +4977,18 @@ export interface components {
         VideoPolicyPatch: {
             /** Auto Publish Enabled */
             auto_publish_enabled?: boolean | null;
+            /** Default Bgm Enabled */
+            default_bgm_enabled?: boolean | null;
             /** Default Fps */
             default_fps?: (30 | 60) | null;
             /** Default Height */
             default_height?: (1080 | 720) | null;
+            /** Default Include Avatar */
+            default_include_avatar?: boolean | null;
+            /** Default Line Pause Seconds */
+            default_line_pause_seconds?: number | null;
+            /** Default Scene Pause Seconds */
+            default_scene_pause_seconds?: number | null;
             /** Default Width */
             default_width?: (1920 | 1280) | null;
             /** Max Render Concurrency */
@@ -28362,6 +28421,98 @@ export interface operations {
                 "application/json": components["schemas"]["CachePolicy"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    clear_all_cache_api_v1_system_cache_clear_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
