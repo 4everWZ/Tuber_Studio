@@ -18,14 +18,18 @@ def build_lifespan(runtime, comments, account, dynamics, messages, browsing, sto
             await messages.open()
             await browsing.open()
             runtime.tasks.start()
+            runtime.meme_harvester.start()
             yield
         finally:
             try:
                 try:
-                    await runtime.tasks.close()
+                    await runtime.meme_harvester.close()
                 finally:
-                    await runtime.memory_organizer.close()
-                    await browsing.close()
+                    try:
+                        await runtime.tasks.close()
+                    finally:
+                        await runtime.memory_organizer.close()
+                        await browsing.close()
             finally:
                 try:
                     await messages.close()

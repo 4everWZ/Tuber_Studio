@@ -247,6 +247,13 @@ async def collect_own_dynamics(browsing, row, metrics):
 
 
 def enqueue_own_comments(browsing, account, cutoff, target, items):
+    if harvester := getattr(browsing.runtime, "meme_harvester", None):
+        try:
+            harvester.enqueue_comment_attachments(
+                items, bvid=target.get("bvid"), dynamic_id=target.get("dynamic_id")
+            )
+        except Exception:
+            pass
     for comment in items:
         timestamp = int(comment["created_at"])
         author = str(comment["platform_user_id"])
@@ -369,6 +376,15 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
     resource = target.get("bvid") or "dynamic:" + str(target["oid"])
     canonical = canonical_intent("bilibili", resource, source["comment_id"], row["character_id"])
     items_list = thread.get("items", [])
+    if not row["preview"] and items_list and (harvester := getattr(browsing.runtime, "meme_harvester", None)):
+        try:
+            harvester.enqueue_comment_attachments(
+                items_list,
+                bvid=target.get("bvid"),
+                dynamic_id=target.get("dynamic_id"),
+            )
+        except Exception:
+            pass
     with browsing.store.db:
         observe_thread(
             browsing.store,

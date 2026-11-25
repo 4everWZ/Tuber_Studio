@@ -16,7 +16,7 @@ import httpx
 from fastapi import Body, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import Response
 from PIL import Image, ImageOps
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, model_validator
 
 from ...agent.api.character_memory import (
     MEMORY_OVERVIEW,
@@ -76,11 +76,69 @@ class MemeUpload(MemeLabels):
     license: MemeLicense
     content_base64: str = Field(min_length=4, max_length=((MAX_MEME_BYTES + 2) // 3) * 4)
     import_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
+    usage_scope: Literal["all_channels", "interaction_only"] = "all_channels"
 
 
 class MemeAvailability(StrictModel):
     character: str | None = Field(default=None, min_length=1, max_length=50)
-    enabled: bool
+    enabled: bool | None = None
+    usage_scope: Literal["all_channels", "interaction_only"] | None = None
+
+    @model_validator(mode="after")
+    def require_field(self):
+        if self.enabled is None and self.usage_scope is None:
+            raise ValueError("请提供 enabled 或 usage_scope")
+        return self
+
+
+class MemeInboxApprove(StrictModel):
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    emotions: list[str] | None = Field(default=None, min_length=1, max_length=20)
+    tags: list[str] | None = Field(default=None, max_length=12)
+    description: str | None = Field(default=None, max_length=400)
+    usage_scope: Literal["all_channels", "interaction_only"] | None = None
+    character: str | None = Field(default=None, min_length=1, max_length=50)
+
+
+class MemeInboxBatch(StrictModel):
+    action: Literal["approve", "reject"]
+    item_ids: list[str] = Field(min_length=1, max_length=100)
+    usage_scope: Literal["all_channels", "interaction_only"] | None = None
+    character: str | None = Field(default=None, min_length=1, max_length=50)
+
+
+class MemeSourceCreate(StrictModel):
+    kind: Literal["remote_feed", "bilibili_creator"]
+    target_kind: Literal["manifest", "github_dir", "space_dynamic", "article", "readlist"] | None = None
+    name: str = Field(min_length=1, max_length=120)
+    url: str = Field(min_length=1, max_length=2048)
+    enabled: bool = True
+    auto_approve: bool = False
+    sync_interval_hours: int | None = Field(default=None, ge=1, le=168)
+    license_name: str = Field(default="", max_length=300)
+    license_url: str = Field(default="", max_length=2048)
+    license_note: str = Field(default="", max_length=3000)
+
+
+class MemeSourcePatch(StrictModel):
+    enabled: bool | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    auto_approve: bool | None = None
+    sync_interval_hours: int | None = Field(default=None, ge=1, le=168)
+    license_name: str | None = Field(default=None, max_length=300)
+    license_url: str | None = Field(default=None, max_length=2048)
+    license_note: str | None = Field(default=None, max_length=3000)
+
+
+class MemeSyncRequest(StrictModel):
+    source_id: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+class MemeHarvesterConfigPatch(StrictModel):
+    comment_harvest_enabled: bool | None = None
+    default_sync_interval_hours: int | None = Field(default=None, ge=1, le=168)
+    meme_inbox_limit_mib: int | None = Field(default=None, ge=0, le=8192)
+    meme_inbox_max_items: int | None = Field(default=None, ge=0, le=10000)
 
 
 class UnifiedMemoryCreate(StrictModel):
@@ -670,10 +728,13 @@ def register_persona_routes(app, settings, runtime, store, comments, memes, requ
         }
 
     @app.get(prefix + "/memes", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
-    async def list_memes(character: str | None = None):
+    async def list_memes(
+        character: str | None = None,
+        usage_scope: Literal["all_channels", "interaction_only"] | None = None,
+    ):
         await memes.seed_existing()
         identity = character or runtime.character["id"]
-        items = memes.list(identity, include_disabled=True)
+        items = memes.list(identity, include_disabled=True, usage_scope=usage_scope)
         return {"items": items, "character_id": identity, "max_file_bytes": MAX_MEME_BYTES}
 
     @app.post(prefix + "/memes", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
@@ -692,7 +753,91 @@ def register_persona_routes(app, settings, runtime, store, comments, memes, requ
             tags=body.tags,
             description=body.description,
             import_id=body.import_id,
+            usage_scope=body.usage_scope,
         )
+
+    @app.get(prefix + "/memes/inbox", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def list_meme_inbox(status: Literal["pending", "all"] = "pending"):
+        return runtime.meme_harvester.list_inbox(status=status)
+
+    @app.get(prefix + "/memes/inbox/{item_id}/preview", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def preview_meme_inbox_item(item_id: str):
+        try:
+            result = runtime.meme_harvester.preview_inbox_item(item_id)
+        except LookupError as error:
+            raise HTTPException(404, str(error)) from None
+        return Response(result["content"], media_type=result["mime_type"])
+
+    @app.post(prefix + "/memes/inbox/batch", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def batch_meme_inbox(body: MemeInboxBatch):
+        return await runtime.meme_harvester.batch_inbox_action(
+            body.action,
+            body.item_ids,
+            usage_scope=body.usage_scope,
+            character_id=body.character or runtime.character["id"],
+        )
+
+    @app.post(prefix + "/memes/inbox/{item_id}/approve", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def approve_meme_inbox_item(item_id: str, body: MemeInboxApprove | None = Body(default=None)):
+        data = body or MemeInboxApprove()
+        try:
+            return await runtime.meme_harvester.approve_inbox_item(
+                item_id,
+                title=data.title,
+                emotions=data.emotions,
+                tags=data.tags,
+                description=data.description,
+                usage_scope=data.usage_scope,
+                character_id=data.character or runtime.character["id"],
+            )
+        except LookupError as error:
+            raise HTTPException(404, str(error)) from None
+
+    @app.post(prefix + "/memes/inbox/{item_id}/reject", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def reject_meme_inbox_item(item_id: str):
+        try:
+            return runtime.meme_harvester.reject_inbox_item(item_id)
+        except LookupError as error:
+            raise HTTPException(404, str(error)) from None
+
+    @app.get(prefix + "/memes/sources", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def list_meme_sources():
+        return runtime.meme_harvester.list_sources()
+
+    @app.post(prefix + "/memes/sources", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def create_meme_source(body: MemeSourceCreate):
+        return runtime.meme_harvester.add_source(body.model_dump())
+
+    @app.post(prefix + "/memes/sources/sync", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def sync_meme_sources(body: MemeSyncRequest | None = Body(default=None)):
+        if body and body.source_id:
+            try:
+                return await runtime.meme_harvester.sync_source(body.source_id)
+            except LookupError as error:
+                raise HTTPException(404, str(error)) from None
+        return await runtime.meme_harvester.sync_all()
+
+    @app.patch(prefix + "/memes/sources/{source_id}", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def update_meme_source(source_id: str, body: MemeSourcePatch):
+        try:
+            return runtime.meme_harvester.update_source(source_id, body.model_dump(exclude_unset=True))
+        except LookupError as error:
+            raise HTTPException(404, str(error)) from None
+
+    @app.delete(prefix + "/memes/sources/{source_id}", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def delete_meme_source(source_id: str):
+        try:
+            return runtime.meme_harvester.delete_source(source_id)
+        except LookupError as error:
+            raise HTTPException(404, str(error)) from None
+
+    @app.get(prefix + "/memes/harvester/config", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def get_meme_harvester_config():
+        return runtime.meme_harvester.full_config()
+
+    @app.put(prefix + "/memes/harvester/config", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
+    async def update_meme_harvester_config(body: MemeHarvesterConfigPatch):
+        return await runtime.meme_harvester.update_config(body.model_dump(exclude_unset=True))
 
     @app.get(prefix + "/memes/{asset_id}/preview", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
     async def preview_meme(asset_id: str, character: str | None = None):
@@ -701,7 +846,7 @@ def register_persona_routes(app, settings, runtime, store, comments, memes, requ
 
     @app.put(prefix + "/memes/{asset_id}", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
     async def meme_availability(asset_id: str, body: MemeAvailability):
-        return memes.enable(asset_id, body.enabled)
+        return memes.update_availability(asset_id, enabled=body.enabled, usage_scope=body.usage_scope)
 
     @app.put(prefix + "/memes/{asset_id}/labels", dependencies=deps, responses=ERROR_RESPONSES, tags=["persona"])
     async def meme_labels(asset_id: str, body: MemeLabels):

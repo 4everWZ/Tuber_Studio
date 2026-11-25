@@ -29,6 +29,7 @@ async def prepare_comment_materials(browsing, target, source_row, *, row=None):
         task["round_id"] = row["id"]
     deadline = min(time.time() + MAX_COMMENT_MATERIAL_SECONDS, (row or {}).get("deadline") or float("inf"))
     observations = []
+    downloaded_images = {}
     for descriptor in descriptors[:MAX_ATTACHMENTS]:
         if not isinstance(descriptor, dict):
             continue
@@ -52,6 +53,7 @@ async def prepare_comment_materials(browsing, target, source_row, *, row=None):
                     observation = await browsing._read(adapter.read_comment_article, identity)
                 elif (kind == "image" and capability.get("images") and hasattr(adapter, "read_comment_image")):
                     data = await browsing._read(adapter.read_comment_image, identity)
+                    downloaded_images[identity] = data
                     frames, coverage = await asyncio.to_thread(
                         sample_comment_image, data, max_frames=capability["max_frames"],
                         max_pixels=capability["max_pixels"], max_bytes=capability["max_bytes"],
@@ -74,6 +76,16 @@ async def prepare_comment_materials(browsing, target, source_row, *, row=None):
         saved = observation | {"status": "read"}
         browsing.store.set(key, {"expires_at": time.time() + 6 * 3600, "observation": saved})
         observations.append(source | saved)
+    if not (row or {}).get("preview") and (harvester := getattr(browsing.runtime, "meme_harvester", None)):
+        try:
+            harvester.enqueue_comment_attachments(
+                [source_row],
+                bvid=target.get("bvid"),
+                dynamic_id=target.get("dynamic_id"),
+                image_bytes_by_url=downloaded_images,
+            )
+        except Exception:
+            pass
     return observations
 
 

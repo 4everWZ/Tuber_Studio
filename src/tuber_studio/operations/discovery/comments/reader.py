@@ -32,6 +32,11 @@ async def evaluate_comment_visit(browsing, result, row, metrics):
         browsing._check_round(row)
         context = await browsing.video_comment_context(row, metadata["bvid"])
         items = context.get("items", [])
+        if not row["preview"] and (harvester := getattr(browsing.runtime, "meme_harvester", None)):
+            try:
+                harvester.enqueue_comment_attachments(items, bvid=metadata.get("bvid"))
+            except Exception:
+                pass
         if (row["config"].get("interaction_only") or row["config"].get("autonomous_batch")) and not row["preview"]:
             with browsing.store.db:
                 admit_comment_page(browsing, row, identity, metadata, items)

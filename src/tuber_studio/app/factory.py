@@ -150,6 +150,7 @@ def create_app(
     runtime.account = account
     memes = runtime.pets.catalog
     runtime.operation_images.catalog = memes
+    runtime.cache.meme_inbox_evicted_callback = runtime.meme_harvester.on_cache_evicted
     comments.memes = memes
     dynamics = Dynamics(
         settings,

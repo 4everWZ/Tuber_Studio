@@ -31,6 +31,7 @@ from ..operations.kernel.control import OperationsControl
 from ..operations.kernel.generation import generate_with_recovery, hold_comment_body, reply_generation_binding
 from ..operations.kernel.repository import BrowsingRepository
 from ..operations.kernel.turns import OperationTurns
+from ..persona.assets.meme_harvester import MemeHarvester
 from ..persona.characters.front_persona import front_identity
 from ..persona.characters.pets import PetAppearances
 from ..persona.context.delivery import comment_scope
@@ -137,6 +138,14 @@ class Runtime:
         )
         self.live.media.cache = self.cache
         self.voices.cache = self.cache
+        self.meme_harvester = MemeHarvester(
+            settings,
+            store,
+            catalog=self.pets.catalog,
+            cache=self.cache,
+            runtime=self,
+        )
+        self.cache.meme_inbox_evicted_callback = self.meme_harvester.on_cache_evicted
 
     @property
     def character(self):
