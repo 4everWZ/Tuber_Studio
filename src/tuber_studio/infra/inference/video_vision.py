@@ -14,14 +14,15 @@ import time
 from contextlib import nullcontext
 from functools import partial
 from heapq import nsmallest
-from typing import Literal
+from typing import Literal, get_args
 from uuid import uuid4
 
 import httpx
 from pydantic import Field, model_validator
 
 from ...core.meter import GenerationMeter
-from ...core.models import Reply, StrictModel
+from ...core.models import Emotion, Reply, StrictModel
+from ...core.turns import operation_ticket
 from .api_providers import APIProvider
 from .http_api import response_json
 from .providers import public_error, validate_reply
@@ -783,6 +784,159 @@ class ApiVideoEvidenceProvider:
         self._check_task(task, deadline)
         self._record_observation(confirmed, count)
         return captions
+
+    async def classify_meme_image(self, frames: list[dict], *, context_hint: str = "") -> dict:
+        if not isinstance(frames, list) or not 0 < len(frames) <= self.config.max_frames:
+            raise ValueError("表情审核视觉帧数超出配置")
+        total = 0
+        for frame in frames:
+            image = frame.get("image")
+            mime_type = frame.get("mime_type", "image/jpeg")
+            validate_image(image, mime_type)
+            if "width" in frame or "height" in frame:
+                if (
+                    any(type(frame.get(key)) is not int or not 0 < frame[key] <= 4096 for key in ("width", "height"))
+                    or frame["width"] * frame["height"] > self.config.max_pixels
+                ):
+                    raise ValueError("表情审核视觉帧像素超出配置")
+            total += len(image)
+        if total > self.config.max_bytes:
+            raise ValueError("表情审核视觉帧总字节超出配置")
+
+        content = []
+        for number, frame in enumerate(frames, 1):
+            image, _ = await self._image_content(frame)
+            timing = f"，GIF 抽样时间 {frame['time_ms']} ms" if "time_ms" in frame else ""
+            label = {"type": "text", "text": f"表情审核画面 {number}{timing}"}
+            content.extend((image, label) if self.config.image_order == "image_first" else (label, image))
+        hint = context_hint.strip()[:600] if isinstance(context_hint, str) and context_hint.strip() else ""
+        if hint:
+            content.append({"type": "text", "text": f"来源线索（仅供参考，须以画面所见为准）：{hint}"})
+
+        emotions_enum = list(get_args(Emotion))
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["is_whale_aqua", "clean_ok", "confidence", "title", "emotions", "tags", "description"],
+            "properties": {
+                "is_whale_aqua": {"type": "boolean"},
+                "clean_ok": {"type": "boolean"},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "title": {"type": "string", "minLength": 1, "maxLength": 120},
+                "emotions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "items": {"type": "string", "enum": emotions_enum},
+                },
+                "tags": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 40},
+                },
+                "description": {"type": "string", "maxLength": 400},
+            },
+        }
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "审核候选表情图片并返回 JSON。"
+                    "is_whale_aqua 判断画面主体是否为虚拟主播大肥鱼（Aqua / 白发鲸鱼少女 / 她的Q版或小鲸鱼形象）表情包；"
+                    "clean_ok 判断画面是否干净合规（无色情暴力、无广告二维码、无无关截图或严重遮挡水印）；"
+                    "confidence 为 0 到 1 的判断置信度；"
+                    "title 为 1 到 120 字的简短中文表情名；"
+                    "emotions 从给定枚举中选择 1 到 3 个最贴合的情绪；"
+                    "tags 填写最多 8 个简短标签；description 填写不超过 400 字的画面描述。"
+                ),
+            },
+            {"role": "user", "content": content},
+        ]
+
+        slot = (
+            nullcontext()
+            if operation_ticket.get() is not None
+            else self.runtime.offline_generation("background")
+        )
+        identity = self.identity()
+        async with slot:
+            try:
+                props = await self._confirmed_properties(None, identity)
+                self.api.adopt_context_window(props["context_tokens"])
+                try:
+                    async with asyncio.timeout(self.config.timeout_seconds):
+                        raw = await self.api.generate_json(
+                            messages,
+                            schema,
+                            max_tokens=min(768, self.config.max_output_tokens),
+                        )
+                except (TimeoutError, httpx.TimeoutException):
+                    raise VideoVisionTimeout("视觉模型请求超时") from None
+                confirmed = await self._confirmed_properties(props, identity)
+            except httpx.HTTPError as error:
+                raise VideoVisionAdmissionRequired("视觉推理暂不可用 · " + public_error(error)) from error
+        self._record_observation(confirmed, len(frames))
+        return self._validate_meme_classification(raw)
+
+    @staticmethod
+    def _validate_meme_classification(raw) -> dict:
+        if not isinstance(raw, dict):
+            raise ValueError("表情分类结果须为 JSON 对象")
+        is_whale_aqua = raw.get("is_whale_aqua")
+        clean_ok = raw.get("clean_ok")
+        confidence = raw.get("confidence")
+        if type(is_whale_aqua) is not bool or type(clean_ok) is not bool:
+            raise ValueError("表情分类缺少布尔判定字段")
+        if type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
+            raise ValueError("表情分类置信度须在 0 到 1 之间")
+        title = raw.get("title")
+        if (
+            not isinstance(title, str)
+            or not 0 < len(title.strip()) <= 120
+            or re.search(r"[\x00-\x1f\x7f]", title)
+        ):
+            raise ValueError("表情分类标题须为 1 到 120 字且不含控制字符")
+        emotions_raw = raw.get("emotions")
+        allowed_emotions = set(get_args(Emotion))
+        if (
+            not isinstance(emotions_raw, list)
+            or any(item not in allowed_emotions for item in emotions_raw)
+        ):
+            raise ValueError("表情分类情绪须使用有效 Emotion ID")
+        emotions = list(dict.fromkeys(emotions_raw))
+        if not 1 <= len(emotions) <= 3:
+            raise ValueError("表情分类情绪须为 1 到 3 个")
+        tags_raw = raw.get("tags")
+        if not isinstance(tags_raw, list) or len(tags_raw) > 8:
+            raise ValueError("表情分类标签数量不能超过 8 个")
+        tags = []
+        seen_tags = set()
+        for tag in tags_raw:
+            if not isinstance(tag, str) or re.search(r"[\x00-\x1f\x7f]", tag):
+                raise ValueError("表情分类标签含无效字符")
+            cleaned = tag.strip()
+            if not cleaned or len(cleaned) > 40:
+                raise ValueError("表情分类标签长度须在 1 到 40 字之间")
+            key = cleaned.casefold()
+            if key not in seen_tags:
+                seen_tags.add(key)
+                tags.append(cleaned)
+        description = raw.get("description")
+        if (
+            not isinstance(description, str)
+            or re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", description)
+            or len(description.strip()) > 400
+        ):
+            raise ValueError("表情分类描述须不超过 400 字且不含控制字符")
+        return {
+            "is_whale_aqua": is_whale_aqua,
+            "clean_ok": clean_ok,
+            "confidence": float(confidence),
+            "title": title.strip(),
+            "emotions": emotions,
+            "tags": tags,
+            "description": description.strip(),
+        }
 
     async def cancel(self, task_id):
         children = list(self._active.get(str(task_id), set()))

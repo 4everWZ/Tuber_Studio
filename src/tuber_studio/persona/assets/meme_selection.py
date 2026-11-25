@@ -8,7 +8,8 @@ from .gallery_search import shortlist
 async def select_meme(runtime, catalog, character, event, text, *, mode="direct_message"):
     if mode not in {"direct_message", "dynamic"}:
         raise ValueError("未知表情使用场景")
-    candidates = shortlist(catalog.list(character), text, event["text"])
+    items = catalog.list(character, usage_scope="all_channels") if mode == "dynamic" else catalog.list(character)
+    candidates = shortlist(items, text, event["text"])
     if not candidates:
         return None
     schema = catalog.selection_schema(character, candidates=candidates)
@@ -33,4 +34,7 @@ async def select_meme(runtime, catalog, character, event, text, *, mode="direct_
         schema,
         max_tokens=2048,
     )
-    return catalog.select(value, character, offered_ids={item["asset_id"] for item in candidates})
+    selected = catalog.select(value, character, offered_ids={item["asset_id"] for item in candidates})
+    if selected is not None and mode == "dynamic" and selected.get("usage_scope", "all_channels") != "all_channels":
+        raise ValueError("该表情仅限互动渠道（评论/私信），不能用于公开动态")
+    return selected

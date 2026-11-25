@@ -23,6 +23,10 @@ from pydantic import Field, field_validator
 
 from ...core.models import MAX_MEME_BYTES, Emotion, StrictModel
 from ...core.validation import linked
+from .meme_dhash import compute_dhash, dhash_matches
+
+UsageScope = Literal["all_channels", "interaction_only"]
+VALID_USAGE_SCOPES = frozenset(get_args(UsageScope))
 
 MAX_BYTES = MAX_MEME_BYTES
 MAX_PIXELS = 4096 * 4096
@@ -41,9 +45,24 @@ PRESETS = {
 }
 
 
+def _validate_usage_scope(value: str) -> UsageScope:
+    if value not in VALID_USAGE_SCOPES:
+        raise ValueError("表情使用范围须为 all_channels 或 interaction_only")
+    return value
+
+
 class MemeSource(StrictModel):
-    kind: Literal["existing_user_assets", "user_upload", "licensed_pack", "generated"]
+    kind: Literal[
+        "existing_user_assets",
+        "user_upload",
+        "licensed_pack",
+        "generated",
+        "remote_feed",
+        "bilibili_comment",
+        "bilibili_creator",
+    ]
     author: str = Field(min_length=1, max_length=300)
+    author_id: str = Field(default="", max_length=120)
     url: str = Field(default="", max_length=2048)
     revision: str = Field(default="", max_length=200)
     note: str = Field(default="", max_length=3000)
@@ -104,15 +123,22 @@ class MemeLabels(StrictModel):
 class MemeProvider(Protocol):
     """Replaceable catalog contract. Future generators must register bytes first."""
 
-    def list(self, character, *, include_disabled=False) -> list[dict]: ...
+    def list(self, character, *, include_disabled=False, usage_scope=None) -> list[dict]: ...
     def read(self, asset_id, character, *, allow_disabled=False) -> dict: ...
     def resolve(self, asset_id, character, *, allow_disabled=False) -> dict: ...
     async def register(
         self, character, content, *, title, emotions, source, license, mime_type=None,
-        enabled=True, tags=(), description="", import_id=None
+        enabled=True, tags=(), description="", import_id=None, usage_scope="all_channels", dhash=None
     ) -> dict: ...
     async def seed_existing(self, *, enabled=False) -> list[dict]: ...
     def enable(self, asset_id, enabled=True) -> dict: ...
+    def set_usage_scope(self, asset_id, usage_scope) -> dict: ...
+    def update_availability(self, asset_id, *, enabled=None, usage_scope=None) -> dict: ...
+    def find_duplicate(self, sha256: str, dhash: str = "") -> dict | None: ...
+    def is_rejected(self, sha256: str, dhash: str = "") -> bool: ...
+    def record_rejected(
+        self, sha256: str, dhash: str = "", *, source_kind: str = "", source_url: str = ""
+    ) -> dict: ...
     def delete(self, asset_id) -> dict: ...
     def pin(self, asset_id, character, owner, *, seconds=None) -> None: ...
     def release(self, owner, *, keep_asset_id=None) -> None: ...
@@ -257,14 +283,34 @@ class MemeCatalog:
                 sha256 TEXT NOT NULL, storage_kind TEXT NOT NULL, blob_name TEXT NOT NULL,
                 image_info TEXT NOT NULL, bytes INTEGER NOT NULL, source TEXT NOT NULL,
                 license TEXT NOT NULL, enabled INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0,
-                created_at REAL NOT NULL);
+                created_at REAL NOT NULL,
+                usage_scope TEXT NOT NULL DEFAULT 'all_channels',
+                dhash TEXT NOT NULL DEFAULT '');
             CREATE TABLE IF NOT EXISTS meme_pins(
                 asset_id TEXT NOT NULL, owner TEXT NOT NULL, expires_at REAL,
                 PRIMARY KEY(asset_id,owner));
             CREATE TABLE IF NOT EXISTS meme_labels(
                 asset_id TEXT PRIMARY KEY REFERENCES meme_assets(asset_id),
                 tags TEXT NOT NULL,description TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS meme_rejected_hashes(
+                id TEXT PRIMARY KEY,
+                sha256 TEXT NOT NULL,
+                dhash TEXT NOT NULL DEFAULT '',
+                source_kind TEXT NOT NULL DEFAULT '',
+                source_url TEXT NOT NULL DEFAULT '',
+                rejected_at REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS meme_rejected_hashes_sha256 ON meme_rejected_hashes(sha256);
         """)
+        columns = {row["name"] for row in self.store.all("PRAGMA table_info(meme_assets)")}
+        with self.store.db:
+            if "usage_scope" not in columns:
+                self.store.db.execute(
+                    "ALTER TABLE meme_assets ADD COLUMN usage_scope TEXT NOT NULL DEFAULT 'all_channels'"
+                )
+            if "dhash" not in columns:
+                self.store.db.execute(
+                    "ALTER TABLE meme_assets ADD COLUMN dhash TEXT NOT NULL DEFAULT ''"
+                )
 
     def _safe_directory(self):
         for directory in (self.directory, self.library):
@@ -312,6 +358,8 @@ class MemeCatalog:
             "tags": json.loads(row["tags"] or "[]"),
             "description": row["description"] or "",
             "sha256": row["sha256"],
+            "dhash": row.get("dhash") or "",
+            "usage_scope": row.get("usage_scope") or "all_channels",
             "bytes": row["bytes"],
             "storage_kind": row["storage_kind"],
             **json.loads(row["image_info"]),
@@ -321,12 +369,20 @@ class MemeCatalog:
             "missing": not path.is_file(),
         }
 
-    def list(self, character, *, include_disabled=False):
+    def list(self, character, *, include_disabled=False, usage_scope=None):
         self._character(character)
-        rows = self.store.all(
-            ASSET_SELECT + "WHERE a.deleted=0 AND (? OR a.enabled=1) ORDER BY a.created_at,a.asset_id",
-            (int(include_disabled),),
-        )
+        if usage_scope is not None:
+            _validate_usage_scope(usage_scope)
+            rows = self.store.all(
+                ASSET_SELECT
+                + "WHERE a.deleted=0 AND (? OR a.enabled=1) AND a.usage_scope=? ORDER BY a.created_at,a.asset_id",
+                (int(include_disabled), usage_scope),
+            )
+        else:
+            rows = self.store.all(
+                ASSET_SELECT + "WHERE a.deleted=0 AND (? OR a.enabled=1) ORDER BY a.created_at,a.asset_id",
+                (int(include_disabled),),
+            )
         return [self._public(row) for row in rows]
 
     @staticmethod
@@ -344,18 +400,26 @@ class MemeCatalog:
             or len(emotions) != len(set(emotions))
         ):
             raise ValueError("表情情绪须使用现有Emotion ID且不重复")
+        source_data = MemeSource.model_validate(source).model_dump()
+        if not source_data.get("author_id"):
+            source_data.pop("author_id", None)
         return (
             title.strip(),
-            MemeSource.model_validate(source).model_dump(),
+            source_data,
             MemeLicense.model_validate(license).model_dump(),
         )
 
     def _insert(
-        self, asset_id, title, emotions, digest, kind, name, info, size, source, license, enabled, labels
+        self, asset_id, title, emotions, digest, kind, name, info, size, source, license, enabled, labels,
+        *, usage_scope="all_channels", dhash=""
     ):
+        usage_scope = _validate_usage_scope(usage_scope)
         with self.store.db:
             self.store.db.execute(
-                "INSERT INTO meme_assets VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?)",
+                "INSERT INTO meme_assets("
+                "asset_id,title,emotions,sha256,storage_kind,blob_name,image_info,bytes,"
+                "source,license,enabled,deleted,created_at,usage_scope,dhash"
+                ") VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?,?,?)",
                 (
                     asset_id,
                     title,
@@ -369,15 +433,18 @@ class MemeCatalog:
                     json.dumps(license, ensure_ascii=False),
                     int(enabled),
                     time.time(),
+                    usage_scope,
+                    dhash or "",
                 ),
             )
             self._save_labels(asset_id, labels)
 
     async def register(
         self, character, content, *, title, emotions, source, license, mime_type=None,
-        enabled=True, tags=(), description="", import_id=None
+        enabled=True, tags=(), description="", import_id=None, usage_scope="all_channels", dhash=None
     ):
         self._character(character)
+        usage_scope = _validate_usage_scope(usage_scope)
         title, source, license = self._metadata(title, emotions, source, license)
         labels = MemeLabels(tags=list(tags), description=description)
         if type(enabled) is not bool:
@@ -386,6 +453,7 @@ class MemeCatalog:
             info = await self.inspector.inspect(content, mime=mime_type)
         except ValueError as error:
             raise ValueError(f"表情「{title}」：{error}") from error
+        computed_dhash = compute_dhash(content) if dhash is None else str(dhash)
         digest = hashlib.sha256(content).hexdigest()
         name = digest + "." + info.pop("extension")
         identity = uuid5(NAMESPACE_URL, "tuber-studio:gallery-import:" + import_id) if import_id else uuid4()
@@ -424,6 +492,8 @@ class MemeCatalog:
                     license,
                     enabled,
                     labels,
+                    usage_scope=usage_scope,
+                    dhash=computed_dhash,
                 )
             except BaseException:
                 if created and not self.store.one(
@@ -510,17 +580,107 @@ class MemeCatalog:
                         license,
                         preset["enabled"],
                         labels,
+                        dhash=compute_dhash(content),
                     )
-                elif existing["tags"] is None and not existing["deleted"]:
-                    self.label(asset_id, labels)
+                elif not existing["deleted"]:
+                    if existing["tags"] is None:
+                        self.label(asset_id, labels)
+                    if not (existing.get("dhash") or ""):
+                        try:
+                            content = _file_bytes(preset["file"])
+                            self.store.execute(
+                                "UPDATE meme_assets SET dhash=? WHERE asset_id=?",
+                                (compute_dhash(content), asset_id),
+                            )
+                        except (OSError, ValueError):
+                            pass
+        for row in self.store.all("SELECT * FROM meme_assets WHERE deleted=0 AND (dhash IS NULL OR dhash='')"):
+            try:
+                content = _file_bytes(self._path(row))
+                self.store.execute(
+                    "UPDATE meme_assets SET dhash=? WHERE asset_id=?",
+                    (compute_dhash(content), row["asset_id"]),
+                )
+            except (OSError, ValueError):
+                continue
         return self.list("whale", include_disabled=True)
 
     def enable(self, asset_id, enabled=True):
+        return self.update_availability(asset_id, enabled=enabled)
+
+    def set_usage_scope(self, asset_id, usage_scope):
+        return self.update_availability(asset_id, usage_scope=usage_scope)
+
+    def update_availability(self, asset_id, *, enabled=None, usage_scope=None):
+        if enabled is None and usage_scope is None:
+            raise ValueError("至少需要提供 enabled 或 usage_scope")
         self._row(asset_id)
-        if type(enabled) is not bool:
-            raise ValueError("启用状态须为布尔值")
-        self.store.execute("UPDATE meme_assets SET enabled=? WHERE asset_id=?", (int(enabled), asset_id))
+        updates, params = [], []
+        if enabled is not None:
+            if type(enabled) is not bool:
+                raise ValueError("启用状态须为布尔值")
+            updates.append("enabled=?")
+            params.append(int(enabled))
+        if usage_scope is not None:
+            updates.append("usage_scope=?")
+            params.append(_validate_usage_scope(usage_scope))
+        params.append(asset_id)
+        self.store.execute(f"UPDATE meme_assets SET {', '.join(updates)} WHERE asset_id=?", tuple(params))
         return self._public(self._row(asset_id))
+
+    def find_duplicate(self, sha256: str, dhash: str = "") -> dict | None:
+        if isinstance(sha256, str) and sha256.strip():
+            row = self.store.one(
+                ASSET_SELECT + "WHERE a.deleted=0 AND a.sha256=? ORDER BY a.created_at,a.asset_id LIMIT 1",
+                (sha256.strip().lower(),),
+            )
+            if row:
+                return self._public(row)
+        if isinstance(dhash, str) and dhash.strip():
+            for row in self.store.all(
+                ASSET_SELECT + "WHERE a.deleted=0 AND a.dhash != '' ORDER BY a.created_at,a.asset_id"
+            ):
+                if dhash_matches(dhash, row["dhash"]):
+                    return self._public(row)
+        return None
+
+    def is_rejected(self, sha256: str, dhash: str = "") -> bool:
+        if isinstance(sha256, str) and sha256.strip():
+            if self.store.one("SELECT 1 FROM meme_rejected_hashes WHERE sha256=? LIMIT 1", (sha256.strip().lower(),)):
+                return True
+        if isinstance(dhash, str) and dhash.strip():
+            for row in self.store.all("SELECT dhash FROM meme_rejected_hashes WHERE dhash != ''"):
+                if dhash_matches(dhash, row["dhash"]):
+                    return True
+        return False
+
+    def record_rejected(
+        self, sha256: str, dhash: str = "", *, source_kind: str = "", source_url: str = ""
+    ) -> dict:
+        if not isinstance(sha256, str) or not sha256.strip():
+            raise ValueError("sha256 不能为空")
+        digest = sha256.strip().lower()
+        clean_dhash = dhash.strip().lower() if isinstance(dhash, str) else ""
+        clean_kind = str(source_kind or "")[:120]
+        clean_url = str(source_url or "")[:2048]
+        now = time.time()
+        with self.store.db:
+            existing = self.store.one("SELECT * FROM meme_rejected_hashes WHERE sha256=? LIMIT 1", (digest,))
+            if existing:
+                self.store.db.execute(
+                    "UPDATE meme_rejected_hashes SET dhash=?, source_kind=?, source_url=?, rejected_at=? WHERE id=?",
+                    (clean_dhash or existing["dhash"], clean_kind or existing["source_kind"],
+                     clean_url or existing["source_url"], now, existing["id"]),
+                )
+                row_id = existing["id"]
+            else:
+                row_id = "rej_" + uuid4().hex
+                self.store.db.execute(
+                    "INSERT INTO meme_rejected_hashes(id,sha256,dhash,source_kind,source_url,rejected_at) "
+                    "VALUES(?,?,?,?,?,?)",
+                    (row_id, digest, clean_dhash, clean_kind, clean_url, now),
+                )
+        return self.store.one("SELECT * FROM meme_rejected_hashes WHERE id=?", (row_id,))
 
     def label(self, asset_id, labels):
         self._row(asset_id)

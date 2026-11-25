@@ -266,11 +266,11 @@ async def test_browsing_clips_and_assets_preview_cleanup_and_clear_all(settings,
     assert not clip.exists() and not preview.exists() and not speech.exists()
     assert model.exists() and meme_lib.exists() and art_ref.exists()
 
-    # HTTP API smoke for 6-category cache & clear-all:
+    # HTTP API smoke for 7-category cache & clear-all:
     with TestClient(create_app(settings)) as client:
         client.post("/api/v1/system/auth/login", json={"token": settings.admin_token})
         got = client.get("/api/v1/system/cache").json()
-        assert set(got["categories"]) == {"video", "music", "speech", "browsing", "temporary", "assets"}
+        assert set(got["categories"]) == {"video", "music", "speech", "browsing", "temporary", "assets", "meme_inbox"}
         assert "summary" in got
         put_res = client.put("/api/v1/system/cache", json={"video_limit_mib": 2048, "assets_limit_mib": 256})
         assert put_res.status_code == 200

@@ -21,8 +21,9 @@ ASSET_MAX_MIB = 8 * 1024
 FINAL = re.compile(r"^[a-f0-9]{32,64}\.(wav|mp3|flac|json)$")
 CLIP_FILE = re.compile(r"^[0-9a-f-]{36}\.mp4$", re.IGNORECASE)
 ASSET_PREVIEW = re.compile(r"^.+\.(mp4|webm|wav|mp3|flac|png|jpg|jpeg|webp)$", re.IGNORECASE)
+MEME_INBOX_FILE = re.compile(r"^[a-f0-9]{64}\.(gif|png|jpg|webp)$", re.IGNORECASE)
 TRANSIENT = re.compile(r"^(\.upload-|\.download-|\.singing-)|^[a-f0-9]{32,64}\.part$")
-CATEGORIES = ("video", "music", "speech", "browsing", "temporary", "assets")
+CATEGORIES = ("video", "music", "speech", "browsing", "temporary", "assets", "meme_inbox")
 
 
 class CachePolicy(StrictModel):
@@ -32,6 +33,8 @@ class CachePolicy(StrictModel):
     browsing_limit_mib: int = Field(default=512, ge=16, le=ASSET_MAX_MIB)
     temporary_limit_mib: int = Field(default=1024, ge=16, le=ASSET_MAX_MIB)
     assets_limit_mib: int = Field(default=512, ge=16, le=ASSET_MAX_MIB)
+    meme_inbox_limit_mib: int = Field(default=512, ge=0, le=ASSET_MAX_MIB)
+    meme_inbox_max_items: int = Field(default=200, ge=0, le=10000)
 
 
 class MediaCache:
@@ -45,6 +48,7 @@ class MediaCache:
         browsing_protected_provider=None,
         video_protected_provider=None,
         song_blob_resolver=None,
+        meme_inbox_evicted_callback=None,
     ):
         self.store = store
         self.root = settings.runtime
@@ -53,6 +57,7 @@ class MediaCache:
         self._browsing_protected_provider = browsing_protected_provider or (lambda: set())
         self._video_protected_provider = video_protected_provider or (lambda: set())
         self._song_blob_resolver = song_blob_resolver
+        self.meme_inbox_evicted_callback = meme_inbox_evicted_callback
         self.locks = {name: asyncio.Lock() for name in CATEGORIES}
         self.leases = {}
         self.writing = set()
@@ -162,6 +167,7 @@ class MediaCache:
             "temporary": [("singing/output", True, None)],
             "browsing": [("browsing", False, FINAL), ("browsing/private-clips", False, CLIP_FILE)],
             "assets": [("private-call-previews", True, ASSET_PREVIEW)],
+            "meme_inbox": [("meme_inbox", False, MEME_INBOX_FILE)],
         }
         pinned = self.music_ids() if category == "music" else set()
         if category == "browsing":
@@ -241,14 +247,20 @@ class MediaCache:
             size += row["bytes"]
             if row["protected"]:
                 protected_size += row["bytes"]
-        return {
+        limit_mib = policy[category + "_limit_mib"]
+        unlimited = category == "meme_inbox" and limit_mib == 0
+        result = {
             "bytes": size,
             "files": count,
             "protected_bytes": protected_size,
             "reclaimable_bytes": size - protected_size,
-            "limit_bytes": policy[category + "_limit_mib"] * MIB,
+            "limit_bytes": 0 if unlimited else limit_mib * MIB,
             "writing": category in self.writing,
         }
+        if category == "meme_inbox":
+            result["unlimited"] = unlimited
+            result["max_items"] = policy["meme_inbox_max_items"]
+        return result
 
     def touch(self, path, *, seconds=0):
         path = Path(path)
@@ -332,16 +344,27 @@ class MediaCache:
         policy = policy or self.policy()
         files = self._files(category)
         size = sum(row["bytes"] for row in files)
-        limit = 0 if clear else policy[category + "_limit_mib"] * MIB - reserve
+        limit_mib = policy[category + "_limit_mib"]
+        unlimited_bytes = category == "meme_inbox" and limit_mib == 0 and not clear
+        limit = None if unlimited_bytes else (0 if clear else limit_mib * MIB - reserve)
+        max_items = policy.get("meme_inbox_max_items", 0) if category == "meme_inbox" and not clear else 0
         candidates = sorted((row for row in files if not row["protected"]), key=lambda row: row["used_at"])
         reclaimable = sum(row["bytes"] for row in candidates)
-        if not clear and size - reclaimable > limit:
+        protected_count = len(files) - len(candidates)
+        if not clear and limit is not None and size - reclaimable > limit:
             raise ValueError(
                 "缓存空间不足：曲库、当前／待播、进行中任务或受保护素材占用超出上限，请先移除不需要的内容或增大上限"
             )
+        if not clear and max_items > 0 and protected_count > max_items:
+            raise ValueError(
+                "缓存条数不足：受保护素材数量超出上限，请先移除不需要的内容或增大条数上限"
+            )
         removed, removed_files, freed = [], 0, 0
+        remaining_count = len(files)
         for row in candidates:
-            if size <= limit and not clear:
+            bytes_ok = clear is False and (limit is None or size <= limit)
+            items_ok = clear is False and (max_items == 0 or remaining_count <= max_items)
+            if not clear and bytes_ok and items_ok:
                 break
             if row["is_dir"]:
                 deleted_count, failed = self._remove_dir_tree(row["path"])
@@ -360,24 +383,34 @@ class MediaCache:
             )
             freed += row["bytes"]
             size -= row["bytes"]
+            remaining_count -= 1
         if category == "music":
             self._prune_indexes(removed)
         elif category in {"temporary", "assets"} and removed:
             for sub in (["singing/output"] if category == "temporary" else ["private-call-previews"]):
                 self._prune_empty_subdirs(self.root / sub)
-        if not clear and size > limit:
+        elif category == "meme_inbox" and removed and self.meme_inbox_evicted_callback is not None:
+            self.meme_inbox_evicted_callback(removed)
+        if not clear and limit is not None and size > limit:
             raise ValueError("部分缓存正在使用，未能释放足够空间")
+        if not clear and max_items > 0 and remaining_count > max_items:
+            raise ValueError("部分缓存正在使用，未能释放足够条数")
         return {"removed_files": removed_files, "freed_bytes": freed, "protected_bytes": size}
 
     @asynccontextmanager
     async def write(self, category, maximum):
         async with self.locks[category]:
-            files = self._files(category)
-            protected = sum(row["bytes"] for row in files if row["protected"])
-            allowed = min(maximum, self.policy()[category + "_limit_mib"] * MIB - protected)
+            policy = self.policy()
+            limit_mib = policy[category + "_limit_mib"]
+            if category == "meme_inbox" and limit_mib == 0:
+                allowed = maximum
+            else:
+                files = self._files(category)
+                protected = sum(row["bytes"] for row in files if row["protected"])
+                allowed = min(maximum, limit_mib * MIB - protected)
             if allowed <= 0:
                 raise ValueError("缓存空间不足，请清理可回收内容或调整容量")
-            self.enforce(category, reserve=allowed)
+            self.enforce(category, reserve=0 if (category == "meme_inbox" and limit_mib == 0) else allowed, policy=policy)
             self.writing.add(category)
             try:
                 yield allowed
@@ -390,9 +423,15 @@ class MediaCache:
         if any(lock.locked() for lock in self.locks.values()):
             raise ValueError("正在写入缓存，请稍后保存容量设置")
         for category in self.locks:
-            protected = sum(row["bytes"] for row in self._scan(category) if row["protected"])
-            if protected > policy[category + "_limit_mib"] * MIB:
+            rows = list(self._scan(category))
+            protected = sum(row["bytes"] for row in rows if row["protected"])
+            limit_mib = policy[category + "_limit_mib"]
+            if not (category == "meme_inbox" and limit_mib == 0) and protected > limit_mib * MIB:
                 raise ValueError("新上限低于受保护素材的占用，请先移除相应曲库条目或等待任务完成")
+            if category == "meme_inbox" and policy["meme_inbox_max_items"] > 0:
+                protected_count = sum(1 for row in rows if row["protected"])
+                if protected_count > policy["meme_inbox_max_items"]:
+                    raise ValueError("新条数上限低于受保护素材的数量，请先移除相应条目或等待任务完成")
         for category in self.locks:
             self.enforce(category, policy=policy)
         self.store.set("cache_policy", policy)

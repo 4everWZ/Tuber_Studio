@@ -112,6 +112,12 @@ class Dynamics(
             if row["illustration_choice"] == "awaiting_choice" and not illustration:
                 raise ValueError("配图待决定，请重新选图或使用纯文字")
             image_payload(illustration)
+            if isinstance(illustration, dict) and illustration.get("asset_id"):
+                if not self.memes:
+                    raise ValueError("表情组件尚未启用")
+                asset = self.memes.resolve(illustration["asset_id"], row["character_id"])
+                if asset.get("usage_scope", "all_channels") != "all_channels":
+                    raise ValueError("该表情仅限互动渠道（评论/私信），不能用于公开动态")
         if action == "copy":
             if illustration or meme_id or row["comment_card"]:
                 raise ValueError("图文动态不能复制成纯文字，请审核后发布图文")
@@ -134,6 +140,9 @@ class Dynamics(
         if meme_id and action != "reject":
             if not self.memes:
                 raise ValueError("表情组件尚未启用")
+            resolved = self.memes.resolve(meme_id, row["character_id"])
+            if resolved.get("usage_scope", "all_channels") != "all_channels":
+                raise ValueError("该表情仅限互动渠道（评论/私信），不能用于公开动态")
             self.memes.pin(meme_id, row["character_id"], owner)
         status = {"approve": "approved", "reject": "rejected", "edit": "pending_review"}[action]
         bound_ref = illustration if action == "approve" else row["image_ref"]
@@ -141,6 +150,8 @@ class Dynamics(
             bound_ref = None
             if meme_id:
                 asset = self.memes.resolve(meme_id, row["character_id"])
+                if asset.get("usage_scope", "all_channels") != "all_channels":
+                    raise ValueError("该表情仅限互动渠道（评论/私信），不能用于公开动态")
                 bound_ref = {"asset_id": meme_id, "sha256": asset["sha256"]}
             presentation = (presentation or {}) | {"image_choice": "manual" if meme_id else "text_only"}
         elif (presentation or {}).get("image_choice") == "shared":
@@ -223,13 +234,20 @@ class Dynamics(
                     *(hashlib.sha256(render_comment_card(card, page)).hexdigest() for page in range(1, pages)),
                 ]
         elif row.get("illustration"):
-            value.update(image_payload(row["illustration"]))
+            illustration = row["illustration"]
+            if isinstance(illustration, dict) and illustration.get("asset_id") and self.memes:
+                asset = self.memes.resolve(illustration["asset_id"], character)
+                if asset.get("usage_scope", "all_channels") != "all_channels":
+                    raise ValueError("该表情仅限互动渠道（评论/私信），不能用于公开动态")
+            value.update(image_payload(illustration))
         elif row.get("illustration_choice") == "awaiting_choice":
             raise ValueError("配图待决定，请重新选图或使用纯文字")
         elif row.get("meme_id"):
             if not self.memes:
                 raise ValueError("配图组件未挂载")
             asset = self.memes.resolve(row["meme_id"], character)
+            if asset.get("usage_scope", "all_channels") != "all_channels":
+                raise ValueError("该表情仅限互动渠道（评论/私信），不能用于公开动态")
             value |= {"meme_id": row["meme_id"], "asset_sha256": asset["sha256"]}
         return value
 
@@ -519,13 +537,21 @@ class Dynamics(
                     or fresh.get("meme_id") != row.get("meme_id") or fresh.get("illustration") != row.get("illustration")
                 ):
                     raise PublishCancelled("人物版本或公开来源已变化，取消发送")
-                if image and row.get("meme_id") and not card:
-                    try:
-                        current_asset = self.memes.resolve(row["meme_id"], character)
-                        if current_asset["sha256"] != image["asset"]["sha256"]:
-                            raise ValueError("配图原文已变化")
-                    except ValueError:
-                        raise PublishCancelled("当前配图已禁用、解绑或变化，取消发送") from None
+                if image and not card:
+                    asset_id = row.get("meme_id") or (
+                        row["illustration"].get("asset_id")
+                        if isinstance(row.get("illustration"), dict)
+                        else None
+                    )
+                    if asset_id:
+                        try:
+                            current_asset = self.memes.resolve(asset_id, character)
+                            if current_asset["sha256"] != image["asset"]["sha256"]:
+                                raise ValueError("配图原文已变化")
+                            if current_asset.get("usage_scope", "all_channels") != "all_channels":
+                                raise ValueError("该表情已改为仅限互动渠道，不能用于公开动态")
+                        except ValueError:
+                            raise PublishCancelled("当前配图已禁用、解绑或变化，取消发送") from None
                 try:
                     self._quota(post_id if revision_ticket else None)
                     if self._duplicate_delivery(post_id, str(account_id), delivery, row["content_hash"]):

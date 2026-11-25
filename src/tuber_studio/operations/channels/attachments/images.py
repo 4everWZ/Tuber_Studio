@@ -202,7 +202,12 @@ class OperationImages:
         material["gallery"] = []
         if gallery and self.catalog:
             remaining = 128 * 1024 - len(dump(material).encode())
-            for item in shortlist(self.catalog.list(scope.character_id), material["draft"], material["context"]):
+            items = (
+                self.catalog.list(scope.character_id, usage_scope="all_channels")
+                if scope.channel == "dynamic"
+                else self.catalog.list(scope.character_id)
+            )
+            for item in shortlist(items, material["draft"], material["context"]):
                 if item["asset_id"] in excluded_assets:
                     continue
                 candidate = model_fields(item) | {"sha256": item["sha256"]}
@@ -297,8 +302,13 @@ class OperationImages:
                     brief = await choose(self.settings, dump(material))
                     gallery, generate = image_permissions(self.store)
                     if isinstance(brief, GalleryImage):
-                        if (not gallery or not self.catalog
-                                or self.catalog.resolve(brief.asset_id, scope.character_id)["sha256"] != brief.sha256):
+                        if not gallery or not self.catalog:
+                            raise ValueError("所选图库图片或授权已变化")
+                        resolved = self.catalog.resolve(brief.asset_id, scope.character_id)
+                        if (
+                            resolved["sha256"] != brief.sha256
+                            or (scope.channel == "dynamic" and resolved.get("usage_scope", "all_channels") != "all_channels")
+                        ):
                             raise ValueError("所选图库图片或授权已变化")
                     elif isinstance(brief, ImageBrief) and not generate:
                         raise ValueError("生成图片的权限已变化")
