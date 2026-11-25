@@ -13,6 +13,8 @@
 
 **Personal Always-On Agent (`feat/personal-agent-v2`) 已完成后端内核、`Aqua Studio` 界面与主动脉冲／制片集成（工作站实机切换待操作者复验）：**
 
+- **动态鲸鱼表情包图库与三渠道融合：** 完成 `MemeCatalog` 扩展（`usage_scope="all_channels" | "interaction_only"`、`meme_dhash.py` 64-bit 静态与动图 dHash 感知去重及拒绝黑名单）、`MediaCache` 7 类缓存目录（新增 `meme_inbox` 独立 `512 MiB` / `200` 张上限与 `0` 不限语义）、`MemeHarvester`（B 站评论粗筛、UP 主二创空间/专栏/文集与 GitHub/Manifest 远程订阅同步、`classify_meme_image` 两阶段视觉筛选及待审箱审核队列）、前端表情包管理与待审箱弹窗，以及评论/私信/动态三渠道与 Remotion 制片的 `usage_scope` 严格隔离。
+- **两层扁平架构与窄工具集 Profile 对齐：** 在既有 `turn_router` + `TaskRuntime` 上落地最大派发深度 `≤ 1` 防套娃守卫（`ACTIVE_TASK_EXECUTION` + 后台禁派 `delegate_task`）、4 组显式 `TaskProfile` 窄工具集（`meme_harvest` / `video_production` / `media_inspection` / `general_research`）、图库前台只读快查（`instant_read(action="meme_gallery_status")`）与后台异步同步（`sync_meme_sources` 返回精简统计 + `evidence_id`）双向分流，以及 `assistant_history()` 原始 JSON 隔离保护。
 - **80/20 鲸鱼娘人设与 B 站短评节奏（`Aqua`）：** `persona/self_model.py` 与 `config/characters.json`（保留 `id="whale"`、`name="Aqua"`，同步更新 `persona/characters/presets.py` 4 组哈希）回调为 80% 鲸鱼娘 OC（呆毛/藏蓝鲸尾/白饭/摸鱼/轻傲娇）+ 20% 本地 Jetson 底色，精简过饱和防御词并增加 3 条关键词触发 `lore`，配合 `browsing_turns.py` 引导 1–2 句自然 B 站短评。
 - **B 站评论真实可见性闭环：** `infra/platforms/bilibili/browsing.py` 补齐主评 `sort=0`、楼内末页定位、无 Cookie 匿名双视角复查与非阻塞锁外延迟复查（`public_visible` / `self_only` / `shadow_deleted` / `pending_recheck` / `check_failed`），连续 2 次非公开触发 30 分钟发评冷却与风控告警，并在 `operations/kernel/activity.py` 与 `OperationsActivityFeed.tsx` / `Stage2PipelineCards.tsx` 透出真实状态。
 - **双层严格隔离记忆：** Layer 1 `UnifiedMemoryStore`（`memories` 表，默认软上限 `100`）按 `scope="owner"`（仅号主）与 `scope="public"`（仅公开渠道）严格隔离，禁用启动时自动迁移遗留表并在设置弹窗提供 `purge-migrated` 一键清理；Layer 2 `persona/memory/recall.py` 经 `recall_history` / `recall_memory` 按需检索经历与原文表。
