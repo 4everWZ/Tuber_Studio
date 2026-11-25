@@ -306,4 +306,98 @@ describe("OperationsActivityFeed", () => {
     expect(detailsAfter.open).toBe(true);
     expect(document.activeElement).toBe(summary);
   });
+
+  it("renders distinct visibility badges/link labels and triggers manual visibility recheck", async () => {
+    const user = userEvent.setup();
+    let rechecked = false;
+    const verifyCalls: string[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/api/v1/operations/intents/intent-self/verify-visibility") && init?.method === "POST") {
+          verifyCalls.push(url);
+          rechecked = true;
+          return jsonResponse({
+            id: "intent-self",
+            status: "published",
+            visibility: "public_visible",
+            visibility_checked_at: 1700000200,
+          });
+        }
+        return jsonResponse({
+          day: "2026-11-22",
+          page: 1,
+          pages: 1,
+          total: 4,
+          counts: { total: 4, sent: 4, pending: 0, visibility_issues: rechecked ? 1 : 2 },
+          items: [
+            {
+              id: "comment/browsing/intent-pub",
+              intent_id: "intent-pub",
+              kind: "comment",
+              status: "published",
+              comment_outcome: "new_reply",
+              visibility: "public_visible",
+              sent_href: "https://www.bilibili.com/video/BV1vis#reply1",
+              text: "公开评论",
+            },
+            {
+              id: "comment/browsing/intent-self",
+              intent_id: "intent-self",
+              kind: "comment",
+              status: "published",
+              comment_outcome: "new_reply",
+              visibility: rechecked ? "public_visible" : "self_only",
+              visibility_checked_at: 1700000100,
+              visibility_detail: { auth_visible: true, anon_visible: rechecked },
+              sent_href: "https://www.bilibili.com/video/BV1vis#reply2",
+              text: "仅自己可见评论",
+            },
+            {
+              id: "comment/browsing/intent-gone",
+              intent_id: "intent-gone",
+              kind: "comment",
+              status: "published",
+              comment_outcome: "new_reply",
+              visibility: "shadow_deleted",
+              sent_href: "https://www.bilibili.com/video/BV1vis#reply3",
+              text: "被吞评论",
+            },
+            {
+              id: "comment/browsing/intent-wait",
+              intent_id: "intent-wait",
+              kind: "comment",
+              status: "published",
+              comment_outcome: "new_reply",
+              visibility: "pending_recheck",
+              sent_href: "https://www.bilibili.com/video/BV1vis#reply4",
+              text: "待复查评论",
+            },
+          ],
+        } satisfies ActivityResponse);
+      })
+    );
+
+    const { container } = render(<OperationsActivityFeed />);
+
+    expect(await screen.findByText("查看公开回复")).toBeInTheDocument();
+    expect(screen.getByText("查看回复（仅自己可见）")).toBeInTheDocument();
+    expect(screen.getByText("原回复链接（疑似被吞）")).toBeInTheDocument();
+    expect(screen.getByText("回执链接（待复查）")).toBeInTheDocument();
+    expect(screen.queryByText("已确认回复")).toBeNull();
+    expect(screen.getByText(/可见异常 2/)).toBeInTheDocument();
+
+    const selfArticle = container.querySelector('[data-activity-key*="intent-self"]') as HTMLElement;
+    const recheckBtn = selfArticle.querySelector(
+      '[data-activity-control="recheck-visibility"]'
+    ) as HTMLButtonElement;
+    await user.click(recheckBtn);
+
+    await waitFor(() => {
+      expect(verifyCalls.length).toBe(1);
+      expect(screen.getByText(/可见异常 1/)).toBeInTheDocument();
+    });
+  });
 });

@@ -17,12 +17,22 @@ _QUEUED_REPLY = (
 )
 _TASK_RESULT = "(t.status NOT IN ('discovered','claimed','preparing','cancelled','queued','paused') OR t.material_key IS NOT NULL)"
 _SUCCESS = {"selected", "viewed_without_comment", "comments_checked"}
+_VISIBILITY_ISSUES = frozenset({"self_only", "shadow_deleted", "not_visible", "check_failed"})
 _REASONS = {
     "no_interest": "没有想参与这个话题",
     "nothing_to_add": "暂时没有想补充的话",
     "insufficient_evidence": "想回应的内容还缺少材料",
     "visual_required": "想回应的细节需要补看画面",
 }
+
+
+def _vis_select(store, table, alias):
+    cols = {column[1] for column in store.db.execute(f"PRAGMA table_info({table})")}
+    return "".join(f",{alias}.{c}" if c in cols else f",NULL AS {c}" for c in ("visibility", "visibility_checked_at", "visibility_detail"))
+
+
+def _vis_fields(row):
+    return {"visibility": row.get("visibility"), "visibility_checked_at": row.get("visibility_checked_at"), "visibility_detail": _json(row.get("visibility_detail"))}
 
 
 def _json(value, fallback=None):
@@ -136,8 +146,9 @@ def _video_data(browsing, *, day=None, visible_since=None, round_id=None):
         (*scope, cutoff, round_id, round_id),
     )
     intents = store.all(
-        "SELECT i.id,i.kind,i.status,i.text,i.error,i.receipt,i.reason,i.target,i.updated_at,i.round_id,"
-        "COALESCE(i.source_pipeline, r.source_pipeline, CASE WHEN json_extract(r.config,'$.interaction_only')=1 "
+        "SELECT i.id,i.kind,i.status,i.text,i.error,i.receipt,i.reason,i.target,i.updated_at,i.round_id"
+        + _vis_select(store, "browsing_intents", "i")
+        + ",COALESCE(i.source_pipeline, r.source_pipeline, CASE WHEN json_extract(r.config,'$.interaction_only')=1 "
         "THEN 'inbox' WHEN r.preview=1 THEN 'manual' ELSE 'discovery' END) AS item_pipeline,"
         "CASE WHEN (" + _AUTO + " OR (" + _QUEUED_REPLY + ")) THEN 1 ELSE 0 END AS automatic_video "
         "FROM browsing_intents i JOIN browsing_rounds r ON r.id=i.round_id "
@@ -273,12 +284,8 @@ def _video_data(browsing, *, day=None, visible_since=None, round_id=None):
         result = video(target.get("bvid"), at, item["round_id"])
         if result is None:
             continue
-        reply = {key: item[key] for key in ("id", "kind", "status", "text", "error")}
-        reply.update(
-            recipient_name=target.get("recipient_name") or "",
-            receipt=_json(item["receipt"], item["receipt"]),
-            updated_at=at,
-        )
+        reply = {key: item[key] for key in ("id", "kind", "status", "text", "error")} | _vis_fields(item)
+        reply.update(recipient_name=target.get("recipient_name") or "", receipt=_json(item["receipt"], item["receipt"]), updated_at=at)
         result["replies"].append(reply)
         if item["status"] == "published":
             result["main_replies" if item["kind"] == "top_level" else "comment_replies"] += 1
@@ -500,7 +507,7 @@ def activity(
         if not resource or not root:
             if confirmed_id:
                 source_href = comment_href(resource, comment) if comment_id_pattern.fullmatch(str(comment)) else None
-                return {
+                return _vis_fields(row) | {
                     "comment_outcome": "new_reply",
                     "sent_href": comment_href(resource, confirmed_id),
                     "source_comment_id": str(comment) if source_href else None,
@@ -539,12 +546,16 @@ def activity(
             else (confirmed_id or observed.get("comment_id") or (matched or {}).get("comment_id"))
         )
         source_href = comment_href(resource, comment) if comment_id_pattern.fullmatch(str(comment)) else None
+        vis = row.get("visibility") or (matched.get("visibility") if matched else None)
         return {
             "thread": {key: thread[key] for key in ("resource", "root_id", "root_author_uid", "resource_author_uid")},
             "source_comment_id": str(comment) if source_href and comment else None,
             "source_href": source_href,
             "sent_href": comment_href(resource, replied_id) if comment_id_pattern.fullmatch(str(replied_id)) else None,
             "comment_outcome": outcome,
+            "visibility": vis,
+            "visibility_checked_at": row.get("visibility_checked_at"),
+            "visibility_detail": _json(row.get("visibility_detail")) if "visibility_detail" in row else None,
             "account_reply_text": (
                 observed.get("text") or (matched or {}).get("text") if outcome == "same_account" else None
             ),
@@ -601,34 +612,31 @@ def activity(
             at=at,
             reason=reason,
             bvid=bvid,
+            intent_id=row["id"],
             comment_kind=comment_kind,
             reply_kind=comment_kind,
             recipient_name=recipient,
-            recipient_uid=str(target["recipient"])
-            if comment_kind == "reply" and str(target.get("recipient", "")).isdigit()
-            else None,
+            recipient_uid=str(target["recipient"]) if comment_kind == "reply" and str(target.get("recipient", "")).isdigit() else None,
             round_id=row["round_id"],
             source_text=target.get("source_text") or "",
-            **details,
+            **(_vis_fields(row) | details),
         )
 
     if account and "drafts" in tables and not round_id and "account_id" in {
         column[1] for column in store.db.execute("PRAGMA table_info(drafts)")
     }:
         for row in store.all(
-            "SELECT d.id,d.status,d.text,d.error,d.receipt,d.updated_at,d.answer_check,c.video_id,c.comment_id,c.thread_id,c.parent_comment_id,c.display_name,c.content AS source_text FROM drafts d JOIN comments c ON c.id=d.comment_id WHERE d.account_id=? AND d.character_id=?",
+            "SELECT d.id,d.status,d.text,d.error,d.receipt,d.updated_at,d.answer_check"
+            + _vis_select(store, "drafts", "d")
+            + ",c.video_id,c.comment_id,c.thread_id,c.parent_comment_id,c.display_name,c.content AS source_text FROM drafts d JOIN comments c ON c.id=d.comment_id WHERE d.account_id=? AND d.character_id=?",
             (account, character),
         ):
             handoff = row["status"] == "private_handoff"
             check = _json(row["answer_check"], {})
-            at = (
-                publication_time(row["receipt"], row["updated_at"])
-                if row["status"] == "published"
-                else row["updated_at"]
-            )
+            at = publication_time(row["receipt"], row["updated_at"]) if row["status"] == "published" else row["updated_at"]
             if not include(at):
                 continue
-            details = {} if handoff else thread_details(row["video_id"], row["thread_id"], row["comment_id"], row, check)
+            details = {} if handoff else (_vis_fields(row) | thread_details(row["video_id"], row["thread_id"], row["comment_id"], row, check))
             add(
                 row,
                 channel="comment",
@@ -826,6 +834,9 @@ def activity(
         ),
         "failed": sum(item["status"] == "failed" for item in items),
         "replies": sum(item["kind"] == "comment" and item["status"] == "published" for item in items),
+        "visibility_issues": sum(
+            item["kind"] == "comment" and item.get("visibility") in _VISIBILITY_ISSUES for item in items
+        ),
         **{key: value for key, value in base["counts"].items() if key not in {"videos", "failed", "replies"}},
     }
     if kind == "public":
@@ -854,6 +865,7 @@ def activity(
             "sent_replies": len(sent) - sent_top_level,
             "pending": sum(item["status"] == "pending_review" for item in filtered),
             "failed": sum(item["status"] == "failed" for item in filtered),
+            "visibility_issues": sum(item.get("visibility") in _VISIBILITY_ISSUES for item in filtered),
         }
     result = {
         "day": base["day"],

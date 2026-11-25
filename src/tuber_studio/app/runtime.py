@@ -364,6 +364,7 @@ class Runtime:
         self.schedule_connection_probe()
         if getattr(self, "browsing", None):
             self.admission_restore = asyncio.create_task(self._restore_visual_admission())
+            self.visibility_restore = asyncio.create_task(self._recheck_pending_visibility())
         await self.cleanup_retention(automatic=True)
         self.retention_worker = asyncio.create_task(self._retention_loop())
         self.live.start_worker()
@@ -402,10 +403,22 @@ class Runtime:
         except Exception:
             pass
 
+    async def _recheck_pending_visibility(self):
+        try:
+            browsing = getattr(self, "browsing", None)
+            if browsing is not None and hasattr(getattr(browsing, "publication", None), "recheck_pending_visibility"):
+                await browsing.publication.recheck_pending_visibility()
+        except Exception:
+            pass
+
     async def close(self):
         await self.heartbeat.close()
         await self.operation_images.close()
-        tasks = [task for task in (self.connection_probe, self.admission_restore) if task is not None]
+        tasks = [
+            task
+            for task in (self.connection_probe, self.admission_restore, getattr(self, "visibility_restore", None))
+            if task is not None
+        ]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -465,6 +478,7 @@ class Runtime:
                 "inbox_enabled": bool(control["enabled"] and effective.get("inbox_enabled", False)),
                 "discovery_enabled": bool(control["enabled"] and effective.get("discovery_enabled", False)),
                 "comment_cooldown_until": cooldown_until if cooldown_until > time.time() else None,
+                "visibility_risk": browsing.sends.visibility_risk_status(account_id),
                 "active_agent_tasks": len(self.tasks.activity()) if getattr(self, "tasks", None) else 0,
             }
         return {

@@ -29,11 +29,21 @@ from .timeline import comment_source, operator_reply, read_scoped_thread
 class Comments(CommentsRepositoryMixin, CommentsScannerMixin, CommentsDrafterMixin):
     """Comment browsing, bounded drafts and an explicit review/auto-publish policy."""
 
+    visibility_recheck_delay: float = 12.0
+
     def __init__(self, settings, store, runtime, account, *, is_live_busy=None):
         self.settings, self.store, self.runtime, self.account = settings, store, runtime, account
         self.is_live_busy = is_live_busy or (lambda: False)
         self.memes = None
         self._init_storage(store)
+        draft_cols = {row[1] for row in store.db.execute("PRAGMA table_info(drafts)")}
+        if "visibility" not in draft_cols:
+            store.execute("ALTER TABLE drafts ADD COLUMN visibility TEXT")
+        if "visibility_checked_at" not in draft_cols:
+            store.execute("ALTER TABLE drafts ADD COLUMN visibility_checked_at REAL")
+        if "visibility_detail" not in draft_cols:
+            store.execute("ALTER TABLE drafts ADD COLUMN visibility_detail TEXT")
+        self._visibility_tasks: dict[int, asyncio.Task] = {}
         self.operations = getattr(runtime, "operations", None) or OperationsControl(store)
         runtime.operations = self.operations
         self.queue = asyncio.Queue(maxsize=40)
@@ -52,10 +62,11 @@ class Comments(CommentsRepositoryMixin, CommentsScannerMixin, CommentsDrafterMix
 
     async def close(self):
         self.closed = True
-        for task in (self.worker,):
+        for task in (self.worker, *list(self._visibility_tasks.values())):
             if task:
                 task.cancel()
-        await asyncio.gather(*(t for t in (self.worker,) if t), return_exceptions=True)
+        await asyncio.gather(*(t for t in (self.worker, *list(self._visibility_tasks.values())) if t), return_exceptions=True)
+        self._visibility_tasks.clear()
         while not self.queue.empty():
             task_id, *_ = self.queue.get_nowait()
             self.store.execute(
@@ -340,15 +351,28 @@ class Comments(CommentsRepositoryMixin, CommentsScannerMixin, CommentsDrafterMix
             return result
 
         def commit(receipt, verification):
+            has_verifier = callable(getattr(self.account.adapter, "verify_publication", None))
+            status = verification["status"]
+            if has_verifier and status == "visible":
+                status = "pending_recheck"
             self.store.execute(
-                "UPDATE drafts SET status='published',receipt=?,error=NULL,updated_at=? WHERE id=?",
-                (json.dumps(receipt, ensure_ascii=False), time.time(), draft_id),
+                "UPDATE drafts SET status='published',receipt=?,visibility=?,visibility_checked_at=?,visibility_detail=?,error=NULL,updated_at=? WHERE id=?",
+                (
+                    json.dumps(receipt, ensure_ascii=False),
+                    status,
+                    None if status == "pending_recheck" else verification.get("checked_at") or time.time(),
+                    dump(verification),
+                    time.time(),
+                    draft_id,
+                ),
             )
             self.store.execute(
                 "UPDATE publish_attempts SET status='published',receipt=? WHERE id=(SELECT MAX(id) FROM publish_attempts WHERE draft_id=?)",
                 (json.dumps(receipt, ensure_ascii=False), draft_id),
             )
             self._record_published_context(draft_id, feedback.coordinator.find("comments", draft_id)["binding"]["account_id"])
+            if status == "pending_recheck":
+                self.schedule_draft_visibility_recheck(draft_id, delay=0)
 
         return await feedback.reconcile("comments", draft_id, read, commit)
 
@@ -677,12 +701,25 @@ class Comments(CommentsRepositoryMixin, CommentsScannerMixin, CommentsDrafterMix
                 raise UnknownPublication("评论发布结果待核对", token) from None
             # Platform success and local bookkeeping are separate boundaries. A database
             # failure must never restore an approved draft and allow another HTTP write.
+            has_verifier = callable(getattr(self.account.adapter, "verify_publication", None))
+            initial_visibility = "pending_recheck" if has_verifier else "not_checked"
+            initial_detail = (
+                {"stage": "scheduled", "delay_seconds": float(self.visibility_recheck_delay), "scheduled_at": time.time()}
+                if has_verifier
+                else None
+            )
             try:
                 encoded = json.dumps(receipt, ensure_ascii=False)
                 with self.store.db:
                     self.store.db.execute(
-                        "UPDATE drafts SET status='published',receipt=?,error=NULL,updated_at=? WHERE id=?",
-                        (encoded, time.time(), draft_id),
+                        "UPDATE drafts SET status='published',receipt=?,visibility=?,visibility_checked_at=NULL,visibility_detail=?,error=NULL,updated_at=? WHERE id=?",
+                        (
+                            encoded,
+                            initial_visibility,
+                            dump(initial_detail) if initial_detail is not None else None,
+                            time.time(),
+                            draft_id,
+                        ),
                     )
                     self.store.db.execute(
                         "UPDATE publish_attempts SET status='published',receipt=? WHERE id=?",
@@ -707,4 +744,91 @@ class Comments(CommentsRepositoryMixin, CommentsScannerMixin, CommentsDrafterMix
                 )
                 raise UnknownPublication("B 站已受理评论，本地回执待补录", token) from None
             self._record_published_context(draft_id, account_id)
-            return {"status": "published", "receipt": receipt}
+        # Released credential_lock before delayed visibility verification.
+        if has_verifier:
+            if self.visibility_recheck_delay <= 0:
+                checked = await self.verify_draft_visibility(draft_id)
+                return {
+                    "status": "published",
+                    "receipt": receipt,
+                    "visibility": checked.get("visibility"),
+                }
+            self.schedule_draft_visibility_recheck(draft_id, delay=self.visibility_recheck_delay)
+        return {"status": "published", "receipt": receipt, "visibility": initial_visibility}
+
+    def schedule_draft_visibility_recheck(self, draft_id: int, *, delay: float | None = None):
+        wait = float(self.visibility_recheck_delay if delay is None else delay)
+        existing = self._visibility_tasks.get(draft_id)
+        if existing and not existing.done():
+            existing.cancel()
+
+        async def _run():
+            try:
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                if self.closed:
+                    return
+                await self.verify_draft_visibility(draft_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                now = time.time()
+                detail = {"status": "check_failed", "checked_at": now, "reason": public_error(error)}
+                try:
+                    self.store.execute(
+                        "UPDATE drafts SET visibility='check_failed',visibility_checked_at=?,visibility_detail=? WHERE id=?",
+                        (now, dump(detail), draft_id),
+                    )
+                except Exception:
+                    pass
+
+        task = asyncio.create_task(_run())
+        self._visibility_tasks[draft_id] = task
+        task.add_done_callback(
+            lambda done: self._visibility_tasks.pop(draft_id, None) if self._visibility_tasks.get(draft_id) is done else None
+        )
+        return task
+
+    async def verify_draft_visibility(self, draft_id: int):
+        row = self._draft_source(draft_id)
+        if not row:
+            raise ValueError("草稿不存在")
+        if row["status"] != "published":
+            raise ValueError("仅已发布的评论草稿支持可见性复查")
+        receipt = json.loads(row["receipt"] or "null") if isinstance(row.get("receipt"), str) else row.get("receipt")
+        if not isinstance(receipt, dict) or not receipt.get("rpid"):
+            raise ValueError("评论草稿缺少有效回执 rpid，无法复查可见性")
+        verifier = getattr(self.account.adapter, "verify_publication", None)
+        if not callable(verifier):
+            raise ValueError("当前平台适配器不支持可见性复查")
+        target = {
+            "resource_type": "video",
+            "type": 1,
+            "bvid": row["video_id"],
+            "oid": receipt.get("aid") or receipt.get("oid"),
+            "root": receipt.get("root") or row["thread_id"],
+            "parent": receipt.get("parent") or row["platform_comment_id"],
+        }
+        try:
+            result = await verifier(target, receipt)
+            if not isinstance(result, dict):
+                result = {"status": "check_failed", "checked_at": time.time(), "reason": "可见性返回格式无效"}
+        except Exception as error:
+            result = {"status": "check_failed", "checked_at": time.time(), "reason": public_error(error)}
+        status = str(result.get("status") or "check_failed")
+        checked_at = float(result.get("checked_at") or time.time())
+        self.store.execute(
+            "UPDATE drafts SET visibility=?,visibility_checked_at=?,visibility_detail=? WHERE id=?",
+            (status, checked_at, dump(result), draft_id),
+        )
+        browsing = getattr(self.runtime, "browsing", None)
+        if browsing is not None and getattr(browsing, "sends", None) is not None:
+            browsing.sends.record_visibility_outcome(
+                row.get("account_id") or self.account.display_account_id(),
+                status,
+                intent_id=f"comments:{draft_id}",
+                bvid=row["video_id"],
+                detail=result,
+                now=checked_at,
+            )
+        return self.store.one("SELECT * FROM drafts WHERE id=?", (draft_id,))

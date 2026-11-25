@@ -828,11 +828,38 @@ async def test_preview_complete_evidence_review_and_one_shot(browsing):
     assert intent["evidence"] == ["11:0"] and browsing.adapter.sent == []
     browsing.review(intent["id"], "approve")
     result = await browsing.publish(intent["id"])
-    assert result["status"] == "published" and result["visibility"] == "not_found"
+    assert result["status"] == "published" and result["visibility"] == "pending_recheck"
+    verified = await browsing.publication.verify_intent_visibility(intent["id"])
+    assert verified["status"] == "published" and verified["visibility"] == "not_found"
+    assert verified["visibility_checked_at"] is not None
     assert browsing.adapter.sent[0][0]["root"] == "0"
     with pytest.raises(ValueError):
         await browsing.publish(intent["id"])
     assert len(browsing.adapter.sent) == 1
+
+
+async def test_delayed_visibility_recheck_runs_outside_credential_lock(browsing, monkeypatch):
+    await finished(browsing, preview=True)
+    intent = browsing.intents()[0]
+    browsing.review(intent["id"], "approve")
+    browsing.publication.visibility_recheck_delay = 0.02
+    lock_held_during_verify = []
+
+    async def verify(target, receipt):
+        lock_held_during_verify.append(browsing.bilibili_account.credential_lock.locked())
+        return {"status": "public_visible", "checked_at": time.time(), "auth_visible": True, "anon_visible": True}
+
+    monkeypatch.setattr(browsing.adapter, "verify_publication", verify)
+    result = await browsing.publish(intent["id"])
+    assert result["status"] == "published" and result["visibility"] == "pending_recheck"
+    assert not browsing.bilibili_account.credential_lock.locked()
+    task = browsing.publication._visibility_tasks.get(intent["id"])
+    assert task is not None
+    await task
+    assert lock_held_during_verify == [False]
+    refreshed = browsing.repo.decode(browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (intent["id"],)))
+    assert refreshed["visibility"] == "public_visible"
+    assert refreshed["visibility_detail"]["anon_visible"] is True
 
 
 async def test_review_edit_preserves_status_and_updates_text(browsing):

@@ -14,6 +14,7 @@ from ...core.store import dump
 from ...core.text import comment_body_issue, validate_comment_body, validate_operation_text
 from ...infra.inference.providers import public_error
 from ...infra.platforms.bilibili.client import PublishUncertain
+from . import sends as _sends
 from .context import read_round
 from .control import canonical_intent
 from .feedback import FeedbackPublication, PublicationContext
@@ -22,21 +23,19 @@ from .repository import infer_round_pipeline
 from .sends import current_send
 
 _COMMENT_KINDS = {"top_level", "reply_public"}
-_ENGAGEMENT_CHANNELS = {
-    "video_like": "video_likes",
-    "video_fav": "video_favorites",
-    "comment_like": "comment_likes",
-    "dynamic_like": "dynamic_likes",
-}
+_ENGAGEMENT_CHANNELS = {"video_like": "video_likes", "video_fav": "video_favorites", "comment_like": "comment_likes", "dynamic_like": "dynamic_likes"}
 _ENGAGEMENT_KINDS = _ENGAGEMENT_CHANNELS.keys()
 
 
 class IntentPublisher:
     """Shared publication store and read-only reconciler across Discovery and Inbox pipelines."""
 
+    visibility_recheck_delay: float = 12.0
+
     def __init__(self, browsing, *, channels=None):
         self.browsing = browsing
         self.channels = channels if channels is not None else getattr(browsing, "publication_channels", None) or {}
+        self._visibility_tasks: dict[str, asyncio.Task] = {}
         browsing.store.execute("""CREATE TABLE IF NOT EXISTS browsing_reply_coverage(
             account_id TEXT,character_id TEXT,source_key TEXT,intent_id TEXT NOT NULL REFERENCES browsing_intents(id) ON DELETE CASCADE,
             PRIMARY KEY(account_id,character_id,source_key))""")
@@ -953,21 +952,29 @@ class IntentPublisher:
                 )
                 raise UnknownPublication("平台提交结果待核对", token) from None
             if row["kind"] in _ENGAGEMENT_KINDS:
-                self.browsing.store.execute("UPDATE browsing_intents SET visibility='visible' WHERE id=?", (identity,))
-            else:
-                try:
-                    visibility = await self.browsing.adapter.verify_publication(row["target"], receipt)
-                    self.browsing.store.execute(
-                        "UPDATE browsing_intents SET visibility=? WHERE id=?",
-                        (visibility["status"], identity),
-                    )
-                except Exception:
-                    self.browsing.store.execute(
-                        "UPDATE browsing_intents SET visibility='check_failed' WHERE id=?", (identity,)
-                    )
-            return self.browsing.repo.decode(
-                self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
+                self.browsing.store.execute("UPDATE browsing_intents SET visibility='visible',visibility_checked_at=? WHERE id=?", (time.time(), identity))
+                return self.browsing.repo.decode(self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
+            has_verifier = callable(getattr(self.browsing.adapter, "verify_publication", None))
+            detail = dump({"stage": "scheduled", "delay_seconds": float(self.visibility_recheck_delay), "scheduled_at": time.time()}) if has_verifier else None
+            self.browsing.store.execute(
+                "UPDATE browsing_intents SET visibility=?,visibility_checked_at=NULL,visibility_detail=? WHERE id=?",
+                ("pending_recheck" if has_verifier else "not_checked", detail, identity),
             )
+        # Released credential_lock before any delayed or network visibility verification.
+        if has_verifier:
+            if self.visibility_recheck_delay <= 0:
+                return await self.verify_intent_visibility(identity)
+            self.schedule_visibility_recheck(identity, delay=self.visibility_recheck_delay)
+        return self.browsing.repo.decode(self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
+
+    def schedule_visibility_recheck(self, identity: str, *, delay: float | None = None):
+        return _sends.schedule_intent_visibility_recheck(self, identity, delay=delay)
+
+    async def verify_intent_visibility(self, identity: str):
+        return await _sends.verify_intent_visibility_now(self, identity, comment_kinds=_COMMENT_KINDS)
+
+    async def recheck_pending_visibility(self, *, limit: int = 10):
+        return await _sends.recheck_pending_intent_visibility(self, limit=limit)
 
     def _record_account_reply(self, row, handled):
         raise NotImplementedError

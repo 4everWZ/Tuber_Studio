@@ -447,4 +447,44 @@ describe("Stage2PipelineCards & AutomationDashboardPage", () => {
     }
     expect(container).toBeInTheDocument();
   });
+
+  it("renders visibility_risk pause alert and comment_cooldown_until on pipeline cards", () => {
+    const futureCooldown = Math.floor(Date.now() / 1000) + 1800;
+    const status = makeStatus({
+      comment_cooldown_until: futureCooldown,
+      visibility_risk: {
+        streak: 2,
+        threshold: 2,
+        active: true,
+        cooldown_until: futureCooldown,
+        downgraded: true,
+        last_status: "shadow_deleted",
+        reason: "连续 2 条评论未公开可见（最近：疑似被吞），已暂停评论发送 30 分钟并降级为人工审核",
+      },
+    });
+
+    const { container } = render(
+      <Stage2PipelineCards
+        status={status}
+        account={null}
+        discovery={null}
+        quotas={makeQuotas()}
+        inboxRecords={{ items: [] }}
+        claims={[]}
+        controlPending={false}
+        onToggleInbox={vi.fn()}
+        onToggleDiscovery={vi.fn()}
+        onSaveInboxSettings={vi.fn()}
+        onSaveDiscoverySettings={vi.fn()}
+        onSaveQuotas={vi.fn()}
+      />
+    );
+
+    const alert = container.querySelector('[data-visibility-risk-alert="active"]');
+    expect(alert).not.toBeNull();
+    expect(alert?.textContent).toContain("发评风控保护已触发");
+    expect(alert?.textContent).toContain("已自动降级为人工审核模式");
+    expect(container.querySelector('[data-comment-cooldown="active"]')).not.toBeNull();
+    expect(screen.getAllByText("发评风控暂停").length).toBeGreaterThanOrEqual(2);
+  });
 });

@@ -689,16 +689,103 @@ async def test_missing_write_receipt_is_uncertain_never_a_read_retry(adapter_fac
 
 
 @pytest.mark.parametrize(
-    "rows,status",
-    [([], "not_found"), ([{"rpid": 555}], "visible"), ([{"rpid": 555, "invisible": 1}], "not_visible")],
+    "auth_rows,anon_rows,status",
+    [
+        ([], [], "shadow_deleted"),
+        ([{"rpid": 555, "ctime": 1000}], [{"rpid": 555, "ctime": 1000}], "public_visible"),
+        ([{"rpid": 555, "ctime": 1000}], [], "self_only"),
+        ([{"rpid": 555, "ctime": 1000, "invisible": 1}], [{"rpid": 555, "ctime": 1000, "invisible": 1}], "shadow_deleted"),
+    ],
 )
 async def test_publication_acceptance_is_independent_from_first_page_visibility(
-    adapter_factory, rows, status
+    adapter_factory, auth_rows, anon_rows, status
 ):
-    adapter = await adapter_factory(lambda request: result({"replies": rows}))
+    seen = []
+
+    def handle(request):
+        seen.append((request.url.path, dict(request.url.params), request.headers.get("cookie")))
+        if request.url.path == "/x/web-interface/nav":
+            return nav() if request.headers.get("cookie") else result(
+                {
+                    "wbi_img": {
+                        "img_url": "https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png",
+                        "sub_url": "https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png",
+                    }
+                },
+                code=-101,
+            )
+        assert request.url.params.get("sort") == "0"
+        if request.headers.get("cookie"):
+            return result({"replies": auth_rows})
+        assert "w_rid" in request.url.params and "wts" in request.url.params
+        return result({"replies": anon_rows})
+
+    adapter = await adapter_factory(handle)
     output = await adapter.verify_publication({"resource_type": "video", "oid": "123"}, {"rpid": "555"})
     assert output["status"] == status
     assert "secret" not in json.dumps(output)
+    assert any(path == "/x/v2/reply" and cookie is None for path, _, cookie in seen)
+
+
+async def test_verify_publication_sub_reply_checks_last_page_and_overflow_not_deleted(adapter_factory):
+    pages_seen = []
+
+    def handle(request):
+        if request.url.path == "/x/web-interface/nav":
+            return result(
+                {
+                    "wbi_img": {
+                        "img_url": "https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png",
+                        "sub_url": "https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png",
+                    }
+                },
+                code=-101,
+            )
+        if request.url.path == "/x/v2/reply/reply":
+            pn = int(request.url.params["pn"])
+            pages_seen.append((pn, bool(request.headers.get("cookie"))))
+            if pn == 1:
+                return result({"replies": [{"rpid": 100 + i} for i in range(20)], "page": {"count": 45, "size": 20}})
+            assert pn == 3
+            return result({"replies": [{"rpid": 555, "ctime": 2000}], "page": {"count": 45, "size": 20}})
+        # High-traffic top-level overflow: 20 newer comments pushed published_at=1000 off page 1
+        return result({"replies": [{"rpid": 900 + i, "ctime": 1500 + i} for i in range(20)]})
+
+    adapter = await adapter_factory(handle)
+    sub = await adapter.verify_publication(
+        {"resource_type": "video", "oid": "123", "root": "100", "parent": "100"}, {"rpid": "555"}
+    )
+    assert sub["status"] == "public_visible"
+    assert (3, True) in pages_seen and (3, False) in pages_seen
+
+    overflow = await adapter.verify_publication(
+        {"resource_type": "video", "oid": "123"}, {"rpid": "555", "published_at": 1000}
+    )
+    assert overflow["status"] == "not_found"
+
+
+async def test_verify_publication_preserves_risk_error_code_and_publish_captures_hints(adapter_factory):
+    def handle(request):
+        if request.url.path == "/x/web-interface/nav":
+            return nav()
+        if request.method == "POST" and request.url.path == "/x/v2/reply/add":
+            return result({"rpid": 555, "success_action": 0, "need_captcha": False, "reply": {"invisible": False}})
+        if not request.headers.get("cookie"):
+            return httpx.Response(200, json={"code": -352, "message": "风控校验失败"})
+        return result({"replies": [{"rpid": 555, "ctime": 1000}]})
+
+    adapter = await adapter_factory(handle)
+    receipt = await adapter.publish_top_level({"resource_type": "video", "oid": "123"}, "一条测试评论")
+    assert receipt["rpid"] == "555"
+    assert receipt["success_action"] == 0
+    assert receipt["need_captcha"] is False
+    assert receipt["reply_invisible"] is False
+
+    checked = await adapter.verify_publication({"resource_type": "video", "oid": "123"}, receipt)
+    assert checked["status"] == "check_failed"
+    assert checked["error_code"] == -352
+    assert checked["auth_visible"] is True
+    assert checked["anon_visible"] is None
 
 @pytest.mark.parametrize("nested", [False, True])
 async def test_image_comment_upload_then_one_bound_pictures_form(adapter_factory, settings, nested):

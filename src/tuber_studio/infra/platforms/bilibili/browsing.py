@@ -14,6 +14,7 @@ import json
 import math
 import re
 import time
+from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
 import httpx
@@ -130,13 +131,37 @@ class BrowsingAdapter(BilibiliAdapter):
             await asyncio.sleep(max(0, self._read_clock + self._read_spacing - time.monotonic()))
             self._read_clock = time.monotonic()
 
-    async def _get_payload(self, path, params):
+    @asynccontextmanager
+    async def _stream_get(self, path, params, *, anonymous: bool = False):
+        if not anonymous:
+            async with self.client.stream("GET", path, params=params, follow_redirects=False) as response:
+                yield response
+            return
+        if self.anon_client is self._default_anon_client and isinstance(self.client._transport, httpx.MockTransport):
+            request = httpx.Request(
+                "GET",
+                self.client.base_url.join(path),
+                params=params,
+                headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.bilibili.com/"},
+            )
+            response = await self.client.send(request, stream=True, follow_redirects=False)
+            try:
+                yield response
+            finally:
+                await response.aclose()
+            return
+        async with self.anon_client.stream("GET", path, params=params, follow_redirects=False) as response:
+            yield response
+
+    async def _get_payload(self, path, params, *, anonymous: bool = False):
         await self._pace()
         try:
-            async with self.client.stream("GET", path, params=params, follow_redirects=False) as response:
+            async with self._stream_get(path, params, anonymous=anonymous) as response:
                 if response.status_code in {401, 403}:
                     raise PlatformReadError(
-                        "permission", f"平台拒绝读取（HTTP {response.status_code}），请检查登录与权限"
+                        "permission",
+                        f"平台拒绝读取（HTTP {response.status_code}），请检查登录与权限",
+                        http_status=response.status_code,
                     )
                 if response.status_code in {412, 429}:
                     raise PlatformReadError.restricted(response.status_code)
@@ -159,31 +184,35 @@ class BrowsingAdapter(BilibiliAdapter):
         # Preserve its explicit anonymous-nav case, but classify expired real
         # logins and risk denials before that signer can erase their category.
         code = payload["code"]
-        anonymous_nav = code == -101 and path == "/x/web-interface/nav" and not self._sessdata
+        anonymous_nav = code == -101 and path == "/x/web-interface/nav" and (anonymous or not self._sessdata)
         if code == -101 and path == "/x/web-interface/nav" and not anonymous_nav:
             raise BilibiliAccountExpired("B站登录已失效")
         if code in {-101, -102, -111, -403} and not anonymous_nav:
-            raise PlatformReadError("permission", "平台账号未登录、失效或无读取权限")
+            raise PlatformReadError("permission", "平台账号未登录、失效或无读取权限", code=code)
         if code in {-352, -412, -509}:
-            raise PlatformReadError("restricted", "平台风控或频率限制")
+            raise PlatformReadError("restricted", f"平台风控或频率限制（code {code}）", code=code)
         if code in {-404, 12006}:
-            raise PlatformReadError("not_found", "平台来源不存在或已删除")
+            raise PlatformReadError("not_found", "平台来源不存在或已删除", code=code)
         if code != 0 and not anonymous_nav:
-            raise PlatformReadError("platform", f"平台拒绝读取（code {code}）")
+            raise PlatformReadError("platform", f"平台拒绝读取（code {code}）", code=code)
         return payload
 
-    async def _read(self, path, params):
-        payload = await self._get_payload(path, params)
+    async def _read(self, path, params, *, anonymous: bool = False):
+        payload = (
+            await self._get_payload(path, params, anonymous=True)
+            if anonymous
+            else await self._get_payload(path, params)
+        )
         # Only anonymous WBI nav is allowed through _get_payload with a
         # nonzero code. It supplies signing keys, not authenticated content.
         if payload["code"] != 0:
-            raise PlatformReadError("permission", "平台账号未登录、失效或无读取权限")
+            raise PlatformReadError("permission", "平台账号未登录、失效或无读取权限", code=payload["code"])
         if not isinstance(payload.get("data"), (dict, list)):
             raise PlatformReadError("invalid", "平台返回无效数据")
         return payload["data"]
 
-    async def _get(self, path, params):
-        data = await self._read(path, params)
+    async def _get(self, path, params, *, anonymous: bool = False):
+        data = await self._read(path, params, anonymous=True) if anonymous else await self._read(path, params)
         if not isinstance(data, dict):
             raise PlatformReadError("invalid", "平台返回对象类型错误")
         return data
@@ -931,11 +960,25 @@ class BrowsingAdapter(BilibiliAdapter):
             rpid = _identifier(data.get("rpid_str") or data.get("rpid"))
         except (KeyError, TypeError, AttributeError, ValueError):
             raise PublishUncertain("B 站回执缺少评论 ID") from None
+        diagnostics = {}
+        if type(data.get("success_action")) is int:
+            diagnostics["success_action"] = data["success_action"]
+        if type(data.get("need_captcha")) is bool:
+            diagnostics["need_captcha"] = data["need_captcha"]
+        reply_obj = data.get("reply")
+        if isinstance(reply_obj, dict) and "invisible" in reply_obj:
+            diagnostics["reply_invisible"] = reply_obj.get("invisible") in (True, 1, "1")
+        toast = data.get("success_toast")
+        if isinstance(toast, str) and toast.strip():
+            clean_toast = toast.strip()[:200]
+            if not any(secret and secret in clean_toast for secret in (self._sessdata, self._csrf)):
+                diagnostics["success_toast"] = clean_toast
         return {
             "platform": "bilibili",
             "code": 0,
             "rpid": rpid,
             **{key: target[key] for key in ("oid", "type", "root", "parent")},
+            **diagnostics,
         }
 
     async def publish_top_level(self, target, text, before_send=None, **images):
@@ -983,27 +1026,186 @@ class BrowsingAdapter(BilibiliAdapter):
         video_id = target["bvid"] if isinstance(target, dict) else str(target)
         return await super().favorite_video(video_id, folder_id=folder_id, before_send=before_send)
 
+    async def _anonymous_wbi_params(self, params: dict) -> dict:
+        try:
+            return await self.wbi_params(params, anonymous=True)
+        except PlatformReadError as error:
+            if error.kind in {"restricted", "network", "permission"}:
+                raise
+            return dict(params)
+        except ValueError:
+            return dict(params)
+
+    @staticmethod
+    def _find_reply_row(rows, rpid):
+        if not isinstance(rows, list):
+            raise PlatformReadError("invalid", "可见性响应无效")
+        ctimes = []
+        matched = None
+        for row in rows:
+            if not isinstance(row, dict):
+                raise PlatformReadError("invalid", "可见性响应无效")
+            ctime = row.get("ctime")
+            if type(ctime) is int and ctime > 0:
+                ctimes.append(ctime)
+            if str(row.get("rpid_str") or row.get("rpid")) == rpid:
+                matched = row
+        oldest_ctime = min(ctimes) if ctimes else None
+        if matched is None:
+            return False, False, None, oldest_ctime
+        hidden = matched.get("invisible") in (True, 1, "1")
+        matched_ctime = matched.get("ctime") if type(matched.get("ctime")) is int else None
+        return True, hidden, matched_ctime, oldest_ctime
+
+    async def _inspect_publication_view(self, normalized, rpid, *, anonymous: bool):
+        is_reply = normalized["root"] != "0"
+        if not is_reply:
+            base = {"oid": normalized["oid"], "type": normalized["type"], "pn": 1, "ps": 20, "sort": 0}
+            params = await self._anonymous_wbi_params(base) if anonymous else base
+            data = await self._get("/x/v2/reply", params, anonymous=anonymous)
+            rows = data.get("replies") or []
+            found, invisible, ctime, oldest_ctime = self._find_reply_row(rows, rpid)
+            page_info = data.get("page") if isinstance(data.get("page"), dict) else {}
+            count = page_info.get("count") if type(page_info.get("count")) is int else None
+            return {
+                "found": found,
+                "invisible": invisible,
+                "ctime": ctime,
+                "covered": len(rows) < 20,
+                "records": len(rows),
+                "oldest_ctime": oldest_ctime,
+                "page_count": count,
+                "checked_page": 1,
+            }
+        base = {
+            "oid": normalized["oid"],
+            "type": normalized["type"],
+            "root": normalized["root"],
+            "pn": 1,
+            "ps": 20,
+        }
+        params = await self._anonymous_wbi_params(base) if anonymous else base
+        data = await self._get("/x/v2/reply/reply", params, anonymous=anonymous)
+        page_replies = data.get("replies") or []
+        rows = ([data["root"]] if data.get("root") else []) + page_replies
+        found, invisible, ctime, oldest_ctime = self._find_reply_row(rows, rpid)
+        page_info = data.get("page") if isinstance(data.get("page"), dict) else {}
+        count = page_info.get("count") if type(page_info.get("count")) is int else None
+        size = page_info.get("size") if type(page_info.get("size")) is int and page_info.get("size") > 0 else 20
+        checked_page = 1
+        records = len(page_replies)
+        covered = records < size or (count is not None and count <= size)
+        if not found and count is not None and count > size:
+            last_page = math.ceil(count / size)
+            if last_page > 1:
+                tail_base = {**base, "pn": last_page, "ps": size}
+                tail_params = await self._anonymous_wbi_params(tail_base) if anonymous else tail_base
+                tail_data = await self._get("/x/v2/reply/reply", tail_params, anonymous=anonymous)
+                tail_replies = tail_data.get("replies") or []
+                found, invisible, ctime, tail_oldest = self._find_reply_row(tail_replies, rpid)
+                oldest_ctime = tail_oldest if tail_oldest is not None else oldest_ctime
+                checked_page = last_page
+                records = len(tail_replies)
+                covered = True
+        return {
+            "found": found,
+            "invisible": invisible,
+            "ctime": ctime,
+            "covered": covered,
+            "records": records,
+            "oldest_ctime": oldest_ctime,
+            "page_count": count,
+            "checked_page": checked_page,
+        }
+
     async def verify_publication(self, target, receipt):
+        checked_at = time.time()
         try:
             rpid = _identifier(receipt.get("rpid"))
             root = target.get("root")
             normalized = self._target(target, top_level=root in (None, 0, "0"))
-            params = {"oid": normalized["oid"], "type": normalized["type"], "pn": 1, "ps": 20}
-            if normalized["root"] != "0":
-                params["root"] = normalized["root"]
-                data = await self._get("/x/v2/reply/reply", params)
-                rows = ([data["root"]] if data.get("root") else []) + (data.get("replies") or [])
-            else:
-                data = await self._get("/x/v2/reply", params)
-                rows = data.get("replies") or []
-            if not isinstance(rows, list):
-                raise PlatformReadError("invalid", "可见性响应无效")
-            for row in rows:
-                if not isinstance(row, dict):
-                    raise PlatformReadError("invalid", "可见性响应无效")
-                if str(row.get("rpid_str") or row.get("rpid")) == rpid:
-                    hidden = row.get("invisible") is True or row.get("invisible") == 1
-                    return {"status": "not_visible" if hidden else "visible", "checked_at": time.time()}
-            return {"status": "not_found", "checked_at": time.time(), "coverage": "first_page_only"}
         except (ValueError, TypeError, AttributeError):
-            return {"status": "check_failed", "checked_at": time.time(), "error": "平台可见性核验失败"}
+            return {
+                "status": "check_failed",
+                "checked_at": checked_at,
+                "reason": "平台可见性核验参数无效",
+                "error": "平台可见性核验参数无效",
+            }
+        is_reply = normalized["root"] != "0"
+        auth_view = None
+        try:
+            auth_view = await self._inspect_publication_view(normalized, rpid, anonymous=False)
+            anon_view = await self._inspect_publication_view(normalized, rpid, anonymous=True)
+        except PlatformReadError as error:
+            return {
+                "status": "check_failed",
+                "checked_at": time.time(),
+                "error_code": error.code if error.code is not None else error.http_status,
+                "error_kind": error.kind,
+                "reason": str(error),
+                "error": str(error),
+                "auth_visible": (
+                    (auth_view["found"] and not auth_view["invisible"]) if auth_view is not None else None
+                ),
+                "anon_visible": None,
+            }
+        except (ValueError, TypeError, AttributeError):
+            return {
+                "status": "check_failed",
+                "checked_at": time.time(),
+                "reason": "平台可见性核验失败",
+                "error": "平台可见性核验失败",
+            }
+
+        published_at = receipt.get("published_at")
+        if not isinstance(published_at, (int, float)) or not math.isfinite(published_at):
+            published_at = None
+        ref_time = auth_view["ctime"] or published_at
+        auth_covered = auth_view["covered"]
+        anon_covered = anon_view["covered"]
+        if not is_reply:
+            if not auth_covered and published_at is not None and auth_view["oldest_ctime"] is not None:
+                auth_covered = auth_view["oldest_ctime"] <= float(published_at) + 2
+            if not anon_covered and ref_time is not None and anon_view["oldest_ctime"] is not None:
+                anon_covered = anon_view["oldest_ctime"] <= float(ref_time) + 2
+
+        auth_visible = auth_view["found"] and not auth_view["invisible"]
+        anon_visible = anon_view["found"] and not anon_view["invisible"]
+        if anon_visible:
+            status = "public_visible"
+        elif auth_view["found"] and auth_view["invisible"]:
+            status = "shadow_deleted"
+        elif auth_visible:
+            if (anon_view["found"] and anon_view["invisible"]) or anon_covered:
+                status = "self_only"
+            else:
+                status = "not_found"
+        else:
+            status = "shadow_deleted" if (auth_covered or anon_covered) else "not_found"
+
+        hints = {
+            key: receipt[key]
+            for key in ("success_action", "need_captcha", "reply_invisible", "success_toast")
+            if key in receipt
+        }
+        return {
+            "status": status,
+            "checked_at": time.time(),
+            "auth_visible": auth_visible,
+            "anon_visible": anon_visible,
+            "auth_found": auth_view["found"],
+            "anon_found": anon_view["found"],
+            "auth_invisible": auth_view["invisible"],
+            "anon_invisible": anon_view["invisible"],
+            "coverage": {
+                "scope": "thread_tail" if is_reply else "first_page_newest",
+                "auth_covered": auth_covered,
+                "anon_covered": anon_covered,
+                "auth_page": auth_view["checked_page"],
+                "anon_page": anon_view["checked_page"],
+                "auth_records": auth_view["records"],
+                "anon_records": anon_view["records"],
+                "anon_oldest_ctime": anon_view["oldest_ctime"],
+            },
+            **({"receipt_hints": hints} if hints else {}),
+        }

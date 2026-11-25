@@ -73,10 +73,25 @@ async def reconcile_intent(publisher, identity):
         )
 
     def commit(receipt, verification):
+        intent_row = publisher.browsing.store.one("SELECT kind FROM browsing_intents WHERE id=?", (identity,))
+        is_comment = bool(intent_row and intent_row["kind"] in ("top_level", "reply_public"))
+        has_verifier = callable(getattr(publisher.browsing.adapter, "verify_publication", None))
+        status = verification["status"]
+        if is_comment and has_verifier and status == "visible":
+            status = "pending_recheck"
         publisher.browsing.store.execute(
-            "UPDATE browsing_intents SET status='published',receipt=?,visibility=?,error=NULL,updated_at=? WHERE id=?",
-            (dump(receipt), verification["status"], time.time(), identity),
+            "UPDATE browsing_intents SET status='published',receipt=?,visibility=?,visibility_checked_at=?,visibility_detail=?,error=NULL,updated_at=? WHERE id=?",
+            (
+                dump(receipt),
+                status,
+                None if status == "pending_recheck" else verification.get("checked_at") or time.time(),
+                dump(verification),
+                time.time(),
+                identity,
+            ),
         )
+        if status == "pending_recheck" and hasattr(publisher, "schedule_visibility_recheck"):
+            publisher.schedule_visibility_recheck(identity, delay=0)
 
     return await feedback.reconcile("browsing", identity, read, commit)
 
@@ -93,6 +108,8 @@ async def reconcile_round_publications(browsing, row, bvid):
     ]
     for item in items:
         await browsing.publication._reconcile(item["id"])
+    if hasattr(browsing.publication, "recheck_pending_visibility"):
+        await browsing.publication.recheck_pending_visibility()
     return len(items)
 
 

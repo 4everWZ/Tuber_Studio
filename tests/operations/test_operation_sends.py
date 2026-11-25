@@ -329,3 +329,41 @@ async def test_video_round_waits_for_handoff_preparation_until_deferred(browsing
     browsing.store.execute("UPDATE dm_drafts SET next_attempt_at=? WHERE id=?", (time.time() + 60, draft_id))
     assert (await finished(browsing, automatic=True, video_only=True))["id"] != first["id"]
     assert browsing.store.one("SELECT status FROM dm_drafts WHERE id=?", (draft_id,))["status"] == "queued"
+
+
+async def test_consecutive_invisible_comments_arm_30m_cooldown_and_auto_downgrade(browsing):
+    from tuber_studio.core.errors import platform_recovery_condition
+
+    for code in (-352, -412, -509, 12014, 12015):
+        assert platform_recovery_condition(code) == "rate_limit"
+
+    await browsing.configure(
+        {
+            "top_level_enabled": True,
+            "top_level_auto_publish": True,
+            "reply_enabled": True,
+            "reply_auto_publish": True,
+            "auto_downgrade_on_error": True,
+        }
+    )
+    now = 2_000_000.0
+    first = browsing.sends.record_visibility_outcome("100", "self_only", intent_id="i-1", bvid=BV, now=now)
+    assert first is not None and first["streak"] == 1 and first["active"] is False
+    assert browsing.sends.comments_cooldown_until("100") == 0.0
+
+    # Re-verifying the same intent does not double-count the streak
+    repeated = browsing.sends.record_visibility_outcome("100", "self_only", intent_id="i-1", bvid=BV, now=now + 5)
+    assert repeated["streak"] == 1 and repeated["active"] is False
+
+    second = browsing.sends.record_visibility_outcome("100", "shadow_deleted", intent_id="i-2", bvid=BV, now=now + 10)
+    assert second is not None and second["streak"] == 2 and second["active"] is True
+    assert second["downgraded"] is True
+    assert second["cooldown_until"] == now + 10 + 1800
+    assert browsing.sends.comments_cooldown_until("100") == now + 10 + 1800
+    assert browsing.policy()["top_level_auto_publish"] is False
+    assert browsing.policy()["reply_auto_publish"] is False
+
+    # A subsequent public_visible outcome resets the streak
+    cleared = browsing.sends.record_visibility_outcome("100", "public_visible", intent_id="i-3", bvid=BV, now=now + 20)
+    assert cleared is None
+    assert browsing.sends.visibility_risk_status("100", now=now + 20) is None

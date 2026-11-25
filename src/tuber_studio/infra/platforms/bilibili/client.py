@@ -134,9 +134,10 @@ def _data(payload: object) -> dict:
 
 
 class PlatformReadError(ValueError):
-    def __init__(self, kind, message, *, http_status=None):
+    def __init__(self, kind, message, *, http_status=None, code=None):
         self.kind = kind
         self.http_status = http_status
+        self.code = code
         super().__init__(message)
 
     @classmethod
@@ -168,8 +169,17 @@ class BilibiliAdapter:
             timeout=httpx.Timeout(45, connect=10),
             follow_redirects=False,
         )
+        self.anon_client = httpx.AsyncClient(
+            base_url="https://api.bilibili.com",
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.bilibili.com/"},
+            cookies={},
+            timeout=httpx.Timeout(45, connect=10),
+            follow_redirects=False,
+        )
+        self._default_anon_client = self.anon_client
 
     async def close(self):
+        await self.anon_client.aclose()
         await self.client.aclose()
 
     async def public_profile(self, uid):
@@ -224,10 +234,11 @@ class BilibiliAdapter:
             "fans": fans,
         }
 
-    async def _get_payload(self, path: str, params: dict):
+    async def _get_payload(self, path: str, params: dict, *, anonymous: bool = False):
+        client = self.anon_client if anonymous else self.client
         for attempt in range(2):
             try:
-                response = await self.client.get(path, params=params)
+                response = await client.get(path, params=params)
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPStatusError as error:
@@ -249,7 +260,7 @@ class BilibiliAdapter:
     async def _get(self, path: str, params: dict) -> dict:
         return _data(await self._get_payload(path, params))
 
-    async def wbi_params(self, params: dict | None = None) -> dict:
+    async def wbi_params(self, params: dict | None = None, *, anonymous: bool = False) -> dict:
         """Sign a trusted caller's query, including a POST's query, once.
 
         Checked against bilibili-api-python 17.4.2's _get_mixin_key/_enc_wbi.
@@ -261,10 +272,14 @@ class BilibiliAdapter:
             or any(not isinstance(k, str) or type(v) not in (str, int) for k, v in params.items())
         ):
             raise ValueError("B 站签名参数须为字符串键和字符串或整数值")
-        payload = await self._get_payload("/x/web-interface/nav", {})
+        payload = (
+            await self._get_payload("/x/web-interface/nav", {}, anonymous=True)
+            if anonymous
+            else await self._get_payload("/x/web-interface/nav", {})
+        )
         # Anonymous nav deliberately reports -101 while supplying public WBI
         # keys. An explicitly configured but expired login must still fail.
-        if isinstance(payload, dict) and payload.get("code") == -101 and not self._sessdata:
+        if isinstance(payload, dict) and payload.get("code") == -101 and (anonymous or not self._sessdata):
             nav = payload.get("data")
         else:
             nav = _data(payload)

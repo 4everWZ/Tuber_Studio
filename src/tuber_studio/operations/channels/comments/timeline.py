@@ -354,8 +354,10 @@ def _receipts(store, resource, root, account, character):
         return
     if _table(store, "browsing_intents"):
         bvid, dynamic = (None, resource.removeprefix("dynamic:")) if resource.startswith("dynamic:") else (resource, None)
+        intent_cols = {col[1] for col in store.db.execute("PRAGMA table_info(browsing_intents)")}
+        vis_sel = ",visibility" if "visibility" in intent_cols else ",NULL AS visibility"
         rows = store.all(
-            "SELECT id,round_id,text,receipt,target,status,updated_at FROM browsing_intents "
+            "SELECT id,round_id,text,receipt,target,status,updated_at" + vis_sel + " FROM browsing_intents "
             "WHERE account_id=? AND character_id=? AND kind='reply_public' "
             "AND status IN ('published','operator_replied') "
             "AND CAST(json_extract(target,'$.root') AS TEXT)=? AND "
@@ -382,8 +384,9 @@ def _receipts(store, resource, root, account, character):
         columns = {col[1] for col in store.db.execute("PRAGMA table_info(drafts)")}
         if "account_id" not in columns:
             return
+        draft_vis = ",d.visibility" if "visibility" in columns else ",NULL AS visibility"
         for row in store.all(
-            "SELECT d.id,d.text,d.status,d.updated_at,d.receipt,d.answer_check,c.comment_id "
+            "SELECT d.id,d.text,d.status,d.updated_at,d.receipt,d.answer_check" + draft_vis + ",c.comment_id "
             "FROM drafts d JOIN comments c ON c.id=d.comment_id WHERE d.account_id=? AND d.character_id=? "
             "AND c.platform='bilibili' AND c.video_id=? AND c.thread_id=? "
             "AND d.status IN ('published','operator_replied')",
@@ -427,7 +430,8 @@ def _reply(row, target, account):
             return {"comment_id": identifier, "parent_comment_id": _id(target.get("parent")),
                     "author_uid": str(account), "author_name": identity.get("account_display_name"),
                     "text": row["text"], "round_id": row.get("round_id"),
-                    "created_at": publication_time(receipt, row["updated_at"]), "publication": "confirmed"}
+                    "created_at": publication_time(receipt, row["updated_at"]), "publication": "confirmed",
+                    "visibility": row.get("visibility")}
     if row["status"] == "operator_replied" and _id(observed.get("comment_id")) and str(observed.get("author_uid")) == str(account):
         return {"comment_id": observed["comment_id"], "parent_comment_id": _id(target.get("parent")),
                 "author_uid": str(account), "author_name": observed.get("author_name"), "text": observed.get("text"),

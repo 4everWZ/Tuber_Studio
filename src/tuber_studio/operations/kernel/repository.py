@@ -174,7 +174,8 @@ class BrowsingRepository:
                 id TEXT PRIMARY KEY,account_id TEXT,character_id TEXT,character_version INTEGER,
                 source_key TEXT,kind TEXT,round_id TEXT,epoch INTEGER,auto_authorized INTEGER,
                 status TEXT,text TEXT,reason TEXT,target TEXT,evidence TEXT,material_keys TEXT,
-                input_version TEXT,receipt TEXT,visibility TEXT,error TEXT,created_at REAL,updated_at REAL,
+                input_version TEXT,receipt TEXT,visibility TEXT,visibility_checked_at REAL,
+                visibility_detail TEXT,error TEXT,created_at REAL,updated_at REAL,
                 source_pipeline TEXT,
                 UNIQUE(account_id,character_id,source_key));
             CREATE INDEX IF NOT EXISTS browsing_intents_round ON browsing_intents(round_id,kind);
@@ -203,6 +204,11 @@ class BrowsingRepository:
             cols = {row[1] for row in store.db.execute(f"PRAGMA table_info({table})")}
             if "source_pipeline" not in cols:
                 store.execute(f"ALTER TABLE {table} ADD COLUMN source_pipeline TEXT")
+        intent_cols = {row[1] for row in store.db.execute("PRAGMA table_info(browsing_intents)")}
+        if "visibility_checked_at" not in intent_cols:
+            store.execute("ALTER TABLE browsing_intents ADD COLUMN visibility_checked_at REAL")
+        if "visibility_detail" not in intent_cols:
+            store.execute("ALTER TABLE browsing_intents ADD COLUMN visibility_detail TEXT")
         progress_cols = {row[1] for row in store.db.execute("PRAGMA table_info(browsing_video_progress)")}
         if "main_decision" not in progress_cols:
             store.execute("ALTER TABLE browsing_video_progress ADD COLUMN main_decision TEXT")
@@ -252,6 +258,7 @@ class BrowsingRepository:
             "evidence",
             "material_keys",
             "receipt",
+            "visibility_detail",
         ):
             if row.get(field) is not None:
                 row[field] = json.loads(row[field])

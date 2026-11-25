@@ -4,6 +4,13 @@ import { humanizeStatus } from "@/shared/lib/formatters";
 import type { ParsedRoute } from "@/shell/navigation";
 import { OperationsWorkbench, type WorkbenchTab } from "./OperationsWorkbench";
 import styles from "./operations.module.css";
+import {
+  extractBrowsingIntentId,
+  formatVisibilityDetail,
+  getVisibilityMeta,
+  sentLinkLabel,
+  verifyIntentVisibility,
+} from "./visibility";
 import type {
   ActivityItem,
   ActivityResponse,
@@ -57,6 +64,7 @@ export function AutomationRecordsPage({ route }: { route: ParsedRoute }) {
   const [activityPages, setActivityPages] = useState(1);
   const [activityError, setActivityError] = useState("");
   const [openEvents, setOpenEvents] = useState<Set<string>>(() => new Set());
+  const [recheckingIds, setRecheckingIds] = useState<Set<string>>(() => new Set());
 
   const prevRoundRef = useRef<string | null | undefined>(undefined);
   const activeActivityRoundRef = useRef<string | undefined>(undefined);
@@ -222,12 +230,24 @@ export function AutomationRecordsPage({ route }: { route: ParsedRoute }) {
               ].filter(Boolean);
               const body = item.account_reply_text || item.confirmed_reply_text || item.text;
               const sourceLink = item.source_href || item.href;
+              const visMeta =
+                item.kind === "comment"
+                  ? getVisibilityMeta(item.visibility) ||
+                    (item.sent_href ? getVisibilityMeta("not_checked") : null)
+                  : null;
+              const visDetailText =
+                item.kind === "comment"
+                  ? formatVisibilityDetail(item.visibility_detail, item.visibility_checked_at)
+                  : "";
+              const verifyIntentId = item.kind === "comment" ? extractBrowsingIntentId(item) : null;
+              const isRechecking = Boolean(verifyIntentId && recheckingIds.has(verifyIntentId));
 
               return (
                 <article key={item.id} className={styles.activityRow}>
                   <div>
                     <strong>
                       {item.title} · {resultLabel}
+                      {visMeta ? ` · ${visMeta.label}` : ""}
                     </strong>
                     {ownership.length > 0 && <p>{ownership.join(" · ")}</p>}
                     {item.source_text && <blockquote>{item.source_text}</blockquote>}
@@ -245,14 +265,36 @@ export function AutomationRecordsPage({ route }: { route: ParsedRoute }) {
                       {item.sent_href && (
                         <a
                           href={item.sent_href}
+                          data-sent-link-visibility={item.visibility || "not_checked"}
                           target={item.sent_href.startsWith("https://") ? "_blank" : undefined}
                           rel={item.sent_href.startsWith("https://") ? "noreferrer" : undefined}
                         >
-                          打开已确认回复
+                          {sentLinkLabel(item.visibility)}
                         </a>
                       )}
+                      {verifyIntentId && (
+                        <button
+                          type="button"
+                          disabled={isRechecking}
+                          onClick={async () => {
+                            setRecheckingIds((prev) => new Set(prev).add(verifyIntentId));
+                            try {
+                              await verifyIntentVisibility(verifyIntentId);
+                              await loadRoundActivity(activeActivityRoundRef.current, activityPage);
+                            } finally {
+                              setRecheckingIds((prev) => {
+                                const next = new Set(prev);
+                                next.delete(verifyIntentId);
+                                return next;
+                              });
+                            }
+                          }}
+                        >
+                          {isRechecking ? "复查中…" : "复查可见性"}
+                        </button>
+                      )}
                     </div>
-                    {(item.reason || item.error) && (
+                    {(item.reason || item.error || visMeta) && (
                       <details
                         data-event={item.id}
                         open={openEvents.has(item.id)}
@@ -268,6 +310,12 @@ export function AutomationRecordsPage({ route }: { route: ParsedRoute }) {
                         }}
                       >
                         <summary>处理详情</summary>
+                        {visMeta && (
+                          <p className={visMeta.isIssue ? "error-text" : "hint"}>
+                            平台可见性：{visMeta.label}
+                            {visDetailText ? ` · ${visDetailText}` : ""}
+                          </p>
+                        )}
                         {item.reason && <p>{item.reason}</p>}
                         {item.error && <p>{item.error}</p>}
                       </details>

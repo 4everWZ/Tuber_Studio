@@ -4,6 +4,13 @@ import { errorMessage, safeMessage } from "@/shared/lib/errors";
 import { humanizeStatus } from "@/shared/lib/formatters";
 import { contactLabel, contactReason, contactStatus } from "./messageLabels";
 import styles from "./operations.module.css";
+import {
+  extractBrowsingIntentId,
+  formatVisibilityDetail,
+  getVisibilityMeta,
+  sentLinkLabel,
+  verifyIntentVisibility,
+} from "./visibility";
 import type {
   ActivityItem,
   ActivityKindFilter,
@@ -113,6 +120,9 @@ function buildCountsText(
             `待审核 ${counts.pending ?? 0}`,
           ];
 
+  if ((counts.visibility_issues ?? 0) > 0) {
+    parts.push(`可见异常 ${counts.visibility_issues}`);
+  }
   if ((counts.failed ?? 0) > 0) {
     parts.push(`异常 ${counts.failed}`);
   }
@@ -141,6 +151,7 @@ export function OperationsActivityFeed({
   const [feedback, setFeedback] = useState("正在读取活动记录…");
   const [loading, setLoading] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
+  const [recheckingIds, setRecheckingIds] = useState<Set<string>>(() => new Set());
 
   const requestSeqRef = useRef(0);
   const displayedQueryRef = useRef("");
@@ -231,6 +242,29 @@ export function OperationsActivityFeed({
   useEffect(() => {
     void loadActivity(page, kind, sourceFilter, commentFilter, day, roundId);
   }, [page, kind, sourceFilter, commentFilter, day, roundId, refreshTick, loadActivity]);
+
+  const handleRecheckVisibility = useCallback(
+    async (intentId: string) => {
+      setRecheckingIds((prev) => {
+        const next = new Set(prev);
+        next.add(intentId);
+        return next;
+      });
+      try {
+        await verifyIntentVisibility(intentId);
+        await loadActivity(page, kind, sourceFilter, commentFilter, day, roundId);
+      } catch (err) {
+        setFeedback(`可见性复查失败：${errorMessage(err)}`);
+      } finally {
+        setRecheckingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(intentId);
+          return next;
+        });
+      }
+    },
+    [page, kind, sourceFilter, commentFilter, day, roundId, loadActivity]
+  );
 
   const totalItems = data?.total ?? 0;
   const totalPages = data?.pages || Math.ceil(totalItems / PAGE_SIZE) || 1;
@@ -486,6 +520,17 @@ export function OperationsActivityFeed({
                   : "正文未保留");
 
             const isDetailsOpen = expandedKeys.has(rowKey);
+            const visMeta =
+              itemKind === "comment"
+                ? getVisibilityMeta(item.visibility) ||
+                  (item.sent_href ? getVisibilityMeta("not_checked") : null)
+                : null;
+            const visDetailText =
+              itemKind === "comment"
+                ? formatVisibilityDetail(item.visibility_detail, item.visibility_checked_at)
+                : "";
+            const verifyIntentId = itemKind === "comment" ? extractBrowsingIntentId(item) : null;
+            const isRechecking = Boolean(verifyIntentId && recheckingIds.has(verifyIntentId));
 
             return (
               <article
@@ -519,6 +564,15 @@ export function OperationsActivityFeed({
                     )}
                     {itemKind === "comment" && <span className="badge">{commentTypeBadge}</span>}
                     <span className="badge">{statusText}</span>
+                    {visMeta && (
+                      <span
+                        className={`badge ${visMeta.badgeClass}`.trim()}
+                        data-visibility-badge={visMeta.code}
+                        data-visibility-tone={visMeta.tone}
+                      >
+                        {visMeta.label}
+                      </span>
+                    )}
                   </span>
                 </div>
 
@@ -536,6 +590,7 @@ export function OperationsActivityFeed({
                       {kind === "videos" &&
                         (item.replies || []).map((reply, idx) => {
                           const outcome = STATUS_LABELS[reply.status] || reply.status;
+                          const replyVis = getVisibilityMeta(reply.visibility);
                           const target =
                             reply.recipient_name ||
                             (reply.kind === "top_level" ? "视频评论区" : "原评论作者");
@@ -543,6 +598,7 @@ export function OperationsActivityFeed({
                             <div key={reply.id || idx} className={styles.replyRow}>
                               <span className="hint">
                                 回复 {target} · {outcome}
+                                {replyVis ? ` · ${replyVis.label}` : ""}
                               </span>
                               <p>{reply.text || "正文未保留"}</p>
                             </div>
@@ -576,11 +632,26 @@ export function OperationsActivityFeed({
                               <a
                                 href={item.sent_href}
                                 className="win-link-btn"
+                                data-sent-link-visibility={item.visibility || "not_checked"}
                                 target="_blank"
                                 rel="noreferrer"
                               >
-                                已确认回复
+                                {sentLinkLabel(item.visibility)}
                               </a>
+                            </>
+                          )}
+                          {verifyIntentId && (
+                            <>
+                              {" "}
+                              <button
+                                type="button"
+                                className="win-link-btn"
+                                data-activity-control="recheck-visibility"
+                                disabled={isRechecking}
+                                onClick={() => void handleRecheckVisibility(verifyIntentId)}
+                              >
+                                {isRechecking ? "复查中…" : "复查可见性"}
+                              </button>
                             </>
                           )}
                         </>
@@ -611,6 +682,12 @@ export function OperationsActivityFeed({
                       ) : (
                         <span>{label}</span>
                       )}
+                    </p>
+                  )}
+                  {visMeta && (
+                    <p className={visMeta.isIssue ? "error-text" : "hint"} data-visibility-detail="">
+                      平台可见性：{visMeta.label}
+                      {visDetailText ? ` · ${safeMessage(visDetailText)}` : ""}
                     </p>
                   )}
                   {reasons && <p>{safeMessage(reasons)}</p>}

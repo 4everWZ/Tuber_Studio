@@ -281,7 +281,15 @@ def test_comment_result_filter_runs_before_pagination_and_uses_operation_day(cha
     result = activity(channels, day="2026-11-08", kind="comments", comment_filter="replied", page_size=1)
     assert result["comment_filter"] == "replied"
     assert result["total"] == result["pages"] == 3
-    assert result["counts"] == {"total": 3, "sent": 2, "sent_top_level": 1, "sent_replies": 1, "pending": 0, "failed": 0}
+    assert result["counts"] == {
+        "total": 3,
+        "sent": 2,
+        "sent_top_level": 1,
+        "sent_replies": 1,
+        "pending": 0,
+        "failed": 0,
+        "visibility_issues": 0,
+    }
     assert result["items"][0]["source_href"].endswith("#reply99")
     page_three = activity(channels, day="2026-11-08", kind="comments", comment_filter="replied", page=3, page_size=1)
     assert page_three["items"][0]["comment_kind"] == "top_level"
@@ -310,3 +318,34 @@ def test_activity_merges_repeated_observations_of_same_reply_before_pagination(c
     assert result["counts"]["sent"] == 0
     second = activity(channels, day="2026-11-07", kind="comments", comment_filter="replied", page_size=1, page=2)
     assert {result["items"][0]["source_comment_id"], second["items"][0]["source_comment_id"]} == {"601", "701"}
+
+
+def test_activity_exposes_comment_visibility_and_counts_visibility_issues(channels):
+    at = stamp("2026-11-08T10:00:00+08:00")
+    row = round_row(channels)
+    reply(channels, row, "vis-ok", at, kind="top_level")
+    reply(channels, row, "vis-self", at + 1, kind="reply_public")
+    reply(channels, row, "vis-gone", at + 2, kind="reply_public")
+    channels.store.execute(
+        "UPDATE browsing_intents SET visibility='public_visible',visibility_checked_at=?,visibility_detail=? WHERE id='vis-ok'",
+        (at + 10, json.dumps({"status": "public_visible", "auth_visible": True, "anon_visible": True})),
+    )
+    channels.store.execute(
+        "UPDATE browsing_intents SET visibility='self_only',visibility_checked_at=?,visibility_detail=? WHERE id='vis-self'",
+        (at + 11, json.dumps({"status": "self_only", "auth_visible": True, "anon_visible": False})),
+    )
+    channels.store.execute(
+        "UPDATE browsing_intents SET visibility='shadow_deleted',visibility_checked_at=?,visibility_detail=? WHERE id='vis-gone'",
+        (at + 12, json.dumps({"status": "shadow_deleted", "auth_visible": False, "anon_visible": False})),
+    )
+    comments = activity(channels, day="2026-11-08", kind="comments", comment_filter="all")
+    by_id = {item["id"]: item for item in comments["items"]}
+    assert by_id["comment/browsing/vis-ok"]["visibility"] == "public_visible"
+    assert by_id["comment/browsing/vis-ok"]["intent_id"] == "vis-ok"
+    assert by_id["comment/browsing/vis-self"]["visibility"] == "self_only"
+    assert by_id["comment/browsing/vis-self"]["visibility_detail"]["anon_visible"] is False
+    assert by_id["comment/browsing/vis-gone"]["visibility"] == "shadow_deleted"
+    assert comments["counts"]["visibility_issues"] == 2
+    videos = activity(channels, day="2026-11-08", kind="videos")
+    reply_vis = {item["id"]: item["visibility"] for item in videos["items"][0]["replies"]}
+    assert reply_vis == {"vis-ok": "public_visible", "vis-self": "self_only", "vis-gone": "shadow_deleted"}

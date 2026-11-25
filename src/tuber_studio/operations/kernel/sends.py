@@ -10,12 +10,18 @@ import httpx
 
 from ...core.errors import PlatformRejected, SendLimitReached, UnknownPublication
 from ...core.models import content_hash
+from ...core.store import dump
 from ...infra.inference.providers import public_error
 from ...infra.platforms.bilibili.client import BilibiliAccountExpired
 from .control import COMMENT_WRITE_FILTER, REACTION_CHANNELS
 from .quotas import DailyReplyLimitReached
 
 current_send = ContextVar("current_operation_send", default=None)
+
+VISIBILITY_RISK_THRESHOLD = 2
+VISIBILITY_RISK_COOLDOWN_SECONDS = 1800
+VISIBILITY_INVISIBLE_STATES = frozenset({"self_only", "shadow_deleted", "not_visible"})
+VISIBILITY_PUBLIC_STATES = frozenset({"public_visible", "visible"})
 
 
 class ReconciliationPending(SendLimitReached):
@@ -105,6 +111,106 @@ class OperationSends:
             return float(value or 0)
         except (TypeError, ValueError):
             return 0.0
+
+    def visibility_risk_status(self, account, *, now=None):
+        if not account:
+            return None
+        current = time.time() if now is None else now
+        saved = self.store.get(f"operation_visibility_risk:{account}")
+        if not isinstance(saved, dict):
+            return None
+        streak = int(saved.get("streak") or 0)
+        cooldown_until = saved.get("cooldown_until")
+        try:
+            cooldown_until = float(cooldown_until) if cooldown_until is not None else None
+        except (TypeError, ValueError):
+            cooldown_until = None
+        cooldown_active = bool(cooldown_until and cooldown_until > current)
+        downgraded = bool(saved.get("downgraded", False))
+        if streak <= 0 and not cooldown_active and not downgraded:
+            return None
+        return {
+            "account_id": str(account),
+            "streak": streak,
+            "threshold": int(saved.get("threshold") or VISIBILITY_RISK_THRESHOLD),
+            "active": cooldown_active or streak >= VISIBILITY_RISK_THRESHOLD,
+            "cooldown_until": cooldown_until if cooldown_active else None,
+            "downgraded": downgraded,
+            "last_status": saved.get("last_status"),
+            "last_intent_id": saved.get("last_intent_id"),
+            "last_bvid": saved.get("last_bvid"),
+            "reason": saved.get("reason") or "",
+            "updated_at": saved.get("updated_at"),
+        }
+
+    def record_visibility_outcome(
+        self, account, status, *, intent_id=None, bvid=None, detail=None, now=None
+    ):
+        if not account:
+            return None
+        current = time.time() if now is None else now
+        account = str(account)
+        key = f"operation_visibility_risk:{account}"
+        if status in VISIBILITY_PUBLIC_STATES:
+            if self.store.get(key):
+                self.store.set(key, None)
+            return None
+        if status not in VISIBILITY_INVISIBLE_STATES:
+            return self.visibility_risk_status(account, now=current)
+        prev = self.store.get(key) or {}
+        if not isinstance(prev, dict):
+            prev = {}
+        recent_ids = list(prev.get("recent_intent_ids") or [])
+        already_counted = bool(intent_id and str(intent_id) in recent_ids)
+        streak = int(prev.get("streak") or 0)
+        if not already_counted:
+            streak += 1
+            if intent_id:
+                recent_ids.append(str(intent_id))
+        triggered = streak >= VISIBILITY_RISK_THRESHOLD
+        downgraded = bool(prev.get("downgraded", False))
+        cooldown_until = prev.get("cooldown_until")
+        if triggered:
+            due = max(self.comments_cooldown_until(account), current + VISIBILITY_RISK_COOLDOWN_SECONDS)
+            self.store.set(f"operation_comments_resume:{account}", due)
+            cooldown_until = due
+            browsing_policy = self.store.get("browsing_policy") or {}
+            if isinstance(browsing_policy, dict) and browsing_policy.get("auto_downgrade_on_error", True):
+                if browsing_policy.get("top_level_auto_publish") or browsing_policy.get("reply_auto_publish"):
+                    updated_policy = browsing_policy | {
+                        "top_level_auto_publish": False,
+                        "reply_auto_publish": False,
+                    }
+                    self.store.set("browsing_policy", updated_policy)
+                    downgraded = True
+            self.changed.set()
+        status_label = {
+            "self_only": "仅自己可见",
+            "shadow_deleted": "疑似被吞",
+            "not_visible": "平台隐藏",
+        }.get(status, status)
+        reason = (
+            f"连续 {streak} 条评论未公开可见（最近：{status_label}），已暂停评论发送 30 分钟"
+            + ("并降级为人工审核" if downgraded else "")
+            if triggered
+            else f"检测到评论未公开可见（{status_label}，连续 {streak}/{VISIBILITY_RISK_THRESHOLD} 次）"
+        )
+        state = {
+            "account_id": account,
+            "streak": streak,
+            "threshold": VISIBILITY_RISK_THRESHOLD,
+            "active": triggered or (bool(cooldown_until) and float(cooldown_until) > current),
+            "cooldown_until": cooldown_until,
+            "downgraded": downgraded,
+            "last_status": status,
+            "last_intent_id": str(intent_id) if intent_id is not None else prev.get("last_intent_id"),
+            "last_bvid": bvid or prev.get("last_bvid"),
+            "recent_intent_ids": recent_ids[-10:],
+            "reason": reason,
+            "updated_at": current,
+        }
+        self.store.set(key, state)
+        return self.visibility_risk_status(account, now=current)
 
     def direct_reserve_block(
         self, account, *, pending_count=0, retry_seconds=60, now=None, writes=None,
@@ -374,7 +480,11 @@ class OperationSends:
                                 self._defer(item, error, now + 60, "login")
                             except PlatformRejected as error:
                                 if error.wait_for == "rate_limit":
-                                    cooldown = 900 if getattr(error, "code", None) == 12014 else 60
+                                    cooldown = (
+                                        900
+                                        if getattr(error, "code", None) in {12014, 12015, -352, -412}
+                                        else 60
+                                    )
                                     due = now + cooldown
                                     if item["reaction"]:
                                         due = now + 60
@@ -430,3 +540,99 @@ class OperationSends:
             self.worker.cancel()
             await asyncio.gather(self.worker, return_exceptions=True)
             self.worker = None
+
+
+def schedule_intent_visibility_recheck(publisher, identity: str, *, delay: float | None = None):
+    wait = float(publisher.visibility_recheck_delay if delay is None else delay)
+    existing = publisher._visibility_tasks.get(identity)
+    if existing and not existing.done():
+        existing.cancel()
+
+    async def _run():
+        try:
+            if wait > 0:
+                await asyncio.sleep(wait)
+            if getattr(publisher.browsing, "closed", False):
+                return
+            await publisher.verify_intent_visibility(identity)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            now = time.time()
+            detail = {"status": "check_failed", "checked_at": now, "reason": public_error(error)}
+            try:
+                publisher.browsing.store.execute(
+                    "UPDATE browsing_intents SET visibility='check_failed',visibility_checked_at=?,visibility_detail=? WHERE id=?",
+                    (now, dump(detail), identity),
+                )
+            except Exception:
+                pass
+
+    task = asyncio.create_task(_run())
+    publisher._visibility_tasks[identity] = task
+    task.add_done_callback(
+        lambda done: publisher._visibility_tasks.pop(identity, None)
+        if publisher._visibility_tasks.get(identity) is done
+        else None
+    )
+    return task
+
+
+async def verify_intent_visibility_now(publisher, identity: str, *, comment_kinds=("top_level", "reply_public")):
+    row = publisher.browsing.repo.decode(
+        publisher.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
+    )
+    if not row:
+        raise ValueError("候选不存在")
+    if row["status"] != "published":
+        raise ValueError("仅已提交成功的评论支持可见性复查")
+    if row["kind"] not in comment_kinds:
+        return row
+    receipt = row.get("receipt")
+    if not isinstance(receipt, dict) or not receipt.get("rpid"):
+        raise ValueError("评论缺少有效回执 rpid，无法复查可见性")
+    verifier = getattr(publisher.browsing.adapter, "verify_publication", None)
+    if not callable(verifier):
+        raise ValueError("当前平台适配器不支持可见性复查")
+    try:
+        result = await verifier(row["target"], receipt)
+        if not isinstance(result, dict):
+            result = {"status": "check_failed", "checked_at": time.time(), "reason": "可见性返回格式无效"}
+    except Exception as error:
+        result = {"status": "check_failed", "checked_at": time.time(), "reason": public_error(error)}
+    status = str(result.get("status") or "check_failed")
+    checked_at = float(result.get("checked_at") or time.time())
+    publisher.browsing.store.execute(
+        "UPDATE browsing_intents SET visibility=?,visibility_checked_at=?,visibility_detail=? WHERE id=?",
+        (status, checked_at, dump(result), identity),
+    )
+    sends = getattr(publisher.browsing, "sends", None)
+    if sends is not None and hasattr(sends, "record_visibility_outcome"):
+        sends.record_visibility_outcome(
+            row["account_id"],
+            status,
+            intent_id=identity,
+            bvid=(row.get("target") or {}).get("bvid"),
+            detail=result,
+            now=checked_at,
+        )
+    return publisher.browsing.repo.decode(
+        publisher.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
+    )
+
+
+async def recheck_pending_intent_visibility(publisher, *, limit: int = 10):
+    rows = publisher.browsing.store.all(
+        "SELECT id FROM browsing_intents WHERE status='published' AND kind IN ('top_level','reply_public') "
+        "AND visibility='pending_recheck' ORDER BY updated_at ASC LIMIT ?",
+        (limit,),
+    )
+    results = []
+    for row in rows:
+        if getattr(publisher.browsing, "closed", False):
+            break
+        try:
+            results.append(await publisher.verify_intent_visibility(row["id"]))
+        except ValueError:
+            continue
+    return results

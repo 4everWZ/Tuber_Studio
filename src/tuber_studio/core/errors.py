@@ -28,7 +28,7 @@ class PlatformRejected(ValueError):
 def platform_recovery_condition(code):
     if code in {-101, -111}:
         return "login"
-    if code in {-509, 12014}:
+    if code in {-509, -412, -352, 12014, 12015}:
         return "rate_limit"
     return None
 

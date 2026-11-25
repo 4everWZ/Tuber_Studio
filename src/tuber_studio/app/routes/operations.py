@@ -145,7 +145,10 @@ def register_browsing_routes(app, browsing, require_admin, *, messages=None) -> 
 
     @app.get(prefix + "/automation", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
     async def automation_status():
-        return browsing.status()
+        data = browsing.status()
+        account_id = data.get("account_id")
+        data["visibility_risk"] = browsing.sends.visibility_risk_status(account_id)
+        return data
 
     @app.put(prefix + "/automation/settings", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
     async def automation_settings(data: dict = Body(...)):
@@ -385,6 +388,15 @@ def register_browsing_routes(app, browsing, require_admin, *, messages=None) -> 
     @app.post(prefix + "/intents/{identity}/publish", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
     async def automation_intent_publish(identity: str):
         return await browsing.publish(identity)
+
+    @app.post(
+        prefix + "/intents/{identity}/verify-visibility",
+        dependencies=deps,
+        responses=ERROR_RESPONSES,
+        tags=["operations"],
+    )
+    async def automation_intent_verify_visibility(identity: str):
+        return await browsing.publication.verify_intent_visibility(identity)
 
 
 def register_operations_routes(

@@ -204,7 +204,7 @@ class BackgroundDiscovery:
                 "href": "#accounts",
             }
         gate = getattr(service, "read_gate", None)
-        read_gate_status = gate.status().get("discovery", {}) if gate is not None else {}
+        read_gate_status = gate.status(service.account or control["account_id"] or "") if gate is not None else {}
         return {
             "enabled": self.enabled,
             "configured_enabled": bool(service.policy().get("discovery_enabled", False)),
@@ -254,9 +254,17 @@ class BackgroundDiscovery:
         scope = self.history_scope()
         if recent:
             return {"activity": self.activity(scope), "scope": scope}
+        intent_cols = {col[1] for col in store.db.execute("PRAGMA table_info(browsing_intents)")}
+        vis_cols = (
+            (",i.visibility" if "visibility" in intent_cols else ",NULL AS visibility")
+            + (",i.visibility_checked_at" if "visibility_checked_at" in intent_cols else ",NULL AS visibility_checked_at")
+            + (",i.visibility_detail" if "visibility_detail" in intent_cols else ",NULL AS visibility_detail")
+        )
         sent = store.all(
-            """SELECT i.id,i.kind,i.updated_at,i.text,json_extract(i.receipt,'$.rpid') AS receipt_id,
-                      json_extract(i.target,'$.bvid') AS bvid
+            "SELECT i.id,i.kind,i.updated_at,i.text,json_extract(i.receipt,'$.rpid') AS receipt_id,"
+            "json_extract(i.target,'$.bvid') AS bvid"
+            + vis_cols
+            + """
                FROM browsing_intents i JOIN browsing_rounds r ON r.id=i.round_id
                WHERE (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1
                  OR EXISTS(SELECT 1 FROM browsing_tasks q WHERE q.round_id=i.round_id
@@ -265,6 +273,12 @@ class BackgroundDiscovery:
                ORDER BY i.updated_at DESC LIMIT 30""",
             scope,
         )
+        for item in sent:
+            if isinstance(item.get("visibility_detail"), str):
+                try:
+                    item["visibility_detail"] = json.loads(item["visibility_detail"])
+                except ValueError:
+                    item["visibility_detail"] = None
         issues = store.all(
             """SELECT t.id,t.round_id,t.bvid,t.error,t.updated_at,t.status
                FROM browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id
@@ -290,9 +304,9 @@ class BackgroundDiscovery:
             issues.insert(
                 0,
                 {
-                    "error": self.attention["message"],
-                    "href": self.attention["href"],
-                    "updated_at": self.attention["at"],
+                    "error": self.attention.get("message") or self.attention.get("summary") or "自动探索已暂停",
+                    "href": self.attention.get("href") or "#automation",
+                    "updated_at": self.attention.get("at") or time.time(),
                     "status": "blocked",
                 },
             )

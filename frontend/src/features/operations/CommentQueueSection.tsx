@@ -14,6 +14,11 @@ import { commentFinished } from "./commentState";
 import { createReplyHandoff } from "./replyHandoff";
 import { VideoContextTreeCard, buildVideoContextTree } from "./VideoContextTreeCard";
 import styles from "./operations.module.css";
+import {
+  formatVisibilityDetail,
+  getVisibilityMeta,
+  verifyIntentVisibility,
+} from "./visibility";
 import type {
   ActivityItem,
   BrowsingIntent,
@@ -78,14 +83,6 @@ const QUEUE_STATUS_LABELS: Record<string, string> = {
   source_changed: "原楼已失效或变化",
   unverified: "原楼暂时无法核验",
   ready: "可排队",
-};
-
-const VISIBILITY_LABELS: Record<string, string> = {
-  visible: "已查到公开记录",
-  not_visible: "平台标记不可见",
-  not_found: "暂未查到",
-  check_failed: "可见性检查失败",
-  not_checked: "尚未检查",
 };
 
 export function queueViewForStatus(status: string | null | undefined): QueueViewName {
@@ -1922,11 +1919,58 @@ export function CommentQueueSection({
                     </details>
                   )}
 
-                  {detailRow.visibility && detailStatus === "published" && (
-                    <p className="hint">
-                      平台可见性 · {VISIBILITY_LABELS[detailRow.visibility] || detailRow.visibility}
-                    </p>
-                  )}
+                  {detailStatus === "published" &&
+                    (() => {
+                      const visMeta = getVisibilityMeta(detailRow.visibility || "not_checked");
+                      const visDetail = formatVisibilityDetail(
+                        detailRow.visibility_detail,
+                        detailRow.visibility_checked_at
+                      );
+                      return visMeta ? (
+                        <div className="actions" style={{ marginTop: 8 }}>
+                          <span
+                            className={`badge ${visMeta.badgeClass}`.trim()}
+                            data-visibility-badge={visMeta.code}
+                            data-visibility-tone={visMeta.tone}
+                          >
+                            平台可见性 · {visMeta.label}
+                          </span>
+                          {visDetail && (
+                            <span className={visMeta.isIssue ? "error-text" : "hint"}>
+                              {safeMessage(visDetail)}
+                            </span>
+                          )}
+                          {detailRow.channel === "browsing" && (
+                            <button
+                              type="button"
+                              className="win-link-btn"
+                              data-queue-control="recheck-visibility"
+                              onClick={async () => {
+                                try {
+                                  const updated = await verifyIntentVisibility(detailRow.id);
+                                  setDetailRow((prev) =>
+                                    prev && prev.id === detailRow.id
+                                      ? {
+                                          ...prev,
+                                          visibility: updated.visibility ?? prev.visibility,
+                                          visibility_checked_at:
+                                            updated.visibility_checked_at ?? prev.visibility_checked_at,
+                                          visibility_detail:
+                                            updated.visibility_detail ?? prev.visibility_detail,
+                                        }
+                                      : prev
+                                  );
+                                } catch (err) {
+                                  setActionMessage(`可见性复查失败：${errorMessage(err)}`);
+                                }
+                              }}
+                            >
+                              复查可见性
+                            </button>
+                          )}
+                        </div>
+                      ) : null;
+                    })()}
                 </>
               );
             })()

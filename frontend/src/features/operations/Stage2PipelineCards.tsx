@@ -108,6 +108,12 @@ export function Stage2PipelineCards({
     0
   );
   const hasUncertain = status?.frozen_reason === "reconciliation_pending" || uncertainCount > 0;
+  const commentCooldownUntil = status?.comment_cooldown_until ?? null;
+  const commentCooldownActive = Boolean(
+    commentCooldownUntil && commentCooldownUntil > Date.now() / 1000
+  );
+  const visibilityRisk = status?.visibility_risk ?? null;
+  const visibilityRiskActive = Boolean(visibilityRisk && (visibilityRisk.active || visibilityRisk.streak > 0));
   const authExpired =
     account?.state === "expired" ||
     (status?.blockers || []).some((b) => {
@@ -266,6 +272,29 @@ export function Stage2PipelineCards({
 
   return (
     <section aria-label="双管道独立控制台">
+      {(visibilityRiskActive || commentCooldownActive) && (
+        <div
+          className="feature-note"
+          role="alert"
+          data-visibility-risk-alert={visibilityRiskActive ? "active" : undefined}
+          data-comment-cooldown={commentCooldownActive ? "active" : undefined}
+          style={{ marginBottom: 12 }}
+        >
+          <strong>
+            {visibilityRisk?.active
+              ? "发评风控保护已触发"
+              : commentCooldownActive
+                ? "评论发送冷却中"
+                : "发评可见性异常观察中"}
+          </strong>
+          {" · "}
+          {visibilityRisk?.reason ? safeMessage(visibilityRisk.reason) : "评论通道因平台频控或风控暂缓提交"}
+          {commentCooldownActive && commentCooldownUntil
+            ? `（预计 ${new Date(commentCooldownUntil * 1000).toLocaleString("zh-CN")} 恢复评论发送）`
+            : ""}
+          {visibilityRisk?.downgraded ? " · 已自动降级为人工审核模式" : ""}
+        </div>
+      )}
       <div className={styles.pipelineGrid}>
         {/* Card 1: Inbox Pipeline */}
         <article
@@ -325,6 +354,11 @@ export function Stage2PipelineCards({
             {hasUncertain && (
               <StatusPill label={`待核对冻结 (${uncertainCount})`} tone="bad" />
             )}
+            {visibilityRisk?.active ? (
+              <StatusPill label="发评风控暂停" tone="bad" title={safeMessage(visibilityRisk.reason)} />
+            ) : commentCooldownActive ? (
+              <StatusPill label="评论冷却中" tone="amber" />
+            ) : null}
           </div>
 
           <dl className={styles.countsGrid} aria-label="收件箱来信统计">
@@ -486,6 +520,11 @@ export function Stage2PipelineCards({
             )}
             {authExpired && <StatusPill label="401 登录失效" tone="bad" />}
             {hasUncertain && <StatusPill label="待核对冻结" tone="bad" />}
+            {visibilityRisk?.active ? (
+              <StatusPill label="发评风控暂停" tone="bad" title={safeMessage(visibilityRisk.reason)} />
+            ) : commentCooldownActive ? (
+              <StatusPill label="评论冷却中" tone="amber" />
+            ) : null}
           </div>
 
           {discoveryDeferred && (

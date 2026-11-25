@@ -1,5 +1,9 @@
 import type { ContinuationRecord } from "@/shared";
-import type { MessagePolicyState, PipelineSource } from "@/shared/operations/types";
+import type {
+  AutomationStatus as SharedAutomationStatus,
+  MessagePolicyState,
+  PipelineSource,
+} from "@/shared/operations/types";
 
 export type {
   PipelineSource,
@@ -15,7 +19,6 @@ export type {
   AutomationBacklog,
   OperationClaim,
   AutomationPolicySettings,
-  AutomationStatus,
   QuotaSnapshot,
   InboxEventItem,
   InboxRecordsResponse,
@@ -23,6 +26,41 @@ export type {
   MessagePolicyState,
   DynamicPolicy,
 } from "@/shared/operations/types";
+
+export interface VisibilityDetail {
+  status?: string;
+  checked_at?: number | null;
+  auth_visible?: boolean | null;
+  anon_visible?: boolean | null;
+  auth_found?: boolean | null;
+  anon_found?: boolean | null;
+  error_code?: number | string | null;
+  error_kind?: string | null;
+  reason?: string | null;
+  error?: string | null;
+  stage?: string | null;
+  delay_seconds?: number | null;
+  coverage?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+export interface VisibilityRiskStatus {
+  account_id?: string;
+  streak: number;
+  threshold: number;
+  active: boolean;
+  cooldown_until?: number | null;
+  downgraded?: boolean;
+  last_status?: string | null;
+  last_intent_id?: string | null;
+  last_bvid?: string | null;
+  reason?: string | null;
+  updated_at?: number | null;
+}
+
+export interface AutomationStatus extends SharedAutomationStatus {
+  visibility_risk?: VisibilityRiskStatus | null;
+}
 
 export type ActivitySourceFilter = "all" | PipelineSource;
 export type ActivityKindFilter = "all" | "videos" | "comments" | "messages" | "dynamics";
@@ -34,10 +72,14 @@ export interface ActivityVideoReply {
   recipient_name?: string;
   status: string;
   text?: string;
+  visibility?: string | null;
+  visibility_checked_at?: number | null;
+  visibility_detail?: VisibilityDetail | null;
 }
 
 export interface ActivityItem {
   id: string;
+  intent_id?: string | null;
   kind?: "video" | "comment" | "message" | "dynamic" | string;
   source_pipeline?: PipelineSource | string;
   source?: PipelineSource | string;
@@ -57,6 +99,9 @@ export interface ActivityItem {
   comment_kind?: "top_level" | "reply" | string | null;
   reply_kind?: "top_level" | "reply" | string | null;
   comment_outcome?: string | null;
+  visibility?: string | null;
+  visibility_checked_at?: number | null;
+  visibility_detail?: VisibilityDetail | null;
   direction?: string | null;
   contact_type?: string | null;
   outreach_status?: string | null;
@@ -120,6 +165,9 @@ export interface DiscoveryPublishedItem {
   bvid?: string;
   text?: string;
   receipt_id?: string | number | null;
+  visibility?: string | null;
+  visibility_checked_at?: number | null;
+  visibility_detail?: VisibilityDetail | null;
   updated_at: number;
 }
 
@@ -189,6 +237,9 @@ export interface BrowsingIntent {
   created_at?: number;
   updated_at?: number;
   receipt?: Record<string, unknown> | null;
+  visibility?: string | null;
+  visibility_checked_at?: number | null;
+  visibility_detail?: VisibilityDetail | null;
   target?: {
     bvid?: string;
     title?: string;
@@ -324,6 +375,8 @@ export interface QueueDetail extends QueueRow {
   unavailable_materials?: number;
   answer_check?: unknown;
   visibility?: string | null;
+  visibility_checked_at?: number | null;
+  visibility_detail?: VisibilityDetail | null;
   done?: number;
   total?: number;
   errors?: number;
