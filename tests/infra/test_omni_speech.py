@@ -91,6 +91,17 @@ async def test_failed_readback_is_not_cached_and_can_be_retried(settings, gatewa
         state["audio"] = good_audio
         actual = await service.synthesize_live("请开窗。", "whale_reference")
         assert len(calls) == 2 and actual.duration == 0.1
+
+        # Longer mixed Chinese-English line tolerates minor ASR homophone drift.
+        long_line = "写 Python 小工具最危险的时刻，就是它刚刚跑通。"
+        state["transcript"] = "写拍森小工具最危险的时刻，就是他刚刚跑通。"
+        long_ok = await service.synthesize_live(long_line, "whale_reference")
+        assert long_ok.duration == 0.1
+
+        # Unrelated long transcript still fails verification and is never cached.
+        state["transcript"] = "今天外面下着大雨大家记得带伞。"
+        with pytest.raises(ValueError, match="指定台词"):
+            await service.synthesize_live("另一句很长很长的台词测试一下。", "whale_reference")
     finally:
         await service.close()
 

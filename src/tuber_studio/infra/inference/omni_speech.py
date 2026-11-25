@@ -1,6 +1,7 @@
 """Studio-side sentence boundaries, verified transcription and playback WAV assembly."""
 import base64
 import binascii
+from difflib import SequenceMatcher
 import io
 import re
 import wave
@@ -17,6 +18,22 @@ def spoken_words(value):
     return re.findall(r"[A-Za-z0-9]+(?:[.,:][0-9]+)*|[^\s，。！？、；：‘’“”《》,.!?;:\"「」『』…]", value)
 
 
+def transcript_matches(expected: str, heard: str) -> bool:
+    """Verify ASR transcript against expected line, allowing minor homophone drift on long lines."""
+    exp = [w.lower() for w in spoken_words(expected)]
+    got = [w.lower() for w in spoken_words(heard)]
+    if not exp or not got:
+        return False
+    if exp == got:
+        return True
+    if len(exp) <= 4:
+        return False
+    ratio_len = len(got) / len(exp)
+    if not (0.60 <= ratio_len <= 1.40):
+        return False
+    return SequenceMatcher(None, exp, got).ratio() >= 0.65
+
+
 async def read_sentence(client, model, text, reference):
     payload = {"model": model, "input": text, "response_format": "wav", "reference_audio": reference}
     async with client.stream("POST", "audio/speech", json=payload) as response:
@@ -27,7 +44,7 @@ async def read_sentence(client, model, text, reference):
             heard = base64.b64decode(response.headers["X-Omni-Transcript"], validate=True).decode()
         except (KeyError, binascii.Error, UnicodeError):
             raise ValueError("Omni 未返回有效的音频转写") from None
-        if not spoken_words(text) or spoken_words(heard) != spoken_words(text):
+        if not transcript_matches(text, heard):
             raise ValueError("Omni 音频转写与指定台词不符")
         data = bytearray()
         async for chunk in response.aiter_bytes():
