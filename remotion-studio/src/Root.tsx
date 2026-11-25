@@ -4,24 +4,25 @@ import { AquaVideo } from "./AquaVideo";
 import type { AquaVideoProps } from "./types";
 
 const DEFAULT_PROPS: AquaVideoProps = {
-  title: "Aqua Code-as-Video Studio",
+  title: "Aqua 浅海手账工坊",
   fps: 30,
   width: 1920,
   height: 1080,
   totalFrames: 180,
-  includeAvatar: false,
+  includeAvatar: true,
+  bgmEnabled: true,
   scenes: [
     {
       scene_id: "demo_intro",
       template: "TitleCard",
-      heading: "Aqua 视频工坊演示",
+      heading: "本鲸的视频小桌准备就绪",
       start_frame: 0,
       duration_frames: 180,
       avatar_cue: "cheerful",
       visual_props: {
-        subtitle: "Remotion Code-as-Video 渲染引擎就绪",
-        bullets: ["音频驱动精准帧对齐", "六套结构化动效模板", "公开来源可追溯"],
-        citation_label: "Aqua Studio",
+        subtitle: "浅海手账 + 右下角小窗实时联动",
+        bullets: ["真实立绘动图", "B 站综艺花字", "轻量浅海 BGM"],
+        citation_label: "Aqua 浅海工坊",
       },
     },
   ],
@@ -29,10 +30,11 @@ const DEFAULT_PROPS: AquaVideoProps = {
     {
       line_id: "demo_l1",
       scene_id: "demo_intro",
-      text: "哈喽，我是 Aqua！Remotion 视频渲染引擎已经就绪啦。",
+      text: "本鲸的新杂谈桌支棱起来了，快丢个选题过来！",
       start_frame: 0,
       duration_frames: 180,
       avatar_cue: "cheerful",
+      emphasis: ["新杂谈桌", "选题"],
     },
   ],
 };

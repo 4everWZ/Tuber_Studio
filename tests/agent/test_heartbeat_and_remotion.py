@@ -401,7 +401,7 @@ def test_remotion_source_isolation_schema_and_alignment(settings, tmp_path):
                 }
             )
 
-        # Valid audio-first alignment with exact custom TTS WAV lengths.
+        # Valid audio-first alignment with exact custom TTS WAV lengths (2 scenes x 2 lines = 4.0s -> 120 frames).
         durations = [0.8, 1.2]
         idx = [0]
 
@@ -417,16 +417,29 @@ def test_remotion_source_isolation_schema_and_alignment(settings, tmp_path):
 
         project = await generate_remotion_project(skill, {"job_id": job_id, "tts_mode": "dry_run"})
         assert project["ok"] is True
-        # 0.8s * 30fps = 24 frames, 1.2s * 30fps = 36 frames -> 60 frames total!
-        assert project["total_frames"] == 60
-        assert project["total_duration_seconds"] == pytest.approx(2.0, abs=0.01)
+        # (0.8s + 1.2s)*2 = 4.0s speech + 2*0.45s line pause + 0.75s scene pause + 0.60s outro hold = 6.25s (~188 frames @ 30fps)
+        assert project["total_frames"] >= 185
+        assert project["total_duration_seconds"] == pytest.approx(188 / 30.0, abs=0.05)
 
         proj_dir = Path(project["project_dir"])
         assert (proj_dir / "subtitles.srt").is_file()
         assert (proj_dir / "manifest.json").is_file()
         assert (proj_dir / "avatar_cues.json").is_file()
+        assert (proj_dir / "public/audio/bgm.wav").is_file()
+        assert (proj_dir / "public/audio/transition.wav").is_file()
         props = json.loads((proj_dir / "props.json").read_text(encoding="utf-8"))
-        assert props["totalFrames"] == 60
+        assert props["totalFrames"] == project["total_frames"]
+        assert props["includeAvatar"] is True
+        assert props["bgmEnabled"] is True
+        # Assert pauses create non-zero breathing gaps between consecutive cues
+        assert props["cues"][1]["start_seconds"] - props["cues"][0]["end_seconds"] >= 0.40
+        assert props["cues"][2]["start_seconds"] - props["cues"][1]["end_seconds"] >= 0.70
+        # Assert expanded 2D Aqua GIF cast (base + story/motion GIFs) and non-duplicate scene stickers
+        assert {"idle", "talking", "hum", "meal", "tail", "token", "turn"} <= set(props["avatarAssets"])
+        assert (proj_dir / "public" / props["avatarAssets"]["meal"]["frames"][0]).is_file()
+        scene_memes = [s["visual_props"].get("meme_asset_id") for s in props["scenes"] if s["visual_props"].get("meme_asset_id")]
+        assert len(scene_memes) == len(set(scene_memes)) and len(props["memeAssets"]) >= 2
+        assert isinstance(props["cues"][0]["emphasis"], list) and len(props["cues"][0]["emphasis"]) >= 1
         assert "import { AbsoluteFill" in (proj_dir / "src/AquaVideo.tsx").read_text(encoding="utf-8")
         assert "Python 协程并发原理图解" not in (proj_dir / "src/AquaVideo.tsx").read_text(encoding="utf-8")
 
@@ -664,5 +677,38 @@ def test_remotion_planner_uses_operation_llm_without_provider_key_and_records_di
         lines, ok = _describe("plan_video_script", planned)
         assert ok is True
         assert any(f"#videos/{planned['job_id']}" in line for line in lines)
+
+        # Verify available_memes are injected into LLM planner packet.
+        user_packet = json.loads(llm_calls[0]["messages"][1]["content"])
+        assert len(user_packet["available_memes"]) >= 5
+        assert any(m["id"] == "motion-eat" for m in user_packet["available_memes"])
+
+    asyncio.run(scenario())
+
+
+def test_remotion_skill_registers_project_and_evicts_old_renders_with_media_cache(settings, tmp_path):
+    async def scenario():
+        app = create_app(settings, adapter=ControlledPlatform())
+        runtime = app.state.runtime
+        skill = runtime.remotion_skill
+        renders = skill.renders_root
+        old_dir = renders / "rem_old_idle"
+        old_dir.mkdir(parents=True, exist_ok=True)
+        old_mp4 = old_dir / "output.mp4"
+        old_mp4.write_bytes(b"0" * (65 * 1024 * 1024))
+        os.utime(old_mp4, (1, 1))
+
+        await runtime.cache.configure({"video_limit_mib": 64})
+        assert not old_dir.exists()
+
+        # Re-create an oversized old render dir (> 64 MiB limit when combined with new job), ensure generate_remotion_project keeps new active job & evicts old:
+        old_dir.mkdir(parents=True, exist_ok=True)
+        old_mp4.write_bytes(b"1" * (65 * 1024 * 1024))
+        os.utime(old_mp4, (1, 1))
+        planned = await plan_video_script(skill, {"topic": "缓存联动测试", "max_scenes": 2})
+        gen = await generate_remotion_project(skill, {"job_id": planned["job_id"], "tts_mode": "dry_run"})
+        assert gen["ok"] is True
+        assert Path(gen["project_dir"]).exists()
+        assert not old_dir.exists()
 
     asyncio.run(scenario())

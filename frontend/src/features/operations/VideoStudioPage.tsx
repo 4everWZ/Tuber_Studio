@@ -27,6 +27,7 @@ interface VideoLineSpec {
   text: string;
   avatar_cue?: string;
   highlight_code?: string | null;
+  emphasis?: string[];
 }
 
 interface VideoSceneSpec {
@@ -57,6 +58,7 @@ interface VideoScriptPlan {
   width: 1920 | 1280;
   height: 1080 | 720;
   include_avatar: boolean;
+  bgm_enabled?: boolean;
   scenes: VideoSceneSpec[];
   sources: VideoSourceRef[];
 }
@@ -237,7 +239,8 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
   const [resolution, setResolution] = useState<"1920x1080" | "1280x720">("1920x1080");
   const [maxScenes, setMaxScenes] = useState(4);
   const [ttsMode, setTtsMode] = useState<"omni_speech" | "dry_run">("omni_speech");
-  const [includeAvatar, setIncludeAvatar] = useState(false);
+  const [includeAvatar, setIncludeAvatar] = useState(true);
+  const [bgmEnabled, setBgmEnabled] = useState(true);
 
   // Action busy flags
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -381,6 +384,7 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
           style_note: styleNote.trim(),
           fps,
           include_avatar: includeAvatar,
+          bgm_enabled: bgmEnabled,
           max_scenes: maxScenes,
         },
       });
@@ -625,6 +629,9 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
               tone={policy?.publish_mode === "auto_publish" ? "amber" : "good"}
               label={policy?.publish_mode === "auto_publish" ? "自动投稿策略" : "人工预览审阅（安全默认）"}
             />
+            <a href="#cache-panel" className="win-link-btn">
+              媒体与资产缓存 →
+            </a>
             <button
               type="button"
               disabled={loading || busyAction !== null}
@@ -736,7 +743,15 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                 checked={includeAvatar}
                 onChange={(e) => setIncludeAvatar(e.target.checked)}
               />
-              <span className="hint">附带形象演出节拍</span>
+              <span className="hint">Aqua 右下角演出小窗</span>
+            </label>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={bgmEnabled}
+                onChange={(e) => setBgmEnabled(e.target.checked)}
+              />
+              <span className="hint">浅海 BGM 与转场音效</span>
             </label>
 
             <div className="actions" style={{ marginLeft: "auto" }}>
@@ -1177,6 +1192,9 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                             tone="blue"
                             label={TEMPLATE_LABELS[scene.template] || scene.template}
                           />
+                          {scene.visual_props?.meme_asset_id && (
+                            <StatusPill tone="amber" label={`表情: ${scene.visual_props.meme_asset_id}`} />
+                          )}
                           {scene.avatar_cue && <StatusPill tone="neutral" label={scene.avatar_cue} />}
                         </div>
                       </div>
@@ -1210,6 +1228,11 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                         {scene.lines.map((line, lIdx) => (
                           <blockquote key={line.line_id || lIdx} className="quoted-text" style={{ margin: "6px 0" }}>
                             {line.text}
+                            {line.emphasis && line.emphasis.length > 0 && (
+                              <span className="hint" style={{ marginLeft: 8 }}>
+                                （花字高亮：{line.emphasis.join(" / ")}）
+                              </span>
+                            )}
                           </blockquote>
                         ))}
                       </div>

@@ -36,6 +36,9 @@ class VideoPlanPatch(StrictModel):
     width: Literal[1920, 1280] | None = None
     height: Literal[1080, 720] | None = None
     include_avatar: bool | None = None
+    bgm_enabled: bool | None = None
+    line_pause_seconds: float | None = Field(default=None, ge=0.0, le=2.0)
+    scene_pause_seconds: float | None = Field(default=None, ge=0.0, le=3.0)
     scenes: list[dict[str, Any]] | None = None
     sources: list[dict[str, Any]] | None = None
 
@@ -72,6 +75,10 @@ class VideoPolicyPatch(StrictModel):
     default_fps: Literal[30, 60] | None = None
     default_width: Literal[1920, 1280] | None = None
     default_height: Literal[1080, 720] | None = None
+    default_include_avatar: bool | None = None
+    default_bgm_enabled: bool | None = None
+    default_line_pause_seconds: float | None = Field(default=None, ge=0.0, le=2.0)
+    default_scene_pause_seconds: float | None = Field(default=None, ge=0.0, le=3.0)
     max_render_concurrency: int | None = Field(default=None, ge=1, le=4)
     render_timeout_seconds: float | None = Field(default=None, ge=5.0, le=3600.0)
     upload_timeout_seconds: float | None = Field(default=None, ge=5.0, le=3600.0)

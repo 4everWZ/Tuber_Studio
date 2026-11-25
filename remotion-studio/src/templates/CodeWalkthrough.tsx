@@ -1,21 +1,30 @@
 import React from "react";
 import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
-import { CJK_FONT_STACK, MONO_FONT_STACK, type AquaCueProp, type AquaSceneProp } from "../types";
+import { AnimatedSticker } from "../components/AnimatedSticker";
+import { AQUA_THEME, CJK_FONT_STACK, MONO_FONT_STACK, type AquaCueProp, type AquaSceneProp, type VisualAssetEntry } from "../types";
 
 export interface CodeWalkthroughProps {
   scene: AquaSceneProp;
   activeCue?: AquaCueProp;
+  memeAssets?: Record<string, VisualAssetEntry>;
+  includeAvatar?: boolean;
 }
 
-export const CodeWalkthrough: React.FC<CodeWalkthroughProps> = ({ scene, activeCue }) => {
+export const CodeWalkthrough: React.FC<CodeWalkthroughProps> = ({
+  scene,
+  activeCue,
+  memeAssets,
+  includeAvatar = true,
+}) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const vp = scene.visual_props || {};
   const rawCode = vp.code_snippet?.trim() || "// Code walkthrough snippet";
-  const codeLines = rawCode.split("\n").slice(0, 18);
+  const codeLines = rawCode.split("\n").slice(0, 16);
   const bullets = vp.bullets ?? [];
-  const language = vp.language || "typescript";
+  const language = vp.language || "python";
   const highlightTarget = (activeCue?.highlight_code || "").trim().toLowerCase();
+  const memeEntry = vp.meme_asset_id ? memeAssets?.[vp.meme_asset_id] : undefined;
 
   const windowEnter = spring({ frame, fps, config: { damping: 16, stiffness: 130 } });
   const autoFocusLine = Math.floor(
@@ -30,48 +39,68 @@ export const CodeWalkthrough: React.FC<CodeWalkthroughProps> = ({ scene, activeC
         flex: 1,
         display: "flex",
         flexDirection: "column",
-        gap: 24,
-        padding: "0 24px 130px",
+        gap: 18,
+        padding: `0 ${includeAvatar ? 286 : 32}px 146px 24px`,
         fontFamily: CJK_FONT_STACK,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16 }}>
         <div>
-          <div style={{ fontSize: 48, fontWeight: 800, color: "#f8fafc" }}>{scene.heading}</div>
+          <div
+            style={{
+              display: "inline-block",
+              padding: "4px 14px",
+              borderRadius: 999,
+              backgroundColor: AQUA_THEME.mintSoft,
+              border: `2px solid ${AQUA_THEME.border}`,
+              fontSize: 16,
+              fontWeight: 800,
+              color: AQUA_THEME.ink,
+              marginBottom: 8,
+            }}
+          >
+            桌面小窗 · 拆代码
+          </div>
+          <div style={{ fontSize: 44, fontWeight: 900, color: AQUA_THEME.ink, lineHeight: 1.15 }}>
+            {scene.heading}
+          </div>
           {vp.subtitle ? (
-            <div style={{ fontSize: 24, color: "#94a3b8", marginTop: 6 }}>{vp.subtitle}</div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: AQUA_THEME.inkSoft, marginTop: 4 }}>
+              {vp.subtitle}
+            </div>
           ) : null}
         </div>
         <span
           style={{
-            padding: "8px 16px",
-            borderRadius: 10,
-            backgroundColor: "rgba(56, 189, 248, 0.16)",
-            border: "1px solid rgba(56, 189, 248, 0.4)",
-            color: "#7dd3fc",
+            padding: "7px 16px",
+            borderRadius: 12,
+            backgroundColor: AQUA_THEME.yellow,
+            border: `2px solid ${AQUA_THEME.border}`,
+            color: AQUA_THEME.ink,
             fontFamily: MONO_FONT_STACK,
-            fontSize: 18,
-            fontWeight: 700,
+            fontSize: 17,
+            fontWeight: 800,
             textTransform: "uppercase",
+            boxShadow: "3px 3px 0 rgba(27, 53, 84, 0.14)",
           }}
         >
           {language}
         </span>
       </div>
 
-      <div style={{ display: "flex", gap: 28, flex: 1, minHeight: 0 }}>
+      <div style={{ display: "flex", gap: 22, flex: 1, minHeight: 0 }}>
         <div
           style={{
-            flex: bullets.length > 0 ? 1.55 : 1,
-            borderRadius: 20,
-            backgroundColor: "#0b1220",
-            border: "1px solid rgba(148, 163, 184, 0.25)",
-            boxShadow: "0 24px 54px rgba(2, 6, 23, 0.65)",
+            flex: bullets.length > 0 ? 1.5 : 1,
+            borderRadius: 24,
+            backgroundColor: "#17253b",
+            border: `3px solid ${AQUA_THEME.border}`,
+            boxShadow: AQUA_THEME.shadowLg,
             overflow: "hidden",
             display: "flex",
             flexDirection: "column",
             opacity: windowEnter,
-            transform: `translateY(${interpolate(windowEnter, [0, 1], [24, 0])}px)`,
+            transform: `translateY(${interpolate(windowEnter, [0, 1], [20, 0])}px)`,
           }}
         >
           <div
@@ -79,22 +108,22 @@ export const CodeWalkthrough: React.FC<CodeWalkthroughProps> = ({ scene, activeC
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              padding: "14px 20px",
-              backgroundColor: "rgba(30, 41, 59, 0.85)",
-              borderBottom: "1px solid rgba(148, 163, 184, 0.16)",
+              padding: "12px 18px",
+              background: "linear-gradient(90deg, #e0f2fe, #fef9c3)",
+              borderBottom: `2.5px solid ${AQUA_THEME.border}`,
             }}
           >
             <div style={{ display: "flex", gap: 8 }}>
-              <span style={{ width: 12, height: 12, borderRadius: "50%", backgroundColor: "#f87171" }} />
-              <span style={{ width: 12, height: 12, borderRadius: "50%", backgroundColor: "#fbbf24" }} />
-              <span style={{ width: 12, height: 12, borderRadius: "50%", backgroundColor: "#34d399" }} />
+              <span style={{ width: 13, height: 13, borderRadius: "50%", backgroundColor: AQUA_THEME.coral, border: `1.5px solid ${AQUA_THEME.border}` }} />
+              <span style={{ width: 13, height: 13, borderRadius: "50%", backgroundColor: AQUA_THEME.yellow, border: `1.5px solid ${AQUA_THEME.border}` }} />
+              <span style={{ width: 13, height: 13, borderRadius: "50%", backgroundColor: AQUA_THEME.mint, border: `1.5px solid ${AQUA_THEME.border}` }} />
             </div>
-            <span style={{ fontFamily: MONO_FONT_STACK, fontSize: 16, color: "#94a3b8" }}>
-              {vp.citation_label || `snippet.${language}`}
+            <span style={{ fontFamily: MONO_FONT_STACK, fontSize: 16, fontWeight: 700, color: AQUA_THEME.ink }}>
+              {vp.citation_label || `aqua_note.${language}`}
             </span>
           </div>
 
-          <div style={{ padding: "18px 0", fontFamily: MONO_FONT_STACK, fontSize: 22, lineHeight: 1.55 }}>
+          <div style={{ padding: "14px 0", fontFamily: MONO_FONT_STACK, fontSize: 21, lineHeight: 1.52 }}>
             {codeLines.map((line, idx) => {
               const lineEnter = spring({
                 frame: Math.max(0, frame - idx * 2),
@@ -110,19 +139,20 @@ export const CodeWalkthrough: React.FC<CodeWalkthroughProps> = ({ scene, activeC
                   style={{
                     display: "flex",
                     alignItems: "baseline",
-                    padding: "4px 24px",
-                    backgroundColor: isHighlighted ? "rgba(56, 189, 248, 0.18)" : "transparent",
-                    borderLeft: isHighlighted ? "4px solid #38bdf8" : "4px solid transparent",
+                    padding: "3px 20px",
+                    backgroundColor: isHighlighted ? "rgba(56, 189, 248, 0.24)" : "transparent",
+                    borderLeft: isHighlighted ? `5px solid ${AQUA_THEME.yellow}` : "5px solid transparent",
                     opacity: lineEnter,
                   }}
                 >
                   <span
                     style={{
-                      width: 44,
+                      width: 38,
                       flexShrink: 0,
-                      color: isHighlighted ? "#7dd3fc" : "#475569",
+                      color: isHighlighted ? AQUA_THEME.yellow : "#64748b",
                       userSelect: "none",
-                      fontSize: 18,
+                      fontSize: 17,
+                      fontWeight: 700,
                     }}
                   >
                     {idx + 1}
@@ -131,8 +161,8 @@ export const CodeWalkthrough: React.FC<CodeWalkthroughProps> = ({ scene, activeC
                     style={{
                       whiteSpace: "pre-wrap",
                       wordBreak: "break-word",
-                      color: isHighlighted ? "#f8fafc" : "#cbd5e1",
-                      fontWeight: isHighlighted ? 600 : 400,
+                      color: isHighlighted ? "#ffffff" : "#cbd5e1",
+                      fontWeight: isHighlighted ? 700 : 400,
                     }}
                   >
                     {line || " "}
@@ -144,38 +174,77 @@ export const CodeWalkthrough: React.FC<CodeWalkthroughProps> = ({ scene, activeC
         </div>
 
         {bullets.length > 0 ? (
-          <div style={{ flex: 0.75, display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: "#7dd3fc", letterSpacing: 0.6 }}>
-              关键要点
+          <div style={{ flex: 0.78, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div
+              style={{
+                alignSelf: "flex-start",
+                padding: "4px 12px",
+                borderRadius: 10,
+                backgroundColor: AQUA_THEME.yellow,
+                border: `2px solid ${AQUA_THEME.border}`,
+                fontSize: 17,
+                fontWeight: 800,
+                color: AQUA_THEME.ink,
+              }}
+            >
+              📌 便利贴笔记
             </div>
             {bullets.map((item, idx) => {
               const itemEnter = spring({
                 frame: Math.max(0, frame - 8 - idx * 6),
                 fps,
-                config: { damping: 17, stiffness: 140 },
+                config: { damping: 16, stiffness: 140 },
               });
+              const noteBg = idx % 2 === 0 ? "#fef9c3" : AQUA_THEME.cream;
               return (
                 <div
                   key={`${item}-${idx}`}
                   style={{
-                    padding: "18px 20px",
-                    borderRadius: 16,
-                    backgroundColor: "rgba(30, 41, 59, 0.72)",
-                    border: "1px solid rgba(56, 189, 248, 0.25)",
-                    color: "#e2e8f0",
-                    fontSize: 23,
+                    padding: "16px 18px",
+                    borderRadius: 18,
+                    backgroundColor: noteBg,
+                    border: `2.5px solid ${AQUA_THEME.border}`,
+                    boxShadow: "4px 4px 0 rgba(27, 53, 84, 0.12)",
+                    color: AQUA_THEME.ink,
+                    fontSize: 22,
+                    fontWeight: 700,
                     lineHeight: 1.4,
                     opacity: itemEnter,
-                    transform: `translateX(${interpolate(itemEnter, [0, 1], [24, 0])}px)`,
+                    transform: `translateX(${interpolate(itemEnter, [0, 1], [18, 0])}px) rotate(${idx % 2 === 0 ? -0.6 : 0.6}deg)`,
                   }}
                 >
-                  <span style={{ color: "#38bdf8", fontWeight: 700, marginRight: 10 }}>
-                    0{idx + 1}
+                  <span style={{ color: AQUA_THEME.sky, fontWeight: 900, marginRight: 8 }}>
+                    #{idx + 1}
                   </span>
                   {item}
                 </div>
               );
             })}
+            {memeEntry ? (
+              <div
+                style={{
+                  marginTop: "auto",
+                  alignSelf: "flex-end",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "8px 14px",
+                  borderRadius: 18,
+                  backgroundColor: AQUA_THEME.cream,
+                  border: `2px dashed ${AQUA_THEME.sky}`,
+                  transform: `rotate(${(Math.sin(frame * 0.12) * 2).toFixed(2)}deg)`,
+                }}
+              >
+                <div style={{ width: 88, height: 88 }}>
+                  <AnimatedSticker asset={memeEntry} alt={memeEntry.title || "Aqua 贴纸"} />
+                </div>
+                {memeEntry.title ? (
+                  <span style={{ fontSize: 16, fontWeight: 800, color: AQUA_THEME.inkSoft }}>
+                    {memeEntry.title}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>

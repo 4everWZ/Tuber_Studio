@@ -4,22 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import io
 import json
 import math
 import os
 import re
 import shutil
-import struct
 import tempfile
 import time
-import wave
 from contextlib import suppress
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from pydantic import Field, StringConstraints, ValidationError, field_validator
+from pydantic import Field, StringConstraints, ValidationError
 
 from ...core.identity import without_model_identity
 from ...core.models import StrictModel, content_hash, tool_function
@@ -36,11 +33,53 @@ from ...operations.facade import (
 )
 from ...persona.memory.daily.models import contains_memory_credential
 from ...persona.self_model import build_self_model_system_message
+from .remotion_assets import (
+    DEFAULT_LINE_PAUSE_SECONDS,
+    DEFAULT_OUTRO_HOLD_SECONDS,
+    DEFAULT_SCENE_PAUSE_SECONDS,
+    AvatarCue,
+    ChartPoint,
+    PublicSourceRef,
+    SceneVisualProps,
+    TemplateId,
+    VideoLineSpec,
+    VideoSceneSpec,
+    _build_dry_run_wav_bytes,
+    _concat_wav_pcm,
+    _detect_browser_executable,
+    _format_srt_timestamp,
+    _format_vtt_timestamp,
+    _pad_pcm_to_frames,
+    _parse_biliup_receipt,
+    _read_wav_pcm,
+    _resolve_studio_dir,
+    _sanitize_diagnostic,
+    _scrub_secrets,
+    _silence_pcm_for_frames,
+    _write_json,
+    build_aqua_video_planner_intent,
+    build_fallback_aqua_scenes,
+    load_whale_meme_catalog,
+    pick_distinct_scene_meme_id,
+    stage_whale_visual_assets,
+    synthesize_bgm_and_sfx,
+)
+
+__all__ = [
+    "DEFAULT_VIDEO_PRODUCTION_POLICY", "MAX_DURATION_DRIFT_SECONDS", "MAX_RENDERED_VIDEO_BYTES", "VIDEO_PRODUCTION_POLICY_KEY",
+    "AvatarCue", "ChartPoint", "GenerateRemotionProjectArgs", "PlanVideoScriptArgs", "PublicSourceRef",
+    "RemotionVideoSkill", "RenderRemotionVideoArgs", "SceneVisualProps", "StageOrPublishVideoArgs",
+    "TemplateId", "VideoLineSpec", "VideoProductionPolicy", "VideoSceneSpec", "VideoScriptPlan",
+    "assert_public_video_sources", "execute_remotion_tool", "generate_remotion_project", "plan_video_script",
+    "register_remotion_tools", "remotion_tool_schemas", "render_remotion_video", "stage_or_publish_bilibili_video",
+]
 
 VIDEO_PRODUCTION_POLICY_KEY = "video_production_policy"
 DEFAULT_VIDEO_PRODUCTION_POLICY = {
     "publish_mode": "preview_review", "auto_publish_enabled": False,
     "default_fps": 30, "default_width": 1920, "default_height": 1080,
+    "default_include_avatar": True, "default_bgm_enabled": True,
+    "default_line_pause_seconds": DEFAULT_LINE_PAUSE_SECONDS, "default_scene_pause_seconds": DEFAULT_SCENE_PAUSE_SECONDS,
     "max_render_concurrency": 2, "render_timeout_seconds": 300.0, "upload_timeout_seconds": 600.0,
 }
 MAX_RENDERED_VIDEO_BYTES = 2 * 1024 * 1024 * 1024
@@ -51,9 +90,6 @@ _JOB_COLUMNS = frozenset({
     "status", "publish_mode", "title", "content_hash", "project_hash", "intent", "write_token", "plan_json",
     "manifest_json", "qc_json", "receipt_json", "project_dir", "output_path", "cover_path", "planner_source", "planner_error", "error",
 })
-
-TemplateId = Literal["TitleCard", "CodeWalkthrough", "ChartCompare", "MemeCutaway", "QuoteSpotlight", "TimelineSummary"]
-AvatarCue = Literal["idle", "cheerful", "curious", "proud", "thinking", "surprised", "calm"]
 
 # Fixed static TSX/package templates — NEVER interpolated with LLM code strings.
 _REMOTION_PACKAGE_JSON = {"name": "aqua-remotion-video", "version": "1.0.0", "private": True, "type": "module", "dependencies": {"react": "^18.3.1", "react-dom": "^18.3.1", "remotion": "^4.0.0"}}
@@ -82,63 +118,7 @@ _REMOTION_AQUA_VIDEO_TSX = (
 _REMOTION_INDEX_TS = 'import { registerRoot } from "remotion";\nimport { RemotionRoot } from "./Root";\nregisterRoot(RemotionRoot);\n'
 
 
-class ChartPoint(StrictModel):
-    label: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
-    value: float = Field(ge=-1e9, le=1e9)
-    unit: str = Field(default="", max_length=16)
-
-
-class SceneVisualProps(StrictModel):
-    subtitle: str = Field(default="", max_length=200)
-    bullets: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]] = Field(default_factory=list, max_length=6)
-    code_snippet: str = Field(default="", max_length=1500)
-    language: Literal["python", "typescript", "json", "bash", "markdown", "text"] = "text"
-    chart_items: list[ChartPoint] = Field(default_factory=list, max_length=8)
-    meme_asset_id: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{1,64}$")
-    citation_label: str = Field(default="", max_length=120)
-
-
-class VideoLineSpec(StrictModel):
-    line_id: str = Field(default="", max_length=40, pattern=r"^(?:[a-zA-Z0-9_-]{1,40})?$")
-    text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=240)]
-    avatar_cue: AvatarCue = "idle"
-    highlight_code: str | None = Field(default=None, max_length=200)
-
-    @field_validator("text")
-    @classmethod
-    def clean_line_text(cls, value: str) -> str:
-        if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", value):
-            raise ValueError("台词包含非法控制字符")
-        return value
-
-
-class VideoSceneSpec(StrictModel):
-    scene_id: str = Field(min_length=1, max_length=40, pattern=r"^[a-zA-Z0-9_-]{1,40}$")
-    template: TemplateId
-    heading: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
-    visual_props: SceneVisualProps = Field(default_factory=SceneVisualProps)
-    lines: list[VideoLineSpec] = Field(min_length=1, max_length=12)
-    avatar_cue: AvatarCue = "idle"
-
-
-class PublicSourceRef(StrictModel):
-    source_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
-    kind: Literal["watched_video", "public_incident", "operator_topic", "web_research", "public_memory", "public_comment"]
-    scope: Literal["public"] = "public"
-    title: str = Field(default="", max_length=160)
-    url: str | None = Field(default=None, max_length=512)
-    bvid: str | None = Field(default=None, pattern=r"^BV[0-9A-Za-z]{10}$")
-    excerpt: str = Field(default="", max_length=500)
-
-    @field_validator("url")
-    @classmethod
-    def require_https_url(cls, value: str | None) -> str | None:
-        if value is None or not value.strip():
-            return None
-        cleaned = value.strip()
-        if not cleaned.startswith("https://") or any(ch.isspace() for ch in cleaned):
-            raise ValueError("公开来源链接必须为有效的 HTTPS URL")
-        return cleaned
+# Scene & script schemas live in remotion_assets.py; keep VideoScriptPlan & Policy below.
 
 
 class VideoScriptPlan(StrictModel):
@@ -149,7 +129,10 @@ class VideoScriptPlan(StrictModel):
     fps: Literal[30, 60] = 30
     width: Literal[1920, 1280] = 1920
     height: Literal[1080, 720] = 1080
-    include_avatar: bool = False
+    include_avatar: bool = True
+    bgm_enabled: bool = True
+    line_pause_seconds: float = Field(default=DEFAULT_LINE_PAUSE_SECONDS, ge=0.0, le=2.0)
+    scene_pause_seconds: float = Field(default=DEFAULT_SCENE_PAUSE_SECONDS, ge=0.0, le=3.0)
     scenes: list[VideoSceneSpec] = Field(min_length=1, max_length=16)
     sources: list[PublicSourceRef] = Field(min_length=1, max_length=12)
 
@@ -160,6 +143,10 @@ class VideoProductionPolicy(StrictModel):
     default_fps: Literal[30, 60] = 30
     default_width: Literal[1920, 1280] = 1920
     default_height: Literal[1080, 720] = 1080
+    default_include_avatar: bool = True
+    default_bgm_enabled: bool = True
+    default_line_pause_seconds: float = Field(default=DEFAULT_LINE_PAUSE_SECONDS, ge=0.0, le=2.0)
+    default_scene_pause_seconds: float = Field(default=DEFAULT_SCENE_PAUSE_SECONDS, ge=0.0, le=3.0)
     max_render_concurrency: int = Field(default=2, ge=1, le=4)
     render_timeout_seconds: float = Field(default=300.0, ge=5.0, le=3600.0)
     upload_timeout_seconds: float = Field(default=600.0, ge=5.0, le=3600.0)
@@ -170,7 +157,10 @@ class PlanVideoScriptArgs(StrictModel):
     candidate_bvids: list[Annotated[str, StringConstraints(pattern=r"^BV[0-9A-Za-z]{10}$")]] = Field(default_factory=list, max_length=6, description="可选关联的公开视频 BV 号。")
     style_note: str = Field(default="", max_length=200, description="可选节奏或风格提示。")
     fps: Literal[30, 60] = Field(default=30, description="视频帧率（30 或 60）。")
-    include_avatar: bool = Field(default=False, description="是否附带虚拟形象口型/动作时间轴。")
+    include_avatar: bool = Field(default=True, description="是否附带 Aqua 虚拟主播演出小窗与动作时间轴。")
+    bgm_enabled: bool = Field(default=True, description="是否开启浅海轻量 BGM 与转场音效混音。")
+    line_pause_seconds: float = Field(default=DEFAULT_LINE_PAUSE_SECONDS, ge=0.0, le=2.0, description="同一镜内相邻台词句间气口停顿（秒）。")
+    scene_pause_seconds: float = Field(default=DEFAULT_SCENE_PAUSE_SECONDS, ge=0.0, le=3.0, description="分镜切换时的停顿留白时长（秒）。")
     max_scenes: int = Field(default=4, ge=1, le=10, description="目标分镜数量。")
 
 
@@ -211,7 +201,9 @@ def assert_public_video_sources(
     for scene in validated.scenes:
         vp = scene.visual_props
         texts.extend([scene.heading, vp.subtitle, vp.code_snippet, vp.citation_label, *vp.bullets])
-        texts.extend(line.text for line in scene.lines)
+        for line in scene.lines:
+            texts.append(line.text)
+            texts.extend(line.emphasis)
     if any(contains_memory_credential(fragment) for fragment in texts):
         raise ValueError("公开视频文案禁止包含凭据或敏感密钥")
 
@@ -234,101 +226,12 @@ def assert_public_video_sources(
     return validated
 
 
-def _format_srt_timestamp(seconds: float) -> str:
-    ms_total = max(0, int(round(seconds * 1000)))
-    hours, rem = divmod(ms_total, 3_600_000)
-    minutes, rem = divmod(rem, 60_000)
-    secs, millis = divmod(rem, 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
-
-
-def _format_vtt_timestamp(seconds: float) -> str:
-    return _format_srt_timestamp(seconds).replace(",", ".")
-
-
-def _detect_browser_executable() -> tuple[str | None, str | None]:
-    if (env_bin := str(os.environ.get("REMOTION_BROWSER_EXECUTABLE") or "").strip()) and Path(env_bin).is_file():
-        return env_bin, "env"
-    pf, pf86 = os.environ.get("ProgramFiles", ""), os.environ.get("ProgramFiles(x86)", "")
-    for kind, cands in (
-        ("chrome", (Path(pf) / "Google/Chrome/Application/chrome.exe", Path(pf86) / "Google/Chrome/Application/chrome.exe",
-                    Path("/usr/bin/google-chrome"), Path("/usr/bin/google-chrome-stable"), Path("/usr/bin/chromium"), Path("/usr/bin/chromium-browser"))),
-        ("edge", (Path(pf86) / "Microsoft/Edge/Application/msedge.exe", Path(pf) / "Microsoft/Edge/Application/msedge.exe")),
-    ):
-        for cand in cands:
-            if str(cand) and cand.is_file():
-                return str(cand), kind
-    for pw_root in (Path(os.environ.get("LOCALAPPDATA", "")) / "ms-playwright", Path.home() / ".cache/ms-playwright"):
-        if not pw_root.is_dir():
-            continue
-        for pat in ("chromium-*/chrome-win*/chrome.exe", "chromium_headless_shell-*/chrome-headless-shell-win*/chrome-headless-shell.exe",
-                    "chromium-*/chrome-linux/chrome", "chromium_headless_shell-*/chrome-linux/headless_shell"):
-            if (matches := sorted(pw_root.glob(pat), reverse=True)) and matches[0].is_file():
-                return str(matches[0]), "playwright-chromium"
-    return None, None
-
-
-def _resolve_studio_dir(runtime, explicit: Path | None = None) -> Path:
-    if explicit is not None:
-        return Path(explicit)
-    root = getattr(getattr(runtime, "settings", None), "root", None)
-    return Path(root) / "remotion-studio" if root else Path(__file__).resolve().parents[4] / "remotion-studio"
-
-
-def _sanitize_diagnostic(text: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"https?://\S+", "[URL]", str(text or ""))).strip()[:240]
-
-
-def _build_dry_run_wav_bytes(text: str, *, sample_rate: int = 16000) -> bytes:
-    duration = max(0.6, min(12.0, len(text.strip()) * 0.16))
-    nframes = max(1600, int(round(duration * sample_rate)))
-    samples = b"".join(struct.pack("<h", int(1200 * math.sin(2.0 * math.pi * 440.0 * i / sample_rate))) for i in range(nframes))
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sample_rate)
-        wf.writeframes(samples)
-    return buf.getvalue()
-
-
-def _read_wav_pcm(wav_bytes: bytes) -> tuple[tuple[int, int, int], bytes, float]:
-    with wave.open(io.BytesIO(wav_bytes), "rb") as r:
-        p = r.getparams()
-        pcm = r.readframes(p.nframes)
-        if p.nframes <= 0 or len(pcm) != p.nframes * p.nchannels * p.sampwidth:
-            raise ValueError("合成音频帧长度无效或被截断")
-        return (p.nchannels, p.sampwidth, p.framerate), pcm, p.nframes / float(p.framerate)
-
-def _concat_wav_pcm(spec: tuple[int, int, int], chunks: list[bytes]) -> bytes:
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as w:
-        w.setnchannels(spec[0]); w.setsampwidth(spec[1]); w.setframerate(spec[2])
-        for pcm in chunks:
-            w.writeframes(pcm)
-    return buf.getvalue()
-
-def _parse_biliup_receipt(stdout: str, stderr: str) -> dict[str, Any]:
-    combined = f"{stdout}\n{stderr}"
-    bv, av = re.search(r"\b(BV[0-9A-Za-z]{10})\b", combined), re.search(r"\b(?:aid|av)[=: ]+([1-9][0-9]{0,19})\b", combined, re.IGNORECASE)
-    return {k: v for k, v in (("bvid", bv.group(1) if bv else None), ("aid", av.group(1) if av else None)) if v}
-
-def _scrub_secrets(text: str, credentials: dict[str, Any]) -> str:
-    cleaned = str(text or "")
-    for key in ("sessdata", "csrf", "bili_jct", "refresh_token"):
-        if len(val := str(credentials.get(key) or "").strip()) >= 4:
-            cleaned = cleaned.replace(val, "[REDACTED]")
-    return cleaned[:400]
-
 def _safe_child_path(root: Path, child: str) -> Path:
     resolved_root = root.resolve()
     target = (resolved_root / child).resolve()
     if not target.is_relative_to(resolved_root) or linked(target):
         raise ValueError("路径超出受控工作目录或包含符号链接")
     return target
-
-def _write_json(path: Path, payload: Any) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 class RemotionVideoSkill:
@@ -349,7 +252,18 @@ class RemotionVideoSkill:
         self.planner_fn, self.tts_fn = planner_fn, tts_fn
         self.subprocess_runner, self.ffprobe_runner, self.biliup_runner = subprocess_runner, ffprobe_runner, biliup_runner
         self._own_semaphore = render_semaphore
+        self.active_job_ids: set[str] = set()
         self._install_storage()
+
+    def _touch_video_cache(self, project_dir: Path, *, lease_seconds: int = 0, enforce: bool = False) -> None:
+        if (cache := getattr(self.runtime, "cache", None)) is None:
+            return
+        with suppress(OSError, ValueError):
+            if not project_dir.resolve().is_relative_to(cache.root.resolve()):
+                return
+            cache.touch(project_dir, seconds=lease_seconds)
+            if enforce:
+                cache.enforce("video")
 
     def _get_semaphore(self) -> asyncio.Semaphore:
         if self._own_semaphore is not None:
@@ -452,6 +366,10 @@ class RemotionVideoSkill:
         unified = getattr(self.runtime, "unified_memory", None)
         return candidates, (unified.for_prompt("public", character_id=character_id, limit=10) if unified is not None else [])
 
+    def _assets_root(self) -> Path:
+        root = getattr(getattr(self.runtime, "settings", None), "root", None)
+        return Path(root) if root else Path(__file__).resolve().parents[4]
+
     def _fallback_script_plan(
         self, args: PlanVideoScriptArgs, candidates: list[dict[str, Any]], public_memories: list[dict[str, Any]]
     ) -> VideoScriptPlan:
@@ -468,22 +386,23 @@ class RemotionVideoSkill:
             PublicSourceRef(source_id=str(m["id"]), kind="public_memory", scope="public", title="公开印象参考", excerpt=str(m.get("content") or "")[:200])
             for m in public_memories[:2]
         )
-        lead = args.topic[:68]
-        scene_rows = [
-            ("scene_intro", "TitleCard", lead, SceneVisualProps(subtitle=args.style_note or "Aqua 公开观察速览", citation_label=sources[0].title[:60]), f"哈喽，我是 Aqua！今天带大家快速过一遍「{lead[:36]}」的核心看点。", "cheerful"),
-            ("scene_main", "QuoteSpotlight", "核心看点梳理", SceneVisualProps(subtitle=sources[0].title[:80], bullets=[s.title[:60] for s in sources[:3] if s.title], citation_label=sources[0].url or sources[0].source_id), f"结合公开信息来看，最关键的一点是：{sources[0].excerpt[:80] or args.topic[:80]}。", "curious"),
-            ("scene_outro", "TimelineSummary", "总结与下期预告", SceneVisualProps(subtitle="资料均来自已核验公开来源", bullets=["来源透明可追溯", "欢迎评论区聊聊你的想法"]), "以上就是 Aqua 整理的重点啦，有想看的话题欢迎留在评论区。", "proud"),
-        ]
-        scenes = [
-            VideoSceneSpec(scene_id=sid, template=tpl, heading=head, visual_props=vp, lines=[VideoLineSpec(line_id=f"l{i}", text=txt, avatar_cue=cue)], avatar_cue=cue)
-            for i, (sid, tpl, head, vp, txt, cue) in enumerate(scene_rows[: args.max_scenes], start=1)
-        ]
+        lead, raw_scenes = build_fallback_aqua_scenes(
+            topic=args.topic,
+            style_note=args.style_note,
+            sources=sources,
+            max_scenes=args.max_scenes,
+            available_memes=load_whale_meme_catalog(self._assets_root()),
+        )
+        scenes = [VideoSceneSpec.model_validate(item) for item in raw_scenes]
         return VideoScriptPlan(
             title=lead,
-            summary=f"围绕「{args.topic[:120]}」整理的公开要点解析。引用来源：" + "；".join(s.url or s.title for s in sources[:3]),
-            tags=["Aqua", "科普速览", "公开观察"],
+            summary=f"Aqua 围绕「{args.topic[:100]}」的浅海手账短评。引用来源：" + "；".join(s.url or s.title for s in sources[:3]),
+            tags=["Aqua", "杂谈吐槽", "浅海手账"],
             fps=args.fps,
             include_avatar=args.include_avatar,
+            bgm_enabled=args.bgm_enabled,
+            line_pause_seconds=args.line_pause_seconds,
+            scene_pause_seconds=args.scene_pause_seconds,
             scenes=scenes,
             sources=sources,
         )
@@ -494,14 +413,19 @@ class RemotionVideoSkill:
         char = self._current_character()
         char_id = str(char.get("id") or "")
         candidates, public_memories = self._public_candidates_and_memories(topic=args.topic, candidate_bvids=args.candidate_bvids, character_id=char_id)
+        available_memes = load_whale_meme_catalog(self._assets_root())
         sys_msg = build_self_model_system_message(
             char, channel="dynamic", scene="公开视频脚本与分镜策划",
-            task_intent="只基于传入的公开来源生成结构化 VideoScriptPlan JSON。可用模板严格限于 TitleCard、CodeWalkthrough、ChartCompare、MemeCutaway、QuoteSpotlight、TimelineSummary；合理填充 visual_props 与口播台词 lines。严禁写可执行代码或引用私人记忆与私信。",
+            task_intent=build_aqua_video_planner_intent(),
         )
         packet = {
-            "topic": args.topic, "style_note": args.style_note, "fps": args.fps, "include_avatar": args.include_avatar, "max_scenes": args.max_scenes,
+            "topic": args.topic, "style_note": args.style_note, "fps": args.fps,
+            "include_avatar": args.include_avatar, "bgm_enabled": args.bgm_enabled,
+            "line_pause_seconds": args.line_pause_seconds, "scene_pause_seconds": args.scene_pause_seconds,
+            "max_scenes": args.max_scenes,
             "available_templates": ["TitleCard", "CodeWalkthrough", "ChartCompare", "MemeCutaway", "QuoteSpotlight", "TimelineSummary"],
             "available_avatar_cues": ["idle", "cheerful", "curious", "proud", "thinking", "surprised", "calm"],
+            "available_memes": [{"id": m["id"], "title": m["title"], "emotions": m["emotions"], "tags": m["tags"]} for m in available_memes],
             "public_candidates": candidates[:6], "public_memories": [{"id": m["id"], "content": m["content"]} for m in public_memories[:6]],
         }
         messages = [sys_msg, {"role": "user", "content": dump(packet)}]
@@ -541,7 +465,7 @@ class RemotionVideoSkill:
             raise ValueError("脚本更新内容为空或包含未知字段")
         validated = assert_public_video_sources(dict(job["plan"]) | patch, store=self.store, unified_memory=getattr(self.runtime, "unified_memory", None), character_id=str(self._current_character().get("id") or ""))
         dumped = validated.model_dump(mode="json")
-        structural = any(f in patch and dumped.get(f) != job["plan"].get(f) for f in ("scenes", "fps", "width", "height", "include_avatar"))
+        structural = any(f in patch and dumped.get(f) != job["plan"].get(f) for f in ("scenes", "fps", "width", "height", "include_avatar", "bgm_enabled", "line_pause_seconds", "scene_pause_seconds"))
         updates: dict[str, Any] = {"title": validated.title, "plan_json": validated.model_dump_json(), "status": "script_planned" if structural else job["status"], "error": None}
         if structural:
             updates |= {"content_hash": content_hash(dumped), "qc_json": None}
@@ -583,6 +507,7 @@ class RemotionVideoSkill:
         resolved = target.resolve()
         if not resolved.is_relative_to(self.renders_root.resolve()) or linked(target) or not resolved.is_file():
             raise FileNotFoundError(f"产物 {kind} 尚未生成或不存在")
+        self._touch_video_cache(project_dir)
         return resolved, media_type
 
     async def _synthesize_line_wav(self, text: str, *, tts_mode: Literal["omni_speech", "dry_run"], voice_id: str | None) -> bytes:
@@ -620,68 +545,130 @@ class RemotionVideoSkill:
         if linked(self.renders_root):
             raise ValueError("渲染目录不能使用符号链接")
         project_dir = _safe_child_path(self.renders_root, job_id)
-        src_dir, public_dir, audio_dir = project_dir / "src", project_dir / "public", project_dir / "public/audio"
-        src_dir.mkdir(parents=True, exist_ok=True)
-        audio_dir.mkdir(parents=True, exist_ok=True)
+        self.active_job_ids.add(job_id)
+        try:
+            src_dir, public_dir, audio_dir = project_dir / "src", project_dir / "public", project_dir / "public/audio"
+            src_dir.mkdir(parents=True, exist_ok=True)
+            audio_dir.mkdir(parents=True, exist_ok=True)
 
-        wav_spec: tuple[int, int, int] | None = None
-        pcm_chunks, cues, scene_props, avatar_cues, srt_lines, vtt_lines = [], [], [], [], [], ["WEBVTT\n"]
-        cursor_seconds, cursor_frame, srt_index = 0.0, 0, 1
-        for s_idx, scene in enumerate(plan.scenes, start=1):
-            scene_start_frame, scene_frames = cursor_frame, 0
-            for l_idx, line in enumerate(scene.lines, start=1):
-                line_id = line.line_id or f"s{s_idx}_l{l_idx}"
-                wav_bytes = await self._synthesize_line_wav(line.text, tts_mode=args.tts_mode, voice_id=args.reference_voice_id)
-                spec, pcm, duration = _read_wav_pcm(wav_bytes)
-                if wav_spec is None:
-                    wav_spec = spec
-                elif spec != wav_spec:
-                    raise ValueError("逐句配音音频采样率或声道数不一致")
-                line_frames = max(1, math.ceil(duration * plan.fps))
-                (audio_dir / f"{line_id}.wav").write_bytes(wav_bytes)
-                pcm_chunks.append(pcm)
-                start_sec, end_sec = cursor_seconds, cursor_seconds + duration
-                cues.append({"line_id": line_id, "scene_id": scene.scene_id, "text": line.text, "start_frame": cursor_frame, "duration_frames": line_frames, "start_seconds": round(start_sec, 4), "end_seconds": round(end_sec, 4), "audio_file": f"audio/{line_id}.wav", "avatar_cue": line.avatar_cue, "highlight_code": line.highlight_code})
-                avatar_cues.append({"line_id": line_id, "cue": line.avatar_cue, "start_frame": cursor_frame, "duration_frames": line_frames, "viseme_energy": 0.65 if args.tts_mode != "dry_run" else 0.35})
-                srt_lines.append(f"{srt_index}\n{_format_srt_timestamp(start_sec)} --> {_format_srt_timestamp(end_sec)}\n{line.text}\n")
-                vtt_lines.append(f"{_format_vtt_timestamp(start_sec)} --> {_format_vtt_timestamp(end_sec)}\n{line.text}\n")
-                srt_index += 1
-                cursor_seconds, cursor_frame, scene_frames = end_sec, cursor_frame + line_frames, scene_frames + line_frames
-            scene_props.append({"scene_id": scene.scene_id, "template": scene.template, "heading": scene.heading, "start_frame": scene_start_frame, "duration_frames": max(1, scene_frames), "visual_props": scene.visual_props.model_dump(mode="json"), "avatar_cue": scene.avatar_cue})
+            wav_spec: tuple[int, int, int] | None = None
+            pcm_chunks, cues, scene_props, avatar_cues, srt_lines, vtt_lines = [], [], [], [], [], ["WEBVTT\n"]
+            cursor_seconds, cursor_frame, srt_index = 0.0, 0, 1
+            line_gap_frames = max(0, int(round(plan.line_pause_seconds * plan.fps)))
+            scene_gap_frames = max(0, int(round(plan.scene_pause_seconds * plan.fps)))
+            lead_in_target = max(0, int(round(min(0.25, plan.scene_pause_seconds * 0.35) * plan.fps))) if scene_gap_frames > 0 else 0
+            outro_frames = max(0, int(round(min(DEFAULT_OUTRO_HOLD_SECONDS, max(plan.line_pause_seconds, plan.scene_pause_seconds)) * plan.fps)))
+            catalog_ids = {m["id"] for m in load_whale_meme_catalog(self._assets_root())}
+            used_meme_ids: set[str] = set()
+            resolved_scene_memes: list[str] = []
 
-        assert wav_spec is not None
-        narration_path, srt_path, vtt_path, avatar_cues_path = public_dir / "narration.wav", project_dir / "subtitles.srt", project_dir / "subtitles.vtt", project_dir / "avatar_cues.json"
-        narration_path.write_bytes(_concat_wav_pcm(wav_spec, pcm_chunks))
-        srt_path.write_text("\n".join(srt_lines), encoding="utf-8")
-        vtt_path.write_text("\n".join(vtt_lines), encoding="utf-8")
-        avatar_cues_path.write_text(dump({"include_avatar": plan.include_avatar, "avatar_mode": "viseme_envelope_ready" if plan.include_avatar else "2d_fallback", "cues": avatar_cues}), encoding="utf-8")
-        props_payload = {"title": plan.title, "fps": plan.fps, "width": plan.width, "height": plan.height, "totalFrames": max(1, cursor_frame), "audioFile": "narration.wav", "includeAvatar": plan.include_avatar, "scenes": scene_props, "cues": cues}
-        props_path, manifest_path = project_dir / "props.json", project_dir / "manifest.json"
-        _write_json(props_path, props_payload)
-        manifest = {
-            "job_id": job_id, "fps": plan.fps, "width": plan.width, "height": plan.height, "total_frames": max(1, cursor_frame), "total_duration_seconds": round(cursor_seconds, 4),
-            "tts_mode": args.tts_mode, "planner_source": (job or {}).get("planner_source") or "explicit_plan", "planner_error": (job or {}).get("planner_error"),
-            "audio_file": str(narration_path), "srt_file": str(srt_path), "vtt_file": str(vtt_path), "avatar_cues_file": str(avatar_cues_path),
-            "props_file": str(props_path), "cues": cues, "sources": [src.model_dump(mode="json") for src in plan.sources],
-        }
-        _write_json(manifest_path, manifest)
-        # Write static schema-safe Remotion template files (never interpolated with LLM code).
-        _write_json(project_dir / "package.json", _REMOTION_PACKAGE_JSON)
-        (src_dir / "index.ts").write_text(_REMOTION_INDEX_TS, encoding="utf-8")
-        (src_dir / "Root.tsx").write_text(_REMOTION_ROOT_TSX, encoding="utf-8")
-        studio_aqua = self.studio_dir / "src/AquaVideo.tsx"
-        (src_dir / "AquaVideo.tsx").write_text(studio_aqua.read_text(encoding="utf-8") if studio_aqua.is_file() else _REMOTION_AQUA_VIDEO_TSX, encoding="utf-8")
-        project_hash = content_hash({"plan": plan.model_dump(mode="json"), "props": props_payload})
-        if job is None:
-            now = time.time()
-            with self.store.db:
-                self.store.db.execute(
-                    "INSERT INTO remotion_video_jobs(id,account_id,character_id,character_version,status,publish_mode,title,content_hash,project_hash,plan_json,manifest_json,project_dir,planner_source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (job_id, self._account_id(), char_id, int(char.get("version") or 1), "project_ready", self.policy().publish_mode, plan.title, content_hash(plan.model_dump(mode="json")), project_hash, plan.model_dump_json(), dump(manifest), str(project_dir), "explicit_plan", now, now),
+            num_scenes = len(plan.scenes)
+            for s_idx, scene in enumerate(plan.scenes, start=1):
+                scene_start_frame, scene_frames = cursor_frame, 0
+                if s_idx > 1 and lead_in_target > 0 and wav_spec is not None:
+                    pcm_chunks.append(_silence_pcm_for_frames(wav_spec, lead_in_target, plan.fps))
+                    cursor_frame += lead_in_target
+                    scene_frames += lead_in_target
+                    cursor_seconds = cursor_frame / float(plan.fps)
+                num_lines = len(scene.lines)
+                for l_idx, line in enumerate(scene.lines, start=1):
+                    line_id = line.line_id or f"s{s_idx}_l{l_idx}"
+                    wav_bytes = await self._synthesize_line_wav(line.text, tts_mode=args.tts_mode, voice_id=args.reference_voice_id)
+                    spec, pcm, duration = _read_wav_pcm(wav_bytes)
+                    if wav_spec is None:
+                        wav_spec = spec
+                    elif spec != wav_spec:
+                        raise ValueError("逐句配音音频采样率或声道数不一致")
+                    line_frames = max(1, math.ceil(duration * plan.fps))
+                    (audio_dir / f"{line_id}.wav").write_bytes(wav_bytes)
+                    pcm_chunks.append(_pad_pcm_to_frames(wav_spec, pcm, line_frames, plan.fps))
+                    start_sec = cursor_frame / float(plan.fps)
+                    end_sec = (cursor_frame + line_frames) / float(plan.fps)
+                    cues.append({"line_id": line_id, "scene_id": scene.scene_id, "text": line.text, "start_frame": cursor_frame, "duration_frames": line_frames, "start_seconds": round(start_sec, 4), "end_seconds": round(end_sec, 4), "audio_file": f"audio/{line_id}.wav", "avatar_cue": line.avatar_cue, "highlight_code": line.highlight_code, "emphasis": list(line.emphasis)})
+                    avatar_cues.append({"line_id": line_id, "cue": line.avatar_cue, "start_frame": cursor_frame, "duration_frames": line_frames, "viseme_energy": 0.65 if args.tts_mode != "dry_run" else 0.35})
+                    srt_lines.append(f"{srt_index}\n{_format_srt_timestamp(start_sec)} --> {_format_srt_timestamp(end_sec)}\n{line.text}\n")
+                    vtt_lines.append(f"{_format_vtt_timestamp(start_sec)} --> {_format_vtt_timestamp(end_sec)}\n{line.text}\n")
+                    srt_index += 1
+                    cursor_frame += line_frames
+                    scene_frames += line_frames
+                    if l_idx < num_lines and line_gap_frames > 0:
+                        pcm_chunks.append(_silence_pcm_for_frames(wav_spec, line_gap_frames, plan.fps))
+                        cursor_frame += line_gap_frames
+                        scene_frames += line_gap_frames
+                    elif l_idx == num_lines:
+                        tail_frames = max(0, scene_gap_frames - lead_in_target) if s_idx < num_scenes else outro_frames
+                        if tail_frames > 0:
+                            pcm_chunks.append(_silence_pcm_for_frames(wav_spec, tail_frames, plan.fps))
+                            cursor_frame += tail_frames
+                            scene_frames += tail_frames
+                    cursor_seconds = cursor_frame / float(plan.fps)
+
+                vp_dict = scene.visual_props.model_dump(mode="json")
+                picked_meme = pick_distinct_scene_meme_id(
+                    scene.avatar_cue,
+                    used_meme_ids,
+                    catalog_ids,
+                    preferred_id=vp_dict.get("meme_asset_id"),
                 )
-        else:
-            self._update_job(job_id, status="project_ready", title=plan.title, plan_json=plan.model_dump_json(), project_hash=project_hash, manifest_json=dump(manifest), project_dir=str(project_dir), error=None)
-        return {"ok": True, "job_id": job_id, "status": "project_ready", "project_dir": str(project_dir), "props_path": str(props_path), "manifest_path": str(manifest_path), "srt_path": str(srt_path), "vtt_path": str(vtt_path), "total_frames": manifest["total_frames"], "total_duration_seconds": manifest["total_duration_seconds"], "project_hash": project_hash}
+                if not vp_dict.get("meme_asset_id") and picked_meme and scene.template in {"TitleCard", "CodeWalkthrough", "MemeCutaway", "QuoteSpotlight"}:
+                    vp_dict["meme_asset_id"] = picked_meme
+                if vp_dict.get("meme_asset_id"):
+                    used_meme_ids.add(str(vp_dict["meme_asset_id"]))
+                    resolved_scene_memes.append(str(vp_dict["meme_asset_id"]))
+                scene_props.append({"scene_id": scene.scene_id, "template": scene.template, "heading": scene.heading, "start_frame": scene_start_frame, "duration_frames": max(1, scene_frames), "visual_props": vp_dict, "avatar_cue": scene.avatar_cue})
+
+            assert wav_spec is not None
+            narration_path, srt_path, vtt_path, avatar_cues_path = public_dir / "narration.wav", project_dir / "subtitles.srt", project_dir / "subtitles.vtt", project_dir / "avatar_cues.json"
+            narration_path.write_bytes(_concat_wav_pcm(wav_spec, pcm_chunks))
+            srt_path.write_text("\n".join(srt_lines), encoding="utf-8")
+            vtt_path.write_text("\n".join(vtt_lines), encoding="utf-8")
+            avatar_assets, meme_assets = stage_whale_visual_assets(
+                self._assets_root(),
+                public_dir,
+                include_avatar=plan.include_avatar,
+                requested_meme_ids=resolved_scene_memes,
+                scene_cues=[s.avatar_cue for s in plan.scenes],
+            )
+            bgm_file, transition_sfx_file = (
+                synthesize_bgm_and_sfx(audio_dir, duration_seconds=cursor_seconds) if plan.bgm_enabled else (None, None)
+            )
+            avatar_cues_path.write_text(dump({"include_avatar": plan.include_avatar, "avatar_mode": "gif_frames_ready" if avatar_assets else "2d_fallback", "cues": avatar_cues}), encoding="utf-8")
+            props_payload = {
+                "title": plan.title, "fps": plan.fps, "width": plan.width, "height": plan.height,
+                "totalFrames": max(1, cursor_frame), "audioFile": "narration.wav", "includeAvatar": plan.include_avatar,
+                "bgmEnabled": plan.bgm_enabled, "bgmFile": bgm_file, "transitionSfxFile": transition_sfx_file,
+                "avatarAssets": avatar_assets, "memeAssets": meme_assets,
+                "scenes": scene_props, "cues": cues,
+            }
+            props_path, manifest_path = project_dir / "props.json", project_dir / "manifest.json"
+            _write_json(props_path, props_payload)
+            manifest = {
+                "job_id": job_id, "fps": plan.fps, "width": plan.width, "height": plan.height, "total_frames": max(1, cursor_frame), "total_duration_seconds": round(cursor_seconds, 4),
+                "tts_mode": args.tts_mode, "planner_source": (job or {}).get("planner_source") or "explicit_plan", "planner_error": (job or {}).get("planner_error"),
+                "audio_file": str(narration_path), "srt_file": str(srt_path), "vtt_file": str(vtt_path), "avatar_cues_file": str(avatar_cues_path),
+                "props_file": str(props_path), "cues": cues, "sources": [src.model_dump(mode="json") for src in plan.sources],
+            }
+            _write_json(manifest_path, manifest)
+            # Write static schema-safe Remotion template files (never interpolated with LLM code).
+            _write_json(project_dir / "package.json", _REMOTION_PACKAGE_JSON)
+            (src_dir / "index.ts").write_text(_REMOTION_INDEX_TS, encoding="utf-8")
+            (src_dir / "Root.tsx").write_text(_REMOTION_ROOT_TSX, encoding="utf-8")
+            studio_aqua = self.studio_dir / "src/AquaVideo.tsx"
+            (src_dir / "AquaVideo.tsx").write_text(studio_aqua.read_text(encoding="utf-8") if studio_aqua.is_file() else _REMOTION_AQUA_VIDEO_TSX, encoding="utf-8")
+            project_hash = content_hash({"plan": plan.model_dump(mode="json"), "props": props_payload})
+            if job is None:
+                now = time.time()
+                with self.store.db:
+                    self.store.db.execute(
+                        "INSERT INTO remotion_video_jobs(id,account_id,character_id,character_version,status,publish_mode,title,content_hash,project_hash,plan_json,manifest_json,project_dir,planner_source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (job_id, self._account_id(), char_id, int(char.get("version") or 1), "project_ready", self.policy().publish_mode, plan.title, content_hash(plan.model_dump(mode="json")), project_hash, plan.model_dump_json(), dump(manifest), str(project_dir), "explicit_plan", now, now),
+                    )
+            else:
+                self._update_job(job_id, status="project_ready", title=plan.title, plan_json=plan.model_dump_json(), project_hash=project_hash, manifest_json=dump(manifest), project_dir=str(project_dir), error=None)
+            self._touch_video_cache(project_dir, lease_seconds=1800, enforce=True)
+            return {"ok": True, "job_id": job_id, "status": "project_ready", "project_dir": str(project_dir), "props_path": str(props_path), "manifest_path": str(manifest_path), "srt_path": str(srt_path), "vtt_path": str(vtt_path), "total_frames": manifest["total_frames"], "total_duration_seconds": manifest["total_duration_seconds"], "project_hash": project_hash}
+        finally:
+            self.active_job_ids.discard(job_id)
 
     async def _run_exec(self, cmd: list[str], *, cwd: Path, timeout: float) -> tuple[int, str, str]:
         proc = await asyncio.create_subprocess_exec(*cmd, cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -767,37 +754,42 @@ class RemotionVideoSkill:
             raise ValueError("视频工程缺少 props.json")
         output_path, policy, public_dir = project_dir / "output.mp4", self.policy(), project_dir / "public"
         cmd = ["npx", "remotion", "render", args.composition_id, str(output_path), f"--props={props_path}", f"--concurrency={min(args.concurrency, policy.max_render_concurrency)}"]
-        self._update_job(args.job_id, status="rendering", error=None)
-        async with self._get_semaphore():
-            if callable(self.subprocess_runner):
-                code, _out, stderr = await self.subprocess_runner(cmd, project_dir, policy.render_timeout_seconds)
-            elif args.dry_run:
-                output_path.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
-                code, stderr = 0, ""
-            else:
-                if not (npx_bin := shutil.which("npx")):
-                    self._update_job(args.job_id, status="render_failed", error="未安装 npx / Remotion CLI")
-                    raise ValueError("未安装 npx / Remotion CLI，请使用 dry_run 或在渲染节点执行")
-                real_cmd = [npx_bin, *cmd[1:], *([f"--public-dir={public_dir}"] if public_dir.is_dir() else [])]
-                if (browser_path := _detect_browser_executable()[0]):
-                    real_cmd.append(f"--browser-executable={browser_path}")
-                code, _out, stderr = await self._run_exec(real_cmd, cwd=self.studio_dir if self._shared_studio_installed() else project_dir, timeout=policy.render_timeout_seconds)
-            if code != 0:
-                err_msg = _sanitize_diagnostic(stderr) or "Remotion 渲染失败"
-                self._update_job(args.job_id, status="render_failed", error=err_msg)
-                raise ValueError(f"Remotion 渲染失败: {err_msg[:200]}")
+        self.active_job_ids.add(args.job_id)
+        try:
+            self._update_job(args.job_id, status="rendering", error=None)
+            async with self._get_semaphore():
+                if callable(self.subprocess_runner):
+                    code, _out, stderr = await self.subprocess_runner(cmd, project_dir, policy.render_timeout_seconds)
+                elif args.dry_run:
+                    output_path.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
+                    code, stderr = 0, ""
+                else:
+                    if not (npx_bin := shutil.which("npx")):
+                        self._update_job(args.job_id, status="render_failed", error="未安装 npx / Remotion CLI")
+                        raise ValueError("未安装 npx / Remotion CLI，请使用 dry_run 或在渲染节点执行")
+                    real_cmd = [npx_bin, *cmd[1:], *([f"--public-dir={public_dir}"] if public_dir.is_dir() else [])]
+                    if (browser_path := _detect_browser_executable()[0]):
+                        real_cmd.append(f"--browser-executable={browser_path}")
+                    code, _out, stderr = await self._run_exec(real_cmd, cwd=self.studio_dir if self._shared_studio_installed() else project_dir, timeout=policy.render_timeout_seconds)
+                if code != 0:
+                    err_msg = _sanitize_diagnostic(stderr) or "Remotion 渲染失败"
+                    self._update_job(args.job_id, status="render_failed", error=err_msg)
+                    raise ValueError(f"Remotion 渲染失败: {err_msg[:200]}")
 
-        expected = float(job["manifest"].get("total_duration_seconds") or 0.0)
-        loudnorm_applied, cover_path = (await self._postprocess_render(output_path, project_dir, expected_duration=expected)) if (not args.dry_run and not callable(self.subprocess_runner)) else (False, None)
-        qc_report = self._validate_qc_probe(await self._probe_rendered_video(output_path, expected_duration=expected, dry_run=args.dry_run), output_path, expected)
-        qc_report |= {"loudnorm_applied": loudnorm_applied, "cover_generated": cover_path is not None}
-        if not qc_report["passed"]:
-            self._update_job(args.job_id, status="qc_failed", qc_json=dump(qc_report), output_path=str(output_path), cover_path=str(cover_path or ""), error="；".join(qc_report["issues"]))
-            return {"ok": False, "job_id": args.job_id, "status": "qc_failed", "output_path": str(output_path), "cover_path": str(cover_path or ""), "qc_report": qc_report}
-        file_sha256 = hashlib.sha256(output_path.read_bytes()).hexdigest()
-        next_status = "ready_for_review" if policy.publish_mode == "preview_review" else "rendered"
-        self._update_job(args.job_id, status=next_status, qc_json=dump(qc_report), output_path=str(output_path), cover_path=str(cover_path or ""), content_hash=file_sha256, error=None)
-        return {"ok": True, "job_id": args.job_id, "status": next_status, "output_path": str(output_path), "cover_path": str(cover_path or ""), "content_hash": file_sha256, "qc_report": qc_report}
+            expected = float(job["manifest"].get("total_duration_seconds") or 0.0)
+            loudnorm_applied, cover_path = (await self._postprocess_render(output_path, project_dir, expected_duration=expected)) if (not args.dry_run and not callable(self.subprocess_runner)) else (False, None)
+            qc_report = self._validate_qc_probe(await self._probe_rendered_video(output_path, expected_duration=expected, dry_run=args.dry_run), output_path, expected)
+            qc_report |= {"loudnorm_applied": loudnorm_applied, "cover_generated": cover_path is not None}
+            if not qc_report["passed"]:
+                self._update_job(args.job_id, status="qc_failed", qc_json=dump(qc_report), output_path=str(output_path), cover_path=str(cover_path or ""), error="；".join(qc_report["issues"]))
+                return {"ok": False, "job_id": args.job_id, "status": "qc_failed", "output_path": str(output_path), "cover_path": str(cover_path or ""), "qc_report": qc_report}
+            file_sha256 = hashlib.sha256(output_path.read_bytes()).hexdigest()
+            next_status = "ready_for_review" if policy.publish_mode == "preview_review" else "rendered"
+            self._update_job(args.job_id, status=next_status, qc_json=dump(qc_report), output_path=str(output_path), cover_path=str(cover_path or ""), content_hash=file_sha256, error=None)
+            self._touch_video_cache(project_dir, lease_seconds=1800, enforce=True)
+            return {"ok": True, "job_id": args.job_id, "status": next_status, "output_path": str(output_path), "cover_path": str(cover_path or ""), "content_hash": file_sha256, "qc_report": qc_report}
+        finally:
+            self.active_job_ids.discard(args.job_id)
 
     def _auto_publish_gate_check(self) -> str | None:
         policy = self.policy()

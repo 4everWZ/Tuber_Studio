@@ -1,16 +1,19 @@
 import React from "react";
 import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
-import { CJK_FONT_STACK, MONO_FONT_STACK, type AquaSceneProp } from "../types";
+import { AQUA_THEME, CJK_FONT_STACK, MONO_FONT_STACK, type AquaSceneProp } from "../types";
 
-const BAR_GRADIENTS = [
-  "linear-gradient(90deg, #38bdf8, #22d3ee)",
-  "linear-gradient(90deg, #818cf8, #c084fc)",
-  "linear-gradient(90deg, #34d399, #2dd4bf)",
-  "linear-gradient(90deg, #fbbf24, #fb923c)",
-  "linear-gradient(90deg, #f472b6, #fb7185)",
+const BAR_COLORS = [
+  "#0ea5e9",
+  "#fb7185",
+  "#14b8a6",
+  "#f59e0b",
+  "#6366f1",
 ];
 
-export const ChartCompare: React.FC<{ scene: AquaSceneProp }> = ({ scene }) => {
+export const ChartCompare: React.FC<{ scene: AquaSceneProp; includeAvatar?: boolean }> = ({
+  scene,
+  includeAvatar = true,
+}) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const vp = scene.visual_props || {};
@@ -24,29 +27,47 @@ export const ChartCompare: React.FC<{ scene: AquaSceneProp }> = ({ scene }) => {
         flex: 1,
         display: "flex",
         flexDirection: "column",
-        gap: 28,
-        padding: "0 32px 130px",
+        gap: 20,
+        padding: `0 ${includeAvatar ? 286 : 36}px 146px 28px`,
         fontFamily: CJK_FONT_STACK,
       }}
     >
       <div>
-        <div style={{ fontSize: 50, fontWeight: 800, color: "#f8fafc" }}>{scene.heading}</div>
+        <div
+          style={{
+            display: "inline-block",
+            padding: "4px 14px",
+            borderRadius: 999,
+            backgroundColor: AQUA_THEME.skySoft,
+            border: `2px solid ${AQUA_THEME.border}`,
+            fontSize: 16,
+            fontWeight: 800,
+            color: AQUA_THEME.ink,
+            marginBottom: 8,
+          }}
+        >
+          实测拉踩表 📊
+        </div>
+        <div style={{ fontSize: 46, fontWeight: 900, color: AQUA_THEME.ink }}>{scene.heading}</div>
         {vp.subtitle ? (
-          <div style={{ fontSize: 25, color: "#94a3b8", marginTop: 8 }}>{vp.subtitle}</div>
+          <div style={{ fontSize: 23, fontWeight: 600, color: AQUA_THEME.inkSoft, marginTop: 4 }}>
+            {vp.subtitle}
+          </div>
         ) : null}
       </div>
 
       <div
         style={{
           flex: 1,
-          borderRadius: 22,
-          padding: "32px 36px",
-          backgroundColor: "rgba(15, 23, 42, 0.78)",
-          border: "1px solid rgba(148, 163, 184, 0.24)",
+          borderRadius: 26,
+          padding: "28px 34px",
+          backgroundColor: AQUA_THEME.cream,
+          border: `3px solid ${AQUA_THEME.border}`,
+          boxShadow: AQUA_THEME.shadowLg,
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
-          gap: 24,
+          gap: 20,
         }}
       >
         {items.length > 0 ? (
@@ -54,7 +75,7 @@ export const ChartCompare: React.FC<{ scene: AquaSceneProp }> = ({ scene }) => {
             const grow = spring({
               frame: Math.max(0, frame - idx * 6),
               fps,
-              config: { damping: 16, stiffness: 110 },
+              config: { damping: 15, stiffness: 115 },
             });
             const ratio = Math.min(1, Math.abs(Number(item.value) || 0) / maxAbs);
             const widthPct = Math.max(8, Math.round(ratio * 100 * grow));
@@ -63,15 +84,19 @@ export const ChartCompare: React.FC<{ scene: AquaSceneProp }> = ({ scene }) => {
               Number.isInteger(item.value) ? Math.round(animatedValue).toString() : animatedValue.toFixed(1);
 
             return (
-              <div key={`${item.label}-${idx}`} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div key={`${item.label}-${idx}`} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                  <span style={{ fontSize: 26, fontWeight: 600, color: "#e2e8f0" }}>{item.label}</span>
+                  <span style={{ fontSize: 25, fontWeight: 800, color: AQUA_THEME.ink }}>{item.label}</span>
                   <span
                     style={{
                       fontFamily: MONO_FONT_STACK,
-                      fontSize: 28,
-                      fontWeight: 700,
-                      color: "#7dd3fc",
+                      fontSize: 24,
+                      fontWeight: 800,
+                      padding: "2px 12px",
+                      borderRadius: 999,
+                      backgroundColor: AQUA_THEME.creamTint,
+                      border: `2px solid ${AQUA_THEME.border}`,
+                      color: AQUA_THEME.ink,
                     }}
                   >
                     {formatted}
@@ -83,7 +108,8 @@ export const ChartCompare: React.FC<{ scene: AquaSceneProp }> = ({ scene }) => {
                     height: 28,
                     width: "100%",
                     borderRadius: 999,
-                    backgroundColor: "rgba(51, 65, 85, 0.55)",
+                    backgroundColor: "#e2e8f0",
+                    border: `2px solid ${AQUA_THEME.border}`,
                     overflow: "hidden",
                   }}
                 >
@@ -92,8 +118,7 @@ export const ChartCompare: React.FC<{ scene: AquaSceneProp }> = ({ scene }) => {
                       height: "100%",
                       width: `${widthPct}%`,
                       borderRadius: 999,
-                      background: BAR_GRADIENTS[idx % BAR_GRADIENTS.length],
-                      boxShadow: "0 0 18px rgba(56, 189, 248, 0.35)",
+                      backgroundColor: BAR_COLORS[idx % BAR_COLORS.length],
                     }}
                   />
                 </div>
@@ -101,15 +126,15 @@ export const ChartCompare: React.FC<{ scene: AquaSceneProp }> = ({ scene }) => {
             );
           })
         ) : (
-          <div style={{ fontSize: 28, color: "#94a3b8", textAlign: "center" }}>
+          <div style={{ fontSize: 28, fontWeight: 700, color: AQUA_THEME.inkSoft, textAlign: "center" }}>
             {bullets.join(" · ") || "暂无对比指标项"}
           </div>
         )}
       </div>
 
       {vp.citation_label ? (
-        <div style={{ fontSize: 18, color: "#94a3b8", textAlign: "right" }}>
-          数据来源：{vp.citation_label}
+        <div style={{ fontSize: 18, fontWeight: 700, color: AQUA_THEME.muted, textAlign: "right" }}>
+          📎 来源便签：{vp.citation_label}
         </div>
       ) : null}
     </div>

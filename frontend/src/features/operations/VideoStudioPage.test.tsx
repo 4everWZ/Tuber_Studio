@@ -197,6 +197,8 @@ describe("VideoStudioPage", () => {
     expect(planCall?.body).toMatchObject({
       topic: "Python 异步并发图解",
       fps: 30,
+      include_avatar: true,
+      bgm_enabled: true,
       max_scenes: 4,
     });
   });
