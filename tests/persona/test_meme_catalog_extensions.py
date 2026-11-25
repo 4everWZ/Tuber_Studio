@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import httpx
@@ -132,7 +131,7 @@ def test_idempotent_db_migration_and_source_kinds(settings, store):
             license TEXT NOT NULL, enabled INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0,
             created_at REAL NOT NULL);
     """)
-    catalog = MemeCatalog(settings, store)
+    MemeCatalog(settings, store)
     # Second init must stay idempotent
     MemeCatalog(settings, store)
     cols = {row["name"] for row in store.all("PRAGMA table_info(meme_assets)")}

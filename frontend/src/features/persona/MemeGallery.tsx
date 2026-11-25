@@ -612,6 +612,7 @@ export function MemeGallery({ onChange }: { onChange?: () => void }) {
       source: {
         kind: "user_upload" as const,
         author: author.trim(),
+        author_id: "",
         url: sourceUrl.trim(),
         revision: sourceRevision.trim(),
         note: sourceNote.trim(),

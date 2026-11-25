@@ -2,9 +2,6 @@ import asyncio
 import base64
 import hashlib
 import io
-import json
-import socket
-import time
 from types import SimpleNamespace
 
 import httpx
@@ -13,7 +10,6 @@ from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
 
 from tuber_studio.app import create_app
-from tuber_studio.core.models import StrictModel
 from tuber_studio.infra.media.cache import MediaCache
 from tuber_studio.operations.channels.comments.materials import prepare_comment_materials
 from tuber_studio.operations.discovery.comments.reader import evaluate_comment_visit

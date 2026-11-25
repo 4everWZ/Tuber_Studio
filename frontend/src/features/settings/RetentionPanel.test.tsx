@@ -45,6 +45,8 @@ function makeCacheStatus(overrides: Partial<CacheStatusResponse> = {}): CacheSta
       temporary_limit_mib: 512,
       browsing_limit_mib: 256,
       assets_limit_mib: 512,
+      meme_inbox_limit_mib: 512,
+      meme_inbox_max_items: 200,
     },
     summary: {
       bytes: 17825792,

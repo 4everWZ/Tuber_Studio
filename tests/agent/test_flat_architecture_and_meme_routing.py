@@ -13,7 +13,7 @@ from tests.support.operations_helpers import ControlledPlatform
 from tuber_studio.agent.chat import router as turn_router
 from tuber_studio.agent.chat.context import ChatContext
 from tuber_studio.agent.chat.lookup.personal_agent import object_scope
-from tuber_studio.agent.chat.models import ChatIntent, DelegationBrief, TurnRoute
+from tuber_studio.agent.chat.models import TurnRoute
 from tuber_studio.agent.chat.router.disambiguation import _disambiguate_route
 from tuber_studio.agent.tasks import delegation as task_delegation
 from tuber_studio.agent.tasks.runtime import ACTIVE_TASK_EXECUTION, Tool

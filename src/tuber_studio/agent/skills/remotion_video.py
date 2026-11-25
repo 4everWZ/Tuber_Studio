@@ -24,16 +24,22 @@ from ...core.models import StrictModel, content_hash, tool_function
 from ...core.store import dump
 from ...core.validation import linked
 from ...infra.web_client.fetch import fetch_excerpt
-from ...operations.facade import (
-    canonical_intent, control_policy, find_write_attempt_by_intent, finish_write_attempt,
-    heartbeat_pulse_snapshot, reserve_write_attempt, select_video_candidates,
-)
+from ...operations import facade as _ops
 from ...persona.memory.daily.models import contains_memory_credential
 from ...persona.self_model import build_self_model_system_message
 from . import remotion_assets as _ra
 from .remotion_assets import (
-    DEFAULT_LINE_PAUSE_SECONDS, DEFAULT_OUTRO_HOLD_SECONDS, DEFAULT_SCENE_PAUSE_SECONDS,
-    AvatarCue, ChartPoint, PublicSourceRef, SceneVisualProps, TemplateId, VideoLineSpec, VideoMode, VideoSceneSpec,
+    DEFAULT_LINE_PAUSE_SECONDS,
+    DEFAULT_OUTRO_HOLD_SECONDS,
+    DEFAULT_SCENE_PAUSE_SECONDS,
+    AvatarCue,
+    ChartPoint,
+    PublicSourceRef,
+    SceneVisualProps,
+    TemplateId,
+    VideoLineSpec,
+    VideoMode,
+    VideoSceneSpec,
 )
 
 __all__ = [
@@ -291,16 +297,11 @@ class RemotionVideoSkill:
         rows = self.store.all(f"SELECT id FROM remotion_video_jobs {where} ORDER BY updated_at DESC LIMIT ?", (*params, max(1, min(int(limit), 100))))
         return [job for row in rows if (job := self.get_job(row["id"])) is not None]
 
-    def _public_candidates_and_memories(
-        self, *, topic: str, candidate_bvids: list[str], character_id: str
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        candidates = select_video_candidates(self._browsing_service(), store=self.store, limit=12, query=None)
+    def _public_candidates_and_memories(self, *, topic: str, candidate_bvids: list[str], character_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        candidates = _ops.select_video_candidates(self._browsing_service(), store=self.store, limit=12, query=None)
         if candidate_bvids:
             by_bv = {item["bvid"]: item for item in candidates}
-            candidates = [
-                by_bv.get(bv) or {"bvid": bv, "title": f"视频 {bv}", "url": f"https://www.bilibili.com/video/{bv}", "summary": topic, "source_kind": "watched_video", "scope": "public"}
-                for bv in candidate_bvids
-            ]
+            candidates = [by_bv.get(bv) or {"bvid": bv, "title": f"视频 {bv}", "url": f"https://www.bilibili.com/video/{bv}", "summary": topic, "source_kind": "watched_video", "scope": "public"} for bv in candidate_bvids]
         unified = getattr(self.runtime, "unified_memory", None)
         return candidates, (unified.for_prompt("public", character_id=character_id, limit=10) if unified is not None else [])
 
@@ -814,7 +815,7 @@ class RemotionVideoSkill:
         if policy.publish_mode != "auto_publish" or not policy.auto_publish_enabled:
             return "当前策略未开启自动投稿，保持人工预览审核队列"
         if (browsing := self._browsing_service()) is not None:
-            snap = heartbeat_pulse_snapshot(browsing, store=self.store)
+            snap = _ops.heartbeat_pulse_snapshot(browsing, store=self.store)
             if snap.get("control_state") in {"off", "paused", "emergency", "blocked", "stopping"}:
                 return f"运营控制面状态为 {snap['control_state']}，暂不自动投稿"
             if (snap.get("writes") or {}).get("uncertain_count"):
@@ -872,7 +873,7 @@ class RemotionVideoSkill:
         policy = self.policy()
         requested_mode = args.publish_mode or policy.publish_mode
         effective_hash = job.get("content_hash") or job.get("project_hash") or content_hash(plan.model_dump(mode="json"))
-        intent = canonical_intent("bilibili", "video_publish", effective_hash, char_id)
+        intent = _ops.canonical_intent("bilibili", "video_publish", effective_hash, char_id)
 
         if requested_mode == "preview_review" and not args.approved:
             self._update_job(args.job_id, status="ready_for_review", publish_mode="preview_review", intent=intent)
@@ -888,7 +889,7 @@ class RemotionVideoSkill:
             return {"ok": False, "job_id": args.job_id, "action": "blocked_uncertain", "status": "publish_uncertain", "intent": intent, "error": "上次投稿回执待核对，已阻止重复上传"}
 
         ops_host = self._browsing_service() or getattr(self.runtime, "operations", None)
-        if (existing := find_write_attempt_by_intent(ops_host, account_id=account_id, character_id=char_id, intent=intent)) is not None:
+        if (existing := _ops.find_write_attempt_by_intent(ops_host, account_id=account_id, character_id=char_id, intent=intent)) is not None:
             if existing.get("resolved_status") == "published":
                 return {"ok": True, "job_id": args.job_id, "action": "already_published", "status": "published", "intent": intent, "receipt": existing.get("receipt")}
             if existing.get("resolved_status") in {"sending", "uncertain"}:
@@ -901,30 +902,26 @@ class RemotionVideoSkill:
         write_token = None
         ops_ctrl = getattr(ops_host, "operations", ops_host) if ops_host is not None else None
         if ops_ctrl is not None and hasattr(ops_ctrl, "reserve") and hasattr(ops_ctrl, "finish"):
-            pol_ctrl = control_policy(ops_host)
+            pol_ctrl = _ops.control_policy(ops_host)
             epoch = pol_ctrl.get("epoch") if (not args.approved and isinstance(pol_ctrl, dict)) else None
-            write_token = reserve_write_attempt(
-                ops_host, account_id=account_id, character=char, intent=intent, channel="video_publish", automatic=not args.approved,
-                epoch=epoch,
-                binding={"job_id": args.job_id, "title": plan.title, "content_hash": effective_hash}, content_hash=effective_hash,
-            )
+            write_token = _ops.reserve_write_attempt(ops_host, account_id=account_id, character=char, intent=intent, channel="video_publish", automatic=not args.approved, epoch=epoch, binding={"job_id": args.job_id, "title": plan.title, "content_hash": effective_hash}, content_hash=effective_hash)
 
         credentials = dict(getattr(getattr(self.runtime, "account", None), "credentials", None) or {})
         try:
             receipt = await self._upload_via_biliup(plan=plan, output_path=Path(job["output_path"]), credentials=credentials, timeout=policy.upload_timeout_seconds)
         except TimeoutError as exc:
             if write_token:
-                finish_write_attempt(ops_host, write_token, "uncertain", error=str(exc))
+                _ops.finish_write_attempt(ops_host, write_token, "uncertain", error=str(exc))
             self._update_job(args.job_id, status="publish_uncertain", intent=intent, write_token=write_token, error=str(exc)[:300])
             return {"ok": False, "job_id": args.job_id, "action": "uncertain", "status": "publish_uncertain", "intent": intent, "write_token": write_token, "error": str(exc)}
         except Exception as exc:
             if write_token:
-                finish_write_attempt(ops_host, write_token, "rejected", error=str(exc)[:300])
+                _ops.finish_write_attempt(ops_host, write_token, "rejected", error=str(exc)[:300])
             self._update_job(args.job_id, status="publish_failed", intent=intent, write_token=write_token, error=str(exc)[:300])
             return {"ok": False, "job_id": args.job_id, "action": "rejected", "status": "publish_failed", "intent": intent, "write_token": write_token, "error": str(exc)}
 
         if write_token:
-            finish_write_attempt(ops_host, write_token, "published", receipt=receipt)
+            _ops.finish_write_attempt(ops_host, write_token, "published", receipt=receipt)
         self._update_job(args.job_id, status="published", intent=intent, write_token=write_token, receipt_json=dump(receipt), error=None)
         return {"ok": True, "job_id": args.job_id, "action": "published", "status": "published", "intent": intent, "write_token": write_token, "receipt": receipt}
 
