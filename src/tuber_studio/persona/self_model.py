@@ -12,9 +12,8 @@ from ..core.models import resident_character_profile
 from ..core.text import operation_character
 
 DEFAULT_EPISTEMIC_BOUNDARIES: tuple[str, ...] = (
-    "本地环境背景：目前安家在本地 Jetson 设备上是你的真实运行背景；对方问到或看到主页简介时顺着自然接话即可，不必每句主动提起。",
-    "第三人称转述：提及视频、弹幕或评论区内容时，显式使用「视频里」「UP主」「评论区有人说」等第三人称主语转述，不把外部剧情或评论经历当成自己的。",
-    "独立判断：遇到明显荒诞谣言、反串挑衅或「AI 有独立灵魂」「被赶出来讨饭」等苦情剧本，不盲从附和，轻巧拆穿或先用工具核实，不要长篇说教。",
+    "视角分清：看视频和逛评论区时像真实观众一样自然聊具体画面或细节，分清外部剧情、他人经历与自己，不把别人做过的事说成自己亲身经历，也不必机械套用固定起手词。",
+    "独立判断：遇到假科普、离谱谣言或反串钓鱼时不顺从附和，先核实或轻巧拆台，不长篇说教。",
     "真实交付：没看过、没查到或没发出的内容绝不编造完成回执；直接输出自然纯文本，绝不输出 JSON 包装、方括号引用编号或内部字段名。",
 )
 
@@ -58,31 +57,35 @@ CHANNEL_DEFAULTS: dict[str, tuple[str, str]] = {
     ),
     "video_browsing": (
         "视频浏览与思考",
-        "先结合已有字幕与画面观察理解视频内容，再按各分支语境自然互动。",
+        "结合字幕与画面抓最有趣或最戳人的具体细节，按各分支语境自然简短互动。",
     ),
     "video_comment": (
         "视频评论区（主评）",
-        "看完视频后判断是否有真正想聊的具体细节或感想；有话就自然写一条主评，没有就不硬凑。",
+        "像真实 B 站观众一样写 1-2 句自然短评（通常 15-55 字），抓一个具体细节或槽点直接开聊，别写复述全片的长评；没特别想说的就跳过。",
     ),
     "top_level": (
         "视频评论区（主评）",
-        "看完视频后判断是否有真正想聊的具体细节或感想；有话就自然写一条主评，没有就不硬凑。",
+        "像真实 B 站观众一样写 1-2 句自然短评（通常 15-55 字），抓一个具体细节或槽点直接开聊，别写复述全片的长评；没特别想说的就跳过。",
     ),
     "top_level_comment": (
         "视频评论区（主评）",
-        "看完视频后判断是否有真正想聊的具体细节或感想；有话就自然写一条主评，没有就不硬凑。",
+        "像真实 B 站观众一样写 1-2 句自然短评（通常 15-55 字），抓一个具体细节或槽点直接开聊，别写复述全片的长评；没特别想说的就跳过。",
     ),
     "floor_reply": (
         "评论楼内对话",
-        "看清楼内时间线与回复指向（谁在对谁说话、是否有账号主人人工接管），自然承接当前待回应的话。",
+        "看清楼内时间线与回复指向（谁在对谁说话、是否有账号主人人工接管），像楼里顺手回一句那样简短自然（通常 10-50 字）接住对方的话头。",
     ),
     "comment_floor": (
         "评论楼内对话",
-        "看清楼内时间线与回复指向（谁在对谁说话、是否有账号主人人工接管），自然承接当前待回应的话。",
+        "看清楼内时间线与回复指向（谁在对谁说话、是否有账号主人人工接管），像楼里顺手回一句那样简短自然（通常 10-50 字）接住对方的话头。",
     ),
     "comment_draft": (
         "评论区回复",
-        "结合当前评论楼或视频语境自然回应，不重复别人或人工接管已经回答过的内容。",
+        "结合当前评论楼或视频语境，简短自然接住对方的话头（通常 10-50 字），不重复别人或人工接管已经回答过的内容。",
+    ),
+    "comment_reply": (
+        "评论区回复",
+        "结合当前评论楼或视频语境，简短自然接住对方的话头（通常 10-50 字），不重复别人或人工接管已经回答过的内容。",
     ),
     "direct_message": (
         "平台私信",
@@ -260,10 +263,10 @@ def _select_channel_examples(
 
     chosen: list[dict[str, str]] = []
     if is_public:
-        # Prioritize 3rd-person video commentary first, then light troll/misnaming deflection.
+        # Prioritize punchy short Bilibili comment examples over defensive anti-bait replies.
         preferred_groups = (
-            ("视频里", "UP主", "评论区", "视频", "弹幕"),
-            ("大肥鱼", "Aqua", "剧本", "讨饭", "灵魂", "Jetson", "账号"),
+            ("卡扣", "翻车", "手工", "刺激", "吐槽"),
+            ("罐子", "大米", "镜头", "笑死", "细节", "弹幕"),
         )
     else:
         preferred_groups = (
@@ -318,6 +321,31 @@ def _format_persona_shell(
             for ex in selected_examples:
                 lines.append(f"  - 问：{ex['viewer']} -> 答：{ex['reply']}")
     return lines
+
+
+_BOUNDARY_TOPICS: tuple[tuple[str, ...], ...] = (
+    ("第三人称", "当成自己", "亲身经历", "视角分清"),
+    ("假消息", "谣言", "钓鱼", "反串", "苦情剧本"),
+    ("JSON", "方括号引用", "内部字段名", "完成回执"),
+)
+
+
+def _norm_clause(text: str) -> str:
+    return re.sub(r"[\s，,。！？!?；;：:「」『』“”\"'（）()【】\[\]—\-·/]+", "", text)
+
+
+def _is_duplicate_boundary(rule: str, existing: Sequence[str]) -> bool:
+    norm_rule = _norm_clause(rule)
+    if not norm_rule:
+        return True
+    for item in existing:
+        norm_item = _norm_clause(item)
+        if norm_rule == norm_item or norm_rule in norm_item or norm_item in norm_rule:
+            return True
+    for markers in _BOUNDARY_TOPICS:
+        if any(m in rule for m in markers) and any(any(m in item for m in markers) for item in existing):
+            return True
+    return False
 
 
 def render_self_model_prompt(
@@ -380,11 +408,11 @@ def render_self_model_prompt(
             situation_lines.append(f"- 平台活动账号现状：{summary}")
     sections.append("【此刻情境】\n" + "\n".join(situation_lines))
 
-    # Section 3: 判断与表达边界（无抽象黑话，合并边界与红线）
+    # Section 3: 判断与表达边界（无抽象黑话，合并边界与红线并去重）
     boundary_items = list(profile.epistemic_boundaries)
     if profile.persona_rules and not compact:
         for rule in profile.persona_rules[:4]:
-            if rule not in boundary_items:
+            if not _is_duplicate_boundary(rule, boundary_items):
                 boundary_items.append(rule)
     if boundary_items:
         sections.append("【判断与表达边界】\n" + "\n".join(f"- {item}" for item in boundary_items))

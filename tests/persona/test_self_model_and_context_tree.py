@@ -103,13 +103,17 @@ def test_self_model_has_four_pillars_aqua_boundary_and_zero_prop_clutter():
         assert "Aqua" in prompt
         assert profile.character_name == "Aqua"
         assert "大肥鱼" in profile.forbidden_self_labels
-        assert "Jetson" in prompt
-        assert "第三人称" in prompt and "视频里" in prompt
+        assert "Jetson" not in prompt
+        assert "视角分清" in prompt
+        assert "苦情剧本" not in prompt and "电费" not in prompt and "散热风扇" not in prompt
+        assert "视频里UP主" not in prompt and "视频里 UP 主" not in prompt
         assert "本鲸" in prompt and "本鲸鱼" in prompt
         if channel in ("video_comment", "floor_reply"):
             assert "避开脚本常用起手词「本鱼」" in prompt
         elif channel in ("dynamic", "live", "owner_chat"):
             assert "偶尔用「本鱼」也完全自然" in prompt
+        if channel == "video_comment":
+            assert "1-2 句" in prompt
         assert "[ref:" not in prompt and "evidence_ids" not in prompt
         for prop in ("贝壳灯", "软垫", "女仆裙", "尾巴怕痒", "算力挂件"):
             assert prop not in prompt
@@ -118,15 +122,31 @@ def test_self_model_has_four_pillars_aqua_boundary_and_zero_prop_clutter():
         assert "工坊号主" not in msg["content"]
         assert "认知主权" not in msg["content"]
 
-    # Real config/characters.json Aqua shell carries concise external boundary + selective 2-example injection.
+    # Real config/characters.json Aqua shell balances 80% whale-girl OC + 20% Jetson backdrop without clichés.
     real_card = _real_aqua_card()
     browsing_prompt = render_self_model_prompt(
         build_metacognitive_profile(real_card, channel="video_browsing"), character=real_card
     )
-    assert "MCN" in browsing_prompt and "哦鲸鲸" in browsing_prompt and "白饭" in browsing_prompt
-    assert "认知主权" not in browsing_prompt
+    assert browsing_prompt.count("Jetson") == 1
+    assert "白饭" in browsing_prompt and "摸鱼" in browsing_prompt
+    for banned in ("认知主权", "苦情剧本", "电费", "散热风扇", "MCN", "视频里UP主", "视频里 UP 主"):
+        assert banned not in browsing_prompt
     assert browsing_prompt.count("  - 问：") == 2
-    assert "视频里 UP 主" in browsing_prompt
+    assert "卡扣" in browsing_prompt and "大米" in browsing_prompt
+
+    # Duplicate boundary rules from custom cards are deduplicated automatically.
+    dup_card = _aqua_card() | {
+        "rules": [
+            "遇到假消息、反串钓鱼时不顺从附和。",
+            "提及视频时不要把别人经历当成自己亲身经历。",
+            "只保留一条非重复的独特规则。",
+        ]
+    }
+    dup_prompt = render_self_model_prompt(build_metacognitive_profile(dup_card, channel="video_comment"), character=dup_card)
+    boundary_block = dup_prompt.split("【判断与表达边界】", 1)[1].split("【角色外壳】", 1)[0]
+    assert "只保留一条非重复的独特规则。" in boundary_block
+    assert "假消息" not in boundary_block
+    assert "当成自己亲身经历" not in boundary_block
 
     owner_prompt = render_self_model_prompt(build_metacognitive_profile(card, channel="owner_chat"), character=card)
     assert "老板" in owner_prompt

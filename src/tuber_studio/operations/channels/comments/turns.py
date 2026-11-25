@@ -97,7 +97,10 @@ async def generate_native_comment_reply(
     if materials:
         extra_ctx["comment_materials"] = materials
 
-    objective = "请自然接住当前评论回复；如果无需发言或对方不是对本账号说话，可调用 skip_reply。"
+    objective = (
+        "请像 B 站评论区顺手回一句那样，用 1-2 句简短口语（通常 10-50 字）直接接住当前评论的话头，别写长段分析；"
+        "如果无需发言或对方不是对本账号说话，可调用 skip_reply。"
+    )
     branch = fork_comment_floor_branch(
         tree,
         root_id=str(row["thread_id"]),

@@ -33,15 +33,19 @@ _LEGACY = {
         "17977df08e4d41bc65d9be6dea2d1ac3d5cb86c11c8e30aee08cb6ab6bd7611a",
         "41205176febfcc15818a6449f57b63fc90f28dde120f5eeebc499457c33bd957",
         "fcc6e7e626716cee12abe9094662c5200603ff587c566d186b41d35ffda1eb1f",
-    },
-}
-_REPLACEMENTS = {
-    # These released seeds carry the refined Aqua shell aligned with Jetson bio and layered voice.
-    "whale": {
         "0c6a5f4be36f15d1d470c0733595b33d920ee44133f8f2a21036528040385fb1",
         "b725b671193dbba081ce8f067405be098975864024f3c036ca2265c02d0f2625",
         "a2e742a911a16daf7a2d1af92dddb1fa0395299f2867e61c209dfff6ada5b22c",
         "a75e4f4aa3a2cef2776bd522189907c0ac15e1088c2f459ab2fc616707da7cd7",
+    },
+}
+_REPLACEMENTS = {
+    # These released seeds carry the 80/20 whale-girl OC rebalance and short Bilibili comment rhythm.
+    "whale": {
+        "7da79cf2de9a8f068a46eb114b9b678053d1aa34fd428b3675c986e8e46643a4",
+        "2d2f6ab53f56b88f6b58da5411935f6b2390c1756f839b275b1df0791641539c",
+        "04b6ec4fe2b29740a402a229bcd0189708e78daa89649c48e4400cdd8f16788d",
+        "65c379224149a0be011741de399c871ade1d961b2aeff28496589213b231485e",
     },
 }
 # Fresh installations receive the full seed. Existing versions gain only the original upgrade fields.

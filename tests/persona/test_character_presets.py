@@ -99,23 +99,37 @@ def test_enriched_preset_keeps_character_assets_without_retired_radio():
     assert {"大肥鱼", "讨饭", "讨白饭"} <= set(main["core"]["blacklist"])
     assert "白饭" not in main["core"]["blacklist"]
     assert "Jetson" not in main["core"]["blacklist"]
-    # The refined Aqua card keeps the proud home-compute white-rice quirk while dropping unrelated fanfic props.
+    # The 80/20 Aqua card keeps lively whale-girl OC soul while dropping retired fanfic props and defensive clichés.
     positive_shell = json.dumps(
         [{k: v for k, v in main["core"].items() if k != "blacklist"}, main["style"], main["rules"], main["lore"]],
         ensure_ascii=False,
     )
-    for retired in ("深海思考", "贝壳灯", "软垫", "女仆裙", "尾巴怕痒", "算力挂件", "认知主权"):
+    for retired in (
+        "深海思考",
+        "贝壳灯",
+        "软垫",
+        "女仆裙",
+        "尾巴怕痒",
+        "算力挂件",
+        "认知主权",
+        "电费",
+        "散热风扇",
+        "苦情剧本",
+        "MCN",
+    ):
         assert retired not in positive_shell
     assert "白饭" in main["core"]["background"] and "Jetson" in main["core"]["background"]
+    assert "摸鱼" in main["core"]["background"]
+    assert "呆毛" in main["core"]["appearance"]["hair"] and "鲸尾" in main["core"]["appearance"]["tail"]
     assert "主人" not in main["core"]["background"]
-    assert len(main["rules"]) == 3
-    assert len(main["core"]["examples"]) == 4
-    assert any("视频里" in ex["reply"] and "UP" in ex["reply"] for ex in main["core"]["examples"])
-    assert main["lore"] == []
+    assert len(main["rules"]) == 2
+    assert len(main["core"]["examples"]) == 5
+    assert all("视频里 UP 主" not in ex["reply"] and "视频里UP主" not in ex["reply"] for ex in main["core"]["examples"])
+    assert len(main["lore"]) == 3
     assert main["core"]["background"] and main["core"]["interaction"]
     for item in main["core"]["examples"]:
         assert item["viewer"]
-        assert 1 <= len(item["reply"]) <= main["style"]["max_chars"]
+        assert 1 <= len(item["reply"]) <= 45
 
 
 def test_character_sources_stay_out_of_prompt_and_lore_is_bounded():

@@ -179,7 +179,8 @@ def _build_browsing_tree(
         if bound.get("actor_roles"):
             extra_ctx["actor_roles"] = bound["actor_roles"]
         objective = (
-            "请以自然口吻直接说出对当前评论的回复；若不想回、对方没跟本账号说话、或不需要插话，请调用 skip_reply。"
+            "请像 B 站楼里顺手回一句那样，用 1-2 句简短口语（通常 10-50 字）直接接住当前评论的话头，别写长段分析或套模板；"
+            "若不想回、对方没跟本账号说话、或不需要插话，请调用 skip_reply。"
             if allow_public
             else "当前只允许观察或跳过（不可公开发言），决定不回复请调用 skip_reply。"
         )
@@ -205,7 +206,10 @@ def _build_browsing_tree(
     # Video top_level (or video_actions) branch
     objectives = []
     if allow_public:
-        objectives.append("如果你想发表一条视频主评，请直接用自然口吻说出正文。")
+        objectives.append(
+            "如果你想发表一条视频主评，请像真实 B 站观众一样直接写 1-2 句自然短评（通常 15-55 字），"
+            "挑一个最戳人的具体画面、细节或槽点开聊，不要写复述全片或分点总结的长评。"
+        )
     else:
         objectives.append("本次仅观看与评估，不可发表公开留言；处理完互动偏好后请调用 skip_reply。")
     if video_actions:

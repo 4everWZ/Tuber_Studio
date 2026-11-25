@@ -618,7 +618,8 @@ def fork_top_level_comment_branch(
         lines.append("补充状态：" + json.dumps(extra_context, ensure_ascii=False, separators=(",", ":")))
     lines.append(
         objective.strip()
-        or "请结合看过的视频内容，以自然第一人称决定是否发一条主评。"
+        or "请结合看过的视频内容，像真实 B 站观众一样决定是否发一条 1-2 句的自然短评（通常 15-55 字），"
+        "抓一个具体细节或槽点直接开聊，别写复述全片的长评。"
         "想发就直接输出纯文本评论（或先按需调用工具查证/看帧/补读片段/点赞）；不发则调用 skip_reply。"
     )
     return _branch_node(
@@ -769,7 +770,7 @@ def fork_comment_floor_branch(
         )
     cue_lines.append(
         objective.strip()
-        or "决定下一步行动：若要公开回复，直接输出自然第一人称正文（不要输出 JSON 或引用编号）；"
+        or "决定下一步行动：若要公开回复，直接输出 1-2 句简短自然的口语正文（通常 10-50 字，不要输出 JSON 或引用编号）；"
         "若需查证或跳过，调用对应工具（如 search_web、read_video_segment、inspect_video_frames、skip_reply、queue_dm_handoff）。"
     )
     messages.append({"role": "user", "content": "\n".join(cue_lines)})
