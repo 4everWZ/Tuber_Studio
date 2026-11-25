@@ -1,7 +1,8 @@
 """Schemas and top-level workbench TaskRuntime composition for Agent tasks."""
 
+import inspect
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import Field, PositiveInt, field_validator
 
@@ -65,6 +66,10 @@ class EditionEdit(StrictModel):
 
 class GoalStop(StrictModel):
     confirmed_runs: dict[UUID, PositiveInt]
+
+
+class SyncMemeSourcesArgs(StrictModel):
+    source_id: str | None = Field(default=None, max_length=64)
 
 
 def attach_workbench_task_extensions(tasks):
@@ -137,6 +142,154 @@ def register_workbench_task_tools(tasks, runtime, store, browsing):
             ),
         )
         register_dynamic_publication(tasks, dynamics)
+
+    async def _maybe_await(value):
+        return await value if inspect.isawaitable(value) else value
+
+    def _project_source(row: dict) -> dict:
+        return {
+            "source_id": row.get("source_id"),
+            "name": row.get("name"),
+            "kind": row.get("kind"),
+            "enabled": bool(row.get("enabled")),
+            "last_status": row.get("last_status"),
+            "last_synced_at": row.get("last_synced_at"),
+            "last_error": str(row.get("last_error") or "")[:200],
+        }
+
+    async def run_meme_status(request, args):
+        harvester = getattr(runtime, "meme_harvester", None)
+        catalog = getattr(getattr(runtime, "pets", None), "catalog", None)
+        if harvester is None and catalog is None:
+            return {"error": "表情包图库服务尚未就绪。"}
+        gallery_total = gallery_enabled = 0
+        if catalog is not None and hasattr(catalog, "list"):
+            char = getattr(runtime, "character", None)
+            assets = catalog.list(char, include_disabled=True) if char else []
+            gallery_total = len(assets)
+            gallery_enabled = sum(1 for item in assets if item.get("enabled", True))
+        inbox_pending = inbox_pending_vision = 0
+        comment_harvest_enabled = True
+        sources_list = []
+        if harvester is not None:
+            if hasattr(harvester, "list_inbox"):
+                inbox = harvester.list_inbox(status="pending") or {}
+                inbox_pending = int(inbox.get("pending_count", len(inbox.get("items", []))))
+                inbox_pending_vision = int(inbox.get("pending_vision_count", 0))
+            if hasattr(harvester, "get_config"):
+                comment_harvest_enabled = bool((harvester.get_config() or {}).get("comment_harvest_enabled", True))
+            if hasattr(harvester, "list_sources"):
+                raw_sources = (harvester.list_sources() or {}).get("items", [])
+                sources_list = [_project_source(s) for s in raw_sources if isinstance(s, dict)]
+            elif hasattr(harvester, "status"):
+                raw_status = await _maybe_await(harvester.status()) or {}
+                inbox_pending = int(raw_status.get("inbox_pending", inbox_pending))
+                inbox_pending_vision = int(raw_status.get("inbox_pending_vision", inbox_pending_vision))
+                comment_harvest_enabled = bool(raw_status.get("comment_harvest_enabled", comment_harvest_enabled))
+                sources_list = [_project_source(s) for s in (raw_status.get("sources") or []) if isinstance(s, dict)]
+        return {
+            "inbox_pending": inbox_pending,
+            "inbox_pending_vision": inbox_pending_vision,
+            "gallery_total": gallery_total,
+            "gallery_enabled": gallery_enabled,
+            "comment_harvest_enabled": comment_harvest_enabled,
+            "sources_total": len(sources_list),
+            "sources_enabled": sum(1 for s in sources_list if s["enabled"]),
+            "sources": sources_list[:20],
+        }
+
+    async def run_meme_sync(request, args):
+        harvester = getattr(runtime, "meme_harvester", None)
+        if harvester is None:
+            return {"error": "表情包采集器尚未就绪。"}
+        source_id = (args.source_id or "").strip() or None
+        queue_res: dict = {}
+        if source_id:
+            sync_res = await _maybe_await(harvester.sync_source(source_id)) or {}
+            if hasattr(harvester, "process_queue_once"):
+                queue_res = await _maybe_await(harvester.process_queue_once()) or {}
+            elif hasattr(harvester, "drain_queue"):
+                queue_res = await _maybe_await(harvester.drain_queue()) or {}
+        elif hasattr(harvester, "sync_all_sources"):
+            sync_res = await _maybe_await(harvester.sync_all_sources()) or {}
+            if hasattr(harvester, "process_queue_once"):
+                queue_res = await _maybe_await(harvester.process_queue_once()) or {}
+            elif hasattr(harvester, "drain_queue"):
+                queue_res = await _maybe_await(harvester.drain_queue()) or {}
+        else:
+            sync_res = await _maybe_await(harvester.sync_all()) or {}
+            if isinstance(sync_res, dict) and isinstance(sync_res.get("queue"), dict):
+                queue_res = sync_res["queue"]
+
+        source_entries = sync_res.get("sources") if isinstance(sync_res, dict) and isinstance(sync_res.get("sources"), list) else (
+            [sync_res] if isinstance(sync_res, dict) and "source_id" in sync_res else []
+        )
+        errors: list[str] = []
+        for err in (sync_res.get("errors") or () if isinstance(sync_res, dict) else ()):
+            errors.append(str(err)[:200])
+        for err in (queue_res.get("errors") or () if isinstance(queue_res, dict) else ()):
+            errors.append(str(err)[:200])
+        for entry in source_entries:
+            if isinstance(entry, dict) and (entry.get("error") or entry.get("status") == "error"):
+                errors.append(f"{entry.get('source_id', '')}: {str(entry.get('error') or 'error')[:160]}")
+
+        synced = int(
+            sync_res["synced"]
+            if isinstance(sync_res, dict) and "synced" in sync_res
+            else sum(1 for e in source_entries if not (isinstance(e, dict) and e.get("status") == "error"))
+        )
+        added_inbox = int(
+            sync_res["added_inbox"]
+            if isinstance(sync_res, dict) and "added_inbox" in sync_res
+            else queue_res.get("added_inbox", 0)
+            or (sum(int(e.get("accepted", 0)) for e in source_entries if isinstance(e, dict)) + int(queue_res.get("accepted", 0)))
+        )
+        auto_approved = int(
+            (sync_res.get("auto_approved", 0) if isinstance(sync_res, dict) else 0) + int(queue_res.get("auto_approved", 0))
+        )
+        discarded = int(
+            sync_res["discarded"]
+            if isinstance(sync_res, dict) and "discarded" in sync_res
+            else int(queue_res.get("discarded", 0)) + sum(int(e.get("skipped", 0)) for e in source_entries if isinstance(e, dict))
+        )
+        pending_vision = int(
+            queue_res["pending_vision"]
+            if isinstance(queue_res, dict) and "pending_vision" in queue_res
+            else queue_res.get("deferred", 0)
+        )
+        if not pending_vision and hasattr(harvester, "list_inbox"):
+            pending_vision = int((harvester.list_inbox(status="pending") or {}).get("pending_vision_count", 0))
+        return {
+            "evidence_id": f"meme_sync:{uuid4().hex[:16]}",
+            "synced": synced,
+            "added_inbox": added_inbox,
+            "auto_approved": auto_approved,
+            "discarded": discarded,
+            "pending_vision": pending_vision,
+            "errors": errors[:20],
+        }
+
+    tasks.register(
+        "meme_harvester_status",
+        Tool(
+            "只读查询表情包待审箱新图数量、主图库数量与订阅源同步状态，不触发同步。",
+            StrictModel,
+            run_meme_status,
+            foreground_read=True,
+            parallel_read=True,
+            responses_only=True,
+        ),
+    )
+    tasks.register(
+        "sync_meme_sources",
+        Tool(
+            "在后台同步表情包订阅源并执行待审视觉筛选，返回精简统计与 evidence_id。",
+            SyncMemeSourcesArgs,
+            run_meme_sync,
+            responses_only=True,
+            own_deadline=True,
+        ),
+    )
 
 
 def create_workbench_task_runtime(runtime, store, browsing):

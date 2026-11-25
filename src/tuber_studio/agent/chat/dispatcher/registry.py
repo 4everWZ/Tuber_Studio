@@ -23,6 +23,7 @@ _READ_KINDS = frozenset({
     "video_activity",
     "live_status",
     "live_studio_hud",
+    "meme_gallery_status",
 })
 
 

@@ -64,7 +64,7 @@ _ROUTE_READ_ACTIONS = (
     "operating_account", "operation_status", "web_lookup", "task_status",
     "workbench_capabilities", "outgoing_queue", "identity_read",
     LOOKUP_TOOL, "watch_totals", recall_memory.NAME, "memory_summary",
-    "daily_settings", "pet_settings",
+    "daily_settings", "pet_settings", "meme_gallery_status",
 )
 _ROUTE_CHANGE_ACTIONS = (
     "daily_settings", "pet_settings", "remember_event", "forget_memory",
@@ -100,11 +100,11 @@ _LIVE_TOOL_CONTEXT = (
 )
 
 _DIRECT_READS = {action for domain in CAPABILITIES.values() for action in domain.read_actions}
-_PRESENTED_READS = _DIRECT_READS | {LOOKUP_TOOL, recall_memory.NAME}
+_PRESENTED_READS = _DIRECT_READS | {LOOKUP_TOOL, recall_memory.NAME, "meme_gallery_status"}
 _DIRECT_CHANGES = {action for domain in CAPABILITIES.values() for action in domain.change_actions}
 _CURRENT_SCOPE_READS = {
     "clock", "game_status", "live_status", "operating_account", "operation_status", "workbench_capabilities",
-    "outgoing_queue",
+    "outgoing_queue", "meme_gallery_status",
 }
 _SETTING_ACTIONS = {"daily_settings", "pet_settings"}
 _OWNER_RELATION = re.compile(
@@ -210,6 +210,9 @@ class VideoSelection(StrictModel):
         return self
 
 
+TaskProfile = Literal["meme_harvest", "video_production", "media_inspection", "general_research"]
+
+
 class DelegationBrief(StrictModel):
     goal: str = Field(min_length=1, max_length=400)
     constraints: list[Annotated[str, StringConstraints(max_length=200)]] = Field(default_factory=list, max_length=8)
@@ -220,6 +223,7 @@ class DelegationBrief(StrictModel):
         max_length=8,
         description="明确只需读取指定对象时填完整读取范围，持续研究、写作或执行计划留空。",
     )
+    profile: TaskProfile | None = None
 
 
 class IdentityRead(StrictModel):
@@ -251,7 +255,7 @@ class ChatIntent(StrictModel):
         "game_status", "game_handoff", "live_history", "owner_profile", "owner_binding", "operating_account",
         "operation_status", "web_lookup", "task_status", "agent_task", "steer_task", "cancel_task",
         "pause_task", "resume_task", "watch_goal",
-        "workbench_capabilities", "pet_settings", "daily_settings",
+        "workbench_capabilities", "pet_settings", "daily_settings", "meme_gallery_status",
         "outgoing_queue", "prepare_publication", "workshop_lookup", "recall_memory",
     ]
     publication_channel: Literal["dynamics", "comments", "messages"] | None = Field(

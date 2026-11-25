@@ -425,6 +425,50 @@ async def dispatch_read_action(dispatcher, intent, char, request_id, data, event
             "card": None,
             "tool_receipt": {"action": "read", "group": "account", "values": facts},
         }
+    if kind == "meme_gallery_status":
+        summary = await runtime.tasks.read("meme_harvester_status", request_id, request, runtime.tasks.scope())
+        if "error" in summary:
+            return {"reply_text": summary["error"], "card": None}
+        pending = int(summary.get("inbox_pending", 0))
+        vision = int(summary.get("inbox_pending_vision", 0))
+        gallery_enabled = int(summary.get("gallery_enabled", 0))
+        gallery_total = int(summary.get("gallery_total", 0))
+        sources_enabled = int(summary.get("sources_enabled", 0))
+        sources_total = int(summary.get("sources_total", 0))
+        reply = (
+            f"表情包待审箱现有 {pending} 张待审新图（另有 {vision} 张待视觉筛选），"
+            f"主图库共 {gallery_total} 张（已启用 {gallery_enabled} 张），"
+            f"已配置 {sources_total} 个订阅源（启用 {sources_enabled} 个）。"
+        )
+        sources = summary.get("sources") or []
+        if sources:
+            latest = next((s for s in sources if s.get("last_synced_at")), sources[0])
+            status_label = {
+                "ok": "同步成功",
+                "not_modified": "无新增更新",
+                "error": "同步失败",
+                "never": "尚未同步",
+            }.get(str(latest.get("last_status") or "never"), str(latest.get("last_status") or "未知"))
+            reply += f"最近订阅源「{latest.get('name') or latest.get('source_id')}」上次状态：{status_label}。"
+            if latest.get("last_error"):
+                reply += f"（错误：{str(latest['last_error'])[:80]}）"
+        return {
+            "reply_text": reply,
+            "reply_format": "plain",
+            "card": {"type": "meme_gallery_status", "data": summary},
+            "tool_receipt": {
+                "action": "read",
+                "group": "meme_gallery",
+                "values": {
+                    "inbox_pending": pending,
+                    "inbox_pending_vision": vision,
+                    "gallery_total": gallery_total,
+                    "gallery_enabled": gallery_enabled,
+                    "sources_total": sources_total,
+                    "sources_enabled": sources_enabled,
+                },
+            },
+        }
     if kind == "operation_status":
         state = await runtime.tasks.read(kind, request_id, request, runtime.tasks.scope())
         labels = {

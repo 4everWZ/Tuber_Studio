@@ -128,6 +128,7 @@ def _route_from_tool_call(call_name: str, args: dict) -> TurnRoute:
             deliverable=args["deliverable"],
             material_refs=_as_str_list(args.get("material_refs")),
             read_tools=_as_str_list(args.get("read_tools")),
+            profile=args.get("profile") or None,
         )
         return TurnRoute(
             route="delegate_task",
@@ -148,6 +149,7 @@ def _route_from_tool_call(call_name: str, args: dict) -> TurnRoute:
                 deliverable=args["deliverable"],
                 material_refs=_as_str_list(args.get("material_refs")),
                 read_tools=_as_str_list(args.get("read_tools")),
+                profile=args.get("profile") or None,
             )
         effect = args.get("task_effect", "discuss")
         action = {

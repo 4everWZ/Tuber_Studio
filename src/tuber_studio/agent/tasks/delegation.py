@@ -40,6 +40,32 @@ _VIDEO_PRODUCTION_TOOLS = (
     "render_remotion_video",
     "stage_or_publish_bilibili_video",
 )
+TASK_TOOL_PROFILES: dict[str, tuple[str, ...]] = {
+    "meme_harvest": ("meme_harvester_status", "sync_meme_sources"),
+    "video_production": (
+        "plan_video_script",
+        "generate_remotion_project",
+        "render_remotion_video",
+        "stage_or_publish_bilibili_video",
+        "workshop_lookup",
+        "web_page",
+    ),
+    "media_inspection": ("inspect_video", "web_search", "web_page", "workshop_lookup", "delegate_text"),
+    "general_research": (
+        "web_search",
+        "web_page",
+        "workshop_lookup",
+        "today_activity",
+        "operation_status",
+        "live_status",
+        "game_status",
+        "bilibili_owner",
+        "operating_account",
+        "delegate_text",
+        "private_browser_open",
+        "private_code",
+    ),
+}
 _VIDEO_PRODUCTION_HINTS = (
     "remotion",
     "code-as-video",
@@ -129,6 +155,11 @@ def model_input(task, context):
         "制作 Remotion 视频时按顺序推进：plan_video_script -> generate_remotion_project -> "
         "render_remotion_video -> stage_or_publish_bilibili_video（默认 preview_review 仅暂存预览审核，不直接投稿）。"
     ) if _wants_video_production(task) else ""
+    brief = task["plan"].get("delegation_brief") if isinstance(task.get("plan"), dict) else None
+    meme_guidance = (
+        "执行图库订阅同步与视觉筛选时，先调用 meme_harvester_status 确认待审箱与订阅源状态，"
+        "再调用 sync_meme_sources（按需指定 source_id 或全量同步），最后调用 submit_materials 汇总 evidence_id 与精简统计。"
+    ) if (brief or {}).get("profile") == "meme_harvest" else ""
     history = [{"role": "system", "content": (
         "在后台完成对方交办的目标。按最新要求选择获准工具；多个独立读取会自动并发，涉及写入或提交的步骤会自动顺序排好执行。"
         "复用仍适用的来源，打开搜索结果正文后再引用。"
@@ -136,6 +167,7 @@ def model_input(task, context):
         "已拿到足够回执时提交成果。只有当前目标缺少必须由对方补充的材料时才调用 ask_owner。"
         + video_guidance
         + video_prod_guidance
+        + meme_guidance
     )}, {"role": "user", "content": dump({"prior_goals": task["plan"]["prior_goals"], "goal": task["goal"],
                                            **({"delegation_brief": task["plan"]["delegation_brief"]}
                                               if task["plan"].get("delegation_brief") else {}),
@@ -245,6 +277,16 @@ async def run_pending(runtime, task, pending, context):
 
 
 async def advance(runtime, task):
+    ctx_var = getattr(runtime, "_execution_ctx", None)
+    token = ctx_var.set(task["id"]) if ctx_var is not None else None
+    try:
+        return await _advance_impl(runtime, task)
+    finally:
+        if ctx_var is not None and token is not None:
+            ctx_var.reset(token)
+
+
+async def _advance_impl(runtime, task):
     if "candidate" not in task["plan"] and (task["plan"].get("delegation_brief") or {}).get("read_tools") == ["recall_memory"]:
         if continuation := getattr(runtime, "tool_continuations", {}).get("recall_memory"):
             await continuation(runtime, task)
@@ -411,14 +453,21 @@ async def advance(runtime, task):
         return
     all_private = private_tools(runtime.tools, context)
     allowed = all_private
-    read_tools = (task["plan"].get("delegation_brief") or {}).get("read_tools")
-    if read_tools is not None:
+    brief = task["plan"].get("delegation_brief") or {}
+    profile = brief.get("profile")
+    read_tools = brief.get("read_tools")
+    if profile in TASK_TOOL_PROFILES:
+        profile_names = set(TASK_TOOL_PROFILES[profile])
+        allowed_names = profile_names & set(read_tools) if read_tools else profile_names
+        allowed = {name: all_private[name] for name in allowed_names if name in all_private}
+    elif read_tools is not None:
         allowed = {name: all_private[name] for name in read_tools if name in all_private}
         if _wants_video_production(task):
             for tool_name in _VIDEO_PRODUCTION_TOOLS:
                 if tool_name in all_private:
                     allowed[tool_name] = all_private[tool_name]
     allowed.pop("recall_memory", None)
+    allowed.pop("delegate_task", None)
     if browser:
         allowed = browser.menu(task, allowed)
     tools = [function(name, tool.description, tool.arguments) for name, tool in allowed.items()]

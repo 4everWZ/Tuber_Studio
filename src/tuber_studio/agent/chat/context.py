@@ -224,8 +224,16 @@ class ChatContext:
             if not self.runtime.daily_memory.history_turn_available(origin, source, self.private_owner):
                 continue
             reply = saved.get("reply_text", "")
-            if not reply:
+            stripped = reply.lstrip() if isinstance(reply, str) else ""
+            if not stripped:
                 continue
+            if stripped[0] in "{[":
+                try:
+                    if isinstance(json.loads(stripped), (dict, list)):
+                        continue
+                except ValueError:
+                    if stripped.startswith(('{"', "[{")):
+                        continue
             message = row["message"]
             reply_prompts.setdefault(saved["reply_text"], set()).add(message)
             if not full_turns:

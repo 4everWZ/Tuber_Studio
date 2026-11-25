@@ -35,6 +35,7 @@ _PRIMARY_READ_ACTIONS = (
     "task_status",
     "activity",
     "game_status",
+    "meme_gallery_status",
 )
 
 _COMPACT_ARRANGEMENT_SCHEMA = {
@@ -119,6 +120,7 @@ def direct_tool_actions() -> tuple[str, ...]:
             workshop_lookup.LOOKUP_TOOL, recall_memory.NAME,
             "owner_profile", "owner_binding", "operating_account", "operation_status",
             "web_lookup", "workbench_capabilities", "pet_settings", "daily_settings",
+            "meme_gallery_status",
         }
     ) - _OWNER_UI_ONLY
     return tuple(sorted(actions))
@@ -195,6 +197,11 @@ def route_tools(runtime, *, cards=(), objects=(), candidates=(), read_only=False
                 with_clarification({
                     "goal": {"type": "string", "minLength": 1, "maxLength": 400},
                     "deliverable": {"type": "string", "minLength": 1, "maxLength": 400},
+                    "profile": {
+                        "type": "string",
+                        "enum": ["meme_harvest", "video_production", "media_inspection", "general_research"],
+                        "description": "后台窄工具集分组：meme_harvest=图库同步与二创筛选；video_production=制片/Remotion渲染/投稿；media_inspection=视频分P抽帧核查；general_research=公开检索与状态调研。",
+                    },
                     "constraints": {"type": "array", "maxItems": 8, "items": {"type": "string", "maxLength": 200}},
                     "material_refs": {"type": "array", "maxItems": 6, "items": object_schema},
                     "read_tools": {"type": "array", "maxItems": 8, "items": read_tool_schema},
@@ -235,6 +242,7 @@ def route_tools(runtime, *, cards=(), objects=(), candidates=(), read_only=False
                 "owner_binding=查本地记录的绑定主人B站主页链接和UID（不联网，用于问主人/他的主页、链接、UID）；"
                 "operating_account=查当前登录的B站运营账号昵称和UID；"
                 "identity_read=同时查绑定主人与运营账号（填 identity_subject=bilibili_owner|operating_account|both）；"
+                "meme_gallery_status=当场查询图库待审箱新图数量与订阅源同步状态，只读不触发同步；"
                 "web_lookup=联网搜新闻或公开网页；outgoing_queue=查待发队列；task_status=查已有交办进度；activity=今日趣事；game_status=游戏状态。",
                 {
                     "action": {"type": "string", "enum": read_actions},

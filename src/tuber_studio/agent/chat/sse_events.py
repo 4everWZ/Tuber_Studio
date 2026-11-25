@@ -59,6 +59,7 @@ _TOOL_LABEL_MAP = {
     "daily_settings": "调整日常设置",
     "pet_settings": "切换桌面形象",
     "workbench_capabilities": "查看可用能力",
+    "meme_gallery_status": "查看图库待审箱与订阅源状态",
     "agent_task": "派发后台任务",
     "steer_task": "调整后台任务",
     "cancel_task": "取消后台任务",

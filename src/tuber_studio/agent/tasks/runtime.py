@@ -9,6 +9,7 @@ import re
 import time
 import traceback
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -29,6 +30,7 @@ from .video_scope import selection_plan, video_binding
 MAX_STEPS = 8
 log = logging.getLogger(__name__)
 _TOOL_NAME = re.compile(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", re.ASCII)
+ACTIVE_TASK_EXECUTION: ContextVar[str | None] = ContextVar("active_task_execution", default=None)
 
 
 class TaskDecision(BaseModel):
@@ -133,6 +135,7 @@ class TaskRuntime:
     """Persist tasks and their tool calls. Model callbacks bound execution after admission."""
 
     Tool = Tool
+    _execution_ctx = ACTIVE_TASK_EXECUTION
 
     def __init__(self, store, scope, decide, make_plan=None):
         self.store, self.scope, self.decide = store, scope, decide
@@ -269,6 +272,8 @@ class TaskRuntime:
     def create(self, identity, goal, *, due=None, source_key=None, creative_goal_id=None, attachments=(),
                video_selection=None, allow_code=False, browser_sources=None, delegation=None, on_create=None,
                prepared_step=None, read_receipts=()):
+        if ACTIVE_TASK_EXECUTION.get() is not None:
+            raise ValueError("两层扁平架构禁止在后台任务内嵌套派发子任务（最大派发深度为 1）")
         scope, now = dump(self.scope()), time.time()
         if creative_goal_id:
             project = self.workspace.goal(creative_goal_id)
@@ -843,6 +848,13 @@ class TaskRuntime:
             self._save(task, status=status, steps=[*task["steps"][:-1], step], due=due, **changes)
 
     async def _invoke(self, task, step, context, goal):
+        token = ACTIVE_TASK_EXECUTION.set(task["id"])
+        try:
+            return await self._invoke_scoped(task, step, context, goal)
+        finally:
+            ACTIVE_TASK_EXECUTION.reset(token)
+
+    async def _invoke_scoped(self, task, step, context, goal):
         tool = self.tools[step["tool"]]
         try:
             if tool.fixed_only and task["plan"] != {"backend": "fixed"}:
