@@ -602,10 +602,29 @@ def heartbeat_pulse_snapshot(browsing, *, store=None, hot_limit: int = 6) -> dic
             "character_id": "",
             "control_state": "off",
             "automatic_ready": False,
+            "account_error": None,
+            "credentials_configured": False,
             "discovery": {"state": "off", "enabled": False, "error": None, "attention": []},
-            "inbox": {"state": "off", "enabled": False, "pending_events": 0, "dm_enabled": False, "dm_error": None, "dm_pending": 0},
-            "dynamics": {"enabled": False, "auto_publish": False, "pending_review": 0, "uncertain": 0, "error": None},
-            "writes": {"uncertain_count": 0},
+            "inbox": {
+                "state": "off",
+                "enabled": False,
+                "pending_events": 0,
+                "dm_enabled": False,
+                "dm_error": None,
+                "dm_pending": 0,
+                "dm_pending_ids": [],
+                "dm_latest_created_at": 0.0,
+            },
+            "dynamics": {
+                "enabled": False,
+                "auto_publish": False,
+                "pending_review": 0,
+                "pending_ids": [],
+                "pending_latest_created_at": 0.0,
+                "uncertain": 0,
+                "error": None,
+            },
+            "writes": {"uncertain_count": 0, "uncertain_ids": []},
             "hot_topics": select_video_candidates(None, store=db_store, limit=hot_limit),
         }
 
@@ -629,37 +648,70 @@ def heartbeat_pulse_snapshot(browsing, *, store=None, hot_limit: int = 6) -> dic
     messages_svc = getattr(raw, "messages", None)
     dm_error = getattr(messages_svc, "error", None)
     dm_pending = 0
+    dm_pending_ids: list[str] = []
+    dm_latest_created_at = 0.0
     if db_store is not None and _facade_table_exists(db_store, "dm_drafts"):
-        row = db_store.one(
-            "SELECT COUNT(*) AS n FROM dm_drafts WHERE status IN ('pending_review','queued','publish_uncertain')"
+        dm_rows = db_store.all(
+            "SELECT id, created_at FROM dm_drafts "
+            "WHERE status IN ('pending_review','queued','publish_uncertain') "
+            "ORDER BY created_at DESC, id DESC"
         )
-        dm_pending = int(row["n"]) if row else 0
+        dm_pending = len(dm_rows)
+        dm_pending_ids = [str(row["id"]) for row in dm_rows]
+        if dm_rows:
+            dm_latest_created_at = max(float(row["created_at"] or 0.0) for row in dm_rows)
 
     dynamics_svc = getattr(raw, "dynamics", None)
     dyn_policy = dynamics_svc.policy() if dynamics_svc is not None and hasattr(dynamics_svc, "policy") else {}
     dyn_error = getattr(dynamics_svc, "error", None)
     dyn_pending = dyn_uncertain = 0
+    dyn_pending_ids: list[str] = []
+    dyn_pending_latest_created_at = 0.0
     if db_store is not None and _facade_table_exists(db_store, "dynamic_posts"):
-        p_row = db_store.one("SELECT COUNT(*) AS n FROM dynamic_posts WHERE status IN ('pending_review','approved')")
+        p_rows = db_store.all(
+            "SELECT id, created_at FROM dynamic_posts "
+            "WHERE status IN ('pending_review','approved') "
+            "ORDER BY created_at DESC, id DESC"
+        )
         u_row = db_store.one("SELECT COUNT(*) AS n FROM dynamic_posts WHERE status='publish_uncertain'")
-        dyn_pending = int(p_row["n"]) if p_row else 0
+        dyn_pending = len(p_rows)
+        dyn_pending_ids = [str(row["id"]) for row in p_rows]
+        if p_rows:
+            dyn_pending_latest_created_at = max(float(row["created_at"] or 0.0) for row in p_rows)
         dyn_uncertain = int(u_row["n"]) if u_row else 0
 
     uncertain_writes = 0
+    uncertain_ids: list[str] = []
     if db_store is not None and _facade_table_exists(db_store, "operation_write_attempts"):
-        u_row = db_store.one(
-            "SELECT COUNT(*) AS n FROM operation_write_attempts WHERE resolved_status='uncertain'"
+        u_rows = db_store.all(
+            "SELECT token FROM operation_write_attempts WHERE resolved_status='uncertain' "
+            "ORDER BY started_at DESC, token DESC"
         )
-        uncertain_writes = int(u_row["n"]) if u_row else 0
+        uncertain_writes = len(u_rows)
+        uncertain_ids = [str(row["token"]) for row in u_rows]
 
     acct_svc = getattr(raw, "bilibili_account", None)
     creds_ok = bool(getattr(acct_svc, "credentials_configured", False))
+    acct_status = acct_svc.status() if (acct_svc is not None and callable(getattr(acct_svc, "status", None))) else {}
+    acct_error: str | None = None
+    if isinstance(acct_status, dict):
+        raw_err = acct_status.get("error")
+        if isinstance(raw_err, str) and raw_err.strip():
+            acct_error = raw_err.strip()
+        elif acct_status.get("state") in {"expired", "restricted", "error"}:
+            acct_error = f"B站账号状态异常：{acct_status['state']}"
+    if not acct_error and acct_svc is not None:
+        raw_attr = getattr(acct_svc, "account_error", None) or getattr(acct_svc, "error", None)
+        if isinstance(raw_attr, str) and raw_attr.strip():
+            acct_error = raw_attr.strip()
     blockers = list(getattr(raw, "blockers", ()) or ())
     return {
         "account_id": account_id,
         "character_id": character_id,
         "control_state": control_state,
         "automatic_ready": bool(creds_ok and not blockers and not uncertain_writes),
+        "account_error": acct_error,
+        "credentials_configured": creds_ok,
         "blockers": blockers,
         "discovery": {
             "state": disc_state,
@@ -675,16 +727,21 @@ def heartbeat_pulse_snapshot(browsing, *, store=None, hot_limit: int = 6) -> dic
             "dm_enabled": bool(inbox_info.get("dm_enabled")),
             "dm_error": dm_error,
             "dm_pending": dm_pending,
+            "dm_pending_ids": dm_pending_ids,
+            "dm_latest_created_at": dm_latest_created_at,
         },
         "dynamics": {
             "enabled": bool(dyn_policy.get("enabled", False)),
             "auto_publish": bool(dyn_policy.get("auto_publish", False)),
             "pending_review": dyn_pending,
+            "pending_ids": dyn_pending_ids,
+            "pending_latest_created_at": dyn_pending_latest_created_at,
             "uncertain": dyn_uncertain,
             "error": dyn_error,
         },
         "writes": {
             "uncertain_count": uncertain_writes,
+            "uncertain_ids": uncertain_ids,
         },
         "hot_topics": select_video_candidates(raw, store=db_store, limit=hot_limit),
     }

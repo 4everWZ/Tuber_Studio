@@ -1,4 +1,5 @@
 import { ArtworkReferencesPanel, CharacterDisplayPanel } from "./ArtworkReferencesPanel";
+import { HeartbeatPolicyPanel } from "./HeartbeatPolicyPanel";
 import { IllustrationPolicyPanel } from "./IllustrationPolicyPanel";
 import { ProvidersPanel } from "./ProvidersPanel";
 
@@ -18,6 +19,7 @@ export function SettingsPage() {
       </div>
 
       <CharacterDisplayPanel />
+      <HeartbeatPolicyPanel />
       <IllustrationPolicyPanel />
       <ArtworkReferencesPanel />
       <ProvidersPanel />

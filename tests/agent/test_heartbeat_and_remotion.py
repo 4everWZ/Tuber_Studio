@@ -189,8 +189,22 @@ def test_heartbeat_tick_curiosity_sanitization_and_rate_limits(settings):
         assert len(delivered_pulses) == 1
         assert seen_prompts and "Aqua" in json.dumps(seen_prompts[0], ensure_ascii=False)
 
-        # Immediate second tick with a different discovery incident should be blocked by pulse_cooldown.
+        # Non-urgent discovery blip inside pulse_cooldown is blocked, while 412 risk cooldown is urgent and penetrates.
         clock_now[0] += 30.0
+        res_non_urgent = await hb.tick(
+            snapshot={
+                "account_id": "",
+                "control_state": "running",
+                "discovery": {"state": "running", "error": "暂时波动"},
+                "inbox": {"pending_events": 0, "dm_pending": 0},
+                "dynamics": {"pending_review": 0, "uncertain": 0},
+                "writes": {"uncertain_count": 0},
+                "hot_topics": [],
+            }
+        )
+        assert res_non_urgent["rate_limited"] == "pulse_cooldown"
+        assert res_non_urgent["pulse"] is None
+
         res2 = await hb.tick(
             snapshot={
                 "account_id": "",
@@ -202,10 +216,11 @@ def test_heartbeat_tick_curiosity_sanitization_and_rate_limits(settings):
                 "hot_topics": [],
             }
         )
-        assert res2["rate_limited"] == "pulse_cooldown"
-        assert res2["pulse"] is None
+        assert res2["rate_limited"] is None
+        assert res2["pulse"] is not None
+        assert res2["pulse"]["severity"] == "urgent"
 
-        # Past pulse_cooldown, max_pulses_per_day=1 blocks emission cleanly.
+        # Past pulse_cooldown, max_pulses_per_day=1 blocks non-urgent emission cleanly.
         clock_now[0] += 400.0
         res3 = await hb.tick(
             snapshot={
@@ -236,7 +251,7 @@ def test_heartbeat_tick_curiosity_sanitization_and_rate_limits(settings):
         )
         assert res4["rate_limited"] is None
         assert res4["pulse"] is not None
-        assert len(hb.list_pulses()) == 2
+        assert len(hb.list_pulses()) == 3
         assert sanitize_pulse_text('{"brief": "工坊号主，这是清洗后文本"}', owner_label="你") == "你，这是清洗后文本"
 
         # Curiosity research must reject unrelated foreign-language forum pages for CJK queries while accepting relevant matches.

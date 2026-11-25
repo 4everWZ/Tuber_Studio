@@ -113,10 +113,15 @@ Dots 的持续运行和跨入口接续对应工坊同一份任务、活动和版
 
 ### 统一常驻心跳与主动脉冲（`agent/heartbeat/`）
 
-`Runtime` 装配 `HeartbeatService` 与进程内去重冷却总线 `AgentEventBus`（`src/tuber_studio/agent/heartbeat/`）：
+`Runtime` 装配 `HeartbeatService`、`HeartbeatStateStore`（`state.py`）与去重冷却总线 `AgentEventBus`（`src/tuber_studio/agent/heartbeat/`）：
 
-- **统一事件总线（`AgentEventBus`）：** 收敛周期后台信号（`tick`、`discovery_health`、`inbox_health`、`dm_health`、`dynamics_health`、`hot_topic`、`video_candidate`）与观看热门话题触发的好奇心公开联网调研（`curiosity_research`），按事件指纹（`dedup_window_seconds=3600`）与同键冷却（`event_cooldown_seconds=900`）防刷屏。
-- **冷静主动简报（`HeartbeatService`）：** 遵循 `HeartbeatPolicy`（默认 `tick_interval_seconds=300`、`pulse_cooldown_seconds=1800`、`max_pulses_per_day=12`、`curiosity_max_queries_per_tick=2`），通过 L2 `self_model` 以 `Aqua` 第一人称自然口吻生成简短脉冲，经 `sanitize_pulse_text` 过滤堆栈、凭据及退役标签「工坊号主」，落盘 `agent_heartbeat_pulses` 并经 `agent/chat/heartbeat_feed.py` 幂等写入聊天流及 `GET /api/v1/agent/chat/events`。
+- **统一事件总线（`AgentEventBus`）：** 收敛周期后台信号（`tick`、`discovery_health`、`inbox_health`、`dm_health`、`dynamics_health`、`hot_topic`、`video_candidate`）与观看热门话题触发的好奇心公开联网调研（`curiosity_research`），结合内存指纹冷却与 SQLite `agent_heartbeat_dedup` 7 天持久去重（`hot_topic_dedup_seconds=604800`）防止重启重复搜题与刷屏。
+- **边沿触发与分级门控（`HeartbeatStateStore` + `HeartbeatService`）：**
+  - `HeartbeatPolicy` 默认收敛为 `pulse_cooldown_seconds=10800`（3h）、`max_pulses_per_day=3`、`max_unreplied_pulses=1`（`0` 表示不限）、勿扰时段 `quiet_hours_start="23:00"` / `quiet_hours_end="08:30"`（留空关闭）。
+  - `urgent` 故障（紧急停机、账号凭证异常、412/风控冷却、收件箱冻结、动态或写入 `uncertain`）基于持久化 `active_faults` 在「非激活 → 激活」边沿触发并穿透冷却/未读上限/勿扰时段，故障恢复后清除键位以便复发再报。
+  - 待审动态与私信草稿按 ID 与时间戳对比只在新草稿到达时提示，存量无变化记为 `no_state_delta`，并把实时数量通过 `status()["pending_summary"]` 供界面角标展示。
+  - 非紧急门控（勿扰、冷却、每日上限、未回脉冲上限）在 `research_topic` 联网搜索之前执行，未回计数以 `operator_chat_turns` 号主最近回复自动清零；策略与状态经 `GET/PUT /api/v1/system/heartbeat` 暴露并在工坊设置页配置。
+- **自然口语简报：** 通过 L2 `self_model` 以 `Aqua` 第一人称自然口吻生成 1–2 句简短脉冲，经 `sanitize_pulse_text` 过滤堆栈、凭据及退役标签「工坊号主」，落盘 `agent_heartbeat_pulses` 并经 `agent/chat/heartbeat_feed.py` 幂等写入聊天流及 `GET /api/v1/agent/chat/events`。
 
 ### Remotion 自动制片技能（`agent/skills/remotion_video.py`）
 

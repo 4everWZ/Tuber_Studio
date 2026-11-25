@@ -14,7 +14,7 @@ from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from ...core.identity import operating_account_facts, owner_address_label, without_model_identity
 from ...core.models import StrictModel, content_hash
@@ -25,76 +25,44 @@ from ...infra.web_client.search import search_public_web
 from ...operations.facade import business_timezone, heartbeat_pulse_snapshot
 from ...persona.self_model import build_self_model_system_message
 from .bus import AgentEventBus, HeartbeatEvent
+from .state import (
+    HeartbeatStateStore,
+    evaluate_snapshot,
+    is_in_quiet_hours,
+    pending_summary_from_snapshot,
+    sanitize_pulse_text,
+    validate_hhmm,
+)
 
 logger = logging.getLogger(__name__)
 
 HEARTBEAT_POLICY_KEY = "agent_heartbeat_policy"
-_RETIRED_LABEL = "\u5de5\u574a\u53f7\u4e3b"
-_RAW_ERROR_RE = re.compile(
-    r"(?:Traceback \(most recent call last\)|ValidationError|pydantic|File \"[^\"]+\"|line \d+|"
-    r"HTTPStatusError|ConnectError|TimeoutException|SESSDATA|bili_jct|sk-[A-Za-z0-9_-]{8,})",
-    re.IGNORECASE,
-)
-
-
-class HeartbeatPolicy(StrictModel):
-    """Runtime policy governing always-on ticks, curiosity research, and brief rate-limits."""
-
-    enabled: bool = True
-    tick_interval_seconds: float = Field(default=300.0, ge=1.0, le=86400.0)
-    pulse_cooldown_seconds: float = Field(default=1800.0, ge=0.0, le=86400.0)
-    event_cooldown_seconds: float = Field(default=900.0, ge=0.0, le=86400.0)
-    max_pulses_per_day: int = Field(default=12, ge=0, le=200)
-    curiosity_research_enabled: bool = True
-    curiosity_max_queries_per_tick: int = Field(default=2, ge=0, le=5)
-    surface_to_chat: bool = True
-
-
-def _calm_health_reason(raw_error: str | None, *, fallback: str) -> str:
-    text = str(raw_error or "").strip()
-    if not text:
-        return fallback
-    if "401" in text or "登录" in text or "expired" in text.lower():
-        return "B站登录状态可能过期了，需要重新扫码确认。"
-    if "412" in text or "429" in text or "风控" in text or "冷却" in text:
-        return "B站读取暂时触发了平台冷却，正在避让等待恢复。"
-    if "超时" in text or "timeout" in text.lower() or "连接" in text:
-        return "上游服务刚刚连接不太稳，稍后会自动重试。"
-    if _RAW_ERROR_RE.search(text):
-        return fallback
-    return sanitize_pulse_text(text, owner_label="你")[:140] or fallback
-
-
-def sanitize_pulse_text(text: str, *, owner_label: str = "你") -> str:
-    """Strip retired labels, raw tracebacks, credential strings, and JSON wrappers."""
-    cleaned = str(text or "").strip()
-    if not cleaned:
-        return ""
-    cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
-    cleaned = cleaned.replace(_RETIRED_LABEL, owner_label)
-    cleaned = cleaned.replace("\u53f7\u4e3b", owner_label)
-    cleaned = cleaned.replace("\u5de5\u574a", "\u8fd9\u8fb9")
-    if _RAW_ERROR_RE.search(cleaned):
-        lines = [line.strip() for line in cleaned.splitlines() if line.strip() and not _RAW_ERROR_RE.search(line)]
-        cleaned = " ".join(lines)
-    if cleaned.startswith("{") and cleaned.endswith("}"):
-        try:
-            obj = json.loads(cleaned)
-            if isinstance(obj, dict):
-                for key in ("brief", "reply_text", "reply_markdown", "summary", "text", "content"):
-                    if isinstance(obj.get(key), str) and obj[key].strip():
-                        cleaned = obj[key].strip()
-                        break
-        except ValueError:
-            pass
-    cleaned = " ".join(cleaned.split())
-    return cleaned[:600]
-
-
 _CJK_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
 _LATIN_ENTITY_RE = re.compile(r"[A-Za-z][A-Za-z0-9._-]{2,}")
 _BVID_ONLY_RE = re.compile(r"^(?:bv[0-9a-zA-Z]{6,}|av\d+)$", re.IGNORECASE)
 _NOISE_LATIN = frozenset({"bilibili", "youtube", "hotmail", "http", "https", "www", "com", "video"})
+
+
+class HeartbeatPolicy(StrictModel):
+    """Runtime policy governing always-on ticks, curiosity research, quiet hours, and brief rate-limits."""
+
+    enabled: bool = True
+    tick_interval_seconds: float = Field(default=300.0, ge=1.0, le=86400.0)
+    pulse_cooldown_seconds: float = Field(default=10800.0, ge=0.0, le=86400.0)
+    event_cooldown_seconds: float = Field(default=900.0, ge=0.0, le=86400.0)
+    max_pulses_per_day: int = Field(default=3, ge=0, le=200)
+    max_unreplied_pulses: int = Field(default=1, ge=0, le=50)
+    hot_topic_dedup_seconds: float = Field(default=604800.0, ge=0.0, le=2592000.0)
+    quiet_hours_start: str = "23:00"
+    quiet_hours_end: str = "08:30"
+    curiosity_research_enabled: bool = True
+    curiosity_max_queries_per_tick: int = Field(default=2, ge=0, le=5)
+    surface_to_chat: bool = True
+
+    @field_validator("quiet_hours_start", "quiet_hours_end")
+    @classmethod
+    def _validate_quiet_clock(cls, value: str) -> str:
+        return validate_hhmm(value)
 
 
 def _extract_research_query(topic: dict[str, Any]) -> str:
@@ -123,25 +91,18 @@ def _is_relevant_research_page(query: str, title: str, excerpt: str) -> bool:
     if not page_text:
         return False
     page_lower = page_text.lower()
-    latin_tokens = [
-        tok.lower() for tok in _LATIN_ENTITY_RE.findall(query) if tok.lower() not in _NOISE_LATIN
-    ]
+    latin_tokens = [tok.lower() for tok in _LATIN_ENTITY_RE.findall(query) if tok.lower() not in _NOISE_LATIN]
     matched_latin = any(tok in page_lower for tok in latin_tokens)
-
     cjk_runs = _CJK_CHAR_RE.findall(query)
     if cjk_runs:
-        has_page_cjk = bool(_CJK_CHAR_RE.search(page_text))
-        if not has_page_cjk:
+        if not _CJK_CHAR_RE.search(page_text):
             return matched_latin
         query_cjk = "".join(cjk_runs)
         if len(query_cjk) >= 2:
             bigrams = {query_cjk[i : i + 2] for i in range(len(query_cjk) - 1)}
             return matched_latin or any(bg in page_text for bg in bigrams)
         return matched_latin or (query_cjk in page_text)
-
-    if latin_tokens:
-        return matched_latin
-    return True
+    return matched_latin if latin_tokens else True
 
 
 class HeartbeatService:
@@ -162,7 +123,8 @@ class HeartbeatService:
         self.runtime = runtime
         self.store = store
         self._clock = clock or time.time
-        self.bus = bus or AgentEventBus(clock=self._clock)
+        self.state_store = HeartbeatStateStore(store)
+        self.bus = bus or AgentEventBus(clock=self._clock, state_store=self.state_store)
         self._web_search_fn = web_search_fn or search_public_web
         self._web_fetch_fn = web_fetch_fn or fetch_excerpt
         self._brief_generator = brief_generator
@@ -173,6 +135,7 @@ class HeartbeatService:
         self._closed = False
         self._last_tick_at: float | None = None
         self._last_snapshot: dict[str, Any] | None = None
+        self._last_snapshot_synthetic = False
         self._install_storage()
 
     def _install_storage(self) -> None:
@@ -256,171 +219,15 @@ class HeartbeatService:
     def _current_browsing(self):
         return getattr(self.runtime, "browsing", None)
 
+    def _business_tz(self) -> str:
+        browsing = self._current_browsing()
+        return business_timezone(browsing) if browsing is not None else "Asia/Taipei"
+
     def _account_facts(self) -> dict[str, Any] | None:
         account_svc = getattr(self.runtime, "account", None)
         if account_svc is None or not hasattr(account_svc, "status"):
             return None
         return operating_account_facts(account_svc.status())
-
-    def _signals_from_snapshot(self, snapshot: dict[str, Any]) -> list[HeartbeatEvent]:
-        events: list[HeartbeatEvent] = []
-        now = float(self._clock())
-
-        disc = snapshot.get("discovery") or {}
-        if snapshot.get("control_state") == "emergency":
-            events.append(
-                HeartbeatEvent(
-                    kind="discovery_health",
-                    source="discovery",
-                    dedup_key="health:control:emergency",
-                    severity="urgent",
-                    title="自主运营处于紧急停止状态",
-                    summary="所有自动探索与互动发送均已暂停，确认安全后可再解除。",
-                    payload={"state": "emergency"},
-                    created_at=now,
-                )
-            )
-        elif disc.get("read_cooldown_until") and float(disc["read_cooldown_until"]) > now:
-            events.append(
-                HeartbeatEvent(
-                    kind="discovery_health",
-                    source="discovery",
-                    dedup_key=f"health:discovery:cooldown:{int(float(disc['read_cooldown_until']) // 300)}",
-                    severity="attention",
-                    title="发现线触发平台读取冷却",
-                    summary="探索发现暂停避让一会儿，但私信和评论回应还在正常守着。",
-                    payload={"read_cooldown_until": disc["read_cooldown_until"]},
-                    created_at=now,
-                )
-            )
-        elif disc.get("error"):
-            calm = _calm_health_reason(disc["error"], fallback="发现线刚才遇到了一点波动，已暂缓本轮。")
-            events.append(
-                HeartbeatEvent(
-                    kind="discovery_health",
-                    source="discovery",
-                    dedup_key=f"health:discovery:err:{content_hash(calm)[:12]}",
-                    severity="attention",
-                    title="发现线状态提醒",
-                    summary=calm,
-                    payload={"state": disc.get("state", "blocked")},
-                    created_at=now,
-                )
-            )
-
-        inbox = snapshot.get("inbox") or {}
-        if inbox.get("state") == "frozen":
-            events.append(
-                HeartbeatEvent(
-                    kind="inbox_health",
-                    source="inbox",
-                    dedup_key="health:inbox:frozen",
-                    severity="urgent",
-                    title="互动收件箱因待核对提交已冻结",
-                    summary="有一条平台发送回执结果待核对，已先暂停新的自动发送。",
-                    payload={"pending_events": int(inbox.get("pending_events") or 0)},
-                    created_at=now,
-                )
-            )
-        elif int(inbox.get("pending_events") or 0) >= 3:
-            count = int(inbox["pending_events"])
-            events.append(
-                HeartbeatEvent(
-                    kind="inbox_health",
-                    source="inbox",
-                    dedup_key=f"health:inbox:backlog:{count // 3}",
-                    severity="info",
-                    title="评论区和互动消息有新动静",
-                    summary=f"有 {count} 条公开互动等待查看或处理。",
-                    payload={"pending_events": count},
-                    created_at=now,
-                )
-            )
-
-        if inbox.get("dm_error"):
-            calm = _calm_health_reason(inbox["dm_error"], fallback="私信轮询刚才没能连上，稍后会再确认。")
-            events.append(
-                HeartbeatEvent(
-                    kind="dm_health",
-                    source="dm",
-                    dedup_key=f"health:dm:err:{content_hash(calm)[:12]}",
-                    severity="attention",
-                    title="私信通道状态提醒",
-                    summary=calm,
-                    payload={"dm_pending": int(inbox.get("dm_pending") or 0)},
-                    created_at=now,
-                )
-            )
-        elif int(inbox.get("dm_pending") or 0) > 0:
-            dm_count = int(inbox["dm_pending"])
-            events.append(
-                HeartbeatEvent(
-                    kind="dm_health",
-                    source="dm",
-                    dedup_key=f"health:dm:pending:{dm_count}",
-                    severity="info",
-                    title="有待确认或未完结的私信草稿",
-                    summary=f"当前有 {dm_count} 条私信草稿/待核对条目。",
-                    payload={"dm_pending": dm_count},
-                    created_at=now,
-                )
-            )
-
-        dyn = snapshot.get("dynamics") or {}
-        if int(dyn.get("uncertain") or 0) > 0:
-            events.append(
-                HeartbeatEvent(
-                    kind="dynamics_health",
-                    source="dynamics",
-                    dedup_key=f"health:dynamics:uncertain:{int(dyn['uncertain'])}",
-                    severity="urgent",
-                    title="动态发送结果待核对",
-                    summary="有一条动态提交还没拿到最终确认，记得去核对一下避免重复发。",
-                    payload={"uncertain": int(dyn["uncertain"])},
-                    created_at=now,
-                )
-            )
-        elif int(dyn.get("pending_review") or 0) > 0:
-            cnt = int(dyn["pending_review"])
-            events.append(
-                HeartbeatEvent(
-                    kind="dynamics_health",
-                    source="dynamics",
-                    dedup_key=f"health:dynamics:review:{cnt}",
-                    severity="info",
-                    title="有新的动态草稿待查看",
-                    summary=f"有 {cnt} 条公开动态草稿写好了，等你看过再发。",
-                    payload={"pending_review": cnt},
-                    created_at=now,
-                )
-            )
-
-        for topic in snapshot.get("hot_topics") or ():
-            bvid = str(topic.get("bvid") or "").strip()
-            if not bvid:
-                continue
-            if not topic.get("popular") and not topic.get("summary"):
-                continue
-            title = str(topic.get("title") or bvid)[:120]
-            events.append(
-                HeartbeatEvent(
-                    kind="hot_topic",
-                    source="discovery",
-                    dedup_key=f"hot_topic:{bvid}",
-                    severity="info",
-                    title=f"发现值得留意的视频话题：{title}",
-                    summary=str(topic.get("summary") or f"刚看了《{title}》，觉得这个话题挺有意思。")[:300],
-                    payload={
-                        "bvid": bvid,
-                        "title": title,
-                        "tags": list(topic.get("tags") or ())[:6],
-                        "popular": bool(topic.get("popular")),
-                        "url": topic.get("url") or f"https://www.bilibili.com/video/{bvid}",
-                    },
-                    created_at=now,
-                )
-            )
-        return events
 
     async def research_topic(
         self,
@@ -428,11 +235,34 @@ class HeartbeatService:
         *,
         bvid: str | None = None,
         bypass_cooldown: bool = False,
+        character_id: str | None = None,
+        account_id: str | None = None,
     ) -> dict[str, Any]:
         """Run bounded curiosity-driven public web research for a trending video or topic."""
         cleaned_query = " ".join(str(topic or "").split())[:120]
         if not cleaned_query:
-            return {"ok": False, "sources": [], "summary": ""}
+            return {"ok": False, "sources": [], "summary": "", "emitted": False}
+        now = float(self._clock())
+        cid = str(character_id if character_id is not None else (self._current_character().get("id") or ""))
+        aid = str(account_id if account_id is not None else ((self._last_snapshot or {}).get("account_id") or ""))
+        dedup_suffix = bvid or content_hash(cleaned_query)[:12]
+        dedup_key = f"curiosity:{dedup_suffix}"
+        policy = self.policy()
+        if (
+            bvid
+            and not bypass_cooldown
+            and policy.hot_topic_dedup_seconds > 0
+            and self.state_store.is_dedup_active(cid, aid, dedup_key, now=now)
+        ):
+            return {
+                "ok": False,
+                "query": cleaned_query,
+                "sources": [],
+                "summary": "",
+                "emitted": False,
+                "suppressed_reason": "persisted_dedup",
+            }
+
         sources: list[dict[str, str]] = []
         try:
             urls = await self._web_search_fn(cleaned_query)
@@ -458,27 +288,32 @@ class HeartbeatService:
                         "excerpt": page_excerpt,
                     }
                 )
-        summary = (
-            f"顺手查了「{cleaned_query}」，看到相关介绍：{sources[0]['excerpt'][:140]}"
-            if sources
-            else ""
-        )
-        dedup_suffix = bvid or content_hash(cleaned_query)[:12]
+        summary = f"顺手查了「{cleaned_query}」，看到相关介绍：{sources[0]['excerpt'][:140]}" if sources else ""
         event = HeartbeatEvent(
             kind="curiosity_research",
             source="curiosity",
-            dedup_key=f"curiosity:{dedup_suffix}",
+            dedup_key=dedup_key,
             severity="info",
             title=f"延伸查证：{cleaned_query[:80]}",
             summary=summary or f"对「{cleaned_query}」做了公开资料检索。",
             payload={"query": cleaned_query, "bvid": bvid, "sources": sources},
-            created_at=float(self._clock()),
+            created_at=now,
         )
         emission = await self.bus.publish(
             event,
-            cooldown_seconds=self.policy().event_cooldown_seconds,
+            cooldown_seconds=policy.event_cooldown_seconds,
             bypass_cooldown=bypass_cooldown,
         )
+        if emission.accepted and policy.hot_topic_dedup_seconds > 0:
+            self.state_store.record_dedup(
+                cid,
+                aid,
+                dedup_key,
+                kind="curiosity_research",
+                digest=dedup_key,
+                ttl_seconds=policy.hot_topic_dedup_seconds,
+                now=now,
+            )
         return {
             "ok": bool(sources),
             "query": cleaned_query,
@@ -489,32 +324,61 @@ class HeartbeatService:
         }
 
     def _pulses_today_count(self, *, account_id: str, character_id: str) -> int:
-        browsing = self._current_browsing()
-        tz = business_timezone(browsing) if browsing is not None else "Asia/Taipei"
+        tz = self._business_tz()
         today = datetime.fromtimestamp(float(self._clock()), ZoneInfo(tz)).date()
         bounds = day_bounds(tz, today)
         row = self.store.one(
             "SELECT COUNT(*) AS n FROM agent_heartbeat_pulses "
-            "WHERE character_id=? AND account_id=? AND created_at>=? AND created_at<?",
+            "WHERE character_id=? AND account_id=? AND severity!='urgent' AND created_at>=? AND created_at<?",
             (character_id, account_id, bounds["start_at"], bounds["next_at"]),
         )
         return int(row["n"]) if row else 0
 
     def _last_pulse_at(self, *, account_id: str, character_id: str) -> float:
         row = self.store.one(
-            "SELECT MAX(created_at) AS ts FROM agent_heartbeat_pulses WHERE character_id=? AND account_id=?",
+            "SELECT MAX(created_at) AS ts FROM agent_heartbeat_pulses "
+            "WHERE character_id=? AND account_id=? AND severity!='urgent'",
             (character_id, account_id),
         )
         return float(row["ts"]) if row and row["ts"] is not None else 0.0
 
-    def _pulse_rate_limited(self, policy: HeartbeatPolicy, *, account_id: str, character_id: str) -> str | None:
-        now = float(self._clock())
+    def _unreplied_pulses_count(self, *, account_id: str, character_id: str) -> int:
+        last_owner_ts = 0.0
+        if self.store.one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='operator_chat_turns'"):
+            owner_row = self.store.one(
+                "SELECT MAX(created_at) AS ts FROM operator_chat_turns "
+                "WHERE character_id=? AND TRIM(COALESCE(message,'')) != '' "
+                "AND COALESCE(json_extract(result, '$.assistant_only'), 0) = 0",
+                (character_id,),
+            )
+            if owner_row and owner_row["ts"] is not None:
+                last_owner_ts = float(owner_row["ts"])
+        row = self.store.one(
+            "SELECT COUNT(*) AS n FROM agent_heartbeat_pulses "
+            "WHERE character_id=? AND account_id=? AND severity!='urgent' AND created_at>?",
+            (character_id, account_id, last_owner_ts),
+        )
+        return int(row["n"]) if row else 0
+
+    def _non_urgent_gate_reason(
+        self,
+        policy: HeartbeatPolicy,
+        *,
+        account_id: str,
+        character_id: str,
+        now: float,
+    ) -> str | None:
+        if is_in_quiet_hours(now, self._business_tz(), policy.quiet_hours_start, policy.quiet_hours_end):
+            return "quiet_hours"
         last_at = self._last_pulse_at(account_id=account_id, character_id=character_id)
-        if last_at and now - last_at < policy.pulse_cooldown_seconds:
+        if last_at and policy.pulse_cooldown_seconds > 0 and now - last_at < policy.pulse_cooldown_seconds:
             return "pulse_cooldown"
         if policy.max_pulses_per_day > 0:
             if self._pulses_today_count(account_id=account_id, character_id=character_id) >= policy.max_pulses_per_day:
                 return "daily_pulse_limit"
+        if policy.max_unreplied_pulses > 0:
+            if self._unreplied_pulses_count(account_id=account_id, character_id=character_id) >= policy.max_unreplied_pulses:
+                return "unread_cap"
         return None
 
     def _fallback_aqua_brief(
@@ -530,20 +394,20 @@ class HeartbeatService:
         hot = [e for e in events if e.kind == "hot_topic"]
         parts: list[str] = []
         if urgent:
-            parts.append(f"{owner}，我这边刚盯到一件需要你看一下的事：{urgent[0].summary}")
+            parts.append(f"{owner}，先跟你说个急事：{urgent[0].summary}")
         elif attention:
             parts.append(f"{owner}，顺便跟你说一声：{attention[0].summary}")
         elif hot:
             top = hot[0]
-            parts.append(f"{owner}，我刚刷到「{top.payload.get('title', top.title)}」，感觉挺值得聊聊的。")
+            parts.append(f"{owner}，我刚刷到「{top.payload.get('title', top.title)}」，感觉还挺有意思的。")
         else:
-            parts.append(f"{owner}，我这边刚完成一轮巡检，{events[0].summary}")
+            parts.append(f"{owner}，顺便提一下，{events[0].summary}")
         if research:
             src = research[0].payload["sources"][0]
-            parts.append(f"我还顺手去搜了点资料（{src.get('title') or '公开来源'}），大致说的是：{src.get('excerpt', '')[:110]}")
-        elif len(events) > 1 and not research:
+            parts.append(f"我还顺手搜了点资料（{src.get('title') or '公开来源'}），大致是：{src.get('excerpt', '')[:100]}")
+        elif len(events) > 1:
             extra = events[1]
-            if extra.kind not in {"curiosity_research"}:
+            if extra.kind != "curiosity_research":
                 parts.append(extra.summary)
         return sanitize_pulse_text(" ".join(parts), owner_label=owner)
 
@@ -555,16 +419,30 @@ class HeartbeatService:
     ) -> str:
         owner = owner_address_label(char)
         facts = self._account_facts()
+        has_urgent = any(e.severity == "urgent" for e in events)
+        has_hot = any(e.kind in {"hot_topic", "curiosity_research"} for e in events)
+        if has_urgent:
+            task_intent = (
+                f"把下面需要立刻处理的异常，用 Aqua 清晰直接的第一人称口吻告诉{owner}。"
+                "控制在 1-2 句话内；只写已给材料里的事实，不输出 JSON、不吐原始堆栈或凭据。"
+            )
+        elif has_hot:
+            task_intent = (
+                f"用 Aqua 自然口语给{owner}发 1-2 句轻松分享，聊聊刚刷到的视频话题或顺手查到的公开资料；"
+                "只写已给材料里的事实，不编造链接、不用「心跳巡检」「刚完成一轮巡检」这类机械套话、不输出 JSON。"
+            )
+        else:
+            task_intent = (
+                f"用 Aqua 自然口语轻声向{owner}提一句刚新增的待处理草稿或小动静，控制在 1-2 句话内；"
+                "不用「心跳巡检」「刚完成一轮巡检」等机械套话，只写已给事实。"
+            )
         sys_msg = build_self_model_system_message(
             char,
             channel="owner_chat",
-            scene="常驻心跳主动简报",
-            task_intent=(
-                f"把下面刚发生的值得注意的后台动静或热点查证，用 Aqua 自然干净的第一人称口吻写一条简短简报给{owner}。"
-                "控制在 2-3 句话内；只写已给材料里的事实，绝不编造链接、不堆砌道具词、不输出 JSON、不吐原始报错。"
-            ),
+            scene="后台主动简报",
+            task_intent=task_intent,
             operating_account=facts,
-            situation="后台常驻心跳巡检发现新的状态变化或值得分享的话题。",
+            situation="后台出现了新的异常变化、待确认草稿或值得分享的视频话题。",
         )
         prompt_payload = {
             "owner_address": owner,
@@ -577,15 +455,11 @@ class HeartbeatService:
                 for s in research_sources[:2]
             ],
         }
-        messages = [
-            sys_msg,
-            {"role": "user", "content": dump(prompt_payload)},
-        ]
+        messages = [sys_msg, {"role": "user", "content": dump(prompt_payload)}]
 
         if callable(self._brief_generator):
             try:
-                raw = await self._brief_generator(messages, char)
-                cleaned = sanitize_pulse_text(raw, owner_label=owner)
+                cleaned = sanitize_pulse_text(await self._brief_generator(messages, char), owner_label=owner)
                 if cleaned:
                     return cleaned
             except Exception:
@@ -625,7 +499,8 @@ class HeartbeatService:
         brief: str,
         research_sources: list[dict[str, str]],
     ) -> dict[str, Any]:
-        primary = events[0]
+        ordered = sorted(events, key=lambda e: 0 if e.severity == "urgent" else 1)
+        primary = ordered[0]
         now = float(self._clock())
         pulse_id = str(uuid4())
         research_summary = "；".join(
@@ -639,10 +514,7 @@ class HeartbeatService:
             for s in research_sources[:3]
             if s.get("url")
         ]
-        payload = {
-            "event_ids": [e.event_id for e in events],
-            "kinds": [e.kind for e in events],
-        }
+        payload = {"event_ids": [e.event_id for e in ordered], "kinds": [e.kind for e in ordered]}
         with self.store.db:
             self.store.db.execute(
                 "INSERT INTO agent_heartbeat_pulses("
@@ -683,6 +555,41 @@ class HeartbeatService:
             "created_at": now,
         }
 
+    def _save_tick_state(
+        self,
+        *,
+        char_id: str,
+        account_id: str,
+        persisted_state: dict[str, Any],
+        eval_result: dict[str, Any],
+        committed_faults: dict[str, str],
+        committed_drafts: list[tuple[str, dict[str, Any]]],
+        suppressions: list[dict[str, Any]],
+        now: float,
+    ) -> None:
+        next_state = dict(persisted_state)
+        active_faults = {
+            k: v for k, v in dict(persisted_state.get("active_faults") or {}).items()
+            if k not in eval_result["recovered_faults"]
+        }
+        active_faults.update(committed_faults)
+        next_state["active_faults"] = active_faults
+        next_state.update(eval_result["cleared_updates"])
+        for kind_tag, fields in committed_drafts:
+            if kind_tag == "dynamics":
+                next_state["dynamics_pending_ids"] = fields["ids"]
+                next_state["dynamics_pending_count"] = fields["count"]
+                next_state["dynamics_latest_created_at"] = fields["latest_ts"]
+            elif kind_tag == "dm":
+                next_state["dm_pending_ids"] = fields["ids"]
+                next_state["dm_pending_count"] = fields["count"]
+                next_state["dm_latest_created_at"] = fields["latest_ts"]
+            elif kind_tag == "inbox":
+                next_state["inbox_pending_count"] = fields["count"]
+        if suppressions:
+            next_state["suppressions"] = [*list(next_state.get("suppressions") or []), *suppressions][-30:]
+        self.state_store.save_state(char_id, account_id, next_state, now=now)
+
     async def tick(
         self,
         *,
@@ -690,72 +597,157 @@ class HeartbeatService:
         force_brief: bool = False,
         bypass_cooldown: bool = False,
     ) -> dict[str, Any]:
-        """Run one unified heartbeat cycle: gather signals, research hot topics, emit rate-limited brief."""
+        """Run one unified heartbeat cycle: evaluate edge-triggered signals, gate non-urgent work, emit brief."""
         async with self._tick_lock:
             policy = self.policy()
             now = float(self._clock())
             self._last_tick_at = now
+            self._last_snapshot_synthetic = snapshot is not None
             snap = snapshot if snapshot is not None else heartbeat_pulse_snapshot(
                 self._current_browsing(), store=self.store
             )
             self._last_snapshot = snap
             char = self._current_character()
+            char_id = str(char.get("id") or "")
             account_id = str(snap.get("account_id") or "")
+            persisted_state = self.state_store.load_state(char_id, account_id)
 
-            candidate_events = self._signals_from_snapshot(snap)
-            emitted_events: list[HeartbeatEvent] = []
-            suppressed: list[dict[str, str]] = []
+            eval_res = evaluate_snapshot(
+                self.state_store,
+                snap,
+                persisted_state,
+                character_id=char_id,
+                account_id=account_id,
+                now=now,
+                bypass_cooldown=bypass_cooldown,
+                clear_bus_cooldown=self.bus.clear_cooldown,
+            )
+            suppressions: list[dict[str, Any]] = list(eval_res["suppressions"])
+            fault_events: list[tuple[str, HeartbeatEvent]] = eval_res["fault_events"]
+            non_urgent_items: list[tuple[str, HeartbeatEvent, Any]] = [
+                ("attention", ev, None) for ev in eval_res["attention_events"]
+            ] + [
+                ("draft:" + tag, ev, fields) for tag, ev, fields in eval_res["draft_events"]
+            ] + [
+                ("hot_topic", ev, None) for ev in eval_res["hot_events"]
+            ]
 
-            for ev in candidate_events:
-                res = await self.bus.publish(
-                    ev,
-                    cooldown_seconds=policy.event_cooldown_seconds,
-                    bypass_cooldown=bypass_cooldown,
+            has_urgent = bool(fault_events)
+            gate_reason = (
+                None
+                if force_brief
+                else self._non_urgent_gate_reason(policy, account_id=account_id, character_id=char_id, now=now)
+            )
+
+            if not has_urgent and gate_reason is not None and non_urgent_items:
+                for _, ev, _ in non_urgent_items:
+                    suppressions.append({
+                        "at": now,
+                        "reason": gate_reason,
+                        "dedup_key": ev.dedup_key,
+                        "kind": ev.kind,
+                        "detail": "gated_before_research",
+                    })
+                self._save_tick_state(
+                    char_id=char_id,
+                    account_id=account_id,
+                    persisted_state=persisted_state,
+                    eval_result=eval_res,
+                    committed_faults={},
+                    committed_drafts=[],
+                    suppressions=suppressions,
+                    now=now,
                 )
+                return {
+                    "ok": True,
+                    "tick_at": now,
+                    "emitted": 0,
+                    "suppressed": [{"dedup_key": s["dedup_key"], "reason": s["reason"]} for s in suppressions],
+                    "pulse": None,
+                    "rate_limited": gate_reason,
+                }
+
+            emitted_events: list[HeartbeatEvent] = []
+            committed_faults: dict[str, str] = {}
+            committed_drafts: list[tuple[str, dict[str, Any]]] = []
+
+            for fkey, ev in fault_events:
+                res = await self.bus.publish(ev, cooldown_seconds=0.0, bypass_cooldown=True)
                 if res.accepted:
                     emitted_events.append(ev)
+                    committed_faults[fkey] = ev.dedup_key
                 else:
-                    suppressed.append({"dedup_key": ev.dedup_key, "reason": res.reason})
+                    suppressions.append({"at": now, "reason": res.reason, "dedup_key": ev.dedup_key, "kind": ev.kind, "detail": "bus"})
+
+            allow_non_urgent = force_brief or gate_reason is None
+            for tag, ev, meta in non_urgent_items:
+                if not allow_non_urgent:
+                    suppressions.append({"at": now, "reason": str(gate_reason), "dedup_key": ev.dedup_key, "kind": ev.kind, "detail": "gated_during_urgent"})
+                    continue
+                is_edge_draft = tag.startswith("draft:")
+                res = await self.bus.publish(ev, cooldown_seconds=policy.event_cooldown_seconds, bypass_cooldown=bypass_cooldown or is_edge_draft)
+                if res.accepted:
+                    emitted_events.append(ev)
+                    if is_edge_draft:
+                        committed_drafts.append((tag.split(":", 1)[1], meta))
+                else:
+                    suppressions.append({"at": now, "reason": res.reason, "dedup_key": ev.dedup_key, "kind": ev.kind, "detail": "bus"})
+
+            if not emitted_events:
+                self._save_tick_state(
+                    char_id=char_id,
+                    account_id=account_id,
+                    persisted_state=persisted_state,
+                    eval_result=eval_res,
+                    committed_faults=committed_faults,
+                    committed_drafts=committed_drafts,
+                    suppressions=suppressions,
+                    now=now,
+                )
+                return {
+                    "ok": True,
+                    "tick_at": now,
+                    "emitted": 0,
+                    "suppressed": [{"dedup_key": s["dedup_key"], "reason": s["reason"]} for s in suppressions],
+                    "pulse": None,
+                    "rate_limited": None,
+                }
 
             research_sources: list[dict[str, str]] = []
-            if policy.curiosity_research_enabled and policy.curiosity_max_queries_per_tick > 0:
-                hot_events = [e for e in emitted_events if e.kind == "hot_topic"]
-                for hot in hot_events[: policy.curiosity_max_queries_per_tick]:
+            if allow_non_urgent and policy.curiosity_research_enabled and policy.curiosity_max_queries_per_tick > 0:
+                for hot in [e for e in emitted_events if e.kind == "hot_topic"][: policy.curiosity_max_queries_per_tick]:
                     query = _extract_research_query(hot.payload)
                     research = await self.research_topic(
                         query,
                         bvid=hot.payload.get("bvid"),
                         bypass_cooldown=bypass_cooldown,
+                        character_id=char_id,
+                        account_id=account_id,
                     )
-                    if research.get("emitted"):
-                        ev = HeartbeatEvent.model_validate(research["event"])
-                        emitted_events.append(ev)
+                    if research.get("suppressed_reason") == "persisted_dedup":
+                        suppressions.append({
+                            "at": now,
+                            "reason": "persisted_dedup",
+                            "dedup_key": f"curiosity:{hot.payload.get('bvid') or ''}",
+                            "kind": "curiosity_research",
+                            "detail": query,
+                        })
+                    elif research.get("emitted"):
+                        emitted_events.append(HeartbeatEvent.model_validate(research["event"]))
                     research_sources.extend(research.get("sources") or ())
 
-            if not emitted_events:
-                return {
-                    "ok": True,
-                    "tick_at": now,
-                    "emitted": 0,
-                    "suppressed": suppressed,
-                    "pulse": None,
-                    "rate_limited": None,
-                }
-
-            limit_reason = (
-                None
-                if force_brief
-                else self._pulse_rate_limited(policy, account_id=account_id, character_id=char["id"])
-            )
-            if limit_reason is not None:
-                return {
-                    "ok": True,
-                    "tick_at": now,
-                    "emitted": len(emitted_events),
-                    "suppressed": suppressed,
-                    "pulse": None,
-                    "rate_limited": limit_reason,
-                }
+            if policy.hot_topic_dedup_seconds > 0:
+                for ev in emitted_events:
+                    if ev.kind == "hot_topic":
+                        self.state_store.record_dedup(
+                            char_id,
+                            account_id,
+                            ev.dedup_key,
+                            kind=ev.kind,
+                            digest=ev.dedup_key,
+                            ttl_seconds=policy.hot_topic_dedup_seconds,
+                            now=now,
+                        )
 
             brief = await self._compose_owner_brief(char, emitted_events, research_sources)
             pulse = self._persist_pulse(
@@ -765,6 +757,16 @@ class HeartbeatService:
                 brief=brief,
                 research_sources=research_sources,
             )
+            self._save_tick_state(
+                char_id=char_id,
+                account_id=account_id,
+                persisted_state=persisted_state,
+                eval_result=eval_res,
+                committed_faults=committed_faults,
+                committed_drafts=committed_drafts,
+                suppressions=suppressions,
+                now=now,
+            )
             if policy.surface_to_chat and callable(self.on_pulse):
                 outcome = self.on_pulse(pulse)
                 if asyncio.iscoroutine(outcome):
@@ -773,7 +775,7 @@ class HeartbeatService:
                 "ok": True,
                 "tick_at": now,
                 "emitted": len(emitted_events),
-                "suppressed": suppressed,
+                "suppressed": [{"dedup_key": s["dedup_key"], "reason": s["reason"]} for s in suppressions],
                 "pulse": pulse,
                 "rate_limited": None,
             }
@@ -813,15 +815,29 @@ class HeartbeatService:
         items = self.list_pulses(limit=1, character_id=character_id)
         return items[0] if items else None
 
-    def status(self) -> dict[str, Any]:
+    def status(self, *, refresh_snapshot: bool = False) -> dict[str, Any]:
         running = bool(self._task and not self._task.done())
+        now = float(self._clock())
         try:
             policy = self.policy()
             char_id = str(self._current_character().get("id") or "")
             recent_count = len(self.list_pulses(limit=20, character_id=char_id))
+            snap = self._last_snapshot
+            if (snap is None or (refresh_snapshot and not self._last_snapshot_synthetic)) and self._current_browsing() is not None:
+                snap = heartbeat_pulse_snapshot(self._current_browsing(), store=self.store)
+            account_id = str((snap or {}).get("account_id") or "")
+            persisted = self.state_store.load_state(char_id, account_id)
+            in_quiet = is_in_quiet_hours(now, self._business_tz(), policy.quiet_hours_start, policy.quiet_hours_end)
+            unreplied = self._unreplied_pulses_count(account_id=account_id, character_id=char_id)
+            pending_summary = pending_summary_from_snapshot(snap)
+            recent_suppressions = list(reversed(persisted.get("suppressions") or []))[:20]
         except Exception:
             policy = HeartbeatPolicy(enabled=False)
             recent_count = 0
+            in_quiet = False
+            unreplied = 0
+            pending_summary = pending_summary_from_snapshot(None)
+            recent_suppressions = []
         return {
             "enabled": policy.enabled,
             "running": running,
@@ -829,6 +845,15 @@ class HeartbeatService:
             "tick_interval_seconds": policy.tick_interval_seconds,
             "pulse_cooldown_seconds": policy.pulse_cooldown_seconds,
             "max_pulses_per_day": policy.max_pulses_per_day,
+            "max_unreplied_pulses": policy.max_unreplied_pulses,
+            "hot_topic_dedup_seconds": policy.hot_topic_dedup_seconds,
+            "quiet_hours_start": policy.quiet_hours_start,
+            "quiet_hours_end": policy.quiet_hours_end,
+            "curiosity_research_enabled": policy.curiosity_research_enabled,
+            "in_quiet_hours": in_quiet,
+            "unreplied_pulses": unreplied,
+            "pending_summary": pending_summary,
+            "recent_suppressions": recent_suppressions,
             "last_tick_at": self._last_tick_at,
             "bus": self.bus.stats(),
             "recent_pulse_count": recent_count,

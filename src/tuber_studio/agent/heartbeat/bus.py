@@ -45,7 +45,7 @@ class BusEmissionResult(StrictModel):
     """Outcome of publishing an event onto AgentEventBus."""
 
     accepted: bool
-    reason: Literal["emitted", "deduplicated", "cooldown"]
+    reason: Literal["emitted", "deduplicated", "cooldown", "persisted_dedup"]
     event: HeartbeatEvent
     handler_errors: list[str] = Field(default_factory=list)
 
@@ -60,10 +60,14 @@ class AgentEventBus:
         dedup_window_seconds: float = 3600.0,
         max_history: int = 200,
         clock: Callable[[], float] | None = None,
+        state_store: Any | None = None,
+        scope_getter: Callable[[], tuple[str, str]] | None = None,
     ) -> None:
         self.default_cooldown_seconds = max(0.0, float(default_cooldown_seconds))
         self.dedup_window_seconds = max(0.0, float(dedup_window_seconds))
         self._clock = clock or time.time
+        self._state_store = state_store
+        self._scope_getter = scope_getter
         self._history: deque[HeartbeatEvent] = deque(maxlen=max(10, int(max_history)))
         self._last_by_key: dict[str, tuple[float, str]] = {}
         self._subscribers: dict[str, list[Callable[[HeartbeatEvent], Any]]] = {}
@@ -103,10 +107,21 @@ class AgentEventBus:
         *,
         cooldown_seconds: float | None = None,
         bypass_cooldown: bool = False,
+        persisted_ttl_seconds: float | None = None,
     ) -> BusEmissionResult:
         """Publish an event if it passes deduplication and cooldown checks."""
         now = float(self._clock())
         digest = self._fingerprint(event)
+        char_id, account_id = self._scope_getter() if callable(self._scope_getter) else ("", "")
+        if (
+            self._state_store is not None
+            and persisted_ttl_seconds is not None
+            and persisted_ttl_seconds > 0
+            and not bypass_cooldown
+            and self._state_store.is_dedup_active(char_id, account_id, event.dedup_key, now=now)
+        ):
+            return BusEmissionResult(accepted=False, reason="persisted_dedup", event=event)
+
         previous = self._last_by_key.get(event.dedup_key)
         if previous is not None and not bypass_cooldown:
             last_at, last_digest = previous
@@ -121,6 +136,16 @@ class AgentEventBus:
 
         self._last_by_key[event.dedup_key] = (now, digest)
         self._history.append(event)
+        if self._state_store is not None and persisted_ttl_seconds is not None and persisted_ttl_seconds > 0:
+            self._state_store.record_dedup(
+                char_id,
+                account_id,
+                event.dedup_key,
+                kind=event.kind,
+                digest=digest,
+                ttl_seconds=persisted_ttl_seconds,
+                now=now,
+            )
 
         errors: list[str] = []
         handlers = [*self._subscribers.get(event.kind, ()), *self._subscribers.get("*", ())]

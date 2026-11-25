@@ -12,7 +12,9 @@ from typing import Any
 import httpx
 from fastapi import Body, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from pydantic import Field, field_validator
 
+from ...agent.heartbeat.state import validate_hhmm
 from ...core.auth import COOKIE_NAME, EnvironmentManagedToken, InvalidAdminCredential
 from ...core.models import StrictModel
 from ...infra.inference.diagnostics import check_provider_diagnostics, saved_provider_models
@@ -43,6 +45,30 @@ class AuthStatusResponse(StrictModel):
 class TokenResetResponse(StrictModel):
     token: str
     authenticated: bool
+
+
+class HeartbeatPolicyPatch(StrictModel):
+    """Strict partial update payload for HeartbeatPolicy."""
+
+    enabled: bool | None = None
+    tick_interval_seconds: float | None = Field(default=None, ge=1.0, le=86400.0)
+    pulse_cooldown_seconds: float | None = Field(default=None, ge=0.0, le=86400.0)
+    event_cooldown_seconds: float | None = Field(default=None, ge=0.0, le=86400.0)
+    max_pulses_per_day: int | None = Field(default=None, ge=0, le=200)
+    max_unreplied_pulses: int | None = Field(default=None, ge=0, le=50)
+    hot_topic_dedup_seconds: float | None = Field(default=None, ge=0.0, le=2592000.0)
+    quiet_hours_start: str | None = None
+    quiet_hours_end: str | None = None
+    curiosity_research_enabled: bool | None = None
+    curiosity_max_queries_per_tick: int | None = Field(default=None, ge=0, le=5)
+    surface_to_chat: bool | None = None
+
+    @field_validator("quiet_hours_start", "quiet_hours_end")
+    @classmethod
+    def _validate_quiet_clock(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_hhmm(value)
 
 
 def register_system_routes(app, settings, runtime, comments, dynamics, auth, login_attempts: dict | None = None) -> None:
@@ -253,6 +279,24 @@ def register_system_routes(app, settings, runtime, comments, dynamics, auth, log
     @app.post(prefix + "/cache/{category}/clear", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["system"])
     async def clear_cache(category: str):
         return {"result": await runtime.cache.clear(category), **runtime.cache.status()}
+
+    @app.get(prefix + "/heartbeat", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["system"])
+    async def heartbeat_settings():
+        return {
+            "policy": runtime.heartbeat.policy().model_dump(),
+            "status": runtime.heartbeat.status(refresh_snapshot=True),
+        }
+
+    @app.put(prefix + "/heartbeat", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["system"])
+    async def update_heartbeat_settings(body: HeartbeatPolicyPatch):
+        patch = body.model_dump(exclude_unset=True)
+        if not patch:
+            raise ValueError("请至少提供一项心跳配置字段")
+        updated = runtime.heartbeat.configure(patch)
+        return {
+            "policy": updated.model_dump(),
+            "status": runtime.heartbeat.status(refresh_snapshot=True),
+        }
 
     @app.websocket("/ws/admin")
     async def admin_ws(websocket: WebSocket):
