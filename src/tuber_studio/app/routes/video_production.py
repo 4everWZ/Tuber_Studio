@@ -14,6 +14,7 @@ from ...agent.skills.remotion_video import (
     PlanVideoScriptArgs,
     RenderRemotionVideoArgs,
     StageOrPublishVideoArgs,
+    VideoMode,
     VideoProductionPolicy,
 )
 from ...core.models import StrictModel
@@ -32,6 +33,7 @@ class VideoPlanPatch(StrictModel):
     summary: str | None = Field(default=None, min_length=1, max_length=1000)
     tags: list[str] | None = Field(default=None, min_length=1, max_length=10)
     category_tid: int | None = Field(default=None, ge=1, le=9999)
+    video_mode: VideoMode | None = None
     fps: Literal[30, 60] | None = None
     width: Literal[1920, 1280] | None = None
     height: Literal[1080, 720] | None = None
@@ -41,6 +43,14 @@ class VideoPlanPatch(StrictModel):
     scene_pause_seconds: float | None = Field(default=None, ge=0.0, le=3.0)
     scenes: list[dict[str, Any]] | None = None
     sources: list[dict[str, Any]] | None = None
+
+
+class VideoUploadBody(StrictModel):
+    """HTTP payload for uploading up to 3 public images/screenshots for a video job."""
+
+    filename: str = Field(min_length=1, max_length=80)
+    image_base64: str = Field(min_length=1, max_length=12_000_000)
+    mime_type: Literal["image/png", "image/jpeg", "image/webp"]
 
 
 class VideoGenerateBody(StrictModel):
@@ -116,6 +126,7 @@ def register_video_production_routes(app, runtime, store, browsing, require_admi
         return sanitized | {
             "render_active": running,
             "media": _media_urls(skill, job),
+            "uploads": skill.list_job_uploads(job),
         }
 
     @app.get(prefix, dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
@@ -294,6 +305,31 @@ def register_video_production_routes(app, runtime, store, browsing, require_admi
     async def get_video_media(job_id: str, kind: MediaKind):
         try:
             path, media_type = _skill().resolve_job_media(job_id, kind)
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(404, str(exc)) from None
+        return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
+
+    @app.post(prefix + "/{job_id}/uploads", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
+    async def upload_video_image(job_id: str, body: VideoUploadBody):
+        skill = _skill()
+        try:
+            result = skill.upload_job_image(
+                job_id,
+                filename=body.filename,
+                image_base64=body.image_base64,
+                mime_type=body.mime_type,
+            )
+        except ValueError as exc:
+            msg = str(exc)
+            status_code = 404 if "找不到" in msg else 409 if "不允许" in msg else 400
+            raise HTTPException(status_code, msg) from None
+        fresh = skill.get_job(job_id)
+        return result | ({"job": _present_job(fresh)} if fresh else {})
+
+    @app.get(prefix + "/{job_id}/uploads/{filename}", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
+    async def get_video_upload(job_id: str, filename: str):
+        try:
+            path, media_type = _skill().resolve_job_upload(job_id, filename)
         except (ValueError, FileNotFoundError) as exc:
             raise HTTPException(404, str(exc)) from None
         return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})

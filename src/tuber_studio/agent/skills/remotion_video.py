@@ -11,17 +11,19 @@ import re
 import shutil
 import tempfile
 import time
+from collections.abc import Sequence
 from contextlib import suppress
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from pydantic import Field, StringConstraints, ValidationError
+from pydantic import Field, StringConstraints, ValidationError, field_validator
 
 from ...core.identity import without_model_identity
 from ...core.models import StrictModel, content_hash, tool_function
 from ...core.store import dump
 from ...core.validation import linked
+from ...infra.web_client.fetch import fetch_excerpt
 from ...operations.facade import (
     canonical_intent,
     control_policy,
@@ -33,6 +35,7 @@ from ...operations.facade import (
 )
 from ...persona.memory.daily.models import contains_memory_credential
 from ...persona.self_model import build_self_model_system_message
+from . import remotion_assets as _ra
 from .remotion_assets import (
     DEFAULT_LINE_PAUSE_SECONDS,
     DEFAULT_OUTRO_HOLD_SECONDS,
@@ -43,33 +46,15 @@ from .remotion_assets import (
     SceneVisualProps,
     TemplateId,
     VideoLineSpec,
+    VideoMode,
     VideoSceneSpec,
-    _build_dry_run_wav_bytes,
-    _concat_wav_pcm,
-    _detect_browser_executable,
-    _format_srt_timestamp,
-    _format_vtt_timestamp,
-    _pad_pcm_to_frames,
-    _parse_biliup_receipt,
-    _read_wav_pcm,
-    _resolve_studio_dir,
-    _sanitize_diagnostic,
-    _scrub_secrets,
-    _silence_pcm_for_frames,
-    _write_json,
-    build_aqua_video_planner_intent,
-    build_fallback_aqua_scenes,
-    load_whale_meme_catalog,
-    pick_distinct_scene_meme_id,
-    stage_whale_visual_assets,
-    synthesize_bgm_and_sfx,
 )
 
 __all__ = [
     "DEFAULT_VIDEO_PRODUCTION_POLICY", "MAX_DURATION_DRIFT_SECONDS", "MAX_RENDERED_VIDEO_BYTES", "VIDEO_PRODUCTION_POLICY_KEY",
     "AvatarCue", "ChartPoint", "GenerateRemotionProjectArgs", "PlanVideoScriptArgs", "PublicSourceRef",
     "RemotionVideoSkill", "RenderRemotionVideoArgs", "SceneVisualProps", "StageOrPublishVideoArgs",
-    "TemplateId", "VideoLineSpec", "VideoProductionPolicy", "VideoSceneSpec", "VideoScriptPlan",
+    "TemplateId", "VideoLineSpec", "VideoMode", "VideoProductionPolicy", "VideoSceneSpec", "VideoScriptPlan",
     "assert_public_video_sources", "execute_remotion_tool", "generate_remotion_project", "plan_video_script",
     "register_remotion_tools", "remotion_tool_schemas", "render_remotion_video", "stage_or_publish_bilibili_video",
 ]
@@ -91,34 +76,7 @@ _JOB_COLUMNS = frozenset({
     "manifest_json", "qc_json", "receipt_json", "project_dir", "output_path", "cover_path", "planner_source", "planner_error", "error",
 })
 
-# Fixed static TSX/package templates — NEVER interpolated with LLM code strings.
-_REMOTION_PACKAGE_JSON = {"name": "aqua-remotion-video", "version": "1.0.0", "private": True, "type": "module", "dependencies": {"react": "^18.3.1", "react-dom": "^18.3.1", "remotion": "^4.0.0"}}
-_REMOTION_ROOT_TSX = (
-    'import React from "react";\nimport { Composition } from "remotion";\nimport { AquaVideo, AquaVideoProps } from "./AquaVideo";\n\n'
-    'export const RemotionRoot: React.FC = () => (\n  <Composition id="AquaVideo" component={AquaVideo} durationInFrames={300} fps={30} width={1920} height={1080}\n'
-    '    defaultProps={{ title: "Aqua Video", fps: 30, totalFrames: 300, scenes: [], cues: [] }}\n'
-    "    calculateMetadata={({ props }: { props: AquaVideoProps }) => ({ durationInFrames: Math.max(1, props.totalFrames || 300), fps: props.fps || 30 })} />\n);\n"
-)
-_REMOTION_AQUA_VIDEO_TSX = (
-    'import React from "react";\nimport { AbsoluteFill, Audio, Sequence, staticFile, useCurrentFrame } from "remotion";\n\n'
-    "export interface AquaSceneProp { scene_id: string; template: string; heading: string; start_frame: number; duration_frames: number; visual_props: Record<string, unknown>; }\n"
-    "export interface AquaCueProp { line_id: string; text: string; start_frame: number; duration_frames: number; avatar_cue: string; }\n"
-    "export interface AquaVideoProps { title: string; fps: number; totalFrames: number; audioFile?: string; scenes: AquaSceneProp[]; cues: AquaCueProp[]; }\n\n"
-    "export const AquaVideo: React.FC<AquaVideoProps> = ({ title, audioFile, scenes, cues }) => {\n"
-    "  const frame = useCurrentFrame();\n"
-    "  const activeCue = cues.find((c) => frame >= c.start_frame && frame < c.start_frame + c.duration_frames);\n"
-    '  return (\n    <AbsoluteFill style={{ backgroundColor: "#0f172a", color: "#f8fafc", fontFamily: "sans-serif", padding: 64 }}>\n'
-    "      {audioFile ? <Audio src={staticFile(audioFile)} /> : null}\n      <div style={{ fontSize: 28, opacity: 0.72, marginBottom: 16 }}>{title}</div>\n"
-    '      {scenes.map((scene) => (\n        <Sequence key={scene.scene_id} from={scene.start_frame} durationInFrames={scene.duration_frames}>\n'
-    '          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>\n            <div style={{ fontSize: 52, fontWeight: 700 }}>{scene.heading}</div>\n'
-    '            <div style={{ fontSize: 24, opacity: 0.85 }}>{String(scene.visual_props?.subtitle || "")}</div>\n          </div>\n        </Sequence>\n      ))}\n'
-    '      {activeCue ? (\n        <div style={{ position: "absolute", bottom: 56, left: 80, right: 80, textAlign: "center", fontSize: 34, backgroundColor: "rgba(15,23,42,0.78)", padding: "16px 24px", borderRadius: 12 }}>{activeCue.text}</div>\n      ) : null}\n'
-    "    </AbsoluteFill>\n  );\n};\n"
-)
-_REMOTION_INDEX_TS = 'import { registerRoot } from "remotion";\nimport { RemotionRoot } from "./Root";\nregisterRoot(RemotionRoot);\n'
-
-
-# Scene & script schemas live in remotion_assets.py; keep VideoScriptPlan & Policy below.
+# Scene & script schemas + static Remotion templates live in remotion_assets.py.
 
 
 class VideoScriptPlan(StrictModel):
@@ -126,6 +84,7 @@ class VideoScriptPlan(StrictModel):
     summary: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
     tags: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]] = Field(min_length=1, max_length=10)
     category_tid: int = Field(default=174, ge=1, le=9999)
+    video_mode: VideoMode = "commentary"
     fps: Literal[30, 60] = 30
     width: Literal[1920, 1280] = 1920
     height: Literal[1080, 720] = 1080
@@ -154,6 +113,9 @@ class VideoProductionPolicy(StrictModel):
 
 class PlanVideoScriptArgs(StrictModel):
     topic: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=400)] = Field(description="公开视频选题、热点话题或 BV 号说明。")
+    brief_text: str = Field(default="", max_length=8000, description="可选参考资料、产品说明或原始大纲（最多 8000 字）。")
+    reference_urls: list[str] = Field(default_factory=list, max_length=4, description="可选公开参考链接（最多 4 条 HTTPS URL，支持 GitHub 仓库自动读 README）。")
+    video_mode: VideoMode = Field(default="commentary", description="视频类型：commentary / self_intro / project_showcase / explainer。")
     candidate_bvids: list[Annotated[str, StringConstraints(pattern=r"^BV[0-9A-Za-z]{10}$")]] = Field(default_factory=list, max_length=6, description="可选关联的公开视频 BV 号。")
     style_note: str = Field(default="", max_length=200, description="可选节奏或风格提示。")
     fps: Literal[30, 60] = Field(default=30, description="视频帧率（30 或 60）。")
@@ -162,6 +124,11 @@ class PlanVideoScriptArgs(StrictModel):
     line_pause_seconds: float = Field(default=DEFAULT_LINE_PAUSE_SECONDS, ge=0.0, le=2.0, description="同一镜内相邻台词句间气口停顿（秒）。")
     scene_pause_seconds: float = Field(default=DEFAULT_SCENE_PAUSE_SECONDS, ge=0.0, le=3.0, description="分镜切换时的停顿留白时长（秒）。")
     max_scenes: int = Field(default=4, ge=1, le=10, description="目标分镜数量。")
+
+    @field_validator("reference_urls", mode="before")
+    @classmethod
+    def _clean_reference_urls(cls, value: Any) -> list[str]:
+        return _ra.normalize_reference_urls(value)
 
 
 class GenerateRemotionProjectArgs(StrictModel):
@@ -185,9 +152,9 @@ class StageOrPublishVideoArgs(StrictModel):
 
 
 def assert_public_video_sources(
-    plan: VideoScriptPlan | dict[str, Any], *, store=None, unified_memory=None, character_id: str = ""
+    plan: VideoScriptPlan | dict[str, Any], *, store=None, unified_memory=None, character_id: str = "", extra_texts: Sequence[str] = ()
 ) -> VideoScriptPlan:
-    """Strictly validate that video plan & sources contain ZERO owner-private memories or DMs."""
+    """Strictly validate that video plan, brief_text & sources contain ZERO owner-private memories or DMs."""
     validated = plan if isinstance(plan, VideoScriptPlan) else VideoScriptPlan.model_validate(plan)
     for src in validated.sources:
         if src.scope != "public" or src.kind not in _ALLOWED_PUBLIC_KINDS:
@@ -195,7 +162,7 @@ def assert_public_video_sources(
         if src.source_id.casefold().startswith(_FORBIDDEN_SOURCE_PREFIXES):
             raise ValueError("公开视频制作禁止引用私有对话或私信来源")
 
-    texts = [validated.title, validated.summary, *validated.tags]
+    texts = [validated.title, validated.summary, *validated.tags, *(str(t) for t in extra_texts if t)]
     for src in validated.sources:
         texts.extend([src.source_id, src.title, src.excerpt])
     for scene in validated.scenes:
@@ -204,34 +171,11 @@ def assert_public_video_sources(
         for line in scene.lines:
             texts.append(line.text)
             texts.extend(line.emphasis)
-    if any(contains_memory_credential(fragment) for fragment in texts):
-        raise ValueError("公开视频文案禁止包含凭据或敏感密钥")
-
-    corpus = "\n".join(texts).casefold()
-    if unified_memory is not None:
-        owner_items = unified_memory.list_memories(scope="owner", character_id=character_id or None, include_inactive=True, limit=200)
-        owner_ids = {str(item["id"]) for item in owner_items}
-        if any(src.source_id in owner_ids for src in validated.sources):
-            raise ValueError("公开视频制作禁止引用 owner 私有记忆")
-        for item in owner_items:
-            content = " ".join(str(item.get("content") or "").split()).casefold()
-            if len(content) >= 6 and content in corpus:
-                raise ValueError("公开视频文案检测到未授权的 owner 私有记忆内容")
-
-    if store is not None and store.one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='dm_inbox'") is not None:
-        for row in store.all("SELECT content FROM dm_inbox ORDER BY id DESC LIMIT 100"):
-            dm_text = " ".join(str(row.get("content") or "").split()).casefold()
-            if len(dm_text) >= 8 and dm_text in corpus:
-                raise ValueError("公开视频文案检测到私信原文，已阻止外泄")
+    _ra.assert_public_texts(
+        texts, contains_credential_fn=contains_memory_credential, store=store,
+        unified_memory=unified_memory, character_id=character_id, source_ids=[s.source_id for s in validated.sources],
+    )
     return validated
-
-
-def _safe_child_path(root: Path, child: str) -> Path:
-    resolved_root = root.resolve()
-    target = (resolved_root / child).resolve()
-    if not target.is_relative_to(resolved_root) or linked(target):
-        raise ValueError("路径超出受控工作目录或包含符号链接")
-    return target
 
 
 class RemotionVideoSkill:
@@ -242,14 +186,14 @@ class RemotionVideoSkill:
     def __init__(
         self, runtime, store, *, browsing=None, renders_root: Path | None = None,
         studio_dir: Path | None = None,
-        planner_fn=None, tts_fn=None, subprocess_runner=None, ffprobe_runner=None,
+        planner_fn=None, tts_fn=None, web_fetch_fn=None, subprocess_runner=None, ffprobe_runner=None,
         biliup_runner=None, render_semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self.runtime, self.store, self._browsing = runtime, store, browsing
         base_rt = renders_root or (getattr(getattr(runtime, "settings", None), "runtime", None) or Path.cwd() / "runtime")
         self.renders_root = Path(base_rt) / "video_renders"
-        self.studio_dir = _resolve_studio_dir(runtime, studio_dir)
-        self.planner_fn, self.tts_fn = planner_fn, tts_fn
+        self.studio_dir = _ra._resolve_studio_dir(runtime, studio_dir)
+        self.planner_fn, self.tts_fn, self.web_fetch_fn = planner_fn, tts_fn, web_fetch_fn
         self.subprocess_runner, self.ffprobe_runner, self.biliup_runner = subprocess_runner, ffprobe_runner, biliup_runner
         self._own_semaphore = render_semaphore
         self.active_job_ids: set[str] = set()
@@ -287,7 +231,7 @@ class RemotionVideoSkill:
         return (self.studio_dir / "node_modules/remotion").is_dir() and (self.studio_dir / "src/Root.tsx").is_file()
 
     def environment_status(self) -> dict[str, Any]:
-        browser_path, browser_kind = _detect_browser_executable()
+        browser_path, browser_kind = _ra._detect_browser_executable()
         settings, op_llm, voices = getattr(self.runtime, "settings", None), getattr(self.runtime, "operation_llm", None), getattr(self.runtime, "voices", None)
         omni_cfg = (getattr(settings, "data", None) or {}).get("omni") or {}
         tts_ref_ok = False
@@ -371,9 +315,14 @@ class RemotionVideoSkill:
         return Path(root) if root else Path(__file__).resolve().parents[4]
 
     def _fallback_script_plan(
-        self, args: PlanVideoScriptArgs, candidates: list[dict[str, Any]], public_memories: list[dict[str, Any]]
+        self,
+        args: PlanVideoScriptArgs,
+        candidates: list[dict[str, Any]],
+        public_memories: list[dict[str, Any]],
+        ref_sources: list[PublicSourceRef] | None = None,
     ) -> VideoScriptPlan:
-        sources = [
+        sources: list[PublicSourceRef] = list(ref_sources or [])
+        sources.extend(
             PublicSourceRef(
                 source_id=f"video:{item['bvid']}", kind="watched_video", scope="public",
                 title=str(item.get("title") or item["bvid"])[:160],
@@ -381,23 +330,31 @@ class RemotionVideoSkill:
                 bvid=item["bvid"], excerpt=str(item.get("summary") or "")[:300],
             )
             for item in candidates[:3]
-        ] or [PublicSourceRef(source_id=f"topic:{content_hash(args.topic)[:12]}", kind="operator_topic", scope="public", title=args.topic[:80], excerpt=args.topic[:300])]
+        )
+        if args.brief_text.strip():
+            sources.append(PublicSourceRef(source_id=f"brief:{content_hash(args.brief_text)[:12]}", kind="operator_topic", scope="public", title=args.topic[:120], excerpt=args.brief_text.strip()[:480], fetch_status="manual"))
+        elif not sources:
+            sources.append(PublicSourceRef(source_id=f"topic:{content_hash(args.topic)[:12]}", kind="operator_topic", scope="public", title=args.topic[:80], excerpt=args.topic[:300]))
         sources.extend(
             PublicSourceRef(source_id=str(m["id"]), kind="public_memory", scope="public", title="公开印象参考", excerpt=str(m.get("content") or "")[:200])
             for m in public_memories[:2]
         )
-        lead, raw_scenes = build_fallback_aqua_scenes(
+        sources = sources[:12]
+        lead, raw_scenes = _ra.build_fallback_aqua_scenes(
             topic=args.topic,
             style_note=args.style_note,
             sources=sources,
             max_scenes=args.max_scenes,
-            available_memes=load_whale_meme_catalog(self._assets_root()),
+            available_memes=_ra.load_whale_meme_catalog(self._assets_root()),
+            video_mode=args.video_mode,
+            brief_text=args.brief_text,
         )
         scenes = [VideoSceneSpec.model_validate(item) for item in raw_scenes]
         return VideoScriptPlan(
             title=lead,
-            summary=f"Aqua 围绕「{args.topic[:100]}」的浅海手账短评。引用来源：" + "；".join(s.url or s.title for s in sources[:3]),
+            summary=f"Aqua 围绕「{args.topic[:100]}」的浅海手账创作。引用来源：" + "；".join(s.url or s.title for s in sources[:3]),
             tags=["Aqua", "杂谈吐槽", "浅海手账"],
+            video_mode=args.video_mode,
             fps=args.fps,
             include_avatar=args.include_avatar,
             bgm_enabled=args.bgm_enabled,
@@ -411,30 +368,29 @@ class RemotionVideoSkill:
         """Stage 1 & 2: Select strictly public sources and plan a schema-validated VideoScriptPlan."""
         args = arguments if isinstance(arguments, PlanVideoScriptArgs) else PlanVideoScriptArgs.model_validate(arguments)
         char = self._current_character()
-        char_id = str(char.get("id") or "")
+        char_id, unified = str(char.get("id") or ""), getattr(self.runtime, "unified_memory", None)
+        _ra.assert_public_texts([args.topic, args.style_note, args.brief_text], contains_credential_fn=contains_memory_credential, store=self.store, unified_memory=unified, character_id=char_id)
+        ref_sources, ref_pages, ref_diagnostics = await _ra.fetch_reference_urls(args.reference_urls, fetch_fn=self.web_fetch_fn or fetch_excerpt)
+        if ref_pages:
+            _ra.assert_public_texts([str(p.get("excerpt") or "") for p in ref_pages], contains_credential_fn=contains_memory_credential, store=self.store, unified_memory=unified, character_id=char_id)
         candidates, public_memories = self._public_candidates_and_memories(topic=args.topic, candidate_bvids=args.candidate_bvids, character_id=char_id)
-        available_memes = load_whale_meme_catalog(self._assets_root())
-        sys_msg = build_self_model_system_message(
-            char, channel="dynamic", scene="公开视频脚本与分镜策划",
-            task_intent=build_aqua_video_planner_intent(),
-        )
+        available_memes = _ra.load_whale_meme_catalog(self._assets_root())
+        sys_msg = build_self_model_system_message(char, channel="dynamic", scene="公开视频脚本与分镜策划", task_intent=_ra.build_aqua_video_planner_intent(args.video_mode))
         packet = {
-            "topic": args.topic, "style_note": args.style_note, "fps": args.fps,
-            "include_avatar": args.include_avatar, "bgm_enabled": args.bgm_enabled,
-            "line_pause_seconds": args.line_pause_seconds, "scene_pause_seconds": args.scene_pause_seconds,
-            "max_scenes": args.max_scenes,
+            "topic": args.topic, "video_mode": args.video_mode, "brief_text": args.brief_text,
+            "reference_pages": ref_pages, "reference_diagnostics": ref_diagnostics, "style_note": args.style_note,
+            "fps": args.fps, "include_avatar": args.include_avatar, "bgm_enabled": args.bgm_enabled,
+            "line_pause_seconds": args.line_pause_seconds, "scene_pause_seconds": args.scene_pause_seconds, "max_scenes": args.max_scenes,
             "available_templates": ["TitleCard", "CodeWalkthrough", "ChartCompare", "MemeCutaway", "QuoteSpotlight", "TimelineSummary"],
             "available_avatar_cues": ["idle", "cheerful", "curious", "proud", "thinking", "surprised", "calm"],
             "available_memes": [{"id": m["id"], "title": m["title"], "emotions": m["emotions"], "tags": m["tags"]} for m in available_memes],
             "public_candidates": candidates[:6], "public_memories": [{"id": m["id"], "content": m["content"]} for m in public_memories[:6]],
         }
         messages = [sys_msg, {"role": "user", "content": dump(packet)}]
-        plan: VideoScriptPlan | None = None
-        planner_source, planner_error = "fallback", None
+        plan, planner_source, planner_error = None, "fallback", None
         if callable(self.planner_fn):
             raw_plan = await self.planner_fn(messages, VideoScriptPlan.model_json_schema(), packet)
-            plan = raw_plan if isinstance(raw_plan, VideoScriptPlan) else VideoScriptPlan.model_validate(raw_plan)
-            planner_source = "custom_planner"
+            plan, planner_source = (raw_plan if isinstance(raw_plan, VideoScriptPlan) else VideoScriptPlan.model_validate(raw_plan)), "custom_planner"
         elif (op_llm := getattr(self.runtime, "operation_llm", None)) is not None and callable(getattr(op_llm, "generate_json", None)):
             try:
                 slot = self.runtime.offline_generation("background") if callable(getattr(self.runtime, "offline_generation", None)) else asyncio.Lock()
@@ -443,17 +399,51 @@ class RemotionVideoSkill:
                         raw_plan = await op_llm.generate_json(messages, VideoScriptPlan.model_json_schema(), max_tokens=6144)
                 plan, planner_source = VideoScriptPlan.model_validate(raw_plan), "llm"
             except Exception as exc:
-                plan, planner_error = None, _sanitize_diagnostic(f"{type(exc).__name__}: {exc}")
+                plan, planner_error = None, _ra._sanitize_diagnostic(f"{type(exc).__name__}: {exc}")
         if plan is None:
-            plan, planner_source = self._fallback_script_plan(args, candidates, public_memories), "fallback"
-        validated = assert_public_video_sources(plan, store=self.store, unified_memory=getattr(self.runtime, "unified_memory", None), character_id=char_id)
+            plan, planner_source = self._fallback_script_plan(args, candidates, public_memories, ref_sources=ref_sources), "fallback"
+        plan = _ra.finalize_rich_plan_fields(plan, topic=args.topic, brief_text=args.brief_text, reference_urls=args.reference_urls, video_mode=args.video_mode, ref_sources=ref_sources)
+        validated = assert_public_video_sources(plan, store=self.store, unified_memory=unified, character_id=char_id, extra_texts=[args.brief_text, *(str(p.get("excerpt") or "") for p in ref_pages)])
         job_id, now, plan_hash = f"rem_{uuid4().hex[:16]}", time.time(), content_hash(validated.model_dump(mode="json"))
         with self.store.db:
             self.store.db.execute(
                 "INSERT INTO remotion_video_jobs(id,account_id,character_id,character_version,status,publish_mode,title,content_hash,plan_json,planner_source,planner_error,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (job_id, self._account_id(), char_id, int(char.get("version") or 1), "script_planned", self.policy().publish_mode, validated.title, plan_hash, validated.model_dump_json(), planner_source, planner_error, now, now),
             )
-        return {"ok": True, "job_id": job_id, "status": "script_planned", "content_hash": plan_hash, "planner_source": planner_source, "planner_error": planner_error, "plan": validated.model_dump(mode="json")}
+        return {"ok": True, "job_id": job_id, "status": "script_planned", "content_hash": plan_hash, "planner_source": planner_source, "planner_error": planner_error, "reference_diagnostics": ref_diagnostics, "plan": validated.model_dump(mode="json")}
+
+    def list_job_uploads(self, job_or_id: dict[str, Any] | str) -> list[dict[str, Any]]:
+        job = self.get_job(job_or_id) if isinstance(job_or_id, str) else job_or_id
+        if not job or not self.renders_root.is_dir():
+            return []
+        try:
+            return _ra.list_job_upload_entries(_ra.resolve_controlled_job_dir(self.renders_root, job), str(job["id"]))
+        except ValueError:
+            return []
+
+    def upload_job_image(self, job_id: str, *, filename: str, image_base64: str, mime_type: str) -> dict[str, Any]:
+        job = self.get_job(job_id)
+        if job is None or not job.get("plan"):
+            raise ValueError("找不到指定视频任务")
+        if job.get("status") in {"published", "publish_uncertain", "rendering"}:
+            raise ValueError(f"当前状态（{job['status']}）不允许上传图片")
+        project_dir = _ra.resolve_controlled_job_dir(self.renders_root, job, create=True)
+        safe_name, size_bytes = _ra.save_job_upload_image(_ra.safe_child_path(project_dir, "public/uploads"), filename=filename, image_base64=image_base64, mime_type=mime_type)
+        if not str(job.get("project_dir") or "").strip():
+            self._update_job(job_id, project_dir=str(project_dir))
+        self._touch_video_cache(project_dir)
+        uploads = _ra.list_job_upload_entries(project_dir, job_id)
+        entry = next((u for u in uploads if u["filename"] == safe_name), {"filename": safe_name, "rel_path": f"uploads/{safe_name}", "url": f"/api/v1/operations/videos/{job_id}/uploads/{safe_name}", "size_bytes": size_bytes})
+        return {"ok": True, "upload": entry, "uploads": uploads}
+
+    def resolve_job_upload(self, job_id: str, filename: str) -> tuple[Path, str]:
+        job = self.get_job(job_id)
+        if job is None:
+            raise ValueError("找不到指定视频任务")
+        project_dir = _ra.resolve_controlled_job_dir(self.renders_root, job)
+        target, media_type = _ra.resolve_job_upload_file(project_dir, filename)
+        self._touch_video_cache(project_dir)
+        return target, media_type
 
     def update_job_plan(self, job_id: str, patch: dict[str, Any]) -> dict[str, Any]:
         job = self.get_job(job_id)
@@ -521,7 +511,7 @@ class RemotionVideoSkill:
                 return bytes(result)
             raise ValueError("自定义 TTS 回调必须返回 WAV 字节或路径")
         if tts_mode == "dry_run":
-            return _build_dry_run_wav_bytes(text)
+            return _ra._build_dry_run_wav_bytes(text)
         voices, settings = getattr(self.runtime, "voices", None), getattr(self.runtime, "settings", None)
         if voices is None or settings is None:
             raise ValueError("TTS 语音服务未配置，请传入 tts_mode='dry_run' 或配置 Omni 语音")
@@ -544,7 +534,7 @@ class RemotionVideoSkill:
         self.renders_root.mkdir(parents=True, exist_ok=True)
         if linked(self.renders_root):
             raise ValueError("渲染目录不能使用符号链接")
-        project_dir = _safe_child_path(self.renders_root, job_id)
+        project_dir = _ra.safe_child_path(self.renders_root, job_id)
         self.active_job_ids.add(job_id)
         try:
             src_dir, public_dir, audio_dir = project_dir / "src", project_dir / "public", project_dir / "public/audio"
@@ -558,7 +548,7 @@ class RemotionVideoSkill:
             scene_gap_frames = max(0, int(round(plan.scene_pause_seconds * plan.fps)))
             lead_in_target = max(0, int(round(min(0.25, plan.scene_pause_seconds * 0.35) * plan.fps))) if scene_gap_frames > 0 else 0
             outro_frames = max(0, int(round(min(DEFAULT_OUTRO_HOLD_SECONDS, max(plan.line_pause_seconds, plan.scene_pause_seconds)) * plan.fps)))
-            catalog_ids = {m["id"] for m in load_whale_meme_catalog(self._assets_root())}
+            catalog_ids = {m["id"] for m in _ra.load_whale_meme_catalog(self._assets_root())}
             used_meme_ids: set[str] = set()
             resolved_scene_memes: list[str] = []
 
@@ -566,7 +556,7 @@ class RemotionVideoSkill:
             for s_idx, scene in enumerate(plan.scenes, start=1):
                 scene_start_frame, scene_frames = cursor_frame, 0
                 if s_idx > 1 and lead_in_target > 0 and wav_spec is not None:
-                    pcm_chunks.append(_silence_pcm_for_frames(wav_spec, lead_in_target, plan.fps))
+                    pcm_chunks.append(_ra._silence_pcm_for_frames(wav_spec, lead_in_target, plan.fps))
                     cursor_frame += lead_in_target
                     scene_frames += lead_in_target
                     cursor_seconds = cursor_frame / float(plan.fps)
@@ -574,37 +564,37 @@ class RemotionVideoSkill:
                 for l_idx, line in enumerate(scene.lines, start=1):
                     line_id = line.line_id or f"s{s_idx}_l{l_idx}"
                     wav_bytes = await self._synthesize_line_wav(line.text, tts_mode=args.tts_mode, voice_id=args.reference_voice_id)
-                    spec, pcm, duration = _read_wav_pcm(wav_bytes)
+                    spec, pcm, duration = _ra._read_wav_pcm(wav_bytes)
                     if wav_spec is None:
                         wav_spec = spec
                     elif spec != wav_spec:
                         raise ValueError("逐句配音音频采样率或声道数不一致")
                     line_frames = max(1, math.ceil(duration * plan.fps))
                     (audio_dir / f"{line_id}.wav").write_bytes(wav_bytes)
-                    pcm_chunks.append(_pad_pcm_to_frames(wav_spec, pcm, line_frames, plan.fps))
+                    pcm_chunks.append(_ra._pad_pcm_to_frames(wav_spec, pcm, line_frames, plan.fps))
                     start_sec = cursor_frame / float(plan.fps)
                     end_sec = (cursor_frame + line_frames) / float(plan.fps)
                     cues.append({"line_id": line_id, "scene_id": scene.scene_id, "text": line.text, "start_frame": cursor_frame, "duration_frames": line_frames, "start_seconds": round(start_sec, 4), "end_seconds": round(end_sec, 4), "audio_file": f"audio/{line_id}.wav", "avatar_cue": line.avatar_cue, "highlight_code": line.highlight_code, "emphasis": list(line.emphasis)})
                     avatar_cues.append({"line_id": line_id, "cue": line.avatar_cue, "start_frame": cursor_frame, "duration_frames": line_frames, "viseme_energy": 0.65 if args.tts_mode != "dry_run" else 0.35})
-                    srt_lines.append(f"{srt_index}\n{_format_srt_timestamp(start_sec)} --> {_format_srt_timestamp(end_sec)}\n{line.text}\n")
-                    vtt_lines.append(f"{_format_vtt_timestamp(start_sec)} --> {_format_vtt_timestamp(end_sec)}\n{line.text}\n")
+                    srt_lines.append(f"{srt_index}\n{_ra._format_srt_timestamp(start_sec)} --> {_ra._format_srt_timestamp(end_sec)}\n{line.text}\n")
+                    vtt_lines.append(f"{_ra._format_vtt_timestamp(start_sec)} --> {_ra._format_vtt_timestamp(end_sec)}\n{line.text}\n")
                     srt_index += 1
                     cursor_frame += line_frames
                     scene_frames += line_frames
                     if l_idx < num_lines and line_gap_frames > 0:
-                        pcm_chunks.append(_silence_pcm_for_frames(wav_spec, line_gap_frames, plan.fps))
+                        pcm_chunks.append(_ra._silence_pcm_for_frames(wav_spec, line_gap_frames, plan.fps))
                         cursor_frame += line_gap_frames
                         scene_frames += line_gap_frames
                     elif l_idx == num_lines:
                         tail_frames = max(0, scene_gap_frames - lead_in_target) if s_idx < num_scenes else outro_frames
                         if tail_frames > 0:
-                            pcm_chunks.append(_silence_pcm_for_frames(wav_spec, tail_frames, plan.fps))
+                            pcm_chunks.append(_ra._silence_pcm_for_frames(wav_spec, tail_frames, plan.fps))
                             cursor_frame += tail_frames
                             scene_frames += tail_frames
                     cursor_seconds = cursor_frame / float(plan.fps)
 
                 vp_dict = scene.visual_props.model_dump(mode="json")
-                picked_meme = pick_distinct_scene_meme_id(
+                picked_meme = _ra.pick_distinct_scene_meme_id(
                     scene.avatar_cue,
                     used_meme_ids,
                     catalog_ids,
@@ -619,10 +609,10 @@ class RemotionVideoSkill:
 
             assert wav_spec is not None
             narration_path, srt_path, vtt_path, avatar_cues_path = public_dir / "narration.wav", project_dir / "subtitles.srt", project_dir / "subtitles.vtt", project_dir / "avatar_cues.json"
-            narration_path.write_bytes(_concat_wav_pcm(wav_spec, pcm_chunks))
+            narration_path.write_bytes(_ra._concat_wav_pcm(wav_spec, pcm_chunks))
             srt_path.write_text("\n".join(srt_lines), encoding="utf-8")
             vtt_path.write_text("\n".join(vtt_lines), encoding="utf-8")
-            avatar_assets, meme_assets = stage_whale_visual_assets(
+            avatar_assets, meme_assets = _ra.stage_whale_visual_assets(
                 self._assets_root(),
                 public_dir,
                 include_avatar=plan.include_avatar,
@@ -630,7 +620,7 @@ class RemotionVideoSkill:
                 scene_cues=[s.avatar_cue for s in plan.scenes],
             )
             bgm_file, transition_sfx_file = (
-                synthesize_bgm_and_sfx(audio_dir, duration_seconds=cursor_seconds) if plan.bgm_enabled else (None, None)
+                _ra.synthesize_bgm_and_sfx(audio_dir, duration_seconds=cursor_seconds) if plan.bgm_enabled else (None, None)
             )
             avatar_cues_path.write_text(dump({"include_avatar": plan.include_avatar, "avatar_mode": "gif_frames_ready" if avatar_assets else "2d_fallback", "cues": avatar_cues}), encoding="utf-8")
             props_payload = {
@@ -641,20 +631,20 @@ class RemotionVideoSkill:
                 "scenes": scene_props, "cues": cues,
             }
             props_path, manifest_path = project_dir / "props.json", project_dir / "manifest.json"
-            _write_json(props_path, props_payload)
+            _ra._write_json(props_path, props_payload)
             manifest = {
                 "job_id": job_id, "fps": plan.fps, "width": plan.width, "height": plan.height, "total_frames": max(1, cursor_frame), "total_duration_seconds": round(cursor_seconds, 4),
                 "tts_mode": args.tts_mode, "planner_source": (job or {}).get("planner_source") or "explicit_plan", "planner_error": (job or {}).get("planner_error"),
                 "audio_file": str(narration_path), "srt_file": str(srt_path), "vtt_file": str(vtt_path), "avatar_cues_file": str(avatar_cues_path),
                 "props_file": str(props_path), "cues": cues, "sources": [src.model_dump(mode="json") for src in plan.sources],
             }
-            _write_json(manifest_path, manifest)
+            _ra._write_json(manifest_path, manifest)
             # Write static schema-safe Remotion template files (never interpolated with LLM code).
-            _write_json(project_dir / "package.json", _REMOTION_PACKAGE_JSON)
-            (src_dir / "index.ts").write_text(_REMOTION_INDEX_TS, encoding="utf-8")
-            (src_dir / "Root.tsx").write_text(_REMOTION_ROOT_TSX, encoding="utf-8")
+            _ra._write_json(project_dir / "package.json", _ra._REMOTION_PACKAGE_JSON)
+            (src_dir / "index.ts").write_text(_ra._REMOTION_INDEX_TS, encoding="utf-8")
+            (src_dir / "Root.tsx").write_text(_ra._REMOTION_ROOT_TSX, encoding="utf-8")
             studio_aqua = self.studio_dir / "src/AquaVideo.tsx"
-            (src_dir / "AquaVideo.tsx").write_text(studio_aqua.read_text(encoding="utf-8") if studio_aqua.is_file() else _REMOTION_AQUA_VIDEO_TSX, encoding="utf-8")
+            (src_dir / "AquaVideo.tsx").write_text(studio_aqua.read_text(encoding="utf-8") if studio_aqua.is_file() else _ra._REMOTION_AQUA_VIDEO_TSX, encoding="utf-8")
             project_hash = content_hash({"plan": plan.model_dump(mode="json"), "props": props_payload})
             if job is None:
                 now = time.time()
@@ -768,11 +758,11 @@ class RemotionVideoSkill:
                         self._update_job(args.job_id, status="render_failed", error="未安装 npx / Remotion CLI")
                         raise ValueError("未安装 npx / Remotion CLI，请使用 dry_run 或在渲染节点执行")
                     real_cmd = [npx_bin, *cmd[1:], *([f"--public-dir={public_dir}"] if public_dir.is_dir() else [])]
-                    if (browser_path := _detect_browser_executable()[0]):
+                    if (browser_path := _ra._detect_browser_executable()[0]):
                         real_cmd.append(f"--browser-executable={browser_path}")
                     code, _out, stderr = await self._run_exec(real_cmd, cwd=self.studio_dir if self._shared_studio_installed() else project_dir, timeout=policy.render_timeout_seconds)
                 if code != 0:
-                    err_msg = _sanitize_diagnostic(stderr) or "Remotion 渲染失败"
+                    err_msg = _ra._sanitize_diagnostic(stderr) or "Remotion 渲染失败"
                     self._update_job(args.job_id, status="render_failed", error=err_msg)
                     raise ValueError(f"Remotion 渲染失败: {err_msg[:200]}")
 
@@ -824,8 +814,8 @@ class RemotionVideoSkill:
                     raise ValueError("未安装 biliup CLI，无法直接投稿")
                 cmd[0] = biliup_bin
                 code, stdout, stderr = await self._run_exec(cmd, cwd=output_path.parent, timeout=timeout)
-        safe_out, safe_err = _scrub_secrets(stdout, credentials), _scrub_secrets(stderr, credentials)
-        receipt = _parse_biliup_receipt(safe_out, safe_err)
+        safe_out, safe_err = _ra._scrub_secrets(stdout, credentials), _ra._scrub_secrets(stderr, credentials)
+        receipt = _ra._parse_biliup_receipt(safe_out, safe_err)
         if code != 0:
             raise RuntimeError(f"biliup exit={code}: {safe_err or safe_out}")
         if not receipt:

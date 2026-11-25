@@ -1,5 +1,5 @@
 import React from "react";
-import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { AnimatedSticker } from "../components/AnimatedSticker";
 import { AQUA_THEME, CJK_FONT_STACK, MONO_FONT_STACK, type AquaCueProp, type AquaSceneProp, type VisualAssetEntry } from "../types";
 
@@ -91,7 +91,7 @@ export const CodeWalkthrough: React.FC<CodeWalkthroughProps> = ({
       <div style={{ display: "flex", gap: 22, flex: 1, minHeight: 0 }}>
         <div
           style={{
-            flex: bullets.length > 0 ? 1.5 : 1,
+            flex: bullets.length > 0 || Boolean(vp.uploaded_image_file) ? 1.5 : 1,
             borderRadius: 24,
             backgroundColor: "#17253b",
             border: `3px solid ${AQUA_THEME.border}`,
@@ -173,22 +173,46 @@ export const CodeWalkthrough: React.FC<CodeWalkthroughProps> = ({
           </div>
         </div>
 
-        {bullets.length > 0 ? (
+        {bullets.length > 0 || vp.uploaded_image_file ? (
           <div style={{ flex: 0.78, display: "flex", flexDirection: "column", gap: 14 }}>
-            <div
-              style={{
-                alignSelf: "flex-start",
-                padding: "4px 12px",
-                borderRadius: 10,
-                backgroundColor: AQUA_THEME.yellow,
-                border: `2px solid ${AQUA_THEME.border}`,
-                fontSize: 17,
-                fontWeight: 800,
-                color: AQUA_THEME.ink,
-              }}
-            >
-              📌 便利贴笔记
-            </div>
+            {vp.uploaded_image_file ? (
+              <div
+                style={{
+                  borderRadius: 18,
+                  padding: 10,
+                  backgroundColor: "#ffffff",
+                  border: `2.5px solid ${AQUA_THEME.border}`,
+                  boxShadow: "4px 4px 0 rgba(27, 53, 84, 0.12)",
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  maxHeight: 240,
+                  overflow: "hidden",
+                }}
+              >
+                <Img
+                  src={staticFile(vp.uploaded_image_file)}
+                  alt={scene.heading}
+                  style={{ width: "100%", maxHeight: 216, objectFit: "contain", borderRadius: 10 }}
+                />
+              </div>
+            ) : null}
+            {bullets.length > 0 ? (
+              <div
+                style={{
+                  alignSelf: "flex-start",
+                  padding: "4px 12px",
+                  borderRadius: 10,
+                  backgroundColor: AQUA_THEME.yellow,
+                  border: `2px solid ${AQUA_THEME.border}`,
+                  fontSize: 17,
+                  fontWeight: 800,
+                  color: AQUA_THEME.ink,
+                }}
+              >
+                📌 便利贴笔记
+              </div>
+            ) : null}
             {bullets.map((item, idx) => {
               const itemEnter = spring({
                 frame: Math.max(0, frame - 8 - idx * 6),

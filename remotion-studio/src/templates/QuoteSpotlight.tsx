@@ -1,5 +1,5 @@
 import React from "react";
-import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { AQUA_THEME, CJK_FONT_STACK, type AquaSceneProp } from "../types";
 
 export const QuoteSpotlight: React.FC<{ scene: AquaSceneProp; includeAvatar?: boolean }> = ({
@@ -78,6 +78,29 @@ export const QuoteSpotlight: React.FC<{ scene: AquaSceneProp; includeAvatar?: bo
           </div>
         ) : null}
       </div>
+
+      {vp.uploaded_image_file ? (
+        <div
+          style={{
+            borderRadius: 20,
+            padding: 12,
+            backgroundColor: "#ffffff",
+            border: `2.5px solid ${AQUA_THEME.border}`,
+            boxShadow: AQUA_THEME.shadow,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            maxHeight: 260,
+            overflow: "hidden",
+          }}
+        >
+          <Img
+            src={staticFile(vp.uploaded_image_file)}
+            alt={scene.heading}
+            style={{ width: "100%", maxHeight: 232, objectFit: "contain", borderRadius: 12 }}
+          />
+        </div>
+      ) : null}
 
       {bullets.length > 0 ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>

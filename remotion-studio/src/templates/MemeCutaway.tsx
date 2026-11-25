@@ -1,5 +1,5 @@
 import React from "react";
-import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { AnimatedSticker } from "../components/AnimatedSticker";
 import { AQUA_THEME, CJK_FONT_STACK, type AquaSceneProp, type VisualAssetEntry } from "../types";
 
@@ -139,6 +139,29 @@ export const MemeCutaway: React.FC<{
                   #{b}
                 </span>
               ))}
+            </div>
+          ) : null}
+          {vp.uploaded_image_file ? (
+            <div
+              style={{
+                marginTop: 6,
+                borderRadius: 18,
+                padding: 10,
+                backgroundColor: "#ffffff",
+                border: `2.5px solid ${AQUA_THEME.border}`,
+                boxShadow: "4px 4px 0 rgba(27, 53, 84, 0.12)",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                maxHeight: 230,
+                overflow: "hidden",
+              }}
+            >
+              <Img
+                src={staticFile(vp.uploaded_image_file)}
+                alt={scene.heading}
+                style={{ width: "100%", maxHeight: 206, objectFit: "contain", borderRadius: 10 }}
+              />
             </div>
           ) : null}
         </div>

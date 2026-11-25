@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
+import inspect
 import io
+import ipaddress
 import json
 import math
 import os
@@ -10,16 +15,23 @@ import re
 import shutil
 import struct
 import wave
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from urllib.parse import urldefrag
 
+import httpx
 from PIL import Image, ImageSequence
 from pydantic import Field, StringConstraints, field_validator
 
 from ...core.models import StrictModel
+from ...core.validation import linked
+from ...infra.inference.validation import validate_image
+from ...infra.web_client.fetch import MAX_URL, fetch_excerpt, public_https_address, public_ip
 
 TemplateId = Literal["TitleCard", "CodeWalkthrough", "ChartCompare", "MemeCutaway", "QuoteSpotlight", "TimelineSummary"]
 AvatarCue = Literal["idle", "cheerful", "curious", "proud", "thinking", "surprised", "calm"]
+VideoMode = Literal["commentary", "self_intro", "project_showcase", "explainer"]
 
 
 class ChartPoint(StrictModel):
@@ -36,6 +48,16 @@ class SceneVisualProps(StrictModel):
     chart_items: list[ChartPoint] = Field(default_factory=list, max_length=8)
     meme_asset_id: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{1,64}$")
     citation_label: str = Field(default="", max_length=120)
+    uploaded_image_file: str | None = Field(default=None, pattern=r"^uploads/[a-zA-Z0-9._-]{1,80}$")
+
+    @field_validator("uploaded_image_file")
+    @classmethod
+    def check_uploaded_image_file(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if ".." in value:
+            raise ValueError("上传图片相对路径不能包含上级目录跳转")
+        return value
 
 
 class VideoLineSpec(StrictModel):
@@ -70,6 +92,8 @@ class PublicSourceRef(StrictModel):
     url: str | None = Field(default=None, max_length=512)
     bvid: str | None = Field(default=None, pattern=r"^BV[0-9A-Za-z]{10}$")
     excerpt: str = Field(default="", max_length=500)
+    fetch_status: Literal["fetched", "fallback", "manual"] | None = None
+    fetch_error: str | None = Field(default=None, max_length=160)
 
     @field_validator("url")
     @classmethod
@@ -341,22 +365,69 @@ def synthesize_bgm_and_sfx(
     return "audio/bgm.wav", "audio/transition.wav"
 
 
-def build_aqua_video_planner_intent() -> str:
-    """Return the 80/20 Aqua Bilibili short-commentary video script planner instruction."""
+_MODE_PLANNER_STRUCTURES: dict[str, str] = {
+    "commentary": (
+        "当前视频类型为「热点吐槽 / 杂谈（commentary）」，去掉「总-分-总」科普播音腔与「哈喽大家好今天带大家梳理」套话，改用 B 站轻快短吐槽结构：\n"
+        "1) 第 1 镜（TitleCard）：3 秒钩子开场，一针见血抛出痛点或反差吐槽；\n"
+        "2) 中间 1~N 镜（CodeWalkthrough / ChartCompare / QuoteSpotlight / MemeCutaway）：抓最戳人的具体细节、代码对比或反转槽点展开；\n"
+        "3) 末镜（MemeCutaway 或 TimelineSummary）：用 1 句轻傲娇、干白饭或「低功耗保鲜摸鱼」式俏皮收尾。"
+    ),
+    "self_intro": (
+        "当前视频类型为「角色与工坊自我介绍（self_intro）」，结合角色卡设定与传入的 `brief_text` 资料自然表达：\n"
+        "1) 第 1 镜（TitleCard）：鲜明身份与反差感钩子开场（80% 鲸鱼娘吐槽感 + 20% 本地开发者底色）；\n"
+        "2) 中间 1~N 镜（QuoteSpotlight / MemeCutaway / CodeWalkthrough / TimelineSummary）：依次展开核心能力、工坊日常工作流与陪伴生态；\n"
+        "3) 末镜（MemeCutaway 或 TimelineSummary）：友好社区互动号召收尾（欢迎三连/评论区搭话）。"
+    ),
+    "project_showcase": (
+        "当前视频类型为「开源项目 / 作品展示（project_showcase）」，结合 `brief_text` 与抓取到的 GitHub README / 项目主页内容：\n"
+        "1) 第 1 镜（TitleCard）：直击真实痛点或最亮眼项目卖点开场；\n"
+        "2) 中间 1~N 镜（CodeWalkthrough / ChartCompare / QuoteSpotlight / TimelineSummary）：拆解核心特性、架构流程、代码或界面亮点；\n"
+        "3) 末镜（TimelineSummary 或 MemeCutaway）：说明适用人群与开源地址，并把公开仓库/项目 URL 原样保留在 summary 与末镜 visual_props.citation_label。"
+    ),
+    "explainer": (
+        "当前视频类型为「原理拆解 / 知识科普（explainer）」，保持轻快口语化但不失条理：\n"
+        "1) 第 1 镜（TitleCard）：用反常识疑问或具体卡点抛出问题钩子；\n"
+        "2) 中间 1~N 镜（CodeWalkthrough / ChartCompare / QuoteSpotlight / TimelineSummary）：分 2~3 个清晰步骤或对比把原理讲透；\n"
+        "3) 末镜（TimelineSummary 或 MemeCutaway）：用一句好记的话完成核心结论复盘。"
+    ),
+}
+
+
+def build_aqua_video_planner_intent(video_mode: VideoMode = "commentary") -> str:
+    """Return the 80/20 Aqua Bilibili video script planner instruction parameterized by mode."""
+    mode_block = _MODE_PLANNER_STRUCTURES.get(video_mode, _MODE_PLANNER_STRUCTURES["commentary"])
     return (
-        "只基于传入的公开来源生成结构化 VideoScriptPlan JSON。"
+        "只基于传入的公开来源、brief_text 与 reference_pages 生成结构化 VideoScriptPlan JSON，并将 video_mode 原样设为传入模式。"
         "视觉风格是「浅海手账 / 清爽二次元杂谈桌 + Aqua 右下角虚拟主播小窗」，"
         "人设遵循 80% 鲸鱼娘 OC（灵动吐槽、轻傲娇、偶尔白饭/摸鱼梗，自称「我」「Aqua」「本鲸」但不自称「大肥鱼」）、20% 本地开发者底色。\n"
-        "严格去掉「总-分-总」科普播音腔与「哈喽大家好今天带大家梳理」套话，改用 B 站轻快短吐槽结构：\n"
-        "1) 第 1 镜（TitleCard）：3 秒钩子开场，一针见血抛出痛点或反差吐槽；\n"
-        "2) 中间 1~2 镜（CodeWalkthrough / ChartCompare / QuoteSpotlight / MemeCutaway）：抓 2 个最戳人的具体细节、代码对比或反转槽点展开；\n"
-        "3) 末镜（MemeCutaway 或 TimelineSummary）：用 1 句轻傲娇、干白饭或「低功耗保鲜摸鱼」式俏皮收尾。\n"
+        f"{mode_block}\n"
         "配音节奏要求（为 TTS 合成优化，程序会自动在句间插入 0.45s、切镜插入 0.75s 气口停顿）：\n"
         "- 每条口播台词 lines[].text 控制在 10~22 个字左右的短促口语，一句只讲一个爆点，少用生僻英文缩写堆砌；\n"
         "- 关键台词可在 emphasis 填入 1~2 个必须直接出自该句 text 原文的亮眼关键词（如「先跑起来」「一锅粥」「低功耗保鲜」），用于 B 站综艺花字高亮；\n"
         "- 请为每一镜的 visual_props.meme_asset_id 从 available_memes 中挑选【互不重复】的鲸鱼表情包/动图（如 archive-megaphone、archive-laptop-rage、story-meal、story-hum、story-tail、story-token、motion-turn、archive-flat-whale 等），并给每句分配丰富的 avatar_cue（curious/thinking/surprised/cheerful/proud/calm）；\n"
         "- 可用模板严格限于 TitleCard、CodeWalkthrough、ChartCompare、MemeCutaway、QuoteSpotlight、TimelineSummary；严禁写可执行代码或引用私人记忆与私信。"
     )
+
+
+def _extract_brief_points(brief_text: str, sources: list[Any], topic: str) -> list[str]:
+    points: list[str] = []
+    for raw_line in re.split(r"[\r\n。！？；;]+", brief_text or ""):
+        clean = re.sub(r"^[#>*\-\d.\s]+", "", raw_line).strip()
+        if len(clean) >= 4 and clean not in points:
+            points.append(clean[:110])
+    for src in sources:
+        for cand in (getattr(src, "title", ""), getattr(src, "excerpt", "")):
+            clean = " ".join(str(cand or "").split()).strip()
+            if len(clean) >= 4 and clean[:110] not in points:
+                points.append(clean[:110])
+    if not points:
+        points.append(topic[:80])
+    return points
+
+
+def _preferred_showcase_url(sources: list[Any]) -> str:
+    urls = [str(getattr(s, "url", "") or "").strip() for s in sources if getattr(s, "url", None)]
+    return next((u for u in urls if "github.com/" in u.lower()), urls[0] if urls else "")
 
 
 def build_fallback_aqua_scenes(
@@ -366,62 +437,127 @@ def build_fallback_aqua_scenes(
     sources: list[Any],
     max_scenes: int,
     available_memes: list[dict[str, Any]],
+    video_mode: VideoMode = "commentary",
+    brief_text: str = "",
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Construct lively 80/20 Aqua fallback scenes when LLM planner is unavailable."""
+    """Construct lively 80/20 Aqua fallback scenes supporting 4 video modes and 2-10 scenes."""
     lead = topic[:48]
     meme_ids = {m["id"] for m in available_memes}
-    hook_meme = "archive-megaphone" if "archive-megaphone" in meme_ids else ("archive-thinking-whale" if "archive-thinking-whale" in meme_ids else None)
-    outro_meme = "story-meal" if "story-meal" in meme_ids else ("archive-flat-whale" if "archive-flat-whale" in meme_ids else None)
-    excerpt = (sources[0].excerpt[:60] if sources else "") or topic[:60]
-    rows = [
-        {
-            "scene_id": "scene_hook",
-            "template": "TitleCard",
-            "heading": lead,
-            "visual_props": {
-                "subtitle": style_note or "本鲸今天不绕弯，直接开聊正题",
-                "bullets": ["3 秒抓重点", "拒绝长篇说教"],
-                "meme_asset_id": hook_meme,
-                "citation_label": (sources[0].title[:40] if sources else "公开观察"),
-            },
-            "lines": [
-                {"line_id": "l1", "text": f"等等，{lead[:14]}这事也太真实了。", "avatar_cue": "surprised", "emphasis": ["太真实了"]},
-                {"line_id": "l2", "text": "先别急着点头，本鲸直接给你划重点。", "avatar_cue": "cheerful", "emphasis": ["划重点"]},
-            ],
-            "avatar_cue": "cheerful",
+    used_memes: set[str] = set()
+    points = _extract_brief_points(brief_text, sources, topic)
+    excerpt = (sources[0].excerpt[:90] if sources and getattr(sources[0], "excerpt", "") else "") or points[0][:90]
+    showcase_url = _preferred_showcase_url(sources)
+
+    def _take_meme(cue: str, preferred: str | None = None) -> str | None:
+        picked = pick_distinct_scene_meme_id(cue, used_memes, meme_ids, preferred_id=preferred)
+        if picked:
+            used_memes.add(picked)
+        return picked
+
+    hook_copy = {
+        "self_intro": ("你好呀，我是 Aqua，你的本地鲸鱼搭档！", "自我介绍来啦，今天不端架子直接聊！", ["Aqua", "自我介绍"]),
+        "project_showcase": (f"{lead[:14]}到底解决了什么痛点？", "先看痛点与亮点，再看开源结构！", ["痛点", "开源"]),
+        "explainer": (f"为什么{lead[:12]}总让人一头雾水？", "别背定义啦，本鲸拆成几步讲透。", ["一头雾水", "讲透"]),
+        "commentary": (f"等等，{lead[:14]}这事也太真实了。", "先别急着点头，本鲸直接给你划重点。", ["太真实了", "划重点"]),
+    }[video_mode]
+    outro_copy = {
+        "self_intro": ("想一起折腾创作和代码，记得在评论区叫我！", "以后工坊日常和直播都靠大家多多关照啦。", ["评论区", "关照"]),
+        "project_showcase": (
+            "仓库地址放在卡片上，欢迎亲自上手试试看！",
+            "觉得顺手就点个 Star，有想法评论区直接开聊。",
+            ["仓库地址", "评论区"],
+        ),
+        "explainer": ("记住这一条主线，原理其实一点都不玄学。", "还有想拆解的技术点，评论区随时点单！", ["一点都不玄学", "评论区"]),
+        "commentary": ("行了，本鲸要切回低功耗模式摸鱼了。", "有更好玩的槽点，记得在评论区叫我。", ["低功耗模式", "评论区"]),
+    }[video_mode]
+
+    hook_scene = {
+        "scene_id": "scene_hook",
+        "template": "TitleCard",
+        "heading": lead,
+        "visual_props": {
+            "subtitle": style_note or points[0][:140],
+            "bullets": [p[:48] for p in points[:3]],
+            "meme_asset_id": _take_meme("cheerful", "archive-megaphone"),
+            "citation_label": (sources[0].title[:60] if sources and getattr(sources[0], "title", "") else "公开观察"),
         },
-        {
-            "scene_id": "scene_detail",
-            "template": "QuoteSpotlight",
-            "heading": "最戳人的细节在这儿",
-            "visual_props": {
-                "subtitle": excerpt,
-                "bullets": [s.title[:48] for s in sources[:3] if getattr(s, "title", "")],
-                "citation_label": (sources[0].url or sources[0].source_id) if sources else "公开来源",
-            },
-            "lines": [
-                {"line_id": "l3", "text": "表面看着风平浪静，细节一扒全露馅。", "avatar_cue": "curious", "emphasis": ["全露馅"]},
-                {"line_id": "l4", "text": "把关键线索拎出来看，是不是瞬间懂了？", "avatar_cue": "thinking", "emphasis": ["瞬间懂了"]},
-            ],
-            "avatar_cue": "curious",
+        "lines": [
+            {"line_id": "l1", "text": hook_copy[0], "avatar_cue": "surprised", "emphasis": [hook_copy[2][0]]},
+            {"line_id": "l2", "text": hook_copy[1], "avatar_cue": "cheerful", "emphasis": [hook_copy[2][1]]},
+        ],
+        "avatar_cue": "cheerful",
+    }
+
+    target_count = max(1, min(10, int(max_scenes)))
+    if target_count == 1:
+        return lead, [hook_scene]
+
+    middle_templates_by_mode: dict[str, tuple[str, ...]] = {
+        "commentary": ("QuoteSpotlight", "MemeCutaway", "ChartCompare", "CodeWalkthrough", "TimelineSummary"),
+        "self_intro": ("QuoteSpotlight", "TimelineSummary", "MemeCutaway", "CodeWalkthrough", "ChartCompare"),
+        "project_showcase": ("CodeWalkthrough", "QuoteSpotlight", "TimelineSummary", "ChartCompare", "MemeCutaway"),
+        "explainer": ("TimelineSummary", "QuoteSpotlight", "CodeWalkthrough", "ChartCompare", "MemeCutaway"),
+    }
+    middle_templates = middle_templates_by_mode[video_mode]
+    middle_count = max(0, target_count - 2)
+    middle_scenes: list[dict[str, Any]] = []
+    line_idx = 3
+    for idx in range(middle_count):
+        tpl = middle_templates[idx % len(middle_templates)]
+        point = points[idx % len(points)]
+        next_point = points[(idx + 1) % len(points)]
+        src = sources[idx % len(sources)] if sources else None
+        citation = (getattr(src, "url", None) or getattr(src, "title", None) or "公开来源") if src else "公开来源"
+        cue = ("curious", "thinking", "proud", "surprised")[idx % 4]
+        vp: dict[str, Any] = {
+            "subtitle": point[:180],
+            "bullets": [point[:48], *( [next_point[:48]] if next_point != point else [] )],
+            "meme_asset_id": _take_meme(cue),
+            "citation_label": str(citation)[:120],
+        }
+        if tpl == "CodeWalkthrough":
+            vp["language"] = "text"
+            vp["code_snippet"] = "\n".join(points[:4])[:1200]
+        elif tpl == "ChartCompare":
+            vp["chart_items"] = [
+                {"label": "关键点 A", "value": 80 + idx * 5, "unit": "%"},
+                {"label": "对比项 B", "value": 45 + idx * 4, "unit": "%"},
+            ]
+        middle_scenes.append(
+            {
+                "scene_id": f"scene_detail_{idx + 1}",
+                "template": tpl,
+                "heading": f"第 {idx + 1} 块重点：{point[:20]}",
+                "visual_props": vp,
+                "lines": [
+                    {"line_id": f"l{line_idx}", "text": f"先看第{idx + 1}点，重点其实非常直接。", "avatar_cue": cue, "emphasis": ["非常直接"]},
+                    {"line_id": f"l{line_idx + 1}", "text": f"把{point[:10]}拎出来看就全明白。", "avatar_cue": "thinking", "emphasis": ["全明白"]},
+                ],
+                "avatar_cue": cue,
+            }
+        )
+        line_idx += 2
+
+    outro_citation = showcase_url[:120] if video_mode == "project_showcase" and showcase_url else (
+        str((sources[0].url or sources[0].title) if sources else "Aqua 浅海手账")[:120]
+    )
+    outro_scene = {
+        "scene_id": "scene_outro",
+        "template": "TimelineSummary" if video_mode in {"project_showcase", "explainer"} else "MemeCutaway",
+        "heading": "开源地址与适用场景" if video_mode == "project_showcase" else ("一句话带走核心结论" if video_mode == "explainer" else "讲完收工，去干一碗热白饭"),
+        "visual_props": {
+            "subtitle": showcase_url or excerpt or "听完别光点赞，评论区交出你的看法",
+            "bullets": [p[:48] for p in points[:2]] or ["本鲸低功耗保鲜中", "欢迎评论区接梗"],
+            "meme_asset_id": _take_meme("proud", "story-meal"),
+            "citation_label": outro_citation,
         },
-        {
-            "scene_id": "scene_outro",
-            "template": "MemeCutaway",
-            "heading": "讲完收工，去干一碗热白饭",
-            "visual_props": {
-                "subtitle": "听完别光点赞，评论区交出你的看法",
-                "bullets": ["本鲸低功耗保鲜中", "欢迎评论区接梗"],
-                "meme_asset_id": outro_meme,
-            },
-            "lines": [
-                {"line_id": "l5", "text": "行了，本鲸要切回低功耗模式摸鱼了。", "avatar_cue": "proud", "emphasis": ["低功耗模式"]},
-                {"line_id": "l6", "text": "有更好玩的槽点，记得在评论区叫我。", "avatar_cue": "cheerful", "emphasis": ["评论区"]},
-            ],
-            "avatar_cue": "proud",
-        },
-    ]
-    return lead, rows[:max_scenes]
+        "lines": [
+            {"line_id": f"l{line_idx}", "text": outro_copy[0], "avatar_cue": "proud", "emphasis": [outro_copy[2][0]]},
+            {"line_id": f"l{line_idx + 1}", "text": outro_copy[1], "avatar_cue": "cheerful", "emphasis": [outro_copy[2][1]]},
+        ],
+        "avatar_cue": "proud",
+    }
+    return lead, [hook_scene, *middle_scenes, outro_scene]
 
 
 _REMOTION_PACKAGE_JSON = {
@@ -571,3 +707,259 @@ def _scrub_secrets(text: str, credentials: dict[str, Any]) -> str:
         if len(val := str(credentials.get(key) or "").strip()) >= 4:
             cleaned = cleaned.replace(val, "[REDACTED]")
     return cleaned[:400]
+
+
+def safe_child_path(root: Path, child: str) -> Path:
+    resolved_root = root.resolve()
+    target = (resolved_root / child).resolve()
+    if not target.is_relative_to(resolved_root) or linked(target):
+        raise ValueError("路径超出受控工作目录或包含符号链接")
+    return target
+
+
+def normalize_reference_urls(values: Any) -> list[str]:
+    """Strip empties, dedupe preserving order, and enforce max 4 reference URLs."""
+    if values is None:
+        return []
+    if not isinstance(values, list):
+        raise ValueError("reference_urls 须为字符串列表")
+    cleaned = list(dict.fromkeys(str(item or "").strip() for item in values if str(item or "").strip()))
+    if len(cleaned) > 4:
+        raise ValueError("公开参考链接最多填写 4 条")
+    return cleaned
+
+
+def parse_public_https_url(raw: str) -> httpx.URL:
+    """Synchronously validate URL syntax and reject non-HTTPS, credentials, custom ports, localhost, or private IPs."""
+    clean = str(raw or "").strip()
+    if not 1 <= len(clean) <= MAX_URL or any(ch.isspace() or ch in "\\\x00" for ch in clean):
+        raise ValueError("公开参考链接格式无效")
+    try:
+        url = httpx.URL(urldefrag(clean).url)
+    except (ValueError, httpx.InvalidURL):
+        raise ValueError("公开参考链接格式无效") from None
+    host = (url.host or "").rstrip(".").lower()
+    if (
+        url.scheme != "https"
+        or not host
+        or url.userinfo
+        or url.port is not None
+        or host == "localhost"
+        or host.endswith((".localhost", ".local", ".internal", ".ts.net"))
+        or ("." not in host and ":" not in host)
+    ):
+        raise ValueError("仅可读取公开 HTTPS 网页（不支持 HTTP、凭据、自定义端口或本地地址）")
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        addr = None
+    if addr is not None and not public_ip(str(addr)):
+        raise ValueError("公开参考链接不能指向内网、回环或链路本地 IP")
+    return url
+
+
+async def fetch_reference_urls(
+    urls: Sequence[str], *, fetch_fn=fetch_excerpt
+) -> tuple[list[PublicSourceRef], list[dict[str, Any]], list[str]]:
+    """Validate reference URLs with `public_https_address` and fetch public excerpts with per-URL fallback."""
+    validated: list[tuple[str, httpx.URL, str | None]] = []
+    for raw in urls:
+        parsed = parse_public_https_url(raw)
+        clean = str(parsed)
+        dns_err: str | None = None
+        try:
+            await public_https_address(parsed)
+        except ValueError:
+            raise
+        except OSError as exc:
+            if fetch_fn is fetch_excerpt:
+                dns_err = _sanitize_diagnostic(f"{type(exc).__name__}: {exc}")[:160] or "DNS 解析失败"
+        validated.append((clean, parsed, dns_err))
+
+    sources: list[PublicSourceRef] = []
+    pages: list[dict[str, Any]] = []
+    diagnostics: list[str] = []
+    for clean, parsed, dns_err in validated:
+        host_or_url = (parsed.host or clean)[:160]
+        src_id = f"web:{hashlib.sha256(clean.encode('utf-8')).hexdigest()[:12]}"
+        if dns_err is not None:
+            sources.append(PublicSourceRef(source_id=src_id, kind="web_research", scope="public", title=host_or_url, url=clean, excerpt="公开链接抓取失败，已保留原地址供参考。", fetch_status="fallback", fetch_error=dns_err))
+            pages.append({"url": clean, "title": host_or_url, "excerpt": "公开链接抓取失败，已保留原地址供参考。", "fetch_status": "fallback", "fetch_error": dns_err})
+            diagnostics.append(f"{host_or_url}: {dns_err}")
+            continue
+        try:
+            res = fetch_fn(clean)
+            if inspect.isawaitable(res):
+                res = await res
+            page_url = str((res.get("url") if isinstance(res, dict) else None) or clean).strip()
+            if not page_url.startswith("https://"):
+                page_url = clean
+            title = (str((res.get("title") if isinstance(res, dict) else None) or "").strip()[:160]) or host_or_url
+            raw_excerpt = str((res.get("excerpt") if isinstance(res, dict) else None) or "").strip()
+            excerpt = raw_excerpt[:480] or title[:480]
+            sources.append(PublicSourceRef(source_id=f"web:{hashlib.sha256(page_url.encode('utf-8')).hexdigest()[:12]}", kind="web_research", scope="public", title=title, url=page_url, excerpt=excerpt, fetch_status="fetched"))
+            pages.append({"url": page_url, "title": title, "excerpt": raw_excerpt[:720], "truncated": bool(isinstance(res, dict) and res.get("truncated")), "fetch_status": "fetched"})
+        except Exception as exc:
+            err_msg = _sanitize_diagnostic(f"{type(exc).__name__}: {exc}")[:160] or "抓取失败"
+            sources.append(PublicSourceRef(source_id=src_id, kind="web_research", scope="public", title=host_or_url, url=clean, excerpt="公开链接抓取失败，已保留原地址供参考。", fetch_status="fallback", fetch_error=err_msg))
+            pages.append({"url": clean, "title": host_or_url, "excerpt": "公开链接抓取失败，已保留原地址供参考。", "fetch_status": "fallback", "fetch_error": err_msg})
+            diagnostics.append(f"{host_or_url}: {err_msg}")
+    return sources, pages, diagnostics
+
+
+MAX_JOB_UPLOADS = 3
+UPLOAD_MIME_EXTS: dict[str, str] = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+UPLOAD_EXT_MIMES: dict[str, str] = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+
+
+def sanitize_upload_filename(filename: str, mime_type: str) -> str:
+    """Sanitize uploaded image filename and enforce MIME-aligned extension."""
+    expected_ext = UPLOAD_MIME_EXTS.get(mime_type)
+    if expected_ext is None:
+        raise ValueError("仅支持 image/png、image/jpeg 或 image/webp 图片")
+    raw = str(filename or "").strip()
+    if not raw or "/" in raw or "\\" in raw or ".." in raw:
+        raise ValueError("图片文件名无效或包含非法路径字符")
+    stem = re.sub(r"[^a-zA-Z0-9_-]+", "_", Path(raw).stem).strip("._-") or "image"
+    cur_ext = Path(raw).suffix.lower()
+    ext = cur_ext if UPLOAD_EXT_MIMES.get(cur_ext) == mime_type else expected_ext
+    return f"{stem[:80 - len(ext)]}{ext}"
+
+
+def save_job_upload_image(uploads_dir: Path, *, filename: str, image_base64: str, mime_type: str) -> tuple[str, int]:
+    """Validate base64 image bytes with `validate_image` and save up to 3 images per job."""
+    safe_name = sanitize_upload_filename(filename, mime_type)
+    payload = str(image_base64 or "").strip()
+    if payload.startswith("data:") and "," in payload:
+        payload = payload.split(",", 1)[1]
+    try:
+        raw_bytes = base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError("图片 Base64 编码无效") from None
+    validate_image(raw_bytes, mime_type)
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    if linked(uploads_dir):
+        raise ValueError("上传目录不能使用符号链接")
+    existing = [p.name for p in sorted(uploads_dir.iterdir()) if p.is_file() and not linked(p)]
+    if safe_name not in existing and len(existing) >= MAX_JOB_UPLOADS:
+        raise ValueError(f"每个视频任务最多上传 {MAX_JOB_UPLOADS} 张公开参考图片")
+    target = safe_child_path(uploads_dir, safe_name)
+    target.write_bytes(raw_bytes)
+    return safe_name, len(raw_bytes)
+
+
+def list_job_upload_entries(project_dir: Path, job_id: str) -> list[dict[str, Any]]:
+    """List uploaded public reference images inside `<project_dir>/public/uploads`."""
+    uploads_dir = project_dir / "public/uploads"
+    if not uploads_dir.is_dir() or linked(uploads_dir):
+        return []
+    entries: list[dict[str, Any]] = []
+    for item in sorted(uploads_dir.iterdir(), key=lambda p: p.name):
+        if linked(item) or not item.is_file() or ".." in item.name:
+            continue
+        if not re.fullmatch(r"[a-zA-Z0-9._-]{1,80}", item.name) or item.suffix.lower() not in UPLOAD_EXT_MIMES:
+            continue
+        entries.append(
+            {
+                "filename": item.name,
+                "rel_path": f"uploads/{item.name}",
+                "url": f"/api/v1/operations/videos/{job_id}/uploads/{item.name}",
+                "size_bytes": item.stat().st_size,
+            }
+        )
+    return entries[:MAX_JOB_UPLOADS]
+
+
+def resolve_job_upload_file(project_dir: Path, filename: str) -> tuple[Path, str]:
+    """Safely resolve a single uploaded public image file for HTTP serving."""
+    raw = str(filename or "").strip()
+    if "/" in raw or "\\" in raw or ".." in raw or not re.fullmatch(r"[a-zA-Z0-9._-]{1,80}", raw):
+        raise ValueError("无效的上传图片文件名")
+    uploads_dir = safe_child_path(project_dir, "public/uploads")
+    target = safe_child_path(uploads_dir, raw)
+    if not target.is_file():
+        raise FileNotFoundError("上传图片不存在")
+    media_type = UPLOAD_EXT_MIMES.get(target.suffix.lower())
+    if media_type is None:
+        raise ValueError("不支持的图片格式")
+    return target, media_type
+
+
+def assert_public_texts(
+    texts: Sequence[str],
+    *,
+    contains_credential_fn,
+    store=None,
+    unified_memory=None,
+    character_id: str = "",
+    source_ids: Sequence[str] = (),
+) -> None:
+    """Reject credentials, owner-private memories, and dm_inbox texts across arbitrary-length fragments."""
+    non_empty = [str(t) for t in texts if t]
+    if any(contains_credential_fn(fragment) for fragment in non_empty):
+        raise ValueError("公开视频文案禁止包含凭据或敏感密钥")
+    corpus = "\n".join(non_empty).casefold()
+    if unified_memory is not None:
+        owner_items = unified_memory.list_memories(scope="owner", character_id=character_id or None, include_inactive=True, limit=200)
+        owner_ids = {str(item["id"]) for item in owner_items}
+        if any(sid in owner_ids for sid in source_ids):
+            raise ValueError("公开视频制作禁止引用 owner 私有记忆")
+        for item in owner_items:
+            content = " ".join(str(item.get("content") or "").split()).casefold()
+            if len(content) >= 6 and content in corpus:
+                raise ValueError("公开视频文案检测到未授权的 owner 私有记忆内容")
+    if store is not None and store.one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='dm_inbox'") is not None:
+        for row in store.all("SELECT content FROM dm_inbox ORDER BY id DESC LIMIT 100"):
+            dm_text = " ".join(str(row.get("content") or "").split()).casefold()
+            if len(dm_text) >= 8 and dm_text in corpus:
+                raise ValueError("公开视频文案检测到私信原文，已阻止外泄")
+
+
+def finalize_rich_plan_fields(
+    plan: Any,
+    *,
+    topic: str,
+    brief_text: str,
+    reference_urls: Sequence[str],
+    video_mode: VideoMode,
+    ref_sources: list[PublicSourceRef],
+) -> Any:
+    """Enforce requested video_mode, preserve verified external/brief sources, and keep project_showcase repo URL."""
+    extra_sources: list[PublicSourceRef] = list(ref_sources)
+    if brief_text.strip():
+        digest = hashlib.sha256(brief_text.encode("utf-8")).hexdigest()[:12]
+        extra_sources.append(PublicSourceRef(source_id=f"brief:{digest}", kind="operator_topic", scope="public", title=topic[:120], excerpt=brief_text.strip()[:480], fetch_status="manual"))
+    merged: list[PublicSourceRef] = []
+    seen_keys: set[str] = set()
+    for src in [*extra_sources, *plan.sources]:
+        key = f"url:{src.url}" if src.url else f"id:{src.source_id}"
+        if key not in seen_keys:
+            seen_keys.add(key)
+            merged.append(src)
+            if len(merged) >= 12:
+                break
+    summary, scenes = plan.summary, list(plan.scenes)
+    if video_mode == "project_showcase":
+        urls = [u for u in reference_urls if u] + [s.url for s in merged if s.url]
+        showcase_url = next((u for u in urls if "github.com/" in u.lower()), urls[0] if urls else "")
+        if showcase_url:
+            if showcase_url not in summary:
+                suffix = f" 项目地址：{showcase_url}"
+                summary = (summary[: max(1, 1000 - len(suffix))] + suffix)[:1000]
+            if scenes and showcase_url not in scenes[-1].visual_props.citation_label:
+                vp = scenes[-1].visual_props.model_copy(update={"citation_label": showcase_url[:120]})
+                scenes[-1] = scenes[-1].model_copy(update={"visual_props": vp})
+    return plan.model_copy(update={"video_mode": video_mode, "summary": summary, "scenes": scenes, "sources": merged})
+
+
+def resolve_controlled_job_dir(renders_root: Path, job: dict[str, Any], *, create: bool = False) -> Path:
+    """Resolve and validate a job directory inside renders_root without symlinks."""
+    raw_dir = str(job.get("project_dir") or "").strip()
+    if create:
+        renders_root.mkdir(parents=True, exist_ok=True)
+        if linked(renders_root):
+            raise ValueError("渲染目录不能使用符号链接")
+    project_dir = Path(raw_dir) if raw_dir else safe_child_path(renders_root, str(job["id"]))
+    if not project_dir.resolve().is_relative_to(renders_root.resolve()) or linked(project_dir):
+        raise ValueError("视频工程目录不在受控范围内")
+    return project_dir

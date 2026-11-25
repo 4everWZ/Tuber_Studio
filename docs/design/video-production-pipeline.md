@@ -42,9 +42,9 @@
 
 | 字段 | 说明 |
 | --- | --- |
-| `title` / `summary` / `tags` | 投稿标题（<=80 字）、简介（附引用来源链接）、分区与标签。 |
-| `scenes[]` | 有序场景列表，每项指定预置 Remotion 模板组件 ID（如 `TitleCard`、`CodeWalkthrough`、`ChartCompare`、`MemeCutaway`）、视觉 props、口播台词 `lines[]` 与可选角色表情/动作预设 `avatar_cue`。 |
-| `sources[]` | 引用的公开来源标识；严禁引用 `owner` 作用域记忆或私聊记录。 |
+| `title` / `summary` / `tags` / `video_mode` | 投稿标题（<=80 字）、简介（附引用来源链接）、分区、标签与创作模式（`commentary` / `self_intro` / `project_showcase` / `explainer`）。 |
+| `scenes[]` | 有序场景列表（支持 2–10 镜策划），每项指定预置 Remotion 模板组件 ID（`TitleCard`、`CodeWalkthrough`、`ChartCompare`、`MemeCutaway`、`QuoteSpotlight`、`TimelineSummary`）、视觉 props（含可选公开上传截图 `uploaded_image_file`）、口播台词 `lines[]` 与角色动作预设 `avatar_cue`。 |
+| `sources[]` | 引用的公开来源标识（含 `brief_text` 转化的 `operator_topic` 与 `reference_urls` 抓取的 `web_research` 及 `fetch_status` 诊断）；严禁引用 `owner` 作用域记忆、凭据或私聊记录。 |
 
 ### 2.2 TTS 驱动时间轴与 VRM/Blender 联动
 

@@ -29,6 +29,7 @@ export interface SceneVisualProps {
   chart_items?: ChartPoint[];
   meme_asset_id?: string | null;
   citation_label?: string;
+  uploaded_image_file?: string | null;
 }
 
 export interface AquaSceneProp {

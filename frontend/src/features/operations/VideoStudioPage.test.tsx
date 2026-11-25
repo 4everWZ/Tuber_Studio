@@ -24,6 +24,7 @@ const SAMPLE_OVERVIEW = {
         title: "一分钟看懂 Remotion 帧对齐",
         summary: "用音频真实帧数驱动 React 视频动画。",
         tags: ["Aqua", "Remotion"],
+        video_mode: "project_showcase",
         fps: 30,
         width: 1920,
         height: 1080,
@@ -56,6 +57,23 @@ const SAMPLE_OVERVIEW = {
             scope: "public",
             title: "Remotion 实战视频",
             url: "https://www.bilibili.com/video/BV1xx411c7mD",
+          },
+          {
+            source_id: "web:gh1",
+            kind: "web_research",
+            scope: "public",
+            title: "aqua-org/studio README",
+            url: "https://github.com/aqua-org/studio",
+            fetch_status: "fetched",
+          },
+          {
+            source_id: "web:bad1",
+            kind: "web_research",
+            scope: "public",
+            title: "docs.example.org",
+            url: "https://docs.example.org/guide",
+            fetch_status: "fallback",
+            fetch_error: "TimeoutError: timed out",
           },
         ],
       },
@@ -145,20 +163,82 @@ describe("VideoStudioPage", () => {
     });
     expect(screen.getByText("质检通过")).toBeInTheDocument();
     expect(screen.getByText("LLM 策划")).toBeInTheDocument();
+    expect(screen.getByText("开源项目 / 作品介绍")).toBeInTheDocument();
+    expect(screen.getByText("已抓取")).toBeInTheDocument();
+    expect(screen.getByText("抓取回退")).toBeInTheDocument();
+    expect(screen.getByText(/TimeoutError: timed out/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "https://github.com/aqua-org/studio" })).toHaveAttribute(
+      "href",
+      "https://github.com/aqua-org/studio"
+    );
 
     await user.click(screen.getByRole("tab", { name: /分镜脚本/ }));
     expect(screen.getByText(/音频驱动帧对齐/)).toBeInTheDocument();
     expect(screen.getByText(/const frames = Math\.ceil/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "打开原来源" })).toHaveAttribute(
-      "href",
-      "https://www.bilibili.com/video/BV1xx411c7mD"
-    );
+    const sourceLinks = screen.getAllByRole("link", { name: "打开原来源" });
+    expect(sourceLinks[0]).toHaveAttribute("href", "https://www.bilibili.com/video/BV1xx411c7mD");
+    expect(sourceLinks[1]).toHaveAttribute("href", "https://github.com/aqua-org/studio");
 
     await user.click(screen.getByRole("tab", { name: "Remotion 代码与 Props" }));
     await waitFor(() => {
       expect(screen.getByText(/"totalFrames":90/)).toBeInTheDocument();
     });
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("supports video_mode, 2-10 scenes, brief_text with counter, and reference_urls in the composer", async () => {
+    const user = userEvent.setup();
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method || "GET";
+      calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (url.endsWith("/api/v1/operations/videos") && method === "GET") {
+        return jsonResponse(SAMPLE_OVERVIEW);
+      }
+      if (url.endsWith("/api/v1/operations/videos/plan") && method === "POST") {
+        return jsonResponse({
+          ok: true,
+          job_id: "rem_rich_01",
+          status: "script_planned",
+          planner_source: "llm",
+          reference_diagnostics: [],
+        });
+      }
+      return jsonResponse({ ok: true });
+    });
+
+    render(<VideoStudioPage route={parseHashRoute("#videos")} />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("视频选题")).toBeInTheDocument();
+    });
+
+    const sceneSelect = screen.getByLabelText("分镜数量");
+    expect(sceneSelect.querySelectorAll("option").length).toBe(9);
+    expect(screen.getByRole("option", { name: "10 镜" })).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("视频类型"), "project_showcase");
+    await user.selectOptions(sceneSelect, "10");
+    await user.type(screen.getByLabelText("视频选题"), "Aqua Studio 开源发布");
+    await user.type(screen.getByLabelText("参考资料或原始大纲"), "核心特性：本地离线工作坊");
+    expect(screen.getByText("12 / 8000")).toBeInTheDocument();
+    await user.type(
+      screen.getByLabelText("公开参考链接"),
+      "https://github.com/aqua-org/studio\n\nhttps://docs.example.org/guide"
+    );
+    await user.click(screen.getByRole("button", { name: "策划脚本" }));
+
+    await waitFor(() => {
+      expect(calls.some((c) => c.url.endsWith("/api/v1/operations/videos/plan") && c.method === "POST")).toBe(true);
+    });
+    const planCall = calls.find((c) => c.url.endsWith("/api/v1/operations/videos/plan"));
+    expect(planCall?.body).toMatchObject({
+      topic: "Aqua Studio 开源发布",
+      video_mode: "project_showcase",
+      brief_text: "核心特性：本地离线工作坊",
+      reference_urls: ["https://github.com/aqua-org/studio", "https://docs.example.org/guide"],
+      max_scenes: 10,
+    });
   });
 
   it("triggers script planning from the composer bar", async () => {

@@ -2866,6 +2866,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/videos/{job_id}/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Video Image */
+        post: operations["upload_video_image_api_v1_operations_videos__job_id__uploads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/videos/{job_id}/uploads/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Video Upload */
+        get: operations["get_video_upload_api_v1_operations_videos__job_id__uploads__filename__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/persona/artwork-references/{character_id}": {
         parameters: {
             query?: never;
@@ -3558,6 +3592,24 @@ export interface paths {
         put?: never;
         /** Clear Cache */
         post: operations["clear_cache_api_v1_system_cache__category__clear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Heartbeat Settings */
+        get: operations["heartbeat_settings_api_v1_system_heartbeat_get"];
+        /** Update Heartbeat Settings */
+        put: operations["update_heartbeat_settings_api_v1_system_heartbeat_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4272,6 +4324,36 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * HeartbeatPolicyPatch
+         * @description Strict partial update payload for HeartbeatPolicy.
+         */
+        HeartbeatPolicyPatch: {
+            /** Curiosity Max Queries Per Tick */
+            curiosity_max_queries_per_tick?: number | null;
+            /** Curiosity Research Enabled */
+            curiosity_research_enabled?: boolean | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Event Cooldown Seconds */
+            event_cooldown_seconds?: number | null;
+            /** Hot Topic Dedup Seconds */
+            hot_topic_dedup_seconds?: number | null;
+            /** Max Pulses Per Day */
+            max_pulses_per_day?: number | null;
+            /** Max Unreplied Pulses */
+            max_unreplied_pulses?: number | null;
+            /** Pulse Cooldown Seconds */
+            pulse_cooldown_seconds?: number | null;
+            /** Quiet Hours End */
+            quiet_hours_end?: string | null;
+            /** Quiet Hours Start */
+            quiet_hours_start?: string | null;
+            /** Surface To Chat */
+            surface_to_chat?: boolean | null;
+            /** Tick Interval Seconds */
+            tick_interval_seconds?: number | null;
+        };
         /** IdentityRead */
         IdentityRead: {
             /** Fields */
@@ -4584,6 +4666,12 @@ export interface components {
              */
             bgm_enabled: boolean;
             /**
+             * Brief Text
+             * @description 可选参考资料、产品说明或原始大纲（最多 8000 字）。
+             * @default
+             */
+            brief_text: string;
+            /**
              * Candidate Bvids
              * @description 可选关联的公开视频 BV 号。
              */
@@ -4614,6 +4702,11 @@ export interface components {
              */
             max_scenes: number;
             /**
+             * Reference Urls
+             * @description 可选公开参考链接（最多 4 条 HTTPS URL，支持 GitHub 仓库自动读 README）。
+             */
+            reference_urls?: string[];
+            /**
              * Scene Pause Seconds
              * @description 分镜切换时的停顿留白时长（秒）。
              * @default 0.75
@@ -4630,6 +4723,13 @@ export interface components {
              * @description 公开视频选题、热点话题或 BV 号说明。
              */
             topic: string;
+            /**
+             * Video Mode
+             * @description 视频类型：commentary / self_intro / project_showcase / explainer。
+             * @default commentary
+             * @enum {string}
+             */
+            video_mode: "commentary" | "self_intro" | "project_showcase" | "explainer";
         };
         /** Proposal */
         Proposal: {
@@ -4967,6 +5067,8 @@ export interface components {
             tags?: string[] | null;
             /** Title */
             title?: string | null;
+            /** Video Mode */
+            video_mode?: ("commentary" | "self_intro" | "project_showcase" | "explainer") | null;
             /** Width */
             width?: (1920 | 1280) | null;
         };
@@ -5054,6 +5156,21 @@ export interface components {
             bvid: string;
             /** Ranges */
             ranges?: components["schemas"]["VideoRange"][];
+        };
+        /**
+         * VideoUploadBody
+         * @description HTTP payload for uploading up to 3 public images/screenshots for a video job.
+         */
+        VideoUploadBody: {
+            /** Filename */
+            filename: string;
+            /** Image Base64 */
+            image_base64: string;
+            /**
+             * Mime Type
+             * @enum {string}
+             */
+            mime_type: "image/png" | "image/jpeg" | "image/webp";
         };
         /** VoiceCorrection */
         VoiceCorrection: {
@@ -23135,6 +23252,199 @@ export interface operations {
             };
         };
     };
+    upload_video_image_api_v1_operations_videos__job_id__uploads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VideoUploadBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_video_upload_api_v1_operations_videos__job_id__uploads__filename__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_references_api_v1_persona_artwork_references__character_id__get: {
         parameters: {
             query?: never;
@@ -28607,6 +28917,194 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    heartbeat_settings_api_v1_system_heartbeat_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_heartbeat_settings_api_v1_system_heartbeat_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HeartbeatPolicyPatch"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
