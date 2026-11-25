@@ -12,6 +12,8 @@ runtime/
 dist/
 *.egg-info/
 node_modules/
+remotion-studio/node_modules/
+remotion-studio/out/
 src/tuber_studio/web_dist/
 frontend/dist/
 frontend/.vite/

@@ -20,6 +20,7 @@ export const WORKBENCH_ROUTE_SLOTS: Record<PageId, FeatureSlotRenderer> = {
   comments: (route) => <OperationsFeature route={route} />,
   messages: (route) => <OperationsFeature route={route} />,
   dynamics: (route) => <OperationsFeature route={route} />,
+  videos: (route) => <OperationsFeature route={route} />,
   issues: (route) => <OperationsFeature route={route} />,
   live: (route) => <LiveFeature route={route} />,
   "live-scene": (route) => <LiveFeature route={route} />,

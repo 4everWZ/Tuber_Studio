@@ -4,6 +4,7 @@ export type PageId =
   | "comments"
   | "messages"
   | "dynamics"
+  | "videos"
   | "automation-records"
   | "automation-settings"
   | "live"
@@ -53,6 +54,7 @@ export const WORKSPACE_SECTIONS: Record<WorkspaceSection, readonly PageId[]> = {
     "comments",
     "messages",
     "dynamics",
+    "videos",
     "automation-records",
     "automation-settings",
   ],
@@ -67,6 +69,7 @@ export const PAGE_TITLES: Record<PageId, string> = {
   automation: "渠道活动",
   messages: "私信",
   dynamics: "动态",
+  videos: "视频创作",
   "automation-records": "运行记录",
   "automation-settings": "刷视频与运营设置",
   issues: "告警与错误",
@@ -98,6 +101,7 @@ export const SUB_NAV_TABS: Record<WorkspaceSection, readonly SubNavTab[]> = {
     { tab: "comments", page: "comments", href: "#comments", label: "评论处理", isOperationsTab: true },
     { tab: "messages", page: "messages", href: "#messages", label: "私信", isOperationsTab: true },
     { tab: "dynamics", page: "dynamics", href: "#dynamics", label: "动态", isOperationsTab: true },
+    { tab: "videos", page: "videos", href: "#videos", label: "视频创作", isOperationsTab: true },
     {
       tab: "automation-records",
       page: "automation-records",

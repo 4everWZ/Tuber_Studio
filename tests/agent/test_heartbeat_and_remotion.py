@@ -606,3 +606,63 @@ def test_remotion_openai_tool_schemas_and_task_runtime(settings, tmp_path):
         assert bad_json["ok"] is False
 
     asyncio.run(scenario())
+
+
+def test_remotion_planner_uses_operation_llm_without_provider_key_and_records_diagnostics(settings, tmp_path):
+    async def scenario():
+        app = create_app(settings, adapter=ControlledPlatform())
+        runtime = app.state.runtime
+        assert settings.provider_key("omni") is None
+
+        llm_calls = []
+
+        class FakeOpLLM:
+            async def generate_json(self, messages, schema, *, max_tokens=2048):
+                llm_calls.append({"messages": messages, "schema_title": schema.get("title"), "max_tokens": max_tokens})
+                return {
+                    "title": "模型直出视频策划",
+                    "summary": "通过 operation_llm 生成的结构化分镜脚本。",
+                    "tags": ["Aqua", "Remotion"],
+                    "fps": 30,
+                    "width": 1280,
+                    "height": 720,
+                    "include_avatar": False,
+                    "scenes": [
+                        {
+                            "scene_id": "s_intro",
+                            "template": "TitleCard",
+                            "heading": "开场导览",
+                            "visual_props": {"subtitle": "无需 provider_key 也能走模型"},
+                            "lines": [{"line_id": "l1", "text": "哈喽，我是 Aqua，我们直接用模型策划分镜。", "avatar_cue": "cheerful"}],
+                            "avatar_cue": "cheerful",
+                        }
+                    ],
+                    "sources": [
+                        {
+                            "source_id": "topic:demo",
+                            "kind": "operator_topic",
+                            "scope": "public",
+                            "title": "公开话题",
+                            "excerpt": "演示模型直出分镜",
+                        }
+                    ],
+                }
+
+        runtime.operation_llm = FakeOpLLM()
+        skill = RemotionVideoSkill(runtime, runtime.store, renders_root=tmp_path)
+        planned = await plan_video_script(skill, {"topic": "验证无 key 也能调用 LLM", "max_scenes": 2})
+        assert planned["ok"] is True
+        assert planned["planner_source"] == "llm"
+        assert planned["planner_error"] is None
+        assert len(llm_calls) == 1
+        assert llm_calls[0]["max_tokens"] == 6144
+
+        # Verify delivery helper describes Remotion receipts cleanly with #videos/{job_id}.
+        from tuber_studio.agent.tasks.delivery import LABELS, _describe
+
+        assert "plan_video_script" in LABELS
+        lines, ok = _describe("plan_video_script", planned)
+        assert ok is True
+        assert any(f"#videos/{planned['job_id']}" in line for line in lines)
+
+    asyncio.run(scenario())

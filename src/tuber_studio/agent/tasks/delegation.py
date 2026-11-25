@@ -34,6 +34,42 @@ class Clarification(StrictModel):
     question: str = Field(min_length=1, max_length=1000)
 
 
+_VIDEO_PRODUCTION_TOOLS = (
+    "plan_video_script",
+    "generate_remotion_project",
+    "render_remotion_video",
+    "stage_or_publish_bilibili_video",
+)
+_VIDEO_PRODUCTION_HINTS = (
+    "remotion",
+    "code-as-video",
+    "做视频",
+    "制作视频",
+    "生成视频",
+    "视频脚本",
+    "视频分镜",
+    "制片",
+    "渲染视频",
+    "做一期视频",
+    "视频投稿",
+)
+
+
+def _wants_video_production(task) -> bool:
+    brief = task["plan"].get("delegation_brief") if isinstance(task.get("plan"), dict) else None
+    haystack = "\n".join(
+        part
+        for part in (
+            str(task.get("goal") or ""),
+            str((brief or {}).get("goal") or ""),
+            str((brief or {}).get("deliverable") or ""),
+            *map(str, (task.get("plan") or {}).get("prior_goals") or ()),
+        )
+        if part
+    ).casefold()
+    return any(token in haystack for token in _VIDEO_PRODUCTION_HINTS)
+
+
 def uses_responses(task):
     return isinstance(task["plan"], dict) and task["plan"].get("backend") == "responses"
 
@@ -89,12 +125,17 @@ def model_input(task, context):
         "sources 可另引独立出处或有同窗回执的采样点。单帧只支持该时点的画面，音轨和连续性要有各自的观察依据。"
         "inspect_video 采用左闭右开区间，按交付时长分别取短片，end=start+所需秒数。"
     ) if video_binding(task) else ""
+    video_prod_guidance = (
+        "制作 Remotion 视频时按顺序推进：plan_video_script -> generate_remotion_project -> "
+        "render_remotion_video -> stage_or_publish_bilibili_video（默认 preview_review 仅暂存预览审核，不直接投稿）。"
+    ) if _wants_video_production(task) else ""
     history = [{"role": "system", "content": (
         "在后台完成对方交办的目标。按最新要求选择获准工具；多个独立读取会自动并发，涉及写入或提交的步骤会自动顺序排好执行。"
         "复用仍适用的来源，打开搜索结果正文后再引用。"
         "取材结束调用 submit_materials，按真实 evidence ID 提交候选、建议和缺口，由前台角色决定交付。"
         "已拿到足够回执时提交成果。只有当前目标缺少必须由对方补充的材料时才调用 ask_owner。"
         + video_guidance
+        + video_prod_guidance
     )}, {"role": "user", "content": dump({"prior_goals": task["plan"]["prior_goals"], "goal": task["goal"],
                                            **({"delegation_brief": task["plan"]["delegation_brief"]}
                                               if task["plan"].get("delegation_brief") else {}),
@@ -368,10 +409,15 @@ async def advance(runtime, task):
     if client is None:
         runtime._save(task, status="waiting", due=time.time() + 30, message="等待后台 Responses 服务连接。")
         return
-    allowed = private_tools(runtime.tools, context)
+    all_private = private_tools(runtime.tools, context)
+    allowed = all_private
     read_tools = (task["plan"].get("delegation_brief") or {}).get("read_tools")
     if read_tools is not None:
-        allowed = {name: allowed[name] for name in read_tools if name in allowed}
+        allowed = {name: all_private[name] for name in read_tools if name in all_private}
+        if _wants_video_production(task):
+            for tool_name in _VIDEO_PRODUCTION_TOOLS:
+                if tool_name in all_private:
+                    allowed[tool_name] = all_private[tool_name]
     allowed.pop("recall_memory", None)
     if browser:
         allowed = browser.menu(task, allowed)

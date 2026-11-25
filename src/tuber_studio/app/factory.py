@@ -35,6 +35,7 @@ from .routes import (
     register_operations_routes,
     register_persona_routes,
     register_system_routes,
+    register_video_production_routes,
 )
 from .runtime import Runtime
 from .web_mount import WebMount
@@ -102,6 +103,7 @@ def register_all_routes(
     register_operations_channel_routes(
         app, store, account, comments, browsing, dynamics, messages, auth.require_admin
     )
+    register_video_production_routes(app, runtime, store, browsing, auth.require_admin)
     register_entry_routes(app, settings, store, auth, web_dir=web_dist)
     register_http_middleware(app, auth, sessions, call_guards=call_guards)
     if prefix := os.getenv("TUBER_WEB_PREFIX"):

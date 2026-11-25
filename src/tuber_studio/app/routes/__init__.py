@@ -8,6 +8,7 @@ from .operations import register_browsing_routes, register_operations_routes
 from .operations_channels import register_operations_channel_routes
 from .persona import register_persona_routes
 from .system import register_system_routes
+from .video_production import register_video_production_routes
 
 __all__ = [
     "register_agent_routes",
@@ -19,4 +20,5 @@ __all__ = [
     "register_persona_routes",
     "register_system_routes",
     "register_task_routes",
+    "register_video_production_routes",
 ]

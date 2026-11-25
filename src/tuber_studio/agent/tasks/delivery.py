@@ -17,6 +17,10 @@ LABELS = {
     "web_search": "检索候选来源", "web_page": "读取网页", "bilibili_owner": "B 站号主",
     "operating_account": "B 站运营账号", "operation_status": "自主运营", "today_activity": "当日运营事件", "inspect_video": "视频取材",
     "live_status": "直播状态", "live_handoff": "节目交接", "game_status": "模拟游戏", "game_action": "模拟游戏动作",
+    "plan_video_script": "策划视频脚本",
+    "generate_remotion_project": "生成 Remotion 工程与配音",
+    "render_remotion_video": "渲染成片与质检",
+    "stage_or_publish_bilibili_video": "视频暂存审阅与投稿",
 }
 OPERATIONS = {
     "off": "未启动", "starting": "正在启动", "running": "运行中", "blocked": "有阻塞",
@@ -752,6 +756,35 @@ def _describe(tool, result):
     if tool == "game_action":
         done = result.get("success") is True
         return ["模拟游戏确认动作已执行。" if done else "模拟游戏未确认执行。", _text(result.get("state"))], done
+    if tool in {
+        "plan_video_script",
+        "generate_remotion_project",
+        "render_remotion_video",
+        "stage_or_publish_bilibili_video",
+    }:
+        raw_job_id = str(result.get("job_id") or "").strip()
+        job_id = _text(raw_job_id)
+        status = _text(result.get("status") or result.get("action"))
+        ok = result.get("ok") is True
+        lines = [f"视频任务 {job_id}" if job_id else "视频制作任务"]
+        if status:
+            lines.append(f"状态：{status}")
+        if title := _text(result.get("title") or (result.get("plan") or {}).get("title")):
+            lines.append(f"标题：{title}")
+        if result.get("total_duration_seconds") is not None:
+            lines.append(f"时长：{result['total_duration_seconds']} 秒（{result.get('total_frames', 0)} 帧）")
+        if qc := result.get("qc_report"):
+            if isinstance(qc, dict):
+                qc_note = "质检通过" if qc.get("passed") else "质检未过：" + "；".join(map(_text, qc.get("issues") or []))
+                lines.append(qc_note)
+        if receipt := result.get("receipt"):
+            if isinstance(receipt, dict) and (bvid := _text(receipt.get("bvid"))):
+                lines.append(f"投稿回执：{bvid}")
+        if err := _text(result.get("error") or result.get("reason")):
+            lines.append(err)
+        if re.fullmatch(r"[A-Za-z0-9_-]{1,80}", raw_job_id):
+            lines.append(f"工作台入口：#videos/{raw_job_id}")
+        return lines, ok
     failed = result.get("status") in {"cancelled", "failed", "blocked", "partial"} or result.get("success") is False
     return ["工具未确认完成。" if failed else "已保存工具回执。"], bool(result) and not failed
 

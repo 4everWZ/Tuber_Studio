@@ -71,6 +71,10 @@ const TOOL_LABELS: Record<string, string> = {
   authorized_inbox_text: "授权读取的来信",
   inbox_received: "来信入库回执",
   comment_received: "评论楼事件",
+  plan_video_script: "策划视频脚本",
+  generate_remotion_project: "生成 Remotion 工程与配音",
+  render_remotion_video: "渲染成片与质检",
+  stage_or_publish_bilibili_video: "视频暂存审阅与投稿",
 };
 
 function drawerStatusTone(status: string): StatusPillTone {
@@ -228,6 +232,19 @@ const TaskStepItem = memo(
         <details>
           <summary>{`${label} · ${summary}`}</summary>
           {description && <p>{description}</p>}
+          {typeof result?.job_id === "string" &&
+            [
+              "plan_video_script",
+              "generate_remotion_project",
+              "render_remotion_video",
+              "stage_or_publish_bilibili_video",
+            ].includes(step.tool) && (
+              <p>
+                <a href={`#videos/${encodeURIComponent(result.job_id)}`}>
+                  打开视频创作任务 · {result.job_id}
+                </a>
+              </p>
+            )}
           {result?.url != null && (
             <SafeExternalAnchor
               url={result.url}

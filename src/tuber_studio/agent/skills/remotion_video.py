@@ -39,22 +39,18 @@ from ...persona.self_model import build_self_model_system_message
 
 VIDEO_PRODUCTION_POLICY_KEY = "video_production_policy"
 DEFAULT_VIDEO_PRODUCTION_POLICY = {
-    "publish_mode": "preview_review",
-    "auto_publish_enabled": False,
-    "default_fps": 30,
-    "default_width": 1920,
-    "default_height": 1080,
-    "max_render_concurrency": 2,
-    "render_timeout_seconds": 300.0,
-    "upload_timeout_seconds": 600.0,
+    "publish_mode": "preview_review", "auto_publish_enabled": False,
+    "default_fps": 30, "default_width": 1920, "default_height": 1080,
+    "max_render_concurrency": 2, "render_timeout_seconds": 300.0, "upload_timeout_seconds": 600.0,
 }
 MAX_RENDERED_VIDEO_BYTES = 2 * 1024 * 1024 * 1024
 MAX_DURATION_DRIFT_SECONDS = 0.5
 _ALLOWED_PUBLIC_KINDS = frozenset({"watched_video", "public_incident", "operator_topic", "web_research", "public_memory", "public_comment"})
 _FORBIDDEN_SOURCE_PREFIXES = ("owner:", "private:", "dm:", "dm_", "chat:", "turn:", "daily-chat:")
-_JOB_COLUMNS = frozenset(
-    {"status", "publish_mode", "title", "content_hash", "project_hash", "intent", "write_token", "plan_json", "manifest_json", "qc_json", "receipt_json", "project_dir", "output_path", "error"}
-)
+_JOB_COLUMNS = frozenset({
+    "status", "publish_mode", "title", "content_hash", "project_hash", "intent", "write_token", "plan_json",
+    "manifest_json", "qc_json", "receipt_json", "project_dir", "output_path", "cover_path", "planner_source", "planner_error", "error",
+})
 
 TemplateId = Literal["TitleCard", "CodeWalkthrough", "ChartCompare", "MemeCutaway", "QuoteSpotlight", "TimelineSummary"]
 AvatarCue = Literal["idle", "cheerful", "curious", "proud", "thinking", "surprised", "calm"]
@@ -87,16 +83,12 @@ _REMOTION_INDEX_TS = 'import { registerRoot } from "remotion";\nimport { Remotio
 
 
 class ChartPoint(StrictModel):
-    """Single data point rendered inside ChartCompare Remotion scenes."""
-
     label: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
     value: float = Field(ge=-1e9, le=1e9)
     unit: str = Field(default="", max_length=16)
 
 
 class SceneVisualProps(StrictModel):
-    """Schema-validated visual properties passed strictly via JSON props."""
-
     subtitle: str = Field(default="", max_length=200)
     bullets: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]] = Field(default_factory=list, max_length=6)
     code_snippet: str = Field(default="", max_length=1500)
@@ -107,8 +99,6 @@ class SceneVisualProps(StrictModel):
 
 
 class VideoLineSpec(StrictModel):
-    """Spoken subtitle line synchronized to WAV audio and optional avatar cue."""
-
     line_id: str = Field(default="", max_length=40, pattern=r"^(?:[a-zA-Z0-9_-]{1,40})?$")
     text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=240)]
     avatar_cue: AvatarCue = "idle"
@@ -123,8 +113,6 @@ class VideoLineSpec(StrictModel):
 
 
 class VideoSceneSpec(StrictModel):
-    """Single Remotion template scene and its spoken narration lines."""
-
     scene_id: str = Field(min_length=1, max_length=40, pattern=r"^[a-zA-Z0-9_-]{1,40}$")
     template: TemplateId
     heading: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
@@ -134,8 +122,6 @@ class VideoSceneSpec(StrictModel):
 
 
 class PublicSourceRef(StrictModel):
-    """Verified public grounding reference for generated video scripts."""
-
     source_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
     kind: Literal["watched_video", "public_incident", "operator_topic", "web_research", "public_memory", "public_comment"]
     scope: Literal["public"] = "public"
@@ -156,8 +142,6 @@ class PublicSourceRef(StrictModel):
 
 
 class VideoScriptPlan(StrictModel):
-    """Complete structured storyboard generated from public sources."""
-
     title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
     summary: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
     tags: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]] = Field(min_length=1, max_length=10)
@@ -171,8 +155,6 @@ class VideoScriptPlan(StrictModel):
 
 
 class VideoProductionPolicy(StrictModel):
-    """Runtime policy governing preview staging vs gated auto_publish and render limits."""
-
     publish_mode: Literal["preview_review", "auto_publish"] = "preview_review"
     auto_publish_enabled: bool = False
     default_fps: Literal[30, 60] = 30
@@ -184,8 +166,6 @@ class VideoProductionPolicy(StrictModel):
 
 
 class PlanVideoScriptArgs(StrictModel):
-    """Tool schema arguments for `plan_video_script`."""
-
     topic: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=400)] = Field(description="公开视频选题、热点话题或 BV 号说明。")
     candidate_bvids: list[Annotated[str, StringConstraints(pattern=r"^BV[0-9A-Za-z]{10}$")]] = Field(default_factory=list, max_length=6, description="可选关联的公开视频 BV 号。")
     style_note: str = Field(default="", max_length=200, description="可选节奏或风格提示。")
@@ -195,8 +175,6 @@ class PlanVideoScriptArgs(StrictModel):
 
 
 class GenerateRemotionProjectArgs(StrictModel):
-    """Tool schema arguments for `generate_remotion_project`."""
-
     job_id: str | None = Field(default=None, max_length=80, description="已规划的视频制作任务 ID。")
     plan: dict[str, Any] | None = Field(default=None, description="可选显式传入的 VideoScriptPlan 对象。")
     tts_mode: Literal["omni_speech", "dry_run"] = Field(default="omni_speech", description="配音模式：omni_speech 或 dry_run。")
@@ -204,8 +182,6 @@ class GenerateRemotionProjectArgs(StrictModel):
 
 
 class RenderRemotionVideoArgs(StrictModel):
-    """Tool schema arguments for `render_remotion_video`."""
-
     job_id: str = Field(min_length=1, max_length=80, description="已生成 Remotion 工程的任务 ID。")
     composition_id: str = Field(default="AquaVideo", pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,40}$", description="Remotion 合成组件 ID。")
     concurrency: int = Field(default=2, ge=1, le=4, description="Remotion 渲染并发线程数。")
@@ -213,8 +189,6 @@ class RenderRemotionVideoArgs(StrictModel):
 
 
 class StageOrPublishVideoArgs(StrictModel):
-    """Tool schema arguments for `stage_or_publish_bilibili_video`."""
-
     job_id: str = Field(min_length=1, max_length=80, description="已通过成片质检的视频任务 ID。")
     publish_mode: Literal["preview_review", "auto_publish"] | None = Field(default=None, description="发布模式：preview_review（默认暂存审核）或 auto_publish。")
     approved: bool = Field(default=False, description="是否已经过人工明确批准发布。")
@@ -268,6 +242,43 @@ def _format_srt_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
+def _format_vtt_timestamp(seconds: float) -> str:
+    return _format_srt_timestamp(seconds).replace(",", ".")
+
+
+def _detect_browser_executable() -> tuple[str | None, str | None]:
+    if (env_bin := str(os.environ.get("REMOTION_BROWSER_EXECUTABLE") or "").strip()) and Path(env_bin).is_file():
+        return env_bin, "env"
+    pf, pf86 = os.environ.get("ProgramFiles", ""), os.environ.get("ProgramFiles(x86)", "")
+    for kind, cands in (
+        ("chrome", (Path(pf) / "Google/Chrome/Application/chrome.exe", Path(pf86) / "Google/Chrome/Application/chrome.exe",
+                    Path("/usr/bin/google-chrome"), Path("/usr/bin/google-chrome-stable"), Path("/usr/bin/chromium"), Path("/usr/bin/chromium-browser"))),
+        ("edge", (Path(pf86) / "Microsoft/Edge/Application/msedge.exe", Path(pf) / "Microsoft/Edge/Application/msedge.exe")),
+    ):
+        for cand in cands:
+            if str(cand) and cand.is_file():
+                return str(cand), kind
+    for pw_root in (Path(os.environ.get("LOCALAPPDATA", "")) / "ms-playwright", Path.home() / ".cache/ms-playwright"):
+        if not pw_root.is_dir():
+            continue
+        for pat in ("chromium-*/chrome-win*/chrome.exe", "chromium_headless_shell-*/chrome-headless-shell-win*/chrome-headless-shell.exe",
+                    "chromium-*/chrome-linux/chrome", "chromium_headless_shell-*/chrome-linux/headless_shell"):
+            if (matches := sorted(pw_root.glob(pat), reverse=True)) and matches[0].is_file():
+                return str(matches[0]), "playwright-chromium"
+    return None, None
+
+
+def _resolve_studio_dir(runtime, explicit: Path | None = None) -> Path:
+    if explicit is not None:
+        return Path(explicit)
+    root = getattr(getattr(runtime, "settings", None), "root", None)
+    return Path(root) / "remotion-studio" if root else Path(__file__).resolve().parents[4] / "remotion-studio"
+
+
+def _sanitize_diagnostic(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"https?://\S+", "[URL]", str(text or ""))).strip()[:240]
+
+
 def _build_dry_run_wav_bytes(text: str, *, sample_rate: int = 16000) -> bytes:
     duration = max(0.6, min(12.0, len(text.strip()) * 0.16))
     nframes = max(1600, int(round(duration * sample_rate)))
@@ -282,31 +293,25 @@ def _build_dry_run_wav_bytes(text: str, *, sample_rate: int = 16000) -> bytes:
 
 
 def _read_wav_pcm(wav_bytes: bytes) -> tuple[tuple[int, int, int], bytes, float]:
-    with wave.open(io.BytesIO(wav_bytes), "rb") as reader:
-        p = reader.getparams()
-        pcm = reader.readframes(p.nframes)
+    with wave.open(io.BytesIO(wav_bytes), "rb") as r:
+        p = r.getparams()
+        pcm = r.readframes(p.nframes)
         if p.nframes <= 0 or len(pcm) != p.nframes * p.nchannels * p.sampwidth:
             raise ValueError("合成音频帧长度无效或被截断")
         return (p.nchannels, p.sampwidth, p.framerate), pcm, p.nframes / float(p.framerate)
 
-
 def _concat_wav_pcm(spec: tuple[int, int, int], chunks: list[bytes]) -> bytes:
     buf = io.BytesIO()
-    with wave.open(buf, "wb") as writer:
-        writer.setnchannels(spec[0])
-        writer.setsampwidth(spec[1])
-        writer.setframerate(spec[2])
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(spec[0]); w.setsampwidth(spec[1]); w.setframerate(spec[2])
         for pcm in chunks:
-            writer.writeframes(pcm)
+            w.writeframes(pcm)
     return buf.getvalue()
-
 
 def _parse_biliup_receipt(stdout: str, stderr: str) -> dict[str, Any]:
     combined = f"{stdout}\n{stderr}"
-    bv = re.search(r"\b(BV[0-9A-Za-z]{10})\b", combined)
-    av = re.search(r"\b(?:aid|av)[=: ]+([1-9][0-9]{0,19})\b", combined, re.IGNORECASE)
+    bv, av = re.search(r"\b(BV[0-9A-Za-z]{10})\b", combined), re.search(r"\b(?:aid|av)[=: ]+([1-9][0-9]{0,19})\b", combined, re.IGNORECASE)
     return {k: v for k, v in (("bvid", bv.group(1) if bv else None), ("aid", av.group(1) if av else None)) if v}
-
 
 def _scrub_secrets(text: str, credentials: dict[str, Any]) -> str:
     cleaned = str(text or "")
@@ -315,14 +320,12 @@ def _scrub_secrets(text: str, credentials: dict[str, Any]) -> str:
             cleaned = cleaned.replace(val, "[REDACTED]")
     return cleaned[:400]
 
-
 def _safe_child_path(root: Path, child: str) -> Path:
     resolved_root = root.resolve()
     target = (resolved_root / child).resolve()
     if not target.is_relative_to(resolved_root) or linked(target):
         raise ValueError("路径超出受控工作目录或包含符号链接")
     return target
-
 
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -335,12 +338,14 @@ class RemotionVideoSkill:
 
     def __init__(
         self, runtime, store, *, browsing=None, renders_root: Path | None = None,
+        studio_dir: Path | None = None,
         planner_fn=None, tts_fn=None, subprocess_runner=None, ffprobe_runner=None,
         biliup_runner=None, render_semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self.runtime, self.store, self._browsing = runtime, store, browsing
         base_rt = renders_root or (getattr(getattr(runtime, "settings", None), "runtime", None) or Path.cwd() / "runtime")
         self.renders_root = Path(base_rt) / "video_renders"
+        self.studio_dir = _resolve_studio_dir(runtime, studio_dir)
         self.planner_fn, self.tts_fn = planner_fn, tts_fn
         self.subprocess_runner, self.ffprobe_runner, self.biliup_runner = subprocess_runner, ffprobe_runner, biliup_runner
         self._own_semaphore = render_semaphore
@@ -356,15 +361,34 @@ class RemotionVideoSkill:
     def _install_storage(self) -> None:
         with self.store.db:
             self.store.db.executescript(
-                "CREATE TABLE IF NOT EXISTS remotion_video_jobs("
-                "id TEXT PRIMARY KEY, account_id TEXT NOT NULL DEFAULT '', character_id TEXT NOT NULL DEFAULT '',"
-                "character_version INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL, publish_mode TEXT NOT NULL DEFAULT 'preview_review',"
-                "title TEXT NOT NULL DEFAULT '', content_hash TEXT NOT NULL DEFAULT '', project_hash TEXT NOT NULL DEFAULT '',"
-                "intent TEXT NOT NULL DEFAULT '', write_token TEXT, plan_json TEXT NOT NULL, manifest_json TEXT,"
-                "qc_json TEXT, receipt_json TEXT, project_dir TEXT NOT NULL DEFAULT '', output_path TEXT NOT NULL DEFAULT '',"
-                "error TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL);"
+                "CREATE TABLE IF NOT EXISTS remotion_video_jobs(id TEXT PRIMARY KEY, account_id TEXT NOT NULL DEFAULT '', character_id TEXT NOT NULL DEFAULT '', character_version INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL, publish_mode TEXT NOT NULL DEFAULT 'preview_review', title TEXT NOT NULL DEFAULT '', content_hash TEXT NOT NULL DEFAULT '', project_hash TEXT NOT NULL DEFAULT '', intent TEXT NOT NULL DEFAULT '', write_token TEXT, plan_json TEXT NOT NULL, manifest_json TEXT, qc_json TEXT, receipt_json TEXT, project_dir TEXT NOT NULL DEFAULT '', output_path TEXT NOT NULL DEFAULT '', cover_path TEXT NOT NULL DEFAULT '', planner_source TEXT NOT NULL DEFAULT '', planner_error TEXT, error TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL);"
                 "CREATE INDEX IF NOT EXISTS idx_remotion_jobs_char ON remotion_video_jobs(character_id, updated_at DESC);"
             )
+            existing_cols = {row[1] for row in self.store.db.execute("PRAGMA table_info(remotion_video_jobs)")}
+            for col_name, col_def in (("cover_path", "TEXT NOT NULL DEFAULT ''"), ("planner_source", "TEXT NOT NULL DEFAULT ''"), ("planner_error", "TEXT")):
+                if col_name not in existing_cols:
+                    self.store.db.execute(f"ALTER TABLE remotion_video_jobs ADD COLUMN {col_name} {col_def}")
+
+    def _shared_studio_installed(self) -> bool:
+        return (self.studio_dir / "node_modules/remotion").is_dir() and (self.studio_dir / "src/Root.tsx").is_file()
+
+    def environment_status(self) -> dict[str, Any]:
+        browser_path, browser_kind = _detect_browser_executable()
+        settings, op_llm, voices = getattr(self.runtime, "settings", None), getattr(self.runtime, "operation_llm", None), getattr(self.runtime, "voices", None)
+        omni_cfg = (getattr(settings, "data", None) or {}).get("omni") or {}
+        tts_ref_ok = False
+        if settings and callable(getattr(settings, "voice", None)) and callable(getattr(settings, "voice_reference_path", None)):
+            with suppress(Exception):
+                voice = settings.voice(self._current_character().get("voice_profile") or "whale_reference")
+                tts_ref_ok = voice.get("provider") == "omni_reference" and settings.voice_reference_path(voice).is_file()
+        return {
+            "node": {"ready": bool(shutil.which("node"))}, "npx": {"ready": bool(shutil.which("npx"))},
+            "ffmpeg": {"ready": bool(shutil.which("ffmpeg"))}, "ffprobe": {"ready": bool(shutil.which("ffprobe"))},
+            "remotion_studio": {"ready": self._shared_studio_installed(), "dir_exists": self.studio_dir.is_dir(), "label": self.studio_dir.name},
+            "browser": {"ready": bool(browser_path), "kind": browser_kind}, "biliup": {"ready": bool(shutil.which("biliup"))},
+            "omni_llm": {"ready": bool(op_llm is not None and callable(getattr(op_llm, "generate_json", None)) and omni_cfg.get("base_url"))},
+            "omni_tts": {"ready": bool(voices is not None and tts_ref_ok and omni_cfg.get("base_url"))},
+        }
 
     def _browsing_service(self):
         return self._browsing if self._browsing is not None else getattr(self.runtime, "browsing", None)
@@ -472,44 +496,94 @@ class RemotionVideoSkill:
         candidates, public_memories = self._public_candidates_and_memories(topic=args.topic, candidate_bvids=args.candidate_bvids, character_id=char_id)
         sys_msg = build_self_model_system_message(
             char, channel="dynamic", scene="公开视频脚本与分镜策划",
-            task_intent="只基于传入的公开来源生成结构化 VideoScriptPlan JSON。严禁写可执行代码或引用私人记忆与私信。",
+            task_intent="只基于传入的公开来源生成结构化 VideoScriptPlan JSON。可用模板严格限于 TitleCard、CodeWalkthrough、ChartCompare、MemeCutaway、QuoteSpotlight、TimelineSummary；合理填充 visual_props 与口播台词 lines。严禁写可执行代码或引用私人记忆与私信。",
         )
         packet = {
-            "topic": args.topic, "style_note": args.style_note, "fps": args.fps,
-            "include_avatar": args.include_avatar, "max_scenes": args.max_scenes,
-            "public_candidates": candidates[:6],
-            "public_memories": [{"id": m["id"], "content": m["content"]} for m in public_memories[:6]],
+            "topic": args.topic, "style_note": args.style_note, "fps": args.fps, "include_avatar": args.include_avatar, "max_scenes": args.max_scenes,
+            "available_templates": ["TitleCard", "CodeWalkthrough", "ChartCompare", "MemeCutaway", "QuoteSpotlight", "TimelineSummary"],
+            "available_avatar_cues": ["idle", "cheerful", "curious", "proud", "thinking", "surprised", "calm"],
+            "public_candidates": candidates[:6], "public_memories": [{"id": m["id"], "content": m["content"]} for m in public_memories[:6]],
         }
         messages = [sys_msg, {"role": "user", "content": dump(packet)}]
         plan: VideoScriptPlan | None = None
+        planner_source, planner_error = "fallback", None
         if callable(self.planner_fn):
             raw_plan = await self.planner_fn(messages, VideoScriptPlan.model_json_schema(), packet)
             plan = raw_plan if isinstance(raw_plan, VideoScriptPlan) else VideoScriptPlan.model_validate(raw_plan)
-        else:
-            settings, op_llm = getattr(self.runtime, "settings", None), getattr(self.runtime, "operation_llm", None)
-            has_key = bool(settings and callable(getattr(settings, "provider_key", None)) and settings.provider_key("omni"))
-            if has_key and op_llm is not None and callable(getattr(op_llm, "generate_json", None)):
-                try:
-                    slot = self.runtime.offline_generation("background") if callable(getattr(self.runtime, "offline_generation", None)) else asyncio.Lock()
-                    async with asyncio.timeout(45), slot:
-                        with without_model_identity():
-                            raw_plan = await op_llm.generate_json(messages, VideoScriptPlan.model_json_schema(), max_tokens=2048)
-                    plan = VideoScriptPlan.model_validate(raw_plan)
-                except Exception:
-                    plan = None
+            planner_source = "custom_planner"
+        elif (op_llm := getattr(self.runtime, "operation_llm", None)) is not None and callable(getattr(op_llm, "generate_json", None)):
+            try:
+                slot = self.runtime.offline_generation("background") if callable(getattr(self.runtime, "offline_generation", None)) else asyncio.Lock()
+                async with asyncio.timeout(90), slot:
+                    with without_model_identity():
+                        raw_plan = await op_llm.generate_json(messages, VideoScriptPlan.model_json_schema(), max_tokens=6144)
+                plan, planner_source = VideoScriptPlan.model_validate(raw_plan), "llm"
+            except Exception as exc:
+                plan, planner_error = None, _sanitize_diagnostic(f"{type(exc).__name__}: {exc}")
         if plan is None:
-            plan = self._fallback_script_plan(args, candidates, public_memories)
-
+            plan, planner_source = self._fallback_script_plan(args, candidates, public_memories), "fallback"
         validated = assert_public_video_sources(plan, store=self.store, unified_memory=getattr(self.runtime, "unified_memory", None), character_id=char_id)
-        job_id, now = f"rem_{uuid4().hex[:16]}", time.time()
-        plan_hash = content_hash(validated.model_dump(mode="json"))
-        policy = self.policy()
+        job_id, now, plan_hash = f"rem_{uuid4().hex[:16]}", time.time(), content_hash(validated.model_dump(mode="json"))
         with self.store.db:
             self.store.db.execute(
-                "INSERT INTO remotion_video_jobs(id,account_id,character_id,character_version,status,publish_mode,title,content_hash,plan_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (job_id, self._account_id(), char_id, int(char.get("version") or 1), "script_planned", policy.publish_mode, validated.title, plan_hash, validated.model_dump_json(), now, now),
+                "INSERT INTO remotion_video_jobs(id,account_id,character_id,character_version,status,publish_mode,title,content_hash,plan_json,planner_source,planner_error,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (job_id, self._account_id(), char_id, int(char.get("version") or 1), "script_planned", self.policy().publish_mode, validated.title, plan_hash, validated.model_dump_json(), planner_source, planner_error, now, now),
             )
-        return {"ok": True, "job_id": job_id, "status": "script_planned", "content_hash": plan_hash, "plan": validated.model_dump(mode="json")}
+        return {"ok": True, "job_id": job_id, "status": "script_planned", "content_hash": plan_hash, "planner_source": planner_source, "planner_error": planner_error, "plan": validated.model_dump(mode="json")}
+
+    def update_job_plan(self, job_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+        job = self.get_job(job_id)
+        if job is None or not job.get("plan"):
+            raise ValueError("找不到指定视频任务")
+        if job.get("status") in {"published", "publish_uncertain", "rendering"}:
+            raise ValueError(f"当前状态（{job['status']}）不允许修改脚本")
+        if not isinstance(patch, dict) or not patch or (set(patch) - set(VideoScriptPlan.model_fields)):
+            raise ValueError("脚本更新内容为空或包含未知字段")
+        validated = assert_public_video_sources(dict(job["plan"]) | patch, store=self.store, unified_memory=getattr(self.runtime, "unified_memory", None), character_id=str(self._current_character().get("id") or ""))
+        dumped = validated.model_dump(mode="json")
+        structural = any(f in patch and dumped.get(f) != job["plan"].get(f) for f in ("scenes", "fps", "width", "height", "include_avatar"))
+        updates: dict[str, Any] = {"title": validated.title, "plan_json": validated.model_dump_json(), "status": "script_planned" if structural else job["status"], "error": None}
+        if structural:
+            updates |= {"content_hash": content_hash(dumped), "qc_json": None}
+        self._update_job(job_id, **updates)
+        return {"ok": True, "job": self.get_job(job_id), "structural_changed": structural}
+
+    def delete_job(self, job_id: str) -> dict[str, Any]:
+        job = self.get_job(job_id)
+        if job is None:
+            raise ValueError("找不到指定视频任务")
+        if job.get("status") in {"published", "publish_uncertain", "rendering"}:
+            raise ValueError(f"状态为 {job['status']} 的视频任务不能删除")
+        if (raw_dir := str(job.get("project_dir") or "").strip()) and (proj := Path(raw_dir)).exists() and not linked(proj) and proj.resolve().is_relative_to(self.renders_root.resolve()):
+            shutil.rmtree(proj, ignore_errors=True)
+        with self.store.db:
+            self.store.db.execute("DELETE FROM remotion_video_jobs WHERE id=?", (str(job_id),))
+        return {"ok": True, "deleted": True, "job_id": str(job_id)}
+
+    def resolve_job_media(self, job_id: str, kind: str) -> tuple[Path, str]:
+        job = self.get_job(job_id)
+        if job is None or not (raw_dir := str(job.get("project_dir") or "").strip()):
+            raise ValueError("找不到指定视频任务或尚未生成工程文件")
+        project_dir = Path(raw_dir)
+        if not project_dir.resolve().is_relative_to(self.renders_root.resolve()) or linked(project_dir):
+            raise ValueError("视频工程目录不在受控范围内")
+        mapping = {
+            "video": (Path(job["output_path"]) if job.get("output_path") else project_dir / "output.mp4", "video/mp4"),
+            "audio": (project_dir / "public/narration.wav", "audio/wav"),
+            "subtitles": (project_dir / "subtitles.srt", "text/plain; charset=utf-8"),
+            "subtitles_vtt": (project_dir / "subtitles.vtt", "text/vtt; charset=utf-8"),
+            "cover": (Path(job["cover_path"]) if job.get("cover_path") else project_dir / "cover.png", "image/png"),
+            "props": (project_dir / "props.json", "application/json; charset=utf-8"),
+            "manifest": (project_dir / "manifest.json", "application/json; charset=utf-8"),
+            "code": (project_dir / "src/AquaVideo.tsx", "text/plain; charset=utf-8"),
+        }
+        if kind not in mapping:
+            raise ValueError(f"不支持的视频产物类型: {kind}")
+        target, media_type = mapping[kind]
+        resolved = target.resolve()
+        if not resolved.is_relative_to(self.renders_root.resolve()) or linked(target) or not resolved.is_file():
+            raise FileNotFoundError(f"产物 {kind} 尚未生成或不存在")
+        return resolved, media_type
 
     async def _synthesize_line_wav(self, text: str, *, tts_mode: Literal["omni_speech", "dry_run"], voice_id: str | None) -> bytes:
         if callable(self.tts_fn):
@@ -546,13 +620,12 @@ class RemotionVideoSkill:
         if linked(self.renders_root):
             raise ValueError("渲染目录不能使用符号链接")
         project_dir = _safe_child_path(self.renders_root, job_id)
-        src_dir, public_dir = project_dir / "src", project_dir / "public"
-        audio_dir = public_dir / "audio"
+        src_dir, public_dir, audio_dir = project_dir / "src", project_dir / "public", project_dir / "public/audio"
         src_dir.mkdir(parents=True, exist_ok=True)
         audio_dir.mkdir(parents=True, exist_ok=True)
 
         wav_spec: tuple[int, int, int] | None = None
-        pcm_chunks, cues, scene_props, avatar_cues, srt_lines = [], [], [], [], []
+        pcm_chunks, cues, scene_props, avatar_cues, srt_lines, vtt_lines = [], [], [], [], [], ["WEBVTT\n"]
         cursor_seconds, cursor_frame, srt_index = 0.0, 0, 1
         for s_idx, scene in enumerate(plan.scenes, start=1):
             scene_start_frame, scene_frames = cursor_frame, 0
@@ -568,60 +641,47 @@ class RemotionVideoSkill:
                 (audio_dir / f"{line_id}.wav").write_bytes(wav_bytes)
                 pcm_chunks.append(pcm)
                 start_sec, end_sec = cursor_seconds, cursor_seconds + duration
-                cues.append(
-                    {
-                        "line_id": line_id, "scene_id": scene.scene_id, "text": line.text,
-                        "start_frame": cursor_frame, "duration_frames": line_frames,
-                        "start_seconds": round(start_sec, 4), "end_seconds": round(end_sec, 4),
-                        "audio_file": f"audio/{line_id}.wav", "avatar_cue": line.avatar_cue, "highlight_code": line.highlight_code,
-                    }
-                )
+                cues.append({"line_id": line_id, "scene_id": scene.scene_id, "text": line.text, "start_frame": cursor_frame, "duration_frames": line_frames, "start_seconds": round(start_sec, 4), "end_seconds": round(end_sec, 4), "audio_file": f"audio/{line_id}.wav", "avatar_cue": line.avatar_cue, "highlight_code": line.highlight_code})
                 avatar_cues.append({"line_id": line_id, "cue": line.avatar_cue, "start_frame": cursor_frame, "duration_frames": line_frames, "viseme_energy": 0.65 if args.tts_mode != "dry_run" else 0.35})
                 srt_lines.append(f"{srt_index}\n{_format_srt_timestamp(start_sec)} --> {_format_srt_timestamp(end_sec)}\n{line.text}\n")
+                vtt_lines.append(f"{_format_vtt_timestamp(start_sec)} --> {_format_vtt_timestamp(end_sec)}\n{line.text}\n")
                 srt_index += 1
                 cursor_seconds, cursor_frame, scene_frames = end_sec, cursor_frame + line_frames, scene_frames + line_frames
             scene_props.append({"scene_id": scene.scene_id, "template": scene.template, "heading": scene.heading, "start_frame": scene_start_frame, "duration_frames": max(1, scene_frames), "visual_props": scene.visual_props.model_dump(mode="json"), "avatar_cue": scene.avatar_cue})
 
         assert wav_spec is not None
-        narration_path = public_dir / "narration.wav"
+        narration_path, srt_path, vtt_path, avatar_cues_path = public_dir / "narration.wav", project_dir / "subtitles.srt", project_dir / "subtitles.vtt", project_dir / "avatar_cues.json"
         narration_path.write_bytes(_concat_wav_pcm(wav_spec, pcm_chunks))
-        srt_path = project_dir / "subtitles.srt"
         srt_path.write_text("\n".join(srt_lines), encoding="utf-8")
-        avatar_cues_path = project_dir / "avatar_cues.json"
+        vtt_path.write_text("\n".join(vtt_lines), encoding="utf-8")
         avatar_cues_path.write_text(dump({"include_avatar": plan.include_avatar, "avatar_mode": "viseme_envelope_ready" if plan.include_avatar else "2d_fallback", "cues": avatar_cues}), encoding="utf-8")
-        props_payload = {"title": plan.title, "fps": plan.fps, "totalFrames": max(1, cursor_frame), "audioFile": "narration.wav", "scenes": scene_props, "cues": cues}
+        props_payload = {"title": plan.title, "fps": plan.fps, "width": plan.width, "height": plan.height, "totalFrames": max(1, cursor_frame), "audioFile": "narration.wav", "includeAvatar": plan.include_avatar, "scenes": scene_props, "cues": cues}
         props_path, manifest_path = project_dir / "props.json", project_dir / "manifest.json"
         _write_json(props_path, props_payload)
         manifest = {
-            "job_id": job_id, "fps": plan.fps, "width": plan.width, "height": plan.height,
-            "total_frames": max(1, cursor_frame), "total_duration_seconds": round(cursor_seconds, 4),
-            "audio_file": str(narration_path), "srt_file": str(srt_path), "avatar_cues_file": str(avatar_cues_path),
+            "job_id": job_id, "fps": plan.fps, "width": plan.width, "height": plan.height, "total_frames": max(1, cursor_frame), "total_duration_seconds": round(cursor_seconds, 4),
+            "tts_mode": args.tts_mode, "planner_source": (job or {}).get("planner_source") or "explicit_plan", "planner_error": (job or {}).get("planner_error"),
+            "audio_file": str(narration_path), "srt_file": str(srt_path), "vtt_file": str(vtt_path), "avatar_cues_file": str(avatar_cues_path),
             "props_file": str(props_path), "cues": cues, "sources": [src.model_dump(mode="json") for src in plan.sources],
         }
         _write_json(manifest_path, manifest)
-
         # Write static schema-safe Remotion template files (never interpolated with LLM code).
         _write_json(project_dir / "package.json", _REMOTION_PACKAGE_JSON)
         (src_dir / "index.ts").write_text(_REMOTION_INDEX_TS, encoding="utf-8")
         (src_dir / "Root.tsx").write_text(_REMOTION_ROOT_TSX, encoding="utf-8")
-        (src_dir / "AquaVideo.tsx").write_text(_REMOTION_AQUA_VIDEO_TSX, encoding="utf-8")
-
+        studio_aqua = self.studio_dir / "src/AquaVideo.tsx"
+        (src_dir / "AquaVideo.tsx").write_text(studio_aqua.read_text(encoding="utf-8") if studio_aqua.is_file() else _REMOTION_AQUA_VIDEO_TSX, encoding="utf-8")
         project_hash = content_hash({"plan": plan.model_dump(mode="json"), "props": props_payload})
         if job is None:
             now = time.time()
             with self.store.db:
                 self.store.db.execute(
-                    "INSERT INTO remotion_video_jobs(id,account_id,character_id,character_version,status,publish_mode,title,content_hash,project_hash,plan_json,manifest_json,project_dir,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (job_id, self._account_id(), char_id, int(char.get("version") or 1), "project_ready", self.policy().publish_mode, plan.title, content_hash(plan.model_dump(mode="json")), project_hash, plan.model_dump_json(), dump(manifest), str(project_dir), now, now),
+                    "INSERT INTO remotion_video_jobs(id,account_id,character_id,character_version,status,publish_mode,title,content_hash,project_hash,plan_json,manifest_json,project_dir,planner_source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (job_id, self._account_id(), char_id, int(char.get("version") or 1), "project_ready", self.policy().publish_mode, plan.title, content_hash(plan.model_dump(mode="json")), project_hash, plan.model_dump_json(), dump(manifest), str(project_dir), "explicit_plan", now, now),
                 )
         else:
-            self._update_job(job_id, status="project_ready", project_hash=project_hash, manifest_json=dump(manifest), project_dir=str(project_dir), error=None)
-
-        return {
-            "ok": True, "job_id": job_id, "status": "project_ready", "project_dir": str(project_dir),
-            "props_path": str(props_path), "manifest_path": str(manifest_path), "srt_path": str(srt_path),
-            "total_frames": manifest["total_frames"], "total_duration_seconds": manifest["total_duration_seconds"], "project_hash": project_hash,
-        }
+            self._update_job(job_id, status="project_ready", title=plan.title, plan_json=plan.model_dump_json(), project_hash=project_hash, manifest_json=dump(manifest), project_dir=str(project_dir), error=None)
+        return {"ok": True, "job_id": job_id, "status": "project_ready", "project_dir": str(project_dir), "props_path": str(props_path), "manifest_path": str(manifest_path), "srt_path": str(srt_path), "vtt_path": str(vtt_path), "total_frames": manifest["total_frames"], "total_duration_seconds": manifest["total_duration_seconds"], "project_hash": project_hash}
 
     async def _run_exec(self, cmd: list[str], *, cwd: Path, timeout: float) -> tuple[int, str, str]:
         proc = await asyncio.create_subprocess_exec(*cmd, cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -640,53 +700,58 @@ class RemotionVideoSkill:
             return dict(await probe if asyncio.iscoroutine(probe) else probe)
         if dry_run:
             return {"has_video": True, "has_audio": True, "silent_audio": False, "duration_seconds": expected_duration, "width": 1920, "height": 1080, "dry_run": True}
-        ffprobe = shutil.which("ffprobe")
-        if not ffprobe:
+        if not (ffprobe := shutil.which("ffprobe")):
             raise ValueError("未安装 ffprobe，无法执行成片质检")
-        code, stdout, stderr = await self._run_exec(
-            [ffprobe, "-v", "error", "-show_format", "-show_streams", "-print_format", "json", str(output_path)],
-            cwd=output_path.parent, timeout=30.0,
-        )
+        code, stdout, stderr = await self._run_exec([ffprobe, "-v", "error", "-show_format", "-show_streams", "-print_format", "json", str(output_path)], cwd=output_path.parent, timeout=30.0)
         if code != 0:
             raise ValueError(f"ffprobe 质检失败: {stderr[:200]}")
         data = json.loads(stdout or "{}")
         streams = data.get("streams") or []
-        v_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
-        a_stream = next((s for s in streams if s.get("codec_type") == "audio"), None)
-        fmt = data.get("format") or {}
-        probe: dict[str, Any] = {
-            "has_video": v_stream is not None, "has_audio": a_stream is not None, "silent_audio": False,
-            "duration_seconds": float(fmt.get("duration") or (v_stream or {}).get("duration") or 0.0),
-            "width": int((v_stream or {}).get("width") or 0), "height": int((v_stream or {}).get("height") or 0),
-        }
-        if (ffmpeg := shutil.which("ffmpeg")) and a_stream is not None:
+        v_s, a_s, fmt = next((s for s in streams if s.get("codec_type") == "video"), None), next((s for s in streams if s.get("codec_type") == "audio"), None), data.get("format") or {}
+        probe: dict[str, Any] = {"has_video": v_s is not None, "has_audio": a_s is not None, "silent_audio": False, "duration_seconds": float(fmt.get("duration") or (v_s or {}).get("duration") or 0.0), "width": int((v_s or {}).get("width") or 0), "height": int((v_s or {}).get("height") or 0)}
+        if (ffmpeg := shutil.which("ffmpeg")) and a_s is not None:
             fcode, _, ferr = await self._run_exec([ffmpeg, "-hide_banner", "-i", str(output_path), "-af", "volumedetect", "-f", "null", "-"], cwd=output_path.parent, timeout=30.0)
             if fcode == 0 and (m := re.search(r"mean_volume:\s*([-\d.]+)\s*dB", ferr)):
-                probe["mean_volume_db"] = float(m.group(1))
-                probe["silent_audio"] = float(m.group(1)) <= -60.0
+                probe |= {"mean_volume_db": float(m.group(1)), "silent_audio": float(m.group(1)) <= -60.0}
         return probe
 
     def _validate_qc_probe(self, probe: dict[str, Any], output_path: Path, expected_duration: float) -> dict[str, Any]:
         size = output_path.stat().st_size if output_path.is_file() else 0
         probed_duration = float(probe.get("duration_seconds") or 0.0)
         drift = abs(probed_duration - float(expected_duration))
-        issues: list[str] = []
-        if size <= 0 or size > MAX_RENDERED_VIDEO_BYTES:
-            issues.append("成片文件大小无效或超出平台限制")
-        if not probe.get("has_video"):
-            issues.append("成片缺少有效视频轨")
-        if not probe.get("has_audio"):
-            issues.append("成片缺少音频轨")
         mean_db = probe.get("mean_volume_db")
-        if probe.get("silent_audio") or (mean_db is not None and float(mean_db) <= -60.0):
-            issues.append("成片音轨为全静音")
-        if drift > MAX_DURATION_DRIFT_SECONDS:
-            issues.append(f"音画时长偏差 {drift:.2f}s 超过 0.5s 上限")
-        return {
-            "passed": not issues, "issues": issues, "size_bytes": size,
-            "expected_duration_seconds": expected_duration, "probed_duration_seconds": probed_duration,
-            "duration_drift_seconds": round(drift, 4), "width": int(probe.get("width") or 0), "height": int(probe.get("height") or 0),
-        }
+        issues = [
+            msg for cond, msg in (
+                (size <= 0 or size > MAX_RENDERED_VIDEO_BYTES, "成片文件大小无效或超出平台限制"),
+                (not probe.get("has_video"), "成片缺少有效视频轨"),
+                (not probe.get("has_audio"), "成片缺少音频轨"),
+                (bool(probe.get("silent_audio") or (mean_db is not None and float(mean_db) <= -60.0)), "成片音轨为全静音"),
+                (drift > MAX_DURATION_DRIFT_SECONDS, f"音画时长偏差 {drift:.2f}s 超过 0.5s 上限"),
+            ) if cond
+        ]
+        return {"passed": not issues, "issues": issues, "size_bytes": size, "expected_duration_seconds": expected_duration, "probed_duration_seconds": probed_duration, "duration_drift_seconds": round(drift, 4), "width": int(probe.get("width") or 0), "height": int(probe.get("height") or 0)}
+
+    async def _postprocess_render(self, output_path: Path, project_dir: Path, *, expected_duration: float) -> tuple[bool, Path | None]:
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg or not output_path.is_file():
+            return False, None
+        loudnorm_applied, norm_tmp = False, project_dir / "output.loudnorm.mp4"
+        try:
+            code, _, _ = await self._run_exec(
+                [ffmpeg, "-y", "-hide_banner", "-i", str(output_path), "-c:v", "copy", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(norm_tmp)],
+                cwd=project_dir, timeout=120.0,
+            )
+            if code == 0 and norm_tmp.is_file() and norm_tmp.stat().st_size > 0:
+                norm_tmp.replace(output_path)
+                loudnorm_applied = True
+        finally:
+            norm_tmp.unlink(missing_ok=True)
+        cover_path = project_dir / "cover.png"
+        ccode, _, _ = await self._run_exec(
+            [ffmpeg, "-y", "-hide_banner", "-ss", f"{min(1.0, max(0.0, expected_duration * 0.35)):.2f}", "-i", str(output_path), "-frames:v", "1", str(cover_path)],
+            cwd=project_dir, timeout=30.0,
+        )
+        return loudnorm_applied, (cover_path if ccode == 0 and cover_path.is_file() else None)
 
     async def render_remotion_video(self, arguments: RenderRemotionVideoArgs | dict[str, Any]) -> dict[str, Any]:
         """Stage 4 & 5: Render Remotion project under concurrency guard and enforce FFmpeg/FFprobe QC."""
@@ -700,10 +765,9 @@ class RemotionVideoSkill:
         props_path = project_dir / "props.json"
         if not props_path.is_file():
             raise ValueError("视频工程缺少 props.json")
-
-        output_path, policy = project_dir / "output.mp4", self.policy()
+        output_path, policy, public_dir = project_dir / "output.mp4", self.policy(), project_dir / "public"
         cmd = ["npx", "remotion", "render", args.composition_id, str(output_path), f"--props={props_path}", f"--concurrency={min(args.concurrency, policy.max_render_concurrency)}"]
-
+        self._update_job(args.job_id, status="rendering", error=None)
         async with self._get_semaphore():
             if callable(self.subprocess_runner):
                 code, _out, stderr = await self.subprocess_runner(cmd, project_dir, policy.render_timeout_seconds)
@@ -711,26 +775,29 @@ class RemotionVideoSkill:
                 output_path.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
                 code, stderr = 0, ""
             else:
-                npx_bin = shutil.which("npx")
-                if not npx_bin:
+                if not (npx_bin := shutil.which("npx")):
+                    self._update_job(args.job_id, status="render_failed", error="未安装 npx / Remotion CLI")
                     raise ValueError("未安装 npx / Remotion CLI，请使用 dry_run 或在渲染节点执行")
-                cmd[0] = npx_bin
-                code, _out, stderr = await self._run_exec(cmd, cwd=project_dir, timeout=policy.render_timeout_seconds)
+                real_cmd = [npx_bin, *cmd[1:], *([f"--public-dir={public_dir}"] if public_dir.is_dir() else [])]
+                if (browser_path := _detect_browser_executable()[0]):
+                    real_cmd.append(f"--browser-executable={browser_path}")
+                code, _out, stderr = await self._run_exec(real_cmd, cwd=self.studio_dir if self._shared_studio_installed() else project_dir, timeout=policy.render_timeout_seconds)
             if code != 0:
-                self._update_job(args.job_id, status="render_failed", error=(stderr[:240] or "Remotion 渲染失败"))
-                raise ValueError(f"Remotion 渲染失败: {stderr[:200]}")
+                err_msg = _sanitize_diagnostic(stderr) or "Remotion 渲染失败"
+                self._update_job(args.job_id, status="render_failed", error=err_msg)
+                raise ValueError(f"Remotion 渲染失败: {err_msg[:200]}")
 
         expected = float(job["manifest"].get("total_duration_seconds") or 0.0)
-        probe = await self._probe_rendered_video(output_path, expected_duration=expected, dry_run=args.dry_run)
-        qc_report = self._validate_qc_probe(probe, output_path, expected)
+        loudnorm_applied, cover_path = (await self._postprocess_render(output_path, project_dir, expected_duration=expected)) if (not args.dry_run and not callable(self.subprocess_runner)) else (False, None)
+        qc_report = self._validate_qc_probe(await self._probe_rendered_video(output_path, expected_duration=expected, dry_run=args.dry_run), output_path, expected)
+        qc_report |= {"loudnorm_applied": loudnorm_applied, "cover_generated": cover_path is not None}
         if not qc_report["passed"]:
-            self._update_job(args.job_id, status="qc_failed", qc_json=dump(qc_report), output_path=str(output_path), error="；".join(qc_report["issues"]))
-            return {"ok": False, "job_id": args.job_id, "status": "qc_failed", "output_path": str(output_path), "qc_report": qc_report}
-
+            self._update_job(args.job_id, status="qc_failed", qc_json=dump(qc_report), output_path=str(output_path), cover_path=str(cover_path or ""), error="；".join(qc_report["issues"]))
+            return {"ok": False, "job_id": args.job_id, "status": "qc_failed", "output_path": str(output_path), "cover_path": str(cover_path or ""), "qc_report": qc_report}
         file_sha256 = hashlib.sha256(output_path.read_bytes()).hexdigest()
         next_status = "ready_for_review" if policy.publish_mode == "preview_review" else "rendered"
-        self._update_job(args.job_id, status=next_status, qc_json=dump(qc_report), output_path=str(output_path), content_hash=file_sha256, error=None)
-        return {"ok": True, "job_id": args.job_id, "status": next_status, "output_path": str(output_path), "content_hash": file_sha256, "qc_report": qc_report}
+        self._update_job(args.job_id, status=next_status, qc_json=dump(qc_report), output_path=str(output_path), cover_path=str(cover_path or ""), content_hash=file_sha256, error=None)
+        return {"ok": True, "job_id": args.job_id, "status": next_status, "output_path": str(output_path), "cover_path": str(cover_path or ""), "content_hash": file_sha256, "qc_report": qc_report}
 
     def _auto_publish_gate_check(self) -> str | None:
         policy = self.policy()
@@ -864,14 +931,11 @@ class RemotionVideoSkill:
 async def plan_video_script(skill: RemotionVideoSkill, arguments: PlanVideoScriptArgs | dict[str, Any]) -> dict[str, Any]:
     return await skill.plan_video_script(arguments)
 
-
 async def generate_remotion_project(skill: RemotionVideoSkill, arguments: GenerateRemotionProjectArgs | dict[str, Any]) -> dict[str, Any]:
     return await skill.generate_remotion_project(arguments)
 
-
 async def render_remotion_video(skill: RemotionVideoSkill, arguments: RenderRemotionVideoArgs | dict[str, Any]) -> dict[str, Any]:
     return await skill.render_remotion_video(arguments)
-
 
 async def stage_or_publish_bilibili_video(skill: RemotionVideoSkill, arguments: StageOrPublishVideoArgs | dict[str, Any]) -> dict[str, Any]:
     return await skill.stage_or_publish_bilibili_video(arguments)
@@ -886,7 +950,6 @@ _REMOTION_TOOL_SPECS: tuple[tuple[str, str, type[StrictModel], str], ...] = (
 
 
 def remotion_tool_schemas(*, format: Literal["chat", "responses"] = "responses") -> list[dict[str, Any]]:
-    """Build OpenAI Chat Completions or Responses function tool schemas for Remotion pipeline."""
     tools: list[dict[str, Any]] = []
     for name, description, model_cls, _method in _REMOTION_TOOL_SPECS:
         spec = tool_function(name, description, model_cls, require_all=False)
@@ -895,17 +958,13 @@ def remotion_tool_schemas(*, format: Literal["chat", "responses"] = "responses")
 
 
 async def execute_remotion_tool(skill: RemotionVideoSkill, name: str, arguments: dict[str, Any] | str) -> dict[str, Any]:
-    """Parse and execute any of the 4 Remotion skill OpenAI function tools."""
-    if isinstance(arguments, str):
-        try:
-            parsed = json.loads(arguments)
-        except ValueError:
-            return {"ok": False, "error": "工具参数须为 JSON 对象"}
-    else:
-        parsed = arguments
+    try:
+        parsed = json.loads(arguments) if isinstance(arguments, str) else arguments
+    except ValueError:
+        return {"ok": False, "error": "工具参数须为 JSON 对象"}
     if not isinstance(parsed, dict):
         return {"ok": False, "error": "工具参数须为 JSON 对象"}
-    dispatch = {tool_name: (model_cls, method_name) for tool_name, _desc, model_cls, method_name in _REMOTION_TOOL_SPECS}
+    dispatch = {n: (m, fn) for n, _d, m, fn in _REMOTION_TOOL_SPECS}
     if name not in dispatch:
         return {"ok": False, "error": f"未知视频工具：{name}"}
     model_cls, method_name = dispatch[name]
@@ -916,20 +975,15 @@ async def execute_remotion_tool(skill: RemotionVideoSkill, name: str, arguments:
 
 
 def register_remotion_tools(tasks, *, runtime=None, store=None, browsing=None, skill: RemotionVideoSkill | None = None) -> RemotionVideoSkill:
-    """Register the 4 Remotion Code-as-Video tools onto TaskRuntime (`responses_only=True`)."""
     target_skill = skill or getattr(runtime, "remotion_skill", None)
     if target_skill is None:
         target_skill = RemotionVideoSkill(runtime, store or tasks.store, browsing=browsing)
         if runtime is not None:
             runtime.remotion_skill = target_skill
-
     tool_cls = tasks.Tool
     for tool_name, description, model_cls, method_name in _REMOTION_TOOL_SPECS:
-        if tool_name in tasks.tools:
-            continue
-
-        async def _runner(_req, args, _fn=getattr(target_skill, method_name)):
-            return await _fn(args)
-
-        tasks.register(tool_name, tool_cls(description, model_cls, _runner, own_deadline=True, responses_only=True))
+        if tool_name not in tasks.tools:
+            async def _runner(_req, args, _fn=getattr(target_skill, method_name)):
+                return await _fn(args)
+            tasks.register(tool_name, tool_cls(description, model_cls, _runner, own_deadline=True, responses_only=True))
     return target_skill
