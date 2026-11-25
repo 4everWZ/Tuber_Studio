@@ -2,6 +2,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import re
 import shutil
 from types import SimpleNamespace
 
@@ -242,14 +243,14 @@ async def test_bootstrap_preserves_disabled_deleted_preferences_and_original_fil
     gifs = [row for row in rows if row["animated"] and not row["enabled"]]
     new_clips = [row for row in rows if row["animated"] and row["enabled"]]
     reactions = [row for row in rows if not row["animated"]]
-    assert len(gifs) == 6 and len(new_clips) == 6
-    assert len({row["sha256"] for row in gifs + new_clips}) == 12
+    assert len(gifs) == 6 and len(new_clips) == 11
+    assert len({row["sha256"] for row in gifs + new_clips}) == 17
     for clip in new_clips:
         assert clip["frames"] >= 10 and not clip["missing"]
         assert (clip["source"]["author"], clip["license"]["name"]) == ("YunYueSama", "大肥鱼项目署名许可 1.0")
-        assert f'/blob/{clip["source"]["revision"]}/assets/whale/dense-' in clip["source"]["url"]
+        assert re.search(rf'/blob/{clip["source"]["revision"]}/assets/whale/(?:dense-|story-|motion-)', clip["source"]["url"])
         assert catalog.read(clip["asset_id"], "whale")["mime_type"] == "image/gif"
-    assert len(reactions) == 11 and all(row["enabled"] for row in reactions)
+    assert len(reactions) == 16 and all(row["enabled"] for row in reactions)
     row = gifs[0]
     assert row["source"]["kind"] == "existing_user_assets" and row["source"]["author"] == "YunYueSama"
     assert row["license"]["name"] == "大肥鱼项目署名许可 1.0" and "第三方" in row["license"]["note"]

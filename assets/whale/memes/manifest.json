@@ -176,6 +176,71 @@
       "note": "原动作图集按帧 [0, 16, 5, 6, 22, 10, 26, 13, 14, 30]（行优先，从 0 编号）裁切，缩放为 256×256 透明循环 GIF，每帧 100 ms。"
     },
     {
+      "id": "story-meal",
+      "title": "干白饭时间",
+      "tags": ["白饭", "饭团", "吃饭", "动图", "Q版"],
+      "description": "Q 版大肥鱼捧着白饭饭团大口干饭的循环动图。",
+      "path": "story-meal.gif",
+      "emotions": [
+        "cheerful",
+        "calm"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/story-meal.png",
+      "note": "原剧情图集按帧 [0..30:2] 裁切去透明外边并等比缩放，居中放置于 256×256 透明循环 GIF，每帧 110 ms。"
+    },
+    {
+      "id": "story-hum",
+      "title": "闭眼哼歌",
+      "tags": ["哼歌", "开心", "摇晃", "动图", "Q版"],
+      "description": "Q 版大肥鱼闭眼轻轻哼歌摇摆的循环动图。",
+      "path": "story-hum.gif",
+      "emotions": [
+        "cheerful",
+        "idle"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/story-hum.png",
+      "note": "原剧情图集按帧 [0..30:2] 裁切去透明外边并等比缩放，居中放置于 256×256 透明循环 GIF，每帧 110 ms。"
+    },
+    {
+      "id": "story-tail",
+      "title": "得意晃尾巴",
+      "tags": ["鲸尾", "得意", "自豪", "动图", "Q版"],
+      "description": "Q 版大肥鱼得意晃动蓝鲸尾巴的循环动图。",
+      "path": "story-tail.gif",
+      "emotions": [
+        "cheerful",
+        "excited"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/story-tail.png",
+      "note": "原剧情图集按帧 [0..30:2] 裁切去透明外边并等比缩放，居中放置于 256×256 透明循环 GIF，每帧 100 ms。"
+    },
+    {
+      "id": "story-token",
+      "title": "偷吃 token",
+      "tags": ["思考", "token", "偷吃", "动图", "Q版"],
+      "description": "Q 版大肥鱼边琢磨边偷吃蓝色小糖块的循环动图。",
+      "path": "story-token.gif",
+      "emotions": [
+        "confused",
+        "cheerful"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/story-token.png",
+      "note": "原剧情图集按帧 [0..30:2] 裁切去透明外边并等比缩放，居中放置于 256×256 透明循环 GIF，每帧 100 ms。"
+    },
+    {
+      "id": "motion-turn",
+      "title": "好奇转身",
+      "tags": ["转身", "好奇", "探头", "动图", "Q版"],
+      "description": "Q 版大肥鱼好奇转身张望的往返循环动图。",
+      "path": "motion-turn.gif",
+      "emotions": [
+        "confused",
+        "shy"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/motion-turn.png",
+      "note": "原转身图集按帧 [0..7,6..1] 往返 14 帧裁切，缩放为 256×256 透明循环 GIF，每帧 100 ms。"
+    },
+    {
       "id": "archive-flowers",
       "title": "花花",
       "tags": ["花", "送花"],
@@ -210,6 +275,75 @@
       "credit": "ai-girl-stickers-32",
       "source": "https://github.com/lmy414/ai-girl-stickers/blob/d1f355f10d641a5760e849440d0913e5f42bbec6/dist/submissions/originals/deepseek/issue-32-071.webp",
       "note": "蓝色大肥鱼档案馆收录的投稿原文件，保留原字节。作品页 https://xn--pssy23gqgbz2d718b.com/works/deepseek202609230076.html"
+    },
+    {
+      "id": "archive-megaphone",
+      "title": "拿喇叭开麦",
+      "tags": ["开麦", "吐槽", "喇叭"],
+      "description": "蓝色大肥鱼拿着小喇叭大声开麦吐槽。",
+      "path": "archive-megaphone.webp",
+      "emotions": [
+        "cheerful",
+        "excited"
+      ],
+      "credit": "ai-girl-stickers-32",
+      "source": "https://github.com/lmy414/ai-girl-stickers/blob/d1f355f10d641a5760e849440d0913e5f42bbec6/dist/submissions/originals/deepseek/issue-32-035.webp",
+      "note": "蓝色大肥鱼档案馆 CC0 1.0 投稿原文件，保留原字节。"
+    },
+    {
+      "id": "archive-laptop-rage",
+      "title": "对着电脑抓狂",
+      "tags": ["代码", "电脑", "抓狂", "bug"],
+      "description": "蓝色大肥鱼对着笔记本电脑露出抓狂问号表情。",
+      "path": "archive-laptop-rage.webp",
+      "emotions": [
+        "angry",
+        "confused"
+      ],
+      "credit": "ai-girl-stickers-32",
+      "source": "https://github.com/lmy414/ai-girl-stickers/blob/d1f355f10d641a5760e849440d0913e5f42bbec6/dist/submissions/originals/deepseek/issue-32-060.webp",
+      "note": "蓝色大肥鱼档案馆 CC0 1.0 投稿原文件，保留原字节。"
+    },
+    {
+      "id": "archive-annoyed-poke",
+      "title": "别戳本鲸",
+      "tags": ["傲娇", "生气", "戳脸"],
+      "description": "蓝色大肥鱼被手指戳鼻子后露出傲娇不满的表情。",
+      "path": "archive-annoyed-poke.webp",
+      "emotions": [
+        "angry",
+        "shy"
+      ],
+      "credit": "ai-girl-stickers-32",
+      "source": "https://github.com/lmy414/ai-girl-stickers/blob/d1f355f10d641a5760e849440d0913e5f42bbec6/dist/submissions/originals/deepseek/issue-32-025.webp",
+      "note": "蓝色大肥鱼档案馆 CC0 1.0 投稿原文件，保留原字节。"
+    },
+    {
+      "id": "archive-craving-cake",
+      "title": "馋点心了",
+      "tags": ["白饭", "点心", "馋了"],
+      "description": "女仆装蓝色大肥鱼头顶冒出想吃点心的气泡。",
+      "path": "archive-craving-cake.webp",
+      "emotions": [
+        "cheerful",
+        "shy"
+      ],
+      "credit": "ai-girl-stickers-32",
+      "source": "https://github.com/lmy414/ai-girl-stickers/blob/d1f355f10d641a5760e849440d0913e5f42bbec6/dist/submissions/originals/deepseek/issue-32-040.webp",
+      "note": "蓝色大肥鱼档案馆 CC0 1.0 投稿原文件，保留原字节。"
+    },
+    {
+      "id": "archive-flat-whale",
+      "title": "原地摊平摸鱼",
+      "tags": ["摸鱼", "低功耗", "摊平"],
+      "description": "蓝色大肥鱼在地上摊成一团进入低功耗保鲜状态。",
+      "path": "archive-flat-whale.webp",
+      "emotions": [
+        "idle"
+      ],
+      "credit": "ai-girl-stickers-32",
+      "source": "https://github.com/lmy414/ai-girl-stickers/blob/d1f355f10d641a5760e849440d0913e5f42bbec6/dist/submissions/originals/deepseek/issue-32-065.webp",
+      "note": "蓝色大肥鱼档案馆 CC0 1.0 投稿原文件，保留原字节。"
     }
   ],
   "sources": {
