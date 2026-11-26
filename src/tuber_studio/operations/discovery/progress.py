@@ -229,7 +229,8 @@ async def prepare_attempt(browsing, identity, row, semaphore, metrics, owner):
             deferred = isinstance(error, BrowsingBudgetDeferred)
             missing_material = getattr(error, "missing_material", False)
             metrics["failures"] += int(
-                not missing_material and kind not in {"no_subtitles", "empty", "filtered", "visual_unavailable"}
+                not missing_material
+                and kind not in {"no_subtitles", "empty", "filtered", "visual_unavailable", "not_found", "closed"}
             )
             browsing.repo.complete(
                 identity,

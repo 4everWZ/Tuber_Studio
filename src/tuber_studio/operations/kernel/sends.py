@@ -9,11 +9,18 @@ from contextvars import ContextVar
 
 import httpx
 
-from ...core.errors import PlatformRejected, SendLimitReached, UnknownPublication
+from ...core.errors import (
+    PlatformRejected,
+    SendLimitReached,
+    UnknownPublication,
+    is_media_permission_rejection,
+    is_terminal_target_rejection,
+)
 from ...core.models import content_hash
 from ...core.store import dump
 from ...infra.inference.providers import public_error
-from ...infra.platforms.bilibili.client import BilibiliAccountExpired
+from ...infra.platforms.bilibili.account import record_comment_capability_restriction
+from ...infra.platforms.bilibili.client import BilibiliAccountExpired, PlatformReadError
 from .control import COMMENT_WRITE_FILTER, REACTION_CHANNELS
 from .quotas import DailyReplyLimitReached
 
@@ -562,6 +569,17 @@ class OperationSends:
                                 self._defer(item, error, max(now + 1, getattr(error, "next_at", now + 60)), "wait")
                             except BilibiliAccountExpired as error:
                                 self._defer(item, error, now + 60, "login")
+                            except PlatformReadError as error:
+                                if is_unavailable_read_error(error):
+                                    if item["channel"] == "browsing":
+                                        mark_intent_source_unavailable(
+                                            self.store, item["source_id"], public_error(error)
+                                        )
+                                    self._remove(item)
+                                else:
+                                    self._defer(
+                                        item, error, max(now + 1, getattr(error, "next_at", now + 60)), "wait"
+                                    )
                             except PlatformRejected as error:
                                 if error.wait_for == "rate_limit":
                                     cooldown = (
@@ -576,6 +594,14 @@ class OperationSends:
                                     elif self._is_comment_head(item):
                                         self.store.set(f"operation_comments_resume:{scope[0]}", due)
                                     self._defer(item, error, due, "rate_limit" if item["approval"] else "wait")
+                                elif is_terminal_target_rejection(error.code):
+                                    if item["channel"] == "browsing":
+                                        mark_intent_source_unavailable(
+                                            self.store, item["source_id"], public_error(error)
+                                        )
+                                    self._remove(item)
+                                elif is_media_permission_rejection(error.code):
+                                    self._remove(item)
                                 elif item["approval"] and error.wait_for:
                                     self._defer(item, error, now + 60, error.wait_for)
                                 elif item["approval"]:
@@ -722,3 +748,66 @@ async def recheck_pending_intent_visibility(publisher, *, limit: int = 10):
         except ValueError:
             continue
     return results
+
+
+def is_unavailable_read_error(error) -> bool:
+    """Return True when a PlatformReadError indicates deleted/closed/missing video or comment source."""
+    return isinstance(error, PlatformReadError) and (
+        error.kind in {"not_found", "closed"} or (error.kind == "invalid" and "已删除" in str(error))
+    )
+
+
+def mark_intent_source_unavailable(store, identity: str, error_message: str):
+    """Settle a `browsing_intents` row when its target video or comment no longer exists / is closed."""
+    store.execute(
+        "UPDATE browsing_intents SET status='rejected_by_platform',auto_authorized=0,error=?,updated_at=? WHERE id=?",
+        (str(error_message or "平台目标不存在或已关闭")[:240], time.time(), identity),
+    )
+
+
+def degrade_intent_text_only(store, row: dict, *, reason: str = "", reset_status: str | None = None) -> dict:
+    """Replace `target.image_ref` with `text_only` cleanly for disallowed media fallback."""
+    target = dict(row["target"]) | {"image_ref": {"text_only": True}}
+    if reason:
+        target["image_degraded_reason"] = str(reason)[:240]
+    if reset_status:
+        store.execute(
+            "UPDATE browsing_intents SET status=?,target=?,error=NULL,updated_at=? WHERE id=?",
+            (reset_status, dump(target), time.time(), row["id"]),
+        )
+        return dict(row) | {"status": reset_status, "target": target}
+    store.execute(
+        "UPDATE browsing_intents SET target=?,error=NULL,updated_at=? WHERE id=?",
+        (dump(target), time.time(), row["id"]),
+    )
+    return dict(row) | {"target": target}
+
+
+def settle_browsing_rejection(browsing, row: dict, error: PlatformRejected, *, automatic: bool, is_like: bool, had_image: bool) -> str:
+    """Record capability restrictions, target termination, or review parking after a `PlatformRejected`."""
+    identity = row["id"]
+    if is_media_permission_rejection(error.code):
+        record_comment_capability_restriction(
+            browsing.store,
+            row["account_id"],
+            gif_allowed=False if error.code == 49044 else None,
+            image_allowed=False if error.code == 49045 else None,
+            reason=public_error(error),
+        )
+        if automatic and had_image:
+            degrade_intent_text_only(browsing.store, row, reason=public_error(error), reset_status="pending_review")
+            return "retry_text_only"
+        browsing.store.execute(
+            "UPDATE browsing_intents SET status='pending_review',auto_authorized=0,error=?,updated_at=? WHERE id=?",
+            (public_error(error) + "（已记录账号不支持此类评论配图，请改用静态图或纯文字后重发）", time.time(), identity),
+        )
+        return "pending_review"
+    if is_terminal_target_rejection(error.code):
+        mark_intent_source_unavailable(browsing.store, identity, public_error(error))
+        return "rejected_by_platform"
+    status = row["status"] if not is_like else "rejected_by_platform"
+    browsing.store.execute(
+        "UPDATE browsing_intents SET status=?,error=?,updated_at=? WHERE id=?",
+        (status, public_error(error), time.time(), identity),
+    )
+    return status

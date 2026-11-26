@@ -15,14 +15,49 @@ class PlatformRejected(ValueError):
         self.code, self.message, self.correctable = code, message, correctable
 
     @property
+    def kind(self):
+        return platform_rejection_kind(self.code)
+
+    @property
     def wait_for(self):
         return platform_recovery_condition(self.code)
 
     def feedback(self):
-        value = {"kind": "platform_rejection", "code": self.code, "message": self.message}
+        value = {
+            "kind": "platform_rejection",
+            "rejection_kind": self.kind,
+            "code": self.code,
+            "message": self.message,
+        }
         if self.correctable is not None:
             value["correctable_hint"] = self.correctable
         return value
+
+
+def platform_rejection_kind(code):
+    if code in {-101, -111}:
+        return "login"
+    if code in {-509, -412, -352, 12014, 12015}:
+        return "rate_limit"
+    if code == 49044:
+        return "gif_not_permitted"
+    if code == 49045:
+        return "image_not_permitted"
+    if code in {-404, 62002, 62004, 62012, 12002, 12006, 12009, 12022, 12061}:
+        return "target_unavailable"
+    if code in {-102, 12035, 12045, 12046}:
+        return "account_restricted"
+    if code in {12016, 12025, 12051, 12052}:
+        return "text_violation"
+    return "other"
+
+
+def is_media_permission_rejection(code):
+    return platform_rejection_kind(code) in {"gif_not_permitted", "image_not_permitted"}
+
+
+def is_terminal_target_rejection(code):
+    return platform_rejection_kind(code) in {"target_unavailable", "account_restricted"}
 
 
 def platform_recovery_condition(code):

@@ -17,6 +17,7 @@ from ..attachments import (
     image_choice,
     row_ref,
     uploads,
+    validate_comment_attachment_permissions,
 )
 from .timeline import (
     COMMENT_ID,
@@ -368,7 +369,11 @@ async def review_queue_selection(browsing, selection, action):
                 try:
                     state = await check_queue_source(browsing, channel, row)
                 except PlatformReadError as exc:
-                    state = "source_changed" if exc.kind in {"not_found", "missing", "deleted", "invalid"} else "unverified"
+                    state = (
+                        "source_changed"
+                        if exc.kind in {"not_found", "missing", "deleted", "closed", "invalid"}
+                        else "unverified"
+                    )
                     result["error"] = public_error(exc)
                 except (ValueError, TimeoutError, AttributeError) as exc:
                     state = "unverified"
@@ -433,6 +438,13 @@ def queue_detail(store, comments, browsing, channel, identity):
         row["illustration_choice"] = image_choice(comments.runtime, channel, row, ref, row["illustration"])
         if row["illustration"] and not row["can_attach_image"] and row["status"] in REVIEW_STATES:
             row["can_publish"] = False
+        if row["illustration"] and row["status"] in REVIEW_STATES:
+            allowed_att, att_reason = validate_comment_attachment_permissions(
+                store, comments.memes, row, row["illustration"]
+            )
+            if not allowed_att:
+                row["can_publish"] = False
+                row["attachment_warning"] = att_reason
         if row["pending_mentions"]:
             row["can_publish"] = False
         row["image_uploads"] = uploads(store, channel, identity)

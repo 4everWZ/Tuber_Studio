@@ -22,9 +22,83 @@ from .login import BilibiliPassport, credential_value, validate_credentials
 
 AVATAR_HOSTS = {"i0.hdslb.com", "i1.hdslb.com", "i2.hdslb.com"}
 PROFILE_CACHE_KEY = "bilibili_account_last_profile"
+COMMENT_CAPABILITIES_PREFIX = "bilibili_comment_capabilities:"
 ACCOUNT_CHECK_SECONDS = 15 * 60
 QR_SECONDS = 180
 QR_POLL_SECONDS = 3
+
+
+def account_comment_capabilities(store, account_id, profile=None):
+    """Return conservative comment-sending capabilities (text/image/GIF) for a Bilibili account."""
+    uid = str(account_id or "").strip()
+    resolved_profile = profile if isinstance(profile, dict) else None
+    if resolved_profile is None and store is not None and uid:
+        cached = store.get(PROFILE_CACHE_KEY, {})
+        if (
+            isinstance(cached, dict)
+            and isinstance(cached.get("profile"), dict)
+            and str(cached["profile"].get("uid") or "") == uid
+        ):
+            resolved_profile = cached["profile"]
+    vip_active = (
+        resolved_profile.get("vip_active")
+        if isinstance(resolved_profile, dict) and isinstance(resolved_profile.get("vip_active"), bool)
+        else None
+    )
+    level = (
+        resolved_profile.get("level")
+        if isinstance(resolved_profile, dict) and type(resolved_profile.get("level")) is int
+        else None
+    )
+    override = store.get(COMMENT_CAPABILITIES_PREFIX + uid, {}) if (store is not None and uid) else {}
+    if not isinstance(override, dict):
+        override = {}
+    comment_allowed = False if level == 0 else True
+    comment_image_allowed = False if override.get("image_allowed") is False else True
+    gif_blocked_by_vip = vip_active is False
+    gif_blocked_by_runtime = override.get("gif_allowed") is False
+    comment_gif_allowed = bool(
+        comment_allowed and comment_image_allowed and not gif_blocked_by_vip and not gif_blocked_by_runtime
+    )
+    if not comment_allowed:
+        reason = "当前 B 站账号等级不足（Lv0），暂无法发送评论"
+    elif not comment_image_allowed:
+        reason = str(override.get("reason") or "当前账号暂无评论配图发送权限")
+    elif not comment_gif_allowed:
+        reason = (
+            "当前账号未开通大会员，无评论动图（GIF）发送权限，仅支持静态图或纯文字"
+            if gif_blocked_by_vip
+            else str(override.get("reason") or "当前账号暂无评论动图（GIF）发送权限，仅支持静态图或纯文字")
+        )
+    else:
+        reason = ""
+    return {
+        "vip_active": vip_active,
+        "level": level,
+        "comment_allowed": comment_allowed,
+        "comment_image_allowed": comment_image_allowed,
+        "comment_gif_allowed": comment_gif_allowed,
+        "reason": reason,
+    }
+
+
+def record_comment_capability_restriction(store, account_id, *, gif_allowed=None, image_allowed=None, reason=None):
+    """Persist runtime-observed platform restrictions (e.g. code 49044 / 49045) per Bilibili UID."""
+    uid = str(account_id or "").strip()
+    if store is None or not uid:
+        return None
+    key = COMMENT_CAPABILITIES_PREFIX + uid
+    prev = store.get(key, {})
+    updated = dict(prev) if isinstance(prev, dict) else {}
+    if gif_allowed is not None:
+        updated["gif_allowed"] = bool(gif_allowed)
+    if image_allowed is not None:
+        updated["image_allowed"] = bool(image_allowed)
+    if isinstance(reason, str) and reason.strip():
+        updated["reason"] = reason.strip()[:240]
+    updated["updated_at"] = time.time()
+    store.set(key, updated)
+    return updated
 
 
 def signature(credentials):
@@ -181,8 +255,11 @@ class BilibiliAccount:
             renewal["state"] = "manual" if configured["sessdata"] else "idle"
         elif renewal["state"] == "idle":
             renewal["state"] = "available"
+        uid = (result.get("profile") or {}).get("uid") or credential.get("uid") or self.verified_account_id
         return result | {
-            "configured": configured, "renewal": renewal,
+            "configured": configured,
+            "renewal": renewal,
+            "comment_capabilities": account_comment_capabilities(self.store, uid, result.get("profile")),
             "verification_stale": (
                 checked is None or time.time() - checked > ACCOUNT_CHECK_SECONDS or result["state"] != "logged_in"
             ),
@@ -500,18 +577,42 @@ class BilibiliAccount:
                 raise ValueError("平台硬币数量无效")
             if fans is not None and (type(fans) is not int or fans < 0):
                 raise ValueError("平台粉丝数量无效")
+            vip_active = profile.get("vip_active")
+            if vip_active is not None and type(vip_active) is not bool:
+                vip_active = None
+            vip_type = profile.get("vip_type")
+            if type(vip_type) is not int or vip_type < 0:
+                vip_type = None
+            level = profile.get("level")
+            if type(level) is not int or not 0 <= level <= 10:
+                level = None
+            profile_payload = {
+                "uid": uid,
+                "name": name,
+                "avatar_url": avatar_url(profile.get("avatar_url")),
+                "coins": coins,
+                "fans": fans,
+                "bio": bio,
+            }
+            if vip_active is not None:
+                profile_payload["vip_active"] = vip_active
+            if vip_type is not None:
+                profile_payload["vip_type"] = vip_type
+            if level is not None:
+                profile_payload["level"] = level
             result.update(
                 state="logged_in",
                 checked_at=time.time(),
-                profile={
-                    "uid": uid,
-                    "name": name,
-                    "avatar_url": avatar_url(profile.get("avatar_url")),
-                    "coins": coins,
-                    "fans": fans,
-                    "bio": bio,
-                },
+                profile=profile_payload,
             )
+            if vip_active is True:
+                prev_cap = self.store.get(COMMENT_CAPABILITIES_PREFIX + uid)
+                if isinstance(prev_cap, dict) and prev_cap.get("gif_allowed") is False:
+                    updated_cap = dict(prev_cap)
+                    updated_cap.pop("gif_allowed", None)
+                    updated_cap.pop("reason", None)
+                    updated_cap["updated_at"] = time.time()
+                    self.store.set(COMMENT_CAPABILITIES_PREFIX + uid, updated_cap)
             if fans is None:
                 result["warnings"].append("粉丝数暂时未取得")
         except asyncio.CancelledError:

@@ -297,7 +297,8 @@ async def run_discovery_video(browsing, row, candidate, metrics):
         browsing.repo.finish_video_attempt(row, candidate, identity, failures + 1)
         return
     if task["status"] in {"selected", "viewed_without_comment", "comments_checked"} or (
-        task["status"] == "skipped" and reason in {"no_subtitles", "empty", "filtered", "visual_unavailable"}
+        task["status"] == "skipped"
+        and reason in {"no_subtitles", "empty", "filtered", "visual_unavailable", "not_found", "closed"}
     ):
         browsing.repo.finish_video_attempt(row, candidate, identity, 0)
         return

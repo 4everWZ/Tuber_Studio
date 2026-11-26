@@ -6,7 +6,13 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from ...core.errors import ContextWindowExceeded, PlatformRejected, UnknownPublication
+from ...core.errors import (
+    ContextWindowExceeded,
+    PlatformRejected,
+    UnknownPublication,
+    is_media_permission_rejection,
+    is_terminal_target_rejection,
+)
 from ...core.identity import identity_messages, runtime_identity
 from ...core.meter import GenerationBudgetExceeded, budgeted_call, budgeted_json
 from ...core.models import content_hash
@@ -652,7 +658,11 @@ class FeedbackPublication:
                         return resolved
                 raise
             except PlatformRejected as error:
-                if error.wait_for == "rate_limit":
+                if (
+                    error.wait_for == "rate_limit"
+                    or is_media_permission_rejection(error.code)
+                    or is_terminal_target_rejection(error.code)
+                ):
                     raise
                 if not getattr(error, "write_token", None):
                     raise

@@ -31,6 +31,30 @@ async def verify_video_target(browsing, target, *, source_aid=None):
     return metadata
 
 
+async def verify_top_level_target_for_send(browsing, row, materials, *, job=None):
+    """Check top-level target video existence/AID consistency before image upload or publish."""
+    target = row["target"]
+    bvid = target.get("bvid")
+    if not bvid:
+        return
+    manual_approval = bool(job and job.get("approval"))
+    matching = next(
+        (
+            m["metadata"]
+            for m in materials
+            if str(m["metadata"].get("aid")) == str(target["oid"]) and m["metadata"].get("bvid") == bvid
+        ),
+        None,
+    )
+    fetched_at = matching.get("fetched_at") if isinstance(matching, dict) else None
+    stale = type(fetched_at) not in {int, float} or (time.time() - float(fetched_at)) > 120
+    if not (manual_approval or matching is None or stale):
+        return
+    video = await browsing._read(browsing.adapter.video_metadata, bvid)
+    if video["bvid"] != bvid or str(video["aid"]) != str(target["oid"]):
+        raise ValueError("源视频已变化，请重新审核草稿")
+
+
 def target_matches_scope(row, account_id, character_id) -> bool:
     """Return True if an intent row belongs to the expected `(account_id, character_id)` scope."""
     if str(row.get("account_id", "")) != str(account_id):
@@ -325,3 +349,57 @@ def record_account_reply(publisher, row, handled):
     return publisher.browsing.repo.decode(
         publisher.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (row["id"],))
     )
+
+
+async def verify_intent_source_before_publish(publisher, row, account, materials, *, job=None):
+    """Run target/reply/video pre-send verification and return an already-observed receipt row if settled."""
+    identity = row["id"]
+    kind = row["kind"]
+    is_like = kind == "comment_like"
+    if kind == "dynamic_like":
+        if observed := await publisher._verify_dynamic_like(row["target"]):
+            publisher.browsing.store.execute(
+                "UPDATE browsing_intents SET status='published',receipt=?,visibility='visible',error=NULL,updated_at=? WHERE id=?",
+                (dump(observed), time.time(), identity),
+            )
+            return publisher.browsing.repo.decode(
+                publisher.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
+            )
+        return None
+    if kind == "top_level":
+        await publisher._verify_top_level_target(row, materials, job=job)
+        return None
+    if kind in ("video_like", "video_fav"):
+        return None
+    target = row["target"]
+    observe_thread = publisher._channel("observe_thread")
+    operator_reply = publisher._channel("operator_reply")
+    resource_key = publisher._channel("resource_key")
+    verified = await publisher._verify_reply_source(target, account)
+    with publisher.browsing.store.db:
+        observe_thread(
+            publisher.browsing.store,
+            row,
+            resource_key(target),
+            verified.get("items"),
+            via="submission_check",
+            resource_author_uid=verified.get("resource_author_uid"),
+        )
+    if is_like:
+        if publisher._liked_target(verified, target):
+            receipt = publisher._like_observation(target)
+            publisher.browsing.store.execute(
+                "UPDATE browsing_intents SET status='published',receipt=?,visibility='visible',"
+                "error=NULL,updated_at=? WHERE id=?",
+                (dump(receipt), time.time(), identity),
+            )
+            return publisher.browsing.repo.decode(
+                publisher.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
+            )
+        return None
+    if handled := operator_reply(verified.get("items", []), target, account):
+        return publisher._record_account_reply(row, handled)
+    name = verified["source"].get("author_name")
+    if name and name != target.get("recipient_name"):
+        validate_comment_body(row["text"], recipient_name=name)
+    return None

@@ -7,6 +7,7 @@ from .attachments import (
     checked_image,
     comment_payload,
     decision,
+    degrade_intent_to_text_only,
     image_choice,
     image_decision_pending,
     image_payload,
@@ -17,10 +18,11 @@ from .attachments import (
     require_comment_attachment,
     row_ref,
     uploads,
+    validate_comment_attachment_permissions,
     wait_decision,
     workstation_image_decisions,
 )
-from .capabilities import video_top_level_images
+from .capabilities import comment_attachment_allowed, is_animated_image, video_top_level_images
 from .images import ImageScope, OperationImages, choose, image_permissions
 
 __all__ = [
@@ -31,19 +33,23 @@ __all__ = [
     "can_attach_comment_image",
     "checked_image",
     "choose",
+    "comment_attachment_allowed",
     "comment_payload",
     "decision",
+    "degrade_intent_to_text_only",
     "image_choice",
     "image_decision_pending",
     "image_payload",
     "image_permissions",
     "image_scope",
+    "is_animated_image",
     "queue_image",
     "rebind_image",
     "record_upload",
     "require_comment_attachment",
     "row_ref",
     "uploads",
+    "validate_comment_attachment_permissions",
     "video_top_level_images",
     "wait_decision",
     "workstation_image_decisions",

@@ -13,6 +13,7 @@ from ....core.models import StrictModel
 from ....core.store import dump
 from ....infra.inference.http_api import InferenceBudgetExceeded
 from ....infra.inference.responses_provider import ResponsesClient
+from ....infra.platforms.bilibili.account import account_comment_capabilities
 from ....persona.assets.gallery_search import model_fields, shortlist
 from ....persona.assets.illustration_policy import illustration_policy
 from ....persona.assets.workstation_images import (
@@ -24,7 +25,7 @@ from ....persona.assets.workstation_images import (
     submit,
 )
 from ....persona.characters.references import resolve_reference
-from .capabilities import video_top_level_images
+from .capabilities import comment_attachment_allowed, is_animated_image, video_top_level_images
 
 
 class ImageScope(StrictModel):
@@ -199,7 +200,15 @@ class OperationImages:
     def _choice_material(self, scope, job, excluded_assets=()):
         material = json.loads(job["material"])
         gallery, generate = image_permissions(self.store)
+        caps = (
+            account_comment_capabilities(self.store, scope.account_id)
+            if scope.channel == "comment"
+            else {"comment_image_allowed": True, "comment_gif_allowed": True}
+        )
         material["gallery"] = []
+        if not caps["comment_image_allowed"]:
+            material["variants"] = []
+            return material
         if gallery and self.catalog:
             remaining = 128 * 1024 - len(dump(material).encode())
             items = (
@@ -207,6 +216,8 @@ class OperationImages:
                 if scope.channel == "dynamic"
                 else self.catalog.list(scope.character_id)
             )
+            if scope.channel == "comment" and not caps["comment_gif_allowed"]:
+                items = [item for item in items if not is_animated_image(item)]
             for item in shortlist(items, material["draft"], material["context"]):
                 if item["asset_id"] in excluded_assets:
                     continue
@@ -310,6 +321,10 @@ class OperationImages:
                             or (scope.channel == "dynamic" and resolved.get("usage_scope", "all_channels") != "all_channels")
                         ):
                             raise ValueError("所选图库图片或授权已变化")
+                        if scope.channel == "comment":
+                            allowed, reason = comment_attachment_allowed(self.store, scope.account_id, resolved)
+                            if not allowed:
+                                raise ValueError(reason or "当前账号不支持该评论配图")
                     elif isinstance(brief, ImageBrief) and not generate:
                         raise ValueError("生成图片的权限已变化")
                     break

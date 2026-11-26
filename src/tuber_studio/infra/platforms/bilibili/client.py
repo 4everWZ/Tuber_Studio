@@ -246,6 +246,14 @@ class BilibiliAdapter:
         except ValueError:
             # Login remains verified when just the public statistic is unavailable.
             pass
+        vip_obj = nav.get("vip") if isinstance(nav.get("vip"), dict) else {}
+        vip_status_raw = vip_obj.get("status") if "status" in vip_obj else nav.get("vipStatus")
+        vip_active = bool(vip_status_raw == 1) if vip_status_raw is not None else None
+        vip_type_raw = vip_obj.get("type") if "type" in vip_obj else nav.get("vipType")
+        vip_type = int(vip_type_raw) if type(vip_type_raw) is int and vip_type_raw >= 0 else None
+        level_obj = nav.get("level_info") if isinstance(nav.get("level_info"), dict) else {}
+        level_raw = level_obj.get("current_level")
+        level = int(level_raw) if type(level_raw) is int and 0 <= level_raw <= 10 else None
         return {
             "uid": uid,
             "name": details.get("name") or nav.get("uname"),
@@ -253,6 +261,9 @@ class BilibiliAdapter:
             "avatar_url": nav.get("face"),
             "coins": nav.get("money"),
             "fans": fans,
+            "vip_active": vip_active,
+            "vip_type": vip_type,
+            "level": level,
         }
 
     async def _get_payload(self, path: str, params: dict, *, anonymous: bool = False):

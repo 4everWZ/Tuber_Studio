@@ -6,12 +6,19 @@ import math
 import re
 import time
 
-from ....core.errors import PlatformRejected, SendLimitReached, UnknownPublication
+from ....core.errors import (
+    PlatformRejected,
+    SendLimitReached,
+    UnknownPublication,
+    is_media_permission_rejection,
+    is_terminal_target_rejection,
+)
 from ....core.identity import runtime_identity
 from ....core.models import content_hash
 from ....core.store import dump
 from ....core.text import validate_comment_body, validate_operation_text
 from ....infra.inference.providers import public_error
+from ....infra.platforms.bilibili.account import record_comment_capability_restriction
 from ....infra.platforms.bilibili.client import BilibiliAdapter, PublishUncertain
 from ...kernel.control import OperationsControl, canonical_intent
 from ...kernel.feedback import FeedbackPublication, PublicationContext, generation_view, publication_binding
@@ -673,9 +680,22 @@ class Comments(CommentsRepositoryMixin, CommentsScannerMixin, CommentsDrafterMix
                 if token:
                     self.operations.finish(token, "rejected")
                 message = public_error(error)
+                next_status = previous
+                if isinstance(error, PlatformRejected):
+                    if is_media_permission_rejection(error.code):
+                        record_comment_capability_restriction(
+                            self.store,
+                            row["account_id"],
+                            gif_allowed=False if error.code == 49044 else None,
+                            image_allowed=False if error.code == 49045 else None,
+                            reason=message,
+                        )
+                        next_status = "pending_review"
+                    elif is_terminal_target_rejection(error.code):
+                        next_status = "rejected_by_platform"
                 self.store.execute(
                     "UPDATE drafts SET status=?,error=?,updated_at=? WHERE id=?",
-                    (previous, message, time.time(), draft_id),
+                    (next_status, message, time.time(), draft_id),
                 )
                 self.store.execute(
                     "UPDATE publish_attempts SET status='failed',error=? WHERE id=?", (message, attempt)

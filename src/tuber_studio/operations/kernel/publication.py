@@ -593,40 +593,75 @@ class IntentPublisher:
                 and self.browsing.operations.policy()["epoch"] == row["epoch"],
             )
         manual_comment = row and row["kind"] in _COMMENT_KINDS and not automatic
-        try:
-            if row and row["kind"] == "comment_like":
-                return await self._publish_once(identity, automatic=automatic)
-            return await FeedbackPublication(
-                self.browsing.runtime, self.browsing.store, self.browsing.operations
-            ).submit(
-                "browsing",
-                identity,
-                prepare=lambda: self._publication_context(identity, automatic),
-                send=lambda ticket, binding, body_hash: self._publish_once(
+        retried_ticket = None
+        retried_binding = None
+        retried_hash = None
+        while True:
+            try:
+                if row and row["kind"] == "comment_like":
+                    return await self._publish_once(identity, automatic=automatic)
+                if retried_ticket is not None:
+                    return await self._publish_once(
+                        identity,
+                        automatic=automatic,
+                        revision_ticket=retried_ticket,
+                        binding=retried_binding,
+                        body_hash=retried_hash,
+                    )
+                return await FeedbackPublication(
+                    self.browsing.runtime, self.browsing.store, self.browsing.operations
+                ).submit(
+                    "browsing",
                     identity,
+                    prepare=lambda: self._publication_context(identity, automatic),
+                    send=lambda ticket, binding, body_hash: self._publish_once(
+                        identity,
+                        automatic=automatic,
+                        revision_ticket=ticket,
+                        binding=binding,
+                        body_hash=content_hash(comment_payload(row, self.browsing.runtime, "browsing"))
+                        if manual_comment
+                        else body_hash,
+                    ),
+                    apply_revision=lambda prepared, text: self._apply_revision(identity, prepared, text),
                     automatic=automatic,
-                    revision_ticket=ticket,
-                    binding=binding,
-                    body_hash=content_hash(comment_payload(row, self.browsing.runtime, "browsing"))
-                    if manual_comment
-                    else body_hash,
-                ),
-                apply_revision=lambda prepared, text: self._apply_revision(identity, prepared, text),
-                automatic=automatic,
-                epoch=row["epoch"] if row and automatic else None,
-                reconcile=lambda token, prepared: self._reconcile(identity),
-                revise_on_rejection=not manual_comment,
-            )
-        except UnknownPublication:
-            if not automatic:
+                    epoch=row["epoch"] if row and automatic else None,
+                    reconcile=lambda token, prepared: self._reconcile(identity),
+                    revise_on_rejection=not manual_comment,
+                )
+            except PlatformRejected as error:
+                if automatic and retried_ticket is None and getattr(error, "_retry_text_only", False):
+                    row = self.browsing.repo.decode(
+                        self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
+                    )
+                    new_payload = comment_payload(row, self.browsing.runtime, "browsing")
+                    retried_hash = content_hash(new_payload)
+                    retried_binding = error._failed_binding
+                    retried_ticket = self.browsing.operations.issue_revision_ticket(
+                        error.write_token,
+                        binding=retried_binding,
+                        content_hash=retried_hash,
+                        automatic=True,
+                        epoch=row["epoch"],
+                    )
+                    continue
                 raise
-            return {"status": "publish_uncertain", "id": identity}
+            except UnknownPublication:
+                if not automatic:
+                    raise
+                return {"status": "publish_uncertain", "id": identity}
 
     async def _verify_reply_source(self, target, account):
         raise NotImplementedError
 
     async def _verify_dynamic_like(self, target):
         raise NotImplementedError
+
+    async def _verify_top_level_target(self, row, materials, *, job=None):
+        return None
+
+    async def _verify_intent_source(self, row, account, materials, *, job=None):
+        return None
 
     @staticmethod
     def _liked_target(thread, target):
@@ -646,9 +681,6 @@ class IntentPublisher:
         record_upload = self._channel("record_upload")
         require_comment_attachment = self._channel("require_comment_attachment")
         row_ref = self._channel("row_ref")
-        observe_thread = self._channel("observe_thread")
-        operator_reply = self._channel("operator_reply")
-        resource_key = self._channel("resource_key")
 
         await self._refresh_intent_identity(identity, automatic)
         async with self.browsing.bilibili_account.credential_lock:
@@ -674,60 +706,24 @@ class IntentPublisher:
             signature = self.browsing.credential_signature()
             if account != row["account_id"]:
                 raise ValueError("候选来源账号已变化")
-            keys = await self.browsing._refresh_material_keys(
-                row["material_keys"],
-                json.loads(row["input_version"]),
-                allow_expired=not automatic and row["kind"] in _COMMENT_KINDS,
-            )
-            if keys != row["material_keys"]:
-                row["material_keys"] = keys
-                self.browsing.store.execute(
-                    "UPDATE browsing_intents SET material_keys=? WHERE id=?", (dump(keys), identity)
+            try:
+                keys = await self.browsing._refresh_material_keys(
+                    row["material_keys"],
+                    json.loads(row["input_version"]),
+                    allow_expired=not automatic and row["kind"] in _COMMENT_KINDS,
                 )
-            if is_dynamic_like:
-                if observed := await self._verify_dynamic_like(row["target"]):
+                if keys != row["material_keys"]:
+                    row["material_keys"] = keys
                     self.browsing.store.execute(
-                        "UPDATE browsing_intents SET status='published',receipt=?,visibility='visible',error=NULL,updated_at=? WHERE id=?",
-                        (dump(observed), time.time(), identity),
+                        "UPDATE browsing_intents SET material_keys=? WHERE id=?", (dump(keys), identity)
                     )
-                    return self.browsing.repo.decode(
-                        self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
-                    )
-            elif row["kind"] == "top_level" and (job := current_send.get()) and job["approval"]:
-                target = row["target"]
-                video = await self.browsing._read(self.browsing.adapter.video_metadata, target["bvid"])
-                if video["bvid"] != target["bvid"] or str(video["aid"]) != str(target["oid"]):
-                    raise ValueError("源视频已变化，请重新审核草稿")
-            elif row["kind"] not in ("top_level", "video_like", "video_fav"):
-                target = row["target"]
-                verified = await self._verify_reply_source(target, account)
-                with self.browsing.store.db:
-                    observe_thread(
-                        self.browsing.store,
-                        row,
-                        resource_key(target),
-                        verified.get("items"),
-                        via="submission_check",
-                        resource_author_uid=verified.get("resource_author_uid"),
-                    )
-                if is_like:
-                    if self._liked_target(verified, target):
-                        receipt = self._like_observation(target)
-                        self.browsing.store.execute(
-                            "UPDATE browsing_intents SET status='published',receipt=?,visibility='visible',"
-                            "error=NULL,updated_at=? WHERE id=?",
-                            (dump(receipt), time.time(), identity),
-                        )
-                        return self.browsing.repo.decode(
-                            self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
-                        )
-                else:
-                    if handled := operator_reply(verified.get("items", []), target, account):
-                        return self._record_account_reply(row, handled)
-                    name = verified["source"].get("author_name")
-                    if name and name != target.get("recipient_name"):
-                        validate_comment_body(row["text"], recipient_name=name)
-            materials = self._intent_materials(row)
+                materials = self._intent_materials(row)
+                if short_circuit := await self._verify_intent_source(row, account, materials, job=current_send.get()):
+                    return short_circuit
+            except Exception as error:
+                if _sends.is_unavailable_read_error(error):
+                    _sends.mark_intent_source_unavailable(self.browsing.store, identity, public_error(error))
+                raise
             actual_binding = self._publication_binding(row, character, [item["metadata"] for item in materials])
             require_comment_attachment("browsing", row, row_ref(row))
             payload = comment_payload(row, self.browsing.runtime, "browsing")
@@ -744,14 +740,18 @@ class IntentPublisher:
                 if payload.get("asset_sha256")
                 else None
             )
-            if image and not any(
-                str(m["metadata"].get("aid")) == str(row["target"]["oid"])
-                and m["metadata"].get("bvid") == row["target"].get("bvid")
-                for m in materials
-            ):
-                meta = await self.browsing.adapter.video_metadata(row["target"]["bvid"])
-                if str(meta.get("aid")) != str(row["target"]["oid"]) or meta.get("bvid") != row["target"]["bvid"]:
-                    raise ValueError("配图评论的视频与原材料不符")
+            if image:
+                allowed, att_reason = self._channel("comment_attachment_allowed")(self.browsing.store, account, image)
+                if not allowed:
+                    if not automatic:
+                        self.browsing.store.execute(
+                            "UPDATE browsing_intents SET status='pending_review',auto_authorized=0,error=?,updated_at=? WHERE id=?",
+                            (att_reason, time.time(), identity),
+                        )
+                        raise ValueError(att_reason)
+                    row = _sends.degrade_intent_text_only(self.browsing.store, row, reason=att_reason)
+                    payload = comment_payload(row, self.browsing.runtime, "browsing")
+                    image, body_hash = None, None
             if (
                 binding is not None
                 and binding != actual_binding
@@ -913,24 +913,26 @@ class IntentPublisher:
                         ).record_unknown(
                             "browsing", identity, token, actual_binding, payload, public_error(error)
                         )
-                    self.browsing.store.execute(
-                        "UPDATE browsing_intents SET status=?,error=?,updated_at=? WHERE id=?",
-                        (
-                            "publish_uncertain"
-                            if uncertain
-                            else row["status"]
-                            if isinstance(error, PlatformRejected) and not is_like
-                            else "rejected_by_platform",
-                            public_error(error),
-                            time.time(),
-                            identity,
-                        ),
-                    )
-                    if isinstance(error, PlatformRejected):
+                    if uncertain:
+                        self.browsing.store.execute(
+                            "UPDATE browsing_intents SET status='publish_uncertain',error=?,updated_at=? WHERE id=?",
+                            (public_error(error), time.time(), identity),
+                        )
+                    elif isinstance(error, PlatformRejected):
+                        if _sends.settle_browsing_rejection(
+                            self.browsing, row, error, automatic=automatic, is_like=is_like, had_image=bool(image)
+                        ) == "retry_text_only":
+                            error._retry_text_only = True
+                            error._failed_binding = actual_binding
                         error.write_token = token
                         error.body_hash = content_hash(payload)
                         error.sent_payload = payload
-                    elif uncertain and not isinstance(error, asyncio.CancelledError):
+                    else:
+                        self.browsing.store.execute(
+                            "UPDATE browsing_intents SET status='rejected_by_platform',error=?,updated_at=? WHERE id=?",
+                            (public_error(error), time.time(), identity),
+                        )
+                    if uncertain and not isinstance(error, asyncio.CancelledError):
                         raise UnknownPublication(public_error(error), token) from None
                 raise
             try:

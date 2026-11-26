@@ -5,10 +5,11 @@ import hashlib
 import json
 
 from ....core.models import content_hash
+from ....core.store import dump
 from ....infra.platforms.bilibili.urls import COMMENT_ID, VIDEO_ID
 from ....persona.assets.workstation_images import gateway_base
 from ...kernel.models import PENDING_IMAGE_STATES
-from .capabilities import video_top_level_images
+from .capabilities import comment_attachment_allowed, video_top_level_images
 from .images import image_permissions
 
 TEXT_ONLY_IMAGE = {"text_only": True}
@@ -201,6 +202,31 @@ async def wait_decision(runtime, channel, row, authorized):
 def require_comment_attachment(channel, row, ref):
     if ref and ref != TEXT_ONLY_IMAGE and not can_attach_comment_image(channel, row):
         raise ValueError("仅视频一级评论可配图。已有附件可从草稿移除。")
+
+
+def validate_comment_attachment_permissions(store, catalog, row, ref):
+    """Check whether the resolved gallery asset in `ref` is allowed for `row['account_id']`."""
+    if not ref or not isinstance(ref, dict) or "asset_id" not in ref or catalog is None:
+        return True, None
+    try:
+        asset = catalog.resolve(ref["asset_id"], row["character_id"])
+    except (LookupError, ValueError, OSError):
+        return True, None
+    return comment_attachment_allowed(store, row.get("account_id"), asset)
+
+
+def degrade_intent_to_text_only(store, row, *, reason=""):
+    """Replace an intent's `image_ref` with `TEXT_ONLY_IMAGE` and persist cleanly."""
+    import time
+
+    target = dict(row["target"]) | {"image_ref": TEXT_ONLY_IMAGE}
+    if reason:
+        target["image_degraded_reason"] = str(reason)[:240]
+    store.execute(
+        "UPDATE browsing_intents SET target=?,error=NULL,updated_at=? WHERE id=?",
+        (dump(target), time.time(), row["id"]),
+    )
+    return dict(row) | {"target": target}
 
 
 def checked_image(catalog, ref, character, *, runtime=None, scope=None):

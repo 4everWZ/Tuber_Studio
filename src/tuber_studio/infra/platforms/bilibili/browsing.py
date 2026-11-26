@@ -192,8 +192,16 @@ class BrowsingAdapter(BilibiliAdapter):
             raise PlatformReadError("permission", "平台账号未登录、失效或无读取权限", code=code)
         if code in {-352, -412, -509}:
             raise PlatformReadError("restricted", f"平台风控或频率限制（code {code}）", code=code)
-        if code in {-404, 12006}:
-            raise PlatformReadError("not_found", "平台来源不存在或已删除", code=code)
+        if code in {-404, 12006, 12022, 62002, 62004, 62012}:
+            messages = {
+                62002: "视频已删除或设为不可见（code 62002）",
+                62004: "视频正在审核中暂不可访问（code 62004）",
+                62012: "视频仅作者自己可见（code 62012）",
+                12022: "原评论已删除（code 12022）",
+            }
+            raise PlatformReadError("not_found", messages.get(code, "平台来源不存在或已删除"), code=code)
+        if code in {12002, 12061}:
+            raise PlatformReadError("closed", f"评论区已关闭或仅精选可见（code {code}）", code=code)
         if code != 0 and not anonymous_nav:
             raise PlatformReadError("platform", f"平台拒绝读取（code {code}）", code=code)
         return payload

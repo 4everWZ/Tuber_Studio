@@ -3,6 +3,7 @@
 from ...channels.attachments.attachments import (
     TEXT_ONLY_IMAGE,
     checked_image,
+    comment_attachment_allowed,
     comment_image,
     comment_payload,
     decision,
@@ -38,12 +39,15 @@ from .verification import (
     record_account_reply,
     refresh_intent_identity,
     verify_dynamic_like,
+    verify_intent_source_before_publish,
     verify_reply_source,
+    verify_top_level_target_for_send,
 )
 
 PUBLICATION_CHANNELS = {
     "TEXT_ONLY_IMAGE": TEXT_ONLY_IMAGE,
     "checked_image": checked_image,
+    "comment_attachment_allowed": comment_attachment_allowed,
     "comment_image": comment_image,
     "comment_payload": comment_payload,
     "comment_source": comment_source,
@@ -94,6 +98,12 @@ class DiscoveryPublisher(IntentPublisher):
 
     async def _verify_dynamic_like(self, target):
         return await verify_dynamic_like(self, target)
+
+    async def _verify_top_level_target(self, row, materials, *, job=None):
+        return await verify_top_level_target_for_send(self.browsing, row, materials, job=job)
+
+    async def _verify_intent_source(self, row, account, materials, *, job=None):
+        return await verify_intent_source_before_publish(self, row, account, materials, job=job)
 
     @staticmethod
     def _liked_target(thread, target):
