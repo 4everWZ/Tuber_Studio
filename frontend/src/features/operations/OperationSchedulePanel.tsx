@@ -1,12 +1,12 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { StatusPill, type StatusPillTone } from "@/shared";
-import styles from "./operations.module.css";
 import type {
-  AutomationStatus,
   OperationScheduleCreateInput,
   OperationScheduleItem,
   OperationScheduleUpdateInput,
-} from "./types";
+} from "@/shared/operations/types";
+import styles from "./operations.module.css";
+import type { AutomationStatus } from "./types";
 
 const WEEKDAYS: ReadonlyArray<readonly [number, string]> = [
   [0, "一"],
