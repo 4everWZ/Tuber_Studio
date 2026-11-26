@@ -430,14 +430,32 @@ def reserve_write_attempt(
     epoch: int | None = None,
     binding: dict | None = None,
     content_hash: str | None = None,
+    revision_ticket: str | None = None,
+    retry_rejected_token: str | None = None,
 ) -> str:
     """Reserve an idempotent platform write attempt through OperationsControl."""
     ops = _operations_host(target)
     if ops is None or not hasattr(ops, "reserve"):
         raise ValueError("OperationsControl 未就绪，无法预约平台投稿")
+    effective_character = character
+    if revision_ticket is None and retry_rejected_token and hasattr(ops, "issue_revision_ticket"):
+        previous = ops.get_attempt(retry_rejected_token) if hasattr(ops, "get_attempt") else None
+        if previous is not None and previous.get("resolved_status") == "rejected":
+            revision_ticket = ops.issue_revision_ticket(
+                retry_rejected_token,
+                binding=binding,
+                content_hash=content_hash,
+                automatic=automatic,
+                epoch=epoch,
+            )
+            if not automatic:
+                effective_character = {
+                    "id": previous["character_id"],
+                    "version": previous["character_version"],
+                }
     return ops.reserve(
         account_id,
-        character,
+        effective_character,
         intent,
         channel,
         recipient=recipient,
@@ -445,6 +463,7 @@ def reserve_write_attempt(
         limits=limits,
         epoch=epoch,
         binding=binding,
+        revision_ticket=revision_ticket,
         content_hash=content_hash,
     )
 

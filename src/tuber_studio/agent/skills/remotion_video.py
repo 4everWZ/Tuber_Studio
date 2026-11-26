@@ -888,28 +888,36 @@ class RemotionVideoSkill:
         if job.get("status") == "publish_uncertain":
             return {"ok": False, "job_id": args.job_id, "action": "blocked_uncertain", "status": "publish_uncertain", "intent": intent, "error": "上次投稿回执待核对，已阻止重复上传"}
 
+        credentials = dict(getattr(getattr(self.runtime, "account", None), "credentials", None) or {})
+        if not (str(credentials.get("sessdata") or "").strip() and str(credentials.get("csrf") or "").strip()):
+            raise ValueError("缺少有效的 B 站登录 Cookie 凭证，无法执行投稿")
+        output_file = Path(str(job.get("output_path") or ""))
+        if not output_file.is_file():
+            raise ValueError("视频成片文件不存在或为空，无法执行投稿")
+
         ops_host = self._browsing_service() or getattr(self.runtime, "operations", None)
+        retry_token = None
         if (existing := _ops.find_write_attempt_by_intent(ops_host, account_id=account_id, character_id=char_id, intent=intent)) is not None:
             if existing.get("resolved_status") == "published":
                 return {"ok": True, "job_id": args.job_id, "action": "already_published", "status": "published", "intent": intent, "receipt": existing.get("receipt")}
             if existing.get("resolved_status") in {"sending", "uncertain"}:
                 return {"ok": False, "job_id": args.job_id, "action": "blocked_uncertain", "status": "publish_uncertain", "intent": intent, "error": "写入账本已有在途或待核对投稿，禁止重复提交"}
+            if existing.get("resolved_status") == "rejected":
+                retry_token = existing.get("token")
         if (dup_job := self._find_existing_job_by_intent(intent, args.job_id)) is not None:
             if dup_job.get("status") == "published":
                 return {"ok": True, "job_id": args.job_id, "action": "already_published", "status": "published", "intent": intent, "receipt": dup_job.get("receipt")}
             return {"ok": False, "job_id": args.job_id, "action": "blocked_uncertain", "status": "publish_uncertain", "intent": intent, "error": "已有同内容待核对投稿任务，禁止重复提交"}
 
-        write_token = None
-        ops_ctrl = getattr(ops_host, "operations", ops_host) if ops_host is not None else None
+        write_token, ops_ctrl = None, (getattr(ops_host, "operations", ops_host) if ops_host is not None else None)
         if ops_ctrl is not None and hasattr(ops_ctrl, "reserve") and hasattr(ops_ctrl, "finish"):
             pol_ctrl = _ops.control_policy(ops_host)
             epoch = pol_ctrl.get("epoch") if (not args.approved and isinstance(pol_ctrl, dict)) else None
-            write_token = _ops.reserve_write_attempt(ops_host, account_id=account_id, character=char, intent=intent, channel="video_publish", automatic=not args.approved, epoch=epoch, binding={"job_id": args.job_id, "title": plan.title, "content_hash": effective_hash}, content_hash=effective_hash)
+            write_token = _ops.reserve_write_attempt(ops_host, account_id=account_id, character=char, intent=intent, channel="video_publish", automatic=not args.approved, epoch=epoch, binding={"job_id": args.job_id, "title": plan.title, "content_hash": effective_hash}, content_hash=effective_hash, retry_rejected_token=retry_token)
 
-        credentials = dict(getattr(getattr(self.runtime, "account", None), "credentials", None) or {})
         cover_file = Path(job["cover_path"]) if job.get("cover_path") else None
         try:
-            receipt = await self._upload_via_biliup(plan=plan, output_path=Path(job["output_path"]), cover_path=cover_file, credentials=credentials, timeout=policy.upload_timeout_seconds)
+            receipt = await self._upload_via_biliup(plan=plan, output_path=output_file, cover_path=cover_file, credentials=credentials, timeout=policy.upload_timeout_seconds)
         except TimeoutError as exc:
             if write_token:
                 _ops.finish_write_attempt(ops_host, write_token, "uncertain", error=str(exc))
@@ -936,18 +944,10 @@ class RemotionVideoSkill:
         return {"publish_mode": policy.publish_mode, "auto_publish_enabled": policy.auto_publish_enabled, "jobs": counts}
 
 
-async def plan_video_script(skill: RemotionVideoSkill, arguments: PlanVideoScriptArgs | dict[str, Any]) -> dict[str, Any]:
-    return await skill.plan_video_script(arguments)
-
-async def generate_remotion_project(skill: RemotionVideoSkill, arguments: GenerateRemotionProjectArgs | dict[str, Any]) -> dict[str, Any]:
-    return await skill.generate_remotion_project(arguments)
-
-async def render_remotion_video(skill: RemotionVideoSkill, arguments: RenderRemotionVideoArgs | dict[str, Any]) -> dict[str, Any]:
-    return await skill.render_remotion_video(arguments)
-
-async def stage_or_publish_bilibili_video(skill: RemotionVideoSkill, arguments: StageOrPublishVideoArgs | dict[str, Any]) -> dict[str, Any]:
-    return await skill.stage_or_publish_bilibili_video(arguments)
-
+async def plan_video_script(skill: RemotionVideoSkill, arguments: PlanVideoScriptArgs | dict[str, Any]) -> dict[str, Any]: return await skill.plan_video_script(arguments)
+async def generate_remotion_project(skill: RemotionVideoSkill, arguments: GenerateRemotionProjectArgs | dict[str, Any]) -> dict[str, Any]: return await skill.generate_remotion_project(arguments)
+async def render_remotion_video(skill: RemotionVideoSkill, arguments: RenderRemotionVideoArgs | dict[str, Any]) -> dict[str, Any]: return await skill.render_remotion_video(arguments)
+async def stage_or_publish_bilibili_video(skill: RemotionVideoSkill, arguments: StageOrPublishVideoArgs | dict[str, Any]) -> dict[str, Any]: return await skill.stage_or_publish_bilibili_video(arguments)
 
 _REMOTION_TOOL_SPECS: tuple[tuple[str, str, type[StrictModel], str], ...] = (
     ("plan_video_script", "基于公开视频或话题规划结构化 Remotion 脚本与分镜 JSON。", PlanVideoScriptArgs, "plan_video_script"),
@@ -972,10 +972,9 @@ async def execute_remotion_tool(skill: RemotionVideoSkill, name: str, arguments:
         return {"ok": False, "error": "工具参数须为 JSON 对象"}
     if not isinstance(parsed, dict):
         return {"ok": False, "error": "工具参数须为 JSON 对象"}
-    dispatch = {n: (m, fn) for n, _d, m, fn in _REMOTION_TOOL_SPECS}
-    if name not in dispatch:
+    if (entry := {n: (m, fn) for n, _d, m, fn in _REMOTION_TOOL_SPECS}.get(name)) is None:
         return {"ok": False, "error": f"未知视频工具：{name}"}
-    model_cls, method_name = dispatch[name]
+    model_cls, method_name = entry
     try:
         return await getattr(skill, method_name)(model_cls.model_validate(parsed))
     except (ValidationError, ValueError) as exc:

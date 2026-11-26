@@ -786,3 +786,69 @@ def test_remotion_stage_publish_uses_web_api_without_biliup_cli(settings, tmp_pa
         assert captured["credentials"] == {"sessdata": "s-web", "csrf": "c-web", "uid": "42"}
 
     asyncio.run(scenario())
+
+
+def test_remotion_retry_rejected_video_publish_uses_revision_ticket(settings, tmp_path, monkeypatch):
+    async def scenario():
+        app = create_app(settings, adapter=ControlledPlatform())
+        runtime = app.state.runtime
+        skill = RemotionVideoSkill(
+            runtime,
+            runtime.store,
+            browsing=runtime.browsing,
+            renders_root=tmp_path,
+        )
+        p = await plan_video_script(skill, {"topic": "失败稿件修订重投", "max_scenes": 2})
+        g = await generate_remotion_project(skill, {"job_id": p["job_id"], "tts_mode": "dry_run"})
+        job_dir = Path(g["project_dir"])
+        out_mp4 = job_dir / "output.mp4"
+        out_mp4.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
+        valid_sha = "8" * 64
+        skill._update_job(
+            g["job_id"],
+            status="ready_for_review",
+            output_path=str(out_mp4),
+            qc_json=json.dumps({"passed": True, "issues": []}),
+            content_hash=valid_sha,
+        )
+
+        # Missing credentials must fail BEFORE creating an account_writes row.
+        runtime.account.credentials = {}
+        with pytest.raises(ValueError, match="Cookie"):
+            await stage_or_publish_bilibili_video(skill, {"job_id": g["job_id"], "approved": True})
+        assert runtime.store.all("SELECT * FROM account_writes WHERE channel='video_publish'") == []
+
+        # First attempt with credentials fails -> publish_failed & account_writes rejected.
+        runtime.account.credentials = {"sessdata": "s-retry", "csrf": "c-retry", "uid": "77"}
+        mode = ["fail"]
+
+        async def flaky_upload(**_kwargs):
+            if mode[0] == "fail":
+                raise RuntimeError("未安装 biliup CLI，无法直接投稿")
+            return {"platform": "bilibili", "uploader": "web_api", "bvid": "BV1retriedOk", "aid": 999}
+
+        monkeypatch.setattr("tuber_studio.agent.skills.remotion_video.upload_bilibili_video_web", flaky_upload)
+
+        failed = await stage_or_publish_bilibili_video(skill, {"job_id": g["job_id"], "approved": True})
+        assert failed["ok"] is False and failed["status"] == "publish_failed"
+        writes = runtime.store.all("SELECT status, character_version FROM account_writes WHERE channel='video_publish'")
+        assert len(writes) == 1 and writes[0]["status"] == "rejected"
+
+        # Simulate character card version bump before manual retry.
+        bumped = runtime.store.save_character(runtime.character)
+        assert bumped["version"] == writes[0]["character_version"] + 1
+
+        # Retry succeeds via OperationRevisions ticket -> operation_write_retries & published.
+        mode[0] = "ok"
+        retried = await stage_or_publish_bilibili_video(skill, {"job_id": g["job_id"], "approved": True})
+        assert retried["ok"] is True
+        assert retried["status"] == "published"
+        assert retried["receipt"]["bvid"] == "BV1retriedOk"
+        retries = runtime.store.all("SELECT status FROM operation_write_retries WHERE channel='video_publish'")
+        assert len(retries) == 1 and retries[0]["status"] == "published"
+
+        # Subsequent call is idempotent already_published.
+        again = await stage_or_publish_bilibili_video(skill, {"job_id": g["job_id"], "approved": True})
+        assert again["action"] == "already_published"
+
+    asyncio.run(scenario())
