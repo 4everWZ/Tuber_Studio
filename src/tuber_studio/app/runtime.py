@@ -499,6 +499,7 @@ class Runtime:
                 "comment_cooldown_until": cooldown_until if cooldown_until > time.time() else None,
                 "visibility_risk": browsing.sends.visibility_risk_status(account_id),
                 "active_agent_tasks": len(self.tasks.activity()) if getattr(self, "tasks", None) else 0,
+                "active_schedule": browsing.schedules.active() if getattr(browsing, "schedules", None) else None,
             }
         return {
             "state": self.live.state,

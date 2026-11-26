@@ -4,6 +4,7 @@ import { apiGet, apiPost, apiPut } from "@/shared/api/client";
 import { emitNotice, errorMessage, safeMessage } from "@/shared/lib/errors";
 import { DiscoverySourceForm } from "./DiscoveryPanel";
 import { OperationRecoveryPolicyForm } from "./OperationRecoveryPolicyForm";
+import { OperationSchedulePanel } from "./OperationSchedulePanel";
 import { useOperationsControl } from "@/shared/operations/operationsStore";
 import { deriveAutomaticSendingWarning, PermissionMatrix } from "./PermissionMatrix";
 import { DynamicPolicyForm, MessagePolicyForm } from "./PolicyForms";
@@ -243,6 +244,14 @@ export function AutomationSettingsPage() {
           <p className="hint">紧急停止会阻止各渠道自动收发，重启后仍有效。</p>
         </div>
       </section>
+
+      <OperationSchedulePanel
+        status={status}
+        controlPending={control.controlPending}
+        onCreateSchedule={(input) => control.createOperationSchedule(input)}
+        onUpdateSchedule={(id, patch) => control.updateOperationSchedule(id, patch)}
+        onDeleteSchedule={(id) => control.deleteOperationSchedule(id)}
+      />
 
       {/* Discovery Source */}
       <div className="win-group-box">

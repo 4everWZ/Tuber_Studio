@@ -29,6 +29,7 @@ from .kernel.control import canonical_intent
 from .kernel.feedback import FeedbackPublication
 from .kernel.models import BrowsingPolicy
 from .kernel.quotas import day_window
+from .kernel.schedules import OperationScheduleCreate, OperationScheduleUpdate
 
 
 def history_scope(browsing) -> tuple[str, str, int]:
@@ -263,6 +264,21 @@ class OperationsFacade:
         provider = self.service.visual_provider
         return {"available": provider is not None, "timestamp": time.time()}
 
+    def list_schedules(self, *, include_finished: bool = True) -> list[dict]:
+        return list_operation_schedules(self.service, include_finished=include_finished)
+
+    def active_schedule(self) -> dict | None:
+        return active_operation_schedule(self.service)
+
+    async def create_schedule(self, payload: dict | OperationScheduleCreate) -> dict:
+        return await create_operation_schedule(self.service, payload)
+
+    async def update_schedule(self, schedule_id: str, payload: dict | OperationScheduleUpdate) -> dict:
+        return await update_operation_schedule(self.service, schedule_id, payload)
+
+    async def delete_schedule(self, schedule_id: str) -> dict:
+        return await delete_operation_schedule(self.service, schedule_id)
+
 
 def operation_status_snapshot(browsing) -> dict:
     """Compact status helper used across operator chat & agent context layers."""
@@ -365,6 +381,33 @@ async def set_browsing_enabled(browsing, enabled: bool, *, guard=None):
 
 async def stop_browsing(browsing):
     return await _raw_browsing(browsing).stop()
+
+
+def active_operation_schedule(browsing) -> dict | None:
+    """Return the active timed or recurring operation schedule, if any."""
+    sched = getattr(_raw_browsing(browsing), "schedules", None)
+    return sched.active() if sched is not None else None
+
+
+def list_operation_schedules(browsing, *, include_finished: bool = True) -> list[dict]:
+    """Return operation schedules ordered active -> scheduled -> recent finished."""
+    sched = getattr(_raw_browsing(browsing), "schedules", None)
+    return sched.list(include_finished=include_finished) if sched is not None else []
+
+
+async def create_operation_schedule(browsing, payload: dict | OperationScheduleCreate) -> dict:
+    """Create and persist a timed or recurring operation schedule."""
+    return await _raw_browsing(browsing).schedules.create(payload)
+
+
+async def update_operation_schedule(browsing, schedule_id: str, payload: dict | OperationScheduleUpdate) -> dict:
+    """Pause, resume, cancel, or rename an operation schedule."""
+    return await _raw_browsing(browsing).schedules.update(schedule_id, payload)
+
+
+async def delete_operation_schedule(browsing, schedule_id: str) -> dict:
+    """Delete an operation schedule and stop runtime if it was the last active one."""
+    return await _raw_browsing(browsing).schedules.delete(schedule_id)
 
 
 def dynamic_sources(dynamics, *, bound_ids=(), query=None) -> list:
@@ -772,9 +815,12 @@ __all__ = [
     "CORRECTED_VIDEOS",
     "FeedbackPublication",
     "MessagePolicy",
+    "OperationScheduleCreate",
+    "OperationScheduleUpdate",
     "OperationsFacade",
     "VIDEO_ID",
     "acknowledge_issues",
+    "active_operation_schedule",
     "activity",
     "browsing_policy",
     "browsing_round",
@@ -796,9 +842,11 @@ __all__ = [
     "control_starting",
     "corrected_caption",
     "create_feedback_publication",
+    "create_operation_schedule",
     "create_operator_dynamic_draft",
     "day_window",
     "decode_target_json",
+    "delete_operation_schedule",
     "dm_draft_source",
     "dm_message_source",
     "dm_outgoing_payload",
@@ -823,6 +871,7 @@ __all__ = [
     "history_scope",
     "illustration_for_row",
     "issue_history",
+    "list_operation_schedules",
     "material_excerpt_state",
     "operation_status_snapshot",
     "propose_dynamic_edit",
@@ -842,5 +891,6 @@ __all__ = [
     "set_dynamics_policy",
     "stop_browsing",
     "update_full_video",
+    "update_operation_schedule",
     "video_clip_adapter",
 ]

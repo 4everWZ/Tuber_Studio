@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { apiGet, apiPost, apiPut } from "@/shared/api/client";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/shared/api/client";
 import { emitNotice, errorMessage } from "@/shared/lib/errors";
 import type {
   AutomationStatus,
@@ -8,6 +8,9 @@ import type {
   InboxPipelineStatus,
   InboxRecordsResponse,
   OperationClaim,
+  OperationScheduleCreateInput,
+  OperationScheduleItem,
+  OperationScheduleUpdateInput,
   QuotaSnapshot,
 } from "./types";
 
@@ -113,6 +116,7 @@ class OperationsStoreImpl {
           inbox_enabled?: boolean;
           discovery_enabled?: boolean;
           comment_cooldown_until?: number | null;
+          active_schedule?: OperationScheduleItem | null;
         }
       | null
       | undefined
@@ -124,6 +128,8 @@ class OperationsStoreImpl {
       return;
     }
     const prevPolicy = prev.policy || {};
+    const prevSchedId = prev.active_schedule?.id ?? null;
+    const nextSchedId = automation.active_schedule?.id ?? null;
     const changed =
       prev.state !== automation.state ||
       Boolean(prevPolicy.enabled) !== Boolean(automation.enabled) ||
@@ -131,12 +137,15 @@ class OperationsStoreImpl {
       (automation.epoch != null && prevPolicy.epoch !== automation.epoch) ||
       Boolean(prev.inbox?.enabled) !== Boolean(automation.inbox_enabled) ||
       Boolean(prev.discovery?.enabled) !== Boolean(automation.discovery_enabled) ||
-      (prev.comment_cooldown_until ?? null) !== (automation.comment_cooldown_until ?? null);
+      (prev.comment_cooldown_until ?? null) !== (automation.comment_cooldown_until ?? null) ||
+      prevSchedId !== nextSchedId;
     if (!changed) return;
     const next: AutomationStatus = {
       ...prev,
       state: automation.state ?? prev.state,
       comment_cooldown_until: automation.comment_cooldown_until ?? null,
+      active_schedule:
+        automation.active_schedule !== undefined ? automation.active_schedule : prev.active_schedule,
       policy: {
         ...prevPolicy,
         enabled: automation.enabled ?? prevPolicy.enabled,
@@ -400,6 +409,50 @@ class OperationsStoreImpl {
     return next;
   }
 
+  async createOperationSchedule(
+    input: OperationScheduleCreateInput
+  ): Promise<OperationScheduleItem | null> {
+    const res = await this.runControlCommand(async () => {
+      const response = await apiPost<
+        "/api/v1/operations/automation/schedules",
+        { schedule: OperationScheduleItem; status: AutomationStatus },
+        OperationScheduleCreateInput
+      >("/api/v1/operations/automation/schedules", { body: input });
+      return response.status;
+    }, input.kind === "duration" ? "定时自主运营已开启。" : "定时运营计划已保存。");
+    return res?.active_schedule ?? res?.schedules?.[0] ?? null;
+  }
+
+  async updateOperationSchedule(
+    scheduleId: string,
+    patch: OperationScheduleUpdateInput
+  ): Promise<AutomationStatus | null> {
+    return this.runControlCommand(async () => {
+      const response = await apiPatch<
+        "/api/v1/operations/automation/schedules/{schedule_id}",
+        { schedule: OperationScheduleItem; status: AutomationStatus },
+        OperationScheduleUpdateInput
+      >("/api/v1/operations/automation/schedules/{schedule_id}", {
+        pathParams: { schedule_id: scheduleId },
+        body: patch,
+      });
+      return response.status;
+    }, patch.action === "cancel" ? "已取消定时运营计划。" : "定时计划状态已更新。");
+  }
+
+  async deleteOperationSchedule(scheduleId: string): Promise<AutomationStatus | null> {
+    return this.runControlCommand(async () => {
+      const response = await apiDelete<
+        "/api/v1/operations/automation/schedules/{schedule_id}",
+        { deleted: string; status: AutomationStatus },
+        never
+      >("/api/v1/operations/automation/schedules/{schedule_id}", {
+        pathParams: { schedule_id: scheduleId },
+      });
+      return response.status;
+    }, "已删除定时运营计划。");
+  }
+
   reset(): void {
     this.state = { ...INITIAL_STATE };
     this.statusRequestSeq = 0;
@@ -442,6 +495,11 @@ const stableControlActions = {
     max_per_day?: number;
     recipient_cooldown_seconds?: number;
   }) => operationsStore.saveQuotaControls(patch),
+  createOperationSchedule: (input: OperationScheduleCreateInput) =>
+    operationsStore.createOperationSchedule(input),
+  updateOperationSchedule: (scheduleId: string, patch: OperationScheduleUpdateInput) =>
+    operationsStore.updateOperationSchedule(scheduleId, patch),
+  deleteOperationSchedule: (scheduleId: string) => operationsStore.deleteOperationSchedule(scheduleId),
 };
 
 export function useOperationsControl(): OperationsStoreState & typeof stableControlActions {

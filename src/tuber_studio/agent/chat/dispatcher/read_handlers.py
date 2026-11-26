@@ -8,7 +8,13 @@ from fastapi import HTTPException
 
 from ....core.identity import operating_account_facts, owner_address_label
 from ....core.store import dump
-from ....operations.facade import business_timezone, day_window, history_scope
+from ....operations.facade import (
+    active_operation_schedule,
+    business_timezone,
+    day_window,
+    history_scope,
+    list_operation_schedules,
+)
 from ...memory_organizer import recall as recall_memory
 from ...tasks.delivery import watch_answer
 from ..l2_bridge import recall_owner_history
@@ -484,10 +490,31 @@ async def dispatch_read_action(dispatcher, intent, char, request_id, data, event
         reply = f"自主运营当前{labels.get(state['state'], '状态暂不可查')}。"
         if channel_status:
             reply += f"渠道设置是{channel_status}。"
+        active_schedule = active_operation_schedule(ctx.browsing)
+        scheduled_items = [
+            item for item in list_operation_schedules(ctx.browsing, include_finished=False)
+            if item.get("status") == "scheduled"
+        ]
+        if active_schedule:
+            mins = max(1, (int(active_schedule.get("remaining_seconds") or 0) + 59) // 60)
+            reply += (
+                f"当前定时计划「{active_schedule['label']}」运行中，"
+                f"剩余约 {mins} 分钟（预计 {active_schedule['end_local_display']} 自动停止）。"
+            )
+        elif scheduled_items:
+            reply += f"另有 {len(scheduled_items)} 项待执行定时计划。"
         return {
             "reply_text": reply,
             "card": None,
-            "tool_receipt": {"action": "read", "group": "operations", "values": {"state": state["state"], **permissions}},
+            "tool_receipt": {
+                "action": "read",
+                "group": "operations",
+                "values": {
+                    "state": state["state"],
+                    **permissions,
+                    "active_schedule": active_schedule,
+                },
+            },
         }
     if kind == "web_lookup":
         try:

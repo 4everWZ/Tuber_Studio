@@ -1,6 +1,7 @@
 """Task control, delegation, video browsing and live/game action handlers."""
 
 import json
+import re
 from datetime import timedelta
 
 from fastapi import HTTPException
@@ -10,17 +11,21 @@ from ....live.facade import live_facade
 from ....operations.facade import (
     browsing_round,
     browsing_status,
+    business_timezone,
     configure_browsing,
     configure_messages,
     control_policy,
     control_starting,
+    create_operation_schedule,
     full_video_status,
+    list_operation_schedules,
     queue_full_video,
     run_preview_browse,
     set_browsing_enabled,
     set_dynamics_policy,
     stop_browsing,
     update_full_video,
+    update_operation_schedule,
 )
 from ...tasks.history import history_preference
 from ..lookup import operator_facts, workshop_lookup
@@ -569,6 +574,137 @@ async def dispatch_action_or_control(dispatcher, intent, char, request_id, data,
             "reply_text": "自主运营已经开启，状态已同步。",
             "binding": ctx.control_binding(char),
             "card": {"type": "operation_control", "data": browsing_status(ctx.browsing)},
+        }
+    if kind == "schedule_operations":
+        spec = intent.operation_schedule
+        if spec is None:
+            return {
+                "reply_text": "你想让我运营多长时间，或在哪段时间自动开启与停止？",
+                "card": None,
+                **clarification,
+            }
+        if spec.operation == "list":
+            items = list_operation_schedules(ctx.browsing, include_finished=False)
+            if not items:
+                return {
+                    "reply_text": "当前没有在运行或待执行的定时自主运营计划。",
+                    "binding": ctx.control_binding(char),
+                    "card": {"type": "operation_control", "data": browsing_status(ctx.browsing)},
+                    "tool_receipt": {"action": "read", "group": "operation_schedules", "values": {"count": 0}},
+                }
+            lines = []
+            for idx, item in enumerate(items, 1):
+                if item["status"] == "active":
+                    lines.append(
+                        f"{idx}. {item['label']}（进行中，将于 {item['end_local_display']} 自动停止）"
+                    )
+                elif item["kind"] == "daily_window":
+                    days = "、".join(item["weekday_labels"]) if item["weekday_labels"] else "每天"
+                    lines.append(f"{idx}. {item['label']}（{days} {item['start_time']}–{item['end_time']}）")
+                else:
+                    lines.append(
+                        f"{idx}. {item['label']}（{item['start_local_display']} 到 {item['end_local_display']}）"
+                    )
+            return {
+                "reply_text": "当前的定时自主运营计划：\n" + "\n".join(lines),
+                "binding": ctx.control_binding(char),
+                "card": {"type": "operation_control", "data": browsing_status(ctx.browsing)},
+                "tool_receipt": {"action": "read", "group": "operation_schedules", "values": {"items": items}},
+            }
+        if spec.operation == "cancel":
+            items = list_operation_schedules(ctx.browsing, include_finished=False)
+            if spec.schedule_id:
+                targets = [item for item in items if item["id"] == spec.schedule_id]
+                if not targets:
+                    return {"reply_text": "找不到对应的定时运营计划。", "card": None}
+            elif not items:
+                return {
+                    "reply_text": "当前没有进行中或待执行的定时自主运营计划。",
+                    "binding": ctx.control_binding(char),
+                    "card": {"type": "operation_control", "data": browsing_status(ctx.browsing)},
+                }
+            elif len(items) == 1 or re.search(r"全部|所有|都", data.message):
+                targets = items
+            else:
+                choices = "\n".join(f"{idx}. {item['label']}" for idx, item in enumerate(items, 1))
+                return {"reply_text": "有多个定时运营计划，你想取消哪一个？\n" + choices, "card": None, **clarification}
+            cancelled = []
+            for item in targets:
+                cancelled.append(
+                    await update_operation_schedule(ctx.browsing, item["id"], {"action": "cancel"})
+                )
+            return {
+                "reply_text": f"已取消 {len(cancelled)} 项定时自主运营计划。",
+                "binding": ctx.control_binding(char),
+                "card": {"type": "operation_control", "data": browsing_status(ctx.browsing)},
+                "tool_receipt": {
+                    "action": "update",
+                    "group": "operation_schedules",
+                    "values": {"cancelled_ids": [item["id"] for item in cancelled]},
+                },
+            }
+        tz = business_timezone(ctx.browsing)
+        local_now = operator_facts.now(ctx.browsing)
+        schedule_kind = spec.kind or (
+            "duration"
+            if spec.duration_minutes is not None
+            else ("daily_window" if spec.start_time and spec.end_time else None)
+        )
+        if schedule_kind is None:
+            return {
+                "reply_text": "请告诉我持续时长（例如 1 小时）或具体的起止时间段。",
+                "card": None,
+                **clarification,
+            }
+        payload: dict = {
+            "kind": schedule_kind,
+            "timezone": tz,
+            "scope_discovery": spec.scope_discovery,
+            "scope_inbox": spec.scope_inbox,
+        }
+        if spec.label:
+            payload["label"] = spec.label
+        if schedule_kind == "duration":
+            payload["duration_minutes"] = spec.duration_minutes
+            payload.setdefault("label", f"对话定时自主运营 {spec.duration_minutes} 分钟")
+        elif schedule_kind == "once_window":
+            if not spec.start_time or not spec.end_time:
+                return {"reply_text": "请说明单次时间段的开始与结束时间。", "card": None, **clarification}
+            target_date = spec.local_date or local_now.date()
+            if spec.local_date is None and spec.end_time <= local_now.strftime("%H:%M") and spec.start_time <= spec.end_time:
+                target_date = target_date + timedelta(days=1)
+            end_date = target_date + timedelta(days=1 if spec.end_time < spec.start_time else 0)
+            payload["start_local"] = f"{target_date.isoformat()} {spec.start_time}"
+            payload["end_local"] = f"{end_date.isoformat()} {spec.end_time}"
+        elif schedule_kind == "daily_window":
+            if not spec.start_time or not spec.end_time:
+                return {"reply_text": "请说明每日定时运营的开始与结束时间。", "card": None, **clarification}
+            payload["start_time"] = spec.start_time
+            payload["end_time"] = spec.end_time
+            payload["weekdays"] = spec.weekdays
+        try:
+            created = await create_operation_schedule(ctx.browsing, payload)
+        except ValueError as error:
+            return {
+                "reply_text": f"暂未能设置定时自主运营：{calm_constraint_message(error)}",
+                "binding": ctx.control_binding(char),
+                "card": {"type": "operation_control", "data": browsing_status(ctx.browsing)},
+            }
+        if created["status"] == "active":
+            reply = f"已开启自主运营（{created['label']}），预计将于 {created['end_local_display']} 自动停止。"
+        elif created["kind"] == "daily_window":
+            days = "、".join(created["weekday_labels"]) if created["weekday_labels"] else "每天"
+            reply = (
+                f"已设置{days} {created['start_time']}–{created['end_time']} 自动运营"
+                f"（下次于 {created['next_start_local_display']} 开启）。"
+            )
+        else:
+            reply = f"已预约在 {created['start_local_display']} 至 {created['end_local_display']} 自动开启自主运营。"
+        return {
+            "reply_text": reply,
+            "binding": ctx.control_binding(char),
+            "card": {"type": "operation_control", "data": browsing_status(ctx.browsing)},
+            "tool_receipt": {"action": "create", "group": "operation_schedules", "values": created},
         }
     if kind in _CONTROL_ACTIONS:
         message = "确认后开启直播会话。" if kind == "start_live" else "可以在这里查看或调整自主运营权限。"

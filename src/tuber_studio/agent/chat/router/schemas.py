@@ -61,6 +61,25 @@ _COMPACT_ARRANGEMENT_SCHEMA = {
     "additionalProperties": False,
 }
 
+_OPERATION_SCHEDULE_SCHEMA = {
+    "type": "object",
+    "description": "当 action=schedule_operations 时填写，用于设置按时长开启、单次时间段、每日固定时间段自主运营，或列出/取消已有定时计划。",
+    "properties": {
+        "operation": {"type": "string", "enum": ["create", "list", "cancel"]},
+        "kind": {"type": "string", "enum": ["duration", "once_window", "daily_window"]},
+        "duration_minutes": {"type": "integer", "minimum": 1, "maximum": 1440},
+        "local_date": {"type": "string", "maxLength": 10},
+        "start_time": {"type": "string", "pattern": r"^(?:[01]\d|2[0-3]):[0-5]\d$"},
+        "end_time": {"type": "string", "pattern": r"^(?:[01]\d|2[0-3]):[0-5]\d$"},
+        "weekdays": {"type": "array", "maxItems": 7, "items": {"type": "integer", "minimum": 0, "maximum": 6}},
+        "scope_discovery": {"type": "boolean"},
+        "scope_inbox": {"type": "boolean"},
+        "label": {"type": "string", "maxLength": 120},
+        "schedule_id": {"type": "string", "maxLength": 64},
+    },
+    "additionalProperties": False,
+}
+
 
 def _as_str_list(value) -> list[str]:
     """Normalize array or JSON-encoded array strings from tool arguments into stripped strings."""
@@ -291,13 +310,14 @@ def route_tools(runtime, *, cards=(), objects=(), candidates=(), read_only=False
             "part": {"type": "integer", "minimum": 1},
             "seconds": {"type": "number", "minimum": 0},
             "end_seconds": {"type": "number", "exclusiveMinimum": 0},
+            "operation_schedule": _OPERATION_SCHEDULE_SCHEMA,
         }
         if cards:
             direct_props["arrangement"] = _COMPACT_ARRANGEMENT_SCHEMA
         menu.append(
             tool(
                 "direct_action",
-                "单轮立即修改设置、长期记忆或执行控制（仅当明确要求开启自主运营 start_operations、改变设置、切换宠物表情、保存/更新/忘记记忆 save_memory|update_memory|delete_memory|forget_memory、排队看完整视频或抽帧、暂停/恢复任务或停止 stop 时使用；纯查询或假设禁止选此项）。",
+                "单轮立即修改设置、长期记忆或执行控制（仅当明确要求开启自主运营 start_operations、设置/查询/取消定时或时间段自主运营 schedule_operations、改变设置、切换宠物表情、保存/更新/忘记记忆 save_memory|update_memory|delete_memory|forget_memory、排队看完整视频或抽帧、暂停/恢复任务或停止 stop 时使用；纯查询或假设禁止选此项）。",
                 with_clarification(direct_props),
                 required=("action",),
             )

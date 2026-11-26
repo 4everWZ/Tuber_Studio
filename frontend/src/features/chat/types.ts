@@ -295,6 +295,12 @@ export interface AutomationControlStatus extends OperationCapabilityStatus {
   character?: { id?: string; version?: number | string } | null;
   settings?: Record<string, unknown> | null;
   base?: Record<string, Record<string, unknown>> | null;
+  active_schedule?: {
+    id?: string;
+    label?: string;
+    end_local_display?: string | null;
+    remaining_seconds?: number | null;
+  } | null;
 }
 
 export interface CallOrigin {

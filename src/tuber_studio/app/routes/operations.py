@@ -12,7 +12,11 @@ from pydantic import Field
 from ...core.models import StrictModel
 from ...operations.activity import acknowledge_issues, activity, clear_issues, history
 from ...operations.channels.mentions import bind_mentions
-from ...operations.facade import illustration_for_row
+from ...operations.facade import (
+    OperationScheduleCreate,
+    OperationScheduleUpdate,
+    illustration_for_row,
+)
 from .system import ERROR_RESPONSES
 
 DISCOVERY_SETTING_FIELDS = frozenset(
@@ -202,6 +206,47 @@ def register_browsing_routes(app, browsing, require_admin, *, messages=None) -> 
             raise ValueError("当前停运尚未收齐任务")
         browsing.operations.configure({"emergency": False})
         return browsing.status()
+
+    @app.get(prefix + "/automation/schedules", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
+    async def automation_schedules():
+        return {
+            "items": browsing.schedules.list(),
+            "active_schedule": browsing.schedules.active(),
+        }
+
+    @app.post(prefix + "/automation/schedules", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
+    async def automation_schedule_create(body: OperationScheduleCreate):
+        schedule = await browsing.schedules.create(body)
+        return {
+            "schedule": schedule,
+            "status": browsing.status(),
+        }
+
+    @app.patch(
+        prefix + "/automation/schedules/{schedule_id}",
+        dependencies=deps,
+        responses=ERROR_RESPONSES,
+        tags=["operations"],
+    )
+    async def automation_schedule_update(schedule_id: str, body: OperationScheduleUpdate):
+        schedule = await browsing.schedules.update(schedule_id, body)
+        return {
+            "schedule": schedule,
+            "status": browsing.status(),
+        }
+
+    @app.delete(
+        prefix + "/automation/schedules/{schedule_id}",
+        dependencies=deps,
+        responses=ERROR_RESPONSES,
+        tags=["operations"],
+    )
+    async def automation_schedule_delete(schedule_id: str):
+        deleted = await browsing.schedules.delete(schedule_id)
+        return {
+            "deleted": deleted["id"],
+            "status": browsing.status(),
+        }
 
     @app.get(prefix + "/discovery", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
     async def automation_discovery():

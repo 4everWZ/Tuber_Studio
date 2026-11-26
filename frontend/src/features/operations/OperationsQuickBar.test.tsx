@@ -70,6 +70,22 @@ describe("OperationsQuickBar & operationsStore", () => {
       state: "stopping",
       policy: { enabled: true, emergency: false },
       waiting_round: { round_id: "rnd-w", remaining: 4 },
+      active_schedule: {
+        id: "sch-qb",
+        kind: "duration",
+        label: "定时刷 1 小时",
+        status: "active",
+        enabled: true,
+        scope_discovery: true,
+        scope_inbox: true,
+        end_local_display: "2026-11-27 03:30",
+        remaining_seconds: 1800,
+        weekdays: [],
+        weekday_labels: [],
+        timezone: "Asia/Taipei",
+        created_at: 10,
+        updated_at: 10,
+      },
     });
 
     const { container } = render(
@@ -78,6 +94,9 @@ describe("OperationsQuickBar & operationsStore", () => {
 
     expect(container.querySelector("#op-home-state")?.textContent).toBe("正在停止自主运营");
     expect(container.querySelector("#op-toggle-auto")).toBeDisabled();
+    expect(container.querySelector("#op-active-schedule")?.textContent).toContain(
+      "定时计划「定时刷 1 小时」运行中"
+    );
     expect(container.querySelector("#op-active-rounds")?.textContent).toBe(
       "视频轮次已保存 · 待续跑 · 剩余 4 项"
     );

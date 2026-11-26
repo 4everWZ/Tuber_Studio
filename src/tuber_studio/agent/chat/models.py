@@ -6,6 +6,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass
+from datetime import date
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -70,7 +71,7 @@ _ROUTE_CHANGE_ACTIONS = (
     "daily_settings", "pet_settings", "remember_event", "forget_memory",
     "save_memory", "update_memory", "delete_memory",
     "live_preference", "live_handoff", "game_handoff", "dynamic", "edit_dynamic",
-    "browse", "full_video", "start_operations", "stop", "resume_video", "inspect_video_frame",
+    "browse", "full_video", "start_operations", "schedule_operations", "stop", "resume_video", "inspect_video_frame",
     "pause_task", "resume_task", "watch_goal", "start_live",
 )
 _ORDINAL_REFERENCE = re.compile(r"第\s*([一二三两123])\s*[件条个]")
@@ -156,7 +157,7 @@ _POLICY_FIELDS = {
     "messages": {"enabled", "auto_send", "auto_poll", "allow_comment_handoff"},
     "dynamics": {"enabled", "auto_publish"},
 }
-_CONTROL_ACTIONS = {"operation_control", "start_operations", "start_live"}
+_CONTROL_ACTIONS = {"operation_control", "start_operations", "schedule_operations", "start_live"}
 _ACTIVE_VIDEO_STATES = {"waiting", "queued", "running"}
 
 _NONCANCELLABLE_ACTIONS = {
@@ -164,7 +165,7 @@ _NONCANCELLABLE_ACTIONS = {
     "browse", "full_video", "inspect_video_frame", "stop", "resume_video", "game_handoff",
     "dynamic", "edit_dynamic", "remember_event", "forget_memory",
     "save_memory", "update_memory", "delete_memory", "live_preference", "live_handoff",
-    "daily_settings", "pet_settings",
+    "daily_settings", "pet_settings", "schedule_operations",
 }
 
 
@@ -231,6 +232,22 @@ class IdentityRead(StrictModel):
     fields: list[Literal["name", "uid", "homepage"]] = Field(min_length=1, max_length=3)
 
 
+class OperationScheduleSpec(StrictModel):
+    """Structured timed or time-window schedule intent for autonomous operations."""
+
+    operation: Literal["create", "list", "cancel"] = "create"
+    kind: Literal["duration", "once_window", "daily_window"] | None = None
+    duration_minutes: int | None = Field(default=None, ge=1, le=1440, strict=True)
+    local_date: date | None = None
+    start_time: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    end_time: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    weekdays: list[int] = Field(default_factory=list, max_length=7)
+    scope_discovery: bool = True
+    scope_inbox: bool = True
+    label: str = Field(default="", max_length=120)
+    schedule_id: str | None = Field(default=None, max_length=64)
+
+
 class ChatIntent(StrictModel):
     _task_patch: TaskPatch | None = PrivateAttr(default=None)
     _settings_read_only: bool = PrivateAttr(default=False)
@@ -249,7 +266,7 @@ class ChatIntent(StrictModel):
     action: Literal[
         "chat", "clarify", "identity_read", "clock", "activity", "event_details", "event_author", "event_reply",
         "video_activity", "dynamic", "edit_dynamic", "browse", "full_video", "public_experiences", "remember_event",
-        "operation_control", "start_operations", "live_status", "start_live", "stop", "resume_video", "video_details",
+        "operation_control", "start_operations", "schedule_operations", "live_status", "start_live", "stop", "resume_video", "video_details",
         "recall_experience", "inspect_video_frame", "live_handoff", "live_preference", "forget_memory",
         "save_memory", "update_memory", "delete_memory", "memory_summary",
         "game_status", "game_handoff", "live_history", "owner_profile", "owner_binding", "operating_account",
@@ -280,6 +297,7 @@ class ChatIntent(StrictModel):
     ] | None = None
     settings_group: str | None = Field(default=None, max_length=40, exclude_if=lambda value: value is None)
     arrangement: Arrangement | None = Field(default=None, exclude_if=lambda value: value is None)
+    operation_schedule: OperationScheduleSpec | None = Field(default=None, exclude_if=lambda value: value is None)
     brief: DelegationBrief | None = Field(default=None, exclude_if=lambda value: value is None)
     identities: list[IdentityRead] = Field(default_factory=list, max_length=2, exclude_if=lambda value: not value)
 
@@ -409,6 +427,7 @@ class TurnRoute(StrictModel):
     settings_group: str | None = Field(default=None, max_length=40)
     publication_channel: Literal["dynamics", "comments", "messages"] | None = None
     arrangement: Arrangement | None = None
+    operation_schedule: OperationScheduleSpec | None = None
     brief: DelegationBrief | None = None
     identities: list[IdentityRead] = Field(default_factory=list, max_length=2)
     task_id: str | None = None

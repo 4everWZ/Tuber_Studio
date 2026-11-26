@@ -30,6 +30,7 @@ from .kernel.context import read_round
 from .kernel.evidence import BrowsingEvidence, EvidenceUnavailable
 from .kernel.models import browsing_filter_reason
 from .kernel.read_gate import PlatformReadGate
+from .kernel.schedules import OperationSchedules
 from .kernel.sends import OperationSends
 from .kernel.telemetry import install_flow_ledger
 
@@ -91,6 +92,7 @@ class OperationsService:
         )
         self.discovery_runner = DiscoveryRunner(self)
         self.inbox_runner = InboxRunner(self)
+        self.schedules = OperationSchedules(self)
         self.control_generation = 0
         self.drain_task = None
         self.abort_task = None

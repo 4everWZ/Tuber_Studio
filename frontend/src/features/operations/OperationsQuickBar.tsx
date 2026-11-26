@@ -1,5 +1,6 @@
 import { CapabilityStrip } from "@/shared";
 import { safeMessage } from "@/shared/lib/errors";
+import { formatRemainingMinutes } from "./OperationSchedulePanel";
 import styles from "./operations.module.css";
 import type { AutomationBacklog, AutomationStatus } from "./types";
 
@@ -97,6 +98,11 @@ export function OperationsQuickBar({
 
   const backlog = status?.backlog;
   const backlogText = backlog ? formatBacklogSummary(backlog, status?.send_error) : null;
+  const activeSchedule = status?.active_schedule;
+  const nextScheduled =
+    !activeSchedule && Array.isArray(status?.schedules)
+      ? status.schedules.find((item) => item.status === "scheduled")
+      : undefined;
 
   return (
     <section id="operation-overview" className={styles.operationOverview}>
@@ -119,6 +125,19 @@ export function OperationsQuickBar({
       </div>
 
       <CapabilityStrip status={status} showLegend showBlocker />
+
+      {activeSchedule ? (
+        <p id="op-active-schedule" className="hint" role="status">
+          定时计划「{activeSchedule.label}」运行中 · 剩余{" "}
+          {formatRemainingMinutes(activeSchedule.remaining_seconds)}（预计{" "}
+          {activeSchedule.end_local_display || "到期"} 自动停止）
+        </p>
+      ) : nextScheduled ? (
+        <p id="op-active-schedule" className="hint" role="status">
+          下一次定时计划：{nextScheduled.label}（
+          {nextScheduled.next_start_local_display || nextScheduled.start_local_display || "即将开始"}）
+        </p>
+      ) : null}
 
       <p id="op-active-rounds" className="hint" role="status">
         {roundSummary}

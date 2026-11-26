@@ -273,6 +273,12 @@ export function OperationControlCard({
         <h2>自主运营</h2>
         <StatusPill label={stateText} tone={pillTone} />
       </div>
+      {status.active_schedule && (
+        <p className="hint">
+          定时计划：{status.active_schedule.label || "限时运行中"} · 预计{" "}
+          {status.active_schedule.end_local_display || "到期"} 自动停止
+        </p>
+      )}
       {blockerText && <p className="hint">{blockerText}</p>}
       <details>
         <summary>查看与修改运营权限</summary>

@@ -45,7 +45,15 @@ def _disambiguate_route(route: TurnRoute, message: str, candidates: list[dict]) 
     """Block guessing or bulk-selecting when a singular deictic spans >= 2 same-kind candidates."""
     if route.route not in {"instant_read", "direct_action", "prepare_publication"}:
         return route
-    if route.action in {"clock", "operating_account", "operation_status", "workbench_capabilities", "activity", "meme_gallery_status"}:
+    if route.action in {
+        "clock",
+        "operating_account",
+        "operation_status",
+        "schedule_operations",
+        "workbench_capabilities",
+        "activity",
+        "meme_gallery_status",
+    }:
         return route
     if not candidates or route.position is not None or _ORDINAL_REFERENCE.search(message):
         return route

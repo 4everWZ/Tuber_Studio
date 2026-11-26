@@ -2,13 +2,14 @@
 
 
 import re
+from datetime import date, timedelta
 
 from fastapi import HTTPException
 
 from ...memory_organizer import recall as recall_memory
 from ..assistant_output import calendar_fields
 from ..context import ChatContext
-from ..lookup import outgoing_queue, workbench_tools, workshop_lookup
+from ..lookup import operator_facts, outgoing_queue, workbench_tools, workshop_lookup
 from ..lookup.operator_task_patch import TaskPatch, grounded_patch, patch_vocabulary, review_change
 from ..lookup.personal_agent import Arrangement
 from ..lookup.workshop_lookup import WorkshopLookup
@@ -25,6 +26,7 @@ from ..models import (
     ChatIntent,
     DelegationBrief,
     IdentityRead,
+    OperationScheduleSpec,
     TurnRoute,
     memory_query,
 )
@@ -38,6 +40,133 @@ def _parse_arrangement(raw) -> Arrangement | None:
     if isinstance(raw, dict) and isinstance(raw.get("states"), str):
         raw = {**raw, "states": _as_str_list(raw["states"])}
     return Arrangement.model_validate(raw)
+
+
+_CN_NUM = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+_WEEKDAY_CN = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
+
+
+def _parse_cn_number(token: str) -> float | None:
+    if not token:
+        return None
+    if token == "半":
+        return 0.5
+    if re.fullmatch(r"\d+(?:\.\d+)?", token):
+        return float(token)
+    if token in _CN_NUM:
+        return float(_CN_NUM[token])
+    if token.startswith("十") and len(token) == 2 and token[1] in _CN_NUM:
+        return float(10 + _CN_NUM[token[1]])
+    return None
+
+
+def _parse_hhmm_parts(hour_str: str, minute_str: str | None, *, pm_hint: bool) -> str | None:
+    hour_val = _parse_cn_number(hour_str)
+    if hour_val is None or hour_val != int(hour_val):
+        return None
+    hour = int(hour_val)
+    minute = 30 if minute_str == "半" else int(minute_str or 0)
+    if pm_hint and 1 <= hour <= 11:
+        hour += 12
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _infer_operation_schedule_from_text(message: str, now) -> OperationScheduleSpec | None:
+    text = message.strip()
+    scope_discovery = not bool(re.search(r"只(?:回|做).{0,6}(?:私信|消息|通知)|不刷视频", text))
+    scope_inbox = not bool(re.search(r"只(?:刷|看)视频|不(?:开|回).{0,6}(?:私信|消息)", text))
+    if not scope_discovery and not scope_inbox:
+        scope_discovery = scope_inbox = True
+
+    if re.search(r"(?:取消|关掉|关闭|停掉|撤掉|删除).{0,10}(?:定时|时间段|每日|每天).{0,10}(?:运营|刷视频|排班|计划)", text):
+        return OperationScheduleSpec(operation="cancel")
+    if re.search(r"(?:查[看询]?|看看|列出|有哪些).{0,10}(?:定时|时间段|每日).{0,10}(?:运营|刷视频|排班|计划)", text):
+        return OperationScheduleSpec(operation="list")
+
+    win = re.search(
+        r"(?:(今天|今日|今晚|明天|明日|明晚|后天|每天|每日|天天|每周[一二三四五六日天]+)\s*)?"
+        r"(?:(上午|早上|凌晨|中午|下午|晚上|今晚|明晚)\s*)?"
+        r"(\d{1,2}|[一二两三四五六七八九十]+)\s*(?:[:：]|([点时])\s*(半|[0-5]?\d)?)?"
+        r"(?:(\d{2}))?\s*(?:到|至|\-|—|~|～)\s*"
+        r"(?:(上午|早上|凌晨|中午|下午|晚上)\s*)?"
+        r"(\d{1,2}|[一二两三四五六七八九十]+)\s*(?:[:：]|([点时])\s*(半|[0-5]?\d)?)?"
+        r"(?:(\d{2}))?",
+        text,
+    )
+    if win and (
+        any(sep in win.group(0) for sep in (":", "："))
+        or (win.group(4) and win.group(9))
+    ):
+        g_day, g_s_ampm, g_sh, g_s_unit, g_sm_word, g_sm_colon, g_e_ampm, g_eh, g_e_unit, g_em_word, g_em_colon = win.groups()
+        s_pm = bool((g_s_ampm or g_day or "") in {"下午", "晚上", "今晚", "明晚"})
+        e_pm = bool((g_e_ampm or g_s_ampm or g_day or "") in {"下午", "晚上", "今晚", "明晚"})
+        sm = g_sm_colon if (g_sm_colon is not None and not g_s_unit) else g_sm_word
+        em = g_em_colon if (g_em_colon is not None and not g_e_unit) else g_em_word
+        start_time = _parse_hhmm_parts(g_sh, sm, pm_hint=s_pm)
+        end_time = _parse_hhmm_parts(g_eh, em, pm_hint=e_pm)
+        if start_time and end_time and start_time != end_time:
+            is_daily = bool(
+                (g_day and (g_day.startswith(("每", "天"))))
+                or re.search(r"每[天日]|天天|每周", text)
+            )
+            weekdays = sorted({_WEEKDAY_CN[ch] for ch in re.findall(r"(?:每周|周)([一二三四五六日天])", text)})
+            local_date: date | None = None
+            if m_date := re.search(r"\b(\d{4}-\d{2}-\d{2})\b", text):
+                try:
+                    local_date = date.fromisoformat(m_date.group(1))
+                except ValueError:
+                    local_date = None
+            elif not is_daily:
+                if re.search(r"明天|明日|明晚", text):
+                    local_date = now.date() + timedelta(days=1)
+                elif "后天" in text:
+                    local_date = now.date() + timedelta(days=2)
+            return OperationScheduleSpec(
+                operation="create",
+                kind="daily_window" if is_daily else "once_window",
+                local_date=local_date,
+                start_time=start_time,
+                end_time=end_time,
+                weekdays=weekdays,
+                scope_discovery=scope_discovery,
+                scope_inbox=scope_inbox,
+            )
+
+    minutes: int | None = None
+    if half := re.search(r"(\d+|[一二两三四五六七八九十]+)\s*个半\s*小时", text):
+        whole = _parse_cn_number(half.group(1))
+        if whole is not None:
+            minutes = int(round((whole + 0.5) * 60))
+    elif hrs := re.search(r"(\d+(?:\.\d+)?|半|[一二两三四五六七八九十]+)\s*个?小时", text):
+        val = _parse_cn_number(hrs.group(1))
+        if val is not None:
+            minutes = int(round(val * 60))
+    elif mins := re.search(r"(\d+|[一二两三四五六七八九十]+)\s*分钟", text):
+        val = _parse_cn_number(mins.group(1))
+        if val is not None:
+            minutes = int(round(val))
+
+    if minutes is not None and 1 <= minutes <= 1440:
+        return OperationScheduleSpec(
+            operation="create",
+            kind="duration",
+            duration_minutes=minutes,
+            scope_discovery=scope_discovery,
+            scope_inbox=scope_inbox,
+        )
+    return None
+
+
+def _parse_operation_schedule(raw) -> OperationScheduleSpec | None:
+    if not raw:
+        return None
+    if isinstance(raw, OperationScheduleSpec):
+        return raw
+    if isinstance(raw, dict) and isinstance(raw.get("weekdays"), str):
+        raw = {**raw, "weekdays": [int(x) for x in _as_str_list(raw["weekdays"]) if x.isdigit()]}
+    return OperationScheduleSpec.model_validate(raw)
 
 
 def _route_from_tool_call(call_name: str, args: dict) -> TurnRoute:
@@ -102,6 +231,7 @@ def _route_from_tool_call(call_name: str, args: dict) -> TurnRoute:
         )
     if call_name == "direct_action":
         arrangement = _parse_arrangement(args.get("arrangement"))
+        operation_schedule = _parse_operation_schedule(args.get("operation_schedule"))
         return TurnRoute(
             route="direct_action",
             action=args["action"],
@@ -118,6 +248,7 @@ def _route_from_tool_call(call_name: str, args: dict) -> TurnRoute:
             seconds=args.get("seconds"),
             end_seconds=args.get("end_seconds"),
             arrangement=arrangement,
+            operation_schedule=operation_schedule,
             clarification_id=args.get("clarification_id") or None,
         )
     if call_name == "delegate_task":
@@ -451,9 +582,25 @@ async def route_to_chat_intent(context: ChatContext, route: TurnRoute, data, cha
         settings_group=route.settings_group,
         publication_channel=route.publication_channel,
         arrangement=route.arrangement,
+        operation_schedule=route.operation_schedule,
         brief=route.brief,
         identities=route.identities,
     )
+    if decision.action in {"start_operations", "schedule_operations"}:
+        inferred_schedule = _infer_operation_schedule_from_text(
+            data.message, operator_facts.now(context.browsing)
+        )
+        if inferred_schedule is not None:
+            if decision.action == "start_operations":
+                decision.action = "schedule_operations"
+            if decision.operation_schedule is None:
+                decision.operation_schedule = inferred_schedule
+            else:
+                merged = decision.operation_schedule.model_dump()
+                for key, val in inferred_schedule.model_dump().items():
+                    if merged.get(key) in (None, "", []):
+                        merged[key] = val
+                decision.operation_schedule = OperationScheduleSpec.model_validate(merged)
     decision._subject = subject
     decision._continue_research = route.continue_research
     if subject and subject.kind in {"task", "artifact", "video", "event"} and not decision.reference:

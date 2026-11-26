@@ -252,6 +252,8 @@ def status(svc):
         "cache": svc.runtime.cache.usage("browsing"),
         "review_session": review,
         "claims": svc.operations.claims.list_claims(),
+        "active_schedule": svc.schedules.active(),
+        "schedules": svc.schedules.list(),
     }
 
 
@@ -644,10 +646,13 @@ def finish_stop(svc, *, emergency=False, stop_sends=True):
     svc.operations.draining = False
     svc.operations.starting = False
     policy_row = svc.operations.policy()
-    if policy_row["enabled"]:
+    was_enabled = bool(policy_row["enabled"])
+    if was_enabled:
         svc.store.set("operation_send_resume_epoch", policy_row["epoch"])
         svc.store.set("operation_send_resume_permissions", svc.send_permissions())
     svc.operations.configure({"enabled": False, **({"emergency": True} if emergency else {})})
+    if (was_enabled or emergency) and not svc.closed:
+        svc.schedules.on_manual_stop(emergency=emergency)
     svc.notifications.pause(svc.account)
     review = svc.store.get("browsing_review_session") or {}
     if review.get("state") in {"starting", "running", "draining"}:
@@ -713,6 +718,7 @@ async def open_service(svc):
     svc.poller = svc.inbox_runner._poller_task
     svc.interaction_worker = svc.inbox_runner._interaction_task
     svc.sends.start()
+    svc.schedules.start()
 
 
 async def close_service(svc):
@@ -720,6 +726,7 @@ async def close_service(svc):
     svc.closed = True
     if svc.drain_task is not None:
         svc.drain_task.cancel()
+    await svc.schedules.close()
     await svc.discovery_runner.stop()
     await svc.inbox_runner.stop()
     await svc.sends.close()

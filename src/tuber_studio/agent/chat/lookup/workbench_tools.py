@@ -125,7 +125,7 @@ def capabilities(runtime):
         if group != "pets":
             labels = "、".join(field["title"] for field in entry["fields"].values())
             lines.append(f"- {entry['label']}：{labels}。")
-    lines.append("我也能查运营活动、视频进度、直播与游戏状态及回执。")
+    lines.append("我也能查运营活动、视频进度、直播与游戏状态及回执；还能按时长或时间段开启、查看和取消定时自主运营。")
     background = [runtime.tasks.tools[name] for name in
                   ("operation_status", "today_activity", "web_search", "web_page", "inspect_video", "delegate_text",
                    "live_status", "live_handoff", "game_status", "game_action") if name in runtime.tasks.tools]

@@ -198,6 +198,56 @@ export interface AutomationPolicySettings {
   [key: string]: unknown;
 }
 
+export interface OperationScheduleItem {
+  id: string;
+  kind: "duration" | "once_window" | "daily_window";
+  label: string;
+  status: "scheduled" | "active" | "completed" | "cancelled" | "paused" | string;
+  enabled: boolean;
+  scope_discovery: boolean;
+  scope_inbox: boolean;
+  start_at?: number | null;
+  end_at?: number | null;
+  start_local_display?: string | null;
+  end_local_display?: string | null;
+  next_start_at?: number | null;
+  next_end_at?: number | null;
+  next_start_local_display?: string | null;
+  next_end_local_display?: string | null;
+  duration_minutes?: number | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  weekdays: number[];
+  weekday_labels: string[];
+  timezone: string;
+  remaining_seconds?: number | null;
+  last_error?: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface OperationScheduleCreateInput {
+  kind: "duration" | "once_window" | "daily_window";
+  label?: string;
+  duration_minutes?: number | null;
+  start_at?: number | null;
+  end_at?: number | null;
+  start_local?: string | null;
+  end_local?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  weekdays?: number[];
+  timezone?: string | null;
+  scope_discovery?: boolean;
+  scope_inbox?: boolean;
+}
+
+export interface OperationScheduleUpdateInput {
+  enabled?: boolean | null;
+  action?: "cancel" | null;
+  label?: string | null;
+}
+
 export interface AutomationStatus extends OperationCapabilityStatus {
   status_sequence?: number;
   started_at?: number;
@@ -255,6 +305,8 @@ export interface AutomationStatus extends OperationCapabilityStatus {
   backlog?: AutomationBacklog | null;
   daily_watch?: DailyWatchStatus | null;
   claims?: OperationClaim[];
+  active_schedule?: OperationScheduleItem | null;
+  schedules?: OperationScheduleItem[];
 }
 
 export interface QuotaSnapshot {

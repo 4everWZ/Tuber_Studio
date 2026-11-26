@@ -52,6 +52,7 @@ _TOOL_LABEL_MAP = {
     "identity_read": "核对账号信息",
     "operation_status": "查看自主运营状态",
     "start_operations": "开启自主运营",
+    "schedule_operations": "设置定时自主运营",
     "operation_control": "管理自主运营权限",
     "live_status": "查看直播状态",
     "start_live": "准备直播会话",

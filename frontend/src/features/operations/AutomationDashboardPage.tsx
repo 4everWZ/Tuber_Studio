@@ -5,6 +5,7 @@ import { webCharacterName } from "@/shared/lib/errors";
 import type { ParsedRoute } from "@/shell/navigation";
 import { DiscoveryProgressDetails } from "./DiscoveryPanel";
 import { IssuesPanel } from "./IssuesPage";
+import { OperationSchedulePanel } from "./OperationSchedulePanel";
 import { OperationsActivityFeed } from "./OperationsActivityFeed";
 import { OperationsQuickBar, automationHomeStateLabel } from "./OperationsQuickBar";
 import { useOperationsControl } from "@/shared/operations/operationsStore";
@@ -187,6 +188,14 @@ export function AutomationDashboardPage({ route }: { route: ParsedRoute }) {
         status={syncedStatus}
         controlPending={control.controlPending}
         onToggleMaster={() => void control.toggleMasterAutomation()}
+      />
+
+      <OperationSchedulePanel
+        status={syncedStatus}
+        controlPending={control.controlPending}
+        onCreateSchedule={(input) => control.createOperationSchedule(input)}
+        onUpdateSchedule={(id, patch) => control.updateOperationSchedule(id, patch)}
+        onDeleteSchedule={(id) => control.deleteOperationSchedule(id)}
       />
 
       <Stage2PipelineCards

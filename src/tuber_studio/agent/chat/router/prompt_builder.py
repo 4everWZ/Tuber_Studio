@@ -15,7 +15,7 @@ def _build_router_messages(char, data, packet, *, allow_identity_read=True):
         f"可调设置字段键：{dump(setting_keys)}\n"
         "核心边界（严格按优先级判断）：\n"
         "1. 闲聊、问候、玩笑、设想（假如/要是/如果）、否定/阻止操作（先别/别动/先别接新活），或只问当前几点/几号/星期几 -> chat（仅问当前时间/日期/星期时填 clock_fields）；但若明确要求记住/修改/忘掉长期偏好或事实时选 direct_action（save_memory/update_memory/delete_memory）。\n"
-        "2. 凡是要求留下便笺/笔记/交接记录/总结/报告、「等我回来再看」、交给后台处理、同步图库/抓取二创图、制片或定时预约 -> 必须选 delegate_task（即使同时提到核实演播间/直播/运营状态，也不能选 instant_read），并按工作类型填 profile："
+        "2. 凡是要求留下便笺/笔记/交接记录/总结/报告、「等我回来再看」、交给后台处理、同步图库/抓取二创图、制片或预约普通后台跟进 -> 必须选 delegate_task（即使同时提到核实演播间/直播/运营状态，也不能选 instant_read），并按工作类型填 profile："
         "同步图库订阅源/抓取二创图/批量视觉筛选选 profile=meme_harvest；多段叙事/代码架构/微调对比/最近视频盘点/项目拆解/制片渲染或投稿（如 LoRA 微调展示、长篇科普）选 profile=video_production；视频分P抽帧核查选 profile=media_inspection；一般公开检索与状态调研选 profile=general_research。\n"
         "3. 对已有 task_id 改口、换重点、补充要求或取消 -> steer_task，且 change_quote 必须逐字复制对方原话里的新要求子句；与已有任务无关的日常闲聊必须选 chat。\n"
         "4. 轻量单点动态、情绪分享、短预告或评论回复/私信送审 -> 必须选 prepare_publication（操作待发队列，不受前文视频/观看记录影响；多幕可视化专题成片再走 delegate_task(profile=video_production)）。\n"
@@ -29,7 +29,7 @@ def _build_router_messages(char, data, packet, *, allow_identity_read=True):
             if allow_identity_read
             else "。"
         )
-        + "\n6. 仅明确要立即开启自主运营（start_operations）、修改设置、保存/更新/忘记记忆（save_memory/update_memory/delete_memory）、换宠物表情（pet_settings）、排完整看视频或停止（stop）时才选 direct_action。\n"
+        + "\n6. 仅明确要立即开启自主运营（start_operations）、按时长或时间段定时开启/安排/查看/取消自主运营（schedule_operations，例如“刷一个小时视频”“今晚20:00到22:00自主运营”“每天8点到10点刷视频”“取消定时运营”）、修改设置、保存/更新/忘记记忆（save_memory/update_memory/delete_memory）、换宠物表情（pet_settings）、排完整看视频或停止（stop）时才选 direct_action。\n"
         "7. 当 candidates 中存在多个同类型对象（如多条视频）且只说“那条/那个”未给出序号/标题/BV 时 -> clarify；若候选分别对应评论与回复且对方明确说“那条评论”，直接按对应 object_ref 调 recall_memory。\n"
         "8. 只针对最后一条 user JSON 中的 message 字段决策；历史对话与 clarification 仅为可选背景。若对方换了新话题（如问当前时间/日期/星期、闲聊、或问别的事），必须完全忽略 clarification，严禁填 clarification_id，也严禁重复上轮澄清问题；仅当 message 明确在回答 clarification.question 时才填 clarification_id。"
     )

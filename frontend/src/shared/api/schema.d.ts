@@ -1604,6 +1604,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/automation/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Automation Schedules */
+        get: operations["automation_schedules_api_v1_operations_automation_schedules_get"];
+        put?: never;
+        /** Automation Schedule Create */
+        post: operations["automation_schedule_create_api_v1_operations_automation_schedules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/automation/schedules/{schedule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Automation Schedule Delete */
+        delete: operations["automation_schedule_delete_api_v1_operations_automation_schedules__schedule_id__delete"];
+        options?: never;
+        head?: never;
+        /** Automation Schedule Update */
+        patch: operations["automation_schedule_update_api_v1_operations_automation_schedules__schedule_id__patch"];
+        trace?: never;
+    };
     "/api/v1/operations/automation/settings": {
         parameters: {
             query?: never;
@@ -4236,7 +4272,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "chat" | "clarify" | "identity_read" | "clock" | "activity" | "event_details" | "event_author" | "event_reply" | "video_activity" | "dynamic" | "edit_dynamic" | "browse" | "full_video" | "public_experiences" | "remember_event" | "operation_control" | "start_operations" | "live_status" | "start_live" | "stop" | "resume_video" | "video_details" | "recall_experience" | "inspect_video_frame" | "live_handoff" | "live_preference" | "forget_memory" | "save_memory" | "update_memory" | "delete_memory" | "memory_summary" | "game_status" | "game_handoff" | "live_history" | "owner_profile" | "owner_binding" | "operating_account" | "operation_status" | "web_lookup" | "task_status" | "agent_task" | "steer_task" | "cancel_task" | "pause_task" | "resume_task" | "watch_goal" | "workbench_capabilities" | "pet_settings" | "daily_settings" | "meme_gallery_status" | "outgoing_queue" | "prepare_publication" | "workshop_lookup" | "recall_memory";
+            action: "chat" | "clarify" | "identity_read" | "clock" | "activity" | "event_details" | "event_author" | "event_reply" | "video_activity" | "dynamic" | "edit_dynamic" | "browse" | "full_video" | "public_experiences" | "remember_event" | "operation_control" | "start_operations" | "schedule_operations" | "live_status" | "start_live" | "stop" | "resume_video" | "video_details" | "recall_experience" | "inspect_video_frame" | "live_handoff" | "live_preference" | "forget_memory" | "save_memory" | "update_memory" | "delete_memory" | "memory_summary" | "game_status" | "game_handoff" | "live_history" | "owner_profile" | "owner_binding" | "operating_account" | "operation_status" | "web_lookup" | "task_status" | "agent_task" | "steer_task" | "cancel_task" | "pause_task" | "resume_task" | "watch_goal" | "workbench_capabilities" | "pet_settings" | "daily_settings" | "meme_gallery_status" | "outgoing_queue" | "prepare_publication" | "workshop_lookup" | "recall_memory";
             arrangement?: components["schemas"]["Arrangement"] | null;
             brief?: components["schemas"]["DelegationBrief"] | null;
             /** Clarification Id */
@@ -4253,6 +4289,7 @@ export interface components {
             memory_content?: string | null;
             /** Memory Tags */
             memory_tags?: string[];
+            operation_schedule?: components["schemas"]["OperationScheduleSpec"] | null;
             /** Part */
             part?: number | null;
             /** Position */
@@ -4964,6 +5001,103 @@ export interface components {
             task_id: string;
             /** Task Revision */
             task_revision: number;
+        };
+        /**
+         * OperationScheduleCreate
+         * @description Validated payload for creating a timed or recurring autonomous operation schedule.
+         */
+        OperationScheduleCreate: {
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+            /** End At */
+            end_at?: number | null;
+            /** End Local */
+            end_local?: string | null;
+            /** End Time */
+            end_time?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "duration" | "once_window" | "daily_window";
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Scope Discovery
+             * @default true
+             */
+            scope_discovery: boolean;
+            /**
+             * Scope Inbox
+             * @default true
+             */
+            scope_inbox: boolean;
+            /** Start At */
+            start_at?: number | null;
+            /** Start Local */
+            start_local?: string | null;
+            /** Start Time */
+            start_time?: string | null;
+            /** Timezone */
+            timezone?: string | null;
+            /** Weekdays */
+            weekdays?: number[];
+        };
+        /**
+         * OperationScheduleSpec
+         * @description Structured timed or time-window schedule intent for autonomous operations.
+         */
+        OperationScheduleSpec: {
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+            /** End Time */
+            end_time?: string | null;
+            /** Kind */
+            kind?: ("duration" | "once_window" | "daily_window") | null;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Local Date */
+            local_date?: string | null;
+            /**
+             * Operation
+             * @default create
+             * @enum {string}
+             */
+            operation: "create" | "list" | "cancel";
+            /** Schedule Id */
+            schedule_id?: string | null;
+            /**
+             * Scope Discovery
+             * @default true
+             */
+            scope_discovery: boolean;
+            /**
+             * Scope Inbox
+             * @default true
+             */
+            scope_inbox: boolean;
+            /** Start Time */
+            start_time?: string | null;
+            /** Weekdays */
+            weekdays?: number[];
+        };
+        /**
+         * OperationScheduleUpdate
+         * @description Validated payload for updating/enabling/cancelling an operation schedule.
+         */
+        OperationScheduleUpdate: {
+            /** Action */
+            action?: "cancel" | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Label */
+            label?: string | null;
         };
         /** OrganizedMemoryChange */
         OrganizedMemoryChange: {
@@ -16092,6 +16226,386 @@ export interface operations {
                 "application/json": {
                     [key: string]: unknown;
                 };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    automation_schedules_api_v1_operations_automation_schedules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    automation_schedule_create_api_v1_operations_automation_schedules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationScheduleCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    automation_schedule_delete_api_v1_operations_automation_schedules__schedule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    automation_schedule_update_api_v1_operations_automation_schedules__schedule_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationScheduleUpdate"];
             };
         };
         responses: {
