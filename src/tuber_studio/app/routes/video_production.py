@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from pydantic import Field
 
 from ...agent.skills.remotion_video import (
+    DurationPreset,
     GenerateRemotionProjectArgs,
     PlanVideoScriptArgs,
     RenderRemotionVideoArgs,
@@ -23,7 +24,7 @@ from .system import ERROR_RESPONSES
 
 __all__ = ["register_video_production_routes"]
 
-MediaKind = Literal["video", "audio", "subtitles", "subtitles_vtt", "cover", "props", "manifest", "code"]
+MediaKind = Literal["video", "audio", "subtitles", "subtitles_vtt", "cover", "contact_sheet", "props", "manifest", "code"]
 
 
 class VideoPlanPatch(StrictModel):
@@ -34,6 +35,7 @@ class VideoPlanPatch(StrictModel):
     tags: list[str] | None = Field(default=None, min_length=1, max_length=10)
     category_tid: int | None = Field(default=None, ge=1, le=9999)
     video_mode: VideoMode | None = None
+    duration_preset: DurationPreset | None = None
     fps: Literal[30, 60] | None = None
     width: Literal[1920, 1280] | None = None
     height: Literal[1080, 720] | None = None
@@ -46,11 +48,26 @@ class VideoPlanPatch(StrictModel):
 
 
 class VideoUploadBody(StrictModel):
-    """HTTP payload for uploading up to 3 public images/screenshots for a video job."""
+    """HTTP payload for uploading up to 12 public images/screenshots or MP4/WebM clips for a video job."""
 
     filename: str = Field(min_length=1, max_length=80)
-    image_base64: str = Field(min_length=1, max_length=12_000_000)
-    mime_type: Literal["image/png", "image/jpeg", "image/webp"]
+    image_base64: str = Field(min_length=1, max_length=45_000_000)
+    mime_type: Literal["image/png", "image/jpeg", "image/webp", "video/mp4", "video/webm"]
+
+
+class VideoPitchIdeasBody(StrictModel):
+    """HTTP payload for pitching video vs dynamic content ideas."""
+
+    brief_hint: str = Field(default="", max_length=2000)
+    max_ideas: int = Field(default=5, ge=1, le=10)
+
+
+class VideoCaptureUiBody(StrictModel):
+    """HTTP payload for capturing local Tuber Studio workbench screenshots into a video job."""
+
+    base_url: str = Field(default="http://127.0.0.1:9020", max_length=200)
+    routes: list[str] | None = Field(default=None, max_length=12)
+    max_captures: int = Field(default=6, ge=1, le=12)
 
 
 class VideoGenerateBody(StrictModel):
@@ -98,7 +115,7 @@ def _media_urls(skill, job: dict[str, Any]) -> dict[str, str]:
     job_id = str(job["id"])
     base = f"/api/v1/operations/videos/{job_id}/media"
     urls: dict[str, str] = {}
-    for kind in ("video", "audio", "subtitles", "subtitles_vtt", "cover", "props", "manifest", "code"):
+    for kind in ("video", "audio", "subtitles", "subtitles_vtt", "cover", "contact_sheet", "props", "manifest", "code"):
         try:
             skill.resolve_job_media(job_id, kind)
         except (ValueError, FileNotFoundError):
@@ -143,6 +160,13 @@ def register_video_production_routes(app, runtime, store, browsing, require_admi
             "environment": skill.environment_status(),
             "candidates": candidates,
         }
+
+    @app.post(prefix + "/pitch-ideas", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
+    async def pitch_ideas(body: VideoPitchIdeasBody = VideoPitchIdeasBody()):
+        try:
+            return _skill().pitch_video_ideas(brief_hint=body.brief_hint, max_ideas=body.max_ideas)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
 
     @app.get(prefix + "/{job_id}", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
     async def get_video_job(job_id: str):
@@ -333,3 +357,29 @@ def register_video_production_routes(app, runtime, store, browsing, require_admi
         except (ValueError, FileNotFoundError) as exc:
             raise HTTPException(404, str(exc)) from None
         return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
+
+    @app.post(prefix + "/{job_id}/capture-ui", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
+    async def capture_job_ui(job_id: str, body: VideoCaptureUiBody = VideoCaptureUiBody()):
+        skill = _skill()
+        try:
+            result = await skill.capture_job_ui_screenshots(
+                job_id,
+                base_url=body.base_url,
+                routes=body.routes,
+                max_captures=body.max_captures,
+            )
+        except ValueError as exc:
+            msg = str(exc)
+            status_code = 404 if "找不到" in msg else 409 if "不允许" in msg else 400
+            raise HTTPException(status_code, msg) from None
+        fresh = skill.get_job(job_id)
+        return result | ({"job": _present_job(fresh)} if fresh else {})
+
+    @app.post(prefix + "/{job_id}/visual-review", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
+    async def review_job_visuals(job_id: str):
+        skill = _skill()
+        try:
+            return await skill.review_job_visuals(job_id)
+        except ValueError as exc:
+            status_code = 404 if "找不到" in str(exc) else 400
+            raise HTTPException(status_code, str(exc)) from None

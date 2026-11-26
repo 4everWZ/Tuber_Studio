@@ -22,7 +22,6 @@ from tuber_studio.agent.skills.remotion_assets import (
 from tuber_studio.agent.skills.remotion_video import (
     PlanVideoScriptArgs,
     RemotionVideoSkill,
-    generate_remotion_project,
     plan_video_script,
 )
 from tuber_studio.app import create_app
@@ -161,7 +160,7 @@ def test_reject_unsafe_reference_urls_and_private_ip_dns(settings, tmp_path, mon
     with pytest.raises(ValidationError):
         PlanVideoScriptArgs(
             topic="超限",
-            reference_urls=[f"https://example.org/{i}" for i in range(5)],
+            reference_urls=[f"https://example.org/{i}" for i in range(7)],
         )
 
     bad_urls = [
@@ -294,9 +293,9 @@ def test_image_uploads_limit_mime_mediacache_and_project_preservation(settings, 
         )
         assert bad_mime.status_code == 400
 
-        # Upload up to 3 valid images
-        for idx in range(3):
-            is_jpg = idx == 1
+        # Upload up to 12 valid images
+        for idx in range(12):
+            is_jpg = idx % 2 == 1
             up = client.post(
                 f"/api/v1/operations/videos/{job_id}/uploads",
                 json={
@@ -308,15 +307,15 @@ def test_image_uploads_limit_mime_mediacache_and_project_preservation(settings, 
             assert up.status_code == 200, up.text
             assert len(up.json()["uploads"]) == idx + 1
 
-        # 4th upload is rejected
-        fourth = client.post(
+        # 13th upload is rejected
+        extra_upload = client.post(
             f"/api/v1/operations/videos/{job_id}/uploads",
-            json={"filename": "shot_3.png", "image_base64": png_b64, "mime_type": "image/png"},
+            json={"filename": "shot_12.png", "image_base64": png_b64, "mime_type": "image/png"},
         )
-        assert fourth.status_code == 400
+        assert extra_upload.status_code == 400
 
         detail = client.get(f"/api/v1/operations/videos/{job_id}").json()["job"]
-        assert len(detail["uploads"]) == 3
+        assert len(detail["uploads"]) == 12
         first_upload = detail["uploads"][0]
         assert first_upload["rel_path"].startswith("uploads/")
 

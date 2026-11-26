@@ -456,8 +456,10 @@ def test_remotion_source_isolation_schema_and_alignment(settings, tmp_path):
         scene_memes = [s["visual_props"].get("meme_asset_id") for s in props["scenes"] if s["visual_props"].get("meme_asset_id")]
         assert len(scene_memes) == len(set(scene_memes)) and len(props["memeAssets"]) >= 2
         assert isinstance(props["cues"][0]["emphasis"], list) and len(props["cues"][0]["emphasis"]) >= 1
-        assert "import { AbsoluteFill" in (proj_dir / "src/AquaVideo.tsx").read_text(encoding="utf-8")
-        assert "Python 协程并发原理图解" not in (proj_dir / "src/AquaVideo.tsx").read_text(encoding="utf-8")
+        aqua_tsx = (proj_dir / "src/AquaVideo.tsx").read_text(encoding="utf-8")
+        assert "export const AquaVideo" in aqua_tsx
+        assert "SceneCanvas" in aqua_tsx
+        assert "Python 协程并发原理图解" not in aqua_tsx
 
     asyncio.run(scenario())
 

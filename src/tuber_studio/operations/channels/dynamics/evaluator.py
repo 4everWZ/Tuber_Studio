@@ -42,6 +42,7 @@ def dynamic_decision_messages(character, recent_posts, public_sources, *, curren
                 "public_incident是公开经历和原评论，published_reply是来评和你当时发出的回复，"
                 "public_memory是角色故事摘录，runtime_event是运行记录，operator_note是号主确认的经历。"
                 "随想、创作、兴趣、日常观察、角色小故事或公开互动都可以独立成稿，篇幅随话题。"
+                "动态适合轻量单点分享、心情随想或视频预告；遇到多幕前后对比、系统架构图解或界面实操演示等高信息密度专题，动态里只做简短预热，完整展开留给视频成片。"
                 "看过的视频、读到的公开评论和自己的心情都能单独分享，也可以自然地一起聊。"
                 "几条素材在讲同一件事时可以合成一条。points 记录这次聊到的各个要点和对应的 source_ids。"
                 "参考相关待发稿和已分享记录。后来只换说法重复同一个点就先等，有新发现或进展可以接着分享。"
