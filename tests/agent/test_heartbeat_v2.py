@@ -7,7 +7,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import httpx
-import pytest
 
 from tests.support.operations_helpers import BV, ControlledPlatform
 from tuber_studio.agent.heartbeat import HeartbeatService, is_in_quiet_hours
