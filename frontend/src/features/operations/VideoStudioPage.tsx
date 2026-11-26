@@ -1,281 +1,64 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MemePickerModal, StatusPill, type MemeAsset, type StatusPillTone } from "@/shared";
-import { apiRequest, studioPath } from "@/shared/api/client";
+import { studioPath } from "@/shared/api/client";
 import { emitNotice, errorMessage } from "@/shared/lib/errors";
 import { formatRelativeTime } from "@/shared/lib/formatters";
 import { defaultMemePreviewUrl } from "@/shared/ui/MemePickerModal";
 import type { ParsedRoute } from "@/shell/navigation";
+import { VideoPitchIdeasCard } from "./VideoPitchIdeasCard";
+import { VideoStoryboardTab } from "./VideoStoryboardTab";
+import {
+  CHANNEL_META,
+  DEFAULT_DURATION_BY_MODE,
+  DEFAULT_SCENES_BY_DURATION,
+  DURATION_PRESET_LABELS,
+  DURATION_PRESET_OPTIONS,
+  FETCH_STATUS_META,
+  MAX_BRIEF_LENGTH,
+  MAX_REFERENCE_URLS,
+  MAX_UPLOAD_FILES,
+  MAX_VIDEO_UPLOAD_BYTES,
+  STATUS_META,
+  UPLOAD_ACCEPT_ATTR,
+  VIDEO_MODE_LABELS,
+  VIDEO_MODE_OPTIONS,
+  formatBytes,
+  inferUploadMimeType,
+  isVideoMime,
+  isVideoUploadItem,
+  readMediaDataUrl,
+  safeHttpsUrl,
+  videoRequest,
+  type CodeArtifactTab,
+  type ComposerUploadItem,
+  type DurationPreset,
+  type InspectorTab,
+  type VideoCandidate,
+  type VideoEditorialFit,
+  type VideoEnvironment,
+  type VideoIdeaPitch,
+  type VideoJobRecord,
+  type VideoListResponse,
+  type VideoMode,
+  type VideoPolicy,
+  type VideoUploadItem,
+  type VideoVisualReview,
+} from "./videoStudioTypes";
 import styles from "./operations.module.css";
-
-interface VideoChartPoint {
-  label: string;
-  value: number;
-  unit?: string;
-}
-
-interface VideoVisualProps {
-  subtitle?: string;
-  bullets?: string[];
-  code_snippet?: string;
-  language?: string;
-  chart_items?: VideoChartPoint[];
-  meme_asset_id?: string | null;
-  citation_label?: string;
-  uploaded_image_file?: string | null;
-}
-
-interface VideoLineSpec {
-  line_id?: string;
-  text: string;
-  avatar_cue?: string;
-  highlight_code?: string | null;
-  emphasis?: string[];
-}
-
-interface VideoSceneSpec {
-  scene_id: string;
-  template: string;
-  heading: string;
-  visual_props?: VideoVisualProps;
-  lines: VideoLineSpec[];
-  avatar_cue?: string;
-}
-
-interface VideoSourceRef {
-  source_id: string;
-  kind: string;
-  scope: string;
-  title?: string;
-  url?: string | null;
-  bvid?: string | null;
-  excerpt?: string;
-  fetch_status?: "fetched" | "fallback" | "manual" | null;
-  fetch_error?: string | null;
-}
-
-type VideoMode = "commentary" | "self_intro" | "project_showcase" | "explainer";
-
-interface VideoUploadItem {
-  filename: string;
-  rel_path: string;
-  url: string;
-  size_bytes: number;
-}
-
-interface VideoScriptPlan {
-  title: string;
-  summary: string;
-  tags: string[];
-  category_tid?: number;
-  video_mode?: VideoMode;
-  fps: 30 | 60;
-  width: 1920 | 1280;
-  height: 1080 | 720;
-  include_avatar: boolean;
-  bgm_enabled?: boolean;
-  scenes: VideoSceneSpec[];
-  sources: VideoSourceRef[];
-}
-
-interface VideoQcReport {
-  passed: boolean;
-  issues?: string[];
-  size_bytes?: number;
-  expected_duration_seconds?: number;
-  probed_duration_seconds?: number;
-  duration_drift_seconds?: number;
-  width?: number;
-  height?: number;
-  loudnorm_applied?: boolean;
-  cover_generated?: boolean;
-}
-
-interface VideoManifestCue {
-  line_id: string;
-  scene_id: string;
-  text: string;
-  start_frame: number;
-  duration_frames: number;
-  start_seconds: number;
-  end_seconds: number;
-  avatar_cue?: string;
-}
-
-interface VideoManifest {
-  job_id: string;
-  fps: number;
-  width: number;
-  height: number;
-  total_frames: number;
-  total_duration_seconds: number;
-  tts_mode?: string;
-  cues?: VideoManifestCue[];
-}
-
-interface VideoJobRecord {
-  id: string;
-  status: string;
-  publish_mode: "preview_review" | "auto_publish";
-  title: string;
-  content_hash?: string;
-  project_hash?: string;
-  intent?: string;
-  planner_source?: string;
-  planner_error?: string | null;
-  plan?: VideoScriptPlan | null;
-  manifest?: VideoManifest | null;
-  qc_report?: VideoQcReport | null;
-  receipt?: { bvid?: string; aid?: string } | null;
-  error?: string | null;
-  render_active?: boolean;
-  uploads?: VideoUploadItem[];
-  media?: Partial<
-    Record<
-      "video" | "audio" | "subtitles" | "subtitles_vtt" | "cover" | "props" | "manifest" | "code",
-      string
-    >
-  >;
-  created_at: number;
-  updated_at: number;
-}
-
-interface VideoPolicy {
-  publish_mode: "preview_review" | "auto_publish";
-  auto_publish_enabled: boolean;
-  default_fps: 30 | 60;
-  default_width: 1920 | 1280;
-  default_height: 1080 | 720;
-  max_render_concurrency: number;
-  render_timeout_seconds: number;
-  upload_timeout_seconds: number;
-}
-
-interface VideoEnvironment {
-  node?: { ready: boolean };
-  npx?: { ready: boolean };
-  ffmpeg?: { ready: boolean };
-  ffprobe?: { ready: boolean };
-  remotion_studio?: { ready: boolean; dir_exists?: boolean; label?: string };
-  browser?: { ready: boolean; kind?: string | null };
-  biliup?: { ready: boolean; mode?: string; web_credentials?: boolean; cli_installed?: boolean };
-  omni_llm?: { ready: boolean };
-  omni_tts?: { ready: boolean };
-}
-
-interface VideoCandidate {
-  bvid: string;
-  title?: string;
-  summary?: string;
-  url?: string;
-}
-
-interface VideoListResponse {
-  jobs: VideoJobRecord[];
-  policy: VideoPolicy;
-  environment: VideoEnvironment;
-  candidates: VideoCandidate[];
-}
-
-type InspectorTab = "preview" | "script" | "code";
-type CodeArtifactTab = "props" | "code" | "subtitles" | "manifest";
-
-const STATUS_META: Record<string, { label: string; tone: StatusPillTone }> = {
-  script_planned: { label: "已策划脚本", tone: "neutral" },
-  project_ready: { label: "工程与配音就绪", tone: "blue" },
-  rendering: { label: "正在渲染", tone: "blue" },
-  rendered: { label: "渲染完成", tone: "good" },
-  ready_for_review: { label: "待人工审阅", tone: "good" },
-  qc_failed: { label: "质检未通过", tone: "amber" },
-  render_failed: { label: "渲染失败", tone: "bad" },
-  published: { label: "已投稿发布", tone: "good" },
-  publish_uncertain: { label: "投稿回执待核对", tone: "amber" },
-  publish_failed: { label: "投稿失败", tone: "bad" },
-};
-
-const TEMPLATE_LABELS: Record<string, string> = {
-  TitleCard: "开场标题卡",
-  CodeWalkthrough: "代码演进",
-  ChartCompare: "数据对比图",
-  MemeCutaway: "趣味吐槽插播",
-  QuoteSpotlight: "观点引用聚焦",
-  TimelineSummary: "时间轴总结",
-};
-
-const VIDEO_MODE_LABELS: Record<VideoMode, string> = {
-  commentary: "热点吐槽 / 杂谈",
-  self_intro: "角色 / 工坊自我介绍",
-  project_showcase: "开源项目 / 作品介绍",
-  explainer: "原理拆解 / 科普",
-};
-
-const FETCH_STATUS_META: Record<string, { label: string; tone: StatusPillTone }> = {
-  fetched: { label: "已抓取", tone: "good" },
-  fallback: { label: "抓取回退", tone: "amber" },
-  manual: { label: "手动资料", tone: "neutral" },
-};
 
 const ACCEPT_ALL_CHANNELS_MEMES = (asset: MemeAsset) =>
   (asset.usage_scope || "all_channels") === "all_channels";
 
-interface ComposerUploadItem {
-  id: string;
-  filename: string;
-  mime_type: "image/png" | "image/jpeg" | "image/webp";
-  image_base64: string;
-  preview_url: string;
-  size_bytes: number;
-}
+const MONOTONY_RISK_META: Record<string, { label: string; tone: StatusPillTone }> = {
+  low: { label: "单调风险：低", tone: "good" },
+  medium: { label: "单调风险：中", tone: "amber" },
+  high: { label: "单调风险：高", tone: "bad" },
+  unknown: { label: "单调风险：未知", tone: "neutral" },
+};
 
 type MemePickerTarget =
   | { mode: "composer" }
   | { mode: "scene"; job: VideoJobRecord; sceneId: string; currentAssetId?: string | null };
-
-function readImageDataUrl(file: File): Promise<{ dataUrl: string; base64: string }> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = String(reader.result || "");
-      const base64 = dataUrl.includes(",") ? dataUrl.split(",", 2)[1] : dataUrl;
-      if (!base64) {
-        reject(new Error("读取本地图片失败"));
-        return;
-      }
-      resolve({ dataUrl, base64 });
-    };
-    reader.onerror = () => reject(new Error("读取本地图片失败"));
-    reader.readAsDataURL(file);
-  });
-}
-
-function safeHttpsUrl(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith("https://")) return null;
-  try {
-    const parsed = new URL(trimmed);
-    return parsed.protocol === "https:" ? parsed.toString() : null;
-  } catch {
-    return null;
-  }
-}
-
-function formatBytes(bytes?: number): string {
-  if (!bytes || bytes <= 0) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-async function videoRequest<T>(
-  path: string,
-  options: { method?: string; body?: unknown; responseType?: "json" | "text" } = {}
-): Promise<T> {
-  return apiRequest<T>(path, {
-    method: options.method || "GET",
-    body: options.body,
-    responseType: options.responseType,
-  });
-}
 
 export function VideoStudioPage({ route }: { route: ParsedRoute }) {
   const [jobs, setJobs] = useState<VideoJobRecord[]>([]);
@@ -296,18 +79,26 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
   const [topic, setTopic] = useState("");
   const [styleNote, setStyleNote] = useState("");
   const [videoMode, setVideoMode] = useState<VideoMode>("commentary");
+  const [durationPreset, setDurationPreset] = useState<DurationPreset>("short");
+  const [durationOverridden, setDurationOverridden] = useState(false);
+  const [maxScenes, setMaxScenes] = useState<number>(DEFAULT_SCENES_BY_DURATION.short);
+  const [maxScenesOverridden, setMaxScenesOverridden] = useState(false);
+  const [includeWorkspaceDocs, setIncludeWorkspaceDocs] = useState(false);
   const [briefText, setBriefText] = useState("");
   const [referenceUrlsText, setReferenceUrlsText] = useState("");
   const [selectedBvids, setSelectedBvids] = useState<string[]>([]);
   const [fps, setFps] = useState<30 | 60>(30);
   const [resolution, setResolution] = useState<"1920x1080" | "1280x720">("1920x1080");
-  const [maxScenes, setMaxScenes] = useState(4);
   const [ttsMode, setTtsMode] = useState<"omni_speech" | "dry_run">("omni_speech");
   const [includeAvatar, setIncludeAvatar] = useState(true);
   const [bgmEnabled, setBgmEnabled] = useState(true);
   const [pinnedMemes, setPinnedMemes] = useState<MemeAsset[]>([]);
   const [composerUploads, setComposerUploads] = useState<ComposerUploadItem[]>([]);
   const [memePickerTarget, setMemePickerTarget] = useState<MemePickerTarget | null>(null);
+
+  // Per-job transient advisory / visual review results returned from POST endpoints
+  const [editorialFitsByJobId, setEditorialFitsByJobId] = useState<Record<string, VideoEditorialFit>>({});
+  const [visualReviewsByJobId, setVisualReviewsByJobId] = useState<Record<string, VideoVisualReview>>({});
 
   // Action busy flags
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -423,6 +214,51 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
     };
   }, [inspectorTab, codeTab, selectedJob, codeArtifacts]);
 
+  function handleVideoModeChange(nextMode: VideoMode) {
+    setVideoMode(nextMode);
+    if (!durationOverridden) {
+      const nextDuration = DEFAULT_DURATION_BY_MODE[nextMode] || "standard";
+      setDurationPreset(nextDuration);
+      if (!maxScenesOverridden) {
+        setMaxScenes(DEFAULT_SCENES_BY_DURATION[nextDuration]);
+      }
+    }
+  }
+
+  function handleDurationPresetChange(nextDuration: DurationPreset) {
+    setDurationPreset(nextDuration);
+    setDurationOverridden(true);
+    if (!maxScenesOverridden) {
+      setMaxScenes(DEFAULT_SCENES_BY_DURATION[nextDuration]);
+    }
+  }
+
+  function handleMaxScenesChange(nextCount: number) {
+    setMaxScenes(nextCount);
+    setMaxScenesOverridden(true);
+  }
+
+  function handleApplyVideoIdea(idea: VideoIdeaPitch) {
+    setTopic(idea.topic || idea.title);
+    setVideoMode(idea.video_mode);
+    setDurationPreset(idea.duration_preset);
+    setDurationOverridden(true);
+    setMaxScenes(DEFAULT_SCENES_BY_DURATION[idea.duration_preset] || 9);
+    setMaxScenesOverridden(false);
+    if (idea.visual_angle && !styleNote.trim()) {
+      setStyleNote(idea.visual_angle.slice(0, 200));
+    }
+    const bvids = (idea.source_refs || []).filter((ref) => /^BV[0-9A-Za-z]{10}$/.test(ref));
+    if (bvids.length > 0) {
+      setSelectedBvids(bvids.slice(0, 6));
+    }
+    if ((idea.source_refs || []).includes("workspace_docs")) {
+      setIncludeWorkspaceDocs(true);
+    }
+    setActionError("");
+    emitNotice(`已将灵感「${idea.title}」填入制片面板。`);
+  }
+
   function toggleCandidateBvid(bvid: string) {
     setSelectedBvids((prev) =>
       prev.includes(bvid) ? prev.filter((item) => item !== bvid) : prev.length < 6 ? [...prev, bvid] : prev
@@ -443,8 +279,8 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
           .filter(Boolean)
       )
     );
-    if (parsedUrls.length > 4) {
-      setActionError("公开参考链接最多填写 4 条。");
+    if (parsedUrls.length > MAX_REFERENCE_URLS) {
+      setActionError(`公开参考链接最多填写 ${MAX_REFERENCE_URLS} 条。`);
       return;
     }
     setBusyAction(runFullPipeline ? "full_pipeline" : "plan");
@@ -455,12 +291,15 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
         job_id: string;
         planner_source?: string;
         reference_diagnostics?: string[];
+        editorial_fit?: VideoEditorialFit;
         job?: VideoJobRecord;
       }>("/api/v1/operations/videos/plan", {
         method: "POST",
         body: {
           topic: trimmed,
           video_mode: videoMode,
+          duration_preset: durationPreset,
+          include_workspace_docs: includeWorkspaceDocs,
           brief_text: briefText,
           reference_urls: parsedUrls,
           candidate_bvids: selectedBvids,
@@ -482,6 +321,9 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
         },
       });
       const jobId = planned.job_id;
+      if (planned.editorial_fit) {
+        setEditorialFitsByJobId((prev) => ({ ...prev, [jobId]: planned.editorial_fit! }));
+      }
       if (resolution === "1280x720") {
         await videoRequest(`/api/v1/operations/videos/${encodeURIComponent(jobId)}/plan`, {
           method: "PATCH",
@@ -534,24 +376,30 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
 
   async function handleComposerUploadFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
-    const remaining = 3 - composerUploads.length;
+    const remaining = MAX_UPLOAD_FILES - composerUploads.length;
     if (remaining <= 0) {
-      setActionError("专属公开配图/截图最多添加 3 张。");
+      setActionError(`专属公开配图/截图或短视频最多添加 ${MAX_UPLOAD_FILES} 份。`);
       return;
     }
     const picked = Array.from(files).slice(0, remaining);
     const added: ComposerUploadItem[] = [];
     for (const file of picked) {
-      if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-        setActionError("仅支持上传 PNG、JPEG 或 WebP 格式的公开图片。");
+      const mimeType = inferUploadMimeType(file);
+      if (!mimeType) {
+        setActionError("仅支持上传 PNG、JPEG、WebP 图片或 MP4、WebM 短视频片段。");
+        return;
+      }
+      if (isVideoMime(mimeType) && file.size > MAX_VIDEO_UPLOAD_BYTES) {
+        setActionError("MP4 / WebM 短视频片段大小不能超过 30 MB。");
         return;
       }
       try {
-        const { dataUrl, base64 } = await readImageDataUrl(file);
+        const { dataUrl, base64 } = await readMediaDataUrl(file);
         added.push({
           id: `${file.name}-${file.size}-${Math.random().toString(36).slice(2, 8)}`,
           filename: file.name,
-          mime_type: file.type as "image/png" | "image/jpeg" | "image/webp",
+          mime_type: mimeType,
+          kind: isVideoMime(mimeType) ? "video" : "image",
           image_base64: base64,
           preview_url: dataUrl,
           size_bytes: file.size,
@@ -562,7 +410,7 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
       }
     }
     setActionError("");
-    setComposerUploads((prev) => [...prev, ...added].slice(0, 3));
+    setComposerUploads((prev) => [...prev, ...added].slice(0, MAX_UPLOAD_FILES));
   }
 
   async function handleSetSceneMeme(job: VideoJobRecord, sceneId: string, memeAssetId: string | null) {
@@ -594,25 +442,46 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
     }
   }
 
-  async function handleUploadImage(job: VideoJobRecord, file: File | null) {
-    if (!file) return;
-    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-      setActionError("仅支持上传 PNG、JPEG 或 WebP 格式的公开图片。");
+  async function handleUploadFiles(job: VideoJobRecord, files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const currentCount = job.uploads?.length || 0;
+    const remaining = MAX_UPLOAD_FILES - currentCount;
+    if (remaining <= 0) {
+      setActionError(`每个视频任务最多上传 ${MAX_UPLOAD_FILES} 份公开参考媒体。`);
       return;
+    }
+    const picked = Array.from(files).slice(0, remaining);
+    for (const file of picked) {
+      const mimeType = inferUploadMimeType(file);
+      if (!mimeType) {
+        setActionError("仅支持上传 PNG、JPEG、WebP 图片或 MP4、WebM 短视频片段。");
+        return;
+      }
+      if (isVideoMime(mimeType) && file.size > MAX_VIDEO_UPLOAD_BYTES) {
+        setActionError("MP4 / WebM 短视频片段大小不能超过 30 MB。");
+        return;
+      }
     }
     setBusyAction("upload");
     setActionError("");
     try {
-      const { base64 } = await readImageDataUrl(file);
-      await videoRequest(`/api/v1/operations/videos/${encodeURIComponent(job.id)}/uploads`, {
-        method: "POST",
-        body: {
-          filename: file.name,
-          image_base64: base64,
-          mime_type: file.type,
-        },
-      });
-      emitNotice(`已上传公开参考图片：${file.name}`);
+      for (const file of picked) {
+        const mimeType = inferUploadMimeType(file)!;
+        const { base64 } = await readMediaDataUrl(file);
+        await videoRequest(`/api/v1/operations/videos/${encodeURIComponent(job.id)}/uploads`, {
+          method: "POST",
+          body: {
+            filename: file.name,
+            image_base64: base64,
+            mime_type: mimeType,
+          },
+        });
+      }
+      emitNotice(
+        picked.length === 1
+          ? `已上传公开参考媒体：${picked[0].name}`
+          : `已上传 ${picked.length} 份公开参考媒体。`
+      );
       await fetchOverview(true);
     } catch (err) {
       const msg = errorMessage(err);
@@ -623,9 +492,68 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
     }
   }
 
-  async function handleBindUploadToScene(job: VideoJobRecord, relPath: string, targetSceneId: string) {
+  async function handleCaptureUi(job: VideoJobRecord) {
+    setBusyAction("capture_ui");
+    setActionError("");
+    try {
+      const res = await videoRequest<{
+        ok: boolean;
+        error?: string | null;
+        captured?: Array<{ route?: string; filename: string; rel_path: string }>;
+      }>(`/api/v1/operations/videos/${encodeURIComponent(job.id)}/capture-ui`, {
+        method: "POST",
+        body: {},
+      });
+      if (!res.ok) {
+        const msg = res.error || "自拍工坊界面失败";
+        setActionError(msg);
+        emitNotice(msg, true);
+      } else {
+        const count = res.captured?.length ?? 0;
+        emitNotice(`已截取 ${count} 张工坊界面截图并写入参考媒体。`);
+      }
+      await fetchOverview(true);
+    } catch (err) {
+      const msg = errorMessage(err);
+      setActionError(msg);
+      emitNotice(msg, true);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleVisualReview(job: VideoJobRecord) {
+    setBusyAction("visual_review");
+    setActionError("");
+    try {
+      const res = await videoRequest<VideoVisualReview>(
+        `/api/v1/operations/videos/${encodeURIComponent(job.id)}/visual-review`,
+        { method: "POST" }
+      );
+      setVisualReviewsByJobId((prev) => ({ ...prev, [job.id]: res }));
+      if (res.reviewed) {
+        emitNotice(`VLM 视觉审阅完成：综合评分 ${res.overall_score} / 100。`);
+      } else {
+        emitNotice("已执行静态视觉检查（VLM 未启用或未生成缩略图）。");
+      }
+    } catch (err) {
+      const msg = errorMessage(err);
+      setActionError(msg);
+      emitNotice(msg, true);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleBindUploadToScene(
+    job: VideoJobRecord,
+    item: VideoUploadItem,
+    targetSceneId: string
+  ) {
     const scenes = job.plan?.scenes;
     if (!scenes) return;
+    const isVideo = isVideoUploadItem(item);
+    const fieldKey = isVideo ? "uploaded_video_file" : "uploaded_image_file";
     setBusyAction("bind_upload");
     setActionError("");
     try {
@@ -634,13 +562,13 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
         if (scene.scene_id === targetSceneId) {
           return {
             ...scene,
-            visual_props: { ...prevProps, uploaded_image_file: relPath },
+            visual_props: { ...prevProps, [fieldKey]: item.rel_path },
           };
         }
-        if (prevProps.uploaded_image_file === relPath) {
+        if (prevProps[fieldKey] === item.rel_path) {
           return {
             ...scene,
-            visual_props: { ...prevProps, uploaded_image_file: null },
+            visual_props: { ...prevProps, [fieldKey]: null },
           };
         }
         return scene;
@@ -649,7 +577,11 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
         method: "PATCH",
         body: { scenes: updatedScenes },
       });
-      emitNotice(targetSceneId ? "已将图片绑定到指定分镜。" : "已解除该图片的分镜绑定。");
+      emitNotice(
+        targetSceneId
+          ? `已将${isVideo ? "视频片段" : "图片"}绑定到指定分镜。`
+          : `已解除该${isVideo ? "视频片段" : "图片"}的分镜绑定。`
+      );
       await fetchOverview(true);
     } catch (err) {
       const msg = errorMessage(err);
@@ -848,8 +780,16 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
     },
   ];
 
+  const activeModeOption =
+    VIDEO_MODE_OPTIONS.find((item) => item.value === videoMode) || VIDEO_MODE_OPTIONS[0];
   const selectedStatusMeta = selectedJob
     ? STATUS_META[selectedJob.status] || { label: selectedJob.status, tone: "neutral" as StatusPillTone }
+    : null;
+  const selectedEditorialFit = selectedJob
+    ? selectedJob.editorial_fit || editorialFitsByJobId[selectedJob.id] || null
+    : null;
+  const selectedVisualReview = selectedJob
+    ? visualReviewsByJobId[selectedJob.id] || selectedJob.qc_report?.visual_review || null
     : null;
   const activeCodeCacheKey = selectedJob
     ? `${selectedJob.id}:${selectedJob.updated_at}:${codeTab}`
@@ -883,8 +823,13 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
           </div>
         </div>
 
+        <VideoPitchIdeasCard
+          disabled={busyAction !== null}
+          onApplyVideoIdea={handleApplyVideoIdea}
+        />
+
         <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10 }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <span className="hint">公开视频选题 / 观察话题</span>
               <input
@@ -901,12 +846,27 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
               <select
                 aria-label="视频类型"
                 value={videoMode}
-                onChange={(e) => setVideoMode(e.target.value as VideoMode)}
+                onChange={(e) => handleVideoModeChange(e.target.value as VideoMode)}
               >
-                <option value="commentary">热点吐槽 / 杂谈 (commentary)</option>
-                <option value="self_intro">角色 / 工坊自我介绍 (self_intro)</option>
-                <option value="project_showcase">开源项目 / 作品介绍 (project_showcase)</option>
-                <option value="explainer">原理拆解 / 科普 (explainer)</option>
+                {VIDEO_MODE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label} ({opt.value})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span className="hint">时长档位</span>
+              <select
+                aria-label="时长档位"
+                value={durationPreset}
+                onChange={(e) => handleDurationPresetChange(e.target.value as DurationPreset)}
+              >
+                {DURATION_PRESET_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -922,23 +882,31 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
             </label>
           </div>
 
+          <p className="hint" style={{ margin: 0 }}>
+            当前类型说明（{activeModeOption.label}）：{activeModeOption.hint}
+          </p>
+
           <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 10 }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span className="hint">参考资料 / 原始大纲（可选）</span>
-                <span className="hint">{briefText.length} / 8000</span>
+                <span className="hint">
+                  {briefText.length} / {MAX_BRIEF_LENGTH}
+                </span>
               </div>
               <textarea
                 rows={3}
                 aria-label="参考资料或原始大纲"
-                placeholder="粘贴公开产品介绍、功能亮点、讲稿大纲或自述要点（最多 8000 字）"
+                placeholder={`粘贴公开产品介绍、功能亮点、讲稿大纲或自述要点（最多 ${MAX_BRIEF_LENGTH} 字）`}
                 value={briefText}
-                maxLength={8000}
+                maxLength={MAX_BRIEF_LENGTH}
                 onChange={(e) => setBriefText(e.target.value)}
               />
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span className="hint">公开参考链接（可选，每行一个，最多 4 条，支持 GitHub 仓库自动读 README）</span>
+              <span className="hint">
+                公开参考链接（可选，每行一个，最多 {MAX_REFERENCE_URLS} 条，支持 GitHub 仓库深度抓取）
+              </span>
               <textarea
                 rows={3}
                 aria-label="公开参考链接"
@@ -981,20 +949,22 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                 {`置顶图库表情（0–3 张）${pinnedMemes.length > 0 ? ` (${pinnedMemes.length}/3)` : ""}`}
               </button>
               <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginTop: 0 }}>
-                <span className="hint">本次专属公开配图/截图（0–3 张）</span>
+                <span className="hint">本次专属公开配图/截图或短视频（0–12 份，≤30MB）</span>
                 <input
                   type="file"
                   multiple
-                  accept="image/png,image/jpeg,image/webp"
+                  accept={UPLOAD_ACCEPT_ATTR}
                   aria-label="本次专属公开配图/截图"
-                  disabled={busyAction !== null || composerUploads.length >= 3}
+                  disabled={busyAction !== null || composerUploads.length >= MAX_UPLOAD_FILES}
                   onChange={(e) => {
                     const files = e.target.files;
                     void handleComposerUploadFiles(files);
                     e.target.value = "";
                   }}
                 />
-                <span className="hint">{composerUploads.length} / 3</span>
+                <span className="hint">
+                  {composerUploads.length} / {MAX_UPLOAD_FILES}
+                </span>
               </label>
             </div>
 
@@ -1026,12 +996,24 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }} data-composer-uploads="">
                 {composerUploads.map((item) => (
                   <span key={item.id} className={styles.claimChip}>
-                    <img
-                      src={item.preview_url}
-                      alt={item.filename}
-                      style={{ width: 24, height: 24, objectFit: "cover", borderRadius: 4 }}
-                    />
-                    <span>{item.filename}</span>
+                    {item.kind === "video" ? (
+                      <video
+                        src={item.preview_url}
+                        muted
+                        playsInline
+                        style={{ width: 32, height: 24, objectFit: "cover", borderRadius: 4 }}
+                      />
+                    ) : (
+                      <img
+                        src={item.preview_url}
+                        alt={item.filename}
+                        style={{ width: 24, height: 24, objectFit: "cover", borderRadius: 4 }}
+                      />
+                    )}
+                    <span>
+                      {item.filename}
+                      {item.kind === "video" ? " (视频)" : ""}
+                    </span>
                     <button
                       type="button"
                       aria-label={`移除配图 ${item.filename}`}
@@ -1075,9 +1057,9 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
               <select
                 aria-label="分镜数量"
                 value={maxScenes}
-                onChange={(e) => setMaxScenes(Number(e.target.value))}
+                onChange={(e) => handleMaxScenesChange(Number(e.target.value))}
               >
-                {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
                   <option key={n} value={n}>
                     {n} 镜
                   </option>
@@ -1094,6 +1076,14 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                 <option value="omni_speech">Omni 参考音色</option>
                 <option value="dry_run">离线测试音轨 (dry_run)</option>
               </select>
+            </label>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={includeWorkspaceDocs}
+                onChange={(e) => setIncludeWorkspaceDocs(e.target.checked)}
+              />
+              <span className="hint">纳入本仓库公开文档与架构</span>
             </label>
             <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <input
@@ -1269,6 +1259,9 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                     <div style={{ margin: "6px 0", fontWeight: 600 }}>{job.title || job.id}</div>
                     <div className="hint">
                       {job.plan?.video_mode ? `${VIDEO_MODE_LABELS[job.plan.video_mode] || job.plan.video_mode} · ` : ""}
+                      {job.plan?.duration_preset
+                        ? `${DURATION_PRESET_LABELS[job.plan.duration_preset] || job.plan.duration_preset} · `
+                        : ""}
                       {job.plan?.scenes?.length || 0} 镜
                       {job.manifest?.total_duration_seconds
                         ? ` · ${job.manifest.total_duration_seconds.toFixed(1)}s`
@@ -1299,6 +1292,15 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                     <StatusPill
                       tone="blue"
                       label={VIDEO_MODE_LABELS[selectedJob.plan.video_mode] || selectedJob.plan.video_mode}
+                    />
+                  )}
+                  {selectedJob.plan?.duration_preset && (
+                    <StatusPill
+                      tone="neutral"
+                      label={
+                        DURATION_PRESET_LABELS[selectedJob.plan.duration_preset] ||
+                        selectedJob.plan.duration_preset
+                      }
                     />
                   )}
                   {selectedJob.planner_source && (
@@ -1339,6 +1341,42 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
               </div>
 
               <h3 style={{ margin: "0 0 8px" }}>{selectedJob.title}</h3>
+
+              {selectedEditorialFit && (
+                <div className="panel" style={{ marginBottom: 10 }} data-editorial-fit="">
+                  <div className="panel-heading">
+                    <div className="actions">
+                      <StatusPill
+                        tone={CHANNEL_META[selectedEditorialFit.recommended_channel]?.tone || "neutral"}
+                        label={`${CHANNEL_META[selectedEditorialFit.recommended_channel]?.label || selectedEditorialFit.recommended_channel} (${Math.round(selectedEditorialFit.fit_score * 100)}%)`}
+                      />
+                      <strong>渠道与体裁评估建议</strong>
+                    </div>
+                    <span className="hint">
+                      建议模式：{VIDEO_MODE_LABELS[selectedEditorialFit.video_mode] || selectedEditorialFit.video_mode} ·{" "}
+                      {DURATION_PRESET_LABELS[selectedEditorialFit.duration_preset] ||
+                        selectedEditorialFit.duration_preset}
+                    </span>
+                  </div>
+                  <p className="hint" style={{ margin: "6px 0 0" }}>
+                    {selectedEditorialFit.reasoning}
+                  </p>
+                  {selectedEditorialFit.dynamic_alternative && (
+                    <p className="hint" style={{ margin: "4px 0 0" }}>
+                      备选建议：{selectedEditorialFit.dynamic_alternative}
+                    </p>
+                  )}
+                  {selectedEditorialFit.key_signals && selectedEditorialFit.key_signals.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                      {selectedEditorialFit.key_signals.map((sig, idx) => (
+                        <span key={idx} className={styles.claimChip}>
+                          {sig}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {selectedJob.error && (
                 <div className="panel" style={{ marginBottom: 10, borderColor: "var(--bad, #dc2626)" }}>
@@ -1459,6 +1497,104 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                     </div>
                   )}
 
+                  {(selectedJob.media?.contact_sheet || selectedVisualReview || selectedJob.plan) && (
+                    <div className="panel" data-visual-qc-panel="">
+                      <div className="panel-heading">
+                        <strong>关键帧审阅图 (Contact Sheet) 与 VLM 视觉审阅</strong>
+                        <div className="actions">
+                          {selectedJob.media?.contact_sheet && (
+                            <a
+                              href={studioPath(selectedJob.media.contact_sheet)}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              查看原图
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            disabled={busyAction !== null || selectedJob.status === "rendering"}
+                            onClick={() => void handleVisualReview(selectedJob)}
+                          >
+                            {busyAction === "visual_review" ? "视觉审阅中…" : "运行 VLM 视觉审阅"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {selectedJob.media?.contact_sheet && (
+                        <div style={{ marginTop: 10 }}>
+                          <img
+                            src={studioPath(selectedJob.media.contact_sheet)}
+                            alt={`${selectedJob.title} 关键帧审阅图`}
+                            style={{ width: "100%", borderRadius: 10, border: "1px solid var(--win-border-light)" }}
+                          />
+                        </div>
+                      )}
+
+                      {selectedVisualReview && (
+                        <div style={{ display: "grid", gap: 6, marginTop: 10 }} data-visual-review="">
+                          <div className="actions" style={{ flexWrap: "wrap" }}>
+                            <StatusPill
+                              tone={
+                                selectedVisualReview.reviewed
+                                  ? selectedVisualReview.overall_score >= 75
+                                    ? "good"
+                                    : "amber"
+                                  : "neutral"
+                              }
+                              label={
+                                selectedVisualReview.reviewed
+                                  ? `视觉评分：${selectedVisualReview.overall_score} / 100`
+                                  : "仅静态视觉检查"
+                              }
+                            />
+                            <StatusPill
+                              tone={
+                                (MONOTONY_RISK_META[selectedVisualReview.monotony_risk] ||
+                                  MONOTONY_RISK_META.unknown).tone
+                              }
+                              label={
+                                (MONOTONY_RISK_META[selectedVisualReview.monotony_risk] ||
+                                  MONOTONY_RISK_META.unknown).label
+                              }
+                            />
+                          </div>
+                          {selectedVisualReview.layout_issues &&
+                            selectedVisualReview.layout_issues.length > 0 && (
+                              <div>
+                                <span className="hint">版式 / 节奏问题：</span>
+                                <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                                  {selectedVisualReview.layout_issues.map((issue, idx) => (
+                                    <li key={idx}>{issue}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          {selectedVisualReview.suggestions &&
+                            selectedVisualReview.suggestions.length > 0 && (
+                              <div>
+                                <span className="hint">优化建议：</span>
+                                <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                                  {selectedVisualReview.suggestions.map((sug, idx) => (
+                                    <li key={idx}>{sug}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          {selectedVisualReview.scenes && selectedVisualReview.scenes.length > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+                              {selectedVisualReview.scenes.map((sc) => (
+                                <span key={sc.scene_index} className={styles.claimChip}>
+                                  #{sc.scene_index} [{sc.verdict}] {sc.note}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {selectedJob.receipt?.bvid && (
                     <div className="panel">
                       <strong>平台回执：</strong>
@@ -1474,32 +1610,53 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
 
                   {selectedJob.status !== "published" && selectedJob.status !== "publish_uncertain" && (
                     <div className="panel">
-                      <strong>公开参考图片 / 截图（最多 3 张，可选绑定到分镜）</strong>
+                      <div className="panel-heading">
+                        <strong>
+                          公开参考图片 / 截图或短视频（最多 {MAX_UPLOAD_FILES} 份，可选绑定到分镜）
+                        </strong>
+                        <button
+                          type="button"
+                          disabled={
+                            busyAction !== null ||
+                            selectedJob.status === "rendering" ||
+                            (selectedJob.uploads?.length || 0) >= MAX_UPLOAD_FILES
+                          }
+                          onClick={() => void handleCaptureUi(selectedJob)}
+                        >
+                          {busyAction === "capture_ui" ? "截图中…" : "自拍工坊界面"}
+                        </button>
+                      </div>
                       <div style={{ display: "grid", gap: 10, marginTop: 8 }}>
                         <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                          <span className="hint">上传 PNG / JPEG / WebP</span>
+                          <span className="hint">上传 PNG / JPEG / WebP 或 MP4 / WebM（≤30MB）</span>
                           <input
                             type="file"
-                            accept="image/png,image/jpeg,image/webp"
+                            multiple
+                            accept={UPLOAD_ACCEPT_ATTR}
                             aria-label="上传公开参考图片"
                             disabled={
                               busyAction !== null ||
                               selectedJob.status === "rendering" ||
-                              (selectedJob.uploads?.length || 0) >= 3
+                              (selectedJob.uploads?.length || 0) >= MAX_UPLOAD_FILES
                             }
                             onChange={(e) => {
-                              const file = e.target.files?.[0] || null;
+                              const files = e.target.files;
+                              void handleUploadFiles(selectedJob, files);
                               e.target.value = "";
-                              void handleUploadImage(selectedJob, file);
                             }}
                           />
-                          <span className="hint">{selectedJob.uploads?.length || 0} / 3</span>
+                          <span className="hint">
+                            {selectedJob.uploads?.length || 0} / {MAX_UPLOAD_FILES}
+                          </span>
                         </label>
                         {selectedJob.uploads && selectedJob.uploads.length > 0 && (
                           <div style={{ display: "grid", gap: 8 }}>
                             {selectedJob.uploads.map((item) => {
-                              const boundScene = (selectedJob.plan?.scenes || []).find(
-                                (s) => s.visual_props?.uploaded_image_file === item.rel_path
+                              const isVideo = isVideoUploadItem(item);
+                              const boundScene = (selectedJob.plan?.scenes || []).find((s) =>
+                                isVideo
+                                  ? s.visual_props?.uploaded_video_file === item.rel_path
+                                  : s.visual_props?.uploaded_image_file === item.rel_path
                               );
                               return (
                                 <div
@@ -1511,19 +1668,30 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                                     flexWrap: "wrap",
                                   }}
                                 >
-                                  <img
-                                    src={studioPath(item.url)}
-                                    alt={item.filename}
-                                    style={{ width: 64, height: 42, objectFit: "cover", borderRadius: 6 }}
-                                  />
+                                  {isVideo ? (
+                                    <video
+                                      src={studioPath(item.url)}
+                                      muted
+                                      playsInline
+                                      preload="metadata"
+                                      style={{ width: 64, height: 42, objectFit: "cover", borderRadius: 6 }}
+                                    />
+                                  ) : (
+                                    <img
+                                      src={studioPath(item.url)}
+                                      alt={item.filename}
+                                      style={{ width: 64, height: 42, objectFit: "cover", borderRadius: 6 }}
+                                    />
+                                  )}
                                   <span style={{ fontWeight: 600 }}>{item.filename}</span>
+                                  {isVideo && <StatusPill tone="blue" label="视频片段" />}
                                   <span className="hint">{formatBytes(item.size_bytes)}</span>
                                   <select
                                     aria-label={`绑定图片 ${item.filename} 到分镜`}
                                     value={boundScene?.scene_id || ""}
                                     disabled={busyAction !== null || selectedJob.status === "rendering"}
                                     onChange={(e) =>
-                                      void handleBindUploadToScene(selectedJob, item.rel_path, e.target.value)
+                                      void handleBindUploadToScene(selectedJob, item, e.target.value)
                                     }
                                   >
                                     <option value="">未绑定分镜</option>
@@ -1551,7 +1719,9 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                           const statusInfo = src.fetch_status ? FETCH_STATUS_META[src.fetch_status] : null;
                           return (
                             <li key={`${src.source_id}-${idx}`} style={{ marginBottom: 4 }}>
-                              <span>[{src.kind}] {src.title || src.source_id}</span>
+                              <span>
+                                [{src.kind}] {src.title || src.source_id}
+                              </span>
                               {statusInfo && (
                                 <>
                                   {" "}
@@ -1651,119 +1821,18 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
               )}
 
               {inspectorTab === "script" && (
-                <div style={{ display: "grid", gap: 12 }}>
-                  {(selectedJob.plan?.scenes || []).map((scene, idx) => (
-                    <div key={scene.scene_id} className="panel">
-                      <div className="panel-heading">
-                        <strong>
-                          #{idx + 1} · {scene.heading}
-                        </strong>
-                        <div className="actions">
-                          <StatusPill
-                            tone="blue"
-                            label={TEMPLATE_LABELS[scene.template] || scene.template}
-                          />
-                          {scene.visual_props?.meme_asset_id && (
-                            <StatusPill tone="amber" label={`表情: ${scene.visual_props.meme_asset_id}`} />
-                          )}
-                          {scene.avatar_cue && <StatusPill tone="neutral" label={scene.avatar_cue} />}
-                          <button
-                            type="button"
-                            data-scene-change-meme={scene.scene_id}
-                            disabled={
-                              busyAction !== null ||
-                              selectedJob.status === "published" ||
-                              selectedJob.status === "publish_uncertain" ||
-                              selectedJob.status === "rendering"
-                            }
-                            onClick={() =>
-                              setMemePickerTarget({
-                                mode: "scene",
-                                job: selectedJob,
-                                sceneId: scene.scene_id,
-                                currentAssetId: scene.visual_props?.meme_asset_id,
-                              })
-                            }
-                          >
-                            更换表情
-                          </button>
-                        </div>
-                      </div>
-                      {scene.visual_props?.subtitle && (
-                        <p className="hint" style={{ margin: "6px 0" }}>
-                          {scene.visual_props.subtitle}
-                        </p>
-                      )}
-                      {scene.visual_props?.bullets && scene.visual_props.bullets.length > 0 && (
-                        <ul style={{ margin: "6px 0", paddingLeft: 18 }}>
-                          {scene.visual_props.bullets.map((b, i) => (
-                            <li key={i}>{b}</li>
-                          ))}
-                        </ul>
-                      )}
-                      {scene.visual_props?.code_snippet && (
-                        <pre style={{ margin: "8px 0", overflowX: "auto", padding: 10, borderRadius: 8 }}>
-                          {scene.visual_props.code_snippet}
-                        </pre>
-                      )}
-                      {scene.visual_props?.chart_items && scene.visual_props.chart_items.length > 0 && (
-                        <div className="hint" style={{ margin: "6px 0" }}>
-                          图表项：
-                          {scene.visual_props.chart_items
-                            .map((pt) => `${pt.label}: ${pt.value}${pt.unit || ""}`)
-                            .join(" / ")}
-                        </div>
-                      )}
-                      <div style={{ marginTop: 8 }}>
-                        <strong className="hint">口播台词</strong>
-                        {scene.lines.map((line, lIdx) => (
-                          <blockquote key={line.line_id || lIdx} className="quoted-text" style={{ margin: "6px 0" }}>
-                            {line.text}
-                            {line.emphasis && line.emphasis.length > 0 && (
-                              <span className="hint" style={{ marginLeft: 8 }}>
-                                （花字高亮：{line.emphasis.join(" / ")}）
-                              </span>
-                            )}
-                          </blockquote>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-
-                  <div className="panel">
-                    <strong>已核验公开来源（严格隔离私有记忆与私信）</strong>
-                    <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
-                      {(selectedJob.plan?.sources || []).map((src, idx) => {
-                        const safeUrl = safeHttpsUrl(src.url);
-                        const statusInfo = src.fetch_status ? FETCH_STATUS_META[src.fetch_status] : null;
-                        return (
-                          <li key={`${src.source_id}-${idx}`}>
-                            <span>[{src.kind}] {src.title || src.source_id}</span>
-                            {statusInfo && (
-                              <>
-                                {" "}
-                                <StatusPill tone={statusInfo.tone} label={statusInfo.label} />
-                              </>
-                            )}
-                            {safeUrl && (
-                              <>
-                                {" · "}
-                                <a href={safeUrl} target="_blank" rel="noopener noreferrer">
-                                  打开原来源
-                                </a>
-                              </>
-                            )}
-                            {src.fetch_status === "fallback" && src.fetch_error && (
-                              <div className="hint" style={{ color: "var(--amber, #d97706)" }}>
-                                抓取降级原因：{src.fetch_error}
-                              </div>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                </div>
+                <VideoStoryboardTab
+                  job={selectedJob}
+                  busy={busyAction !== null}
+                  onChangeSceneMeme={(sceneId, currentAssetId) =>
+                    setMemePickerTarget({
+                      mode: "scene",
+                      job: selectedJob,
+                      sceneId,
+                      currentAssetId,
+                    })
+                  }
+                />
               )}
 
               {inspectorTab === "code" && (

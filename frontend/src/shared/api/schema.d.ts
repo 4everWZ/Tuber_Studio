@@ -2729,6 +2729,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/videos/pitch-ideas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pitch Ideas */
+        post: operations["pitch_ideas_api_v1_operations_videos_pitch_ideas_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/videos/plan": {
         parameters: {
             query?: never;
@@ -2776,6 +2793,23 @@ export interface paths {
         post?: never;
         /** Delete Video Job */
         delete: operations["delete_video_job_api_v1_operations_videos__job_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/videos/{job_id}/capture-ui": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Capture Job Ui */
+        post: operations["capture_job_ui_api_v1_operations_videos__job_id__capture_ui_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2894,6 +2928,23 @@ export interface paths {
         get: operations["get_video_upload_api_v1_operations_videos__job_id__uploads__filename__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/videos/{job_id}/visual-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Job Visuals */
+        post: operations["review_job_visuals_api_v1_operations_videos__job_id__visual_review_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4951,7 +5002,7 @@ export interface components {
              * Mime Type
              * @enum {string}
              */
-            mime_type: "image/png" | "image/jpeg" | "image/webp";
+            mime_type: "image/png" | "image/jpeg" | "image/webp" | "video/mp4" | "video/webm";
         };
         /** PlanVideoScriptArgs */
         PlanVideoScriptArgs: {
@@ -4963,7 +5014,7 @@ export interface components {
             bgm_enabled: boolean;
             /**
              * Brief Text
-             * @description 可选参考资料、产品说明或原始大纲（最多 8000 字）。
+             * @description 可选参考资料、产品说明或原始大纲（最多 30000 字）。
              * @default
              */
             brief_text: string;
@@ -4972,6 +5023,11 @@ export interface components {
              * @description 可选关联的公开视频 BV 号。
              */
             candidate_bvids?: string[];
+            /**
+             * Duration Preset
+             * @description 可选时长档位：short / standard / deep_dive。
+             */
+            duration_preset?: ("short" | "standard" | "deep_dive") | null;
             /**
              * Fps
              * @description 视频帧率（30 或 60）。
@@ -4986,6 +5042,12 @@ export interface components {
              */
             include_avatar: boolean;
             /**
+             * Include Workspace Docs
+             * @description 是否读取允许公开的工坊仓库文档与模块结构。
+             * @default false
+             */
+            include_workspace_docs: boolean;
+            /**
              * Line Pause Seconds
              * @description 同一镜内相邻台词句间气口停顿（秒）。
              * @default 0.45
@@ -4993,10 +5055,9 @@ export interface components {
             line_pause_seconds: number;
             /**
              * Max Scenes
-             * @description 目标分镜数量。
-             * @default 4
+             * @description 目标分镜数量（不填时按视频类型与时长档位自动推导）。
              */
-            max_scenes: number;
+            max_scenes?: number | null;
             /**
              * Pinned Meme Ids
              * @description 可选置顶图库表情 ID（0-3 张，仅限全渠道可用表情）。
@@ -5004,7 +5065,7 @@ export interface components {
             pinned_meme_ids?: string[];
             /**
              * Reference Urls
-             * @description 可选公开参考链接（最多 4 条 HTTPS URL，支持 GitHub 仓库自动读 README）。
+             * @description 可选公开参考链接（最多 6 条 HTTPS URL，支持 GitHub 仓库深度抓取）。
              */
             reference_urls?: string[];
             /**
@@ -5026,16 +5087,16 @@ export interface components {
             topic: string;
             /**
              * Uploaded Images
-             * @description 可选本次视频专属公开配图/截图（0-3 张）。
+             * @description 可选本次视频专属公开配图/截图或短视频片段（0-12 份）。
              */
             uploaded_images?: components["schemas"]["PlanUploadedImage"][];
             /**
              * Video Mode
-             * @description 视频类型：commentary / self_intro / project_showcase / explainer。
+             * @description 视频类型：commentary / daily_vlog / watched_roundup / project_showcase / explainer / self_intro。
              * @default commentary
              * @enum {string}
              */
-            video_mode: "commentary" | "self_intro" | "project_showcase" | "explainer";
+            video_mode: "commentary" | "daily_vlog" | "watched_roundup" | "project_showcase" | "explainer" | "self_intro";
         };
         /** Proposal */
         Proposal: {
@@ -5327,6 +5388,24 @@ export interface components {
             type: string;
         };
         /**
+         * VideoCaptureUiBody
+         * @description HTTP payload for capturing local Tuber Studio workbench screenshots into a video job.
+         */
+        VideoCaptureUiBody: {
+            /**
+             * Base Url
+             * @default http://127.0.0.1:9020
+             */
+            base_url: string;
+            /**
+             * Max Captures
+             * @default 6
+             */
+            max_captures: number;
+            /** Routes */
+            routes?: string[] | null;
+        };
+        /**
          * VideoGenerateBody
          * @description HTTP payload for generating TTS audio, manifest, and Remotion project.
          */
@@ -5345,6 +5424,22 @@ export interface components {
             tts_mode: "omni_speech" | "dry_run";
         };
         /**
+         * VideoPitchIdeasBody
+         * @description HTTP payload for pitching video vs dynamic content ideas.
+         */
+        VideoPitchIdeasBody: {
+            /**
+             * Brief Hint
+             * @default
+             */
+            brief_hint: string;
+            /**
+             * Max Ideas
+             * @default 5
+             */
+            max_ideas: number;
+        };
+        /**
          * VideoPlanPatch
          * @description Editable fields on a planned VideoScriptPlan prior to publishing.
          */
@@ -5353,6 +5448,8 @@ export interface components {
             bgm_enabled?: boolean | null;
             /** Category Tid */
             category_tid?: number | null;
+            /** Duration Preset */
+            duration_preset?: ("short" | "standard" | "deep_dive") | null;
             /** Fps */
             fps?: (30 | 60) | null;
             /** Height */
@@ -5378,7 +5475,7 @@ export interface components {
             /** Title */
             title?: string | null;
             /** Video Mode */
-            video_mode?: ("commentary" | "self_intro" | "project_showcase" | "explainer") | null;
+            video_mode?: ("commentary" | "daily_vlog" | "watched_roundup" | "project_showcase" | "explainer" | "self_intro") | null;
             /** Width */
             width?: (1920 | 1280) | null;
         };
@@ -5469,7 +5566,7 @@ export interface components {
         };
         /**
          * VideoUploadBody
-         * @description HTTP payload for uploading up to 3 public images/screenshots for a video job.
+         * @description HTTP payload for uploading up to 12 public images/screenshots or MP4/WebM clips for a video job.
          */
         VideoUploadBody: {
             /** Filename */
@@ -5480,7 +5577,7 @@ export interface components {
              * Mime Type
              * @enum {string}
              */
-            mime_type: "image/png" | "image/jpeg" | "image/webp";
+            mime_type: "image/png" | "image/jpeg" | "image/webp" | "video/mp4" | "video/webm";
         };
         /** VoiceCorrection */
         VoiceCorrection: {
@@ -22695,6 +22792,102 @@ export interface operations {
             };
         };
     };
+    pitch_ideas_api_v1_operations_videos_pitch_ideas_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["VideoPitchIdeasBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     plan_video_api_v1_operations_videos_plan_post: {
         parameters: {
             query?: never;
@@ -23075,6 +23268,104 @@ export interface operations {
             };
         };
     };
+    capture_job_ui_api_v1_operations_videos__job_id__capture_ui_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["VideoCaptureUiBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     generate_video_project_api_v1_operations_videos__job_id__generate_post: {
         parameters: {
             query?: never;
@@ -23179,7 +23470,7 @@ export interface operations {
             header?: never;
             path: {
                 job_id: string;
-                kind: "video" | "audio" | "subtitles" | "subtitles_vtt" | "cover" | "props" | "manifest" | "code";
+                kind: "video" | "audio" | "subtitles" | "subtitles_vtt" | "cover" | "contact_sheet" | "props" | "manifest" | "code";
             };
             cookie?: never;
         };
@@ -23667,6 +23958,100 @@ export interface operations {
             path: {
                 job_id: string;
                 filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    review_job_visuals_api_v1_operations_videos__job_id__visual_review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
             };
             cookie?: never;
         };
