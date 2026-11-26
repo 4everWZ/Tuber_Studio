@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import stat
 import wave
 from pathlib import Path
@@ -571,6 +572,8 @@ def test_remotion_render_concurrency_qc_gate_and_idempotent_publish(settings, tm
         expected_intent = canonical_intent("bilibili", "video_publish", r1_ok["content_hash"], runtime.character["id"])
         assert pub1["intent"] == expected_intent
         assert len(biliup_calls) == 1
+        assert biliup_calls[0][:4] == ["biliup", "--user-cookie", biliup_calls[0][2], "upload"]
+        assert "--submit" in biliup_calls[0] and biliup_calls[0][biliup_calls[0].index("--submit") + 1] == "web"
         assert not observed_cookie_paths[0].exists(), "temp cookie file & dir must be removed in finally"
         assert observed_cookie_contents[0]["cookie_info"]["cookies"][0]["value"] == "secret_sess_9999"
 
@@ -725,5 +728,61 @@ def test_remotion_skill_registers_project_and_evicts_old_renders_with_media_cach
         assert gen["ok"] is True
         assert Path(gen["project_dir"]).exists()
         assert not old_dir.exists()
+
+    asyncio.run(scenario())
+
+
+def test_remotion_stage_publish_uses_web_api_without_biliup_cli(settings, tmp_path, monkeypatch):
+    async def scenario():
+        app = create_app(settings, adapter=ControlledPlatform())
+        runtime = app.state.runtime
+        runtime.account.credentials = {"sessdata": "s-web", "csrf": "c-web", "uid": "42"}
+
+        orig_which = shutil.which
+        monkeypatch.setattr(shutil, "which", lambda cmd: None if cmd == "biliup" else orig_which(cmd))
+
+        skill = RemotionVideoSkill(
+            runtime,
+            runtime.store,
+            browsing=runtime.browsing,
+            renders_root=tmp_path,
+        )
+        env = skill.environment_status()
+        assert env["biliup"]["ready"] is True
+        assert env["biliup"]["mode"] == "web_api"
+        assert env["biliup"]["web_credentials"] is True
+        assert env["biliup"]["cli_installed"] is False
+
+        p = await plan_video_script(skill, {"topic": "原生 Web 投稿回归", "max_scenes": 2})
+        g = await generate_remotion_project(skill, {"job_id": p["job_id"], "tts_mode": "dry_run"})
+        job_dir = Path(g["project_dir"])
+        out_mp4 = job_dir / "output.mp4"
+        out_mp4.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
+        cover_png = job_dir / "cover.png"
+        cover_png.write_bytes(b"\x89PNG\r\n\x1a\n")
+        skill._update_job(
+            g["job_id"],
+            status="ready_for_review",
+            output_path=str(out_mp4),
+            cover_path=str(cover_png),
+            qc_json=json.dumps({"passed": True, "issues": []}),
+            content_hash="hash-web-upload-01",
+        )
+
+        captured = {}
+
+        async def fake_web_upload(**kwargs):
+            captured.update(kwargs)
+            return {"platform": "bilibili", "uploader": "web_api", "bvid": "BV1nativeWeb01", "aid": 321}
+
+        monkeypatch.setattr("tuber_studio.agent.skills.remotion_video.upload_bilibili_video_web", fake_web_upload)
+
+        pub = await stage_or_publish_bilibili_video(skill, {"job_id": g["job_id"], "approved": True})
+        assert pub["ok"] is True
+        assert pub["action"] == "published"
+        assert pub["receipt"]["bvid"] == "BV1nativeWeb01"
+        assert captured["output_path"] == out_mp4
+        assert captured["cover_path"] == cover_png
+        assert captured["credentials"] == {"sessdata": "s-web", "csrf": "c-web", "uid": "42"}
 
     asyncio.run(scenario())

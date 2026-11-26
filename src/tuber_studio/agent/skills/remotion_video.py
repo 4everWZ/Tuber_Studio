@@ -23,6 +23,7 @@ from ...core.identity import without_model_identity
 from ...core.models import StrictModel, content_hash, tool_function
 from ...core.store import dump
 from ...core.validation import linked
+from ...infra.platforms.bilibili.video_upload import upload_bilibili_video_web
 from ...infra.web_client.fetch import fetch_excerpt
 from ...operations import facade as _ops
 from ...persona.memory.daily.models import contains_memory_credential
@@ -239,11 +240,15 @@ class RemotionVideoSkill:
             with suppress(Exception):
                 voice = settings.voice(self._current_character().get("voice_profile") or "whale_reference")
                 tts_ref_ok = voice.get("provider") == "omni_reference" and settings.voice_reference_path(voice).is_file()
+        creds = dict(getattr(getattr(self.runtime, "account", None), "credentials", None) or {})
+        web_creds_ok = bool(str(creds.get("sessdata") or "").strip() and str(creds.get("csrf") or "").strip())
+        cli_ok = bool(shutil.which("biliup"))
         return {
             "node": {"ready": bool(shutil.which("node"))}, "npx": {"ready": bool(shutil.which("npx"))},
             "ffmpeg": {"ready": bool(shutil.which("ffmpeg"))}, "ffprobe": {"ready": bool(shutil.which("ffprobe"))},
             "remotion_studio": {"ready": self._shared_studio_installed(), "dir_exists": self.studio_dir.is_dir(), "label": self.studio_dir.name},
-            "browser": {"ready": bool(browser_path), "kind": browser_kind}, "biliup": {"ready": bool(shutil.which("biliup"))},
+            "browser": {"ready": bool(browser_path), "kind": browser_kind},
+            "biliup": {"ready": web_creds_ok or cli_ok, "mode": "web_api" if web_creds_ok else ("biliup_cli" if cli_ok else "missing"), "web_credentials": web_creds_ok, "cli_installed": cli_ok},
             "omni_llm": {"ready": bool(op_llm is not None and callable(getattr(op_llm, "generate_json", None)) and omni_cfg.get("base_url"))},
             "omni_tts": {"ready": bool(voices is not None and tts_ref_ok and omni_cfg.get("base_url"))},
         }
@@ -258,8 +263,7 @@ class RemotionVideoSkill:
         acct = getattr(self.runtime, "account", None)
         if acct is not None and hasattr(acct, "display_account_id") and (uid := str(acct.display_account_id() or "")):
             return uid
-        browsing = self._browsing_service()
-        return str(browsing.account) if browsing is not None and getattr(browsing, "account", None) else ""
+        return str(b.account) if (b := self._browsing_service()) is not None and getattr(b, "account", None) else ""
 
     def policy(self) -> VideoProductionPolicy:
         saved = self.store.get(VIDEO_PRODUCTION_POLICY_KEY) or {}
@@ -824,25 +828,21 @@ class RemotionVideoSkill:
                 return "当前账号处于平台风控冷却期，已转回人工预览审核"
         return None
 
-    async def _upload_via_biliup(self, *, plan: VideoScriptPlan, output_path: Path, credentials: dict[str, Any], timeout: float) -> dict[str, Any]:
+    async def _upload_via_biliup(self, *, plan: VideoScriptPlan, output_path: Path, cover_path: Path | None = None, credentials: dict[str, Any], timeout: float) -> dict[str, Any]:
         sessdata, csrf, uid = str(credentials.get("sessdata") or "").strip(), str(credentials.get("csrf") or "").strip(), str(credentials.get("uid") or "").strip()
         if not (sessdata and csrf):
             raise ValueError("缺少有效的 B 站登录 Cookie 凭证，无法执行投稿")
+        if not callable(self.biliup_runner):
+            return await upload_bilibili_video_web(title=plan.title, desc=plan.summary[:250], tid=plan.category_tid, tags=list(plan.tags[:10]), output_path=output_path, cover_path=cover_path, credentials=credentials, timeout=timeout)
         cookie_payload = {"cookie_info": {"cookies": [{"name": "SESSDATA", "value": sessdata}, {"name": "bili_jct", "value": csrf}, *([{"name": "DedeUserID", "value": uid}] if uid else [])]}}
         with tempfile.TemporaryDirectory(prefix="biliup-cookie-") as tmp_dir:
             cookie_file = Path(tmp_dir) / "cookies.json"
             cookie_file.write_text(json.dumps(cookie_payload, ensure_ascii=False), encoding="utf-8")
             with suppress(OSError):
                 os.chmod(cookie_file, 0o600)
-            cmd = ["biliup", "upload", "--user-cookie", str(cookie_file), "--title", plan.title, "--desc", plan.summary[:250], "--tid", str(plan.category_tid), "--tag", ",".join(plan.tags[:10]), str(output_path)]
-            if callable(self.biliup_runner):
-                code, stdout, stderr = await self.biliup_runner(cmd, output_path.parent, timeout)
-            else:
-                biliup_bin = shutil.which("biliup")
-                if not biliup_bin:
-                    raise ValueError("未安装 biliup CLI，无法直接投稿")
-                cmd[0] = biliup_bin
-                code, stdout, stderr = await self._run_exec(cmd, cwd=output_path.parent, timeout=timeout)
+            cover_args = ["--cover", str(cover_path)] if cover_path and cover_path.is_file() else []
+            cmd = ["biliup", "--user-cookie", str(cookie_file), "upload", "--submit", "web", "--title", plan.title, "--desc", plan.summary[:250], "--tid", str(plan.category_tid), "--tag", ",".join(plan.tags[:10]), *cover_args, str(output_path)]
+            code, stdout, stderr = await self.biliup_runner(cmd, output_path.parent, timeout)
         safe_out, safe_err = _ra._scrub_secrets(stdout, credentials), _ra._scrub_secrets(stderr, credentials)
         receipt = _ra._parse_biliup_receipt(safe_out, safe_err)
         if code != 0:
@@ -907,8 +907,9 @@ class RemotionVideoSkill:
             write_token = _ops.reserve_write_attempt(ops_host, account_id=account_id, character=char, intent=intent, channel="video_publish", automatic=not args.approved, epoch=epoch, binding={"job_id": args.job_id, "title": plan.title, "content_hash": effective_hash}, content_hash=effective_hash)
 
         credentials = dict(getattr(getattr(self.runtime, "account", None), "credentials", None) or {})
+        cover_file = Path(job["cover_path"]) if job.get("cover_path") else None
         try:
-            receipt = await self._upload_via_biliup(plan=plan, output_path=Path(job["output_path"]), credentials=credentials, timeout=policy.upload_timeout_seconds)
+            receipt = await self._upload_via_biliup(plan=plan, output_path=Path(job["output_path"]), cover_path=cover_file, credentials=credentials, timeout=policy.upload_timeout_seconds)
         except TimeoutError as exc:
             if write_token:
                 _ops.finish_write_attempt(ops_host, write_token, "uncertain", error=str(exc))

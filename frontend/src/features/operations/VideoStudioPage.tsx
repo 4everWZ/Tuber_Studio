@@ -157,7 +157,7 @@ interface VideoEnvironment {
   ffprobe?: { ready: boolean };
   remotion_studio?: { ready: boolean; dir_exists?: boolean; label?: string };
   browser?: { ready: boolean; kind?: string | null };
-  biliup?: { ready: boolean };
+  biliup?: { ready: boolean; mode?: string; web_credentials?: boolean; cli_installed?: boolean };
   omni_llm?: { ready: boolean };
   omni_tts?: { ready: boolean };
 }
@@ -738,7 +738,7 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
   async function handleStageOrPublish(job: VideoJobRecord, approved: boolean) {
     if (
       approved &&
-      !window.confirm(`确认将成片「${job.title}」通过 biliup 投稿到当前 B 站账号？`)
+      !window.confirm(`确认将成片「${job.title}」投稿到当前 B 站账号？`)
     ) {
       return;
     }
@@ -833,7 +833,19 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
     },
     { key: "llm", label: "Omni LLM", ready: Boolean(environment?.omni_llm?.ready) },
     { key: "tts", label: "Omni TTS", ready: Boolean(environment?.omni_tts?.ready) },
-    { key: "biliup", label: "biliup 投稿", ready: Boolean(environment?.biliup?.ready) },
+    {
+      key: "biliup",
+      label: "B 站投稿",
+      ready: Boolean(environment?.biliup?.ready),
+      detail:
+        environment?.biliup?.mode === "web_api"
+          ? "内置 Web"
+          : environment?.biliup?.mode === "biliup_cli"
+            ? "biliup CLI"
+            : environment?.biliup?.ready
+              ? undefined
+              : "需登录 B 站",
+    },
   ];
 
   const selectedStatusMeta = selectedJob
