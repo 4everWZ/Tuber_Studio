@@ -1,10 +1,10 @@
 """Studio-side sentence boundaries, verified transcription and playback WAV assembly."""
 import base64
 import binascii
-from difflib import SequenceMatcher
 import io
 import re
 import wave
+from difflib import SequenceMatcher
 
 from .http_api import check_response_status
 
