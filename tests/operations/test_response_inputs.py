@@ -48,7 +48,7 @@ def reply(refs=()):
 
 @pytest.mark.parametrize(
     ("mentioned_uid", "parent_uid", "expected"),
-    [("3706944382568764", "200", ["self", "other"]), ("300", "300", ["other"]), (None, None, [])],
+    [("3706944382568764", "200", ["self", "other"]), ("300", "300", ["other"]), (None, None, ["other"])],
 )
 def test_response_actors_keep_real_addressees_distinct_from_oc_and_source(
     mentioned_uid, parent_uid, expected
@@ -74,6 +74,11 @@ def test_response_actors_keep_real_addressees_distinct_from_oc_and_source(
     addressing = bound["thread"]["addressing"]
     assert addressing["source_relation_to_self"] == "other"
     assert [item["relation_to_self"] for item in addressing["addressed_to"]] == expected
+    if mentioned_uid is None:
+        assert addressing["addressed_to"] == [
+            {"uid": None, "name": "汐", "relation_to_self": "other", "basis": ["plain_mention"]}
+        ]
+        assert addressing["is_explicitly_mentioned"] is False
     if mentioned_uid == parent_uid and mentioned_uid:
         assert addressing["addressed_to"][0]["basis"] == ["mention", "reply_parent"]
     assert bound["thread"]["root"]["relation_to_self"] == "other"
@@ -89,8 +94,11 @@ def test_response_actors_keep_real_addressees_distinct_from_oc_and_source(
 def test_missing_account_or_parent_identity_stays_unknown_despite_matching_names():
     data = {"thread": {"source": {"author_uid": "200", "author_name": "大肥鱼", "text": "@大肥鱼"}}}
     value = bind_response_actors(data, {"account_uid": None, "character_name": "大肥鱼"})
-    assert value["thread"]["addressing"]["source_relation_to_self"] == "unknown"
-    assert value["thread"]["addressing"]["addressed_to"] == []
+    addressing = value["thread"]["addressing"]
+    assert addressing["source_relation_to_self"] == "unknown"
+    assert addressing["is_explicitly_mentioned"] is False
+    assert addressing["addressed_to"][0]["uid"] is None
+    assert addressing["addressed_to"][0]["basis"] == ["plain_mention"]
     assert data == {"thread": {"source": {"author_uid": "200", "author_name": "大肥鱼", "text": "@大肥鱼"}}}
 
 
@@ -240,16 +248,19 @@ def test_compact_public_experience_retains_clean_quote_without_quote_ref():
     assert bound == original
 
 
-@pytest.mark.parametrize("lookup", [False, True])
-async def test_video_comment_uses_cached_video_only_after_quoting_the_request(browsing, monkeypatch, lookup):
+@pytest.mark.parametrize("audience,lookup", [("self", False), ("self", True), ("third_party", False)])
+async def test_video_comment_uses_cached_video_only_after_quoting_the_request(
+    browsing, monkeypatch, audience, lookup
+):
     from tests.support.operations_helpers import BV
 
     row = await prepared_row(browsing)
     key, material = await browsing._prepare_evidence(BV, row["config"])
+    recipient_uid = row["account_id"] if audience == "self" else "300"
     source = {
         "comment_id": "501", "thread_id": "501", "parent_comment_id": None,
         "platform_user_id": "200", "display_name": "观众", "content": "@汐 视频里鸡蛋浮起来是加了什么？",
-        "mentions": [{"uid": "300", "name": "汐"}],
+        "mentions": [{"uid": recipient_uid, "name": "汐"}],
     }
     calls = []
 
@@ -284,6 +295,9 @@ async def test_video_comment_uses_cached_video_only_after_quoting_the_request(br
         row, material, key, {segment["id"] for segment in browsing._segments(material)},
         source, [source], {"lock_wait_seconds": 0},
     )
+    if audience == "third_party":
+        assert result is None and not calls and not browsing.adapter.sent
+        return
     expected = {"11:0", "public:501"} if lookup else {"public:501"}
     assert len(calls) == (2 if lookup else 1) and set(result["evidence"]) == expected
     assert result["material_keys"] == [key] and not browsing.adapter.sent
