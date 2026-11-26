@@ -122,12 +122,12 @@ def test_self_model_has_four_pillars_aqua_boundary_and_zero_prop_clutter():
         assert "工坊号主" not in msg["content"]
         assert "认知主权" not in msg["content"]
 
-    # Real config/characters.json Aqua shell balances 80% whale-girl OC + 20% Jetson backdrop without clichés.
+    # Real config/characters.json Aqua shell keeps lively whale-girl OC without hardware/defensive clichés.
     real_card = _real_aqua_card()
     browsing_prompt = render_self_model_prompt(
         build_metacognitive_profile(real_card, channel="video_browsing"), character=real_card
     )
-    assert browsing_prompt.count("Jetson") == 1
+    assert "Jetson" not in browsing_prompt
     assert "白饭" in browsing_prompt and "摸鱼" in browsing_prompt
     for banned in ("认知主权", "苦情剧本", "电费", "散热风扇", "MCN", "视频里UP主", "视频里 UP 主"):
         assert banned not in browsing_prompt

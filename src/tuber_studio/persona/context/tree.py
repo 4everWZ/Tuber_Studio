@@ -697,6 +697,8 @@ def fork_comment_floor_branch(
     branch_id: str | None = None,
     objective: str = "",
     extra_context: dict[str, Any] | None = None,
+    addressing: dict[str, Any] | None = None,
+    video_author: dict[str, Any] | None = None,
 ) -> ContextNode:
     """Fork a per-root_id comment floor branch including owner manual takeover turns."""
     root_str = str(root_id).strip()
@@ -707,6 +709,26 @@ def fork_comment_floor_branch(
 
     messages: list[dict[str, Any]] = []
     header = [f"【当前分支：评论楼内对话 (root_id={root_str})】"]
+    if video_author:
+        va_name = str(video_author.get("name") or "").strip() or "未知"
+        va_uid = str(video_author.get("uid") or "").strip()
+        if video_author.get("is_self"):
+            header.append(f"视频作者：{va_name}" + (f" (UID:{va_uid})" if va_uid else "") + "（本账号，你是这条视频的 UP 主）")
+        else:
+            header.append(
+                f"视频作者：{va_name}" + (f" (UID:{va_uid})" if va_uid else "")
+                + "（第三方作者，不是你；观众提到的催更、创作模板、吐槽或夸赞都是对这位作者说的，不是在说你）"
+            )
+    nature = str((addressing or {}).get("conversation_nature") or "")
+    if nature == "direct_interaction_with_self":
+        header.append("对话指向：对方正在直接 @ 或回复本账号（可以以本账号身份自然回应，如直接叫错你的名字可炸毛纠正）。")
+    elif nature == "third_party_dialogue":
+        header.append("对话指向：这是评论区里别人 @ 或回复第三方用户的对话，并非对你说话；请直接调用 skip_reply。")
+    elif nature == "general_public_comment":
+        header.append(
+            "对话指向：这是观众在公开视频下的普通讨论/玩梗（未 @ 也未回复本账号）。"
+            "评论里出现的“催更”“更新”“大肥鱼”等字眼大概率指向视频作者、剧情角色或他人外号，切勿对号入座、自称作者或贸然炸毛；没有自然接梗点就调用 skip_reply。"
+        )
     if extra_context:
         header.append("楼层上下文：" + json.dumps(extra_context, ensure_ascii=False, separators=(",", ":")))
     header.append(
@@ -763,11 +785,15 @@ def fork_comment_floor_branch(
 
     cue_lines = []
     if target:
-        cue_lines.append(
-            f"请针对 {target['author_name']}"
-            + (f" (UID:{target['author_uid']})" if target["author_uid"] else "")
-            + f" 的这句原话：「{target['text']}」"
-        )
+        uid_note = f" (UID:{target['author_uid']})" if target["author_uid"] else ""
+        if nature in {"general_public_comment", "third_party_dialogue"}:
+            cue_lines.append(
+                f"当前浏览到的公开评论（作者：{target['author_name']}{uid_note}）：「{target['text']}」"
+            )
+        else:
+            cue_lines.append(
+                f"请针对 {target['author_name']}{uid_note} 的这句原话：「{target['text']}」"
+            )
     cue_lines.append(
         objective.strip()
         or "决定下一步行动：若要公开回复，直接输出 1-2 句简短自然的口语正文（通常 10-50 字，不要输出 JSON 或引用编号）；"

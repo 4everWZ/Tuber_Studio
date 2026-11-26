@@ -613,9 +613,26 @@ except ImportError:
         branch_id: str | None = None,
         objective: str = "",
         extra_context: dict[str, Any] | None = None,
+        addressing: dict[str, Any] | None = None,
+        video_author: dict[str, Any] | None = None,
     ) -> ContextNode:
         confirmed = {str(x) for x in confirmed_bot_comment_ids if x}
         messages: list[dict[str, Any]] = []
+        nature = str((addressing or {}).get("conversation_nature") or "")
+        if video_author:
+            va_name = str(video_author.get("name") or "").strip() or "未知"
+            va_uid = str(video_author.get("uid") or "").strip()
+            va_line = (
+                f"视频作者：{va_name}" + (f" (UID:{va_uid})" if va_uid else "")
+                + ("（本账号，你是这条视频的 UP 主）" if video_author.get("is_self") else "（第三方作者，不是你；观众催更或吐槽都在说这位作者）")
+            )
+            messages.append({"role": "user", "content": va_line})
+        if nature == "direct_interaction_with_self":
+            messages.append({"role": "user", "content": "对话指向：对方正在直接 @ 或回复本账号（如直接叫错你的名字可炸毛纠正）。"})
+        elif nature == "third_party_dialogue":
+            messages.append({"role": "user", "content": "对话指向：这是评论区里别人 @ 或回复第三方用户的对话，并非对你说话；请直接调用 skip_reply。"})
+        elif nature == "general_public_comment":
+            messages.append({"role": "user", "content": "对话指向：这是观众在公开视频下的普通讨论/玩梗（未 @ 也未回复本账号），切勿对号入座或冒认作者。"})
         target_cid, _, _, _, _ = _comment_fields(reply_target)
         seen_ids: set[str] = set()
         for item in timeline or ():
@@ -664,9 +681,15 @@ except ImportError:
         if t_badges:
             t_who += f"[{'、'.join(t_badges)}]"
         if not t_cid or t_cid not in seen_ids:
-            prompt_lines = [f"当前需要回应的评论（comment_id {t_cid}，来自 {t_who}）：\n{t_text}"]
+            if nature in {"general_public_comment", "third_party_dialogue"}:
+                prompt_lines = [f"当前浏览到的公开评论（comment_id {t_cid}，作者：{t_who}）：\n{t_text}"]
+            else:
+                prompt_lines = [f"当前需要回应的评论（comment_id {t_cid}，来自 {t_who}）：\n{t_text}"]
         else:
-            prompt_lines = [f"请针对上面最后提到的 {t_who} 的这条评论决定是否回复。"]
+            if nature in {"general_public_comment", "third_party_dialogue"}:
+                prompt_lines = [f"当前浏览到的公开评论（作者：{t_who}），判断是否需要插话；不需要或不是对本账号说话请调用 skip_reply。"]
+            else:
+                prompt_lines = [f"请针对上面最后提到的 {t_who} 的这条评论决定是否回复。"]
         if extra_context:
             prompt_lines.append("补充情境：\n" + json.dumps(extra_context, ensure_ascii=False))
         if objective.strip():

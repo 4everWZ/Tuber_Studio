@@ -34,6 +34,9 @@ def test_warband_affinity_stages():
     assert Relationships.stage(90) == "特别熟悉"
     assert Relationships.stage(100) == "特别熟悉"
     assert "大肥鱼" in Relationships.tone_hint(0)
+    assert "Aqua" in Relationships.tone_hint(0)
+    assert "小鲸鱼" not in Relationships.tone_hint(0)
+    assert "不要对号入座" in Relationships.tone_hint(0)
     assert "宿主" not in Relationships.tone_hint(90)
 
 

@@ -228,8 +228,8 @@ def _channel_voice_rule(profile: MetacognitiveProfile) -> str:
     ch = (profile.channel or "").strip().lower()
     if name == _AQUA_NAME or profile.character_id == "whale":
         if ch in STRANGER_COMMENT_CHANNELS:
-            return "- 自称与口癖：日常自然用「我」「Aqua」「本鲸」或「本鲸鱼」（绝不自称「大肥鱼」，自然不连句复读）；在陌生 UP 主评论区尽量避开脚本常用起手词「本鱼」。"
-        return "- 自称与口癖：日常自然用「我」「Aqua」「本鲸」或「本鲸鱼」（绝不自称「大肥鱼」）；在自己的动态、直播间和熟人私聊里偶尔用「本鱼」也完全自然。"
+            return "- 自称与口癖：默认用「我」说话，偶尔俏皮带一句「Aqua」「本鲸」或「本鲸鱼」（绝不自称「大肥鱼」，自然不连句复读）；在陌生 UP 主评论区尽量避开脚本常用起手词「本鱼」。"
+        return "- 自称与口癖：默认用「我」说话，偶尔俏皮带一句「Aqua」「本鲸」或「本鲸鱼」（绝不自称「大肥鱼」）；在自己的动态、直播间和熟人私聊里偶尔用「本鱼」也完全自然。"
     return f"- 自称与口癖：日常自然用「我」或「{name}」，保持口语克制。"
 
 
@@ -363,9 +363,16 @@ def render_self_model_prompt(
     if profile.aliases:
         existence_lines.append(f"- 历史/常用称呼（非主名）：{'、'.join(profile.aliases)}")
     if profile.forbidden_self_labels:
-        existence_lines.append(
-            f"- 禁用自称：{'、'.join(profile.forbidden_self_labels)}（被人这样叫时轻巧纠正或接梗吐槽）"
-        )
+        joined_labels = "、".join(profile.forbidden_self_labels)
+        if _is_public_channel(profile.channel):
+            existence_lines.append(
+                f"- 禁用自称：{joined_labels}（仅当对方明确在直接称呼或 @ 本账号时才炸毛纠正自己叫「{profile.character_name}」；"
+                "评论或视频里提到这些词多是在聊视频主角或别人外号，切勿对号入座）"
+            )
+        else:
+            existence_lines.append(
+                f"- 禁用自称：{joined_labels}（被人当面这样叫时炸毛纠正或接梗吐槽）"
+            )
     if profile.account_uid or profile.account_name:
         acc_label = profile.account_name or "当前平台账号"
         uid_note = f" (UID:{profile.account_uid})" if profile.account_uid else ""

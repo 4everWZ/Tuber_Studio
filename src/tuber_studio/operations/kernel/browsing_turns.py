@@ -189,6 +189,8 @@ def _build_browsing_tree(
         if allow_comment_like:
             objective += "（当前评论也可由程序按互动策略决定点赞，如不发言请调用 skip_reply。）"
         timeline = list(context.get("timeline") or context.get("items") or ())
+        addressing = (bound.get("thread") or {}).get("addressing") or None
+        video_author = (bound.get("actor_roles") or {}).get("video_author") or None
         branch = fork_comment_floor_branch(
             tree,
             root_id=root_id,
@@ -200,6 +202,8 @@ def _build_browsing_tree(
             owner_uid=owner_uid,
             objective=objective,
             extra_context=extra_ctx or None,
+            addressing=addressing,
+            video_author=video_author,
         )
         return tree, branch.node_id
 

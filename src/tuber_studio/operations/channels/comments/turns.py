@@ -101,6 +101,18 @@ async def generate_native_comment_reply(
         "请像 B 站评论区顺手回一句那样，用 1-2 句简短口语（通常 10-50 字）直接接住当前评论的话头，别写长段分析；"
         "如果无需发言或对方不是对本账号说话，可调用 skip_reply。"
     )
+    addressing = (event.get("comment_context") or {}).get("addressing") or event.get("addressing") or None
+    va_meta = (video_material or {}).get("metadata") or {}
+    va_name = str(va_meta.get("owner") or "").strip()
+    video_author = (
+        {
+            "uid": str(uploader_uid or "") or None,
+            "name": va_name,
+            "is_self": bool(account_id and uploader_uid and str(account_id) == str(uploader_uid)),
+        }
+        if (uploader_uid or va_name)
+        else None
+    )
     branch = fork_comment_floor_branch(
         tree,
         root_id=str(row["thread_id"]),
@@ -112,6 +124,8 @@ async def generate_native_comment_reply(
         owner_uid=owner_uid,
         objective=objective,
         extra_context=extra_ctx or None,
+        addressing=addressing,
+        video_author=video_author,
     )
 
     tool_names = ["search_web", "save_memory", "recall_history", "skip_reply"]

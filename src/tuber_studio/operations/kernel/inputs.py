@@ -75,13 +75,32 @@ def bind_response_actors(data, self_actor):
         if basis not in actor["basis"]:
             actor["basis"].append(basis)
 
-    mentions = addressing.get("source_mentions", [])
+    mentions = addressing.get("source_mentions") or []
     for mention in mentions:
         if isinstance(mention, dict):
             add(mention.get("uid"), mention.get("name"), "mention")
     parent = thread.get("parent") or {}
     if parent and str(parent.get("comment_id") or "") != str(source.get("comment_id") or ""):
         add(parent.get("author_uid"), parent.get("author_name") or parent.get("display_name"), "reply_parent")
+    known_names = {
+        str(a.get("name") or "").strip().casefold()
+        for a in addressed.values()
+        if str(a.get("name") or "").strip()
+    }
+    self_display = str(self_actor.get("account_display_name") or "").strip().casefold()
+    source_text = str(source.get("text") or "")
+    for match in re.finditer(r"(?:^|[\s，,。！？!?:：；;(（\[【])@([A-Za-z0-9_\-\u4e00-\u9fff·]{1,40})", source_text):
+        handle = match.group(1).strip()
+        lowered = handle.casefold()
+        if not handle or lowered in known_names or (self_display and lowered == self_display):
+            continue
+        key = f"plain:{lowered}"
+        actor = addressed.setdefault(
+            key, {"uid": None, "name": handle, "relation_to_self": "other", "basis": []}
+        )
+        if "plain_mention" not in actor["basis"]:
+            actor["basis"].append("plain_mention")
+        known_names.add(lowered)
     addressing["addressed_to"] = list(addressed.values())
     is_explicitly_mentioned = any(
         a.get("relation_to_self") == "self" and "mention" in a.get("basis", [])
@@ -92,15 +111,19 @@ def bind_response_actors(data, self_actor):
         for a in addressed.values()
     )
     has_third_party = any(a.get("relation_to_self") == "other" for a in addressed.values())
-    mentions_other = any(a["relation_to_self"] == "other" and "mention" in a["basis"] for a in addressed.values())
+    mentions_other = any(
+        a["relation_to_self"] == "other" and ("mention" in a["basis"] or "plain_mention" in a["basis"])
+        for a in addressed.values()
+    )
+    has_any_mention = bool(mentions) or any("plain_mention" in a.get("basis", []) for a in addressed.values())
     addressing["is_explicitly_mentioned"] = is_explicitly_mentioned
     addressing["is_reply_to_self"] = is_reply_to_self
     addressing["has_third_party_mention"] = has_third_party
     addressing["conversation_nature"] = (
         "direct_interaction_with_self"
-        if (is_explicitly_mentioned or (is_reply_to_self and not mentions))
+        if (is_explicitly_mentioned or (is_reply_to_self and not has_any_mention))
         else "third_party_dialogue"
-        if (mentions_other if mentions else has_third_party)
+        if (mentions_other if has_any_mention else has_third_party)
         else "general_public_comment"
     )
     if source:

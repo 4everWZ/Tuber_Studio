@@ -8,6 +8,7 @@ from ...channels.comments.materials import prepare_comment_materials
 from ...channels.direct_messages.outreach import handoff_comment
 from ...kernel.control import canonical_intent
 from ...kernel.generation import GenerationInvalid
+from ...kernel.inputs import bind_response_actors
 from ...kernel.quotas import DailyReplyLimitReached, day_window
 from ..comments.admission import (
     release_discovery_claims,
@@ -111,6 +112,23 @@ class CommentDecisionMixin:
                 if grouped := thread_context.get("grouped_comments"):
                     source = source | {"grouped_comments": grouped}
                 thread_response = self.invited_private_response(row, thread_context)
+                if thread_response is None:
+                    bound_addressing = (
+                        (
+                            bind_response_actors(
+                                {"video_source": metadata or {}, "thread": thread_context},
+                                {"account_uid": str(row.get("account_id") or "")},
+                            ).get("thread")
+                            or {}
+                        ).get("addressing")
+                        or {}
+                    )
+                    if (
+                        bound_addressing.get("conversation_nature") == "third_party_dialogue"
+                        and not bound_addressing.get("is_explicitly_mentioned")
+                        and not bound_addressing.get("is_reply_to_self")
+                    ):
+                        return None
                 if thread_response is None:
                     admission = slots.enter_context(
                         self.browsing.comment_admission.slot(row, "reply_public", bvid, author_uid, direct=False)

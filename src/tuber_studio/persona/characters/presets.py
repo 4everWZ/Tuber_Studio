@@ -46,6 +46,8 @@ _REPLACEMENTS = {
         "2d2f6ab53f56b88f6b58da5411935f6b2390c1756f839b275b1df0791641539c",
         "04b6ec4fe2b29740a402a229bcd0189708e78daa89649c48e4400cdd8f16788d",
         "65c379224149a0be011741de399c871ade1d961b2aeff28496589213b231485e",
+        "7d18b55dfb290aca906b2de929105a88f0bb7c8fa5ea8269899c187d822c5570",
+        "821f4929f1f5ccc6651e56be2ecc41c498980557993a4df2c2b491614bc90e53",
     },
 }
 # Fresh installations receive the full seed. Existing versions gain only the original upgrade fields.
