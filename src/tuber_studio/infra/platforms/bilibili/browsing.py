@@ -29,6 +29,7 @@ from .client import (
     PublishUncertain,
     _positive_id,
     _video_params,
+    bilibili_web_headers,
 )
 from .comment_materials import MAX_IMAGE_BYTES, article_excerpt, comment_image_url
 from .subtitles import deduplicate_subtitles
@@ -142,7 +143,7 @@ class BrowsingAdapter(BilibiliAdapter):
                 "GET",
                 self.client.base_url.join(path),
                 params=params,
-                headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.bilibili.com/"},
+                headers=bilibili_web_headers(),
             )
             response = await self.client.send(request, stream=True, follow_redirects=False)
             try:
@@ -926,10 +927,13 @@ class BrowsingAdapter(BilibiliAdapter):
         pictures = await comment_pictures(self, image, prepare_authorized, on_uploaded)
         if before_send is not None:
             before_send()
+        bvid_raw = str(target.get("bvid") or "").strip()
+        referer = f"https://www.bilibili.com/video/{bvid_raw}/" if _BV.fullmatch(bvid_raw) else "https://www.bilibili.com/"
         try:
             response = await self.client.post(
                 "/x/v2/reply/add",
                 params=params,
+                headers={"Origin": "https://www.bilibili.com", "Referer": referer},
                 data={
                     "oid": target["oid"],
                     "type": target["type"],

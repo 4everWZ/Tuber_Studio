@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import random
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -111,6 +112,66 @@ class OperationSends:
             return float(value or 0)
         except (TypeError, ValueError):
             return 0.0
+
+    def comments_pacing_until(self, account):
+        if not account:
+            return 0.0
+        value = self.store.get(f"operation_comments_pacing:{account}", 0)
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def reactions_pacing_until(self, account):
+        if not account:
+            return 0.0
+        value = self.store.get(f"operation_reactions_pacing:{account}", 0)
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def last_comment_target(self, account):
+        if not account:
+            return None
+        saved = self.store.get(f"operation_last_comment_target:{account}")
+        return saved if isinstance(saved, dict) else None
+
+    @staticmethod
+    def _pacing_jitter(base_seconds):
+        return random.uniform(0.0, float(base_seconds) * 0.35) if base_seconds > 0 else 0.0
+
+    def _item_bvid(self, item):
+        if item["channel"] == "browsing":
+            row = self.store.one(
+                "SELECT json_extract(target,'$.bvid') AS bvid FROM browsing_intents WHERE id=?",
+                (item["source_id"],),
+            )
+            return str((row or {}).get("bvid") or "")
+        if item["channel"] == "comments":
+            row = self.store.one(
+                "SELECT c.video_id AS bvid FROM drafts d JOIN comments c ON c.id=d.comment_id WHERE d.id=?",
+                (item["source_id"],),
+            )
+            return str((row or {}).get("bvid") or "")
+        return ""
+
+    def _record_send_pacing(self, account, item, *, sent_at, item_bvid=""):
+        if not account:
+            return
+        policy = self.control.policy()
+        if item["reaction"]:
+            rbase = int(policy.get("min_reaction_interval_seconds", 0) or 0)
+            if rbase > 0:
+                due = max(self.reactions_pacing_until(account), sent_at + rbase + self._pacing_jitter(rbase))
+                self.store.set(f"operation_reactions_pacing:{account}", due)
+        elif self._is_comment_head(item):
+            cbase = int(policy.get("min_comment_interval_seconds", 0) or 0)
+            if cbase > 0:
+                due = max(self.comments_pacing_until(account), sent_at + cbase + self._pacing_jitter(cbase))
+                self.store.set(f"operation_comments_pacing:{account}", due)
+                if item_bvid:
+                    self.store.set(f"operation_last_comment_target:{account}", {"bvid": item_bvid, "at": sent_at})
 
     def visibility_risk_status(self, account, *, now=None):
         if not account:
@@ -445,16 +506,35 @@ class OperationSends:
             if self.control.accepting_work:
                 scope = self.scope()
                 now = time.time()
-                reaction_due = self.store.get(f"operation_reactions_resume:{scope[0]}", 0)
-                comments_due = self.comments_cooldown_until(scope[0])
+                policy = self.control.policy()
+                cbase = int(policy.get("min_comment_interval_seconds", 0) or 0)
+                rbase = int(policy.get("min_reaction_interval_seconds", 0) or 0)
+                reaction_due = max(
+                    float(self.store.get(f"operation_reactions_resume:{scope[0]}", 0) or 0),
+                    self.reactions_pacing_until(scope[0]) if rbase > 0 else 0.0,
+                )
+                comments_due = max(
+                    self.comments_cooldown_until(scope[0]),
+                    self.comments_pacing_until(scope[0]) if cbase > 0 else 0.0,
+                )
+                last_target = self.last_comment_target(scope[0]) if cbase > 0 else None
+                same_video_due = 0.0
                 # Keep background FIFO and preserve order within each direct
                 # channel. An image wait leaves the sender free for other heads.
-                heads = [
-                    head
-                    for head in self.ready_heads(scope, now)
-                    if (not head["reaction"] or reaction_due <= now)
-                    and (not self._is_comment_head(head) or comments_due <= now)
-                ]
+                heads = []
+                for head in self.ready_heads(scope, now):
+                    if head["reaction"] and reaction_due > now:
+                        continue
+                    if self._is_comment_head(head):
+                        if comments_due > now:
+                            continue
+                        if cbase > 0 and isinstance(last_target, dict) and last_target.get("bvid"):
+                            head_bvid = self._item_bvid(head)
+                            sv_due = float(last_target.get("at") or 0) + cbase * 2
+                            if head_bvid and head_bvid == last_target["bvid"] and sv_due > now:
+                                same_video_due = sv_due if same_video_due == 0.0 else min(same_video_due, sv_due)
+                                continue
+                    heads.append(head)
                 reserve_block = self.direct_reserve_block(scope[0], retry_seconds=60, now=now)
                 eligible_heads = []
                 for head in heads:
@@ -469,8 +549,12 @@ class OperationSends:
                         if admitted:
                             self.active = item
                             token = current_send.set(item)
+                            item_bvid = self._item_bvid(item) if self._is_comment_head(item) else ""
                             try:
                                 if await self.dispatch(item):
+                                    self._record_send_pacing(
+                                        scope[0], item, sent_at=time.time(), item_bvid=item_bvid
+                                    )
                                     self._remove(item)
                             except ReconciliationPending as error:
                                 self._defer(item, error, error.next_at, "reconciliation")
@@ -528,6 +612,8 @@ class OperationSends:
                     delay = min(delay, reaction_due - now) if delay is not None else reaction_due - now
                 if comments_due > now:
                     delay = min(delay, comments_due - now) if delay is not None else comments_due - now
+                if same_video_due > now:
+                    delay = min(delay, same_video_due - now) if delay is not None else same_video_due - now
                 if heads:
                     delay = min(0.5, delay) if delay is not None else 0.5
             try:

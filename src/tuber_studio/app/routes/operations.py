@@ -79,6 +79,8 @@ INBOX_SETTING_FIELDS = frozenset(
         "max_per_hour",
         "max_per_day",
         "recipient_cooldown_seconds",
+        "min_comment_interval_seconds",
+        "min_reaction_interval_seconds",
         "direct_quota_reserve",
     }
 )
@@ -99,6 +101,8 @@ class QuotaControlPatch(StrictModel):
     max_per_hour: int | None = Field(default=None, ge=0, strict=True)
     max_per_day: int | None = Field(default=None, ge=0, strict=True)
     recipient_cooldown_seconds: int | None = Field(default=None, ge=0, le=86400, strict=True)
+    min_comment_interval_seconds: int | None = Field(default=None, ge=0, le=3600, strict=True)
+    min_reaction_interval_seconds: int | None = Field(default=None, ge=0, le=600, strict=True)
 
 
 def _quota_status_snapshot(browsing) -> dict:
@@ -127,6 +131,8 @@ def _quota_status_snapshot(browsing) -> dict:
         "max_per_hour": max_hour,
         "max_per_day": max_day,
         "recipient_cooldown_seconds": control["recipient_cooldown_seconds"],
+        "min_comment_interval_seconds": control["min_comment_interval_seconds"],
+        "min_reaction_interval_seconds": control["min_reaction_interval_seconds"],
         "used_per_hour": used_hour,
         "used_per_day": used_day,
         "remaining_per_hour": remaining_hour,

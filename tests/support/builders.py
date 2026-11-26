@@ -56,6 +56,7 @@ async def browsing(settings, store, runtime):
     runtime.operation_llm = ControlledModel()
     settings.data["omni"]["model"] = "omni-default"
     service.store.set("browsing_policy", BrowsingPolicy(top_level_enabled=True).model_dump())
+    service.operations.configure({"min_comment_interval_seconds": 0, "min_reaction_interval_seconds": 0})
     yield service
     await service.close()
     await comments.close()

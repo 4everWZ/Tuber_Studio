@@ -9,7 +9,7 @@ import httpx
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-from .client import BilibiliAccountExpired
+from .client import BilibiliAccountExpired, bilibili_web_headers
 
 PASSPORT = "https://passport.bilibili.com"
 WEB = "https://www.bilibili.com"
@@ -65,7 +65,7 @@ class BilibiliPassport:
     def __init__(self):
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(12, connect=5), follow_redirects=False,
-            headers={"User-Agent": "Mozilla/5.0", "Referer": WEB + "/", "Origin": WEB},
+            headers=bilibili_web_headers(referer=WEB + "/", origin=WEB),
         )
 
     async def close(self):

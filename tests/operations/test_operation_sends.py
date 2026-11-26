@@ -367,3 +367,87 @@ async def test_consecutive_invisible_comments_arm_30m_cooldown_and_auto_downgrad
     cleared = browsing.sends.record_visibility_outcome("100", "public_visible", intent_id="i-3", bvid=BV, now=now + 20)
     assert cleared is None
     assert browsing.sends.visibility_risk_status("100", now=now + 20) is None
+
+
+async def test_send_queue_enforces_comment_same_video_and_reaction_pacing(browsing, monkeypatch):
+    from tuber_studio.operations.kernel.control import OperationsPolicy
+
+    defaults = OperationsPolicy()
+    assert defaults.min_comment_interval_seconds == 45
+    assert defaults.min_reaction_interval_seconds == 8
+
+    clock = [2_000_000.0]
+    monkeypatch.setattr(time, "time", lambda: clock[0])
+    monkeypatch.setattr(browsing.sends, "_pacing_jitter", lambda _base: 0.0)
+    await browsing.configure({"top_level_auto_publish": True, "reply_auto_publish": True})
+    await browsing.set_enabled(True)
+    browsing.operations.configure({"min_comment_interval_seconds": 30, "min_reaction_interval_seconds": 10})
+    await browsing.sends.close()
+
+    def _insert_intent(intent_id: str, kind: str, bvid: str, root: str):
+        target = json.dumps({"resource_type": "video", "oid": "42", "bvid": bvid, "root": root, "parent": root})
+        browsing.store.execute(
+            "INSERT INTO browsing_intents(id,account_id,character_id,character_version,source_key,kind,round_id,"
+            "epoch,auto_authorized,status,text,reason,target,evidence,material_keys,input_version,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                intent_id, "100", "whale", 1, f"k-{intent_id}", kind, "r-1",
+                browsing.operations.policy()["epoch"], 0, "approved", "好耶", "", target,
+                "[]", "[]", "v1", clock[0], clock[0],
+            ),
+        )
+
+    browsing.store.execute(
+        "INSERT OR IGNORE INTO browsing_rounds(id,account_id,character_id,character_version,status,preview,epoch,config,created_at,updated_at) "
+        "VALUES('r-1','100','whale',1,'finished',0,0,'{}',?,?)",
+        (clock[0], clock[0]),
+    )
+    bv_a = BV
+    bv_b = "BV1other00002"
+    _insert_intent("c-a1", "reply_public", bv_a, "101")
+    _insert_intent("c-a2", "reply_public", bv_a, "102")
+    _insert_intent("c-b1", "reply_public", bv_b, "201")
+    _insert_intent("r-1", "comment_like", bv_a, "301")
+    _insert_intent("r-2", "comment_like", bv_a, "302")
+
+    sent: list[tuple[str, float]] = []
+
+    async def fake_dispatch(item):
+        sent.append((item["source_id"], clock[0]))
+        return True
+
+    browsing.sends.dispatch = fake_dispatch
+    for idx, sid in enumerate(("r-1", "r-2", "c-a1", "c-a2", "c-b1")):
+        browsing.sends.enqueue("browsing", sid, approval=f"app-{idx}")
+
+    async def _step_wait():
+        await asyncio.sleep(0.05)
+
+    # First comment c-a1 and first reaction r-1 send immediately at t=0.
+    await _step_wait()
+    assert [s[0] for s in sent] == ["c-a1", "r-1"]
+
+    # At +11s: r-2 passes 10s reaction pacing; comments still gated until +30s.
+    clock[0] += 11
+    browsing.sends.changed.set()
+    await _step_wait()
+    assert [s[0] for s in sent] == ["c-a1", "r-1", "r-2"]
+
+    # At +31s: c-b1 (different video) sends, while same-video c-a2 stays deferred until +60s!
+    clock[0] += 20
+    browsing.sends.changed.set()
+    await _step_wait()
+    assert [s[0] for s in sent] == ["c-a1", "r-1", "r-2", "c-b1"]
+
+    # At +62s (>= 30s after c-b1 and >= 60s after c-a1 on bv_a): c-a2 sends.
+    clock[0] += 31
+    browsing.sends.changed.set()
+    await _step_wait()
+    assert [s[0] for s in sent] == ["c-a1", "r-1", "r-2", "c-b1", "c-a2"]
+
+    # Setting pacing to 0 disables pacing immediately.
+    _insert_intent("c-a3", "reply_public", bv_a, "103")
+    browsing.operations.configure({"min_comment_interval_seconds": 0, "min_reaction_interval_seconds": 0})
+    browsing.sends.enqueue("browsing", "c-a3", approval="app-z")
+    await _step_wait()
+    assert sent[-1][0] == "c-a3"

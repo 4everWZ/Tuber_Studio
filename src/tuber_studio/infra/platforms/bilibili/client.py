@@ -28,6 +28,27 @@ from .comment_materials import comment_attachments
 
 _BV = re.compile(r"BV1[0-9A-Za-z]{9}\Z")
 _AV = re.compile(r"av([1-9][0-9]{0,18})\Z", re.IGNORECASE)
+BILIBILI_WEB_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
+
+def bilibili_web_headers(
+    *,
+    referer: str = "https://www.bilibili.com/",
+    origin: str | None = None,
+) -> dict[str, str]:
+    """Build standard Bilibili Web client headers without synthetic fingerprints."""
+    headers = {
+        "User-Agent": BILIBILI_WEB_USER_AGENT,
+        "Referer": referer,
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+    }
+    if origin:
+        headers["Origin"] = origin
+    return headers
 # Public nav-key permutation used by bilibili-api-python 17.4.2. This is
 # request signing only: no generated buvid/fingerprint or challenge fallback.
 _WBI_ORDER = (
@@ -164,14 +185,14 @@ class BilibiliAdapter:
             cookies["DedeUserID"] = credential["uid"]
         self.client = httpx.AsyncClient(
             base_url="https://api.bilibili.com",
-            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.bilibili.com/"},
+            headers=bilibili_web_headers(),
             cookies=cookies,
             timeout=httpx.Timeout(45, connect=10),
             follow_redirects=False,
         )
         self.anon_client = httpx.AsyncClient(
             base_url="https://api.bilibili.com",
-            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.bilibili.com/"},
+            headers=bilibili_web_headers(),
             cookies={},
             timeout=httpx.Timeout(45, connect=10),
             follow_redirects=False,
@@ -450,6 +471,10 @@ class BilibiliAdapter:
         try:
             response = await self.client.post(
                 "/x/v2/reply/add",
+                headers={
+                    "Origin": "https://www.bilibili.com",
+                    "Referer": f"https://www.bilibili.com/video/{info['bvid']}/",
+                },
                 data={
                     "oid": info["aid"],
                     "type": 1,

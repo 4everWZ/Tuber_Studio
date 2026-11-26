@@ -263,7 +263,12 @@ async def configure(svc, data):
     raw.pop("comment_handoff_enabled", None)
     raw.pop("handoff_auto_send", None)
     control_patch = {}
-    for key in ("recipient_cooldown_seconds", "direct_quota_reserve"):
+    for key in (
+        "recipient_cooldown_seconds",
+        "direct_quota_reserve",
+        "min_comment_interval_seconds",
+        "min_reaction_interval_seconds",
+    ):
         if key in raw:
             control_patch[key] = raw.pop(key)
     if "business_timezone" in raw and isinstance(raw["business_timezone"], str) and raw["business_timezone"].strip():

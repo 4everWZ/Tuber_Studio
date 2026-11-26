@@ -23,6 +23,8 @@ class OperationsPolicy(StrictModel):
     max_per_day: int = Field(default=20, ge=0)
     direct_quota_reserve: int = Field(default=2, ge=0)
     recipient_cooldown_seconds: int = Field(default=120, ge=0, le=86400)
+    min_comment_interval_seconds: int = Field(default=45, ge=0, le=3600)
+    min_reaction_interval_seconds: int = Field(default=8, ge=0, le=600)
     max_recoveries: int = Field(default=8, ge=0, le=64)
 
 

@@ -5063,6 +5063,10 @@ export interface components {
             max_per_day?: number | null;
             /** Max Per Hour */
             max_per_hour?: number | null;
+            /** Min Comment Interval Seconds */
+            min_comment_interval_seconds?: number | null;
+            /** Min Reaction Interval Seconds */
+            min_reaction_interval_seconds?: number | null;
             /** Recipient Cooldown Seconds */
             recipient_cooldown_seconds?: number | null;
         };

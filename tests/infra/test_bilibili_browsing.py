@@ -821,3 +821,27 @@ async def test_image_comment_upload_then_one_bound_pictures_form(adapter_factory
                              prepare_authorized=lambda: events.append("prepare") or True,
                              before_send=lambda: events.append("submit"), on_uploaded=lambda picture: events.append("uploaded"))
     assert receipt["rpid"] == "555" and events[-1] == "accepted"
+
+
+async def test_reply_add_sends_standard_browser_headers_and_video_referer(adapter_factory):
+    captured = {}
+
+    def handle(request):
+        if request.url.path == "/x/web-interface/nav":
+            return nav()
+        if request.method == "POST" and request.url.path == "/x/v2/reply/add":
+            captured["user_agent"] = request.headers.get("user-agent")
+            captured["accept_language"] = request.headers.get("accept-language")
+            captured["origin"] = request.headers.get("origin")
+            captured["referer"] = request.headers.get("referer")
+            return result({"rpid": 999})
+        raise AssertionError(f"Unexpected: {request.method} {request.url}")
+
+    adapter = await adapter_factory(handle)
+    receipt = await adapter.publish_top_level({"resource_type": "video", "oid": "42", "bvid": BV}, "测试头")
+    assert receipt["rpid"] == "999"
+    assert captured["user_agent"] and captured["user_agent"] != "Mozilla/5.0"
+    assert "Chrome/" in captured["user_agent"]
+    assert captured["accept_language"] == "zh-CN,zh;q=0.9"
+    assert captured["origin"] == "https://www.bilibili.com"
+    assert captured["referer"] == f"https://www.bilibili.com/video/{BV}/"
