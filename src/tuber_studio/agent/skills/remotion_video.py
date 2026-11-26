@@ -76,7 +76,7 @@ class VideoScriptPlan(StrictModel):
     title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
     summary: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
     tags: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]] = Field(min_length=1, max_length=10)
-    category_tid: int = Field(default=174, ge=1, le=9999)
+    category_tid: int = Field(default=231, ge=1, le=9999)
     video_mode: VideoMode = "commentary"
     fps: Literal[30, 60] = 30
     width: Literal[1920, 1280] = 1920

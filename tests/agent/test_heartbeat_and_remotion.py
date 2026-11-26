@@ -834,18 +834,21 @@ def test_remotion_retry_rejected_video_publish_uses_revision_ticket(settings, tm
         writes = runtime.store.all("SELECT status, character_version FROM account_writes WHERE channel='video_publish'")
         assert len(writes) == 1 and writes[0]["status"] == "rejected"
 
-        # Simulate character card version bump before manual retry.
+        # Simulate character card version bump before manual retry, plus a 2nd failure before 3rd succeeds.
         bumped = runtime.store.save_character(runtime.character)
         assert bumped["version"] == writes[0]["character_version"] + 1
 
-        # Retry succeeds via OperationRevisions ticket -> operation_write_retries & published.
+        failed2 = await stage_or_publish_bilibili_video(skill, {"job_id": g["job_id"], "approved": True})
+        assert failed2["ok"] is False and failed2["status"] == "publish_failed"
+
+        # Third attempt succeeds via second OperationRevisions ticket -> operation_write_retries & published.
         mode[0] = "ok"
         retried = await stage_or_publish_bilibili_video(skill, {"job_id": g["job_id"], "approved": True})
         assert retried["ok"] is True
         assert retried["status"] == "published"
         assert retried["receipt"]["bvid"] == "BV1retriedOk"
-        retries = runtime.store.all("SELECT status FROM operation_write_retries WHERE channel='video_publish'")
-        assert len(retries) == 1 and retries[0]["status"] == "published"
+        retries = runtime.store.all("SELECT status FROM operation_write_retries WHERE channel='video_publish' ORDER BY started_at ASC")
+        assert [r["status"] for r in retries] == ["rejected", "published"]
 
         # Subsequent call is idempotent already_published.
         again = await stage_or_publish_bilibili_video(skill, {"job_id": g["job_id"], "approved": True})

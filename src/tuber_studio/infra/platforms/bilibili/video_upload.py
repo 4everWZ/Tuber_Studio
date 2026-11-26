@@ -19,7 +19,118 @@ MEMBER_ORIGIN = "https://member.bilibili.com"
 _PREUPLOAD_URL = "https://member.bilibili.com/preupload"
 _COVER_UP_URL = "https://member.bilibili.com/x/vu/web/cover/up"
 _ADD_V3_URL = "https://member.bilibili.com/x/vu/web/add/v3"
+_ARCHIVE_PRE_URL = "https://member.bilibili.com/x/vupre/web/archive/pre"
+_HUMAN_TYPE2_URL = "https://member.bilibili.com/x/vupre/web/archive/human/type2/list"
 _DEFAULT_CHUNK_BYTES = 10 * 1024 * 1024
+
+_PARENT_TO_HUMAN_TYPE2: dict[int, int] = {
+    181: 1001, 11: 1001, 23: 1001, 5: 1002, 3: 1003, 129: 1004,
+    1: 1005, 167: 1005, 13: 1005, 119: 1007, 4: 1008, 36: 1010, 177: 1010,
+    188: 1012, 223: 1013, 155: 1014, 234: 1018, 211: 1020, 217: 1024, 160: 1030,
+}
+_HUMAN_TYPE2_TO_LEGACY_TID: dict[int, int] = {
+    1001: 182, 1002: 241, 1003: 130, 1004: 154, 1005: 27, 1006: 162,
+    1007: 22, 1008: 17, 1010: 201, 1011: 231, 1012: 95, 1013: 176,
+    1014: 159, 1017: 164, 1018: 238, 1019: 161, 1020: 76, 1024: 75,
+    1025: 254, 1029: 21, 1030: 21, 1031: 21,
+}
+_AI_TECH_MARKERS = (
+    "ai", "人工智能", "本地ai", "deepseek", "llm", "大模型",
+    "remotion", "python", "代码", "开源", "编程", "算法", "技术",
+)
+
+
+def _is_ai_tech_topic(title: str, tags: list[str]) -> bool:
+    haystack = f"{title} {' '.join(tags)}".casefold()
+    return any(marker in haystack for marker in _AI_TECH_MARKERS)
+
+
+async def _resolve_submit_categories(
+    client: httpx.AsyncClient,
+    *,
+    requested_tid: int,
+    title: str,
+    tags: list[str],
+    member_headers: dict[str, str],
+) -> tuple[int, int | None]:
+    """Align submission partition IDs with Bilibili's active typelist and type_mode=2."""
+    try:
+        pre_resp = await client.get(_ARCHIVE_PRE_URL, params={"lang": "cn"}, headers=member_headers)
+        pre_resp.raise_for_status()
+        pre_json = pre_resp.json()
+    except (httpx.HTTPError, ValueError):
+        return requested_tid, None
+    if not isinstance(pre_json, dict) or pre_json.get("code") != 0:
+        return requested_tid, None
+
+    data = pre_json.get("data") if isinstance(pre_json.get("data"), dict) else {}
+    type_mode = int(data.get("type_mode") or 0)
+    typelist = data.get("typelist") or []
+    valid_children: dict[int, int] = {}
+    parent_first_child: dict[int, int] = {}
+    for parent in typelist:
+        if not isinstance(parent, dict) or not isinstance(parent.get("id"), int):
+            continue
+        pid = parent["id"]
+        for child in parent.get("children") or []:
+            if isinstance(child, dict) and isinstance(child.get("id"), int):
+                cid = child["id"]
+                valid_children[cid] = pid
+                parent_first_child.setdefault(pid, cid)
+
+    valid_type2: set[int] = set()
+    type2_order: list[int] = []
+    if type_mode == 2:
+        try:
+            t2_resp = await client.get(_HUMAN_TYPE2_URL, headers=member_headers)
+            t2_resp.raise_for_status()
+            t2_json = t2_resp.json()
+            if isinstance(t2_json, dict) and t2_json.get("code") == 0:
+                for item in (t2_json.get("data") or {}).get("type_list") or []:
+                    if isinstance(item, dict) and isinstance(item.get("id"), int):
+                        valid_type2.add(item["id"])
+                        type2_order.append(item["id"])
+        except (httpx.HTTPError, ValueError):
+            pass
+
+    ai_tech = _is_ai_tech_topic(title, tags)
+    human_type2: int | None = None
+    if requested_tid in valid_type2:
+        human_type2 = requested_tid
+        mapped_tid = _HUMAN_TYPE2_TO_LEGACY_TID.get(requested_tid)
+        if mapped_tid in valid_children:
+            resolved_tid = mapped_tid
+        elif 231 in valid_children:
+            resolved_tid = 231
+        else:
+            resolved_tid = next(iter(valid_children), requested_tid)
+        return resolved_tid, human_type2
+
+    if requested_tid in valid_children:
+        resolved_tid = requested_tid
+    elif requested_tid in parent_first_child:
+        resolved_tid = 231 if requested_tid == 188 and 231 in valid_children else parent_first_child[requested_tid]
+    elif ai_tech and 231 in valid_children:
+        resolved_tid = 231
+    elif 21 in valid_children:
+        resolved_tid = 21
+    else:
+        resolved_tid = next(iter(valid_children), requested_tid)
+
+    if type_mode == 2 and valid_type2:
+        if ai_tech and (requested_tid not in valid_children or resolved_tid in {231, 230, 95}) and 1011 in valid_type2:
+            human_type2 = 1011
+        elif resolved_tid == 161 and 1019 in valid_type2:
+            human_type2 = 1019
+        elif resolved_tid == 162 and 1006 in valid_type2:
+            human_type2 = 1006
+        elif (parent_id := valid_children.get(resolved_tid)) in _PARENT_TO_HUMAN_TYPE2 and _PARENT_TO_HUMAN_TYPE2[parent_id] in valid_type2:
+            human_type2 = _PARENT_TO_HUMAN_TYPE2[parent_id]
+        elif 1030 in valid_type2:
+            human_type2 = 1030
+        else:
+            human_type2 = type2_order[0]
+    return resolved_tid, human_type2
 
 
 def _scrub(text: str, credentials: dict[str, Any]) -> str:
@@ -269,18 +380,33 @@ async def upload_bilibili_video_web(
 
         clean_title = (title or "").strip()[:80]
         clean_tags = [str(tag).strip() for tag in tags if str(tag).strip()][:10]
-        body = {
+        resolved_tid, human_type2 = await _resolve_submit_categories(
+            http,
+            requested_tid=int(tid),
+            title=clean_title,
+            tags=clean_tags,
+            member_headers=member_headers,
+        )
+        body: dict[str, Any] = {
             "copyright": 1,
             "videos": [{"filename": remote_filename, "title": clean_title, "desc": ""}],
             "source": "",
-            "tid": int(tid),
+            "tid": resolved_tid,
+            **({"human_type2": human_type2} if human_type2 is not None else {}),
             "cover": cover_url,
             "title": clean_title,
             "tag": ",".join(clean_tags) or "日常",
-            "desc_format_id": 0,
+            "desc_format_id": 9999,
             "desc": (desc or "").strip()[:250],
             "dynamic": "",
             "subtitle": {"open": 0, "lan": ""},
+            "dolby": 0,
+            "lossless_music": 0,
+            "interactive": 0,
+            "up_selection_reply": False,
+            "up_close_reply": False,
+            "up_close_danmu": False,
+            "is_only_self": 0,
             "open_elec": 0,
             "no_reprint": 1,
             "recreate": -1,

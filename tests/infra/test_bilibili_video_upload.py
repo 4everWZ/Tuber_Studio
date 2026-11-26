@@ -78,12 +78,44 @@ async def test_web_upload_pipeline_cover_chunks_and_wbi_submit(tmp_path):
                 assert body == {"parts": [{"partNumber": 1, "eTag": "etag"}, {"partNumber": 2, "eTag": "etag"}, {"partNumber": 3, "eTag": "etag"}]}
                 return httpx.Response(200, json={"OK": 1})
 
+        if request.url.path == "/x/vupre/web/archive/pre":
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "type_mode": 2,
+                        "typelist": [
+                            {"id": 188, "name": "科技", "children": [{"id": 95, "name": "数码"}, {"id": 231, "name": "计算机技术"}]},
+                            {"id": 160, "name": "生活", "children": [{"id": 21, "name": "日常"}]},
+                        ],
+                    },
+                },
+            )
+
+        if request.url.path == "/x/vupre/web/archive/human/type2/list":
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "type_list": [
+                            {"id": 1011, "name": "人工智能"},
+                            {"id": 1012, "name": "科技数码"},
+                            {"id": 1030, "name": "生活兴趣"},
+                        ]
+                    },
+                },
+            )
+
         if request.url.path == "/x/vu/web/add/v3":
             assert request.url.params["w_rid"] == "signed_md5"
             assert request.url.params["csrf"] == SECRETS["csrf"]
             payload = json.loads(request.content.decode())
             assert payload["title"] == "测试投稿标题"
-            assert payload["tid"] == 188
+            assert payload["tid"] == 231
+            assert payload["human_type2"] == 1011
+            assert payload["desc_format_id"] == 9999
             assert payload["tag"] == "Aqua,Remotion"
             assert payload["cover"] == "//i0.hdslb.com/bfs/archive/cov1.png"
             assert payload["videos"] == [{"filename": "test_video_001", "title": "测试投稿标题", "desc": ""}]
@@ -136,6 +168,8 @@ async def test_web_upload_timeout_on_submit_raises_timeout_and_rejection_scrubs_
             if "uploads" in request.url.params:
                 return httpx.Response(200, json={"upload_id": "u1"})
             return httpx.Response(200, json={"OK": 1})
+        if request.url.path == "/x/vupre/web/archive/pre":
+            return httpx.Response(200, json={"code": 0, "data": {"type_mode": 0, "typelist": [{"id": 188, "children": [{"id": 231}]}]}})
         if request.url.path == "/x/vu/web/add/v3":
             if mode[0] == "timeout":
                 raise httpx.ReadTimeout(f"timeout for {SECRETS['sessdata']}", request=request)
@@ -177,3 +211,88 @@ async def test_web_upload_timeout_on_submit_raises_timeout_and_rejection_scrubs_
         assert "21001" in str(exc_rejected.value)
         assert SECRETS["sessdata"] not in str(exc_rejected.value)
         assert SECRETS["csrf"] not in str(exc_rejected.value)
+
+
+@pytest.mark.parametrize(
+    ("tid_in", "title_in", "tags_in", "expected_tid", "expected_type2"),
+    [
+        (174, "我是Aqua，一只住在牢大家里的小鲸鱼——先导版", ["Aqua", "本地AI", "DeepSeek"], 231, 1011),
+        (174, "周末白饭制作vlog", ["日常", "生活"], 21, 1030),
+        (1011, "直接指定新版人工智能分区", ["闲聊"], 231, 1011),
+    ],
+)
+async def test_web_upload_maps_retired_tid_174_and_direct_human_type2(
+    tmp_path, tid_in, title_in, tags_in, expected_tid, expected_type2
+):
+    video, _cover = _video_file(tmp_path, size=4)
+    submitted = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/preupload":
+            return httpx.Response(
+                200,
+                json={
+                    "OK": 1,
+                    "upos_uri": "upos://ugcbup/v3.mp4",
+                    "endpoint": "https://upos.bilivideo.com",
+                    "auth": "tok",
+                    "chunk_size": 100,
+                    "biz_id": 1,
+                },
+            )
+        if request.url.host == "upos.bilivideo.com":
+            if "uploads" in request.url.params:
+                return httpx.Response(200, json={"upload_id": "u3"})
+            return httpx.Response(200, json={"OK": 1})
+        if request.url.path == "/x/vupre/web/archive/pre":
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "type_mode": 2,
+                        "typelist": [
+                            {"id": 188, "name": "科技", "children": [{"id": 95, "name": "数码"}, {"id": 231, "name": "计算机技术"}]},
+                            {"id": 160, "name": "生活", "children": [{"id": 21, "name": "日常"}]},
+                        ],
+                    },
+                },
+            )
+        if request.url.path == "/x/vupre/web/archive/human/type2/list":
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "type_list": [
+                            {"id": 1011, "name": "人工智能"},
+                            {"id": 1012, "name": "科技数码"},
+                            {"id": 1030, "name": "生活兴趣"},
+                        ]
+                    },
+                },
+            )
+        if request.url.path == "/x/vu/web/add/v3":
+            submitted.update(json.loads(request.content.decode()))
+            return httpx.Response(200, json={"code": 0, "data": {"bvid": "BV1mapped0001", "aid": 789}})
+        raise AssertionError(f"Unexpected: {request.url}")
+
+    async def fake_wbi(params):
+        return {**params, "w_rid": "sig"}
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        receipt = await upload_bilibili_video_web(
+            title=title_in,
+            desc="desc",
+            tid=tid_in,
+            tags=tags_in,
+            output_path=video,
+            credentials=SECRETS,
+            client=client,
+            wbi_signer=fake_wbi,
+        )
+
+    assert receipt["bvid"] == "BV1mapped0001"
+    assert submitted["tid"] == expected_tid
+    assert submitted["human_type2"] == expected_type2
+    assert submitted["desc_format_id"] == 9999
