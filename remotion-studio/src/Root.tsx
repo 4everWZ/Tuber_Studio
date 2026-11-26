@@ -4,13 +4,14 @@ import { AquaVideo } from "./AquaVideo";
 import type { AquaVideoProps } from "./types";
 
 const DEFAULT_PROPS: AquaVideoProps = {
-  title: "Aqua 浅海手账工坊",
+  title: "Aqua 创作工坊",
   fps: 30,
   width: 1920,
   height: 1080,
   totalFrames: 180,
   includeAvatar: true,
   bgmEnabled: true,
+  duration_preset: "standard",
   scenes: [
     {
       scene_id: "demo_intro",
@@ -19,10 +20,14 @@ const DEFAULT_PROPS: AquaVideoProps = {
       start_frame: 0,
       duration_frames: 180,
       avatar_cue: "cheerful",
+      theme: "dark_tech",
+      transition: "fade",
+      camera_motion: "push_in",
+      avatar_layout: "corner_float",
       visual_props: {
-        subtitle: "浅海手账 + 右下角小窗实时联动",
-        bullets: ["真实立绘动图", "B 站综艺花字", "轻量浅海 BGM"],
-        citation_label: "Aqua 浅海工坊",
+        subtitle: "多镜头动态引擎 + 节拍同步推进",
+        bullets: ["实时立绘光环", "Tokyo Night 高亮", "音轨自动避让"],
+        citation_label: "Aqua Studio Engine",
       },
     },
   ],
@@ -30,11 +35,14 @@ const DEFAULT_PROPS: AquaVideoProps = {
     {
       line_id: "demo_l1",
       scene_id: "demo_intro",
-      text: "本鲸的新杂谈桌支棱起来了，快丢个选题过来！",
+      text: "本鲸的新视频引擎支棱起来了，快丢个选题过来！",
       start_frame: 0,
       duration_frames: 180,
       avatar_cue: "cheerful",
-      emphasis: ["新杂谈桌", "选题"],
+      emphasis: ["新视频引擎", "选题"],
+      reveal_step: 0,
+      line_index_in_scene: 0,
+      sfx: "none",
     },
   ],
 };
