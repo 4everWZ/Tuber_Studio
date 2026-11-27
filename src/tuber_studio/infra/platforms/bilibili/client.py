@@ -16,6 +16,7 @@ import asyncio
 import hashlib
 import html
 import json
+import os
 import random
 import re
 import time
@@ -190,6 +191,9 @@ class BilibiliAdapter:
         bootstrap_session_cookies: bool | None = None,
         pre_comment_engagement: bool | None = None,
         pre_comment_dwell_range: tuple[float, float] = (4.0, 12.0),
+        comment_transport: str | None = None,
+        browser_profile_dir: str | os.PathLike[str] | None = None,
+        browser_publisher=None,
     ):
         credential = credential or {}
         self._sessdata = str(credential.get("sessdata") or "")
@@ -225,11 +229,51 @@ class BilibiliAdapter:
             max(0.0, float(pre_comment_dwell_range[0])),
             max(0.0, float(pre_comment_dwell_range[1])),
         )
+        self._comment_transport = comment_transport
+        self._browser_profile_dir = browser_profile_dir
+        self._browser_publisher = browser_publisher
         self._recent_video_reads: dict[str, tuple[float, dict]] = {}
         self._recent_comment_reads: dict[tuple[str, int, str], float] = {}
 
     def _is_mock_transport(self) -> bool:
         return isinstance(getattr(self.client, "_transport", None), httpx.MockTransport)
+
+    def resolve_comment_transport(self, *, has_image: bool = False) -> str:
+        """Select 'browser_ui' or 'http_api' for comment publication."""
+        # MockTransport tests and image attachments always stay on the HTTP API path.
+        if self._is_mock_transport() or has_image:
+            return "http_api"
+        raw_mode = (
+            self._comment_transport
+            if self._comment_transport is not None
+            else os.getenv("TUBER_BILIBILI_COMMENT_TRANSPORT", "auto")
+        )
+        mode = str(raw_mode or "auto").strip().lower()
+        if mode not in {"auto", "browser_ui", "http_api"}:
+            raise ValueError(f"不支持的评论发布通道: {raw_mode}")
+        if mode == "http_api":
+            return "http_api"
+        if self._browser_publisher is not None:
+            return "browser_ui"
+        from .browser_comments import find_chromium_executable, playwright_available
+
+        if playwright_available() and find_chromium_executable() is not None:
+            return "browser_ui"
+        if mode == "browser_ui":
+            raise ValueError("已指定 browser_ui 评论通道，但未检测到 Playwright 或 Chromium")
+        return "http_api"
+
+    def _get_browser_comment_publisher(self):
+        if self._browser_publisher is None:
+            from .browser_comments import BilibiliBrowserCommentPublisher
+
+            self._browser_publisher = BilibiliBrowserCommentPublisher(
+                sessdata=self._sessdata,
+                csrf=self._csrf,
+                uid=self._uid,
+                profile_dir=self._browser_profile_dir,
+            )
+        return self._browser_publisher
 
     def _should_bootstrap_session_cookies(self, *, force: bool = False) -> bool:
         if force:
@@ -448,6 +492,8 @@ class BilibiliAdapter:
         }
 
     async def close(self):
+        if self._browser_publisher is not None:
+            await self._browser_publisher.aclose()
         await self.anon_client.aclose()
         await self.client.aclose()
 
@@ -726,6 +772,41 @@ class BilibiliAdapter:
         parent = _positive_id(comment_id)
         root = _positive_id(thread_id) if thread_id is not None else parent
         mention_form = comment_mention_form(text, mentions)
+        if self.resolve_comment_transport() == "browser_ui":
+            parsed = _video_params(video_id)
+            bvid = parsed.get("bvid")
+            aid = parsed.get("aid")
+            if not bvid or not aid:
+                cached = self._recent_video_info(bvid=bvid, oid=aid)
+                if cached and cached.get("bvid") and cached.get("aid"):
+                    bvid = cached["bvid"]
+                    aid = int(cached["aid"])
+                else:
+                    info = await self._video(video_id)
+                    bvid = info["bvid"]
+                    aid = info["aid"]
+            publisher = self._get_browser_comment_publisher()
+            receipt = await publisher.publish_comment(
+                {
+                    "resource_type": "video",
+                    "type": 1,
+                    "oid": str(aid),
+                    "bvid": bvid,
+                    "root": root,
+                    "parent": parent,
+                    "mentions": list(mentions) if mentions else [],
+                },
+                text,
+                before_send=before_send,
+                mentions=mentions,
+            )
+            return {
+                **receipt,
+                "video_id": bvid,
+                "aid": aid,
+                "root": root,
+                "parent": parent,
+            }
         await self.ensure_session_cookies()
         info = await self._video(video_id)
         pages = info.get("pages") or []

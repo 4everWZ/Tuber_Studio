@@ -84,8 +84,22 @@ class BrowsingAdapter(BilibiliAdapter):
 
     read_video_tags = True
 
-    def __init__(self, credential=None):
-        super().__init__(credential)
+    def __init__(
+        self,
+        credential=None,
+        *,
+        comment_transport: str | None = None,
+        browser_profile_dir=None,
+        browser_publisher=None,
+        **kwargs,
+    ):
+        super().__init__(
+            credential,
+            comment_transport=comment_transport,
+            browser_profile_dir=browser_profile_dir,
+            browser_publisher=browser_publisher,
+            **kwargs,
+        )
         self.request_gate = None
         self._read_spacing = 0.1
         self._read_clock = 0.0
@@ -942,6 +956,30 @@ class BrowsingAdapter(BilibiliAdapter):
             raise ValueError("发布需要当前账号SESSDATA及CSRF")
         text = validate_comment_body(text)
         mention_form = comment_mention_form(text, target.get("mentions", []))
+
+        # Keep image-attachment comments on HTTP API until browser image upload is implemented.
+        if self.resolve_comment_transport(has_image=image is not None) == "browser_ui":
+            browser_target = dict(target)
+            if browser_target["resource_type"] == "video" and not browser_target.get("bvid"):
+                cached = self._recent_video_info(oid=browser_target["oid"])
+                if cached and cached.get("bvid"):
+                    browser_target["bvid"] = cached["bvid"]
+                else:
+                    info = await self._video("av" + browser_target["oid"])
+                    browser_target["bvid"] = info["bvid"]
+            if (
+                browser_target["resource_type"] != "dynamic"
+                or browser_target.get("dynamic_id")
+                or browser_target.get("type") == 17
+            ):
+                publisher = self._get_browser_comment_publisher()
+                return await publisher.publish_comment(
+                    browser_target,
+                    text,
+                    before_send=before_send,
+                    mentions=browser_target.get("mentions", ()),
+                )
+
         await self.ensure_session_cookies()
         params = await self.wbi_params()
         from .images import comment_pictures
@@ -1016,18 +1054,24 @@ class BrowsingAdapter(BilibiliAdapter):
 
     async def publish_top_level(self, target, text, before_send=None, **images):
         cid = target.get("cid") if isinstance(target, dict) else None
+        dynamic_id = target.get("dynamic_id") if isinstance(target, dict) else None
         target = self._target(target, top_level=True) | {"mentions": target.get("mentions", [])}
         if cid:
             target["cid"] = cid
+        if dynamic_id:
+            target["dynamic_id"] = dynamic_id
         if images.get("image") is not None and target["type"] != 1:
             raise ValueError("仅视频一级评论提供配图能力")
         return await self._publish_target(target, text, before_send, **images)
 
     async def publish_resource_reply(self, target, text, before_send=None):
         cid = target.get("cid") if isinstance(target, dict) else None
+        dynamic_id = target.get("dynamic_id") if isinstance(target, dict) else None
         target = self._target(target) | {"mentions": target.get("mentions", [])}
         if cid:
             target["cid"] = cid
+        if dynamic_id:
+            target["dynamic_id"] = dynamic_id
         return await self._publish_target(target, text, before_send)
 
     async def like_comment(self, target, *, before_send=None):
