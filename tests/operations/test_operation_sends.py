@@ -381,9 +381,12 @@ def test_old_visibility_readback_does_not_extend_or_reset_a_new_account_episode(
     sends = browsing.sends
     old = 2_000_000.0
     sends.record_visibility_outcome("100", "self_only", intent_id="older", now=old + 10, published_at=old)
+    previous = sends.record_visibility_outcome("100", "self_only", intent_id="older-b", now=old + 25, published_at=old + 20)
+    assert previous["active"]
     now = old + 3600
     first = sends.record_visibility_outcome("100", "self_only", intent_id="new-a", now=now, published_at=now - 10)
     assert first["streak"] == 1 and not first["active"]
+    assert not first["cooldown_until"] and "连续 1/2 次" in first["reason"]
     late = sends.record_visibility_outcome("100", "public_visible", intent_id="older", now=now + 1, published_at=old)
     assert late["streak"] == 1 and late["last_intent_id"] == "new-a"
     delayed = sends.record_visibility_outcome("100", "self_only", intent_id="old-draft", now=now + 1, published_at=old)

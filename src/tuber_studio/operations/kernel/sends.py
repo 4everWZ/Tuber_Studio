@@ -198,7 +198,7 @@ class OperationSends:
         if streak <= 0 and not cooldown_active and not downgraded:
             return None
         reason = saved.get("reason") or ""
-        if cooldown_until and not cooldown_active:
+        if cooldown_until and not cooldown_active and (saved.get("last_publication_at") or 0) < cooldown_until:
             reason = f"此前 {streak} 条评论未公开可见，评论冷却已结束"
         return {
             "account_id": str(account),
@@ -249,6 +249,8 @@ class OperationSends:
         triggered = streak >= VISIBILITY_RISK_THRESHOLD
         downgraded = bool(prev.get("downgraded", False))
         cooldown_until = prev.get("cooldown_until")
+        if not same_window and cooldown_until and float(cooldown_until) <= current:
+            cooldown_until = None
         if triggered:
             due = max(self.comments_cooldown_until(account), current + VISIBILITY_RISK_COOLDOWN_SECONDS)
             self.store.set(f"operation_comments_resume:{account}", due)
