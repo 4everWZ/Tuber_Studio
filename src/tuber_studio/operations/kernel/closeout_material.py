@@ -211,10 +211,11 @@ def _dynamic_item(store, scope, row, receipt):
     return result if published else None
 
 
-def _select(items, run_start):
+def _select(items, run_start, day_start):
     groups = defaultdict(list)
     for item in items:
         item["in_current_run"] = item["occurred_at"] >= run_start
+        item["earlier_in_week"] = item["occurred_at"] < day_start
         groups[item["kind"]].append(item)
     selected, urls, identities = [], set(), set()
     for group in groups.values():
@@ -223,6 +224,14 @@ def _select(items, run_start):
         selected.append(item)
         urls.add(item["url"])
         identities.add(item["source_id"])
+    if not any(item["earlier_in_week"] for item in selected):
+        older = [item for item in items if item["earlier_in_week"] and item["url"] not in urls
+                 and item["source_id"] not in identities]
+        if older:
+            item = max(older, key=lambda record: (record["kind"] == "watched_video", record["occurred_at"]))
+            selected.append(item)
+            urls.add(item["url"])
+            identities.add(item["source_id"])
     for group in groups.values():
         for item in group:
             if len(selected) >= 8:
@@ -301,7 +310,8 @@ def public_period_brief(store, run):
         if item := _dynamic_item(store, scope, row, receipt):
             items.append(item)
 
-    selected = _select(items, run_start.timestamp())
+    day_start = run_start.replace(hour=0, minute=0, second=0, microsecond=0)
+    selected = _select(items, run_start.timestamp(), day_start.timestamp())
     sources, highlights = [], []
     for item in selected:
         is_video = item["kind"] == "watched_video"

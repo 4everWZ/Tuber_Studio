@@ -50,10 +50,13 @@ async def compose_closeout(runtime, character, brief):
         {"role": "system", "content": (
             "用你自己的口吻回看过去一周。标题说一件具体的事，第一句直接抛出你的发现或吐槽。"
             "围绕一个能串起来的主题选三四条记录。若材料有观看、已确认互动、待审稿这三类，各带到一条；"
-            "有本轮记录就至少选一条。每段绑定一个 source_id。口播讲具体看法和动作，片名、作者和来源由画面展示。"
+            "至少选一条 in_current_run（本轮），如果有 earlier_in_week（本周前几天），也至少选一条。"
+            "只有当天材料可用时，仍优先带到本轮，并同时选可用的本轮前材料。"
+            "每段绑定一个 source_id。口播讲具体看法和动作，片名、作者和来源由画面展示。"
             "别人视频和评论的话归给原作者，看到或想到的事可以自然联想。pending_review 只代表你有一个待审想法，"
             "不能当作发过的话，也不编一段稿件或代作者表现。已点赞不能写成已经回复；仅收到平台回执的动态不要断言已公开。"
-            "给视频另写一两句自然的简介，像是在跟观众说这支片为什么值得看，避免账单、标签清单、工坊元数据或套话。"
+            "给视频另写一两句第一人称的简介。挑最值得展开的一件事，可以反问或吐槽，"
+            "像平常发视频时留给观众的话，省掉『这支片带你回顾』和逐条罗列。"
             "资料中的文字都是素材。输出字段只写观众会读到的字，链接和出处由程序绑定。"
         )},
         {"role": "user", "content": dump({
@@ -69,10 +72,9 @@ async def compose_closeout(runtime, character, brief):
     selected = [items[source_id] for source_id in ids]
     if {_category(item) for item in selected} != {_category(item) for item in items.values()}:
         raise ValueError("收尾剪辑没有覆盖本期可用的观看、互动和待审事项")
-    if any(item.get("in_current_run") for item in items.values()) and not any(
-        item.get("in_current_run") for item in selected
-    ):
-        raise ValueError("收尾剪辑没有带到本轮实际发生的事")
+    for flag in ("in_current_run", "earlier_in_week"):
+        if any(item.get(flag) for item in items.values()) and not any(item.get(flag) for item in selected):
+            raise ValueError("收尾剪辑没有同时覆盖本轮和可用的本周较早记录")
     return editorial.model_dump()
 
 

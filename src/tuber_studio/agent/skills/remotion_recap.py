@@ -51,6 +51,7 @@ class OperationsRecapEditorialItem(StrictModel):
     target_url: str | None = None
     occurred_at: float | None = None
     in_current_run: bool | None = None
+    earlier_in_week: bool | None = None
     url: str | None = None
     bvid: str | None = None
 

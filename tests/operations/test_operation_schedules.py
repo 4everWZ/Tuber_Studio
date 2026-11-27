@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from tests.support.operations_helpers import ControlledPlatform
 from tests.support.operations_helpers import browsing as browsing
 from tuber_studio.app import create_app
+from tuber_studio.core.errors import SendLimitReached
 from tuber_studio.core.store import dump
 from tuber_studio.operations.channels.dynamics import publisher
 from tuber_studio.operations.kernel import closeout_editorial
@@ -225,6 +226,8 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
     sent = []
     clips = []
     editorial_inputs = []
+    limit_until = _at(22, 3)
+    quotas = []
     job = {"id": "recap-video", "status": "script_planned"}
     video_id, earlier_id = "BV1d8pU6xEZX", "BV1J7sm6YE6K"
 
@@ -236,7 +239,8 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
         items = {item["kind"]: item for item in reversed(evidence["items"])}
         return {
             "title": "盐水里能浮起什么", "opening": "我本来想看一个盐水实验，结果评论区先给我出了道题。",
-            "passages": [{"source_id": items[kind]["source_id"], "narration": line} for kind, line in (
+            "passages": [{"source_id": f"watch:{earlier_id}", "narration": "这让我想起周初看过的另一次沉浮实验。"}]
+            + [{"source_id": items[kind]["source_id"], "narration": line} for kind, line in (
                 ("watched_video", "我看到了杯子里盐分变化以后，鸡蛋慢慢浮起来。"),
                 ("public_reply", "我回了楼里关于加盐顺序的问题，回去看才发现大家盯着不同的步骤。"),
                 ("pending_comment", "有人想看糖能不能做到一样的事，我留了个想法请人先看看。"),
@@ -248,6 +252,11 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
         before_send()
         sent.append(text)
         return {"dynamic_id": "100001"}
+
+    def check_quota(*_):
+        quotas.append(True)
+        if len(quotas) == 1:
+            raise SendLimitReached("动态最小发布间隔", limit_until)
 
     def plan(brief, *, job_key):
         clips.append(("plan", brief, job_key))
@@ -270,6 +279,7 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
         return {"status": "published", "platform_state": "public_visible"}
 
     monkeypatch.setattr(publisher, "publish_text", dynamic_text)
+    monkeypatch.setattr(browsing.dynamics, "_quota", check_quota)
     monkeypatch.setattr(closeout_editorial, "budgeted_json", editorial_reply)
     browsing.runtime.remotion_skill = SimpleNamespace(
         status=dict, get_job=lambda _: job, plan_operations_recap=plan, generate_remotion_project=generate,
@@ -330,15 +340,15 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
     )
     await _tick_with_closeout(browsing, _at(21, 0))
     run = browsing.schedules.closeouts.list(schedule["id"])[0]
-    assert run["dynamic_status"] == "published", run["last_error"]
+    assert run["dynamic_status"] == "pending", run["last_error"]
+    dynamic_id = run["dynamic_id"]
+    assert dynamic_id and browsing.schedules.closeouts._row(run["id"])["dynamic_retry_at"] == limit_until
     assert run["video_status"] == "scheduled"
-    assert sent and "待审 · 《盐水实验》" in sent[0]
-    assert f"https://www.bilibili.com/video/{video_id}#reply101" in sent[0]
-    assert "尚未发出的原稿" not in sent[0] and "只在账号可见的旧回复" not in sent[0]
-    assert not clips
+    assert not sent and not clips
     await _tick_with_closeout(browsing, _at(22, 0))
     run = browsing.schedules.closeouts.list(schedule["id"])[0]
     assert run["video_status"] == "submitted", run["last_error"]
+    assert run["dynamic_status"] == "pending" and len(quotas) == 1
     assert clips[0][1]["public_comments"] == 1
     assert clips[0][1]["accepted_comments"] == 2
     assert clips[0][1]["public_dynamics"] == 0
@@ -356,6 +366,13 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
     assert (pending["status"], pending["excerpt"], pending["target_excerpt"]) == (
         "pending_review", "", "换成糖也能让鸡蛋浮起来吗？",
     )
+    await _tick_with_closeout(browsing, limit_until)
+    run = browsing.schedules.closeouts.list(schedule["id"])[0]
+    assert run["dynamic_status"] == "published", run["last_error"]
+    assert run["dynamic_id"] == dynamic_id and len(editorial_inputs) == 1
+    assert sent and "待审 · 《盐水实验》" in sent[0] and "本周较早的沉浮实验" in sent[0]
+    assert f"https://www.bilibili.com/video/{video_id}#reply101" in sent[0]
+    assert "尚未发出的原稿" not in sent[0] and "只在账号可见的旧回复" not in sent[0]
     await _tick_with_closeout(browsing, _at(22, 6))
     await _tick_with_closeout(browsing, _at(22, 7))
     assert browsing.schedules.closeouts.list(schedule["id"])[0]["video_status"] == "published"

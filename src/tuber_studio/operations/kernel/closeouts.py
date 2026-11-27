@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, model_validator
 
+from ...core.errors import SendLimitReached
 from ...core.models import StrictModel
 from ...core.store import dump
 from ...infra.inference.providers import public_error
@@ -49,13 +50,15 @@ class OperationCloseouts:
                 character_id TEXT NOT NULL, character_version INTEGER NOT NULL,
                 period_start_at REAL NOT NULL, period_end_at REAL NOT NULL, period_timezone TEXT NOT NULL,
                 video_start_at REAL, video_end_at REAL, config TEXT NOT NULL, brief TEXT,
-                dynamic_status TEXT NOT NULL, dynamic_id INTEGER, dynamic_error TEXT,
+                dynamic_status TEXT NOT NULL, dynamic_id INTEGER, dynamic_error TEXT, dynamic_retry_at REAL NOT NULL DEFAULT 0,
                 video_status TEXT NOT NULL, video_job_id TEXT, video_error TEXT, video_requested INTEGER DEFAULT 0,
                 retry_at REAL NOT NULL DEFAULT 0, cancelled INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(schedule_id, period_start_at));
             CREATE INDEX IF NOT EXISTS schedule_closeouts_recent
                 ON operation_schedule_closeouts(schedule_id, period_end_at DESC);
         """)
+        if "dynamic_retry_at" not in {row[1] for row in self.store.db.execute("PRAGMA table_info(operation_schedule_closeouts)")}:
+            self.store.db.execute("ALTER TABLE operation_schedule_closeouts ADD COLUMN dynamic_retry_at REAL NOT NULL DEFAULT 0")
 
     @staticmethod
     def config(row):
@@ -140,20 +143,35 @@ class OperationCloseouts:
             "ORDER BY period_end_at",
         )
 
-    def _due(self, row, now):
-        if row["dynamic_status"] == "pending" or row["video_status"] == "preparing":
-            return True
+    @staticmethod
+    def _video_ready_at(row):
+        if row["video_status"] == "preparing":
+            return 0
         if row["video_status"] == "scheduled":
-            return row["video_start_at"] is not None and now >= row["video_start_at"]
-        return row["video_status"] in {"submitted", "publish_uncertain"} and now >= row["retry_at"]
+            return row["video_start_at"]
+        if row["video_status"] in {"submitted", "publish_uncertain"}:
+            return row["retry_at"]
+        return None
+
+    @staticmethod
+    def _dynamic_due(row, now):
+        return row["dynamic_status"] == "pending" and now >= row["dynamic_retry_at"]
+
+    def _due(self, row, now):
+        video_at = self._video_ready_at(row)
+        return self._dynamic_due(row, now) or (video_at is not None and now >= video_at)
 
     def next_delay(self, now):
         if self._worker and not self._worker.done() or self.service.operations.draining:
             return None
         if self.service.operations.policy()["emergency"]:
             return None
-        times = [row["video_start_at"] if row["video_status"] == "scheduled" else row["retry_at"]
-                 for row in self._pending() if row["dynamic_status"] != "pending" and row["video_status"] != "preparing"]
+        times = []
+        for row in self._pending():
+            if row["dynamic_status"] == "pending":
+                times.append(row["dynamic_retry_at"])
+            if (video_at := self._video_ready_at(row)) is not None:
+                times.append(video_at)
         return max(0.0, min(times) - now) if times else None
 
     def kick(self, now):
@@ -206,12 +224,12 @@ class OperationCloseouts:
 
         for row in rows:
             config = OperationCloseoutConfig.model_validate_json(row["config"])
-            if row["dynamic_status"] == "pending":
-                await self._dynamic(row, config)
+            if self._dynamic_due(row, clock()):
+                await self._dynamic(row, config, clock)
             if row["video_status"] in _VIDEO_WAITING:
                 await self._video(self._row(row["id"]), config, clock)
 
-    async def _dynamic(self, row, config):
+    async def _dynamic(self, row, config, clock):
         dynamics = self.service.dynamics
         try:
             character = self._guard(row)
@@ -223,7 +241,15 @@ class OperationCloseouts:
                 draft = await dynamics.publish_schedule_closeout(draft, lambda: self._guard(row, writing=True))
             state = {"published": "published", "publish_uncertain": "uncertain", "publish_failed": "failed",
                      "rejected": "rejected"}.get(draft["status"], "review")
-            self._save(row["id"], dynamic_status=state, dynamic_error=draft.get("error"))
+            self._save(row["id"], dynamic_status=state, dynamic_error=draft.get("error"), dynamic_retry_at=0)
+        except SendLimitReached as error:
+            current = self._row(row["id"])
+            if current and not current["cancelled"]:
+                post = dynamics._post(current["dynamic_id"]) if current["dynamic_id"] else {}
+                if post.get("status") in {"pending_review", "approved"} and not post.get("attempted_at"):
+                    self._save(row["id"], dynamic_retry_at=max(error.next_at, clock()), dynamic_error=public_error(error))
+                else:
+                    self._save(row["id"], dynamic_status="uncertain", dynamic_error=public_error(error))
         except Exception as error:
             current = self._row(row["id"])
             if current and not current["cancelled"]:
@@ -232,7 +258,8 @@ class OperationCloseouts:
                 self._save(row["id"], dynamic_status=state, dynamic_error=public_error(error))
 
     async def _video(self, row, config, clock):
-        if not self._due(row, clock()):
+        video_at = self._video_ready_at(row)
+        if video_at is None or clock() < video_at:
             return
         skill = getattr(self.service.runtime, "remotion_skill", None)
         job_id = row["video_job_id"]
