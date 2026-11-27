@@ -77,6 +77,12 @@ export function deriveAutomaticSendingWarning(
   if (configured === false) {
     return "请先登录 B 站账号。";
   }
+  if (status.startup_check === "checking") {
+    return "正在核验账号与模型连接…";
+  }
+  if (status.state === "off" && status.startup_check === "pending") {
+    return "当前未开启自主运营，开启时会自动核验账号与模型连接。";
+  }
   return "等待账号或模型连接。";
 }
 

@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from ...core.text import validate_comment_body, validate_operation_text
+from ...core.text import detect_reasoning_leak, validate_comment_body, validate_operation_text
 from ...infra.web_client.search import search_public_web
 from .l2_bridge import (
     MemoryScope,
@@ -41,8 +41,9 @@ _FORBIDDEN_WRAPPER_KEYS = frozenset({"action", "evidence_ids", "text_ref", "quot
 
 def sanitize_spoken_text(text: str | None) -> str:
     """Strip accidental model reasoning or chat control tokens from plain-text speech."""
-    cleaned = _INTERNAL_TAG_RE.sub("", str(text or "")).strip()
-    return cleaned
+    cleaned = _INTERNAL_TAG_RE.sub("", str(text or ""))
+    cleaned = re.sub(r"\A[\s\S]*?</(?:think|thought|analysis)>", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
 
 
 def detect_internal_protocol_leak(text: str) -> str | None:
@@ -59,6 +60,8 @@ def detect_internal_protocol_leak(text: str) -> str | None:
             parsed = None
         if isinstance(parsed, dict) and (_FORBIDDEN_WRAPPER_KEYS & parsed.keys() or set(parsed.keys()) <= {"text", "content", "reason"}):
             return "正文不能是 JSON 包裹结构，请直接说出自然话语"
+    if leak := detect_reasoning_leak(stripped):
+        return leak
     return None
 
 

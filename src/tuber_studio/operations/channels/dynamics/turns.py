@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -19,6 +20,9 @@ from ...kernel.l2_bridge import (
 from ...kernel.session import run_tool_session, should_use_native_turns
 from ...kernel.tools import OperationToolSession, sanitize_spoken_text
 from ..mentions import bind_mentions, detect_plain_mentions
+from .materials import source_links
+
+_BV_RE = re.compile(r"\b(BV[0-9A-Za-z]{10})\b")
 
 DYNAMIC_TOOL_NAMES = ("search_web", "save_memory", "recall_history", "skip_reply")
 
@@ -31,7 +35,47 @@ def should_use_native_dynamic_turns(service: Any) -> bool:
     return should_use_native_turns(service.runtime, llm_override_attrs=("generate_json",))
 
 
-def _format_dynamic_sources(public_sources: list[dict[str, Any]]) -> str:
+def _source_bvid(src: dict[str, Any]) -> str:
+    """Extract BV id from structured source metadata or linked URLs."""
+    for candidate in (
+        src.get("bvid"),
+        (src.get("video") or {}).get("bvid"),
+        (src.get("reference") or {}).get("resource"),
+        str(src.get("id") or "").removeprefix("video:"),
+    ):
+        value = str(candidate or "").strip()
+        if re.fullmatch(r"BV[0-9A-Za-z]{10}", value):
+            return value
+    for candidate in (*source_links(src), src.get("source_url") or ""):
+        if match := _BV_RE.search(str(candidate or "")):
+            return match.group(1)
+    return ""
+
+
+def _source_author(src: dict[str, Any]) -> tuple[str, str]:
+    """Return `(uid, name)` for the primary external/source author on a material item."""
+    orig = src.get("original_comment") or {}
+    ref = src.get("reference") or {}
+    participants = src.get("participants") or ()
+    first_participant = next((item for item in participants if isinstance(item, dict)), {})
+    uid = str(
+        orig.get("author_uid")
+        or orig.get("platform_user_id")
+        or ref.get("author_uid")
+        or first_participant.get("uid")
+        or ""
+    ).strip()
+    name = str(
+        orig.get("author_name")
+        or orig.get("author")
+        or ref.get("author_name")
+        or first_participant.get("name")
+        or ""
+    ).strip()
+    return uid, name
+
+
+def _format_dynamic_sources(public_sources: list[dict[str, Any]], *, self_uid: str = "") -> str:
     if not public_sources:
         return "最近没有强制要提的公开互动记录；如果你想分享个人随想、日常观察或角色灵感，也可以直接发表一条独立动态。"
     lines: list[str] = []
@@ -40,11 +84,23 @@ def _format_dynamic_sources(public_sources: list[dict[str, Any]]) -> str:
         fictional_label = "虚构设定/故事" if src.get("fictional") else "真实公开经历"
         if stype == "published_reply":
             orig = src.get("original_comment") or {}
-            author = orig.get("author_name") or orig.get("author") or "观众"
+            _, author = _source_author(src)
+            author = author or "观众"
             quote = orig.get("text") or src.get("comment") or ""
             my_reply = src.get("reply") or src.get("text") or ""
-            bvid = src.get("bvid") or (src.get("video") or {}).get("bvid") or ""
+            bvid = _source_bvid(src)
             lines.append(f"- [评论区互动 {bvid} · {fictional_label}] @{author} 说：「{quote}」；你回过：「{my_reply}」")
+        elif stype == "public_comment":
+            bvid = _source_bvid(src)
+            uid, author = _source_author(src)
+            text = str(src.get("text") or src.get("quote") or "").strip()
+            if self_uid and uid and str(uid) == str(self_uid):
+                lines.append(f"- [你自己发过的公开评论 {bvid}] 你曾说：「{text}」")
+            else:
+                display = author or "路人"
+                lines.append(
+                    f"- [旁观到的他人评论 {bvid} · 作者 @{display}（第三方用户，非你本人发言）] @{display} 说：「{text}」"
+                )
         elif stype == "public_incident":
             headline = src.get("headline") or ""
             anecdote = src.get("anecdote") or src.get("text") or ""
@@ -55,13 +111,15 @@ def _format_dynamic_sources(public_sources: list[dict[str, Any]]) -> str:
             ]
             quote_part = f"；原评论：「{' / '.join(quotes)}」" if quotes else ""
             lines.append(f"- [公开经历 · {headline}] {anecdote}{quote_part}")
-        elif stype in {"video_watch"}:
+        elif stype in {"watched_video", "video_watch"}:
             video = src.get("video") or {}
-            bvid = src.get("bvid") or video.get("bvid") or ""
-            title = video.get("title") or src.get("title") or ""
-            owner = video.get("owner") or src.get("owner") or ""
-            summary = src.get("text") or src.get("summary") or ""
-            lines.append(f"- [视频经历 {bvid}] 《{title}》UP主 {owner}：{summary}")
+            bvid = _source_bvid(src)
+            _, participant_name = _source_author(src)
+            title = str(video.get("title") or src.get("title") or "").strip()
+            owner = str(video.get("owner") or src.get("owner") or participant_name or "").strip()
+            summary = str(src.get("text") or src.get("summary") or "").strip()
+            header = f"《{title}》UP主 {owner}" if title else (f"UP主 {owner}" if owner else "已观看视频")
+            lines.append(f"- [视频经历 {bvid}] {header}：{summary}")
         else:
             text = src.get("text") or src.get("quote") or src.get("summary") or ""
             if text:
@@ -97,10 +155,12 @@ def _match_grounded_sources(content: str, public_sources: list[dict[str, Any]], 
             matched_ids.append(sid)
             continue
         stype = src.get("type") or src.get("kind") or ""
-        bvid = str(src.get("bvid") or (src.get("video") or {}).get("bvid") or "").strip()
+        bvid = _source_bvid(src)
         title = str(src.get("title") or (src.get("video") or {}).get("title") or "").strip()
+        if not title and stype in {"watched_video", "video_watch"} and " · " in str(src.get("text") or ""):
+            title = str(src.get("text") or "").splitlines()[0].split(" · ", 1)[0].strip()
         orig = src.get("original_comment") or {}
-        author = str(orig.get("author_name") or orig.get("author") or "").strip()
+        _, author = _source_author(src)
         quote = str(orig.get("text") or src.get("text") or "").strip()
         incident_texts = [
             src.get("headline") or "",
@@ -118,10 +178,12 @@ def _match_grounded_sources(content: str, public_sources: list[dict[str, Any]], 
         )
         if explicit_hit:
             matched_ids.append(sid)
-            if stype in {"published_reply", "public_incident"} and len(link_ids) < 2:
-                link_ids.append(sid)
+            has_link = bool(source_links(src)) or bool(bvid)
+            if stype in {"published_reply", "public_incident", "public_comment"} and len(link_ids) < 2:
+                if has_link or stype in {"published_reply", "public_incident"}:
+                    link_ids.append(sid)
                 illustration = "comment_card"
-            elif bvid and len(link_ids) < 2:
+            elif has_link and len(link_ids) < 2:
                 link_ids.append(sid)
 
     return matched_ids, link_ids[:2], illustration
@@ -130,19 +192,27 @@ def _match_grounded_sources(content: str, public_sources: list[dict[str, Any]], 
 def _detect_dynamic_mentions(content: str, public_sources: list[dict[str, Any]], source_ids: list[str]) -> list[dict[str, Any]]:
     wanted = set(source_ids)
     candidates: list[dict[str, Any]] = []
+    seen_uids: set[str] = set()
+
+    def add_candidate(raw_uid: Any, raw_name: Any) -> None:
+        uid = str(raw_uid or "").strip()
+        name = str(raw_name or "").strip()
+        if uid and name and uid not in seen_uids:
+            seen_uids.add(uid)
+            candidates.append({"uid": uid, "name": name})
+
     for src in public_sources:
         if wanted and src.get("id") not in wanted:
             continue
         orig = src.get("original_comment") or {}
-        uid = str(orig.get("author_uid") or orig.get("platform_user_id") or "")
-        name = str(orig.get("author_name") or orig.get("author") or "").strip()
-        if uid and name:
-            candidates.append({"uid": uid, "name": name})
+        add_candidate(orig.get("author_uid") or orig.get("platform_user_id"), orig.get("author_name") or orig.get("author"))
+        ref = src.get("reference") or {}
+        add_candidate(ref.get("author_uid"), ref.get("author_name"))
+        for person in src.get("participants") or ():
+            if isinstance(person, dict):
+                add_candidate(person.get("uid"), person.get("name"))
         video = src.get("video") or {}
-        v_uid = str(video.get("owner_uid") or "")
-        v_name = str(video.get("owner") or "").strip()
-        if v_uid and v_name:
-            candidates.append({"uid": v_uid, "name": v_name})
+        add_candidate(video.get("owner_uid"), video.get("owner"))
     return detect_plain_mentions(content, candidates)
 
 
@@ -180,10 +250,11 @@ async def evaluate_native_dynamic(
         parts.append("你近期发过的动态（不要重复类似内容）：\n" + recent_block)
     if topic:
         parts.append(f"本次指定分享主题：{topic}")
-    parts.append("可用公开经历与互动参考：\n" + _format_dynamic_sources(public_sources))
+    parts.append("可用公开经历与互动参考：\n" + _format_dynamic_sources(public_sources, self_uid=str(evaluation_account or "")))
     parts.append(
         "请用自己的自然口吻直接写出一条要发的 B 站动态正文（不需要 JSON 包裹，也不要写内部编号）。\n"
-        "- 可以围绕上面某段看过的视频或评论互动讲清起因和感受（程序会自动关联真实链接与 @）；\n"
+        "- 可以围绕上面某段看过的视频或评论互动，把起因和来龙去脉讲清楚，让没看过原楼的关注者也能看懂（程序会自动关联真实链接与 @）；\n"
+        "- 涉及「旁观到的他人评论」时，切勿当成你自己说过的话，要说清是在哪个视频/谁的评论看到的；\n"
         "- 也可以纯分享独立思考、心情随感或日常观察（不必强行牵扯视频）；\n"
         "- 如果觉得当下不适合发或会撞车，请调用 skip_reply。"
     )
@@ -312,11 +383,23 @@ async def revise_native_dynamic_caption(
         memory_scope="public",
     )
     tree = create_context_tree(base)
+    sources = row.get("sources") or []
+    source_block = _format_dynamic_sources(sources, self_uid=str(row.get("account_id") or "")) if sources else ""
+    if not source_block:
+        card = row.get("source_comment_card") or row.get("comment_card") or {}
+        card_quotes = [
+            f"- @{item.get('author') or '路人'}：{item.get('quote')}"
+            for item in (card.get("comments") or ())
+            if isinstance(item, dict) and item.get("quote")
+        ]
+        if card_quotes:
+            source_block = "\n".join(card_quotes)
     prompt = (
         f"需要修改已发布的动态正文。\n"
         f"原正文：{original.get('text') or ''}\n"
-        f"修改要求：{instruction}\n\n"
-        "请直接输出修改后的完整动态正文（自然中文，不用 JSON 包裹）。原本有用的 @ 昵称请保留。"
+        + (f"原动态关联的公开来源（注意区分本人与第三方发言）：\n{source_block}\n" if source_block else "")
+        + f"修改要求：{instruction}\n\n"
+        "请直接输出修改后的完整动态正文（自然中文，不用 JSON 包裹）。原本有用的 @ 昵称请保留，讲清起因与来龙去脉。"
     )
     branch = tree.add_node(
         ContextNode(

@@ -18,6 +18,7 @@ from ...core.meter import GenerationBudgetExceeded, budgeted_call, budgeted_json
 from ...core.models import content_hash
 from ...core.store import dump
 from ...core.text import (
+    detect_reasoning_leak,
     operation_character,
     operation_output_diagnostics,
     validate_comment_body,
@@ -339,9 +340,15 @@ class FeedbackModel:
         return await self._call(row, messages, schema, "decision")
 
     async def revise(self, row, decision):
+        instruction = (
+            "结合本次已读取内容与平台反馈，重新写这条公开动态的自然正文。务必保留事件起因与来龙去脉，不要为了缩短字数把背景砍成没头没尾的残句；不要把他人评论说成你自己说过的话。"
+            if row["binding"].get("channel") == "dynamics"
+            else "结合本次已读取内容与反馈，重新写这次发言的自然正文。"
+        )
+
         def messages():
             return self.messages() + [
-                {"role": "system", "content": "结合本次已读取内容与反馈，重新写这次发言的自然正文。"}
+                {"role": "system", "content": instruction}
             ]
 
         schema = {
@@ -550,6 +557,16 @@ class FeedbackPublication:
         if self.coordinator.get(row["id"])["feedback"].get("kind") == "style_diagnostic":
             return {"status": "pending_review", "text": result.value,
                     "continuation": self.coordinator.dto(channel, identity)}
+        orig = row.get("original_output")
+        orig_text = orig.get("text") if isinstance(orig, dict) else orig if isinstance(orig, str) else ""
+        if automatic and isinstance(orig_text, str) and detect_reasoning_leak(orig_text):
+            feedback = {"kind": "style_diagnostic", "message": "原稿检测到思考过程泄露，修订稿已保留待人工审核"}
+            self.coordinator._state(row["id"], "awaiting_review", feedback=feedback, output=result.value)
+            return {
+                "status": "pending_review",
+                "text": result.value,
+                "continuation": self.coordinator.dto(channel, identity),
+            }
         previous = row["trigger_feedback"].get("write_token")
         self.coordinator.ticket(
             row["id"], previous, prepared.outgoing(result.value), automatic=automatic, epoch=epoch

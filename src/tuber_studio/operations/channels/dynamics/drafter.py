@@ -3,18 +3,25 @@
 import json
 import time
 from datetime import datetime
+from uuid import uuid4
 
 from ....core.identity import identity_messages, runtime_identity
 from ....core.meter import budgeted_json
 from ....core.models import content_hash
-from ....core.text import operation_output_diagnostics
+from ....core.text import detect_reasoning_leak, operation_output_diagnostics
 from ....infra.platforms.bilibili.dynamics import read_dynamic_caption, validate_text
 from ...kernel.feedback import FeedbackPublication
 from ...kernel.generation import generate_with_recovery
 from ..mentions import MENTION_INSTRUCTION, MENTION_REQUESTS, bind_mentions, rebase_mentions
 from .evaluator import dynamic_decision_messages
+from .materials import source_links
 from .repository import _content_hash, _has_legacy_chat_lineage, _json
 from .turns import evaluate_native_dynamic, revise_native_dynamic_caption, should_use_native_dynamic_turns
+
+
+def _safe_rebase_mentions(text: str, mentions: list[dict]) -> list[dict]:
+    kept = [item for item in (mentions or []) if item.get("name") and f"@{item['name']}" in text]
+    return rebase_mentions(text, kept) if kept else []
 
 
 class DynamicsDrafterMixin:
@@ -193,6 +200,105 @@ class DynamicsDrafterMixin:
              caption, self._outgoing_text(row, caption), "draft", _json(mentions)),
         )
         return self.dynamic_edit(request_id, account, character["id"])
+
+    async def create_manual_dynamic_edit(
+        self,
+        post_id: int,
+        caption: str,
+        *,
+        include_source_links: bool | None = None,
+        request_id: str | None = None,
+    ):
+        adapter = self.account.adapter
+        account = str(await self.account.account_id())
+        character = self._character()
+        row = self._post(post_id)
+        if row["status"] != "published" or not (row.get("receipt") or {}).get("dynamic_id"):
+            raise ValueError("只有已发布成功的动态才能原地编辑")
+        if row.get("account_id") and row["account_id"] != account:
+            raise ValueError("该动态属于其他账号，请先切换账号")
+        if (row["character_id"], row["character_version"]) != (character["id"], character["version"]):
+            raise ValueError("角色或版本已切换，无法直接原地编辑")
+        if not self._valid_sources(row):
+            raise ValueError("原动态的公开来源已变化")
+        identifier = str(row["receipt"]["dynamic_id"])
+        req_id = request_id or str(uuid4())
+        original = await read_dynamic_caption(adapter, identifier, account)
+        link_ids = None
+        if include_source_links is True:
+            existing_links = (row.get("presentation") or {}).get("link_source_ids")
+            link_ids = list(existing_links) if existing_links else [
+                s["id"] for s in row["sources"] if source_links(s)
+            ][:2]
+        elif include_source_links is False:
+            link_ids = []
+        cleaned = self._edit_caption(row, caption, link_source_ids=link_ids)
+        if leak := detect_reasoning_leak(cleaned):
+            raise ValueError(leak)
+        outgoing = self._outgoing_text(row, cleaned, link_source_ids=link_ids)
+        mentions = _safe_rebase_mentions(cleaned, original.get("mentions", []))
+        self.store.execute(
+            "INSERT INTO dynamic_edits(request_id,post_id,account_id,character_id,platform_id,original,caption,outgoing,status,mentions,link_source_ids)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                req_id, row["id"], account, character["id"], identifier, _json(original),
+                cleaned, outgoing, "draft", _json(mentions),
+                _json(link_ids) if link_ids is not None else None,
+            ),
+        )
+        return self.dynamic_edit(req_id, account, character["id"])
+
+    def redraft_post(self, post_id: int, *, text: str | None = None, include_source_links: bool = True):
+        row = self._post(post_id)
+        char = self._character()
+        if (row["character_id"], row["character_version"]) != (char["id"], char["version"]):
+            raise ValueError("角色或版本已切换，请重新评估起草")
+        active_account = self._source_account()
+        target_account = row.get("account_id") or active_account or ""
+        if active_account and row.get("account_id") and active_account != row["account_id"]:
+            raise ValueError("请先切换到原动态所属账号")
+        if row["sources"] and not self._valid_sources(row):
+            raise ValueError("原动态的公开来源已变化，请重新评估起草")
+        content = validate_text(text if text is not None else row["content"])
+        if leak := detect_reasoning_leak(content):
+            raise ValueError(leak)
+        link_ids = (
+            [s["id"] for s in row["sources"] if source_links(s)][:2]
+            if include_source_links
+            else []
+        )
+        mentions = _safe_rebase_mentions(content, row.get("mentions", []))
+        has_comment_card = any(
+            (s.get("type") or s.get("kind")) in {"published_reply", "public_incident", "public_comment"}
+            for s in row["sources"]
+        )
+        data = {
+            "action": "post",
+            "reason": f"基于动态 #{post_id} 重新编辑草稿",
+            "content": content,
+            "source_ids": list(row["source_ids"]),
+            "next_evaluation_seconds": self.policy()["evaluate_interval_seconds"],
+            "evaluation_account_id": target_account,
+            "illustration": "comment_card" if has_comment_card else "none",
+            "presentation": {
+                "link_source_ids": link_ids,
+                "mentions": mentions,
+                "pending_mentions": [],
+                "points": [{"summary": content[:60], "source_ids": list(row["source_ids"])}] if row["source_ids"] else [],
+            },
+        }
+        identity = runtime_identity(self.runtime, char, target_account or None)
+        saved = self._save_decision(
+            char,
+            True,
+            data,
+            row["sources"],
+            generation_identity=identity,
+            schedule=False,
+            account_id=target_account,
+            decide_image=False,
+        )
+        return self._post(saved["post_id"])
 
     async def _presentation(self, data, sources):
         participants = [person for source in sources for person in source.get("participants", [])]

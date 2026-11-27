@@ -113,6 +113,8 @@ class DynamicsRepositoryMixin:
         store.execute("CREATE INDEX IF NOT EXISTS dynamic_posts_delivery ON dynamic_posts(account_id,delivery_key)")
         if "mentions" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_edits)")}:
             store.execute("ALTER TABLE dynamic_edits ADD COLUMN mentions TEXT")
+        if "link_source_ids" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_edits)")}:
+            store.execute("ALTER TABLE dynamic_edits ADD COLUMN link_source_ids TEXT")
         ensure_reflections(store)
         if "generation_continuation_id" not in {
             row[1] for row in store.db.execute("PRAGMA table_info(dynamic_decisions)")
@@ -365,8 +367,14 @@ class DynamicsRepositoryMixin:
         if row is None:
             raise ValueError("未找到当前账号和角色的动态修订")
         row["mentions"] = json.loads(row["mentions"]) if row["mentions"] is not None else None
+        row["link_source_ids"] = (
+            json.loads(row["link_source_ids"]) if row.get("link_source_ids") is not None else None
+        )
         if row["status"] == "draft":
             post = self._post(row["post_id"])
-            caption = self._edit_caption(post, row["caption"])
-            row = row | {"caption": caption, "outgoing": self._outgoing_text(post, caption)}
+            caption = self._edit_caption(post, row["caption"], link_source_ids=row["link_source_ids"])
+            row = row | {
+                "caption": caption,
+                "outgoing": self._outgoing_text(post, caption, link_source_ids=row["link_source_ids"]),
+            }
         return row

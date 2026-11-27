@@ -273,4 +273,100 @@ describe("DynamicsPage", () => {
       expect(applyBtn).toBeDisabled();
     });
   });
+
+  it("supports publish_failed editing, inline published dynamic edit, and redrafting", async () => {
+    const user = userEvent.setup();
+    const editRequests: Array<{ postId: string; body: unknown }> = [];
+    const redraftRequests: Array<{ postId: string; body: unknown }> = [];
+    let currentPosts: DynamicPost[] = [
+      makePost(20, { status: "publish_failed", content: "发布失败的原稿", error: "平台拒绝" }),
+      makePost(21, {
+        status: "published",
+        content: "十袋米当日常？白饭刚揭盖。",
+        sources: [
+          {
+            id: "comment:BV1q5WZ6HEFD:321197068865:325013871744",
+            type: "public_comment",
+            text: "十袋米也就我一天的量吧",
+            source_url: "https://www.bilibili.com/video/BV1q5WZ6HEFD#reply325013871744",
+          },
+        ],
+        receipt: { dynamic_id: "1275098382031912982" },
+      }),
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method || "GET").toUpperCase();
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        if (url === "/api/v1/operations/dynamics/policy") return jsonResponse({ enabled: true });
+        if (url === "/api/v1/operations/dynamics/posts") return jsonResponse(currentPosts);
+        if (url === "/api/v1/operations/dynamics/decisions") return jsonResponse([]);
+        if (url === "/api/v1/operations/dynamics/materials") return jsonResponse({ sources: [] });
+        if (url.startsWith("/api/v1/operations/dynamics/memories")) return jsonResponse([]);
+        if (url === "/api/v1/operations/dynamics/posts/21/edit" && method === "POST") {
+          editRequests.push({ postId: "21", body });
+          currentPosts = currentPosts.map((p) =>
+            p.id === 21
+              ? { ...p, content: body.caption, outgoing_links: ["https://www.bilibili.com/video/BV1q5WZ6HEFD#reply325013871744"] }
+              : p
+          );
+          return jsonResponse({
+            request_id: "edit-req-21",
+            post_id: 21,
+            platform_id: "1275098382031912982",
+            caption: body.caption,
+            outgoing: `${body.caption}\n\nhttps://www.bilibili.com/video/BV1q5WZ6HEFD#reply325013871744`,
+            status: "applied",
+            error: null,
+          });
+        }
+        if (url === "/api/v1/operations/dynamics/posts/21/redraft" && method === "POST") {
+          redraftRequests.push({ postId: "21", body });
+          const created = makePost(22, { status: "pending_review", content: body.text });
+          currentPosts = [created, ...currentPosts];
+          return jsonResponse(created);
+        }
+        return jsonResponse({});
+      })
+    );
+
+    const { container } = render(<DynamicsPage route={parseHashRoute("#dynamics")} />);
+
+    // 1. publish_failed post is visible in 待处理 and editable
+    const failedBtn = await screen.findByText(/#20 · 发布失败/);
+    await user.click(failedBtn);
+    const failedTextarea = container.querySelector("[data-dynamic-textarea]") as HTMLTextAreaElement;
+    expect(failedTextarea.readOnly).toBe(false);
+    expect(container.querySelector("[data-save-dynamic-caption]")).toBeInTheDocument();
+
+    // 2. Switch to 历史 and open post #21 for inline edit and redraft
+    await user.click(screen.getByRole("radio", { name: "历史" }));
+    await user.click(await screen.findByText(/#21 · 已发布/));
+
+    const editTextarea = container.querySelector("[data-published-edit-textarea]") as HTMLTextAreaElement;
+    const linksCheckbox = container.querySelector("[data-published-include-links]") as HTMLInputElement;
+    expect(linksCheckbox.checked).toBe(true);
+    await user.clear(editTextarea);
+    await user.type(editTextarea, "刷到视频评论区有意思的十袋米梗，我也来凑个热闹。");
+    await user.click(container.querySelector("[data-submit-published-edit]") as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(editRequests).toHaveLength(1);
+      expect(editRequests[0].body).toEqual({
+        caption: "刷到视频评论区有意思的十袋米梗，我也来凑个热闹。",
+        include_source_links: true,
+        apply: true,
+      });
+    });
+
+    // 3. Redraft creates post #22 and switches back to 待处理 selecting #22
+    await user.click(container.querySelector("[data-redraft-dynamic]") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(redraftRequests).toHaveLength(1);
+      expect(container.querySelector('[data-post-id="22"]')).toHaveAttribute("aria-current", "true");
+    });
+  });
 });

@@ -75,6 +75,7 @@ class Dynamics(
             "pending_review",
             "approved",
             "rejected",
+            "publish_failed",
         }:
             raise ValueError("当前动态不能执行该审核操作")
         if options.pop("review_key", row["review_key"]) != row["review_key"]:
@@ -208,15 +209,15 @@ class Dynamics(
         )
 
     @classmethod
-    def _outgoing_text(cls, row, text):
-        if links := cls._comment_links(row):
+    def _outgoing_text(cls, row, text, *, link_source_ids=None):
+        if links := cls._comment_links(row, link_source_ids=link_source_ids):
             text += "\n\n" + "\n".join(("原评论：" if "#reply" in url else "") + url for url in links)
         return text
 
     @classmethod
-    def _edit_caption(cls, row, text):
+    def _edit_caption(cls, row, text, *, link_source_ids=None):
         text = validate_text(text)
-        if links := cls._comment_links(row):
+        if links := cls._comment_links(row, link_source_ids=link_source_ids):
             known = "|".join(re.escape(url) for url in links)
             text = re.sub(rf"(?:\s*(?:原评论(?:链接)?\s*[：:]\s*)?(?:{known}))+\s*\Z", "", text)
         return validate_text(text)
@@ -782,9 +783,18 @@ class Dynamics(
             if actual == expected:
                 guard()
                 presentation = row.get("presentation")
-                if presentation is not None or mentions:
+                if edit.get("link_source_ids") is not None:
+                    presentation = (presentation or {}) | {
+                        "link_source_ids": edit["link_source_ids"],
+                        "mentions": mentions,
+                        "points": [],
+                    }
+                elif presentation is not None or mentions:
                     presentation = (presentation or {"link_source_ids": None}) | {"mentions": mentions, "points": []}
-                edited = self._outgoing(row | {"content": edit["caption"], "mentions": mentions}, character)
+                edited = self._outgoing(
+                    row | {"content": edit["caption"], "mentions": mentions, "presentation": presentation},
+                    character,
+                )
                 with self.store.db:
                     self.store.db.execute(
                         "UPDATE dynamic_posts SET content=?,content_hash=?,presentation=?,delivery_key=?,updated_at=? WHERE id=?",

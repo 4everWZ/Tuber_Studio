@@ -20,8 +20,12 @@ class DynamicsAttachmentsMixin:
         return render_comment_card(card, page)
 
     @staticmethod
-    def _comment_links(row):
-        selected = (row.get("presentation") or {}).get("link_source_ids")
+    def _comment_links(row, *, link_source_ids=None):
+        selected = (
+            link_source_ids
+            if link_source_ids is not None
+            else (row.get("presentation") or {}).get("link_source_ids")
+        )
         if selected is not None:
             by_id = {source["id"]: source for source in row["sources"]}
             return list(dict.fromkeys(link for identity in selected if identity in by_id

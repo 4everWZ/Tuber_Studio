@@ -582,7 +582,10 @@ export interface DynamicMaterials {
 
 export interface DynamicEditResult {
   request_id: string;
+  post_id?: number;
   platform_id?: string;
+  caption?: string;
+  outgoing?: string;
   status: "draft" | "submitting" | "pending_verification" | "applied" | string;
   error?: string | null;
 }

@@ -94,6 +94,36 @@ describe("PermissionMatrix & deriveAutomaticSendingWarning", () => {
       settings: { top_level_enabled: true, top_level_auto_publish: false },
     });
     expect(deriveAutomaticSendingWarning(draftOnlyStatus, null)).toBe("");
+
+    // Off + pending startup_check explains standby without falsely claiming missing connection
+    const standbyPendingStatus = makeStatus({
+      state: "off",
+      startup_check: "pending",
+      automatic_sending_ready: false,
+      blockers: [],
+      settings: { top_level_enabled: true, top_level_auto_publish: true },
+    });
+    expect(
+      deriveAutomaticSendingWarning(standbyPendingStatus, {
+        state: "logged_in",
+        configured: { sessdata: true, csrf: true },
+      })
+    ).toBe("当前未开启自主运营，开启时会自动核验账号与模型连接。");
+
+    // Checking startup_check shows in-progress verification
+    const checkingStatus = makeStatus({
+      state: "starting",
+      startup_check: "checking",
+      automatic_sending_ready: false,
+      blockers: [],
+      settings: { top_level_enabled: true, top_level_auto_publish: true },
+    });
+    expect(
+      deriveAutomaticSendingWarning(checkingStatus, {
+        state: "logged_in",
+        configured: { sessdata: true, csrf: true },
+      })
+    ).toBe("正在核验账号与模型连接…");
   });
 
   it("serializes matrix toggles while saving and reloads actual state on failure", async () => {

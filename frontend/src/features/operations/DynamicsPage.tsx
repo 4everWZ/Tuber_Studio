@@ -34,6 +34,7 @@ const POST_STATUS_LABELS: Record<string, string> = {
   publish_uncertain: "待核对",
   publishing: "发布中",
   published: "已发布",
+  publish_failed: "发布失败",
   rejected: "已拒绝",
   invalidated: "已失效",
 };
@@ -87,7 +88,7 @@ function formatDateTime(value: number | string | null | undefined): string {
 function postStatusTone(status: string): "good" | "amber" | "bad" | "neutral" {
   if (status === "published") return "good";
   if (status === "approved" || status === "publishing") return "neutral";
-  if (status === "rejected") return "bad";
+  if (status === "rejected" || status === "publish_failed") return "bad";
   if (status === "publish_uncertain" || status === "invalidated") return "amber";
   return "neutral";
 }
@@ -193,6 +194,11 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
   const [editResult, setEditResult] = useState<DynamicEditResult | null>(null);
   const [editApplyBusy, setEditApplyBusy] = useState(false);
   const [editApplyError, setEditApplyError] = useState("");
+  const [publishedEditText, setPublishedEditText] = useState("");
+  const [publishedIncludeLinks, setPublishedIncludeLinks] = useState(true);
+  const [publishedActionBusy, setPublishedActionBusy] = useState(false);
+  const [publishedActionError, setPublishedActionError] = useState("");
+  const [publishedActionNote, setPublishedActionNote] = useState("");
 
   const refreshSeqRef = useRef(0);
   const lastBgRefreshAtRef = useRef(0);
@@ -398,7 +404,9 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
   const isSelectedEditable = Boolean(
     activePost &&
       !isDetached &&
-      (activePost.status === "pending_review" || activePost.status === "approved")
+      (activePost.status === "pending_review" ||
+        activePost.status === "approved" ||
+        activePost.status === "publish_failed")
   );
   const awaitingChoice = activePost?.illustration_choice === "awaiting_choice";
 
@@ -592,6 +600,77 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
     }
   }
 
+  async function handleEditPublishedPost(post: DynamicPost) {
+    if (publishedActionBusy || !publishedEditText.trim()) return;
+    setPublishedActionBusy(true);
+    setPublishedActionError("");
+    setPublishedActionNote("");
+    try {
+      const res = await apiPost<
+        "/api/v1/operations/dynamics/posts/{post_id}/edit",
+        DynamicEditResult,
+        { caption: string; include_source_links: boolean; apply: boolean }
+      >("/api/v1/operations/dynamics/posts/{post_id}/edit", {
+        pathParams: { post_id: post.id },
+        body: {
+          caption: publishedEditText,
+          include_source_links: publishedIncludeLinks,
+          apply: true,
+        },
+      });
+      setEditRequestIdInput(res.request_id);
+      setEditResult(res);
+      if (res.status === "applied") {
+        const msg = "已修改 B 站原动态并同步保存。";
+        setPublishedActionNote(msg);
+        emitNotice(msg);
+      } else if (res.status === "pending_verification") {
+        const msg = "已提交修改请求，结果待核对，可在上方点击「核对编辑结果」确认。";
+        setPublishedActionNote(msg);
+        emitNotice(msg);
+      }
+      await refreshDynamics({ force: true });
+    } catch (err) {
+      const msg = errorMessage(err, "原地修改已发动态失败。");
+      setPublishedActionError(msg);
+      emitNotice(msg, true);
+    } finally {
+      setPublishedActionBusy(false);
+    }
+  }
+
+  async function handleRedraftPost(post: DynamicPost, textOverride?: string) {
+    if (publishedActionBusy) return;
+    setPublishedActionBusy(true);
+    setPublishedActionError("");
+    setPublishedActionNote("");
+    try {
+      const created = await apiPost<
+        "/api/v1/operations/dynamics/posts/{post_id}/redraft",
+        DynamicPost,
+        { text?: string; include_source_links: boolean }
+      >("/api/v1/operations/dynamics/posts/{post_id}/redraft", {
+        pathParams: { post_id: post.id },
+        body: {
+          text: textOverride ?? post.content ?? "",
+          include_source_links: publishedIncludeLinks,
+        },
+      });
+      setPostView("pending");
+      setDetachedPost(null);
+      setSelectedPostId(created.id);
+      setActionStatus(`已复制为新草稿 #${created.id}，审核后可重新发布。`);
+      emitNotice(`已生成新草稿 #${created.id}，可审核后重新发布。`);
+      await refreshDynamics({ force: true });
+    } catch (err) {
+      const msg = errorMessage(err, "复制为新草稿失败。");
+      setPublishedActionError(msg);
+      emitNotice(msg, true);
+    } finally {
+      setPublishedActionBusy(false);
+    }
+  }
+
   const cardData = activePost
     ? activePost.comment_card || activePost.source_comment_card || null
     : null;
@@ -599,6 +678,16 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
     () => collectDeduplicatedCardLinks(cardData),
     [cardData]
   );
+
+  const hasSourceLinkCandidates = Boolean(
+    activePost?.sources?.some((s) => Boolean(s.source_url)) || cardLinks.length > 0
+  );
+  useEffect(() => {
+    setPublishedEditText(activePost?.content ?? "");
+    setPublishedIncludeLinks(hasSourceLinkCandidates);
+    setPublishedActionError("");
+    setPublishedActionNote("");
+  }, [activePost?.id, activePost?.content, activePost?.status, hasSourceLinkCandidates]);
 
   const selectedMemeAsset =
     activePost?.meme_id ? memeAssets.get(activePost.meme_id) ?? null : null;
@@ -940,6 +1029,77 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
                     </button>
                   )}
                 </div>
+
+                {!isDetached && activePost.status === "published" && (
+                  <div className={styles.memeAttachmentPreview} data-published-edit-box="">
+                    <strong>原地编辑已发动态 / 复制重发</strong>
+                    <p className="hint" style={{ margin: "4px 0 8px" }}>
+                      可直接在 B 站修改这条已发动态的正文并补回来源链接，或复制一份为新草稿重新发布。
+                    </p>
+                    <label>
+                      修改后的正文
+                      <textarea
+                        rows={4}
+                        data-published-edit-textarea=""
+                        value={publishedEditText}
+                        disabled={publishedActionBusy}
+                        onChange={(e) => setPublishedEditText(e.target.value)}
+                      />
+                    </label>
+                    <label className="check-field" style={{ marginTop: 8 }}>
+                      <input
+                        type="checkbox"
+                        data-published-include-links=""
+                        checked={publishedIncludeLinks}
+                        disabled={publishedActionBusy}
+                        onChange={(e) => setPublishedIncludeLinks(e.target.checked)}
+                      />{" "}
+                      附带原来源链接
+                    </label>
+                    <div className="row-actions" style={{ marginTop: 8 }}>
+                      <button
+                        type="button"
+                        data-submit-published-edit=""
+                        disabled={publishedActionBusy || !publishedEditText.trim()}
+                        onClick={() => void handleEditPublishedPost(activePost)}
+                      >
+                        {publishedActionBusy ? "提交中…" : "修改 B 站原动态"}
+                      </button>
+                      <button
+                        type="button"
+                        data-redraft-dynamic=""
+                        disabled={publishedActionBusy}
+                        onClick={() => void handleRedraftPost(activePost, publishedEditText)}
+                      >
+                        复制为新草稿重新发布
+                      </button>
+                    </div>
+                    {publishedActionNote && (
+                      <p className="hint" role="status" style={{ marginTop: 6 }}>
+                        {publishedActionNote}
+                      </p>
+                    )}
+                    {publishedActionError && (
+                      <p className="hint err" role="alert" style={{ marginTop: 6 }}>
+                        {publishedActionError}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {!isDetached &&
+                  (activePost.status === "rejected" || activePost.status === "invalidated") && (
+                    <div className="row-actions" style={{ marginTop: 8 }}>
+                      <button
+                        type="button"
+                        data-redraft-dynamic=""
+                        disabled={publishedActionBusy}
+                        onClick={() => void handleRedraftPost(activePost)}
+                      >
+                        复制为新草稿
+                      </button>
+                    </div>
+                  )}
 
                 {actionStatus && (
                   <p className="hint" role="status" style={{ marginTop: 8 }}>

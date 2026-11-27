@@ -422,6 +422,45 @@ def register_operations_channel_routes(app, store, account, comments, browsing, 
         return await dynamics.publish(post_id, expected_text=expected) if expected else await dynamics.publish(post_id)
 
     @app.post(
+        prefix + "/dynamics/posts/{post_id}/edit", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"]
+    )
+    async def create_or_apply_dynamic_edit(post_id: int, data: dict = Body(...)):
+        if set(data) - {"caption", "include_source_links", "apply"}:
+            raise ValueError("未知动态编辑字段")
+        caption = data.get("caption")
+        if not isinstance(caption, str) or not caption.strip():
+            raise ValueError("请输入修改后的动态正文")
+        include_links = data.get("include_source_links")
+        if include_links is not None and type(include_links) is not bool:
+            raise ValueError("include_source_links 须为布尔值")
+        apply_now = data.get("apply", False)
+        if type(apply_now) is not bool:
+            raise ValueError("apply 须为布尔值")
+        edit = await dynamics.create_manual_dynamic_edit(
+            post_id, caption, include_source_links=include_links,
+        )
+        if apply_now:
+            edit = await dynamics.apply_dynamic_edit(edit["request_id"])
+        return {
+            key: edit[key]
+            for key in ("request_id", "post_id", "platform_id", "caption", "outgoing", "status", "error")
+        }
+
+    @app.post(
+        prefix + "/dynamics/posts/{post_id}/redraft", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"]
+    )
+    async def redraft_dynamic(post_id: int, data: dict = Body(default={})):
+        if set(data) - {"text", "include_source_links"}:
+            raise ValueError("未知动态重拟草稿字段")
+        text = data.get("text")
+        if text is not None and not isinstance(text, str):
+            raise ValueError("text 须为字符串")
+        include_links = data.get("include_source_links", True)
+        if type(include_links) is not bool:
+            raise ValueError("include_source_links 须为布尔值")
+        return dynamics.redraft_post(post_id, text=text, include_source_links=include_links)
+
+    @app.post(
         prefix + "/dynamics/edits/{request_id}/apply", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"]
     )
     async def apply_dynamic_edit(request_id: UUID):

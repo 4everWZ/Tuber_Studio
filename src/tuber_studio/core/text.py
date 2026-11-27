@@ -20,6 +20,37 @@ _COMMENT_PROTOCOL_FIELDS = {
     "source_quote", "web_search", "web_fetch",
 }
 
+_STRONG_REASONING_MARKERS = (
+    re.compile(r"\bcheck\s+for\s+banned\s+phrases\b", re.IGNORECASE),
+    re.compile(r"^\s*Final\s+text\s*:", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\s*Self-reference\s*:", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"\bNo\s+need\s+to\s+skip\b", re.IGNORECASE),
+    re.compile(r"</(?:think|thought|analysis)>", re.IGNORECASE),
+)
+
+_META_DRAFTING_CUES = (
+    re.compile(r'^\s*Wait,\s+["\'“]', re.IGNORECASE | re.MULTILINE),
+    re.compile(r"\bActually,?\s+let\s+me\b", re.IGNORECASE),
+    re.compile(r"\bLet\s+me\s+(?:check|refine|double-check|rethink|rewrite|adjust|verify)\b", re.IGNORECASE),
+    re.compile(r"^\s*Another\s+consideration\s*:", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"\bShould\s+I\s+(?:call|use|mention|skip|keep|add|include)\b", re.IGNORECASE),
+    re.compile(r"\bFine\s+as\s+is\b", re.IGNORECASE),
+    re.compile(r"^\s*Hmm,\s+good\b", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"\bThis\s+is\s+good\s*[—–-]", re.IGNORECASE),
+)
+
+
+def detect_reasoning_leak(text: str) -> str | None:
+    """Detect English chain-of-thought or meta-drafting leakage in visible output."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    if any(pattern.search(text) for pattern in _STRONG_REASONING_MARKERS):
+        return "检测到模型思考过程或英文草稿分析泄露进正文，已拦截保留原稿"
+    hits = sum(1 for pattern in _META_DRAFTING_CUES if pattern.search(text))
+    if hits >= 2:
+        return "检测到模型思考过程或英文草稿分析泄露进正文，已拦截保留原稿"
+    return None
+
 
 def reply_output_budget(config, mode):
     if mode in {"comment_draft", "direct_message"}:
@@ -99,14 +130,17 @@ def operation_output_diagnostics(text):
         clause.strip() for clause in re.split(r"[。！？!?；;\n]+", text) if len(clause.strip()) >= 18
     )
     repeated_clauses = sum(len(clause) * count for clause, count in clauses.items() if count >= 6)
+    reasoning_leak = bool(detect_reasoning_leak(text))
     return {
         "visible_characters": len(text),
         "visible_utf8_bytes": len(text.encode("utf-8")),
         "repeated_paragraph_characters": repeated,
         "repeated_clause_characters": repeated_clauses,
         "adjacent_phrase_loop": adjacent,
+        "reasoning_leak": reasoning_leak,
         "needs_review": (
-            adjacent
+            reasoning_leak
+            or adjacent
             or len(text) >= 4096
             and repeated > len(text) * 0.8
             or repeated_clauses >= 480
