@@ -1129,7 +1129,8 @@ class BrowsingAdapter(BilibiliAdapter):
         params = await self._anonymous_wbi_params(base) if anonymous else base
         data = await self._get("/x/v2/reply/reply", params, anonymous=anonymous)
         page_replies = data.get("replies") or []
-        rows = ([data["root"]] if data.get("root") else []) + page_replies
+        roots = [data["root"]] if data.get("root") else []
+        rows = roots + page_replies
         found, invisible, ctime, oldest_ctime = self._find_reply_row(rows, rpid)
         page_info = data.get("page") if isinstance(data.get("page"), dict) else {}
         count = page_info.get("count") if type(page_info.get("count")) is int else None
@@ -1144,6 +1145,10 @@ class BrowsingAdapter(BilibiliAdapter):
                 tail_params = await self._anonymous_wbi_params(tail_base) if anonymous else tail_base
                 tail_data = await self._get("/x/v2/reply/reply", tail_params, anonymous=anonymous)
                 tail_replies = tail_data.get("replies") or []
+                if tail_data.get("root"):
+                    roots.append(tail_data["root"])
+                    rows.append(tail_data["root"])
+                rows.extend(tail_replies)
                 found, invisible, ctime, tail_oldest = self._find_reply_row(tail_replies, rpid)
                 oldest_ctime = tail_oldest if tail_oldest is not None else oldest_ctime
                 checked_page = last_page
@@ -1151,6 +1156,8 @@ class BrowsingAdapter(BilibiliAdapter):
                 covered = last_page == 2 and page_info.get("count") == (
                     tail_data.get("page") or {}
                 ).get("count")
+        root_found, root_hidden, _, _ = self._find_reply_row(roots, normalized["root"])
+        parent_found, parent_hidden, _, _ = self._find_reply_row(rows, normalized["parent"])
         return {
             "found": found,
             "invisible": invisible,
@@ -1160,6 +1167,8 @@ class BrowsingAdapter(BilibiliAdapter):
             "oldest_ctime": oldest_ctime,
             "page_count": count,
             "checked_page": checked_page,
+            "root_visible": root_found and not root_hidden,
+            "parent_visible": parent_found and not parent_hidden,
         }
 
     async def _read_publication_view(self, target, rpid, *, anonymous: bool):
@@ -1225,15 +1234,13 @@ class BrowsingAdapter(BilibiliAdapter):
 
         auth_visible = auth_view["found"] and not auth_view["invisible"]
         anon_visible = anon_view["found"] and not anon_view["invisible"]
+        anon_target_public = not is_reply or (anon_view["root_visible"] and anon_view["parent_visible"])
         if anon_visible:
             status = "public_visible"
         elif auth_view["found"] and auth_view["invisible"]:
             status = "shadow_deleted"
-        elif auth_visible:
-            if (anon_view["found"] and anon_view["invisible"]) or anon_covered:
-                status = "self_only"
-            else:
-                status = "not_found"
+        elif auth_visible and ((anon_view["found"] and anon_view["invisible"]) or (anon_covered and anon_target_public)):
+            status = "self_only"
         else:
             status = "not_found"
 
@@ -1262,6 +1269,10 @@ class BrowsingAdapter(BilibiliAdapter):
                 "anon_oldest_ctime": anon_view["oldest_ctime"],
                 "auth_seek_found": auth_view.get("seek_found"),
                 "anon_seek_found": anon_view.get("seek_found"),
+                **({"anon_root_visible": anon_view["root_visible"],
+                    "anon_parent_visible": anon_view["parent_visible"]} if is_reply else {}),
             },
             **({"receipt_hints": hints} if hints else {}),
+            **({"reason": "匿名读回未核实原评论楼和父评论均可见"}
+               if status == "not_found" and anon_covered and not anon_target_public else {}),
         }

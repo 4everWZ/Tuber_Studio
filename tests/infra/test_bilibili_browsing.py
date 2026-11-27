@@ -825,6 +825,43 @@ async def test_exact_browser_seek_finds_nested_reply_missing_in_anonymous_listin
     assert report["coverage"]["anon_seek_found"] is True
 
 
+@pytest.mark.parametrize(
+    "anonymous_root,anonymous_parent,expected",
+    [
+        ({"rpid": 42}, {"rpid": 43}, "self_only"),
+        ({"rpid": 42}, None, "not_found"),
+        (None, {"rpid": 43}, "not_found"),
+        ({"rpid": 42, "invisible": 1}, {"rpid": 43}, "not_found"),
+        ({"rpid": 42}, {"rpid": 43, "invisible": 1}, "not_found"),
+    ],
+)
+async def test_missing_reply_requires_public_original_thread_and_parent(
+    adapter_factory, anonymous_root, anonymous_parent, expected
+):
+    def handle(request):
+        if request.url.path == "/x/web-interface/nav":
+            return nav()
+        if request.url.path == "/x/v2/reply/wbi/main":
+            assert request.url.params["seek_rpid"] == "555"
+            return result({"replies": []})
+        assert request.url.path == "/x/v2/reply/reply"
+        if request.headers.get("cookie"):
+            return result({"root": {"rpid": 42}, "replies": [{"rpid": 43}, {"rpid": 555}]})
+        return result({"root": anonymous_root, "replies": [anonymous_parent] if anonymous_parent else []})
+
+    adapter = await adapter_factory(handle)
+    report = await adapter.verify_publication(
+        {"resource_type": "video", "oid": "123", "root": "42", "parent": "43"}, {"rpid": "555"},
+    )
+    assert report["status"] == expected
+    assert report["auth_visible"] is True and report["anon_found"] is False
+    coverage = report["coverage"]
+    assert coverage["anon_covered"] is True
+    assert coverage["anon_root_visible"] is bool(anonymous_root and not anonymous_root.get("invisible"))
+    assert coverage["anon_parent_visible"] is bool(anonymous_parent and not anonymous_parent.get("invisible"))
+    assert bool(report.get("reason")) is (expected == "not_found")
+
+
 async def test_verify_publication_preserves_risk_error_code_and_publish_captures_hints(adapter_factory):
     def handle(request):
         if request.url.path == "/x/web-interface/nav":
