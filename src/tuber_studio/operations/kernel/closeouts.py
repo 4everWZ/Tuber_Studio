@@ -75,6 +75,17 @@ def public_period_brief(store, run):
         "WHERE account_id=? AND character_id=? AND published_at>=? AND published_at<? AND status='published'",
         args,
     )["n"]
+    activity = store.one(
+        "SELECT "
+        "COUNT(CASE WHEN i.kind IN ('top_level','reply_public') AND i.status='pending_review' "
+        " AND i.created_at>=:start AND i.created_at<:end THEN 1 END) AS review_comments, "
+        "COUNT(CASE WHEN i.kind IN ('comment_like','video_like','dynamic_like') AND i.status='published' "
+        " AND i.receipt IS NOT NULL AND i.updated_at>=:start AND i.updated_at<:end THEN 1 END) AS confirmed_likes "
+        "FROM browsing_intents i JOIN browsing_rounds r ON r.id=i.round_id "
+        "WHERE i.account_id=:account AND i.character_id=:character AND r.preview=0 "
+        "AND ((i.created_at>=:start AND i.created_at<:end) OR (i.updated_at>=:start AND i.updated_at<:end))",
+        dict(zip(("account", "character", "start", "end"), args, strict=True)),
+    )
     zone = ZoneInfo(run["period_timezone"])
     start, end = (datetime.fromtimestamp(run[f"period_{key}_at"], zone) for key in ("start", "end"))
     period = f"{start:%Y-%m-%d %H:%M} 至 {end:%m-%d %H:%M}（{zone.key}）"
@@ -96,6 +107,7 @@ def public_period_brief(store, run):
     return {"title": f"{start:%m月%d日} {name}运营复盘", "period_label": period,
             "watched_videos": len(videos), "accepted_comments": comments["accepted"],
             "public_comments": comments["visible"], "public_dynamics": dynamics,
+            "review_comments": activity["review_comments"], "confirmed_likes": activity["confirmed_likes"],
             "sources": sources, "highlights": highlights}
 
 

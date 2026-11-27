@@ -27,6 +27,8 @@ class OperationsRecapBrief(StrictModel):
     public_comments: RecapCount
     accepted_comments: RecapCount | None = None
     public_dynamics: RecapCount
+    review_comments: RecapCount | None = None
+    confirmed_likes: RecapCount | None = None
     sources: list[PublicSourceRef] = Field(default_factory=list, max_length=8)
     highlights: list[OperationsRecapHighlight] = Field(default_factory=list, max_length=4)
     reflection: str = Field(default="", max_length=120)
@@ -50,6 +52,10 @@ def recap_plan_fields(brief: OperationsRecapBrief) -> dict:
         ("公开页读回", brief.public_comments, "条评论", "从公开页读回的评论有 {count} 条。"),
         ("动态发布回执", brief.public_dynamics, "条动态", "发了 {count} 条动态。"),
     ))
+    if brief.review_comments:
+        metrics.append(("评论待审核", brief.review_comments, "条草稿", "还有 {count} 条评论草稿，先留着审核。"))
+    if brief.confirmed_likes:
+        metrics.append(("点赞回执", brief.confirmed_likes, "个赞", "这轮还点了 {count} 个赞。"))
     counts_text = "，".join(f"{label} {count}" for label, count, _, _ in metrics)
     aggregate = PublicSourceRef(
         source_id=f"operations-recap:{content_hash([brief.period_label, counts_text])[:20]}",

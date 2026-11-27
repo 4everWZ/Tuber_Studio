@@ -89,6 +89,10 @@ class DynamicsDrafterMixin:
             f"评论有 {accepted_comments} 条收到回执，其中 {brief['public_comments']} 条已从公开页读回。"
             f"还发了 {brief['public_dynamics']} 条动态。"
         )
+        if pending := brief.get("review_comments"):
+            body += f"有 {pending} 条评论草稿，先留审核。"
+        if likes := brief.get("confirmed_likes"):
+            body += f"这轮还点了 {likes} 个赞。"
         if brief["sources"]:
             source = brief["sources"][0]
             body += f"\n原片也给你们留一条。《{source['title']}》 {source['url']}"

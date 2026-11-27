@@ -262,6 +262,13 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
     char = browsing.runtime.character
     scope = (browsing.account, char["id"], char["version"])
     store.execute("INSERT INTO browsing_rounds(id,preview,status) VALUES('actual-watch',0,'completed')")
+    store.execute(
+        "INSERT INTO browsing_intents(id,account_id,character_id,source_key,round_id,kind,status,receipt,created_at,updated_at) "
+        "VALUES('reviewed-draft',?,?, 'reviewed-source','actual-watch','reply_public','pending_review',NULL,?,?), "
+        "('liked-video',?,?, 'liked-source','actual-watch','video_like','published',?, ?,?)",
+        (browsing.account, char["id"], _at(20, 10), _at(20, 10), browsing.account, char["id"],
+         dump({"code": 0, "action": "like"}), _at(20, 20), _at(20, 20)),
+    )
     video_id = "BV1d8pU6xEZX"
     store.execute(
         "INSERT INTO browsing_tasks(id,round_id,bvid,status) VALUES('viewed','actual-watch',?,'selected')", (video_id,),
@@ -284,6 +291,7 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
     assert run["dynamic_status"] == "published", run["last_error"]
     assert run["video_status"] == "scheduled"
     assert sent and "2 条收到回执，其中 1 条" in sent[0]
+    assert "1 条评论草稿" in sent[0] and "1 个赞" in sent[0]
     assert not clips
     await _tick_with_closeout(browsing, _at(22, 0))
     run = browsing.schedules.closeouts.list(schedule["id"])[0]
@@ -292,6 +300,7 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
     assert clips[0][1]["accepted_comments"] == 2
     assert clips[0][1]["public_dynamics"] == 0
     assert clips[0][1]["watched_videos"] == 1
+    assert clips[0][1]["review_comments"] == clips[0][1]["confirmed_likes"] == 1
     assert clips[0][1]["sources"][0]["title"] == "盐水实验"
     await _tick_with_closeout(browsing, _at(22, 6))
     await _tick_with_closeout(browsing, _at(22, 7))
