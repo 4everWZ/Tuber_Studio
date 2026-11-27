@@ -425,7 +425,7 @@ def register_operations_channel_routes(app, store, account, comments, browsing, 
         prefix + "/dynamics/posts/{post_id}/edit", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"]
     )
     async def create_or_apply_dynamic_edit(post_id: int, data: dict = Body(...)):
-        if set(data) - {"caption", "include_source_links", "apply"}:
+        if set(data) - {"caption", "include_source_links", "include_comment_card", "apply"}:
             raise ValueError("未知动态编辑字段")
         caption = data.get("caption")
         if not isinstance(caption, str) or not caption.strip():
@@ -433,11 +433,17 @@ def register_operations_channel_routes(app, store, account, comments, browsing, 
         include_links = data.get("include_source_links")
         if include_links is not None and type(include_links) is not bool:
             raise ValueError("include_source_links 须为布尔值")
+        include_card = data.get("include_comment_card", False)
+        if type(include_card) is not bool:
+            raise ValueError("include_comment_card 须为布尔值")
         apply_now = data.get("apply", False)
         if type(apply_now) is not bool:
             raise ValueError("apply 须为布尔值")
         edit = await dynamics.create_manual_dynamic_edit(
-            post_id, caption, include_source_links=include_links,
+            post_id,
+            caption,
+            include_source_links=include_links,
+            include_comment_card=include_card,
         )
         if apply_now:
             edit = await dynamics.apply_dynamic_edit(edit["request_id"])

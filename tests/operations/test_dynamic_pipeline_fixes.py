@@ -15,6 +15,7 @@ from tuber_studio.core.errors import platform_rejection
 from tuber_studio.core.models import content_hash
 from tuber_studio.core.text import detect_reasoning_leak, operation_output_diagnostics
 from tuber_studio.operations.channels.dynamics import Dynamics
+from tuber_studio.operations.channels.dynamics import comment_card as comment_card_module
 from tuber_studio.operations.channels.dynamics import drafter as drafter_module
 from tuber_studio.operations.channels.dynamics import publisher as publisher_module
 from tuber_studio.operations.channels.dynamics.turns import (
@@ -356,6 +357,11 @@ async def test_publish_failed_post_can_be_edited_approved_and_republished(settin
 
 
 def test_published_dynamic_direct_edit_with_restored_links_and_redraft_endpoints(settings, monkeypatch):
+    from io import BytesIO
+
+    from PIL import Image, ImageFont
+
+    monkeypatch.setattr(comment_card_module, "_font", lambda size: ImageFont.load_default())
     app = create_app(settings, adapter=ControlledPlatform())
     studio = app.state.dynamics
     identifier = "1275098382031912982"
@@ -380,18 +386,37 @@ def test_published_dynamic_direct_edit_with_restored_links_and_redraft_endpoints
     picture = {"img_src": "https://i0.hdslb.com/bfs/new_dyn/1.png", "img_width": 960, "img_height": 512}
     remote = {"text": old, "pictures": [picture]}
     writes = []
+    uploads = []
 
     async def fake_read(adapter, target, account):
         assert target == identifier and account == "100"
         return dict(remote)
 
+    async def fake_upload(adapter, image, *, authorized):
+        assert authorized()
+        uploads.append(image)
+        return {
+            "url": "https://i0.hdslb.com/bfs/new_dyn/card_page_1.png",
+            "width": 960,
+            "height": 420,
+            "imageType": "png",
+            "original": 1,
+            "size": 12.5,
+        }
+
     async def fake_write(adapter, target, text, pictures, *, before_send):
         before_send()
         writes.append((target, text, pictures))
+        # Simulate Bilibili CDN returning i1 instead of i0 on subsequent detail read
         remote["text"] = text
+        remote["pictures"] = [
+            p | {"img_src": p["img_src"].replace("i0.hdslb.com", "i1.hdslb.com")}
+            for p in pictures
+        ]
 
     monkeypatch.setattr(drafter_module, "read_dynamic_caption", fake_read)
     monkeypatch.setattr(publisher_module, "read_dynamic_caption", fake_read)
+    monkeypatch.setattr(publisher_module, "upload_image", fake_upload)
     monkeypatch.setattr(publisher_module, "edit_dynamic_caption", fake_write)
 
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
@@ -405,8 +430,9 @@ def test_published_dynamic_direct_edit_with_restored_links_and_redraft_endpoints
                 "reason": "评论区互动",
                 "content": old,
                 "source_ids": [source["id"]],
+                "illustration": "comment_card",
                 "next_evaluation_seconds": 1800,
-                "presentation": {"link_source_ids": [], "mentions": [], "points": []},
+                "presentation": {"image_choice": "shared", "link_source_ids": [], "mentions": [], "points": []},
             },
             [source],
             schedule=False,
@@ -414,18 +440,40 @@ def test_published_dynamic_direct_edit_with_restored_links_and_redraft_endpoints
         )
         post_id = decision["post_id"]
         studio._status(post_id, "published", receipt={"dynamic_id": identifier, "code": 0, "platform": "bilibili"})
-        assert studio._post(post_id)["outgoing_links"] == []
+        post_before = studio._post(post_id)
+        assert post_before["outgoing_links"] == []
+        # Even when source_comment_card holds the card (comment_card=None), comment_card_image still renders it
+        if post_before.get("comment_card") is not None:
+            app.state.runtime.store.execute(
+                "UPDATE dynamic_posts SET presentation=? WHERE id=?",
+                (json.dumps({"image_choice": "picture", "link_source_ids": [], "mentions": [], "points": []}), post_id),
+            )
+            assert studio._post(post_id)["comment_card"] is None and studio._post(post_id)["source_comment_card"]
+        png_bytes = studio.comment_card_image(post_id, 0)
+        with Image.open(BytesIO(png_bytes)) as img:
+            assert img.format == "PNG" and img.width == 960
 
-        # Direct edit restores source link when include_source_links=True and apply=True
+        # Direct edit restores source link AND uploads + attaches comment card PNG before meme picture
         resp = client.post(
             f"/api/v1/operations/dynamics/posts/{post_id}/edit",
-            json={"caption": new_caption, "include_source_links": True, "apply": True},
+            json={
+                "caption": new_caption,
+                "include_source_links": True,
+                "include_comment_card": True,
+                "apply": True,
+            },
         )
-        data = resp.raise_for_status().json()
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
         assert data["status"] == "applied"
         expected_link = "https://www.bilibili.com/video/BV1q5WZ6HEFD#reply325013871744"
         assert expected_link in data["outgoing"]
-        assert writes == [(identifier, data["outgoing"], [picture])]
+        assert len(uploads) == 1 and uploads[0]["mime_type"] == "image/png"
+        assert len(writes) == 1
+        assert [p["img_src"] for p in writes[0][2]] == [
+            "https://i0.hdslb.com/bfs/new_dyn/card_page_1.png",
+            "https://i0.hdslb.com/bfs/new_dyn/1.png",
+        ]
         updated = studio._post(post_id)
         assert updated["content"] == new_caption
         assert updated["outgoing_links"] == [expected_link]

@@ -14,7 +14,8 @@ class DynamicsAttachmentsMixin:
         return comment_card(sources, store=self.store, actor=actor, timezone=timezone)
 
     def comment_card_image(self, post_id, page=0):
-        card = self._post(post_id)["comment_card"]
+        post = self._post(post_id)
+        card = post["comment_card"] or post.get("source_comment_card")
         if not card:
             raise ValueError("这条动态没有原评论图")
         return render_comment_card(card, page)

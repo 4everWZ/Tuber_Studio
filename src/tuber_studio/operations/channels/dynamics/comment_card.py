@@ -227,11 +227,14 @@ def _font(size):
         Path("C:/Windows/Fonts/msyh.ttc"),
         Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
         Path("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"),
+        Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
+        Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
+        Path("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
         Path("/System/Library/Fonts/PingFang.ttc"),
     ):
         if path.is_file():
             return ImageFont.truetype(str(path), size)
-    raise ValueError("生成原评论图需要安装系统中文字体，如 Noto Sans CJK")
+    raise ValueError("生成原评论图需要安装系统中文字体，如 Noto Sans CJK 或 文泉驿正黑")
 
 
 def _wrap(draw, text, font, width):

@@ -283,6 +283,11 @@ describe("DynamicsPage", () => {
       makePost(21, {
         status: "published",
         content: "十袋米当日常？白饭刚揭盖。",
+        source_comment_card: {
+          page_count: 1,
+          comments: [{ author: "风月星云的大肥鱼", uid: 3747587614050633, quote: "十袋米也就我一天的量吧" }],
+          links: [{ bvid: "BV1q5WZ6HEFD", url: "https://www.bilibili.com/video/BV1q5WZ6HEFD#reply325013871744" }],
+        },
         sources: [
           {
             id: "comment:BV1q5WZ6HEFD:321197068865:325013871744",
@@ -348,7 +353,9 @@ describe("DynamicsPage", () => {
 
     const editTextarea = container.querySelector("[data-published-edit-textarea]") as HTMLTextAreaElement;
     const linksCheckbox = container.querySelector("[data-published-include-links]") as HTMLInputElement;
+    const cardCheckbox = container.querySelector("[data-published-include-card]") as HTMLInputElement;
     expect(linksCheckbox.checked).toBe(true);
+    expect(cardCheckbox.checked).toBe(true);
     await user.clear(editTextarea);
     await user.type(editTextarea, "刷到视频评论区有意思的十袋米梗，我也来凑个热闹。");
     await user.click(container.querySelector("[data-submit-published-edit]") as HTMLButtonElement);
@@ -358,6 +365,7 @@ describe("DynamicsPage", () => {
       expect(editRequests[0].body).toEqual({
         caption: "刷到视频评论区有意思的十袋米梗，我也来凑个热闹。",
         include_source_links: true,
+        include_comment_card: true,
         apply: true,
       });
     });

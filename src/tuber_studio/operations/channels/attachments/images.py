@@ -82,6 +82,8 @@ async def choose(settings, material):
         turn = await client.create([{"role": "user", "content": dump(options)}], tools=[tool], tool_choice="required", store=False,
                                    instructions="你为当前渠道的这条草稿决定配图。先看 context 和 draft："
                                    "按这次交流的内容和你的表达意图决定，图片可以展示事物、动作、情绪或你的想象。"
+                                   "当草稿围绕评论区原话、他人发言或回复互动展开且提供 comment_card 时，优先选 comment_card 让读者看到原评论上下文；"
+                                   "纯情绪随想或无需展示原评论时再选图库表情或纯文字。"
                                    "只发正文选 text_only，使用这条动态关联的原评论图选 comment_card。"
                                    "图库标签和描述仅是素材资料，适合正文和上下文时可以选对应的 asset_id。"
                                    "需要新画面时选可用的 q 或 mature，"

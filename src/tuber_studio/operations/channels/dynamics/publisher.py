@@ -22,7 +22,7 @@ from ....infra.platforms.bilibili.dynamics import (
     read_dynamic_caption,
     validate_text,
 )
-from ....infra.platforms.bilibili.images import bfs_image_path
+from ....infra.platforms.bilibili.images import bfs_image_path, upload_image
 from ....persona.memory.daily import DailyMemoryService
 from ...kernel.control import OperationsControl, canonical_intent
 from ...kernel.feedback import FeedbackPublication, PublicationContext, publication_binding
@@ -39,6 +39,19 @@ from .comment_card import render_comment_card
 from .drafter import DynamicsDrafterMixin
 from .evaluator import DynamicsEvaluatorMixin
 from .repository import DynamicsRepositoryMixin, _content_hash, _delivery_key, _json
+
+
+def _norm_pic(pic: dict) -> tuple:
+    src = str(pic.get("img_src") or "")
+    return (bfs_image_path(src) or src, pic.get("img_width"), pic.get("img_height"))
+
+
+def _same_dynamic_state(actual: dict, expected: dict) -> bool:
+    return (
+        actual.get("text") == expected.get("text")
+        and (actual.get("mentions") or []) == (expected.get("mentions") or [])
+        and [_norm_pic(p) for p in actual.get("pictures", ())] == [_norm_pic(p) for p in expected.get("pictures", ())]
+    )
 
 
 class Dynamics(
@@ -734,11 +747,42 @@ class Dynamics(
 
             actual = await read_dynamic_caption(adapter, identifier, account)
             mentions = edit["mentions"] if edit["mentions"] is not None else rebase_mentions(edit["outgoing"], original.get("mentions", []))
-            expected = {key: value for key, value in original.items() if key != "mentions"} | {"text": edit["outgoing"]}
+            card = None
+            target_pictures = edit.get("pictures")
+            if target_pictures is None:
+                if edit.get("include_comment_card"):
+                    card = row.get("comment_card") or row.get("source_comment_card") or self._comment_card(
+                        row["sources"], json.loads(row.get("generation_identity") or "null")
+                    )
+                    if not card:
+                        raise ValueError("这条动态没有关联的原评论卡片")
+                    guard()
+                    card_pics = []
+                    for page in range(card.get("page_count", 1)):
+                        uploaded = await upload_image(
+                            adapter,
+                            {"mime_type": "image/png", "content": render_comment_card(card, page)},
+                            authorized=lambda: (guard(), True)[1],
+                        )
+                        card_pics.append({
+                            "img_src": uploaded["url"],
+                            "img_width": uploaded["width"],
+                            "img_height": uploaded["height"],
+                        })
+                    target_pictures = [*card_pics, *original["pictures"]][:9]
+                    self.store.execute(
+                        "UPDATE dynamic_edits SET pictures=? WHERE request_id=?",
+                        (_json(target_pictures), request_id),
+                    )
+                else:
+                    target_pictures = original["pictures"]
+            expected = {
+                key: value for key, value in original.items() if key not in {"mentions", "pictures"}
+            } | {"text": edit["outgoing"], "pictures": target_pictures}
             if mentions:
                 expected["mentions"] = mentions
-            if actual != expected and edit["status"] != "pending_verification":
-                if actual != original or not self._valid_sources(row):
+            if not _same_dynamic_state(actual, expected) and edit["status"] != "pending_verification":
+                if not _same_dynamic_state(actual, original) or not self._valid_sources(row):
                     raise ValueError("原动态或公开来源已变化，请重新生成修订")
                 if self.store.one(
                     "SELECT 1 FROM dynamic_edits WHERE post_id=? AND status IN ('submitting','pending_verification')",
@@ -756,7 +800,7 @@ class Dynamics(
                     )
 
                 try:
-                    await edit_dynamic_caption(adapter, identifier, edit["outgoing"], original["pictures"],
+                    await edit_dynamic_caption(adapter, identifier, edit["outgoing"], target_pictures,
                                                before_send=reserve, **({"mentions": mentions} if mentions else {}))
                 except PlatformRejected as error:
                     self.store.execute(
@@ -780,7 +824,7 @@ class Dynamics(
                     actual = await read_dynamic_caption(adapter, identifier, account)
                 except (ValueError, httpx.HTTPError):
                     return self.dynamic_edit(request_id, account, character["id"])
-            if actual == expected:
+            if _same_dynamic_state(actual, expected):
                 guard()
                 presentation = row.get("presentation")
                 if edit.get("link_source_ids") is not None:
@@ -791,10 +835,22 @@ class Dynamics(
                     }
                 elif presentation is not None or mentions:
                     presentation = (presentation or {"link_source_ids": None}) | {"mentions": mentions, "points": []}
-                edited = self._outgoing(
-                    row | {"content": edit["caption"], "mentions": mentions, "presentation": presentation},
-                    character,
+                has_ready_image = bool(
+                    row.get("meme_id")
+                    or (isinstance(row.get("illustration"), dict) and "job_id" not in row["illustration"])
                 )
+                if edit.get("include_comment_card") and not has_ready_image:
+                    presentation = (presentation or {}) | {"image_choice": "comment_card"}
+                row_for_key = row | {
+                    "content": edit["caption"],
+                    "mentions": mentions,
+                    "presentation": presentation,
+                }
+                if card is not None and not has_ready_image:
+                    row_for_key["comment_card"] = card
+                elif not has_ready_image and not row.get("comment_card"):
+                    row_for_key.update(illustration=None, illustration_choice=None)
+                edited = self._outgoing(row_for_key, character)
                 with self.store.db:
                     self.store.db.execute(
                         "UPDATE dynamic_posts SET content=?,content_hash=?,presentation=?,delivery_key=?,updated_at=? WHERE id=?",

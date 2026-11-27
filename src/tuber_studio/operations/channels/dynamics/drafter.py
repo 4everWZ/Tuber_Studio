@@ -207,6 +207,7 @@ class DynamicsDrafterMixin:
         caption: str,
         *,
         include_source_links: bool | None = None,
+        include_comment_card: bool = False,
         request_id: str | None = None,
     ):
         adapter = self.account.adapter
@@ -221,6 +222,12 @@ class DynamicsDrafterMixin:
             raise ValueError("角色或版本已切换，无法直接原地编辑")
         if not self._valid_sources(row):
             raise ValueError("原动态的公开来源已变化")
+        if include_comment_card:
+            card = row.get("comment_card") or row.get("source_comment_card") or self._comment_card(
+                row["sources"], json.loads(row.get("generation_identity") or "null")
+            )
+            if not card:
+                raise ValueError("这条动态没有关联的原评论卡片")
         identifier = str(row["receipt"]["dynamic_id"])
         req_id = request_id or str(uuid4())
         original = await read_dynamic_caption(adapter, identifier, account)
@@ -238,12 +245,13 @@ class DynamicsDrafterMixin:
         outgoing = self._outgoing_text(row, cleaned, link_source_ids=link_ids)
         mentions = _safe_rebase_mentions(cleaned, original.get("mentions", []))
         self.store.execute(
-            "INSERT INTO dynamic_edits(request_id,post_id,account_id,character_id,platform_id,original,caption,outgoing,status,mentions,link_source_ids)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO dynamic_edits(request_id,post_id,account_id,character_id,platform_id,original,caption,outgoing,status,mentions,link_source_ids,include_comment_card)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 req_id, row["id"], account, character["id"], identifier, _json(original),
                 cleaned, outgoing, "draft", _json(mentions),
                 _json(link_ids) if link_ids is not None else None,
+                int(include_comment_card),
             ),
         )
         return self.dynamic_edit(req_id, account, character["id"])

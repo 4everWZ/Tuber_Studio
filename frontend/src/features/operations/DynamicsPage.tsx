@@ -196,6 +196,7 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
   const [editApplyError, setEditApplyError] = useState("");
   const [publishedEditText, setPublishedEditText] = useState("");
   const [publishedIncludeLinks, setPublishedIncludeLinks] = useState(true);
+  const [publishedIncludeCard, setPublishedIncludeCard] = useState(false);
   const [publishedActionBusy, setPublishedActionBusy] = useState(false);
   const [publishedActionError, setPublishedActionError] = useState("");
   const [publishedActionNote, setPublishedActionNote] = useState("");
@@ -609,12 +610,18 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
       const res = await apiPost<
         "/api/v1/operations/dynamics/posts/{post_id}/edit",
         DynamicEditResult,
-        { caption: string; include_source_links: boolean; apply: boolean }
+        {
+          caption: string;
+          include_source_links: boolean;
+          include_comment_card: boolean;
+          apply: boolean;
+        }
       >("/api/v1/operations/dynamics/posts/{post_id}/edit", {
         pathParams: { post_id: post.id },
         body: {
           caption: publishedEditText,
           include_source_links: publishedIncludeLinks,
+          include_comment_card: Boolean(cardData && publishedIncludeCard),
           apply: true,
         },
       });
@@ -682,12 +689,14 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
   const hasSourceLinkCandidates = Boolean(
     activePost?.sources?.some((s) => Boolean(s.source_url)) || cardLinks.length > 0
   );
+  const hasUnattachedCard = Boolean(cardData && !activePost?.comment_card);
   useEffect(() => {
     setPublishedEditText(activePost?.content ?? "");
     setPublishedIncludeLinks(hasSourceLinkCandidates);
+    setPublishedIncludeCard(hasUnattachedCard);
     setPublishedActionError("");
     setPublishedActionNote("");
-  }, [activePost?.id, activePost?.content, activePost?.status, hasSourceLinkCandidates]);
+  }, [activePost?.id, activePost?.content, activePost?.status, hasSourceLinkCandidates, hasUnattachedCard]);
 
   const selectedMemeAsset =
     activePost?.meme_id ? memeAssets.get(activePost.meme_id) ?? null : null;
@@ -1056,6 +1065,18 @@ export function DynamicsPage({ route }: { route: ParsedRoute }) {
                       />{" "}
                       附带原来源链接
                     </label>
+                    {cardData && (
+                      <label className="check-field" style={{ marginTop: 4 }}>
+                        <input
+                          type="checkbox"
+                          data-published-include-card=""
+                          checked={publishedIncludeCard}
+                          disabled={publishedActionBusy}
+                          onChange={(e) => setPublishedIncludeCard(e.target.checked)}
+                        />{" "}
+                        附带原评论卡片图
+                      </label>
+                    )}
                     <div className="row-actions" style={{ marginTop: 8 }}>
                       <button
                         type="button"

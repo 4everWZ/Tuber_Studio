@@ -115,6 +115,10 @@ class DynamicsRepositoryMixin:
             store.execute("ALTER TABLE dynamic_edits ADD COLUMN mentions TEXT")
         if "link_source_ids" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_edits)")}:
             store.execute("ALTER TABLE dynamic_edits ADD COLUMN link_source_ids TEXT")
+        edit_cols = {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_edits)")}
+        for name, definition in (("include_comment_card", "INTEGER"), ("pictures", "TEXT")):
+            if name not in edit_cols:
+                store.execute(f"ALTER TABLE dynamic_edits ADD COLUMN {name} {definition}")
         ensure_reflections(store)
         if "generation_continuation_id" not in {
             row[1] for row in store.db.execute("PRAGMA table_info(dynamic_decisions)")
@@ -370,6 +374,8 @@ class DynamicsRepositoryMixin:
         row["link_source_ids"] = (
             json.loads(row["link_source_ids"]) if row.get("link_source_ids") is not None else None
         )
+        row["include_comment_card"] = bool(row.get("include_comment_card"))
+        row["pictures"] = json.loads(row["pictures"]) if row.get("pictures") is not None else None
         if row["status"] == "draft":
             post = self._post(row["post_id"])
             caption = self._edit_caption(post, row["caption"], link_source_ids=row["link_source_ids"])
