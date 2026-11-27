@@ -7,6 +7,7 @@ import json
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.support.operations_helpers import ControlledPlatform
@@ -228,6 +229,7 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
     editorial_inputs = []
     limit_until = _at(22, 3)
     quotas = []
+    plan_attempts = []
     job = {"id": "recap-video", "status": "script_planned"}
     video_id, earlier_id = "BV1d8pU6xEZX", "BV1J7sm6YE6K"
 
@@ -259,6 +261,9 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
             raise SendLimitReached("动态最小发布间隔", limit_until)
 
     def plan(brief, *, job_key):
+        plan_attempts.append(job_key)
+        if len(plan_attempts) == 1:
+            raise ValueError("制片入口拒绝素材字段")
         clips.append(("plan", brief, job_key))
         return {"job_id": job["id"]}
 
@@ -347,7 +352,14 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
     assert not sent and not clips
     await _tick_with_closeout(browsing, _at(22, 0))
     run = browsing.schedules.closeouts.list(schedule["id"])[0]
+    assert run["video_status"] == "render_failed" and not run["video_job_id"]
+    with pytest.raises(ValueError, match="原自动投稿授权时段"):
+        browsing.schedules.closeouts.request_video(schedule["id"], run["id"], automatic=True, now=_at(23, 0))
+    browsing.schedules.closeouts.request_video(schedule["id"], run["id"], automatic=True, now=_at(22, 1))
+    await browsing.schedules.closeouts._worker
+    run = browsing.schedules.closeouts.list(schedule["id"])[0]
     assert run["video_status"] == "submitted", run["last_error"]
+    assert plan_attempts == [run["id"], run["id"]]
     assert run["dynamic_status"] == "pending" and len(quotas) == 1
     assert clips[0][1]["public_comments"] == 1
     assert clips[0][1]["accepted_comments"] == 2

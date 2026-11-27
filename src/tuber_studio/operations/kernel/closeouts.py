@@ -124,7 +124,7 @@ class OperationCloseouts:
         columns = ",".join(f"{key}=?" for key in fields)
         self.store.execute(f"UPDATE operation_schedule_closeouts SET {columns} WHERE id=?", (*fields.values(), run_id))
 
-    def request_video(self, schedule_id, run_id):
+    def request_video(self, schedule_id, run_id, *, automatic=False, now=None):
         row = self._row(run_id)
         if not row or row["schedule_id"] != schedule_id or row["cancelled"]:
             raise ValueError("找不到可操作的运营收尾记录")
@@ -132,8 +132,14 @@ class OperationCloseouts:
             row["video_status"] == "window_missed" and not row["video_job_id"]
         ):
             raise ValueError("当前复盘视频不能开始制作")
-        self._save(run_id, video_status="preparing", video_requested=1, video_error=None)
-        self.kick(time.time())
+        now = time.time() if now is None else now
+        if automatic:
+            config = OperationCloseoutConfig.model_validate_json(row["config"])
+            if (row["video_status"] != "render_failed" or config.video_mode != "automatic_publish"
+                    or not row["video_start_at"] <= now < row["video_end_at"]):
+                raise ValueError("仅可在原自动投稿授权时段内恢复制片")
+        self._save(run_id, video_status="preparing", video_requested=int(not automatic), video_error=None)
+        self.kick(now)
         return self._serialize(self._row(run_id))
 
     def _pending(self):

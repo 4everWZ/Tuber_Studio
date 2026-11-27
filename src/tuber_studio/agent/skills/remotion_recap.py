@@ -46,6 +46,7 @@ class OperationsRecapEditorialItem(StrictModel):
     creator: str | None = None
     excerpt: str | None = None
     excerpt_kind: str | None = None
+    excerpt_url: str | None = None
     target_excerpt: str | None = None
     target_author: str | None = None
     target_url: str | None = None
@@ -59,6 +60,10 @@ class OperationsRecapEditorialItem(StrictModel):
     def validate_attribution(self):
         if self.status not in _EDITORIAL_STATUS[self.kind]:
             raise ValueError("剪辑素材类型与核实状态不符")
+        if self.excerpt_url and (self.kind != "watched_video" or not self.url or not re.fullmatch(
+            re.escape(self.url) + r"\?p=[1-9]\d*&t=\d+", self.excerpt_url,
+        )):
+            raise ValueError("字幕时间链接必须指向同一条观看原片")
         return self
 
 
@@ -135,11 +140,12 @@ def _make_evidence_scene(item: OperationsRecapEditorialItem, narration: str, ind
     if item.kind == "watched_video":
         creator = _display_excerpt(item.creator, 45)
         excerpt = _display_excerpt(item.excerpt, 88)
+        label = {"video_description": "原片简介", "subtitle": "原片字幕", "automatic_subtitle": "自动字幕"}.get(item.excerpt_kind)
         return VideoSceneSpec(
             **base, template="TitleCard", chapter_title="本轮观看" if item.in_current_run else "本周观看",
             theme="aqua_light", transition="wipe_right", camera_motion="static", avatar_cue="curious",
             visual_props={
-                "subtitle": f"原片简介 · {excerpt}" if excerpt and item.excerpt_kind == "video_description" else excerpt,
+                "subtitle": f"{label} · {excerpt}" if excerpt and label else excerpt,
                 "citation_label": f"UP 主 {creator}" if creator else "",
             },
             lines=_spoken_lines(narration, "curious"),
@@ -201,13 +207,14 @@ def _editorial_plan_fields(brief: OperationsRecapBrief) -> dict:
         has_excerpt = not pending and (item.kind != "public_dynamic" or item.status == "public_visible")
         references.append(PublicSourceRef(
             source_id=item.source_id, kind=kind, title=item.title,
-            url=None if pending else item.url, bvid=None if pending else item.bvid,
+            url=None if pending else item.excerpt_url or item.url, bvid=None if pending else item.bvid,
             excerpt=_display_excerpt(item.excerpt, 500) if has_excerpt else "", fetch_status="manual",
         ))
         scenes.append(_make_evidence_scene(item, passage.narration, index))
 
     description = editorial.description or editorial.opening
-    selected_urls = {reference.url for reference in references if reference.url}
+    selected_urls = {url for source_id in source_ids if items[source_id].status != "pending_review"
+                     for url in (items[source_id].url, items[source_id].excerpt_url) if url}
     description_urls = {url.rstrip(".,!?;)]】）") for url in _PUBLIC_LINK.findall(description)}
     if not description_urls.issubset(selected_urls):
         raise ValueError("视频简介只能使用所选公开素材的原始链接")

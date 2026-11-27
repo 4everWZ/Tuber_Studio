@@ -29,7 +29,8 @@ class WeeklyExample:
                 {
                     "source_id": "video:BV1xx411c7mD", "kind": "watched_video", "status": "watched",
                     "title": "把弹幕做成画面节拍", "creator": "弹幕研究员", "url": self.watched_url,
-                    "bvid": "BV1xx411c7mD", "in_current_run": True,
+                    "bvid": "BV1xx411c7mD", "in_current_run": True, "excerpt": "先等这段声音走完。",
+                    "excerpt_kind": "subtitle", "excerpt_url": self.watched_url + "?p=1&t=8",
                 },
                 {
                     "source_id": "public-reply:41002", "kind": "public_reply", "status": "public_visible",
@@ -78,6 +79,7 @@ def test_weekly_editorial_plan_keeps_visual_evidence_and_narration_separate(sett
     assert watched["heading"] == "把弹幕做成画面节拍"
     assert watched["chapter_title"] == "本轮观看"
     assert watched["visual_props"]["citation_label"] == "UP 主 弹幕研究员"
+    assert watched["visual_props"]["subtitle"] == "原片字幕 · 先等这段声音走完。"
     assert reply["visual_props"]["subtitle"] == "配乐停一下，我就能听清了。"
     assert reply["visual_props"]["bullets"] == ["原楼留言（剪片的小雨） · 我剪的时候总觉得声音盖过了字幕。"]
     assert reply["visual_props"]["citation_label"] == "本账号的公开回复"
@@ -90,7 +92,7 @@ def test_weekly_editorial_plan_keeps_visual_evidence_and_narration_separate(sett
     assert "工作台草稿人" not in str(plan)
     assert "尚未授权公开" not in str(plan)
     assert "没有选入的作品" not in str(plan)
-    assert {source["url"] for source in plan["sources"]} == {example.watched_url, example.reply_url, None}
+    assert {source["url"] for source in plan["sources"]} == {example.watched_url + "?p=1&t=8", example.reply_url, None}
     assert plan["summary"] == brief["editorial"]["description"]
     assert {"大肥鱼", "deepseek"}.issubset(plan["tags"])
     assert closing["lines"][0]["text"] == brief["editorial"]["closing"]

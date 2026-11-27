@@ -241,8 +241,8 @@ def register_browsing_routes(app, browsing, require_admin, *, messages=None) -> 
         responses=ERROR_RESPONSES,
         tags=["operations"],
     )
-    async def automation_schedule_prepare_video(schedule_id: str, run_id: str):
-        return {"run": browsing.schedules.closeouts.request_video(schedule_id, run_id)}
+    async def automation_schedule_prepare_video(schedule_id: str, run_id: str, automatic: bool = False):
+        return {"run": browsing.schedules.closeouts.request_video(schedule_id, run_id, automatic=automatic)}
 
     @app.delete(
         prefix + "/automation/schedules/{schedule_id}",
