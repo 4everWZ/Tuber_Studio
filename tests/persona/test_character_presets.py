@@ -96,9 +96,13 @@ def test_enriched_preset_keeps_character_assets_without_retired_radio():
     assert main["style"]["max_chars"] == 120
     assert {"Aqua", "本鲸"} <= set(main["style"]["catchphrases"])
     assert "大肥鱼" not in main["style"]["catchphrases"]
-    assert {"大肥鱼", "讨饭", "讨白饭", "我记下了", "比刚才稳", "你自己掂量"} <= set(main["core"]["blacklist"])
+    assert {"大肥鱼", "讨饭", "讨白饭", "哦鲸鲸", "这设定太损了", "先吃为敬", "白饭已经揭盖", "我记下了", "比刚才稳", "你自己掂量"} <= set(main["core"]["blacklist"])
     assert "白饭" not in main["core"]["blacklist"]
     assert "Jetson" not in main["core"]["blacklist"]
+    from tuber_studio.persona.characters.presets import _LEGACY, _REPLACEMENTS
+    assert _fingerprint(main) in _REPLACEMENTS["whale"]
+    assert "7d18b55dfb290aca906b2de929105a88f0bb7c8fa5ea8269899c187d822c5570" in _LEGACY["whale"]
+    assert any("脏话" in rule for rule in main["rules"])
     # The 80/20 Aqua card keeps lively whale-girl OC soul while dropping retired fanfic props and defensive clichés.
     positive_shell = json.dumps(
         [{k: v for k, v in main["core"].items() if k != "blacklist"}, main["style"], main["rules"], main["lore"]],

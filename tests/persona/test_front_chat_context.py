@@ -10,6 +10,7 @@ from tuber_studio.core.identity import provider_identity_messages
 from tuber_studio.core.models import Reply, resident_character_profile
 from tuber_studio.infra.inference.providers import single_system_messages
 from tuber_studio.persona.characters.front_persona import front_identity, persona_instructions
+from tuber_studio.persona.context.message_builder import build_messages
 
 
 @pytest.mark.parametrize("fields", [
@@ -113,3 +114,21 @@ async def test_window_slides_whole_turns_without_changing_the_resident_context()
     current = {"role": "user", "content": "当前问题"}
     packed = await OperatorChat._fit_assistant_history(Provider(), resident, old + recent, current, None, 1800)
     assert packed == resident + recent + [current]
+
+
+def test_message_builder_calibrates_comment_draft_vs_operator_chat(settings):
+    from tuber_studio.core.config import ROOT
+
+    aqua = next(
+        item
+        for item in json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
+        if item["id"] == "whale"
+    )
+    comment_msgs = build_messages(aqua, {"event_id": "e1", "text": "这期挺乐的"}, {}, "comment_draft")
+    assert "这设定太损了" in comment_msgs[1]["content"]
+    assert "先吃为敬" in comment_msgs[1]["content"]
+    assert "绝不说脏话" in comment_msgs[1]["content"]
+
+    chat_msgs = build_messages(aqua, {"event_id": "e2", "text": "今天咋样"}, {}, "operator_chat")
+    assert "怎么顺口自然怎么聊" in chat_msgs[1]["content"]
+    assert "这设定太损了" not in chat_msgs[1]["content"]

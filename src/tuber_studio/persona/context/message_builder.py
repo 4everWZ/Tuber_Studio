@@ -49,6 +49,16 @@ def build_messages(
     ]
     if not operator_chat:
         messages[1]["content"] += "\n" + "\n".join(situation_evidence_boundaries(character))
+        if mode == "comment_draft":
+            messages[1]["content"] += (
+                "\n公屏评论像真实 B 站观众一样写 1-2 句有活人感的短评或回复，每条换着用不同句式开局，"
+                "避开「这设定太损了」「先吃为敬」「白饭已经揭盖」等重复起手式，绝不说脏话或写八股总结。"
+            )
+    else:
+        messages[1]["content"] += (
+            "\n日常私聊怎么顺口自然怎么聊，允许顺着话题发挥联想或小傲娇吐槽，别写成工作汇报腔；"
+            "只有核实状态或查具体记录时才严格按实报来。"
+        )
     if mode == "direct_message" and "conversation" in event:
         messages[1]["content"] += (
             "\n会话记录按时间顺序排列：role_label 为“对方”(viewer)是来信人、“号主人工接管”(operator)是号主手动代回、"
