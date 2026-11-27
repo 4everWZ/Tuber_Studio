@@ -89,8 +89,8 @@ def public_period_brief(store, run):
         byline = " ".join(creator.split())[:32] if isinstance(creator, str) else ""
         sources.append({"source_id": sid, "kind": "watched_video", "title": title,
                         "bvid": bvid, "url": f"https://www.bilibili.com/video/{bvid}/", "excerpt": byline})
-        highlights.append({"title": title, "text": f"{byline}的投稿，《{title[:70]}》。" if byline else f"看过《{title}》。",
-                           "source_id": sid, "credit": f"UP 主 {byline}" if byline else ""})
+        highlights.append({"title": title, "text": f"看过《{title}》。", "source_id": sid,
+                           "credit": f"UP 主 {byline}" if byline else "B 站投稿"})
     character = store.character(run["character_id"], run["character_version"])
     name = str(character.get("name") or "").strip()[:32]
     return {"title": f"{start:%m月%d日} {name}运营复盘", "period_label": period,

@@ -100,6 +100,14 @@ def test_operations_recap_uses_public_receipt_counts_and_freezes_the_scheduled_d
     assert excerpt["visual_props"]["citation_label"] == source["title"]
     assert reflection["heading"] == "我的复盘感想"
     assert source["url"] in saved["plan"]["summary"]
+    watched = {"kind": "watched_video", "source_id": "video:qa", "url": "https://example.com/video"}
+    gallery = skill.plan_operations_recap(brief | {
+        "sources": [watched], "reflection": "",
+        "highlights": [{"title": "图形合成？看看这个！", "source_id": "video:qa", "text": "看过这条。", "credit": "UP 主 例子"}],
+    })["plan"]["scenes"][-1]
+    assert gallery["template"] == "TimelineSummary"
+    assert gallery["visual_props"]["bullets"] == ["图形合成？看看这个！ · UP 主 例子"]
+    assert "图形合成" not in gallery["lines"][0]["text"]
     with pytest.raises(ValueError, match="公开来源"):
         skill.plan_operations_recap(brief | {"sources": []})
     with pytest.raises(ValueError, match="超过取得回执"):

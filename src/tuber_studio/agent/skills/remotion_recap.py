@@ -87,10 +87,14 @@ def recap_plan_fields(brief: OperationsRecapBrief) -> dict:
             ],
         ),
     ]
+    watched_titles = []
     for index, highlight in enumerate(brief.highlights, 1):
         if (source := sources.get(highlight.source_id)) is None:
             raise ValueError("复盘片段缺少对应的公开来源")
         label = highlight.credit.strip() or source.title[:120] or source.url or source.source_id
+        if source.kind == "watched_video" and highlight.credit:
+            watched_titles.append(f"{highlight.title} · {label}"[:120])
+            continue
         scenes.append(VideoSceneSpec(
             scene_id=f"recap_highlight_{index}",
             template="QuoteSpotlight",
@@ -101,6 +105,18 @@ def recap_plan_fields(brief: OperationsRecapBrief) -> dict:
             transition="fade",
             visual_props={"subtitle": highlight.text, "citation_label": label[:120]},
             lines=[VideoLineSpec(text=highlight.text, avatar_cue="thinking")],
+        ))
+    if watched_titles:
+        scenes.append(VideoSceneSpec(
+            scene_id="recap_watched_sources",
+            template="TimelineSummary",
+            heading="这轮看过的投稿",
+            theme="dark_tech",
+            avatar_layout="compact",
+            transition="fade",
+            visual_props={"bullets": watched_titles, "citation_label": "原片链接见简介"},
+            lines=[VideoLineSpec(text="放几条我这轮看过的投稿。原片链接在简介里，感兴趣就点进去看看呀。",
+                                 avatar_cue="curious")],
         ))
     if reflection := brief.reflection.strip():
         scenes.append(VideoSceneSpec(
