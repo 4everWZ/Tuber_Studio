@@ -38,6 +38,8 @@ curl --fail http://127.0.0.1:9020/healthz
 docker compose -f deploy/omni/app-compose.yml -f deploy/omni/workstation.compose.yml up -d --build --wait tuber-core studio-edge
 ```
 
+升级或回滚时，如果命令重建了 `tuber-core`，同一次操作还要让 `studio-edge` 接入新容器的网络。只选择 Core 并使用 `--no-deps` 时，Core 健康后用同一组 Compose 文件执行 `up -d --no-deps --force-recreate --wait studio-edge`。最后从浏览器所在网络打开实际 HTTPS 工作台入口，确认页面加载。
+
 已有业务卷的部署再叠加 `app-business-data.compose.yml`。正式工坊同时启用可接管的网页阅读，在该文件后追加 `-f deploy/omni/reading-worker.compose.yml`，Compose 会先启动独立阅读 worker。[阅读进程部署](reading-worker/README.md)
 
 当号主允许使用已有视频原件取材时，可以在相应工坊追加 `-f deploy/omni/private-source.compose.yml`。`TUBER_PRIVATE_SOURCE_DIR` 填工作站上含 `manifest.json` 和原始片段的目录，`TUBER_PRIVATE_SOURCE_URL` 填清单对应的原投稿分 P 完整网址。Core 的 UID 65532 须能读取该目录。只有 Core 获得只读挂载。任务工具在对应分 P 的取材授权内使用原件，来源回执注明归档。
