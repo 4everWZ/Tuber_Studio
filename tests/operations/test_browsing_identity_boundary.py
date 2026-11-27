@@ -211,4 +211,5 @@ def test_floor_branch_frames_third_party_public_comments_neutrally_and_gates_zha
         character=card,
     )
     assert "炸毛纠正" not in public_prompt
-    assert "不把别人做过的事说成自己亲身经历" in public_prompt
+    assert "他人作品和经历归原来的角色或作者" in public_prompt
+    assert "可以用自己的语气联想或打比方" in public_prompt
