@@ -363,10 +363,33 @@ async def test_consecutive_invisible_comments_arm_30m_cooldown_and_auto_downgrad
     assert browsing.policy()["top_level_auto_publish"] is False
     assert browsing.policy()["reply_auto_publish"] is False
 
+    late = browsing.sends.record_visibility_outcome("100", "shadow_deleted", intent_id="i-2", now=now + 180)
+    assert late["streak"] == 2
+    assert late["cooldown_until"] == now + 10 + 1800
+    expired = browsing.sends.record_visibility_outcome("100", "shadow_deleted", intent_id="i-2", now=now + 2000)
+    assert not expired["active"] and not expired["cooldown_until"]
+    assert "冷却已结束" in expired["reason"]
+    assert browsing.sends.comments_cooldown_until("100") == now + 10 + 1800
+
     # A subsequent public_visible outcome resets the streak
     cleared = browsing.sends.record_visibility_outcome("100", "public_visible", intent_id="i-3", bvid=BV, now=now + 20)
     assert cleared is None
     assert browsing.sends.visibility_risk_status("100", now=now + 20) is None
+
+
+def test_old_visibility_readback_does_not_extend_or_reset_a_new_account_episode(browsing):
+    sends = browsing.sends
+    old = 2_000_000.0
+    sends.record_visibility_outcome("100", "self_only", intent_id="older", now=old + 10, published_at=old)
+    now = old + 3600
+    first = sends.record_visibility_outcome("100", "self_only", intent_id="new-a", now=now, published_at=now - 10)
+    assert first["streak"] == 1 and not first["active"]
+    late = sends.record_visibility_outcome("100", "public_visible", intent_id="older", now=now + 1, published_at=old)
+    assert late["streak"] == 1 and late["last_intent_id"] == "new-a"
+    delayed = sends.record_visibility_outcome("100", "self_only", intent_id="old-draft", now=now + 1, published_at=old)
+    assert delayed["streak"] == 1
+    second = sends.record_visibility_outcome("100", "self_only", intent_id="new-b", now=now + 10, published_at=now + 2)
+    assert second["streak"] == 2 and second["active"]
 
 
 async def test_send_queue_enforces_comment_same_video_and_reaction_pacing(browsing, monkeypatch):

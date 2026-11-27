@@ -1073,28 +1073,34 @@ class BrowsingAdapter(BilibiliAdapter):
         matched_ctime = matched.get("ctime") if type(matched.get("ctime")) is int else None
         return True, hidden, matched_ctime, oldest_ctime
 
+    async def _seek_publication(self, target, rpid, *, anonymous: bool):
+        base = {
+            "oid": target["oid"], "type": target["type"], "mode": 3, "plat": 1,
+            "pagination_str": '{"offset":""}', "seek_rpid": rpid, "web_location": "1315875",
+        }
+        sign = self._anonymous_wbi_params if anonymous else self.wbi_params
+        data = await self._get("/x/v2/reply/wbi/main", await sign(base), anonymous=anonymous)
+        roots = data.get("replies") or []
+        rows = list(roots) + (data.get("top_replies") or [])
+        for row in rows:
+            rows.extend(row.get("replies") or [])
+        matches = [row for row in rows if all(
+            str(row.get(key + "_str") or row.get(key, target[key])) == target[key]
+            for key in ("root", "parent")
+        )]
+        found, invisible, ctime, oldest_ctime = self._find_reply_row(matches, rpid)
+        cursor = data.get("cursor") if isinstance(data.get("cursor"), dict) else {}
+        return {
+            "found": found, "invisible": invisible, "ctime": ctime,
+            "covered": target["root"] == "0" and cursor.get("is_end") is True and cursor.get("all_count") == len(roots),
+            "records": len(roots), "oldest_ctime": oldest_ctime, "checked_page": 1,
+            "seek_attempted": True, "seek_found": found,
+        }
+
     async def _inspect_publication_view(self, normalized, rpid, *, anonymous: bool):
         is_reply = normalized["root"] != "0"
         if not is_reply and normalized["resource_type"] == "dynamic":
-            base = {
-                "oid": normalized["oid"], "type": normalized["type"], "mode": 3, "plat": 1,
-                "pagination_str": '{"offset":""}', "seek_rpid": rpid, "web_location": "1315875",
-            }
-            sign = self._anonymous_wbi_params if anonymous else self.wbi_params
-            params = await sign(base)
-            data = await self._get("/x/v2/reply/wbi/main", params, anonymous=anonymous)
-            rows = data.get("replies") or []
-            found, invisible, ctime, oldest_ctime = self._find_reply_row(rows, rpid)
-            cursor = data.get("cursor") if isinstance(data.get("cursor"), dict) else {}
-            return {
-                "found": found,
-                "invisible": invisible,
-                "ctime": ctime,
-                "covered": cursor.get("is_end") is True and cursor.get("all_count") == len(rows),
-                "records": len(rows),
-                "oldest_ctime": oldest_ctime,
-                "checked_page": 1,
-            }
+            return await self._seek_publication(normalized, rpid, anonymous=anonymous)
         if not is_reply:
             base = {"oid": normalized["oid"], "type": normalized["type"], "pn": 1, "ps": 20, "sort": 0}
             params = await self._anonymous_wbi_params(base) if anonymous else base
@@ -1156,6 +1162,15 @@ class BrowsingAdapter(BilibiliAdapter):
             "checked_page": checked_page,
         }
 
+    async def _read_publication_view(self, target, rpid, *, anonymous: bool):
+        listed = await self._inspect_publication_view(target, rpid, anonymous=anonymous)
+        if listed["found"] or listed.get("seek_attempted"):
+            return listed
+        exact = await self._seek_publication(target, rpid, anonymous=anonymous)
+        if exact["found"]:
+            return listed | {key: exact[key] for key in ("found", "invisible", "ctime", "seek_attempted", "seek_found")}
+        return listed | {"covered": listed["covered"] or exact["covered"], "seek_attempted": True, "seek_found": False}
+
     async def verify_publication(self, target, receipt):
         checked_at = time.time()
         try:
@@ -1172,8 +1187,8 @@ class BrowsingAdapter(BilibiliAdapter):
         is_reply = normalized["root"] != "0"
         auth_view = None
         try:
-            auth_view = await self._inspect_publication_view(normalized, rpid, anonymous=False)
-            anon_view = await self._inspect_publication_view(normalized, rpid, anonymous=True)
+            auth_view = await self._read_publication_view(normalized, rpid, anonymous=False)
+            anon_view = await self._read_publication_view(normalized, rpid, anonymous=True)
         except PlatformReadError as error:
             return {
                 "status": "check_failed",
@@ -1220,7 +1235,7 @@ class BrowsingAdapter(BilibiliAdapter):
             else:
                 status = "not_found"
         else:
-            status = "shadow_deleted" if (auth_covered and anon_covered) else "not_found"
+            status = "not_found"
 
         hints = {
             key: receipt[key]
@@ -1245,6 +1260,8 @@ class BrowsingAdapter(BilibiliAdapter):
                 "auth_records": auth_view["records"],
                 "anon_records": anon_view["records"],
                 "anon_oldest_ctime": anon_view["oldest_ctime"],
+                "auth_seek_found": auth_view.get("seek_found"),
+                "anon_seek_found": anon_view.get("seek_found"),
             },
             **({"receipt_hints": hints} if hints else {}),
         }

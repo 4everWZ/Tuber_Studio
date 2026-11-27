@@ -23,7 +23,7 @@ from ....infra.platforms.bilibili.client import BilibiliAdapter, PublishUncertai
 from ...kernel.control import OperationsControl, canonical_intent
 from ...kernel.feedback import FeedbackPublication, PublicationContext, generation_view, publication_binding
 from ...kernel.models import BrowsingPolicy
-from ...kernel.quotas import DailyReplyLimitReached
+from ...kernel.quotas import DailyReplyLimitReached, publication_time
 from ..attachments import comment_payload, decision, require_comment_attachment, row_ref
 from ..mentions import draft_mentions, rebase_mentions, revision_payload
 from .drafter import CommentsDrafterMixin
@@ -850,5 +850,6 @@ class Comments(CommentsRepositoryMixin, CommentsScannerMixin, CommentsDrafterMix
                 bvid=row["video_id"],
                 detail=result,
                 now=checked_at,
+                published_at=publication_time(receipt, row["updated_at"]),
             )
         return self.store.one("SELECT * FROM drafts WHERE id=?", (draft_id,))

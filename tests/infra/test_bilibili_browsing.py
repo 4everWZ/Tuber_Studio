@@ -691,7 +691,7 @@ async def test_missing_write_receipt_is_uncertain_never_a_read_retry(adapter_fac
 @pytest.mark.parametrize(
     "auth_rows,anon_rows,status",
     [
-        ([], [], "shadow_deleted"),
+        ([], [], "not_found"),
         ([{"rpid": 555, "ctime": 1000}], [{"rpid": 555, "ctime": 1000}], "public_visible"),
         ([{"rpid": 555, "ctime": 1000}], [], "self_only"),
         ([{"rpid": 555, "ctime": 1000, "invisible": 1}], [{"rpid": 555, "ctime": 1000, "invisible": 1}], "shadow_deleted"),
@@ -714,6 +714,9 @@ async def test_publication_acceptance_is_independent_from_first_page_visibility(
                 },
                 code=-101,
             )
+        if request.url.path == "/x/v2/reply/wbi/main":
+            assert request.url.params["seek_rpid"] == "555"
+            return result({"replies": []})
         assert request.url.params.get("sort") == "0"
         if request.headers.get("cookie"):
             return result({"replies": auth_rows})
@@ -732,6 +735,8 @@ async def test_verify_publication_sub_reply_checks_last_page_and_overflow_not_de
 
     def handle(request):
         if request.url.path == "/x/web-interface/nav":
+            if request.headers.get("cookie"):
+                return nav()
             return result(
                 {
                     "wbi_img": {
@@ -797,6 +802,27 @@ async def test_dynamic_top_level_visibility_uses_the_same_seek_as_the_public_pag
     assert verified["status"] == "public_visible"
     assert verified["coverage"]["scope"] == "dynamic_seek"
     assert views == [True, False]
+
+
+async def test_exact_browser_seek_finds_nested_reply_missing_in_anonymous_listing(adapter_factory):
+    def handle(request):
+        if request.url.path == "/x/web-interface/nav":
+            return nav()
+        nested = {"rpid_str": "555", "root_str": "42", "parent_str": "43", "ctime": 2000}
+        if request.url.path == "/x/v2/reply/reply":
+            return result({"replies": [nested] if request.headers.get("cookie") else []})
+        assert request.url.path == "/x/v2/reply/wbi/main"
+        assert not request.headers.get("cookie")
+        assert request.url.params["seek_rpid"] == "555"
+        assert "w_rid" in request.url.params
+        return result({"replies": [{"rpid": 42, "replies": [nested]}]})
+
+    adapter = await adapter_factory(handle)
+    report = await adapter.verify_publication(
+        {"resource_type": "video", "oid": "123", "root": "42", "parent": "43"}, {"rpid": "555"},
+    )
+    assert report["status"] == "public_visible"
+    assert report["coverage"]["anon_seek_found"] is True
 
 
 async def test_verify_publication_preserves_risk_error_code_and_publish_captures_hints(adapter_factory):

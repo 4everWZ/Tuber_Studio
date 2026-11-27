@@ -113,7 +113,8 @@ export function Stage2PipelineCards({
     commentCooldownUntil && commentCooldownUntil > Date.now() / 1000
   );
   const visibilityRisk = status?.visibility_risk ?? null;
-  const visibilityRiskActive = Boolean(visibilityRisk && (visibilityRisk.active || visibilityRisk.streak > 0));
+  const showVisibilityRisk = Boolean(visibilityRisk && (visibilityRisk.active || visibilityRisk.streak > 0));
+  const recentVisibilityHistory = visibilityRisk && !visibilityRisk.active && visibilityRisk.streak >= visibilityRisk.threshold;
   const authExpired =
     account?.state === "expired" ||
     (status?.blockers || []).some((b) => {
@@ -272,11 +273,11 @@ export function Stage2PipelineCards({
 
   return (
     <section aria-label="双管道独立控制台">
-      {(visibilityRiskActive || commentCooldownActive) && (
+      {(showVisibilityRisk || commentCooldownActive) && (
         <div
           className="feature-note"
-          role="alert"
-          data-visibility-risk-alert={visibilityRiskActive ? "active" : undefined}
+          role={visibilityRisk?.active || commentCooldownActive ? "alert" : "status"}
+          data-visibility-risk-alert={visibilityRisk?.active ? "active" : undefined}
           data-comment-cooldown={commentCooldownActive ? "active" : undefined}
           style={{ marginBottom: 12 }}
         >
@@ -285,7 +286,7 @@ export function Stage2PipelineCards({
               ? "发评风控保护已触发"
               : commentCooldownActive
                 ? "评论发送冷却中"
-                : "发评可见性异常观察中"}
+                : recentVisibilityHistory ? "最近评论可见性记录" : "发评可见性异常观察中"}
           </strong>
           {" · "}
           {visibilityRisk?.reason ? safeMessage(visibilityRisk.reason) : "评论通道因平台频控或风控暂缓提交"}

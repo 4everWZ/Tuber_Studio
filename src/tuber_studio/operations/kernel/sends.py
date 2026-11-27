@@ -22,7 +22,7 @@ from ...infra.inference.providers import public_error
 from ...infra.platforms.bilibili.account import record_comment_capability_restriction
 from ...infra.platforms.bilibili.client import BilibiliAccountExpired, PlatformReadError
 from .control import COMMENT_WRITE_FILTER, REACTION_CHANNELS
-from .quotas import DailyReplyLimitReached
+from .quotas import DailyReplyLimitReached, publication_time
 
 current_send = ContextVar("current_operation_send", default=None)
 
@@ -197,44 +197,55 @@ class OperationSends:
         downgraded = bool(saved.get("downgraded", False))
         if streak <= 0 and not cooldown_active and not downgraded:
             return None
+        reason = saved.get("reason") or ""
+        if cooldown_until and not cooldown_active:
+            reason = f"此前 {streak} 条评论未公开可见，评论冷却已结束"
         return {
             "account_id": str(account),
             "streak": streak,
             "threshold": int(saved.get("threshold") or VISIBILITY_RISK_THRESHOLD),
-            "active": cooldown_active or streak >= VISIBILITY_RISK_THRESHOLD,
+            "active": cooldown_active,
             "cooldown_until": cooldown_until if cooldown_active else None,
             "downgraded": downgraded,
             "last_status": saved.get("last_status"),
             "last_intent_id": saved.get("last_intent_id"),
             "last_bvid": saved.get("last_bvid"),
-            "reason": saved.get("reason") or "",
+            "reason": reason,
             "updated_at": saved.get("updated_at"),
         }
 
     def record_visibility_outcome(
-        self, account, status, *, intent_id=None, bvid=None, detail=None, now=None
+        self, account, status, *, intent_id=None, bvid=None, detail=None, now=None, published_at=None
     ):
         if not account:
             return None
         current = time.time() if now is None else now
+        observed_publication = current if published_at is None else float(published_at)
         account = str(account)
         key = f"operation_visibility_risk:{account}"
+        prev = self.store.get(key) or {}
+        if not isinstance(prev, dict):
+            prev = {}
+        last_publication = prev.get("last_publication_at") or prev.get("updated_at") or 0
+        if observed_publication < last_publication and str(intent_id or "") != prev.get("last_intent_id"):
+            return self.visibility_risk_status(account, now=current)
         if status in VISIBILITY_PUBLIC_STATES:
-            if self.store.get(key):
+            if prev:
                 self.store.set(key, None)
             return None
         if status not in VISIBILITY_INVISIBLE_STATES:
             return self.visibility_risk_status(account, now=current)
-        prev = self.store.get(key) or {}
-        if not isinstance(prev, dict):
-            prev = {}
         recent_ids = list(prev.get("recent_intent_ids") or [])
-        already_counted = bool(intent_id and str(intent_id) in recent_ids)
-        streak = int(prev.get("streak") or 0)
-        if not already_counted:
-            streak += 1
-            if intent_id:
-                recent_ids.append(str(intent_id))
+        if intent_id and str(intent_id) in recent_ids:
+            return self.visibility_risk_status(account, now=current)
+        if current - observed_publication >= VISIBILITY_RISK_COOLDOWN_SECONDS:
+            return self.visibility_risk_status(account, now=current)
+        same_window = observed_publication - last_publication < VISIBILITY_RISK_COOLDOWN_SECONDS
+        streak = int(prev.get("streak") or 0) + 1 if same_window else 1
+        if not same_window:
+            recent_ids = []
+        if intent_id:
+            recent_ids.append(str(intent_id))
         triggered = streak >= VISIBILITY_RISK_THRESHOLD
         downgraded = bool(prev.get("downgraded", False))
         cooldown_until = prev.get("cooldown_until")
@@ -276,6 +287,7 @@ class OperationSends:
             "recent_intent_ids": recent_ids[-10:],
             "reason": reason,
             "updated_at": current,
+            "last_publication_at": observed_publication,
         }
         self.store.set(key, state)
         return self.visibility_risk_status(account, now=current)
@@ -727,6 +739,7 @@ async def verify_intent_visibility_now(publisher, identity: str, *, comment_kind
             bvid=(row.get("target") or {}).get("bvid"),
             detail=result,
             now=checked_at,
+            published_at=publication_time(receipt, row["updated_at"]),
         )
     return publisher.browsing.repo.decode(
         publisher.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))

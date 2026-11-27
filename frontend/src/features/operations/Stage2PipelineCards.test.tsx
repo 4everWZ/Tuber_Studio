@@ -487,4 +487,21 @@ describe("Stage2PipelineCards & AutomationDashboardPage", () => {
     expect(container.querySelector('[data-comment-cooldown="active"]')).not.toBeNull();
     expect(screen.getAllByText("发评风控暂停").length).toBeGreaterThanOrEqual(2);
   });
+
+  it("shows expired visibility history without an active comment pause", () => {
+    const { container } = render(
+      <Stage2PipelineCards
+        status={makeStatus({ visibility_risk: {
+          streak: 4, threshold: 2, active: false, cooldown_until: null, downgraded: false,
+          last_status: "self_only", reason: "此前 4 条评论未公开可见，评论冷却已结束",
+        } })}
+        account={null} discovery={null} quotas={makeQuotas()} inboxRecords={{ items: [] }} claims={[]}
+        controlPending={false} onToggleInbox={vi.fn()} onToggleDiscovery={vi.fn()}
+        onSaveInboxSettings={vi.fn()} onSaveDiscoverySettings={vi.fn()} onSaveQuotas={vi.fn()}
+      />
+    );
+    expect(screen.getByText("最近评论可见性记录")).toBeInTheDocument();
+    expect(container.querySelector('[data-visibility-risk-alert="active"]')).toBeNull();
+    expect(screen.queryByText("发评风控暂停")).not.toBeInTheDocument();
+  });
 });
