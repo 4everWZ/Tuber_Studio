@@ -6,8 +6,10 @@ import asyncio
 import base64
 import inspect
 import io
+import json
 import math
 import random
+import re
 import shutil
 import struct
 import wave
@@ -24,6 +26,8 @@ from ...core.validation import linked
 from . import remotion_assets as _ra
 
 _SFX_NAMES = ("transition", "whoosh", "pop", "chime", "chapter_hit")
+MAX_RENDERED_VIDEO_BYTES = 2 * 1024 * 1024 * 1024
+MAX_DURATION_DRIFT_SECONDS = 0.5
 
 
 def _decode_pcm_samples(pcm: bytes, sampwidth: int) -> list[float]:
@@ -269,6 +273,65 @@ async def _invoke_exec(run_exec, cmd: list[str], *, cwd: Path, timeout: float) -
         stdout_b.decode("utf-8", errors="replace"),
         stderr_b.decode("utf-8", errors="replace"),
     )
+
+
+async def probe_rendered_video(output_path, *, expected_duration, dry_run, ffprobe_runner=None, run_exec=None):
+    if callable(ffprobe_runner):
+        probe = ffprobe_runner(output_path, expected_duration)
+        return dict(await probe if inspect.isawaitable(probe) else probe)
+    if dry_run:
+        return {
+            "has_video": True, "has_audio": True, "silent_audio": False,
+            "duration_seconds": expected_duration, "width": 1920, "height": 1080, "dry_run": True,
+        }
+    if not (ffprobe := shutil.which("ffprobe")):
+        raise ValueError("未安装 ffprobe，无法执行成片质检")
+    code, stdout, stderr = await _invoke_exec(
+        run_exec, [ffprobe, "-v", "error", "-show_format", "-show_streams", "-print_format", "json", str(output_path)],
+        cwd=output_path.parent, timeout=30.0,
+    )
+    if code != 0:
+        raise ValueError(f"ffprobe 质检失败: {stderr[:200]}")
+    data = json.loads(stdout or "{}")
+    streams, fmt = data.get("streams") or [], data.get("format") or {}
+    video = next((s for s in streams if s.get("codec_type") == "video"), None)
+    audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
+    video_fields = video or {}
+    probe = {
+        "has_video": video is not None,
+        "has_audio": audio is not None,
+        "silent_audio": False,
+        "duration_seconds": float(fmt.get("duration") or video_fields.get("duration") or 0.0),
+        "width": int(video_fields.get("width") or 0),
+        "height": int(video_fields.get("height") or 0),
+    }
+    if (ffmpeg := shutil.which("ffmpeg")) and audio is not None:
+        fcode, _, ferr = await _invoke_exec(
+            run_exec, [ffmpeg, "-hide_banner", "-i", str(output_path), "-af", "volumedetect", "-f", "null", "-"],
+            cwd=output_path.parent, timeout=30.0,
+        )
+        if fcode == 0 and (match := re.search(r"mean_volume:\s*([-\d.]+)\s*dB", ferr)):
+            mean_volume = float(match.group(1))
+            probe |= {"mean_volume_db": mean_volume, "silent_audio": mean_volume <= -60.0}
+    return probe
+
+
+def validate_qc_probe(probe, output_path, expected_duration):
+    size = output_path.stat().st_size if output_path.is_file() else 0
+    probed_duration = float(probe.get("duration_seconds") or 0.0)
+    drift, mean_db = abs(probed_duration - float(expected_duration)), probe.get("mean_volume_db")
+    issues = [msg for condition, msg in (
+        (size <= 0 or size > MAX_RENDERED_VIDEO_BYTES, "成片文件大小无效或超出平台限制"),
+        (not probe.get("has_video"), "成片缺少有效视频轨"),
+        (not probe.get("has_audio"), "成片缺少音频轨"),
+        (probe.get("silent_audio") or (mean_db is not None and float(mean_db) <= -60.0), "成片音轨为全静音"),
+        (drift > MAX_DURATION_DRIFT_SECONDS, f"音画时长偏差 {drift:.2f}s 超过 0.5s 上限"),
+    ) if condition]
+    return {
+        "passed": not issues, "issues": issues, "size_bytes": size, "expected_duration_seconds": expected_duration,
+        "probed_duration_seconds": probed_duration, "duration_drift_seconds": round(drift, 4),
+        "width": int(probe.get("width") or 0), "height": int(probe.get("height") or 0),
+    }
 
 
 def _load_contact_sheet_font(size: int = 18):

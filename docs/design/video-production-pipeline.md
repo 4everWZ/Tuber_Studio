@@ -61,6 +61,12 @@
 - `POST /api/v1/operations/videos/{job_id}/capture-ui`：仅限本机回环地址（`127.0.0.1` / `localhost`）的 Playwright Chromium 1920x1080 截屏，直接存入任务的 `public/uploads/` 供 `UIShowcase` 聚焦高亮。
 - `POST /api/v1/operations/videos/{job_id}/uploads`：支持上传公开参考图片（PNG/JPEG/WebP）与 `.mp4`/`.webm` 录屏片段（Magic-byte 校验，`<=30MB`），并在生成工程时自动绑定未手动指定的视频片段。
 
+### 2.4 运营时段复盘
+
+复盘先确定运营时段，再冻结该时段的观看记录、平台确认公开的评论与动态数量，以及可引用的公开片段。`RemotionVideoSkill.plan_operations_recap` 将同一份摘要编排为标题、数据图、带出处的片段和可选感想。自动与手动制作均沿用现有配音、时间轴、渲染和投稿入口。同一账号、角色与定时任务键重复准备时复用已有稿件，保留第一次保存的事实和之后的人工修订。
+
+数据图显示传入原值。零值没有柱形，负值从零基线向左延伸，不同单位仅列原值。普通策划降级时可用文字呈现来源已有的观察点。渲染节点使用安装在本地的 Remotion CLI，生成工程带有模板组件、锁文件和素材目录，可在仓库依赖版本下编辑与重渲。干跑可用于工程预检，取得实际成片后才能投稿。[Remotion 命令文档](https://www.remotion.dev/docs/cli/render) · [Mux 的数据视频实例](https://www.mux.com/blog/visualize-mux-data-with-remotion)
+
 ---
 
 ## 3. 凭据复用与发布控制开关
@@ -71,8 +77,9 @@
 
 ### 3.2 发布模式与幂等回执
 
-- 策略开关 `video_production.publish_mode` 默认 `preview_review`，仅在人工确认或满足全公开 + 质检通过 + 非风控冷却的 `auto_publish` 门禁时提交。
-- 复用 `canonical_intent("bilibili", "video_publish", content_hash, character_id)` 保证同一成片在网络超时或重启恢复时只结算一次投稿回执；结果不确定时置为 `publish_uncertain` 并阻止重复投稿。
+- 策略开关 `video_production.publish_mode` 默认 `preview_review`。模型工具只能把成片排入审核。号主明确确认或服务端视频发布窗口授权后，复核公开来源、成片质检、真实登录 UID 及角色绑定，再进入提交。定时授权由服务端提供，窗口可在常规运营停止后独立生效，仍核对急停、验收模式、账号写入额度及平台冷却。
+- Web 上传分片完成后，写入账本和 `publishing` 状态在同一事务内预约一次 `add/v3` 提交。`canonical_intent("bilibili", "video_publish", content_hash, character_id)` 按账号和成片去重。明确拒绝可经人工确认重投。提交结果不确定时置为 `publish_uncertain`，回查原提交，保留禁止重复投稿的状态。
+- 正确的 BV 或 AV 回执将本地任务置为 `published`，`platform_state=submitted` 表示创作中心已受理。`POST /api/v1/operations/videos/{job_id}/publish/recheck` 只读核对原编号与作者，确认匿名可见后才记录 `public_visible` 和公开地址。
 
 ---
 
@@ -84,6 +91,7 @@
   - `src/tuber_studio/agent/skills/remotion_research.py`（GitHub 深度抓取、白名单仓库文档、回环 UI 截屏）
   - `src/tuber_studio/agent/skills/remotion_planner.py`（Two-Stage Director、6 模式电影级兜底、选题 Pitch、场景默认值规范化）
   - `src/tuber_studio/agent/skills/remotion_audio_qc.py`（逐帧包络、Lo-fi BGM + 5 路 SFX 套件、Contact Sheet、可选 VLM 审片）
-  - `src/tuber_studio/agent/skills/remotion_video.py`（状态机编排、`TaskRuntime` 工具注册与幂等发布）
+  - `src/tuber_studio/agent/skills/remotion_video.py`（状态机编排与 `TaskRuntime` 工具注册）
+  - `src/tuber_studio/agent/skills/remotion_publication.py`（投稿授权、幂等事务与回执核对）
 - **L4 HTTP 路由：** `src/tuber_studio/app/routes/video_production.py`（`/api/v1/operations/videos/*`）
 - **回归测试：** `tests/agent/test_remotion_cinematic_pipeline.py`、`tests/agent/test_heartbeat_and_remotion.py`、`tests/agent/test_video_rich_inputs.py`、`tests/agent/test_remotion_dynamic_memes.py`、`tests/app/test_video_production_routes.py`、`tests/architecture/test_layer_boundaries.py`。

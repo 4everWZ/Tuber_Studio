@@ -3,25 +3,86 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import math
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager, nullcontext
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
 
-from .client import BILIBILI_WEB_USER_AGENT, BilibiliAdapter, bilibili_web_headers
+from .browsing import BrowsingAdapter
+from .client import BILIBILI_WEB_USER_AGENT, BilibiliAdapter, PlatformReadError, bilibili_web_headers
+from .urls import COMMENT_ID, VIDEO_ID
 
 MEMBER_UPLOAD_REFERER = "https://member.bilibili.com/platform/upload/video/frame"
 MEMBER_ORIGIN = "https://member.bilibili.com"
 _PREUPLOAD_URL = "https://member.bilibili.com/preupload"
 _COVER_UP_URL = "https://member.bilibili.com/x/vu/web/cover/up"
 _ADD_V3_URL = "https://member.bilibili.com/x/vu/web/add/v3"
+_PUBLIC_VIDEO_PATH = "/x/web-interface/wbi/view"
 _ARCHIVE_PRE_URL = "https://member.bilibili.com/x/vupre/web/archive/pre"
 _HUMAN_TYPE2_URL = "https://member.bilibili.com/x/vupre/web/archive/human/type2/list"
 _DEFAULT_CHUNK_BYTES = 10 * 1024 * 1024
+
+
+class VideoSubmissionRejected(RuntimeError):
+    """The creator endpoint returned a definite rejection."""
+
+
+def video_receipt_ids(receipt) -> dict[str, str | int]:
+    """Read only verified identifiers, without coercing falsey or virtual values."""
+    if not isinstance(receipt, dict):
+        return {}
+    bvid, aid = receipt.get("bvid"), receipt.get("aid")
+    result = {"bvid": bvid} if isinstance(bvid, str) and VIDEO_ID.fullmatch(bvid) else {}
+    if COMMENT_ID.fullmatch(str(aid)):
+        result["aid"] = int(aid)
+    return result
+
+
+async def verify_bilibili_video_publication(receipt, account_id: str, *, client: httpx.AsyncClient | None = None):
+    """Read the exact creator-center receipt through the anonymous video page API."""
+    ids = video_receipt_ids(receipt)
+    if not ids:
+        return {"state": "unconfirmed", "reason": "缺少可核对的投稿编号"}
+    key = "bvid" if "bvid" in ids else "aid"
+
+    try:
+        if client is None:
+            adapter = BrowsingAdapter()
+            try:
+                params = await adapter.wbi_params({key: ids[key]}, anonymous=True)
+                payload = await adapter._get_payload(_PUBLIC_VIDEO_PATH, params, anonymous=True)
+            finally:
+                await adapter.close()
+        else:
+            response = await client.get("https://api.bilibili.com" + _PUBLIC_VIDEO_PATH, params={key: ids[key]},
+                                        headers=bilibili_web_headers())
+            response.raise_for_status()
+            payload = response.json()
+    except PlatformReadError as error:
+        return {"state": "check_failed", "code": error.code or error.http_status,
+                "reason": "暂时无法读回 B 站视频页面"}
+    except (httpx.HTTPError, ValueError):
+        return {"state": "check_failed", "reason": "暂时无法读回 B 站视频页面"}
+    if not isinstance(payload, dict) or type(payload.get("code")) is not int:
+        return {"state": "check_failed", "reason": "平台视频详情响应格式无效"}
+    if payload["code"] != 0:
+        return {"state": "unconfirmed", "code": payload["code"], "reason": "公开页面暂未返回此投稿"}
+    row = payload.get("data")
+    if not isinstance(row, dict) or not isinstance(row.get("owner"), dict):
+        return {"state": "check_failed", "reason": "平台视频详情缺少作者资料"}
+    found = video_receipt_ids(row)
+    if (any(found.get(k) != v for k, v in ids.items())
+            or str(row["owner"].get("mid", "")) != str(account_id)):
+        return {"state": "mismatch", "reason": "页面投稿编号或作者与提交回执不一致"}
+    url = (f"https://www.bilibili.com/video/{found['bvid']}" if "bvid" in found else
+           f"https://www.bilibili.com/video/av{found['aid']}")
+    return {"state": "public_visible", "url": url}
 
 _PARENT_TO_HUMAN_TYPE2: dict[int, int] = {
     181: 1001, 11: 1001, 23: 1001, 5: 1002, 3: 1003, 129: 1004,
@@ -165,8 +226,11 @@ def _normalize_upos_url(endpoint: str, upos_uri: str) -> tuple[str, str]:
     if raw_ep.startswith("//"):
         raw_ep = "https:" + raw_ep
     parsed = urlsplit(raw_ep)
-    if parsed.scheme != "https" or not parsed.hostname:
-        raise RuntimeError(f"无效的 B 站上传节点地址: {raw_ep}")
+    host = parsed.hostname or ""
+    if (parsed.scheme != "https" or not host.endswith((".bilivideo.com", ".bilibili.com"))
+            or parsed.username or parsed.password or parsed.port not in (None, 443)
+            or parsed.query or parsed.fragment):
+        raise RuntimeError("B 站返回了无效的上传节点地址")
     rel = upos_uri.strip().removeprefix("upos://").lstrip("/")
     if not rel:
         raise RuntimeError("B 站 preupload 返回的 upos_uri 无效")
@@ -199,7 +263,7 @@ async def _upload_cover(
         raise RuntimeError(f"封面上传失败: {_scrub(str(exc), credentials)}") from None
     if not isinstance(payload, dict) or payload.get("code") != 0:
         msg = payload.get("message") if isinstance(payload, dict) else "响应格式无效"
-        raise RuntimeError(f"封面上传被拒绝: {_scrub(str(msg or payload), credentials)}")
+        raise RuntimeError(f"封面上传被拒绝: {_scrub(str(msg or '平台未返回说明'), credentials)}")
     url = str(((payload.get("data") or {}).get("url")) or "").strip()
     if not url:
         raise RuntimeError("封面上传成功但未返回有效 URL")
@@ -216,6 +280,7 @@ async def _upos_chunked_upload(
     chunk_size: int,
     biz_id: Any,
     credentials: dict[str, Any],
+    expected_output_digest: str | None,
 ) -> None:
     upos_headers = {
         "User-Agent": BILIBILI_WEB_USER_AGENT,
@@ -237,6 +302,8 @@ async def _upos_chunked_upload(
 
         total_chunks = max(1, math.ceil(file_size / chunk_size))
         parts: list[dict[str, Any]] = []
+        digest = hashlib.sha256()
+        uploaded = 0
         with output_path.open("rb") as fh:
             for idx in range(total_chunks):
                 start = idx * chunk_size
@@ -244,6 +311,7 @@ async def _upos_chunked_upload(
                 if not chunk:
                     break
                 end = start + len(chunk)
+                digest.update(chunk)
                 put_resp = await client.put(
                     upos_url,
                     params={
@@ -261,6 +329,9 @@ async def _upos_chunked_upload(
                 )
                 put_resp.raise_for_status()
                 parts.append({"partNumber": idx + 1, "eTag": "etag"})
+                uploaded += len(chunk)
+            if fh.read(1) or uploaded != file_size or expected_output_digest and digest.hexdigest() != expected_output_digest:
+                raise RuntimeError("上传的成片与批准时的文件不同，尚未提交投稿")
 
         fin_resp = await client.post(
             upos_url,
@@ -280,7 +351,7 @@ async def _upos_chunked_upload(
         raise RuntimeError(f"视频分片上传失败: {_scrub(str(exc), credentials)}") from None
 
     if not isinstance(fin_data, dict) or fin_data.get("OK") != 1:
-        raise RuntimeError(f"视频合片未成功: {_scrub(str(fin_data), credentials)}")
+        raise RuntimeError("B 站未确认视频合片成功")
 
 
 async def upload_bilibili_video_web(
@@ -295,6 +366,8 @@ async def upload_bilibili_video_web(
     timeout: float = 600.0,
     client: httpx.AsyncClient | None = None,
     wbi_signer: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
+    submission_guard: Callable[[], AbstractAsyncContextManager[None]] | None = None,
+    expected_output_digest: str | None = None,
 ) -> dict[str, Any]:
     """Upload MP4 and optional cover via Bilibili Web Creator Center UPOS + add/v3."""
     sessdata = str(credentials.get("sessdata") or "").strip()
@@ -346,7 +419,7 @@ async def upload_bilibili_video_web(
             raise RuntimeError(f"预上传申请失败: {_scrub(str(exc), credentials)}") from None
 
         if not isinstance(pre, dict) or pre.get("OK") != 1:
-            raise RuntimeError(f"B 站 preupload 返回异常: {_scrub(str(pre), credentials)}")
+            raise RuntimeError("B 站未确认预上传申请")
 
         upos_url, remote_filename = _normalize_upos_url(
             str(pre.get("endpoint") or ""),
@@ -366,6 +439,7 @@ async def upload_bilibili_video_web(
             chunk_size=chunk_size,
             biz_id=pre.get("biz_id"),
             credentials=credentials,
+            expected_output_digest=expected_output_digest,
         )
 
         sign_base = {"t": int(time.time() * 1000), "csrf": csrf}
@@ -414,42 +488,34 @@ async def upload_bilibili_video_web(
             "csrf": csrf,
         }
 
-        try:
-            submit_resp = await http.post(
-                _ADD_V3_URL,
-                params=signed_params,
-                headers=member_headers,
-                json=body,
-            )
-            payload = submit_resp.json()
-        except (httpx.TimeoutException, httpx.TransportError, ValueError) as exc:
-            raise TimeoutError(
-                f"B 站投稿提交结果待核对: {_scrub(str(exc), credentials)}"
-            ) from None
+        async with submission_guard() if submission_guard is not None else nullcontext():
+            try:
+                submit_resp = await http.post(
+                    _ADD_V3_URL,
+                    params=signed_params,
+                    headers=member_headers,
+                    json=body,
+                )
+                payload = submit_resp.json()
+            except (httpx.TimeoutException, httpx.TransportError, ValueError) as exc:
+                raise TimeoutError(
+                    f"B 站投稿提交结果待核对: {_scrub(str(exc), credentials)}"
+                ) from None
 
+        if not submit_resp.is_success:
+            raise TimeoutError(f"B 站投稿 HTTP {submit_resp.status_code}，结果待核对")
         if not isinstance(payload, dict) or type(payload.get("code")) is not int:
-            if submit_resp.status_code >= 400:
-                raise TimeoutError(f"B 站投稿 HTTP {submit_resp.status_code}，结果待核对")
             raise TimeoutError("B 站投稿响应格式无效，结果待核对")
 
         code = payload["code"]
         if code != 0:
             msg = str(payload.get("message") or payload.get("msg") or "投稿被拒绝")
-            raise RuntimeError(f"B 站投稿被拒绝 (code={code}): {_scrub(msg, credentials)}")
+            raise VideoSubmissionRejected(f"B 站投稿被拒绝 (code={code}): {_scrub(msg, credentials)}")
 
-        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-        bvid = str(data.get("bvid") or "").strip()
-        aid_raw = data.get("aid")
-        aid = int(aid_raw) if isinstance(aid_raw, int) or (isinstance(aid_raw, str) and aid_raw.isdigit()) else None
-        if not (bvid or aid):
+        if not (ids := video_receipt_ids(payload.get("data"))):
             raise TimeoutError("B 站投稿返回成功但缺少 bvid/aid，转为待核对状态")
 
-        receipt: dict[str, Any] = {"platform": "bilibili", "uploader": "web_api"}
-        if bvid:
-            receipt["bvid"] = bvid
-        if aid is not None:
-            receipt["aid"] = aid
-        return receipt
+        return {"platform": "bilibili", "uploader": "web_api", **ids}
     finally:
         if owns_client:
             await http.aclose()

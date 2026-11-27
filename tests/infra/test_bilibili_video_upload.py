@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+from contextlib import asynccontextmanager
 from http.cookies import SimpleCookie
 from urllib.parse import parse_qs
 
@@ -10,9 +12,30 @@ import httpx
 import pytest
 
 from tuber_studio.infra.platforms.bilibili.client import BILIBILI_WEB_USER_AGENT
-from tuber_studio.infra.platforms.bilibili.video_upload import upload_bilibili_video_web
+from tuber_studio.infra.platforms.bilibili.video_upload import upload_bilibili_video_web, verify_bilibili_video_publication
 
 SECRETS = {"sessdata": "secret_sess_123", "csrf": "secret_csrf_456", "uid": "998877"}
+
+
+async def test_video_publication_verification_requires_exact_receipt_and_owner():
+    receipt = {"bvid": "BV1webUpld99", "aid": 456789}
+    response = {"code": -404, "data": None}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/x/web-interface/wbi/view"
+        assert request.url.params["bvid"] == receipt["bvid"] and "cookie" not in request.headers
+        return httpx.Response(200, json=response)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert (await verify_bilibili_video_publication(receipt, "100", client=client))["state"] == "unconfirmed"
+        response.update(code=0, data=receipt | {"owner": {"mid": 101}})
+        assert (await verify_bilibili_video_publication(receipt, "100", client=client))["state"] == "mismatch"
+        response.update(data=receipt | {"aid": 3, "owner": {"mid": 100}})
+        assert (await verify_bilibili_video_publication(receipt, "100", client=client))["state"] == "mismatch"
+        response.update(data=receipt | {"owner": {"mid": 100}})
+        assert await verify_bilibili_video_publication(receipt, "100", client=client) == {
+            "state": "public_visible", "url": "https://www.bilibili.com/video/BV1webUpld99",
+        }
 
 
 def _video_file(tmp_path, size: int = 12) -> tuple[object, object]:
@@ -27,6 +50,17 @@ async def test_web_upload_pipeline_cover_chunks_and_wbi_submit(tmp_path):
     video, cover = _video_file(tmp_path, size=10)
     seen: list[dict] = []
     uploaded_chunks: list[tuple[int, bytes]] = []
+    consent = False
+
+    @asynccontextmanager
+    async def submission_guard():
+        nonlocal consent
+        assert b"".join(data for _index, data in uploaded_chunks) == video.read_bytes()
+        consent = True
+        try:
+            yield
+        finally:
+            consent = False
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(
@@ -109,6 +143,7 @@ async def test_web_upload_pipeline_cover_chunks_and_wbi_submit(tmp_path):
             )
 
         if request.url.path == "/x/vu/web/add/v3":
+            assert consent
             assert request.url.params["w_rid"] == "signed_md5"
             assert request.url.params["csrf"] == SECRETS["csrf"]
             payload = json.loads(request.content.decode())
@@ -120,7 +155,7 @@ async def test_web_upload_pipeline_cover_chunks_and_wbi_submit(tmp_path):
             assert payload["cover"] == "//i0.hdslb.com/bfs/archive/cov1.png"
             assert payload["videos"] == [{"filename": "test_video_001", "title": "测试投稿标题", "desc": ""}]
             assert payload["csrf"] == SECRETS["csrf"]
-            return httpx.Response(200, json={"code": 0, "data": {"bvid": "BV1webUpload9", "aid": 456789}})
+            return httpx.Response(200, json={"code": 0, "data": {"bvid": "BV1webUpld99", "aid": 456789}})
 
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
@@ -138,9 +173,11 @@ async def test_web_upload_pipeline_cover_chunks_and_wbi_submit(tmp_path):
             credentials=SECRETS,
             client=client,
             wbi_signer=fake_wbi,
+            submission_guard=submission_guard,
+            expected_output_digest=hashlib.sha256(video.read_bytes()).hexdigest(),
         )
 
-    assert receipt == {"platform": "bilibili", "uploader": "web_api", "bvid": "BV1webUpload9", "aid": 456789}
+    assert receipt == {"platform": "bilibili", "uploader": "web_api", "bvid": "BV1webUpld99", "aid": 456789}
     assert [(part, len(data)) for part, data in uploaded_chunks] == [(1, 4), (2, 4), (3, 2)]
     assert b"".join(data for _part, data in uploaded_chunks) == b"X" * 10
     assert all(req["ua"] == BILIBILI_WEB_USER_AGENT for req in seen)
@@ -274,7 +311,7 @@ async def test_web_upload_maps_retired_tid_174_and_direct_human_type2(
             )
         if request.url.path == "/x/vu/web/add/v3":
             submitted.update(json.loads(request.content.decode()))
-            return httpx.Response(200, json={"code": 0, "data": {"bvid": "BV1mapped0001", "aid": 789}})
+            return httpx.Response(200, json={"code": 0, "data": {"bvid": "BV1mapped001", "aid": 789}})
         raise AssertionError(f"Unexpected: {request.url}")
 
     async def fake_wbi(params):
@@ -292,7 +329,7 @@ async def test_web_upload_maps_retired_tid_174_and_direct_human_type2(
             wbi_signer=fake_wbi,
         )
 
-    assert receipt["bvid"] == "BV1mapped0001"
+    assert receipt["bvid"] == "BV1mapped001"
     assert submitted["tid"] == expected_tid
     assert submitted["human_type2"] == expected_type2
     assert submitted["desc_format_id"] == 9999

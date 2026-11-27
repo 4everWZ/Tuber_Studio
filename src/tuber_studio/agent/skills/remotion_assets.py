@@ -530,8 +530,6 @@ def build_fallback_aqua_scenes(
         vp: dict[str, Any] = {"subtitle": point[:180], "bullets": [point[:48], *([next_point[:48]] if next_point != point else [])], "meme_asset_id": _take_meme(cue), "citation_label": str(citation)[:120]}
         if tpl == "CodeWalkthrough":
             vp |= {"language": "text", "code_snippet": "\n".join(points[:4])[:1200]}
-        elif tpl == "ChartCompare":
-            vp["chart_items"] = [{"label": "关键点 A", "value": 80 + idx * 5, "unit": "%"}, {"label": "对比项 B", "value": 45 + idx * 4, "unit": "%"}]
         middle_scenes.append({
             "scene_id": f"scene_detail_{idx + 1}", "template": tpl, "heading": f"第 {idx + 1} 块重点：{point[:20]}", "visual_props": vp, "avatar_cue": cue,
             "lines": [{"line_id": f"l{line_idx}", "text": f"先看第{idx + 1}点，重点其实非常直接。", "avatar_cue": cue, "emphasis": ["非常直接"]}, {"line_id": f"l{line_idx + 1}", "text": f"把{point[:10]}拎出来看就全明白。", "avatar_cue": "thinking", "emphasis": ["全明白"]}],
@@ -560,7 +558,18 @@ def build_fallback_aqua_scenes(
     return lead, [hook_scene, *middle_scenes, outro_scene]
 
 
-_REMOTION_PACKAGE_JSON = {"name": "aqua-remotion-video", "version": "1.0.0", "private": True, "type": "module", "dependencies": {"react": "^18.3.1", "react-dom": "^18.3.1", "remotion": "^4.0.0"}}
+_REMOTION_PACKAGE_JSON = {
+    "name": "aqua-remotion-video",
+    "version": "1.0.0",
+    "private": True,
+    "type": "module",
+    "dependencies": {
+        "@remotion/cli": "4.0.242",
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1",
+        "remotion": "4.0.242",
+    },
+}
 _REMOTION_ROOT_TSX = (
     'import React from "react";\nimport { Composition } from "remotion";\nimport { AquaVideo, AquaVideoProps } from "./AquaVideo";\n'
     'export const RemotionRoot: React.FC = () => (<Composition id="AquaVideo" component={AquaVideo} durationInFrames={300} fps={30} width={1920} height={1080} '
@@ -666,6 +675,26 @@ def _sanitize_diagnostic(text: str) -> str:
 
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def stage_remotion_scaffold(studio_dir: Path, project_dir: Path) -> None:
+    """Export the template source tree and the same dependency versions as the renderer."""
+    studio_sources = studio_dir / "src"
+    destination = project_dir / "src"
+    destination.mkdir(parents=True, exist_ok=True)
+    if (studio_sources / "index.ts").is_file() and (studio_dir / "package.json").is_file():
+        shutil.copytree(studio_sources, destination, dirs_exist_ok=True)
+        for filename in ("package.json", "package-lock.json", "remotion.config.ts", "tsconfig.json"):
+            if (source := studio_dir / filename).is_file():
+                shutil.copyfile(source, project_dir / filename)
+        return
+    _write_json(project_dir / "package.json", _REMOTION_PACKAGE_JSON)
+    for filename, content in (
+        ("index.ts", _REMOTION_INDEX_TS),
+        ("Root.tsx", _REMOTION_ROOT_TSX),
+        ("AquaVideo.tsx", _REMOTION_AQUA_VIDEO_TSX),
+    ):
+        (destination / filename).write_text(content, encoding="utf-8")
 
 
 def _parse_biliup_receipt(stdout: str, stderr: str) -> dict[str, Any]:

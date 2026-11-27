@@ -92,6 +92,7 @@ class VideoPublishBody(StrictModel):
 
     publish_mode: Literal["preview_review", "auto_publish"] | None = None
     approved: bool = False
+    expected_content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class VideoPolicyPatch(StrictModel):
@@ -251,6 +252,10 @@ def register_video_production_routes(app, runtime, store, browsing, require_admi
             raise HTTPException(404, "找不到指定视频任务")
         if not job.get("manifest"):
             raise HTTPException(409, "请先生成配音与 Remotion 工程后再渲染")
+        try:
+            skill.require_project_available(job)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
         if job_id in active_renders and not active_renders[job_id].done():
             raise HTTPException(409, "该视频任务正在渲染中，请稍候")
 
@@ -308,12 +313,21 @@ def register_video_production_routes(app, runtime, store, browsing, require_admi
                     job_id=job_id,
                     publish_mode=body.publish_mode,
                     approved=body.approved,
+                    expected_content_hash=body.expected_content_hash,
                 )
             )
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from None
         fresh = skill.get_job(job_id)
         return result | ({"job": _present_job(fresh)} if fresh else {})
+
+    @app.post(prefix + "/{job_id}/publish/recheck", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
+    async def recheck_video_publication(job_id: str):
+        skill = _skill()
+        if skill.get_job(job_id) is None:
+            raise HTTPException(404, "找不到指定视频任务")
+        result = await skill.refresh_video_publication(job_id)
+        return result | {"job": _present_job(skill.get_job(job_id))}
 
     @app.delete(prefix + "/{job_id}", dependencies=deps, responses=ERROR_RESPONSES, tags=["operations"])
     async def delete_video_job(job_id: str):

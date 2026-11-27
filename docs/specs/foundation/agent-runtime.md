@@ -132,7 +132,7 @@ Dots 的持续运行和跨入口接续对应工坊同一份任务、活动和版
 
 - **严格公开来源隔离：** `assert_public_video_sources` 仅允许 `watched_video`、`public_incident`、`operator_topic`、`web_research`、`public_memory`、`public_comment`，显式拒绝 `owner:`、`private:`、`dm:`、`chat:` 等私域前缀与凭据片段。
 - **固定 TSX 模板与受控渲染：** 仅把校验通过的 JSON props 注入预置 React/Remotion 模板（不执行模型生成的任意代码），经并发信号量（默认 `max_render_concurrency=2`）与 `ffprobe` 校验音画同步（漂移 `<= 0.5s`）。
-- **审阅闸门与幂等投稿：** 默认策略 `publish_mode="preview_review"` 停留在待审核队列；显式开启 `auto_publish` 或人工批准后通过 `operations/facade.py` 复用 `canonical_intent("bilibili", "video_publish", content_hash, character_id)` 与单次写入预留完成 `biliup` 投稿及回执结算。
+- **审阅闸门与幂等投稿：** 制片模型工具把成片放入待审核队列。服务端按号主确认或有效定时授权提交，通过 `operations/facade.py` 使用 `canonical_intent("bilibili", "video_publish", content_hash, character_id)` 绑定一次投稿。创作中心返回有效回执后记录受理，匿名读回原稿件及账号后记录公开可见。 [视频投稿细节](../../design/video-production-pipeline.md#32-发布模式与幂等回执)
 
 ## 工具、身份与交付边界
 

@@ -52,7 +52,8 @@ def material_excerpt_state(browsing, account_id: str, character_id: str, bvid: s
 
 def control_policy(service) -> dict:
     """Return current kernel OperationsControl policy dictionary."""
-    return service.operations.policy()
+    host = _operations_host(service)
+    return host.policy() if host is not None else {}
 
 
 def control_starting(browsing) -> bool:
@@ -475,6 +476,8 @@ def reserve_write_attempt(
     content_hash: str | None = None,
     revision_ticket: str | None = None,
     retry_rejected_token: str | None = None,
+    admission_hook=None,
+    scheduled_guard=None,
 ) -> str:
     """Reserve an idempotent platform write attempt through OperationsControl."""
     ops = _operations_host(target)
@@ -508,6 +511,8 @@ def reserve_write_attempt(
         binding=binding,
         revision_ticket=revision_ticket,
         content_hash=content_hash,
+        admission_hook=admission_hook,
+        scheduled_guard=scheduled_guard,
     )
 
 

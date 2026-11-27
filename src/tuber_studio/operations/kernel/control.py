@@ -300,6 +300,7 @@ class OperationsControl:
         revision_ticket=None,
         content_hash=None,
         admission_hook=None,
+        scheduled_guard=None,
     ):
         if not isinstance(intent, str) or not intent or len(intent) > 1000 or not str(account_id):
             raise ValueError("发送需要固定账号与来源意图")
@@ -310,9 +311,21 @@ class OperationsControl:
         # SQLite's write lock rather than racing independent in-memory locks.
         with db:
             db.execute("BEGIN IMMEDIATE")
-            policy = self.assert_allowed(
-                automatic=automatic, channel=channel, account_id=account_id, character=character, epoch=epoch
-            )
+            if scheduled_guard is None:
+                policy = self.assert_allowed(
+                    automatic=automatic, channel=channel, account_id=account_id, character=character, epoch=epoch
+                )
+            else:
+                if channel != "video_publish" or not automatic or epoch is not None or revision_ticket is not None:
+                    raise ValueError("定时授权仅用于许可窗口内的首次视频投稿")
+                self.assert_review_writable(account_id)
+                policy = self.policy()
+                current = self.store.character()
+                if policy["emergency"] or self.draining:
+                    raise ValueError("运营已急停或正在收尾，保留待发视频")
+                if (character["id"], character["version"]) != (current["id"], current["version"]):
+                    raise ValueError("定时视频的角色版本已变化")
+                scheduled_guard()
             previous = None
             # An unresolved turn blocks later sends to that inbox, including other entry points.
             if channel == "messages" and recipient and db.execute(

@@ -6,10 +6,7 @@ import asyncio
 import hashlib
 import json
 import math
-import os
-import re
 import shutil
-import tempfile
 import time
 from collections.abc import Sequence
 from contextlib import suppress
@@ -23,7 +20,6 @@ from ...core.editorial import CHANNEL_TRIAGE_GUIDANCE, DurationPreset, VideoMode
 from ...core.models import StrictModel, content_hash, tool_function
 from ...core.store import dump
 from ...core.validation import linked
-from ...infra.platforms.bilibili.video_upload import upload_bilibili_video_web
 from ...infra.web_client.fetch import fetch_excerpt
 from ...operations import facade as _ops
 from ...persona.memory.daily.models import contains_memory_credential
@@ -48,11 +44,14 @@ from .remotion_assets import (
     VideoLineSpec,
     VideoSceneSpec,
 )
+from .remotion_audio_qc import MAX_DURATION_DRIFT_SECONDS, MAX_RENDERED_VIDEO_BYTES
+from .remotion_recap import OperationsRecapBrief, recap_plan_fields
+from .remotion_publication import StageOrPublishVideoArgs, StageVideoToolArgs, VideoPublicationMixin
 
 __all__ = [
     "DEFAULT_VIDEO_PRODUCTION_POLICY", "MAX_DURATION_DRIFT_SECONDS", "MAX_RENDERED_VIDEO_BYTES", "VIDEO_PRODUCTION_POLICY_KEY",
     "AvatarCue", "ChartPoint", "CodeStep", "DiagramEdge", "DiagramNode", "DurationPreset", "GenerateRemotionProjectArgs",
-    "PlanUploadedImage", "PlanVideoScriptArgs", "PublicSourceRef", "RemotionVideoSkill", "RenderRemotionVideoArgs",
+    "OperationsRecapBrief", "PlanUploadedImage", "PlanVideoScriptArgs", "PublicSourceRef", "RemotionVideoSkill", "RenderRemotionVideoArgs",
     "SceneVisualProps", "StageOrPublishVideoArgs", "TemplateId", "UiFocusRegion", "VideoLineSpec", "VideoMode",
     "VideoProductionPolicy", "VideoSceneSpec", "VideoScriptPlan", "assert_public_video_sources",
     "capture_job_ui_screenshots", "execute_remotion_tool", "generate_remotion_project", "pitch_video_ideas",
@@ -67,12 +66,12 @@ DEFAULT_VIDEO_PRODUCTION_POLICY = {
     "default_line_pause_seconds": DEFAULT_LINE_PAUSE_SECONDS, "default_scene_pause_seconds": DEFAULT_SCENE_PAUSE_SECONDS,
     "max_render_concurrency": 2, "render_timeout_seconds": 300.0, "upload_timeout_seconds": 600.0,
 }
-MAX_RENDERED_VIDEO_BYTES, MAX_DURATION_DRIFT_SECONDS = 2 * 1024 * 1024 * 1024, 0.5
 _ALLOWED_PUBLIC_KINDS = frozenset({"watched_video", "public_incident", "operator_topic", "web_research", "public_memory", "public_comment"})
 _FORBIDDEN_SOURCE_PREFIXES = ("owner:", "private:", "dm:", "dm_", "chat:", "turn:", "daily-chat:")
 _JOB_COLUMNS = frozenset({
     "status", "publish_mode", "title", "content_hash", "project_hash", "intent", "write_token", "plan_json",
     "manifest_json", "qc_json", "receipt_json", "project_dir", "output_path", "cover_path", "planner_source", "planner_error", "error",
+    "account_id", "platform_state", "platform_checked_at", "public_url",
 })
 
 # Scene & script schemas + static Remotion templates live in remotion_assets.py.
@@ -155,12 +154,6 @@ class RenderRemotionVideoArgs(StrictModel):
     dry_run: bool = Field(default=False, description="跳过真实 npx/ffmpeg 子进程，输出干跑校验结果。")
 
 
-class StageOrPublishVideoArgs(StrictModel):
-    job_id: str = Field(min_length=1, max_length=80, description="已通过成片质检的视频任务 ID。")
-    publish_mode: Literal["preview_review", "auto_publish"] | None = Field(default=None, description="发布模式：preview_review（默认暂存审核）或 auto_publish。")
-    approved: bool = Field(default=False, description="是否已经过人工明确批准发布。")
-
-
 def assert_public_video_sources(
     plan: VideoScriptPlan | dict[str, Any], *, store=None, unified_memory=None, character_id: str = "", extra_texts: Sequence[str] = ()
 ) -> VideoScriptPlan:
@@ -181,7 +174,7 @@ def assert_public_video_sources(
     return validated
 
 
-class RemotionVideoSkill:
+class RemotionVideoSkill(VideoPublicationMixin):
     """Orchestrates the 6-stage Remotion Code-as-Video production & Bilibili publishing pipeline."""
 
     _render_semaphore: asyncio.Semaphore | None = None
@@ -193,6 +186,7 @@ class RemotionVideoSkill:
         self.planner_fn, self.tts_fn, self.web_fetch_fn = planner_fn, tts_fn, web_fetch_fn
         self.subprocess_runner, self.ffprobe_runner, self.biliup_runner = subprocess_runner, ffprobe_runner, biliup_runner
         self._own_semaphore, self.active_job_ids = render_semaphore, set()
+        self.active_publication_ids: set[str] = set()
         self._install_storage()
 
     def _touch_video_cache(self, project_dir: Path, *, lease_seconds: int = 0, enforce: bool = False) -> None:
@@ -218,11 +212,14 @@ class RemotionVideoSkill:
                 "CREATE INDEX IF NOT EXISTS idx_remotion_jobs_char ON remotion_video_jobs(character_id, updated_at DESC);"
             )
             existing_cols = {row[1] for row in self.store.db.execute("PRAGMA table_info(remotion_video_jobs)")}
-            for col_name, col_def in (("cover_path", "TEXT NOT NULL DEFAULT ''"), ("planner_source", "TEXT NOT NULL DEFAULT ''"), ("planner_error", "TEXT")):
+            for col_name, col_def in (("cover_path", "TEXT NOT NULL DEFAULT ''"), ("planner_source", "TEXT NOT NULL DEFAULT ''"), ("planner_error", "TEXT"), ("platform_state", "TEXT"), ("platform_checked_at", "REAL"), ("public_url", "TEXT")):
                 if col_name not in existing_cols:
                     self.store.db.execute(f"ALTER TABLE remotion_video_jobs ADD COLUMN {col_name} {col_def}")
 
-    def _shared_studio_installed(self) -> bool: return (self.studio_dir / "node_modules/remotion").is_dir() and (self.studio_dir / "src/Root.tsx").is_file()
+    def _shared_studio_installed(self) -> bool:
+        return (self.studio_dir / "node_modules/@remotion/cli/remotion-cli.js").is_file() and (
+            self.studio_dir / "src/index.ts"
+        ).is_file()
     def _browsing_service(self): return self._browsing if self._browsing is not None else getattr(self.runtime, "browsing", None)
     def _current_character(self) -> dict[str, Any]: return getattr(self.runtime, "character", None) or self.store.character()
     def _assets_root(self) -> Path: return Path(root) if (root := getattr(getattr(self.runtime, "settings", None), "root", None)) else Path(__file__).resolve().parents[4]
@@ -236,14 +233,18 @@ class RemotionVideoSkill:
             with suppress(Exception):
                 voice = settings.voice(self._current_character().get("voice_profile") or "whale_reference")
                 tts_ref_ok = voice.get("provider") == "omni_reference" and settings.voice_reference_path(voice).is_file()
-        creds = dict(getattr(getattr(self.runtime, "account", None), "credentials", None) or {})
+        account = getattr(self.runtime, "account", None)
+        creds = dict(getattr(account, "credentials", None) or {})
         web_creds_ok, cli_ok = bool(str(creds.get("sessdata") or "").strip() and str(creds.get("csrf") or "").strip()), bool(shutil.which("biliup"))
         return {
             "node": {"ready": bool(shutil.which("node"))}, "npx": {"ready": bool(shutil.which("npx"))},
             "ffmpeg": {"ready": bool(shutil.which("ffmpeg"))}, "ffprobe": {"ready": bool(shutil.which("ffprobe"))},
             "remotion_studio": {"ready": self._shared_studio_installed(), "dir_exists": self.studio_dir.is_dir(), "label": self.studio_dir.name},
             "browser": {"ready": bool(browser_path), "kind": browser_kind},
-            "biliup": {"ready": web_creds_ok or cli_ok, "mode": "web_api" if web_creds_ok else ("biliup_cli" if cli_ok else "missing"), "web_credentials": web_creds_ok, "cli_installed": cli_ok},
+            "biliup": {"ready": web_creds_ok and callable(getattr(account, "account_id", None)),
+                       "mode": ("biliup_cli" if callable(self.biliup_runner) else "web_api") if web_creds_ok else "missing",
+                       "web_credentials": web_creds_ok, "cli_installed": cli_ok,
+                       "account_verified": bool(getattr(account, "display_account_id", lambda: "")())},
             "omni_llm": {"ready": bool(op_llm is not None and callable(getattr(op_llm, "generate_json", None)) and omni_cfg.get("base_url"))},
             "omni_tts": {"ready": bool(voices is not None and tts_ref_ok and omni_cfg.get("base_url"))},
         }
@@ -283,6 +284,12 @@ class RemotionVideoSkill:
             except ValueError:
                 decoded[target] = None
         return decoded
+
+    def require_project_available(self, job: dict[str, Any]) -> None:
+        if job["id"] in self.active_job_ids or job["id"] in self.active_publication_ids:
+            raise ValueError("该视频任务正在准备、渲染或投稿")
+        if job["status"] in {"scheduled", "publishing", "published", "publish_uncertain"} or job.get("receipt"):
+            raise ValueError("该视频任务已进入投稿流程，请先核对当前状态")
 
     def list_jobs(self, *, limit: int = 20, status: str | None = None) -> list[dict[str, Any]]:
         where, params = ("WHERE status=?", (status,)) if status else ("", ())
@@ -391,6 +398,55 @@ class RemotionVideoSkill:
             raise
         return {"ok": True, "job_id": job_id, "status": "script_planned", "content_hash": plan_hash, "planner_source": planner_source, "planner_error": planner_error, "reference_diagnostics": ref_diagnostics, "editorial_fit": editorial_fit.model_dump(mode="json"), "plan": validated.model_dump(mode="json")}
 
+    def plan_operations_recap(
+        self, brief: OperationsRecapBrief | dict[str, Any], *, job_key: str | None = None
+    ) -> dict[str, Any]:
+        """Store the public snapshot once so scheduled work can resume the same draft."""
+        args = brief if isinstance(brief, OperationsRecapBrief) else OperationsRecapBrief.model_validate(brief)
+        character = self._current_character()
+        account_id, character_id = self._account_id(), str(character["id"])
+        if job_key is None:
+            job_id = f"rem_{uuid4().hex[:16]}"
+        else:
+            if not isinstance(job_key, str) or not 1 <= len(job_key.strip()) <= 160:
+                raise ValueError("运营复盘任务键需要 1 至 160 字")
+            job_id = f"rem_recap_{content_hash([account_id, character_id, job_key.strip()])[:24]}"
+        if (job := self.get_job(job_id)) is None:
+            policy = self.policy()
+            plan = assert_public_video_sources(
+                recap_plan_fields(args) | {
+                    "fps": policy.default_fps,
+                    "width": policy.default_width,
+                    "height": policy.default_height,
+                    "include_avatar": policy.default_include_avatar,
+                    "bgm_enabled": policy.default_bgm_enabled,
+                    "line_pause_seconds": policy.default_line_pause_seconds,
+                    "scene_pause_seconds": policy.default_scene_pause_seconds,
+                },
+                store=self.store,
+                unified_memory=getattr(self.runtime, "unified_memory", None),
+                character_id=character_id,
+            )
+            now = time.time()
+            with self.store.db:
+                self.store.db.execute(
+                    "INSERT INTO remotion_video_jobs(id,account_id,character_id,character_version,status,publish_mode,"
+                    "title,content_hash,plan_json,planner_source,created_at,updated_at) "
+                    "VALUES(?,?,?,?,'script_planned','preview_review',?,?,?,'operations_recap',?,?) "
+                    "ON CONFLICT(id) DO NOTHING",
+                    (job_id, account_id, character_id, int(character["version"]), plan.title,
+                     content_hash(plan.model_dump(mode="json")), plan.model_dump_json(), now, now),
+                )
+            job = self.get_job(job_id)
+        return {
+            "ok": True,
+            "job_id": job_id,
+            "status": job["status"],
+            "plan": job["plan"],
+            "planner_source": job["planner_source"],
+            "content_hash": job["content_hash"],
+        }
+
     def _require_editable_job(self, job_id: str, action: str = "修改脚本") -> dict[str, Any]:
         job = self.get_job(job_id)
         if job is None or not job.get("plan"):
@@ -477,7 +533,8 @@ class RemotionVideoSkill:
         job = self.get_job(job_id)
         if job is None:
             raise ValueError("找不到指定视频任务")
-        if job.get("status") in {"published", "publish_uncertain", "rendering"}:
+        self.require_project_available(job)
+        if job.get("status") == "rendering":
             raise ValueError(f"状态为 {job['status']} 的视频任务不能删除")
         if (raw_dir := str(job.get("project_dir") or "").strip()) and (proj := Path(raw_dir)).exists() and not linked(proj) and proj.resolve().is_relative_to(self.renders_root.resolve()):
             shutil.rmtree(proj, ignore_errors=True)
@@ -533,6 +590,8 @@ class RemotionVideoSkill:
         char = self._current_character()
         char_id = str(char.get("id") or "")
         job = self.get_job(args.job_id) if args.job_id else None
+        if job is not None:
+            self.require_project_available(job)
         if (raw_plan := args.plan if args.plan is not None else (job.get("plan") if job else None)) is None:
             raise ValueError("需要提供有效的 job_id 或 plan")
         plan = assert_public_video_sources(raw_plan, store=self.store, unified_memory=getattr(self.runtime, "unified_memory", None), character_id=char_id)
@@ -546,8 +605,7 @@ class RemotionVideoSkill:
         project_dir = _ra.safe_child_path(self.renders_root, job_id)
         self.active_job_ids.add(job_id)
         try:
-            src_dir, public_dir, audio_dir = project_dir / "src", project_dir / "public", project_dir / "public/audio"
-            src_dir.mkdir(parents=True, exist_ok=True)
+            public_dir, audio_dir = project_dir / "public", project_dir / "public/audio"
             audio_dir.mkdir(parents=True, exist_ok=True)
             wav_spec: tuple[int, int, int] | None = None
             pcm_chunks, cues, scene_props, avatar_cues, srt_lines, vtt_lines = [], [], [], [], [], ["WEBVTT\n"]
@@ -640,11 +698,7 @@ class RemotionVideoSkill:
                 "cues": cues, "sources": [src.model_dump(mode="json") for src in plan.sources],
             }
             _ra._write_json(manifest_path, manifest)
-            _ra._write_json(project_dir / "package.json", _ra._REMOTION_PACKAGE_JSON)
-            (src_dir / "index.ts").write_text(_ra._REMOTION_INDEX_TS, encoding="utf-8")
-            (src_dir / "Root.tsx").write_text(_ra._REMOTION_ROOT_TSX, encoding="utf-8")
-            studio_aqua = self.studio_dir / "src/AquaVideo.tsx"
-            (src_dir / "AquaVideo.tsx").write_text(studio_aqua.read_text(encoding="utf-8") if studio_aqua.is_file() else _ra._REMOTION_AQUA_VIDEO_TSX, encoding="utf-8")
+            _ra.stage_remotion_scaffold(self.studio_dir, project_dir)
             project_hash = content_hash({"plan": plan.model_dump(mode="json"), "props": props_payload})
             if job is None:
                 now = time.time()
@@ -654,7 +708,11 @@ class RemotionVideoSkill:
                         (job_id, self._account_id(), char_id, int(char.get("version") or 1), "project_ready", self.policy().publish_mode, plan.title, content_hash(plan.model_dump(mode="json")), project_hash, plan.model_dump_json(), dump(manifest), str(project_dir), "explicit_plan", now, now),
                     )
             else:
-                self._update_job(job_id, status="project_ready", title=plan.title, plan_json=plan.model_dump_json(), project_hash=project_hash, manifest_json=dump(manifest), project_dir=str(project_dir), error=None)
+                self._update_job(
+                    job_id, status="project_ready", title=plan.title, plan_json=plan.model_dump_json(),
+                    project_hash=project_hash, manifest_json=dump(manifest), project_dir=str(project_dir),
+                    qc_json=None, output_path="", cover_path="", error=None,
+                )
             self._touch_video_cache(project_dir, lease_seconds=1800, enforce=True)
             return {"ok": True, "job_id": job_id, "status": "project_ready", "project_dir": str(project_dir), "props_path": str(props_path), "manifest_path": str(manifest_path), "srt_path": str(srt_path), "vtt_path": str(vtt_path), "total_frames": manifest["total_frames"], "total_duration_seconds": manifest["total_duration_seconds"], "project_hash": project_hash}
         finally:
@@ -670,39 +728,6 @@ class RemotionVideoSkill:
             await proc.wait()
             raise
         return (proc.returncode if proc.returncode is not None else -1, stdout_b.decode("utf-8", errors="replace"), stderr_b.decode("utf-8", errors="replace"))
-
-    async def _probe_rendered_video(self, output_path: Path, *, expected_duration: float, dry_run: bool) -> dict[str, Any]:
-        if callable(self.ffprobe_runner):
-            probe = self.ffprobe_runner(output_path, expected_duration)
-            return dict(await probe if asyncio.iscoroutine(probe) else probe)
-        if dry_run:
-            return {"has_video": True, "has_audio": True, "silent_audio": False, "duration_seconds": expected_duration, "width": 1920, "height": 1080, "dry_run": True}
-        if not (ffprobe := shutil.which("ffprobe")):
-            raise ValueError("未安装 ffprobe，无法执行成片质检")
-        code, stdout, stderr = await self._run_exec([ffprobe, "-v", "error", "-show_format", "-show_streams", "-print_format", "json", str(output_path)], cwd=output_path.parent, timeout=30.0)
-        if code != 0:
-            raise ValueError(f"ffprobe 质检失败: {stderr[:200]}")
-        data = json.loads(stdout or "{}")
-        streams = data.get("streams") or []
-        v_s, a_s, fmt = next((s for s in streams if s.get("codec_type") == "video"), None), next((s for s in streams if s.get("codec_type") == "audio"), None), data.get("format") or {}
-        probe: dict[str, Any] = {"has_video": v_s is not None, "has_audio": a_s is not None, "silent_audio": False, "duration_seconds": float(fmt.get("duration") or (v_s or {}).get("duration") or 0.0), "width": int((v_s or {}).get("width") or 0), "height": int((v_s or {}).get("height") or 0)}
-        if (ffmpeg := shutil.which("ffmpeg")) and a_s is not None:
-            fcode, _, ferr = await self._run_exec([ffmpeg, "-hide_banner", "-i", str(output_path), "-af", "volumedetect", "-f", "null", "-"], cwd=output_path.parent, timeout=30.0)
-            if fcode == 0 and (m := re.search(r"mean_volume:\s*([-\d.]+)\s*dB", ferr)):
-                probe |= {"mean_volume_db": float(m.group(1)), "silent_audio": float(m.group(1)) <= -60.0}
-        return probe
-
-    def _validate_qc_probe(self, probe: dict[str, Any], output_path: Path, expected_duration: float) -> dict[str, Any]:
-        size = output_path.stat().st_size if output_path.is_file() else 0
-        probed_duration = float(probe.get("duration_seconds") or 0.0)
-        drift, mean_db = abs(probed_duration - float(expected_duration)), probe.get("mean_volume_db")
-        issues = [msg for cond, msg in (
-            (size <= 0 or size > MAX_RENDERED_VIDEO_BYTES, "成片文件大小无效或超出平台限制"),
-            (not probe.get("has_video"), "成片缺少有效视频轨"), (not probe.get("has_audio"), "成片缺少音频轨"),
-            (bool(probe.get("silent_audio") or (mean_db is not None and float(mean_db) <= -60.0)), "成片音轨为全静音"),
-            (drift > MAX_DURATION_DRIFT_SECONDS, f"音画时长偏差 {drift:.2f}s 超过 0.5s 上限"),
-        ) if cond]
-        return {"passed": not issues, "issues": issues, "size_bytes": size, "expected_duration_seconds": expected_duration, "probed_duration_seconds": probed_duration, "duration_drift_seconds": round(drift, 4), "width": int(probe.get("width") or 0), "height": int(probe.get("height") or 0)}
 
     async def _postprocess_render(
         self, output_path: Path, project_dir: Path, *, expected_duration: float, scenes: Sequence[dict[str, Any]] = (), fps: int = 30
@@ -728,6 +753,7 @@ class RemotionVideoSkill:
         job = self.get_job(args.job_id)
         if job is None or not job.get("project_dir") or not job.get("manifest"):
             raise ValueError("找不到已完成工程准备的视频任务")
+        self.require_project_available(job)
         project_dir = Path(job["project_dir"])
         if not project_dir.resolve().is_relative_to(self.renders_root.resolve()) or linked(project_dir):
             raise ValueError("视频工程目录不在受控范围内")
@@ -737,7 +763,7 @@ class RemotionVideoSkill:
         cmd = ["npx", "remotion", "render", args.composition_id, str(output_path), f"--props={props_path}", f"--concurrency={min(args.concurrency, policy.max_render_concurrency)}"]
         self.active_job_ids.add(args.job_id)
         try:
-            self._update_job(args.job_id, status="rendering", error=None)
+            self._update_job(args.job_id, status="rendering", qc_json=None, error=None)
             async with self._get_semaphore():
                 if callable(self.subprocess_runner):
                     code, _out, stderr = await self.subprocess_runner(cmd, project_dir, policy.render_timeout_seconds)
@@ -745,13 +771,19 @@ class RemotionVideoSkill:
                     output_path.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
                     code, stderr = 0, ""
                 else:
-                    if not (npx_bin := shutil.which("npx")):
-                        self._update_job(args.job_id, status="render_failed", error="未安装 npx / Remotion CLI")
-                        raise ValueError("未安装 npx / Remotion CLI，请使用 dry_run 或在渲染节点执行")
-                    real_cmd = [npx_bin, *cmd[1:], *([f"--public-dir={public_dir}"] if public_dir.is_dir() else [])]
+                    studio = (self.studio_dir if self._shared_studio_installed() else project_dir).resolve()
+                    cli = studio / "node_modules/@remotion/cli/remotion-cli.js"
+                    if not (node_bin := shutil.which("node")) or not cli.is_file():
+                        error = "渲染工程缺少本地 Node.js 或 Remotion CLI"
+                        self._update_job(args.job_id, status="render_failed", error=error)
+                        raise ValueError(error)
+                    real_cmd = [
+                        node_bin, str(cli), "render", str(studio / "src/index.ts"), *cmd[3:],
+                        *([f"--public-dir={public_dir}"] if public_dir.is_dir() else []),
+                    ]
                     if (browser_path := _ra._detect_browser_executable()[0]):
                         real_cmd.append(f"--browser-executable={browser_path}")
-                    code, _out, stderr = await self._run_exec(real_cmd, cwd=self.studio_dir if self._shared_studio_installed() else project_dir, timeout=policy.render_timeout_seconds)
+                    code, _out, stderr = await self._run_exec(real_cmd, cwd=studio, timeout=policy.render_timeout_seconds)
                 if code != 0:
                     err_msg = _ra._sanitize_diagnostic(stderr) or "Remotion 渲染失败"
                     self._update_job(args.job_id, status="render_failed", error=err_msg)
@@ -763,8 +795,12 @@ class RemotionVideoSkill:
                 loudnorm_applied, cover_path, sheet_path, scene_frames = await self._postprocess_render(output_path, project_dir, expected_duration=expected, scenes=scenes_meta, fps=int(manifest.get("fps") or 30))
             else:
                 loudnorm_applied, cover_path, sheet_path, scene_frames = False, None, None, []
-            qc_report = self._validate_qc_probe(await self._probe_rendered_video(output_path, expected_duration=expected, dry_run=args.dry_run), output_path, expected)
-            qc_report |= {"loudnorm_applied": loudnorm_applied, "cover_generated": cover_path is not None, "contact_sheet_generated": sheet_path is not None, "scene_frames": len(scene_frames)}
+            probe = await _raqc.probe_rendered_video(
+                output_path, expected_duration=expected, dry_run=args.dry_run,
+                ffprobe_runner=self.ffprobe_runner, run_exec=self._run_exec,
+            )
+            qc_report = _raqc.validate_qc_probe(probe, output_path, expected)
+            qc_report |= {"dry_run": args.dry_run, "loudnorm_applied": loudnorm_applied, "cover_generated": cover_path is not None, "contact_sheet_generated": sheet_path is not None, "scene_frames": len(scene_frames)}
             if not qc_report["passed"]:
                 self._update_job(args.job_id, status="qc_failed", qc_json=dump(qc_report), output_path=str(output_path), cover_path=str(cover_path or ""), error="；".join(qc_report["issues"]))
                 return {"ok": False, "job_id": args.job_id, "status": "qc_failed", "output_path": str(output_path), "cover_path": str(cover_path or ""), "qc_report": qc_report}
@@ -773,118 +809,25 @@ class RemotionVideoSkill:
             self._update_job(args.job_id, status=next_status, qc_json=dump(qc_report), output_path=str(output_path), cover_path=str(cover_path or ""), content_hash=file_sha256, error=None)
             self._touch_video_cache(project_dir, lease_seconds=1800, enforce=True)
             return {"ok": True, "job_id": args.job_id, "status": next_status, "output_path": str(output_path), "cover_path": str(cover_path or ""), "content_hash": file_sha256, "qc_report": qc_report}
+        except (Exception, asyncio.CancelledError) as exc:
+            current = self.get_job(args.job_id)
+            if current and current["status"] == "rendering":
+                error = _ra._sanitize_diagnostic(str(exc)) or ("渲染已取消" if isinstance(exc, asyncio.CancelledError) else "渲染失败")
+                self._update_job(args.job_id, status="render_failed", error=error)
+            raise
         finally:
             self.active_job_ids.discard(args.job_id)
 
-    def _auto_publish_gate_check(self) -> str | None:
-        policy = self.policy()
-        if policy.publish_mode != "auto_publish" or not policy.auto_publish_enabled:
-            return "当前策略未开启自动投稿，保持人工预览审核队列"
-        if (browsing := self._browsing_service()) is not None:
-            snap = _ops.heartbeat_pulse_snapshot(browsing, store=self.store)
-            if snap.get("control_state") in {"off", "paused", "emergency", "blocked", "stopping"}:
-                return f"运营控制面状态为 {snap['control_state']}，暂不自动投稿"
-            if (snap.get("writes") or {}).get("uncertain_count"):
-                return "存在待核对写入回执，已阻止自动投稿"
-            if (snap.get("discovery") or {}).get("read_cooldown_until"):
-                return "当前账号处于平台风控冷却期，已转回人工预览审核"
-        return None
+    def _verified_publication_plan(self, job, character):
+        return assert_public_video_sources(
+            job["plan"], store=self.store, unified_memory=getattr(self.runtime, "unified_memory", None),
+            character_id=character["id"],
+        )
 
-    async def _upload_via_biliup(self, *, plan: VideoScriptPlan, output_path: Path, cover_path: Path | None = None, credentials: dict[str, Any], timeout: float) -> dict[str, Any]:
-        sessdata, csrf, uid = str(credentials.get("sessdata") or "").strip(), str(credentials.get("csrf") or "").strip(), str(credentials.get("uid") or "").strip()
-        if not (sessdata and csrf):
-            raise ValueError("缺少有效的 B 站登录 Cookie 凭证，无法执行投稿")
-        if not callable(self.biliup_runner):
-            return await upload_bilibili_video_web(title=plan.title, desc=plan.summary[:250], tid=plan.category_tid, tags=list(plan.tags[:10]), output_path=output_path, cover_path=cover_path, credentials=credentials, timeout=timeout)
-        cookie_payload = {"cookie_info": {"cookies": [{"name": "SESSDATA", "value": sessdata}, {"name": "bili_jct", "value": csrf}, *([{"name": "DedeUserID", "value": uid}] if uid else [])]}}
-        with tempfile.TemporaryDirectory(prefix="biliup-cookie-") as tmp_dir:
-            cookie_file = Path(tmp_dir) / "cookies.json"
-            cookie_file.write_text(json.dumps(cookie_payload, ensure_ascii=False), encoding="utf-8")
-            with suppress(OSError):
-                os.chmod(cookie_file, 0o600)
-            cover_args = ["--cover", str(cover_path)] if cover_path and cover_path.is_file() else []
-            cmd = ["biliup", "--user-cookie", str(cookie_file), "upload", "--submit", "web", "--title", plan.title, "--desc", plan.summary[:250], "--tid", str(plan.category_tid), "--tag", ",".join(plan.tags[:10]), *cover_args, str(output_path)]
-            code, stdout, stderr = await self.biliup_runner(cmd, output_path.parent, timeout)
-        safe_out, safe_err = _ra._scrub_secrets(stdout, credentials), _ra._scrub_secrets(stderr, credentials)
-        receipt = _ra._parse_biliup_receipt(safe_out, safe_err)
-        if code != 0:
-            raise RuntimeError(f"biliup exit={code}: {safe_err or safe_out}")
-        if not receipt:
-            raise TimeoutError("biliup 返回成功但未解析到 bvid/aid，转为待核对状态")
-        return receipt
-
-    def _find_existing_job_by_intent(self, intent: str, current_job_id: str) -> dict[str, Any] | None:
-        row = self.store.one("SELECT id, status, receipt_json FROM remotion_video_jobs WHERE intent=? AND id!=? AND status IN ('published','publish_uncertain') ORDER BY updated_at DESC LIMIT 1", (intent, current_job_id))
-        if row is not None:
-            with suppress(ValueError):
-                row["receipt"] = json.loads(row["receipt_json"]) if row.get("receipt_json") else None
-        return row
-
-    async def stage_or_publish_bilibili_video(self, arguments: StageOrPublishVideoArgs | dict[str, Any]) -> dict[str, Any]:
-        """Stage 6: Stage in preview_review queue (default) or idempotently publish via biliup."""
-        args = arguments if isinstance(arguments, StageOrPublishVideoArgs) else StageOrPublishVideoArgs.model_validate(arguments)
-        job = self.get_job(args.job_id)
-        if job is None or not job.get("plan"):
-            raise ValueError("找不到指定视频任务")
-        char = self._current_character()
-        char_id = str(char.get("id") or "")
-        plan = assert_public_video_sources(job["plan"], store=self.store, unified_memory=getattr(self.runtime, "unified_memory", None), character_id=char_id)
-        if not (job.get("qc_report") or {}).get("passed"):
-            raise ValueError("成片尚未通过 FFmpeg/FFprobe 质检，不能投稿")
-        policy = self.policy()
-        requested_mode = args.publish_mode or policy.publish_mode
-        effective_hash = job.get("content_hash") or job.get("project_hash") or content_hash(plan.model_dump(mode="json"))
-        intent = _ops.canonical_intent("bilibili", "video_publish", effective_hash, char_id)
-        if requested_mode == "preview_review" and not args.approved:
-            self._update_job(args.job_id, status="ready_for_review", publish_mode="preview_review", intent=intent)
-            return {"ok": True, "job_id": args.job_id, "action": "staged_for_review", "status": "ready_for_review", "intent": intent, "output_path": job.get("output_path"), "title": plan.title}
-        if not args.approved and (gate_err := self._auto_publish_gate_check()) is not None:
-            self._update_job(args.job_id, status="ready_for_review", intent=intent, error=gate_err)
-            return {"ok": False, "job_id": args.job_id, "action": "gated_to_review", "status": "ready_for_review", "intent": intent, "reason": gate_err}
-        account_id = job.get("account_id") or self._account_id() or "local"
-        if job.get("status") == "published" and job.get("receipt"):
-            return {"ok": True, "job_id": args.job_id, "action": "already_published", "status": "published", "intent": intent, "receipt": job["receipt"]}
-        if job.get("status") == "publish_uncertain":
-            return {"ok": False, "job_id": args.job_id, "action": "blocked_uncertain", "status": "publish_uncertain", "intent": intent, "error": "上次投稿回执待核对，已阻止重复上传"}
-        credentials = dict(getattr(getattr(self.runtime, "account", None), "credentials", None) or {})
-        if not (str(credentials.get("sessdata") or "").strip() and str(credentials.get("csrf") or "").strip()):
-            raise ValueError("缺少有效的 B 站登录 Cookie 凭证，无法执行投稿")
-        if not (output_file := Path(str(job.get("output_path") or ""))).is_file():
-            raise ValueError("视频成片文件不存在或为空，无法执行投稿")
-        ops_host, retry_token = self._browsing_service() or getattr(self.runtime, "operations", None), None
-        if (existing := _ops.find_write_attempt_by_intent(ops_host, account_id=account_id, character_id=char_id, intent=intent)) is not None:
-            if (st := existing.get("resolved_status")) == "published":
-                return {"ok": True, "job_id": args.job_id, "action": "already_published", "status": "published", "intent": intent, "receipt": existing.get("receipt")}
-            if st in {"sending", "uncertain"}:
-                return {"ok": False, "job_id": args.job_id, "action": "blocked_uncertain", "status": "publish_uncertain", "intent": intent, "error": "写入账本已有在途或待核对投稿，禁止重复提交"}
-            if st == "rejected":
-                retry_token = existing.get("token")
-        if (dup_job := self._find_existing_job_by_intent(intent, args.job_id)) is not None:
-            if dup_job.get("status") == "published":
-                return {"ok": True, "job_id": args.job_id, "action": "already_published", "status": "published", "intent": intent, "receipt": dup_job.get("receipt")}
-            return {"ok": False, "job_id": args.job_id, "action": "blocked_uncertain", "status": "publish_uncertain", "intent": intent, "error": "已有同内容待核对投稿任务，禁止重复提交"}
-        write_token, ops_ctrl = None, (getattr(ops_host, "operations", ops_host) if ops_host is not None else None)
-        if ops_ctrl is not None and hasattr(ops_ctrl, "reserve") and hasattr(ops_ctrl, "finish"):
-            pol_ctrl = _ops.control_policy(ops_host)
-            epoch = pol_ctrl.get("epoch") if (not args.approved and isinstance(pol_ctrl, dict)) else None
-            write_token = _ops.reserve_write_attempt(ops_host, account_id=account_id, character=char, intent=intent, channel="video_publish", automatic=not args.approved, epoch=epoch, binding={"job_id": args.job_id, "title": plan.title, "content_hash": effective_hash}, content_hash=effective_hash, retry_rejected_token=retry_token)
-        cover_file = Path(job["cover_path"]) if job.get("cover_path") else None
-        try:
-            receipt = await self._upload_via_biliup(plan=plan, output_path=output_file, cover_path=cover_file, credentials=credentials, timeout=policy.upload_timeout_seconds)
-        except TimeoutError as exc:
-            if write_token:
-                _ops.finish_write_attempt(ops_host, write_token, "uncertain", error=str(exc))
-            self._update_job(args.job_id, status="publish_uncertain", intent=intent, write_token=write_token, error=str(exc)[:300])
-            return {"ok": False, "job_id": args.job_id, "action": "uncertain", "status": "publish_uncertain", "intent": intent, "write_token": write_token, "error": str(exc)}
-        except Exception as exc:
-            if write_token:
-                _ops.finish_write_attempt(ops_host, write_token, "rejected", error=str(exc)[:300])
-            self._update_job(args.job_id, status="publish_failed", intent=intent, write_token=write_token, error=str(exc)[:300])
-            return {"ok": False, "job_id": args.job_id, "action": "rejected", "status": "publish_failed", "intent": intent, "write_token": write_token, "error": str(exc)}
-        if write_token:
-            _ops.finish_write_attempt(ops_host, write_token, "published", receipt=receipt)
-        self._update_job(args.job_id, status="published", intent=intent, write_token=write_token, receipt_json=dump(receipt), error=None)
-        return {"ok": True, "job_id": args.job_id, "action": "published", "status": "published", "intent": intent, "write_token": write_token, "receipt": receipt}
+    async def stage_video_for_review(self, args: StageVideoToolArgs):
+        return await self.stage_or_publish_bilibili_video(
+            StageOrPublishVideoArgs(job_id=args.job_id, publish_mode="preview_review")
+        )
 
     def status(self) -> dict[str, Any]:
         try:
@@ -906,7 +849,7 @@ _REMOTION_TOOL_SPECS: tuple[tuple[str, str, type[StrictModel], str], ...] = (
     ("plan_video_script", "基于公开视频或话题规划结构化 Remotion 脚本与分镜 JSON。", PlanVideoScriptArgs, "plan_video_script"),
     ("generate_remotion_project", "生成配音 WAV、字幕 SRT、时间轴 Manifest 与 Remotion TSX 工程。", GenerateRemotionProjectArgs, "generate_remotion_project"),
     ("render_remotion_video", "受并发保护地渲染 Remotion 视频并执行 FFprobe 音画质检。", RenderRemotionVideoArgs, "render_remotion_video"),
-    ("stage_or_publish_bilibili_video", "将质检通过的视频放入审核队列或按幂等意图执行投稿。", StageOrPublishVideoArgs, "stage_or_publish_bilibili_video"),
+    ("stage_or_publish_bilibili_video", "将质检通过的视频放入审核队列。", StageVideoToolArgs, "stage_video_for_review"),
 )
 
 

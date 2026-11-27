@@ -163,9 +163,6 @@ def normalize_cinematic_scene_defaults(plan_dict: dict[str, Any]) -> dict[str, A
                 {"id": "render", "label": "音画合成", "lane": 2, "tone": "amber"},
             ]
             vp["diagram_edges"] = [{"source": "input", "target": "planner", "label": "结构化"}, {"source": "planner", "target": "render", "label": "帧对齐"}]
-        if tpl == "KineticStatement" and not vp.get("stat_callout"):
-            vp["stat_callout"] = str(vp.get("subtitle") or scene.get("heading") or "100%")[:24]
-
         lines = scene.get("lines")
         if isinstance(lines, list):
             node_ids = [str(n.get("id")) for n in (vp.get("diagram_nodes") or ()) if isinstance(n, dict) and n.get("id")]
@@ -213,7 +210,7 @@ def _make_lines(scene_idx: int, tpl: str, point: str, next_point: str, cue: str,
         "ArchitectureFlow": [(f"先顺一遍{short_p}的数据流向。", "curious", ["数据流向"], "whoosh"), ("上游先拿真实公开材料，绝不凭空编造。", "thinking", ["公开材料"], "pop"), ("中间导演层拆好章节与节奏，再交给渲染。", "proud", ["章节与节奏"], "none"), (f"最后把{short_n}对齐到每一帧输出。", "cheerful", ["每一帧"], "chime")],
         "CodeWalkthrough": [(f"直接看{short_p}的关键实现。", "thinking", ["关键实现"], "whoosh"), ("第一段先锁定结构化 Schema 与校验边界。", "curious", ["校验边界"], "pop"), ("第二步再把每句音频实测帧长写进时间轴。", "proud", ["实测帧长"], "none"), ("这样代码和配音就能一步一高亮对上拍。", "cheerful", ["对上拍"], "chime")],
         "UIShowcase": [("来看看实际界面的交互焦点。", "cheerful", ["交互焦点"], "whoosh"), (f"左上角这组状态能一眼看清{short_p}。", "curious", ["一眼看清"], "pop"), (f"点开详情区还能继续联动{short_n}。", "proud", ["联动"], "none")],
-        "ChartCompare": [(f"拿一组实测数据对照一下{short_p}。", "curious", ["实测数据"], "whoosh"), ("左边是优化前的耗时与波动，右边是稳态表现。", "thinking", ["稳态表现"], "pop"), ("差距摆在眼前，调整方向就非常明确了。", "proud", ["非常明确"], "chime")],
+        "ChartCompare": [(f"先看资料怎么讲{short_p}。", "curious", [short_p[:6]] if len(short_p) >= 2 else [], "whoosh"), ("这里没有可直接比较的实测数字，先记下这两个观察点。", "thinking", ["观察点"], "pop")],
         "KineticStatement": [(f"记住这个核心结论：{short_p}。", "proud", ["核心结论"], "chapter_hit"), ("复杂工程不靠玄学，靠可复现的每一步对比。", "cheerful", ["可复现"], "pop")],
     }
     pool = templates_copy.get(tpl, [
@@ -319,10 +316,6 @@ def build_cinematic_fallback_scenes(
             }
         elif tpl == "UIShowcase":
             vp["ui_focus_regions"] = [{"x": 0.28, "y": 0.30, "zoom": 1.35, "label": "核心控制区", "line_index": 0}, {"x": 0.68, "y": 0.55, "zoom": 1.45, "label": "结果预览区", "line_index": 1}]
-        elif tpl == "ChartCompare":
-            vp["chart_items"] = [{"label": "基线方案", "value": 46 + idx * 3, "unit": "%"}, {"label": "当前实验", "value": 84 + min(12, idx * 2), "unit": "%"}]
-        elif tpl == "KineticStatement":
-            vp["stat_callout"] = f"{min(99, 60 + idx * 7)}%" if video_mode != "daily_vlog" else "Before vs After"
 
         chap_title = chapter_names[min(chap_num - 1, len(chapter_names) - 1)]
         middle_scenes.append({

@@ -60,6 +60,107 @@ def _make_wav_bytes(duration_seconds: float, *, amplitude: int = 4000, sample_ra
     return buf.getvalue()
 
 
+def test_operations_recap_uses_public_receipt_counts_and_freezes_the_scheduled_draft(settings, tmp_path):
+    app = create_app(settings, adapter=ControlledPlatform())
+    runtime = app.state.runtime
+    skill = RemotionVideoSkill(runtime, runtime.store, renders_root=tmp_path)
+    skill.configure_policy({"default_width": 1280, "default_height": 720})
+    source = {
+        "source_id": "public-reply:900",
+        "kind": "public_comment",
+        "title": "原楼回复",
+        "url": "https://example.com/comment",
+    }
+    highlight = {"title": "一次接话", "text": "我看完了，想再听一点幕后。", "source_id": source["source_id"]}
+    brief = {
+        "title": "一段运营回放",
+        "period_label": "2026-11-20 至 2026-11-22",
+        "watched_videos": 12,
+        "public_comments": 0,
+        "public_dynamics": 3,
+        "sources": [source],
+        "highlights": [highlight],
+        "reflection": "这次我想多看一点原楼。",
+    }
+    saved = skill.plan_operations_recap(brief, job_key="fixture-window")
+    repeat = skill.plan_operations_recap(brief | {"watched_videos": 20}, job_key="fixture-window")
+    draft = skill.get_job(saved["job_id"])
+    assert saved == repeat
+    assert draft["publish_mode"] == "preview_review" and draft["status"] == "script_planned"
+    assert len(skill.list_jobs()) == 1
+    assert (saved["plan"]["width"], saved["plan"]["height"]) == (1280, 720)
+    title, counts, excerpt, reflection = saved["plan"]["scenes"]
+    assert title["visual_props"]["subtitle"] == brief["period_label"]
+    assert [item["value"] for item in counts["visual_props"]["chart_items"]] == [12, 0, 3]
+    assert [line["reveal_step"] for line in counts["lines"]] == [0, 1, 2]
+    assert counts["lines"][1]["text"] == "平台确认公开的评论有 0 条。"
+    assert excerpt["visual_props"]["subtitle"] == highlight["text"]
+    assert excerpt["visual_props"]["citation_label"] == source["title"]
+    assert reflection["heading"] == "我的复盘感想"
+    assert source["url"] in saved["plan"]["summary"]
+    with pytest.raises(ValueError, match="公开来源"):
+        skill.plan_operations_recap(brief | {"sources": []})
+    with pytest.raises(ValueError, match="私"):
+        skill.plan_operations_recap(brief | {
+            "sources": [source | {"source_id": "dm:900"}],
+            "highlights": [highlight | {"source_id": "dm:900"}],
+        })
+
+
+def test_recap_render_settles_failure_and_blocks_competing_work(settings, tmp_path):
+    async def scenario():
+        runtime = create_app(settings, adapter=ControlledPlatform()).state.runtime
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def successful_renderer(cmd, _cwd, _timeout):
+            Path(cmd[cmd.index("render") + 2]).write_bytes(b"fixture-output")
+            return 0, "", ""
+
+        async def stalled_renderer(_cmd, _cwd, _timeout):
+            entered.set()
+            await release.wait()
+            raise TimeoutError("渲染超时")
+
+        skill = RemotionVideoSkill(
+            runtime, runtime.store, renders_root=tmp_path, tts_fn=lambda *_: _make_wav_bytes(0.45),
+            subprocess_runner=successful_renderer,
+            ffprobe_runner=lambda _path, duration: {
+                "has_video": True, "has_audio": True, "duration_seconds": duration,
+                "width": 1920, "height": 1080,
+            },
+            render_semaphore=asyncio.Semaphore(1),
+        )
+        job = skill.plan_operations_recap({
+            "title": "运营回放",
+            "period_label": "复盘时段",
+            "watched_videos": 2,
+            "public_comments": 1,
+            "public_dynamics": 0,
+        })["job_id"]
+        await skill.generate_remotion_project({"job_id": job})
+        assert (await skill.render_remotion_video({"job_id": job}))["ok"]
+        skill.subprocess_runner = stalled_renderer
+        pending = asyncio.create_task(skill.render_remotion_video({"job_id": job}))
+        await entered.wait()
+        for step in (
+            skill.generate_remotion_project, skill.render_remotion_video, skill.stage_or_publish_bilibili_video
+        ):
+            with pytest.raises(ValueError, match="正在.*渲染"):
+                await step({"job_id": job})
+        release.set()
+        with pytest.raises(TimeoutError, match="渲染超时"):
+            await pending
+        record = skill.get_job(job)
+        assert record["status"] == "render_failed"
+        assert record["qc_report"] is None
+        with pytest.raises(ValueError, match="尚未通过"):
+            await skill.stage_or_publish_bilibili_video({"job_id": job, "approved": True})
+        skill.subprocess_runner = successful_renderer
+        assert (await skill.render_remotion_video({"job_id": job}))["status"] == "ready_for_review"
+
+    asyncio.run(scenario())
+
+
 def test_editorial_channel_triage_and_prompt_boundaries(settings):
     comment_fit = assess_editorial_channel("这期片段好笑", candidate_bvids=["BV1xx411c7mD"])
     assert comment_fit.recommended_channel == "comment"
@@ -258,6 +359,12 @@ def test_two_stage_director_duration_presets_and_cinematic_fallback(settings, tm
         assert len(fb_res["plan"]["scenes"]) == 9
         tpls = {s["template"] for s in fb_res["plan"]["scenes"]}
         assert {"TitleCard", "ChapterBumper", "ChartCompare"} <= tpls
+        for scene in fb_res["plan"]["scenes"]:
+            if scene["template"] == "ChartCompare":
+                assert scene["visual_props"]["chart_items"] == []
+                assert any("没有可直接比较的实测数字" in line["text"] for line in scene["lines"])
+            if scene["template"] == "KineticStatement":
+                assert scene["visual_props"]["stat_callout"] == ""
 
         normalized = normalize_cinematic_scene_defaults({"video_mode": "explainer", "scenes": [{"scene_id": "s1", "template": "ArchitectureFlow", "heading": "架构", "lines": [{"text": "看看数据流"}]}]})
         assert normalized["scenes"][0]["avatar_layout"] == "compact"

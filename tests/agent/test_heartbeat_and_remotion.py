@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import shutil
@@ -29,6 +30,7 @@ from tuber_studio.agent.skills import (
 )
 from tuber_studio.app import create_app
 from tuber_studio.core.store import dump
+from tuber_studio.infra.platforms.bilibili.video_upload import VideoSubmissionRejected
 from tuber_studio.operations.facade import canonical_intent, select_video_candidates
 
 
@@ -460,13 +462,18 @@ def test_remotion_source_isolation_schema_and_alignment(settings, tmp_path):
         assert "export const AquaVideo" in aqua_tsx
         assert "SceneCanvas" in aqua_tsx
         assert "Python 协程并发原理图解" not in aqua_tsx
+        assert (proj_dir / "src/components/SceneCanvas.tsx").is_file()
+        assert (proj_dir / "src/templates/ChartCompare.tsx").is_file()
+        assert (proj_dir / "package-lock.json").is_file()
 
     asyncio.run(scenario())
 
 
 def test_remotion_render_concurrency_qc_gate_and_idempotent_publish(settings, tmp_path):
     async def scenario():
-        app = create_app(settings, adapter=ControlledPlatform())
+        adapter = ControlledPlatform()
+        adapter.account = "123456"
+        app = create_app(settings, adapter=adapter)
         runtime = app.state.runtime
         creds = {"uid": "123456", "sessdata": "secret_sess_9999", "csrf": "secret_csrf_8888"}
         runtime.account.credentials = dict(creds)
@@ -589,6 +596,7 @@ def test_remotion_render_concurrency_qc_gate_and_idempotent_publish(settings, tm
         g_clone = await generate_remotion_project(skill, {"job_id": p_clone["job_id"], "tts_mode": "dry_run"})
         r_clone = await render_remotion_video(skill, {"job_id": g_clone["job_id"], "dry_run": False})
         assert r_clone["ok"] is True
+        Path(r_clone["output_path"]).write_bytes(Path(r1_ok["output_path"]).read_bytes())
         skill._update_job(g_clone["job_id"], content_hash=r1_ok["content_hash"])
         pub_clone = await stage_or_publish_bilibili_video(skill, {"job_id": g_clone["job_id"]})
         assert pub_clone["action"] == "already_published"
@@ -632,8 +640,15 @@ def test_remotion_openai_tool_schemas_and_task_runtime(settings, tmp_path):
         assert gen_res["ok"] is True
         ren_res = await execute_remotion_tool(skill, "render_remotion_video", {"job_id": plan_res["job_id"], "dry_run": True})
         assert ren_res["ok"] is True
+        assert ren_res["qc_report"]["dry_run"]
         stage_res = await execute_remotion_tool(skill, "stage_or_publish_bilibili_video", {"job_id": plan_res["job_id"]})
         assert stage_res["action"] == "staged_for_review"
+        guessed_approval = await execute_remotion_tool(
+            skill, "stage_or_publish_bilibili_video", {"job_id": plan_res["job_id"], "approved": True}
+        )
+        assert guessed_approval["ok"] is False
+        with pytest.raises(ValueError, match="真实渲染后才能投稿"):
+            await stage_or_publish_bilibili_video(skill, {"job_id": plan_res["job_id"], "approved": True})
 
         bad_json = await execute_remotion_tool(skill, "plan_video_script", "{not-json")
         assert bad_json["ok"] is False
@@ -738,7 +753,7 @@ def test_remotion_stage_publish_uses_web_api_without_biliup_cli(settings, tmp_pa
     async def scenario():
         app = create_app(settings, adapter=ControlledPlatform())
         runtime = app.state.runtime
-        runtime.account.credentials = {"sessdata": "s-web", "csrf": "c-web", "uid": "42"}
+        runtime.account.credentials = {"sessdata": "s-web", "csrf": "c-web", "uid": "100"}
 
         orig_which = shutil.which
         monkeypatch.setattr(shutil, "which", lambda cmd: None if cmd == "biliup" else orig_which(cmd))
@@ -768,24 +783,26 @@ def test_remotion_stage_publish_uses_web_api_without_biliup_cli(settings, tmp_pa
             output_path=str(out_mp4),
             cover_path=str(cover_png),
             qc_json=json.dumps({"passed": True, "issues": []}),
-            content_hash="hash-web-upload-01",
+            content_hash=hashlib.sha256(out_mp4.read_bytes()).hexdigest(),
         )
 
         captured = {}
 
         async def fake_web_upload(**kwargs):
             captured.update(kwargs)
-            return {"platform": "bilibili", "uploader": "web_api", "bvid": "BV1nativeWeb01", "aid": 321}
+            async with kwargs["submission_guard"]():
+                assert skill.get_job(g["job_id"])["status"] == "publishing"
+            return {"platform": "bilibili", "uploader": "web_api", "bvid": "BV1Native990", "aid": 321}
 
-        monkeypatch.setattr("tuber_studio.agent.skills.remotion_video.upload_bilibili_video_web", fake_web_upload)
+        monkeypatch.setattr("tuber_studio.agent.skills.remotion_publication.upload_bilibili_video_web", fake_web_upload)
 
         pub = await stage_or_publish_bilibili_video(skill, {"job_id": g["job_id"], "approved": True})
         assert pub["ok"] is True
         assert pub["action"] == "published"
-        assert pub["receipt"]["bvid"] == "BV1nativeWeb01"
+        assert pub["receipt"]["bvid"] == "BV1Native990"
         assert captured["output_path"] == out_mp4
         assert captured["cover_path"] == cover_png
-        assert captured["credentials"] == {"sessdata": "s-web", "csrf": "c-web", "uid": "42"}
+        assert captured["credentials"] == {"sessdata": "s-web", "csrf": "c-web", "uid": "100"}
 
     asyncio.run(scenario())
 
@@ -805,7 +822,7 @@ def test_remotion_retry_rejected_video_publish_uses_revision_ticket(settings, tm
         job_dir = Path(g["project_dir"])
         out_mp4 = job_dir / "output.mp4"
         out_mp4.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
-        valid_sha = "8" * 64
+        valid_sha = hashlib.sha256(out_mp4.read_bytes()).hexdigest()
         skill._update_job(
             g["job_id"],
             status="ready_for_review",
@@ -821,15 +838,16 @@ def test_remotion_retry_rejected_video_publish_uses_revision_ticket(settings, tm
         assert runtime.store.all("SELECT * FROM account_writes WHERE channel='video_publish'") == []
 
         # First attempt with credentials fails -> publish_failed & account_writes rejected.
-        runtime.account.credentials = {"sessdata": "s-retry", "csrf": "c-retry", "uid": "77"}
+        runtime.account.credentials = {"sessdata": "s-retry", "csrf": "c-retry", "uid": "100"}
         mode = ["fail"]
 
-        async def flaky_upload(**_kwargs):
-            if mode[0] == "fail":
-                raise RuntimeError("未安装 biliup CLI，无法直接投稿")
-            return {"platform": "bilibili", "uploader": "web_api", "bvid": "BV1retriedOk", "aid": 999}
+        async def flaky_upload(**kwargs):
+            async with kwargs["submission_guard"]():
+                if mode[0] == "fail":
+                    raise VideoSubmissionRejected("B 站创作中心明确拒绝投稿")
+                return {"platform": "bilibili", "uploader": "web_api", "bvid": "BV1retriedOk", "aid": 999}
 
-        monkeypatch.setattr("tuber_studio.agent.skills.remotion_video.upload_bilibili_video_web", flaky_upload)
+        monkeypatch.setattr("tuber_studio.agent.skills.remotion_publication.upload_bilibili_video_web", flaky_upload)
 
         failed = await stage_or_publish_bilibili_video(skill, {"job_id": g["job_id"], "approved": True})
         assert failed["ok"] is False and failed["status"] == "publish_failed"
@@ -857,3 +875,67 @@ def test_remotion_retry_rejected_video_publish_uses_revision_ticket(settings, tm
         assert again["action"] == "already_published"
 
     asyncio.run(scenario())
+
+
+async def test_remotion_scheduled_grant_checks_window_and_recovers_receipt(settings, tmp_path, monkeypatch):
+    adapter = ControlledPlatform()
+    application = create_app(settings, adapter=adapter)
+    runtime = application.state.runtime
+    runtime.account.credentials = {"sessdata": "test-session", "csrf": "test-csrf", "uid": "100"}
+    assert await runtime.account.account_id() == "100"
+    skill = RemotionVideoSkill(runtime, runtime.store, renders_root=tmp_path)
+    skill.configure_policy({"publish_mode": "auto_publish", "auto_publish_enabled": True})
+    assert not runtime.browsing.operations.policy()["enabled"]
+    approved_window = True
+    published_sends = []
+
+    async def fake_upload(**kwargs):
+        nonlocal approved_window
+        if kwargs["title"] == expired_title:
+            approved_window = False
+        async with kwargs["submission_guard"]():
+            published_sends.append(kwargs["title"])
+            return {"platform": "bilibili", "bvid": "BV1Native990", "aid": 321}
+
+    async def fake_readback(receipt, account):
+        assert receipt["aid"] == 321 and account == "100"
+        return {"state": "public_visible", "url": "https://www.bilibili.com/video/BV1Native990"}
+
+    def assert_window():
+        if not approved_window:
+            raise ValueError("定时发布窗口已结束")
+
+    data = []
+    for index, topic in enumerate(("定时稿件", "失效的定时稿件")):
+        planned = await skill.plan_video_script({"topic": topic, "max_scenes": 2})
+        generated = await skill.generate_remotion_project({"job_id": planned["job_id"], "tts_mode": "dry_run"})
+        mp4 = Path(generated["project_dir"]) / "output.mp4"
+        mp4.write_bytes(b"test video" + bytes([index]))
+        skill._update_job(planned["job_id"], status="ready_for_review", output_path=str(mp4),
+                          qc_json=dump({"passed": True}), content_hash=hashlib.sha256(mp4.read_bytes()).hexdigest())
+        data.append(skill.get_job(planned["job_id"]))
+    published, expired = data
+    expired_title = expired["title"]
+    monkeypatch.setattr("tuber_studio.agent.skills.remotion_publication.upload_bilibili_video_web", fake_upload)
+    monkeypatch.setattr("tuber_studio.agent.skills.remotion_publication.verify_bilibili_video_publication", fake_readback)
+
+    args = {"job_id": published["id"], "publish_mode": "auto_publish"}
+    gated = await skill.stage_or_publish_bilibili_video(args)
+    assert gated["action"] == "gated_to_review" and not published_sends
+    result = await skill.stage_or_publish_bilibili_video(args, scheduled_guard=assert_window)
+    assert result["status"] == "published" and result["platform_state"] == "submitted"
+    writes = runtime.store.all("SELECT * FROM account_writes WHERE channel='video_publish'")
+    assert len(writes) == 1 and writes[0]["automatic"] and writes[0]["account_id"] == "100"
+
+    # A partial local state update after settlement must recover from the ledger without sending.
+    skill._update_job(published["id"], status="publishing", receipt_json=None, platform_state=None)
+    readback = await skill.refresh_video_publication(published["id"])
+    assert readback["status"] == "published" and readback["platform_state"] == "public_visible"
+    assert len(published_sends) == 1
+
+    result = await skill.stage_or_publish_bilibili_video(
+        {"job_id": expired["id"], "publish_mode": "auto_publish"}, scheduled_guard=assert_window,
+    )
+    assert result["action"] == "prepare_failed" and "窗口已结束" in result["error"]
+    assert len(runtime.store.all("SELECT * FROM account_writes WHERE channel='video_publish'")) == 1
+    assert len(published_sends) == 1
