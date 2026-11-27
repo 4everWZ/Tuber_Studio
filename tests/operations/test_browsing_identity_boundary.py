@@ -210,6 +210,5 @@ def test_floor_branch_frames_third_party_public_comments_neutrally_and_gates_zha
         build_metacognitive_profile(card, channel="video_browsing", self_actor=self_actor),
         character=card,
     )
-    assert "炸毛纠正" in public_prompt
-    assert "明确在直接称呼或 @ 本账号" in public_prompt
-    assert "切勿对号入座" in public_prompt
+    assert "炸毛纠正" not in public_prompt
+    assert "不把别人做过的事说成自己亲身经历" in public_prompt

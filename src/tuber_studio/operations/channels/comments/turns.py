@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import time
 from typing import Any
 
@@ -11,6 +10,7 @@ from ....core.meter import GenerationMeter
 from ....core.models import Reply, content_hash
 from ....core.text import operation_output_diagnostics, validate_comment_body
 from ...kernel.generation import generate_with_recovery, hold_comment_body
+from ...kernel.inputs import bind_response_actors
 from ...kernel.l2_bridge import (
     build_base_node,
     create_context_tree,
@@ -20,24 +20,20 @@ from ...kernel.l2_bridge import (
 from ...kernel.session import run_tool_session, should_use_native_turns
 from ...kernel.tools import OperationToolSession, sanitize_spoken_text
 from ..mentions import bind_mentions, detect_plain_mentions, mention_participants
-from .timeline import comment_source, comment_thread, confirmed_bot_comment_ids
+from .timeline import comment_source, comment_thread
 
 
-def _cached_video_material(store: Any, bvid: str) -> dict[str, Any] | None:
-    """Read already-watched video material without triggering any new subtitle/frame fetch."""
-    if not store or not bvid:
+def _comment_video_material(browsing, bvid, account_id, character_id, evidence):
+    """Reuse evidence for this video and verified account."""
+    if not browsing or not bvid or not account_id:
         return None
-    tables = {r["name"] for r in store.all("SELECT name FROM sqlite_master WHERE type='table'")}
-    if "browsing_video_progress" not in tables:
-        return None
-    row = store.one("SELECT material FROM browsing_video_progress WHERE bvid=?", (bvid,))
-    if not row or not row.get("material"):
-        return None
-    try:
-        data = json.loads(row["material"])
-        return data if isinstance(data, dict) else None
-    except Exception:
-        return None
+    if evidence.get("account_id") == account_id:
+        for key in evidence.get("material_keys", ()):
+            material = browsing.evidence.load(key)
+            if material.get("metadata", {}).get("bvid") == bvid:
+                return material
+    material = browsing.repo.watch_material({"account_id": account_id, "character_id": character_id}, bvid)
+    return material if (material or {}).get("metadata", {}).get("bvid") == bvid else None
 
 
 def should_use_native_comment_turns(service: Any) -> bool:
@@ -69,12 +65,21 @@ async def generate_native_comment_reply(
         character_id=character["id"],
     )
     timeline_comments = timeline_data.get("comments") or []
-    confirmed_ids = confirmed_bot_comment_ids(
-        store, str(account_id or ""), str(character["id"]), str(row["video_id"]), str(row["thread_id"])
-    ) | {str(item["comment_id"]) for item in timeline_comments if item.get("publication") == "confirmed"}
-    video_material = _cached_video_material(store, str(row.get("video_id") or ""))
+    confirmed_ids = {str(item["comment_id"]) for item in timeline_comments if item.get("publication") == "confirmed"}
+    browsing = getattr(runtime, "browsing", None)
+    video_material = _comment_video_material(
+        browsing, row.get("video_id"), account_id, character["id"], event.get("video_evidence") or {}
+    )
     owner_uid = str((character.get("bilibili_owner") or {}).get("uid") or "") or None
-    uploader_uid = timeline_data.get("resource_author_uid")
+    metadata = (video_material or {}).get("metadata") or {}
+    uploader_uid = metadata.get("owner_uid") or timeline_data.get("resource_author_uid")
+    source = comment_source(row)
+    thread = event.get("comment_context") or {"source": source, "addressing": event.get("addressing") or {}}
+    bound_data = {"thread": thread}
+    if uploader_uid or metadata.get("owner"):
+        bound_data["video_source"] = {"owner_uid": uploader_uid, "owner": metadata.get("owner")}
+    bound = bind_response_actors(bound_data, self_actor)
+    actor_roles = bound["actor_roles"]
 
     base = build_base_node(
         character,
@@ -92,8 +97,7 @@ async def generate_native_comment_reply(
         extra_ctx["relationship"] = {
             k: relationship[k] for k in ("affinity", "tone_hint", "interaction_count") if k in relationship
         }
-    if event.get("actor_roles"):
-        extra_ctx["actor_roles"] = event["actor_roles"]
+    extra_ctx["actor_roles"] = actor_roles
     if materials:
         extra_ctx["comment_materials"] = materials
 
@@ -101,37 +105,24 @@ async def generate_native_comment_reply(
         "请像 B 站评论区顺手回一句那样，用 1-2 句简短口语（通常 10-50 字）直接接住当前评论的话头，别写长段分析；"
         "如果无需发言或对方不是对本账号说话，可调用 skip_reply。"
     )
-    addressing = (event.get("comment_context") or {}).get("addressing") or event.get("addressing") or None
-    va_meta = (video_material or {}).get("metadata") or {}
-    va_name = str(va_meta.get("owner") or "").strip()
-    video_author = (
-        {
-            "uid": str(uploader_uid or "") or None,
-            "name": va_name,
-            "is_self": bool(account_id and uploader_uid and str(account_id) == str(uploader_uid)),
-        }
-        if (uploader_uid or va_name)
-        else None
-    )
     branch = fork_comment_floor_branch(
         tree,
         root_id=str(row["thread_id"]),
         timeline=timeline_comments,
-        reply_target=comment_source(row),
+        reply_target=source,
         self_uid=str(account_id or "") or None,
         confirmed_bot_comment_ids=confirmed_ids,
         uploader_uid=str(uploader_uid or "") or None,
         owner_uid=owner_uid,
         objective=objective,
         extra_context=extra_ctx or None,
-        addressing=addressing,
-        video_author=video_author,
+        addressing=bound["thread"]["addressing"],
+        video_author=actor_roles.get("video_author"),
     )
 
     tool_names = ["search_web", "save_memory", "recall_history", "skip_reply"]
     if video_material:
         tool_names.extend(["read_video_segment", "inspect_video_frames"])
-    browsing = getattr(runtime, "browsing", None)
     visual_ok = bool(video_material and browsing and getattr(browsing, "evidence", None) and browsing.evidence.has_visual_provider())
 
     tool_session = OperationToolSession(
@@ -217,7 +208,7 @@ async def generate_native_comment_reply(
         }
 
     text = result["text"]
-    participants = mention_participants({"source": comment_source(row), "timeline": timeline_comments})
+    participants = mention_participants({"source": source, "timeline": timeline_comments})
     detected = detect_plain_mentions(text, participants)
     mentions: list[dict[str, Any]] = []
     pending_mentions: list[dict[str, Any]] = []

@@ -271,7 +271,11 @@ async def test_video_comment_uses_cached_video_only_after_quoting_the_request(
         assert "[ref:" not in content
         actions = {b["properties"]["action"]["enum"][0] for b in schema["oneOf"]}
         if len(calls) == 1:
-            assert "加盐之后" not in content and "盐水实验" not in content
+            header = json.loads(content.removeprefix("公开来源材料：").split("\n\n", 1)[0])
+            assert "加盐之后" not in content and "title" not in header["video_source"]
+            assert header["actor_roles"]["video_author"] == {
+                "uid": "200", "name": "盐水实验室", "is_self": False,
+            }
             assert "read_more" in actions
             if lookup:
                 return {"action": "read_more", "reason": "insufficient_evidence", "explanation": "核查视频中的步骤",
@@ -305,6 +309,28 @@ async def test_video_comment_uses_cached_video_only_after_quoting_the_request(
     sent = await browsing.publish(result["id"])
     assert sent["status"] == "published" and set(sent["evidence"]) == expected
     assert browsing.adapter.sent == [(result["target"], result["text"])]
+
+
+async def test_comment_response_discards_video_material_from_a_different_post(browsing):
+    from tests.support.operations_helpers import BV, model_packet
+
+    row = await prepared_row(browsing)
+    _, material = await browsing._prepare_evidence(BV, row["config"])
+    source = {"comment_id": "501", "author_uid": "321", "author_name": "观众", "text": "这个题材有趣"}
+    captures = []
+
+    async def generate(messages, schema, *, max_tokens):
+        captures.append(model_packet(messages[-1]["content"]))
+        return {"action": "skip", "reason": "no_interest", "explanation": "暂时略过", "text": ""}
+
+    browsing.runtime.operation_llm.generate_json = generate
+    await browsing.decisions._response(
+        row, material, {"source": source, "target": {"bvid": "BV1Ab411c7mz", "oid": "100"}},
+        {"11:0"}, "reply_public", {"lock_wait_seconds": 0},
+    )
+    assert captures[0]["reply_target"]["author_uid"] == "321"
+    assert "video_source" not in captures[0] and not captures[0].get("comment_video_available")
+    assert not browsing.adapter.sent
 
 
 @pytest.mark.parametrize("readable", [False, True])

@@ -8,6 +8,7 @@ from ....core.identity import runtime_identity
 from ....core.store import dump
 from ....infra.platforms.bilibili.account import cached_account_actor
 from ...kernel.control import canonical_intent
+from ...kernel.inputs import bind_response_actors
 from ..mentions import bind_mentions, draft_mentions, mention_participants, rebase_mentions
 from .materials import model_comment_materials, prepare_comment_materials
 from .timeline import comment_source, comment_thread_context
@@ -44,7 +45,8 @@ class CommentsDrafterMixin:
         actor = cached_account_actor(self.store, self.account.credentials, account_id) | {
             "character_id": character["id"], "character_name": character["name"],
         }
-        return {"self_actor": actor, "comment_context": comment_thread_context(source, items, target)}
+        bound = bind_response_actors({"thread": comment_thread_context(source, items, target)}, actor)
+        return {"self_actor": actor, "comment_context": bound["thread"], "actor_roles": bound["actor_roles"]}
 
     def _check_sources(self, rows, video_id, thread_id, platform):
         current = {row["id"]: row for row in self._thread_sources(video_id, thread_id, platform)}

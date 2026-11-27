@@ -5,14 +5,16 @@ import re
 
 from ....core.models import content_hash
 from ....infra.platforms.bilibili.urls import comment_href
-from ....persona.memory.recall import MaterialFilter
+from ....persona.memory.recall import MaterialFilter, model_material
 
 __all__ = [
     "MaterialFilter",
     "REFLECTIONS",
     "REFLECTION_INSTRUCTION",
+    "dynamic_model_material",
     "ensure_reflections",
     "public_reads",
+    "published_reply_resource",
     "reflections",
     "source_links",
 ]
@@ -61,6 +63,8 @@ def public_reads(store, account, character, bound_ids, query=None):
         yield row["updated_at"], {
             "id": f"video:{bvid}", "type": "watched_video", "fictional": False,
             "text": metadata.get("title", "") + " · 已读片段\n" + "\n".join(excerpts),
+            "video": {"bvid": bvid, "title": metadata.get("title"), "owner": metadata.get("owner"),
+                      "owner_uid": metadata.get("owner_uid")},
             "source_url": f"https://www.bilibili.com/video/{bvid}",
             "coordinates": coordinates, "observed_at": row["updated_at"], "material_version": content_hash(material),
             "participants": [{"uid": str(metadata["owner_uid"]), "name": metadata.get("owner", "")}]
@@ -92,14 +96,29 @@ def public_reads(store, account, character, bound_ids, query=None):
         }
 
 
+def dynamic_model_material(source, *, comment_texts=()):
+    return model_material(source, comment_texts=comment_texts) | {
+        key: source[key] for key in ("video", "original_author", "original_material_kind", "reply_account_uid")
+        if key in source
+    }
+
+
+def published_reply_resource(source):
+    if resource := (source.get("reference") or {}).get("resource"):
+        return resource
+    if video := re.search(r"/video/(BV[0-9A-Za-z]{10})", source.get("source_url") or ""):
+        return video[1]
+    return None
+
+
 def source_links(source):
     if source.get("type") == "public_incident":
         links = [comment_href(ref.get("bvid"), ref.get("comment_id")) for ref in source.get("public_sources", [])]
         if any(links):
             return [link for link in dict.fromkeys(links) if link]
-    if source.get("type") == "published_reply" and (video := re.search(r"/video/(BV[0-9A-Za-z]{10})",
-                                                                   source.get("source_url", ""))):
-        return [comment_href(video[1], (source.get("original_comment") or {}).get("id"))]
+    if source.get("type") == "published_reply" and (resource := published_reply_resource(source)):
+        if link := comment_href(resource, (source.get("original_comment") or {}).get("id")):
+            return [link]
     return [source["source_url"]] if source.get("source_url") else []
 
 

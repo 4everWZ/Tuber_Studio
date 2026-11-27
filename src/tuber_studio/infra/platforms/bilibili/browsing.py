@@ -333,7 +333,9 @@ class BrowsingAdapter(BilibiliAdapter):
                 "author_uid": author}
 
     async def _dynamic_detail(self, dynamic_id):
-        signed = await self.wbi_params({"id": dynamic_id, "timezone_offset": -480})
+        from .reconciliation import dynamic_detail_params
+
+        signed = await self.wbi_params(dynamic_detail_params(dynamic_id))
         item = (await self._get("/x/polymer/web-dynamic/v1/detail", signed)).get("item")
         if not isinstance(item, dict) or str(item.get("id_str")) != dynamic_id:
             raise PlatformReadError("not_found", "原始动态不可读或对象不一致")
@@ -347,9 +349,11 @@ class BrowsingAdapter(BilibiliAdapter):
 
     @staticmethod
     def _dynamic_reaction_source(item):
+        from .reconciliation import dynamic_summary
+
         modules = item.get("modules") or {}
         state = ((modules.get("module_stat") or {}).get("like") or {}).get("status")
-        text = _text(((modules.get("module_dynamic") or {}).get("desc") or {}).get("text"))
+        text = _text(dynamic_summary(modules.get("module_dynamic") or {}).get("text"))
         author = (modules.get("module_author") or {}).get("mid")
         if type(state) is not bool or not author or not text:
             return None
@@ -1071,6 +1075,26 @@ class BrowsingAdapter(BilibiliAdapter):
 
     async def _inspect_publication_view(self, normalized, rpid, *, anonymous: bool):
         is_reply = normalized["root"] != "0"
+        if not is_reply and normalized["resource_type"] == "dynamic":
+            base = {
+                "oid": normalized["oid"], "type": normalized["type"], "mode": 3, "plat": 1,
+                "pagination_str": '{"offset":""}', "seek_rpid": rpid, "web_location": "1315875",
+            }
+            sign = self._anonymous_wbi_params if anonymous else self.wbi_params
+            params = await sign(base)
+            data = await self._get("/x/v2/reply/wbi/main", params, anonymous=anonymous)
+            rows = data.get("replies") or []
+            found, invisible, ctime, oldest_ctime = self._find_reply_row(rows, rpid)
+            cursor = data.get("cursor") if isinstance(data.get("cursor"), dict) else {}
+            return {
+                "found": found,
+                "invisible": invisible,
+                "ctime": ctime,
+                "covered": cursor.get("is_end") is True and cursor.get("all_count") == len(rows),
+                "records": len(rows),
+                "oldest_ctime": oldest_ctime,
+                "checked_page": 1,
+            }
         if not is_reply:
             base = {"oid": normalized["oid"], "type": normalized["type"], "pn": 1, "ps": 20, "sort": 0}
             params = await self._anonymous_wbi_params(base) if anonymous else base
@@ -1118,7 +1142,9 @@ class BrowsingAdapter(BilibiliAdapter):
                 oldest_ctime = tail_oldest if tail_oldest is not None else oldest_ctime
                 checked_page = last_page
                 records = len(tail_replies)
-                covered = True
+                covered = last_page == 2 and page_info.get("count") == (
+                    tail_data.get("page") or {}
+                ).get("count")
         return {
             "found": found,
             "invisible": invisible,
@@ -1175,7 +1201,8 @@ class BrowsingAdapter(BilibiliAdapter):
         ref_time = auth_view["ctime"] or published_at
         auth_covered = auth_view["covered"]
         anon_covered = anon_view["covered"]
-        if not is_reply:
+        dynamic_top_level = not is_reply and normalized["resource_type"] == "dynamic"
+        if not is_reply and not dynamic_top_level:
             if not auth_covered and published_at is not None and auth_view["oldest_ctime"] is not None:
                 auth_covered = auth_view["oldest_ctime"] <= float(published_at) + 2
             if not anon_covered and ref_time is not None and anon_view["oldest_ctime"] is not None:
@@ -1193,7 +1220,7 @@ class BrowsingAdapter(BilibiliAdapter):
             else:
                 status = "not_found"
         else:
-            status = "shadow_deleted" if (auth_covered or anon_covered) else "not_found"
+            status = "shadow_deleted" if (auth_covered and anon_covered) else "not_found"
 
         hints = {
             key: receipt[key]
@@ -1210,7 +1237,7 @@ class BrowsingAdapter(BilibiliAdapter):
             "auth_invisible": auth_view["invisible"],
             "anon_invisible": anon_view["invisible"],
             "coverage": {
-                "scope": "thread_tail" if is_reply else "first_page_newest",
+                "scope": "thread_tail" if is_reply else "dynamic_seek" if dynamic_top_level else "first_page_newest",
                 "auth_covered": auth_covered,
                 "anon_covered": anon_covered,
                 "auth_page": auth_view["checked_page"],

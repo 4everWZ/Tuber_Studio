@@ -1,7 +1,7 @@
 """Discovery decision coordinator composing shared kernel ResponseEngine with Discovery evaluators."""
 
 from ...channels.comments.materials import model_comment_materials
-from ...channels.comments.timeline import comment_thread_context, resource_key
+from ...channels.comments.timeline import comment_thread_context, confirmed_bot_comment_ids, resource_key
 from ...channels.direct_messages.outreach import confirmed_invitation
 from ...channels.mentions import MENTION_INSTRUCTION, bind_mentions, mention_participants
 from ...kernel.decision_engine import ResponseEngine
@@ -14,6 +14,7 @@ from .video_decision import VideoDecisionMixin
 DECISION_CHANNELS = {
     "resource_key": resource_key,
     "comment_thread_context": comment_thread_context,
+    "confirmed_bot_comment_ids": confirmed_bot_comment_ids,
     "confirmed_invitation": confirmed_invitation,
     "model_comment_materials": model_comment_materials,
     "bind_mentions": bind_mentions,

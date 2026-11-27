@@ -482,7 +482,8 @@ class DirectMessagesDrafterMixin:
                     )
                     return
                 if window.latest_outgoing_id and not ambiguous_order:
-                    self._settle_incoming(draft, list(refs.values()), window.latest_outgoing_id)
+                    for incoming, outgoing in window.prior_settled:
+                        self._settle_incoming(draft, [incoming], outgoing)
                     self.store.execute(
                         "UPDATE dm_drafts SET status='cancelled',resume_pending=0,error=?,updated_at=? WHERE id=?",
                         ("号主已在平台手动回复，无需重复发送", time.time(), identity),

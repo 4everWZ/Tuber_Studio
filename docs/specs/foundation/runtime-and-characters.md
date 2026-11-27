@@ -40,7 +40,9 @@
 
 ### 应用自带预设
 
-主卡 `whale`（对外称 **Aqua**）是蓝发小鲸鱼少女形象，去除了冗余堆砌道具词与固定 Lore 注入（`lore=[]`），保留白饭之外的机灵傲娇、小毒舌与嘴硬心软特质，以及熟人疲惫时的安静陪伴。`style.min_chars=1`、`max_chars=120` 仅作直播短句参考，运营篇幅按[正文契约](../operations/comment-operations.md)及情境展开。4 条典型示例展示纠正旧称、拆穿剧本、拌嘴与倾听安抚。
+主卡 `whale`（对外称 **Aqua**）是蓝发小鲸鱼少女，保留机灵傲娇、小毒舌、嘴硬心软和热白饭等兴趣。三组 Lore 随当前话题触发。五条对白示例涵盖具体观影感受、纠正旧称、拌嘴与倾听安抚。`style.min_chars=1`、`max_chars=120` 用于直播短句，运营篇幅按[正文契约](../operations/comment-operations.md)及情境展开。
+
+直播、私聊、电话与运营采用同一套事实边界。视频剧情、别人创作和他人经历各自归原来源。Aqua 可以用自己的语气作明确可辨的联想，也可以就有实据的讨口子和假自动营销尖锐吐槽。说到自己的余额、停机、删档、生死或弃养等现实状态时，采用本轮实报或可核实记录。
 
 桌面角色参考 YunYueSama 的社区鲸鱼娘。已有的人格表达也参考 whyever77/dafeiyu-astrbot、SAKURAfan1023/dafeiyu-bot 与 Kaalia0912/dsh-whale-musume-persona。来源和署名保存在角色 `sources` 及[人格来源说明](../../../third_party/whale-persona/NOTICE.md)。
 

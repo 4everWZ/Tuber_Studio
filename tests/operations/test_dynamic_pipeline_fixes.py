@@ -107,9 +107,15 @@ def test_dynamic_source_formatting_and_grounding_handle_third_party_comment_and_
 
     formatted = _format_dynamic_sources(public_sources, self_uid="3706944382568764")
     assert "旁观到的他人评论 BV1q5WZ6HEFD" in formatted
-    assert "@风月星云的大肥鱼（第三方用户，非你本人发言）" in formatted
-    assert "[视频经历 BV1q5WZ6HEFD]" in formatted
-    assert "深海干饭王" in formatted
+    assert "@风月星云的大肥鱼（UID 3747587614050633），评论 325013871744" in formatted
+    assert "[观看素材 BV1q5WZ6HEFD] 《深海干饭王》 UP主 干饭UP主（UID 998877），视频片段" in formatted
+
+    own_account = _format_dynamic_sources(public_sources, self_uid="3747587614050633")
+    assert "同账号的公开评论，角色归属未确认" in own_account
+    assert "你曾说" not in own_account
+    assert _match_grounded_sources("刚看了 BV1q5WZ6HEFD。", public_sources) == (
+        ["video:BV1q5WZ6HEFD"], ["video:BV1q5WZ6HEFD"], "none"
+    )
 
     content = "刚才刷 BV1q5WZ6HEFD 时在评论区看到 @风月星云的大肥鱼 说一天能吃十袋米，差点把茶水喷出来。"
     matched, link_ids, illustration = _match_grounded_sources(content, public_sources)
@@ -119,6 +125,39 @@ def test_dynamic_source_formatting_and_grounding_handle_third_party_comment_and_
 
     mentions = _detect_dynamic_mentions(content, public_sources, matched)
     assert mentions == [{"label": "@风月星云的大肥鱼", "account": "3747587614050633"}]
+
+    same_name = {"id": "other-source", "type": "public_comment", "participants": [
+        {"name": "风月星云的大肥鱼", "uid": "100"}
+    ]}
+    assert _detect_dynamic_mentions(content, [*public_sources, same_name], [*matched, same_name["id"]]) == [
+        {"label": "@风月星云的大肥鱼", "account": "风月星云的大肥鱼"}
+    ]
+
+
+def test_visible_planning_and_final_draft_sequence_is_rejected():
+    leaked = (
+        'If it were me going, the 4th thing would be a rice warmer.\n\n'
+        'Final draft:\n\n"Just now I was lurking in the comments."\n\n'
+        'Let me go with the compact version. Should I skip? No. Let me finalize.\n\n'
+        '刚看到有人聊插件市场，说购物车里就三样东西。'
+    )
+    assert operation_output_diagnostics(leaked)["reasoning_leak"] is True
+    with pytest.raises(ValueError, match="思考过程"):
+        validate_spoken_output(leaked, kind="dynamic")
+    assert validate_spoken_output("Final draft:\n今天终于写完了那份读书笔记。", kind="dynamic")
+
+
+def test_organized_third_party_quote_keeps_its_author_in_dynamic_context():
+    from tuber_studio.operations.channels.dynamics.materials import dynamic_model_material
+
+    public = dynamic_model_material({
+        "id": "organized:11", "type": "public_incident", "fictional": False,
+        "original_material_kind": "comment", "original_author": {"uid": "215", "name": "另一条鱼"},
+        "text": "「睡醒继续扮演昨天的自己，本鱼每天干的正是这件事。」",
+    })
+    formatted = _format_dynamic_sources([public], self_uid="100")
+    assert "收录的第三方评论" in formatted and "@另一条鱼（UID 215）" in formatted
+    assert "本鱼每天干的正是这件事" in formatted
 
 
 async def test_revise_native_dynamic_caption_includes_sources_in_prompt(settings, store):

@@ -4,6 +4,7 @@ import json
 
 from tuber_studio.core.config import ROOT
 from tuber_studio.infra.inference.providers import single_system_messages
+from tuber_studio.persona.characters.front_persona import persona_instructions
 from tuber_studio.persona.context.tree import (
     DEFAULT_VIDEO_BASE_TOKEN_LIMIT,
     append_assistant_tool_calls,
@@ -157,6 +158,16 @@ def test_self_model_has_four_pillars_aqua_boundary_and_zero_prop_clutter():
     custom_oc = _aqua_card() | {"id": "oc-sea", "name": "海风", "display_name": "海风", "aliases": []}
     assert build_metacognitive_profile(custom_oc).character_name == "海风"
 
+
+def test_real_aqua_keeps_stance_and_marks_imagination_across_public_and_voice_context():
+    card = _real_aqua_card()
+    base = build_base_node(card, channel="dynamic")
+    for instructions in (base.messages[0]["content"], persona_instructions(card)):
+        assert "傲娇" in instructions
+        assert "视频剧情、他人作品和经历归原来的角色或作者" in instructions
+        assert "联想或打比方，让人听得出是在想象" in instructions
+        assert "不能证明自己的余额、停机、删档、生死或被弃养" in instructions
+        assert "尖锐吐槽有实据的讨口子或假装自动化的营销" in instructions
 
 def test_video_base_keeps_full_transcript_under_24k_and_degrades_over_24k():
     card = _aqua_card()

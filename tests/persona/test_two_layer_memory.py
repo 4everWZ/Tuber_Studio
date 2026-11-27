@@ -240,6 +240,32 @@ def test_layer2_recall_history_stays_isolated_and_never_dumps_into_saved_memorie
     assert unified.count_memories() == 0
 
 
+def test_public_history_preserves_organized_original_author_and_excludes_unbound_note(store):
+    from tuber_studio.persona.memory.daily import DailyMemoryService
+
+    DailyMemoryService(store)
+    timestamp = time.time()
+    quote = "本鱼每天都会读屏幕里的日记"
+    original = {"comment_id": "501", "author_uid": "215", "author_name": "别家的鱼",
+                "text": quote, "href": "https://www.bilibili.com/video/BV1xx411c7mD#reply501", "kind": "comment"}
+    proof = {"version": 1, "kind": "viewer", "memory_kind": "experience", "confirmed_by": "source_match",
+             "operation_account_id": "100", "source_ref": "thread:example", "quote": quote,
+             "memory_source": {"kind": "comment", "references": [original],
+                               "thread": {"resource": "BV1xx411c7mD", "comment_id": "501"}}}
+    sql = ("INSERT INTO daily_highlights(character_id,character_version,highlight_date,category,headline,source_ref,"
+           "quote,anecdote,tags,created_at,updated_at,source_evidence) "
+           "VALUES('whale',1,'2026-11-27','experience','概括标题',?,?,?,'[]',?,?,?)")
+    store.execute(sql, ("thread:example", quote, "未绑定原文的私有摘要", timestamp, timestamp, json.dumps(proof)))
+    store.execute(sql, ("thread:unknown", "未核实的屏幕故事", "不该给公开渠道的猜测", timestamp, timestamp,
+                        json.dumps({"kind": "viewer", "memory_kind": "experience"})))
+    public = recall_history(store, query="屏幕", scope="public", character_id="whale", account_id="100")["items"]
+    item, = public
+    assert item["material_kind"] == "public_comment" and item["author_uid"] == "215"
+    assert item["href"] == original["href"] and quote in item["text"]
+    assert "私有摘要" not in str(item) and "猜测" not in str(item)
+    assert recall_history(store, query="屏幕", scope="public", character_id="whale", account_id="101")["items"] == []
+
+
 def test_persona_memories_admin_endpoints_stats_purge_and_clear(settings):
     app = create_app(settings)
     with TestClient(app) as client:

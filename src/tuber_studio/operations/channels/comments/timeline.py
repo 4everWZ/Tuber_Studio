@@ -9,6 +9,7 @@ from functools import partial
 
 from ....core.models import content_hash
 from ....infra.platforms.bilibili.urls import COMMENT_ID, VIDEO_ID, comment_href, public_discussion_url
+from ...kernel.inputs import bind_response_actors
 from ...kernel.quotas import publication_time
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "VIDEO_ID",
     "comment_activity",
     "comment_href",
+    "comment_is_third_party",
     "comment_source",
     "comment_thread",
     "comment_thread_context",
@@ -66,39 +68,21 @@ def operator_reply(items, target, account):
 
 
 def confirmed_bot_comment_ids(store, account_id, character_id, resource, root_id):
-    """Return confirmed OC-published reply comment IDs for a given video/dynamic floor."""
+    """Return receipt-backed OC comments and replies on this discussion floor."""
     root = _id(root_id)
-    if not (account_id and character_id and resource and root):
+    if not (store and account_id and character_id and resource and root):
         return set()
-    ids = set()
-    if _table(store, "browsing_intents"):
-        bvid, dynamic = (None, resource.removeprefix("dynamic:")) if resource.startswith("dynamic:") else (resource, None)
-        for row in store.all(
-            "SELECT receipt FROM browsing_intents WHERE account_id=? AND character_id=? AND kind='reply_public' "
-            "AND status='published' AND CAST(json_extract(target,'$.root') AS TEXT)=? AND "
-            "((? IS NOT NULL AND json_extract(target,'$.bvid')=?) OR (? IS NOT NULL AND "
-            "COALESCE(CAST(json_extract(target,'$.dynamic_id') AS TEXT),CAST(json_extract(target,'$.oid') AS TEXT))=?))",
-            (str(account_id), character_id, root, bvid, bvid, dynamic, dynamic),
-        ):
-            if rpid := _id(_json(row["receipt"]).get("rpid") or _json(row["receipt"]).get("comment_id")):
-                ids.add(rpid)
-    if _table(store, "drafts") and _table(store, "comments"):
-        cols = {col[1] for col in store.db.execute("PRAGMA table_info(drafts)")}
-        if "account_id" in cols:
-            for row in store.all(
-                "SELECT d.receipt FROM drafts d JOIN comments c ON c.id=d.comment_id "
-                "WHERE d.account_id=? AND d.character_id=? AND c.platform='bilibili' "
-                "AND c.video_id=? AND c.thread_id=? AND d.status='published'",
-                (str(account_id), character_id, resource, root),
-            ):
-                if rpid := _id(_json(row["receipt"]).get("rpid") or _json(row["receipt"]).get("comment_id")):
-                    ids.add(rpid)
-    return ids
+    return {
+        item["comment_id"]
+        for item in _receipts(store, resource, root, account_id, character_id)
+        if item.get("publication") == "confirmed"
+    }
 
 
 def comment_thread_context(item, items, target, *, account_id=None, resource_author_uid=None, confirmed_ids=()):
     comment_id, root_id = str(item["comment_id"]), str(target["root"])
-    by_id = {str(row["comment_id"]): row for row in items if row.get("comment_id")}
+    timeline = [row for row in items if str(row.get("thread_id") or row.get("comment_id")) == root_id]
+    by_id = {str(row["comment_id"]): row for row in timeline if row.get("comment_id")}
     actual = by_id.get(comment_id, item)
     confirmed_set = {str(cid) for cid in (confirmed_ids or ())}
 
@@ -112,7 +96,7 @@ def comment_thread_context(item, items, target, *, account_id=None, resource_aut
         uid = str(comment_source(row)["author_uid"] or "")
         cid = str(row.get("comment_id") or "")
         if account_id and uid == str(account_id):
-            if row.get("publication") == "confirmed" or cid in confirmed_set:
+            if cid in confirmed_set:
                 return "小鲸鱼"
             return "号主人工接管"
         if resource_author_uid and uid == str(resource_author_uid):
@@ -134,7 +118,6 @@ def comment_thread_context(item, items, target, *, account_id=None, resource_aut
     parent_id = parent_of(actual)
     root = by_id.get(root_id, item if comment_id == root_id else None)
     parent = by_id.get(parent_id) if parent_id else None
-    timeline = [row for row in items if str(row.get("thread_id") or row.get("comment_id")) == root_id]
     if len(timeline) <= 16:
         window = timeline
     else:
@@ -163,6 +146,17 @@ def comment_thread_context(item, items, target, *, account_id=None, resource_aut
             "source_root_comment_id": root_id,
         },
     }
+
+
+def comment_is_third_party(thread, account_id):
+    participants = {key: thread[key] for key in ("source", "parent", "addressing") if key in thread}
+    addressing = bind_response_actors({"thread": participants}, {"account_uid": account_id})["thread"]["addressing"]
+    return (
+        addressing["conversation_nature"] == "third_party_dialogue"
+        and not addressing["is_explicitly_mentioned"]
+        and not addressing["is_reply_to_self"]
+        and any(actor["uid"] and actor["relation_to_self"] == "other" for actor in addressing["addressed_to"])
+    )
 
 
 def _id(value):
@@ -358,12 +352,14 @@ def _receipts(store, resource, root, account, character):
         vis_sel = ",visibility" if "visibility" in intent_cols else ",NULL AS visibility"
         rows = store.all(
             "SELECT id,round_id,text,receipt,target,status,updated_at" + vis_sel + " FROM browsing_intents "
-            "WHERE account_id=? AND character_id=? AND kind='reply_public' "
-            "AND status IN ('published','operator_replied') "
+            "WHERE account_id=? AND character_id=? AND ("
+            "(kind='top_level' AND status='published' AND json_extract(target,'$.bvid')=? "
+            "AND CAST(COALESCE(json_extract(receipt,'$.rpid'),json_extract(receipt,'$.comment_id')) AS TEXT)=?) OR "
+            "(kind='reply_public' AND status IN ('published','operator_replied') "
             "AND CAST(json_extract(target,'$.root') AS TEXT)=? AND "
-            "((? IS NOT NULL AND json_extract(target,'$.bvid')=?) OR (? IS NOT NULL AND "
-            "COALESCE(CAST(json_extract(target,'$.dynamic_id') AS TEXT),CAST(json_extract(target,'$.oid') AS TEXT))=?))",
-            (str(account), character, root, bvid, bvid, dynamic, dynamic),
+            "(json_extract(target,'$.bvid')=? OR (NULLIF(json_extract(target,'$.bvid'),'') IS NULL AND "
+            "COALESCE(CAST(json_extract(target,'$.dynamic_id') AS TEXT),CAST(json_extract(target,'$.oid') AS TEXT))=?))))",
+            (str(account), character, bvid, root, root, bvid, dynamic),
         )
         for row in rows:
             target = _json(row["target"])

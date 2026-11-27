@@ -757,11 +757,46 @@ async def test_verify_publication_sub_reply_checks_last_page_and_overflow_not_de
     )
     assert sub["status"] == "public_visible"
     assert (3, True) in pages_seen and (3, False) in pages_seen
+    middle = await adapter.verify_publication(
+        {"resource_type": "video", "oid": "123", "root": "100", "parent": "100"}, {"rpid": "500"}
+    )
+    assert middle["status"] == "not_found"
+    assert not middle["coverage"]["auth_covered"] and not middle["coverage"]["anon_covered"]
 
     overflow = await adapter.verify_publication(
         {"resource_type": "video", "oid": "123"}, {"rpid": "555", "published_at": 1000}
     )
     assert overflow["status"] == "not_found"
+
+
+async def test_dynamic_top_level_visibility_uses_the_same_seek_as_the_public_page(adapter_factory):
+    views = []
+
+    def handle(request):
+        if request.url.path == "/x/web-interface/nav":
+            if request.headers.get("cookie"):
+                return nav()
+            return result(
+                {"wbi_img": {
+                    "img_url": "https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png",
+                    "sub_url": "https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png",
+                }},
+                code=-101,
+            )
+        assert request.url.path == "/x/v2/reply/wbi/main"
+        assert request.url.params["type"] == "11"
+        assert request.url.params["seek_rpid"] == "555"
+        assert "w_rid" in request.url.params
+        views.append(bool(request.headers.get("cookie")))
+        return result({"replies": [{"rpid": 555, "ctime": 2000}], "cursor": {"is_end": False}})
+
+    adapter = await adapter_factory(handle)
+    verified = await adapter.verify_publication(
+        {"resource_type": "dynamic", "oid": "123", "type": 11}, {"rpid": "555"}
+    )
+    assert verified["status"] == "public_visible"
+    assert verified["coverage"]["scope"] == "dynamic_seek"
+    assert views == [True, False]
 
 
 async def test_verify_publication_preserves_risk_error_code_and_publish_captures_hints(adapter_factory):

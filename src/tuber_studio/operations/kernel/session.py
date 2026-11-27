@@ -10,7 +10,6 @@ from typing import Any
 
 import httpx
 
-from ...core.text import operation_output_diagnostics
 from ...infra.inference.api_providers import APIProvider
 from ...infra.inference.providers import public_error
 from ...infra.inference.responses_provider import FunctionCall, ResponsesClient, ResponseTurn
@@ -290,7 +289,6 @@ async def run_tool_session(
             raise GenerationFeedback(
                 public_error(error),
                 original_output=raw_text,
-                diagnostics=operation_output_diagnostics(raw_text),
             ) from None
         append_branch_turn(tree, branch_id, {"role": "assistant", "content": clean_text})
         return OperationTurnResult(

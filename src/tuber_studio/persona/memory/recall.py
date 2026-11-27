@@ -15,6 +15,8 @@ from ...core.models import StrictModel, tool_function
 from ...core.store import dump
 from ...core.time import day_bounds
 from ...infra.platforms.bilibili.urls import comment_href
+from .daily.models import contains_memory_credential
+from .daily.organizer_bridge import DailyMemoryOrganizerBridge
 
 NAME = "recall_memory"
 DESCRIPTION = "回查获准记忆、实际观看片段、读到的原评和确认送达的回复。可以用话题和日期找，再用来源 ID 读回。"
@@ -428,23 +430,35 @@ def _score_recall_text(text: str, *, needle: str, terms: tuple[str, ...]) -> int
     return score
 
 
-def _highlight_is_public(row: dict[str, Any]) -> bool:
-    ref = str(row.get("source_ref") or "")
-    ev: dict[str, Any] = {}
-    raw_ev = row.get("source_evidence")
-    if raw_ev:
-        try:
-            parsed = json.loads(raw_ev)
-            if isinstance(parsed, dict):
-                ev = parsed
-        except (TypeError, ValueError):
-            pass
-    return (
-        row.get("category") == "public_incident"
-        or ref.startswith(("operator-public:", "system:downtime:"))
-        or ev.get("memory_kind") == "experience"
-        or ev.get("kind") in {"viewer", "live"}
-    )
+def _public_highlight(row: dict[str, Any], proof: dict[str, Any]) -> dict[str, Any] | None:
+    quote = row.get("quote") or ""
+    if not quote.strip() or contains_memory_credential(quote):
+        return None
+    if row["category"] == "public_incident":
+        return {"text": f"公开事件的原评论摘录：{quote}", "material_kind": "public_incident"}
+    ref = row.get("source_ref") or ""
+    if (proof.get("version") != 1 or proof.get("quote") != quote
+            or proof.get("source_ref") != ref or proof.get("owner_only")):
+        return None
+    if proof.get("operation_sources"):
+        return None
+    if ref.startswith("operator-public:") and (proof.get("kind"), proof.get("confirmed_by")) == ("operator_note", "operator"):
+        return {"text": f"号主确认可公开的原话：{quote}", "material_kind": "operator_note"}
+    if ref.startswith("system:downtime:") and (proof.get("kind"), proof.get("confirmed_by")) == ("runtime_event", "runtime_event"):
+        return {"text": f"可公开的运行记录：{quote}", "material_kind": "runtime_event"}
+    source = proof.get("memory_source")
+    if not isinstance(source, dict) or proof.get("confirmed_by") != "source_match":
+        return None
+    public = DailyMemoryOrganizerBridge._public_memory_projection(proof, source)
+    if not public:
+        return None
+    original = public["references"][0]
+    author = original.get("author_name") or "作者资料未保存"
+    label = "收录的第三方评论" if original.get("comment_id") else "收录的视频字幕"
+    return {"text": f"{label}（{author}）：{public['text']}",
+            "material_kind": "public_comment" if original.get("comment_id") else "subtitle",
+            "author_name": original.get("author_name"), "author_uid": original.get("author_uid"),
+            "href": original["href"]}
 
 
 def recall_history(
@@ -542,35 +556,41 @@ def recall_history(
             params.append(char)
         sql += " ORDER BY updated_at DESC, id DESC LIMIT 120"
         for row in store.all(sql, tuple(params)):
-            is_pub = _highlight_is_public(row)
-            if scope_str == "public" and not is_pub:
+            try:
+                proof = json.loads(row.get("source_evidence") or "{}")
+            except (TypeError, ValueError):
+                proof = {}
+            proof = proof if isinstance(proof, dict) else {}
+            op_acct = proof.get("operation_account_id")
+            if acct and op_acct is not None and str(op_acct) != acct:
                 continue
-            if acct and "source_evidence" in cols and row.get("source_evidence"):
-                try:
-                    ev = json.loads(row["source_evidence"])
-                except (TypeError, ValueError):
-                    ev = {}
-                op_acct = ev.get("operation_account_id") if isinstance(ev, dict) else None
-                if op_acct is not None and str(op_acct) != acct:
-                    continue
-            note = str(row.get("anecdote") or row.get("quote") or row.get("headline") or "").strip()
+            public = _public_highlight(row, proof)
+            if scope_str == "public" and not public:
+                continue
+            note = (public["text"] if scope_str == "public" else
+                    str(row.get("anecdote") or row.get("quote") or row.get("headline") or "").strip())
             if not note:
                 continue
-            headline = str(row.get("headline") or "").strip()
+            headline = str(row.get("headline") or "").strip() if scope_str == "owner" else ""
             item = {
                 "id": f"highlight:{row['id']}",
                 "origin": "daily_highlight",
                 "layer": "episodic_history",
-                "scope": "public" if is_pub else "owner",
+                "scope": "public" if public else "owner",
                 "date": row["highlight_date"],
                 "category": row["category"],
                 "headline": headline,
                 "text": note,
                 "timestamp": float(row["updated_at"]),
             }
-            add_candidate(item, f"{headline} {note} {row.get('quote') or ''}", float(row["updated_at"]))
+            search_text = note
+            if scope_str == "public":
+                item.update(public)
+            else:
+                search_text = f"{headline} {note} {row.get('quote') or ''}"
+            add_candidate(item, search_text, float(row["updated_at"]))
 
-    # 3. Public comment timeline (`browsing_comment_timeline`) & confirmed published replies.
+    # 3. Public comments read from the platform. A platform handle alone cannot identify who generated a reply.
     if include_comments and _recall_table_exists(store, "browsing_comment_timeline"):
         sql = (
             "SELECT account_id, character_id, resource, root_id, comment_id, author_uid, author_name, text, created_at "
@@ -594,7 +614,8 @@ def recall_history(
             body = str(row.get("text") or "").strip()
             if not body:
                 continue
-            author = str(row.get("author_name") or row.get("author_uid") or "").strip()
+            author_uid = str(row.get("author_uid") or "").strip()
+            author = str(row.get("author_name") or author_uid or "未知作者").strip()
             ts = float(row["created_at"] or 0.0)
             item = {
                 "id": f"comment:{row['resource']}:{row['comment_id']}",
@@ -605,7 +626,12 @@ def recall_history(
                 "root_id": row["root_id"],
                 "comment_id": row["comment_id"],
                 "author_name": author,
-                "text": f"{author}在{row['resource']}楼#{row['root_id']}：{body}" if author else body,
+                "author_uid": author_uid or None,
+                "account_relation": (
+                    ("same_account" if author_uid == acct else "other_account")
+                    if author_uid and acct else "unknown"
+                ),
+                "text": f"{author}在{row['resource']}楼#{row['root_id']}的评论原文：{body}",
                 "timestamp": ts,
             }
             add_candidate(item, f"{author} {row['resource']} {body}", ts)
@@ -625,6 +651,13 @@ def recall_history(
             params.append(acct)
         sql += " ORDER BY COALESCE(published_at, updated_at) DESC, id DESC LIMIT 60"
         for row in store.all(sql, tuple(params)):
+            try:
+                receipt = json.loads(row.get("receipt") or "{}")
+            except (TypeError, ValueError):
+                continue
+            dynamic_id = str(receipt.get("dynamic_id") or "") if isinstance(receipt, dict) else ""
+            if not re.fullmatch(r"[1-9][0-9]{0,19}", dynamic_id):
+                continue
             body = str(row.get("content") or "").strip()
             if not body:
                 continue
@@ -634,6 +667,8 @@ def recall_history(
                 "origin": "dynamic_post",
                 "layer": "episodic_history",
                 "scope": "public",
+                "platform_id": dynamic_id,
+                "author_uid": str(row.get("account_id") or "") or None,
                 "text": f"已发动态：{body[:400]}",
                 "timestamp": ts,
             }

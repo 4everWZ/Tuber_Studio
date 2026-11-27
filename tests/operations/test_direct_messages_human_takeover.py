@@ -86,10 +86,63 @@ async def test_chronological_dm_after_operator_takeover_includes_operator_turn_a
     assert [item["text"] for item in conv] == ["几点开播？", "八点准时开播。", "那今天主要玩什么呀？"]
     assert [item["speaker"] for item in conv] == ["viewer", "operator", "viewer"]
     assert [item["role_label"] for item in conv] == ["对方", "号主人工接管", "对方"]
+    assert not conv[0].get("open")
     assert conv[2].get("open") is True
     assert messages.adapter.sent == [(viewer, "今晚玩潜水员戴夫，八点见！")]
     settled = messages.store.all("SELECT incoming_id,outgoing_id FROM dm_incoming_settlements ORDER BY incoming_id")
     assert [row["outgoing_id"] for row in settled] == ["1002", "1"]
+
+
+async def test_platform_dm_readback_preserves_receipt_character_after_switch(messages):
+    account, viewer = "900", "123"
+    store = messages.store
+    first = messages.runtime.character
+    second = store.save_character(first | {"id": "other-dm-oc", "name": "另一位角色"})
+    now = int(time.time())
+    original = platform_message(1, viewer, account, "最早那条问题", now)
+    messages._ingest_history([original], viewer, account, "观众")
+    source_id = store.one("SELECT id FROM dm_inbox WHERE message_id='1001'")["id"]
+    published_id = messages.enqueue("message", source_id, schedule=False)
+    await messages._generate(published_id, False)
+    messages.review(published_id, "approve")
+    receipt = (await messages.send(published_id))["receipt"]
+    first_reply = platform_message(2, account, viewer, messages.adapter.sent[0][1], now + 1) | {
+        "msg_key": receipt["msg_key"],
+    }
+    store.activate(second["id"])
+    messages._ingest_history([first_reply], viewer, account, "观众")
+    saved = store.one("SELECT character_id,origin FROM dm_operator_replies WHERE message_id=?", (receipt["msg_key"],))
+    assert saved == {"character_id": first["id"], "origin": "oc"}
+
+    # A cached row from before the correction may still carry the polling character.
+    store.execute("UPDATE dm_operator_replies SET character_id=? WHERE message_id=?", (second["id"], receipt["msg_key"]))
+    draft_scope = {"platform": "bilibili", "account_id": account, "platform_user_id": viewer}
+    assert not messages._outgoing_history(draft_scope | {"character_id": second["id"]})
+    restored, = messages._outgoing_history(draft_scope | {"character_id": first["id"]})
+    assert restored["message_id"] == receipt["msg_key"] and restored["origin"] == "oc"
+
+
+async def test_manual_reply_settlement_keeps_actual_outgoing_id_when_oc_spoke_later(messages):
+    account, viewer = "900", "123"
+    store = messages.store
+    character = messages.runtime.character
+    now = int(time.time())
+    messages._ingest_history([platform_message(1, viewer, account, "八点开播吗？", now)], viewer, account, "观众")
+    source_id = store.one("SELECT id FROM dm_inbox WHERE message_id='1001'")["id"]
+    pending_id = messages.enqueue("message", source_id, schedule=False)
+    store.execute(
+        "INSERT INTO dm_drafts(platform,account_id,platform_user_id,character_id,character_version,source_kind,source_id,status,receipt) "
+        "VALUES('bilibili',?,?,?,?, 'comment',99,'published',?)",
+        (account, viewer, character["id"], character["version"], json.dumps({"msg_key": "1003"})),
+    )
+    messages._ingest_history([
+        platform_message(2, account, viewer, "八点开播。", now + 1),
+        platform_message(3, account, viewer, "你好，来给你之前点的歌单。", now + 2),
+    ], viewer, account, "观众")
+    await messages._generate(pending_id, False)
+    settled = store.one("SELECT outgoing_id FROM dm_incoming_settlements WHERE incoming_id=?", (source_id,))
+    assert settled == {"outgoing_id": "1002"}
+    assert not messages.adapter.sent
 
 
 async def test_history_gap_resumes_with_cursor_across_polls_without_skipping_a_page(messages):

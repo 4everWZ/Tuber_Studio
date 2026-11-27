@@ -11,6 +11,12 @@ from ...infra.inference.providers import public_error
 from ...persona.memory.daily import MemoryChanged
 from .state import HANDOFF_PLATFORM, IDLE_AFTER, IDLE_COOLDOWN, IDLE_WINDOW, TERMINAL
 
+IDLE_PROMPTS = (
+    "想聊的话，随时在弹幕里说。",
+    "最近刷到过什么让你想倒回去看一眼的片段？",
+    "想吐槽的话，讲一件今天遇到的离谱小事吧。",
+)
+
 
 class LiveSessionRunnerMixin:
     def start_worker(self):
@@ -113,7 +119,10 @@ class LiveSessionRunnerMixin:
                     self.last_activity = time.monotonic()
                 else:
                     self.idle_attempts.append(time.monotonic())
-                    line = self.options().idle_text or "想聊的话，随时在弹幕里说。"
+                    line = self.options().idle_text
+                    if not line.strip():
+                        line = IDLE_PROMPTS[self.idle_prompt_index]
+                        self.idle_prompt_index = (self.idle_prompt_index + 1) % len(IDLE_PROMPTS)
                     await self._submit(Event(type="idle", text=line), internal=True)
             while self.queue and self.state == "live" and not self.muted:
                 self.current_id = self.pick()

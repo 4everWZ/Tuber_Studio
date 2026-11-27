@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import time
 from typing import Any
 from uuid import uuid4
@@ -24,43 +23,6 @@ from .l2_bridge import (
 from .models import ResponseDecision
 from .session import OperationTurnResult, run_tool_session
 from .tools import ALL_OPERATION_TOOL_NAMES, OperationToolSession
-
-
-def _confirmed_bot_ids(store: Any, account_id: str, character_id: str, resource: str, root_id: str) -> set[str]:
-    """Return confirmed published bot comment IDs in this floor so manual owner replies stay separated."""
-    if not store or not account_id or not character_id or not resource or not root_id:
-        return set()
-    confirmed: set[str] = set()
-    tables = {r["name"] for r in store.all("SELECT name FROM sqlite_master WHERE type='table'")}
-    if "browsing_intents" in tables:
-        bvid, dynamic = (None, resource.removeprefix("dynamic:")) if resource.startswith("dynamic:") else (resource, None)
-        rows = store.all(
-            "SELECT receipt FROM browsing_intents WHERE account_id=? AND character_id=? "
-            "AND kind='reply_public' AND status='published' "
-            "AND CAST(json_extract(target,'$.root') AS TEXT)=? AND "
-            "((? IS NOT NULL AND json_extract(target,'$.bvid')=?) OR "
-            "(? IS NOT NULL AND COALESCE(CAST(json_extract(target,'$.dynamic_id') AS TEXT),"
-            "CAST(json_extract(target,'$.oid') AS TEXT))=?))",
-            (str(account_id), str(character_id), str(root_id), bvid, bvid, dynamic, dynamic),
-        )
-        for row in rows:
-            receipt = json.loads(row.get("receipt") or "{}")
-            rpid = str(receipt.get("rpid") or receipt.get("comment_id") or "")
-            if rpid:
-                confirmed.add(rpid)
-    if "drafts" in tables and "comments" in tables:
-        rows = store.all(
-            "SELECT d.receipt FROM drafts d JOIN comments c ON c.id=d.comment_id "
-            "WHERE d.account_id=? AND d.character_id=? AND c.platform='bilibili' "
-            "AND c.video_id=? AND c.thread_id=? AND d.status='published'",
-            (str(account_id), str(character_id), resource, str(root_id)),
-        )
-        for row in rows:
-            receipt = json.loads(row.get("receipt") or "{}")
-            rpid = str(receipt.get("rpid") or receipt.get("comment_id") or "")
-            if rpid:
-                confirmed.add(rpid)
-    return confirmed
 
 
 def _handoff_eligibility(engine: Any, row: dict[str, Any], thread: dict[str, Any], comment_reply: bool) -> dict[str, Any]:
@@ -110,11 +72,7 @@ def _build_browsing_tree(
     own_uid = str(self_actor.get("account_uid") or "")
     target = context.get("target") or {}
     comment_reply = kind == "reply_public" and not dynamic_source
-    base_video = (
-        material
-        if material and (not comment_reply or target.get("bvid") == (material.get("metadata") or {}).get("bvid"))
-        else None
-    )
+    base_video = material
     extra_base_blocks: list[str] = []
     if bound.get("own_public_experiences"):
         exp_lines = [
@@ -159,8 +117,8 @@ def _build_browsing_tree(
     if comment_reply:
         source = context.get("source") or {}
         root_id = str(target.get("root") or source.get("thread_id") or source.get("comment_id") or "")
-        resource = str(target.get("bvid") or ("dynamic:" + str(target.get("oid"))) if target.get("oid") else "")
-        confirmed_ids = _confirmed_bot_ids(
+        resource = engine._channel("resource_key")(target) or ""
+        confirmed_ids = engine._channel("confirmed_bot_comment_ids")(
             engine.browsing.store, str(row.get("account_id") or ""), str(row["character_id"]), resource, root_id
         )
         uploader_uid = context.get("resource_author_uid") or (bound.get("video_source") or {}).get("owner_uid")
@@ -226,7 +184,6 @@ def _build_browsing_tree(
         objectives.append("注意：完整字幕较长，上方仅显示分P目录；需要细看某一段请调用 read_video_segment。")
     branch = fork_top_level_comment_branch(
         tree,
-        existing_hot_comments=recent,
         objective="\n".join(objectives),
     )
     return tree, branch.node_id
@@ -258,7 +215,11 @@ async def run_native_browsing_response(
     target = context.get("target") or {}
     source = context.get("source") or {}
     root_id = str(target.get("root") or source.get("comment_id") or "")
-    resource = str(target.get("bvid") or ("dynamic:" + str(target.get("oid"))) if target.get("oid") else (material or {}).get("metadata", {}).get("bvid") or "")
+    resource = str(
+        engine._channel("resource_key")(target)
+        or ((material or {}).get("metadata") or {}).get("bvid")
+        or ""
+    )
 
     tree, branch_id = _build_browsing_tree(
         engine,
@@ -394,7 +355,7 @@ async def run_native_browsing_response(
         "account_id": row["account_id"],
         "character": {"id": row["character_id"], "version": row["character_version"]},
         "schema": "ResponseDecision",
-        "protocol": "native-multiturn-tools-v1",
+        "protocol": "native-multiturn-tools-v2",
         "self_identity": captured_identity(rendered),
         "source_sha256": content_hash({"kind": kind, "resource": resource, "root_id": root_id, "source": source}),
         "model": engine.browsing.model_signature(),

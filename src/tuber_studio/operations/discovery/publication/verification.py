@@ -8,6 +8,7 @@ from ....core.models import content_hash
 from ....core.store import dump
 from ....core.text import validate_comment_body
 from ....infra.platforms.bilibili.client import PlatformReadError
+from ...channels.comments.timeline import comment_is_third_party, comment_thread_context
 from ...kernel.decision_engine import ResponseEngine
 from ...kernel.feedback import publication_binding as make_publication_binding
 from ...kernel.generation import generate_with_recovery
@@ -376,12 +377,14 @@ async def verify_intent_source_before_publish(publisher, row, account, materials
     operator_reply = publisher._channel("operator_reply")
     resource_key = publisher._channel("resource_key")
     verified = await publisher._verify_reply_source(target, account)
-    with publisher.browsing.store.db:
+    store = publisher.browsing.store
+    items = verified.get("items") or []
+    with store.db:
         observe_thread(
-            publisher.browsing.store,
+            store,
             row,
             resource_key(target),
-            verified.get("items"),
+            items,
             via="submission_check",
             resource_author_uid=verified.get("resource_author_uid"),
         )
@@ -397,8 +400,20 @@ async def verify_intent_source_before_publish(publisher, row, account, materials
                 publisher.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
             )
         return None
-    if handled := operator_reply(verified.get("items", []), target, account):
+    if handled := operator_reply(items, target, account):
         return publisher._record_account_reply(row, handled)
+    # During an automatic send the draft is pending review. Explicitly
+    # approved sends can still join an existing discussion.
+    if row["status"] == "pending_review" and target.get("bvid") and not target.get("source_event"):
+        source = next((item for item in items if str(item["comment_id"]) == str(target["parent"])), None)
+        if source and comment_is_third_party(comment_thread_context(source, items, target), account):
+            reason = "当前楼回复指向第三方账号，保留草稿待审核"
+            store.execute(
+                "UPDATE browsing_intents SET auto_authorized=0,error=?,updated_at=? "
+                "WHERE id=? AND status='pending_review' AND text=?",
+                (reason, time.time(), identity, row["text"]),
+            )
+            raise ValueError(reason)
     name = verified["source"].get("author_name")
     if name and name != target.get("recipient_name"):
         validate_comment_body(row["text"], recipient_name=name)

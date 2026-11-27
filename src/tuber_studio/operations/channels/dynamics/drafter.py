@@ -49,7 +49,12 @@ class DynamicsDrafterMixin:
                 return False
             if source["type"] == "watched_video" and source.get("material_version"):
                 return fresh.get("material_version") == source["material_version"]
-            return all(fresh.get(key) == value for key, value in source.items() if key != "observed_at")
+            if source.get("original_author") and source["original_author"].get("uid") != (
+                fresh.get("original_author") or {}
+            ).get("uid"):
+                return False
+            return all(fresh.get(key) == value for key, value in source.items()
+                       if key not in {"observed_at", "original_author"})
 
         return (
             row["character_id"] == char["id"]
@@ -362,6 +367,7 @@ class DynamicsDrafterMixin:
                 fresh
             ):
                 raise ValueError("身份更新期间动态正文或来源已变化")
+        participants.extend(source["original_author"] for source in sources if source.get("original_author"))
             if (
                 runtime_identity(self.runtime, character, account)["identity_version"]
                 != identity["identity_version"]

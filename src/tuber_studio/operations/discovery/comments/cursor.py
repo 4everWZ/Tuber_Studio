@@ -141,7 +141,7 @@ def enqueue_comment_visit(browsing, row, task_id, metadata, items, *, interactiv
             continue
         parent_row = by_id.get(str(item.get("parent_comment_id") or ""))
         parent_uid = str(comment_source(parent_row)["author_uid"]) if parent_row else ""
-        is_direct = bool(own_uid and parent_uid == own_uid)
+        is_direct = bool(own_uid and parent_uid == own_uid and item.get("parent_verified") is not False)
         combined_text = "\n".join(
             filter(None, [source["text"], *(comment_source(g)["text"] for g in item.get("grouped_comments", []))])
         )

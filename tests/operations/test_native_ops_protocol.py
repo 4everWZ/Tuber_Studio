@@ -342,6 +342,9 @@ def test_shared_video_base_identical_prefix_and_owner_takeover_history():
         {"comment_id": "601", "author_uid": "300", "author_name": "路人", "text": "视频里的参数怎么调？"},
         {"comment_id": "602", "author_uid": "100", "author_name": "号主", "text": "这里我先手工回复一下，先把温度调低。"},
         {"comment_id": "603", "author_uid": "100", "author_name": "Aqua", "text": "收到，后面看盐水浓度就行。"},
+        {"comment_id": "605", "author_uid": "888", "author_name": "Aqua", "text": "我的投稿已经做完了。",
+         "speaker_role": "Aqua", "publication": "confirmed", "parent_comment_id": "602", "parent_verified": False},
+        {"comment_id": "999", "thread_id": "999", "author_uid": "100", "text": "这是另一个讨论楼。"},
     ]
     b1 = fork_comment_floor_branch(
         tree,
@@ -349,7 +352,7 @@ def test_shared_video_base_identical_prefix_and_owner_takeover_history():
         timeline=timeline,
         reply_target={"comment_id": "604", "author_uid": "300", "author_name": "路人", "text": "那现在还用加盐吗？"},
         self_uid="100",
-        confirmed_bot_comment_ids={"603"},
+        confirmed_bot_comment_ids={"603", "605"},
     )
     b2 = fork_comment_floor_branch(
         tree,
@@ -370,6 +373,9 @@ def test_shared_video_base_identical_prefix_and_owner_takeover_history():
     assert "[人工接管" in takeover_msg["content"]
     bot_msg = next(m for m in m1 if "后面看盐水浓度" in m["content"])
     assert bot_msg["role"] == "assistant"
+    other = next(m for m in m1 if "我的投稿已经做完了" in m["content"])
+    assert other["role"] == "user" and "[评论者" in other["content"] and "(回复" not in other["content"]
+    assert all("这是另一个讨论楼" not in item["content"] for item in m1)
 
     dm_branch = fork_dm_session_branch(
         tree,
@@ -431,21 +437,33 @@ async def test_native_comments_and_dm_channels_preserve_takeovers_and_skip(brows
 
     client2 = await _attach_responses(browsing.runtime, browsing.settings, cmt_handler)
     try:
-        row = {
-            "comment_id": "c-601",
-            "video_id": BV,
-            "thread_id": "c-600",
-            "parent_comment_id": "c-600",
-            "platform": "bilibili",
+        source = {
+            "comment_id": "602",
+            "thread_id": "601",
+            "parent_comment_id": "601",
             "platform_user_id": "300",
             "display_name": "观众甲",
             "content": "加一点盐真有用吗？",
         }
+        root = {"comment_id": "601", "platform_user_id": "100", "display_name": "Aqua", "content": "可以做浮力小实验。"}
+        browse_target = json.dumps({"bvid": BV, "root": "0", "parent": "0"})
+        browsing.store.execute(
+            "INSERT INTO browsing_intents(id,account_id,character_id,kind,status,text,target,receipt,updated_at) "
+            "VALUES('root-601','100','whale','top_level','published',?,?,?,?)",
+            (root["content"], browse_target, '{"rpid":"601"}', time.time()),
+        )
+        browsing.comments.import_items(BV, [root, source])
+        row = browsing.store.one("SELECT * FROM comments WHERE video_id=? AND comment_id='602'", (BV,))
+        character = browsing.runtime.character
+        event = browsing.comments._comment_event(row) | browsing.comments._comment_actors(row, character, "100")
         reply_obj, _ = await generate_native_comment_reply(
-            browsing.comments, row, browsing.runtime.character, {"event_id": "c-601", "mentions": []}, {}, "100"
+            browsing.comments, row, character, event, {}, "100"
         )
         assert reply_obj is not None and reply_obj.spoken_text == "确实，稍微放点盐就浮起来啦。"
-        assert "[ref:" not in json.dumps(captured_cmt[0], ensure_ascii=False)
+        prompt = captured_cmt[0]["input"]
+        assert {"role": "assistant", "content": root["content"]} in prompt
+        assert any("对方正在直接 @ 或回复本账号" in item["content"] for item in prompt)
+        assert "[ref:" not in json.dumps(prompt, ensure_ascii=False)
     finally:
         await client2.close()
 
@@ -457,7 +475,9 @@ async def test_dynamics_dual_track_grounded_and_standalone_native_posts(browsing
             "type": "published_reply",
             "bvid": BV,
             "video": {"bvid": BV, "title": "盐水实验"},
+            "reference": {"resource": BV, "thread_id": "80"},
             "original_comment": {
+                "id": "80",
                 "author_name": "盐水实验室",
                 "author_uid": "200",
                 "text": "加盐后鸡蛋浮起来了",
@@ -466,8 +486,10 @@ async def test_dynamics_dual_track_grounded_and_standalone_native_posts(browsing
         }
     ]
     mode = {"standalone": False}
+    captured = []
 
     def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(json.loads(request.content))
         if mode["standalone"]:
             return _resp_msg("dyn_2", "今天安静看着水波发呆了一会儿，原来放空也蛮舒服的。")
         return _resp_msg("dyn_1", f"刚才和 @盐水实验室 聊完《盐水实验》才注意到细节，视频在这里 https://www.bilibili.com/video/{BV}")
@@ -480,7 +502,8 @@ async def test_dynamics_dual_track_grounded_and_standalone_native_posts(browsing
             char=char,
             evaluation_account="100",
             recent_posts=[],
-            related_posts=[],
+            related_posts=[{"status": "pending", "content": "海面上的旧草稿"},
+                           {"status": "shared", "content": "海面上的已发记录"}],
             public_sources=public_sources,
             unified_public=[],
             current_time="2026-11-24T12:00:00Z",
@@ -490,6 +513,9 @@ async def test_dynamics_dual_track_grounded_and_standalone_native_posts(browsing
         assert grounded["link_source_ids"] == ["src-1"]
         assert grounded["illustration"] == "comment_card"
         assert grounded["mentions"] == [{"label": "@盐水实验室", "account": "200"}]
+        prompt = json.dumps(captured[0], ensure_ascii=False)
+        assert "未确认发布" in prompt and "海面上的旧草稿" in prompt
+        assert "平台已确认" in prompt and "海面上的已发记录" in prompt
 
         browsing.dynamics.store.set("browsing_policy", browsing.policy())
         row = {"id": "dyn-row-1", "account_id": "100", "character_version": 1, "created_at": time.time()}
@@ -517,5 +543,31 @@ async def test_dynamics_dual_track_grounded_and_standalone_native_posts(browsing
         assert standalone["source_ids"] == []
         assert standalone["points"] == []
         assert "水波发呆" in standalone["content"]
+    finally:
+        await client.close()
+
+
+async def test_native_dynamic_preserves_rejected_planning_output_for_review(browsing):
+    from tuber_studio.operations.kernel.generation import GenerationInvalid
+
+    leaked = "Final draft:\nLet me polish the caption. Should I skip? No.\n\n刷到有人在聊插件市场。"
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return _resp_msg("dynamic-leak", leaked)
+
+    client = await _attach_responses(browsing.runtime, browsing.settings, handler)
+    try:
+        with pytest.raises(GenerationInvalid, match="思考过程"):
+            await evaluate_native_dynamic(
+                browsing.dynamics, char=browsing.runtime.character, evaluation_account="100",
+                recent_posts=[], related_posts=[], public_sources=[], unified_public=[],
+                current_time="2026-11-27T12:00:00+08:00",
+            )
+        saved = browsing.store.one("SELECT id FROM operation_continuations WHERE channel='generation.dynamics'")
+        episode = browsing.runtime.continuations.get(saved["id"])
+        assert episode["state"] == "invalid" and episode["original_output"] == leaked
+        assert len(calls) == 1 and not browsing.adapter.sent
     finally:
         await client.close()

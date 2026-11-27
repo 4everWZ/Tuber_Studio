@@ -3,7 +3,6 @@
 import asyncio
 import hashlib
 import json
-import re
 import time
 from contextlib import AsyncExitStack
 from datetime import datetime
@@ -15,6 +14,7 @@ from ....core.meter import budgeted_json
 from ....core.models import content_hash
 from ....core.text import MAX_OPERATION_TEXT_BYTES, operation_character, operation_output_diagnostics
 from ....infra.platforms.bilibili.dynamics import validate_text
+from ....infra.platforms.bilibili.urls import COMMENT_ID, VIDEO_ID, comment_href
 from ....persona.assets.illustration_policy import illustration_policy
 from ....persona.assets.meme_selection import select_meme
 from ....persona.characters.front_persona import expressive_persona
@@ -23,7 +23,7 @@ from ....persona.memory import recall as recall_memory
 from ...kernel.generation import generate_with_recovery
 from ..attachments import workstation_image_decisions
 from ..mentions import MENTION_INSTRUCTION, MENTION_REQUESTS, mention_requests
-from .materials import MaterialFilter, public_reads, reflections, source_links
+from .materials import MaterialFilter, dynamic_model_material, public_reads, reflections, source_links
 from .repository import (
     MAX_SAFE_INTEGER,
     _content_hash,
@@ -39,7 +39,9 @@ def dynamic_decision_messages(character, recent_posts, public_sources, *, curren
             "role": "system",
             "content": (
                 "用自己的口吻和关注你的人分享。今天想聊什么、想聊多长，由你决定。"
-                "public_incident是公开经历和原评论，published_reply是来评和你当时发出的回复，"
+                "public_incident是公开经历和原评论。published_reply 的 text 是带回执的回复，"
+                "original_comment 是来评，original_author 对应来评作者，reply_account_uid 对应回复账号。"
+                "public_comment 是读到的评论，watched_video 是读到的视频内容。"
                 "public_memory是角色故事摘录，runtime_event是运行记录，operator_note是号主确认的经历。"
                 "随想、创作、兴趣、日常观察、角色小故事或公开互动都可以独立成稿，篇幅随话题。"
                 "动态适合轻量单点分享、心情随想或视频预告；遇到多幕前后对比、系统架构图解或界面实操演示等高信息密度专题，动态里只做简短预热，完整展开留给视频成片。"
@@ -223,10 +225,13 @@ class DynamicsEvaluatorMixin:
                 references = public["references"]
                 if not references:
                     continue
+                original = references[0]
                 result.append({"id": f"organized:{row['id']}", "type": "public_incident", "fictional": False,
                                "text": public["text"], "memory_version": row["updated_at"],
-                               "observed_at": row["created_at"],
-                               "source_url": references[0]["href"], "public_sources": [
+                               "observed_at": row["created_at"], "source_url": original["href"],
+                               "original_author": {"uid": original.get("author_uid"), "name": original.get("author_name")},
+                               "original_material_kind": "comment" if original.get("comment_id") else "subtitle",
+                               "public_sources": [
                                    {"bvid": anchor["resource"], "thread_id": anchor["root_id"],
                                     "comment_id": ref["comment_id"], "quote": ref["text"]} for ref in references
                                ] if anchor.get("resource", "").startswith("BV") else []})
@@ -235,10 +240,12 @@ class DynamicsEvaluatorMixin:
                 source["memory_preference_revision"] = preference["revision"]
         has_account = any(row[1] == "account_id" for row in self.store.db.execute("PRAGMA table_info(drafts)"))
         scoped = bool(account_id and has_account)
+        account_column = "d.account_id" if has_account else "NULL AS account_id"
         legacy_time = "d.updated_at"
         legacy_filter, legacy_args = query.sql("d.text||' '||c.content", legacy_time, "c.video_id")
         rows = self.store.all(
-            "SELECT d.id,d.text,d.receipt,d.updated_at,c.video_id,c.comment_id,c.content FROM drafts d "
+            f"SELECT d.id,d.text,d.receipt,{account_column},d.updated_at,c.video_id,c.comment_id,c.content,"
+            "c.platform_user_id,c.display_name FROM drafts d "
             "JOIN comments c ON c.id=d.comment_id WHERE d.status='published' AND c.platform='bilibili' "
             "AND json_extract(d.answer_check,'$.organized_memory') IS NULL "
             "AND d.character_id=? AND d.character_version=? " + (
@@ -255,9 +262,7 @@ class DynamicsEvaluatorMixin:
             try:
                 receipt = json.loads(row["receipt"] or "null")
                 # A copied/imported row without an actual platform receipt is not public evidence.
-                if not isinstance(receipt, dict) or not re.fullmatch(
-                    r"[1-9][0-9]{0,19}", str(receipt.get("rpid", ""))
-                ):
+                if not isinstance(receipt, dict) or not COMMENT_ID.fullmatch(str(receipt.get("rpid"))):
                     continue
             except (ValueError, TypeError):
                 continue
@@ -269,6 +274,8 @@ class DynamicsEvaluatorMixin:
                     "fictional": True,
                     "source_url": f"https://www.bilibili.com/video/{row['video_id']}",
                     "original_comment": {"id": row["comment_id"], "text": row["content"]},
+                    "original_author": {"uid": row["platform_user_id"], "name": row["display_name"]},
+                    "reply_account_uid": row["account_id"] or receipt.get("account_id"),
                     "receipt_id": str(receipt["rpid"]),
                     "observed_at": row["updated_at"],
                 }
@@ -279,7 +286,8 @@ class DynamicsEvaluatorMixin:
                 material.extend(public_reads(self.store, account_id, char["id"], bound_ids, query))
                 reply_filter, reply_args = query.sql(
                     "text||' '||COALESCE(json_extract(target,'$.source_text'),'')", "updated_at",
-                    "COALESCE(json_extract(target,'$.resource'),json_extract(target,'$.bvid'))",
+                    "COALESCE(json_extract(target,'$.resource'),json_extract(target,'$.bvid'),"
+                    "'dynamic:'||json_extract(target,'$.dynamic_id'))",
                     "COALESCE(json_extract(target,'$.root'),json_extract(target,'$.root_id'))",
                 )
                 for row in self.store.all(
@@ -294,17 +302,25 @@ class DynamicsEvaluatorMixin:
                      _json(bound_ids), _json(bound_ids)),
                 ):
                     target, receipt = json.loads(row["target"]), json.loads(row["receipt"] or "null")
-                    if not isinstance(receipt, dict) or not re.fullmatch(r"[1-9][0-9]{0,19}", str(receipt.get("rpid"))) or not (
-                        re.fullmatch(r"BV[0-9A-Za-z]{10}", str(target.get("bvid"))) and target.get("source_text")
-                    ):
+                    if not isinstance(receipt, dict) or not COMMENT_ID.fullmatch(str(receipt.get("rpid"))):
+                        continue
+                    resource = target.get("bvid")
+                    if not VIDEO_ID.fullmatch(str(resource)):
+                        if not COMMENT_ID.fullmatch(str(target.get("dynamic_id"))):
+                            continue
+                        resource = f"dynamic:{target['dynamic_id']}"
+                    source_text = target.get("source_text")
+                    if not source_text or not COMMENT_ID.fullmatch(str(target.get("parent"))):
                         continue
                     result.append({
                         "id": f"reply:browsing:{row['id']}", "type": "published_reply", "text": row["text"],
-                        "fictional": False, "source_url": f"https://www.bilibili.com/video/{target['bvid']}",
-                        "original_comment": {"id": target.get("parent"), "text": target["source_text"]},
+                        "fictional": False, "source_url": comment_href(resource),
+                        "original_comment": {"id": target["parent"], "text": source_text},
+                        "original_author": {"uid": target.get("recipient"), "name": target.get("recipient_name")},
+                        "reply_account_uid": account_id,
                         "receipt_id": str(receipt["rpid"]),
                         "observed_at": row["updated_at"],
-                        "reference": {"resource": target["bvid"], "thread_id": target.get("root") or target.get("root_id")},
+                        "reference": {"resource": resource, "thread_id": target.get("root") or target.get("root_id")},
                     })
         for row in self._memory_rows(query=query, bound_ids=bound_ids, authorized_only=True) if preference["enabled"] else ():
             mark = self.store.one(
@@ -333,12 +349,16 @@ class DynamicsEvaluatorMixin:
 
     def _recent_public_posts(self, character):
         _, preference = self._memory_preference()
-        account = getattr(self.account, "display_account_id", lambda: "")()
+        candidates = self.store.all(
+            "SELECT * FROM dynamic_posts WHERE status='published' AND account_id=? "
+            "AND character_id=? AND character_version=? AND json_extract(receipt,'$.dynamic_id') IS NOT NULL "
+            "ORDER BY published_at DESC, id DESC LIMIT 12",
+            (self._source_account(), character["id"], character["version"]),
+        )
         return [
             {"content": post["content"], "published_at": post["published_at"]}
-            for post in self.list_posts("published", 5)
-            if (post["character_id"], post["character_version"]) == (character["id"], character["version"])
-            and (not account or post["account_id"] == account)
+            for post in map(self._decode, candidates)
+            if COMMENT_ID.fullmatch(str((post.get("receipt") or {}).get("dynamic_id")))
             and not _has_legacy_chat_lineage(post)
             and not json.loads(post.get("context_sources") or "[]")
             and not any(
@@ -349,7 +369,7 @@ class DynamicsEvaluatorMixin:
                 ))
                 for source in post["sources"]
             )
-        ]
+        ][:5]
 
     def _related_posts(self, character, account, sources):
         if not sources or not account:
@@ -375,6 +395,8 @@ class DynamicsEvaluatorMixin:
             found = 0
             for row in candidates:
                 row = self._decode(row)
+                if shared and not COMMENT_ID.fullmatch(str((row.get("receipt") or {}).get("dynamic_id"))):
+                    continue
                 if not self._valid_sources(row | {"character_version": character["version"]}):
                     continue
                 history.append({
@@ -639,7 +661,7 @@ class DynamicsEvaluatorMixin:
                     if topic:
                         sources = recall_memory.search_public(self, recall_memory.RecallQuery(topic=topic))["items"]
                     originals = recall_memory.originals(sources)
-                    public_sources = [recall_memory.model_material(source, comment_texts=originals) for source in sources]
+                    public_sources = [dynamic_model_material(source, comment_texts=originals) for source in sources]
                     if not manual and self._live_busy():
                         base["reason"] = "直播队列繁忙，延后动态评估"
                         return self._save_decision(char, manual, base, [])
@@ -651,7 +673,7 @@ class DynamicsEvaluatorMixin:
                             char=char,
                             evaluation_account=evaluation_account,
                             recent_posts=self._recent_public_posts(char),
-                            related_posts=self._related_posts(char, getattr(self.account, "display_account_id", lambda: "")(), sources),
+                            related_posts=self._related_posts(char, evaluation_account, sources),
                             public_sources=public_sources,
                             unified_public=list(
                                 getattr(self.runtime, "unified_memory", None).for_prompt("public", character_id=char["id"], limit=15)

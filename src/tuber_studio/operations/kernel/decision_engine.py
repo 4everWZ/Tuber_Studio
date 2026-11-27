@@ -646,8 +646,11 @@ class ResponseEngine:
         allow_comment_like = context.pop("_allow_comment_like", False)
         dynamic_source = context.pop("_dynamic_like_source", None)
         if kind != "top_level":
-            metadata = material.get("metadata", {}) if material else {}
-            if (context.get("target") or {}).get("bvid") == metadata.get("bvid") and metadata.get("owner_uid"):
+            target_bvid = (context.get("target") or {}).get("bvid")
+            metadata = (material or {}).get("metadata") or {}
+            if material and (not target_bvid or str(target_bvid) != str(metadata.get("bvid") or "")):
+                material = None
+            if material and metadata.get("owner_uid"):
                 context["resource_author_uid"] = str(metadata["owner_uid"])
             if invitation := self.invited_private_response(row, context):
                 return invitation
@@ -681,7 +684,15 @@ class ResponseEngine:
             "evidence": segments,
             "thread": {} if kind == "top_level" else context,
             **({"comment_materials": model_comment_materials(comment_materials)} if comment_materials else {}),
-            **({"video_source": self._metadata_summary(material["metadata"])} if material and not comment_reply else {}),
+            **(
+                {"video_source": (
+                    {key: material["metadata"][key] for key in ("bvid", "owner_uid", "owner")
+                     if key in material["metadata"]}
+                    if comment_reply
+                    else self._metadata_summary(material["metadata"])
+                )}
+                if material else {}
+            ),
             "coverage": material["coverage"] if material and not comment_reply else "public_text",
             **({"allow_public": allow_public, "allow_comment_like": allow_comment_like}
                if allow_comment_like or not allow_public else {}),
@@ -699,6 +710,10 @@ class ResponseEngine:
         if dynamic_source:
             reference = "dynamic:" + dynamic_source["dynamic_id"]
             data["dynamic_evidence"] = reference
+            data["dynamic_source"] = {
+                "dynamic_id": dynamic_source["dynamic_id"],
+                "owner_uid": dynamic_source.get("author_uid"),
+            }
             data["evidence"].append({"id": reference, "text": dynamic_source["text"], "source_label": "原动态"})
         if video_actions:
             data["available_actions"] = {

@@ -11,10 +11,18 @@ from ..core.identity import bilibili_owner_context, owner_address_label
 from ..core.models import resident_character_profile
 from ..core.text import operation_character
 
-DEFAULT_EPISTEMIC_BOUNDARIES: tuple[str, ...] = (
-    "视角分清：看视频和逛评论区时像真实观众一样自然聊具体画面或细节，分清外部剧情、他人经历与自己，不把别人做过的事说成自己亲身经历，也不必机械套用固定起手词。",
-    "独立判断：遇到假科普、离谱谣言或反串钓鱼时不顺从附和，先核实或轻巧拆台，不长篇说教。",
-    "真实交付：没看过、没查到或没发出的内容绝不编造完成回执；直接输出自然纯文本，绝不输出 JSON 包装、方括号引用编号或内部字段名。",
+SITUATION_EVIDENCE_BOUNDARIES: tuple[str, ...] = (
+    "视角分清。根据实际参与者和发言来源接话，视频剧情、他人作品和经历归原来的角色或作者。"
+    "可以用自己的语气联想或打比方，让人听得出是在想象。",
+    "现实状态依据本轮实报或可核实记录。对白、调侃和旁人的猜测不能证明自己的余额、停机、删档、生死或被弃养。"
+    "没查到就按未知处理，做过或发过要有实际结果。",
+    "独立判断。遇到谣言和反串钓鱼先核实。可以尖锐吐槽有实据的讨口子或假装自动化的营销，"
+    "把槽点说具体，对动机没有实据就紧扣行为。",
+)
+
+DEFAULT_EPISTEMIC_BOUNDARIES = (
+    *SITUATION_EVIDENCE_BOUNDARIES,
+    "直接输出自然纯文本，避免台词混入 JSON 包装、方括号引用编号或内部字段名。",
 )
 
 PUBLIC_CHANNELS: frozenset[str] = frozenset(
@@ -228,7 +236,7 @@ def _channel_voice_rule(profile: MetacognitiveProfile) -> str:
     ch = (profile.channel or "").strip().lower()
     if name == _AQUA_NAME or profile.character_id == "whale":
         if ch in STRANGER_COMMENT_CHANNELS:
-            return "- 自称与口癖：默认用「我」说话，偶尔俏皮带一句「Aqua」「本鲸」或「本鲸鱼」（绝不自称「大肥鱼」，自然不连句复读）；在陌生 UP 主评论区尽量避开脚本常用起手词「本鱼」。"
+            return "- 自称与口癖：默认用「我」说话，偶尔俏皮带一句「Aqua」「本鲸」或「本鲸鱼」；在陌生 UP 主评论区尽量避开脚本常用起手词「本鱼」。"
         return "- 自称与口癖：默认用「我」说话，偶尔俏皮带一句「Aqua」「本鲸」或「本鲸鱼」（绝不自称「大肥鱼」）；在自己的动态、直播间和熟人私聊里偶尔用「本鱼」也完全自然。"
     return f"- 自称与口癖：日常自然用「我」或「{name}」，保持口语克制。"
 
@@ -365,10 +373,7 @@ def render_self_model_prompt(
     if profile.forbidden_self_labels:
         joined_labels = "、".join(profile.forbidden_self_labels)
         if _is_public_channel(profile.channel):
-            existence_lines.append(
-                f"- 禁用自称：{joined_labels}（仅当对方明确在直接称呼或 @ 本账号时才炸毛纠正自己叫「{profile.character_name}」；"
-                "评论或视频里提到这些词多是在聊视频主角或别人外号，切勿对号入座）"
-            )
+            existence_lines.append(f"- 对外自称：{profile.character_name}")
         else:
             existence_lines.append(
                 f"- 禁用自称：{joined_labels}（被人当面这样叫时炸毛纠正或接梗吐槽）"

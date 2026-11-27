@@ -357,7 +357,9 @@ def slice_video_segments(
     }
 
 
-def _video_header_lines(material: dict[str, Any], *, first_impression: str = "") -> list[str]:
+def _video_header_lines(
+    material: dict[str, Any], *, first_impression: str = "", account_uid: str = ""
+) -> list[str]:
     metadata = material.get("metadata") if isinstance(material.get("metadata"), dict) else {}
     lines = ["【观看视频材料】"]
     if bvid := str(metadata.get("bvid") or "").strip():
@@ -368,7 +370,10 @@ def _video_header_lines(material: dict[str, Any], *, first_impression: str = "")
     owner_uid = str(metadata.get("owner_uid") or "").strip()
     if owner or owner_uid:
         uid_part = f" (UID:{owner_uid})" if owner_uid else ""
-        lines.append(f"- UP主：{owner or '未知'}{uid_part}")
+        ownership = ""
+        if owner_uid and account_uid:
+            ownership = "（本账号的投稿）" if owner_uid == account_uid else "（其他账号的投稿，本轮以观众身份阅读）"
+        lines.append(f"- UP主：{owner or '未知'}{uid_part}{ownership}")
     if duration := metadata.get("duration"):
         lines.append(f"- 时长：{timestamp(_safe_float(duration))}（{int(_safe_float(duration))}秒）")
     tags = [str(tag).strip() for tag in (metadata.get("tags") or ()) if str(tag).strip()]
@@ -386,12 +391,13 @@ def format_video_base_text(
     material: dict[str, Any],
     *,
     first_impression: str = "",
+    account_uid: str = "",
     max_tokens: int = DEFAULT_VIDEO_BASE_TOKEN_LIMIT,
     token_counter: Callable[[str], int] | None = None,
 ) -> tuple[str, bool, int]:
     """Render watched video base text, degrading to chapter digests if > max_tokens."""
     counter = token_counter or estimate_tokens
-    header_lines = _video_header_lines(material, first_impression=first_impression)
+    header_lines = _video_header_lines(material, first_impression=first_impression, account_uid=account_uid)
     segments = normalize_video_segments(material)
 
     if not segments:
@@ -521,6 +527,7 @@ def build_base_node(
         video_text, degraded, video_tokens = format_video_base_text(
             video_material,
             first_impression=first_impression,
+            account_uid=str(((self_actor or operating_account) or {}).get("account_uid") or ""),
             max_tokens=max_video_tokens,
             token_counter=token_counter,
         )
@@ -637,7 +644,11 @@ def _comment_fields(row: dict[str, Any]) -> dict[str, Any]:
     cid = str(row.get("comment_id") or row.get("id") or "").strip()
     root = str(row.get("thread_id") or row.get("root_id") or cid).strip()
     parent = row.get("parent_comment_id") if "parent_comment_id" in row else row.get("parent_id")
-    parent_str = str(parent).strip() if parent not in (None, "", 0, "0") else None
+    parent_str = (
+        str(parent).strip()
+        if row.get("parent_verified") is not False and parent not in (None, "", 0, "0")
+        else None
+    )
     uid = str(row.get("author_uid") or row.get("platform_user_id") or row.get("user_id") or "").strip()
     name = str(row.get("author_name") or row.get("display_name") or row.get("username") or "").strip()
     text = str(row.get("text") if row.get("text") is not None else (row.get("content") or "")).strip()
@@ -648,9 +659,6 @@ def _comment_fields(row: dict[str, Any]) -> dict[str, Any]:
         "author_uid": uid,
         "author_name": name or "评论者",
         "text": text,
-        "speaker_role": row.get("speaker_role") or row.get("role"),
-        "publication": row.get("publication"),
-        "is_owner_takeover": bool(row.get("is_owner_takeover")),
     }
 
 
@@ -664,17 +672,9 @@ def _classify_floor_speaker(
 ) -> tuple[str, str]:
     cid = item["comment_id"]
     uid = item["author_uid"]
-    explicit_role = str(item.get("speaker_role") or "").strip()
-
-    if explicit_role in {"oc", "assistant", "Aqua", "小鲸鱼"} or item.get("publication") == "confirmed" or (
-        cid and cid in confirmed_ids
-    ):
-        return "assistant", "Aqua"
-    if (
-        item.get("is_owner_takeover")
-        or explicit_role in {"operator", "号主人工接管", "人工接管"}
-        or (self_uid and uid == str(self_uid))
-    ):
+    if self_uid and uid == str(self_uid):
+        if cid in confirmed_ids:
+            return "assistant", "角色已发送"
         return "user", "人工接管"
     if uploader_uid and uid == str(uploader_uid):
         return "user", "UP主"
@@ -703,7 +703,11 @@ def fork_comment_floor_branch(
     """Fork a per-root_id comment floor branch including owner manual takeover turns."""
     root_str = str(root_id).strip()
     confirmed = {str(cid) for cid in (confirmed_bot_comment_ids or ()) if str(cid).strip()}
-    normalized_items = [_comment_fields(row) for row in timeline]
+    normalized_items = [
+        _comment_fields(row)
+        for row in timeline
+        if str(row.get("thread_id") or row.get("root_id") or root_str) == root_str
+    ]
     target = _comment_fields(reply_target) if reply_target else (normalized_items[-1] if normalized_items else None)
     by_id = {item["comment_id"]: item for item in normalized_items if item["comment_id"]}
 

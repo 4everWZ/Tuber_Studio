@@ -22,6 +22,24 @@ _DETAIL_FEATURES = (
 )
 
 
+def dynamic_detail_params(dynamic_id):
+    return {
+        **_DYNAMIC_CLIENT,
+        "id": dynamic_id,
+        "timezone_offset": -480,
+        "platform": "web",
+        "gaia_source": "main_web",
+        "features": _DETAIL_FEATURES,
+        "web_location": "333.1368",
+        "x-bili-web-req-json": '{"spm_id":"333.1368"}',
+    }
+
+
+def dynamic_summary(module):
+    opus = (module.get("major") or {}).get("opus") or {}
+    return opus.get("summary") or module.get("desc") or {}
+
+
 def _id(value, *, zero=False):
     if isinstance(value, bool) or not isinstance(value, (int, str)):
         raise ValueError("核对记录缺少有效标识")
@@ -238,16 +256,7 @@ async def reconcile_dynamic(read, target, *, author_uid, text, started_at, recei
         if expected:
             data = await read(
                 "/x/polymer/web-dynamic/v1/detail",
-                {
-                    **_DYNAMIC_CLIENT,
-                    "id": expected,
-                    "timezone_offset": -480,
-                    "platform": "web",
-                    "gaia_source": "main_web",
-                    "features": _DETAIL_FEATURES,
-                    "web_location": "333.1368",
-                    "x-bili-web-req-json": '{"spm_id":"333.1368"}',
-                },
+                dynamic_detail_params(expected),
             )
             records = [data["item"]]
         else:
@@ -275,7 +284,7 @@ async def reconcile_dynamic(read, target, *, author_uid, text, started_at, recei
                 modules = item["modules"]
                 poster = modules["module_author"]
                 dynamic = modules["module_dynamic"]
-                summary = ((dynamic.get("major") or {}).get("opus") or {}).get("summary") or dynamic["desc"]
+                summary = dynamic_summary(dynamic)
                 if (
                     (expected and identifier != expected)
                     or _id(poster["mid"]) != author

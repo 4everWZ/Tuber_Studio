@@ -10,7 +10,7 @@ from ....infra.inference.providers import public_error
 from .models import ConversationWindow, MessageInputChanged
 from .outreach import confirmed_invitation, verified_agreement
 
-_ROLE_LABELS = {"viewer": "对方", "oc": "小鲸鱼", "operator": "号主人工接管"}
+_ROLE_LABELS = {"viewer": "对方", "oc": "当前角色已发送", "operator": "号主人工接管"}
 
 
 class DirectMessagesWindowingMixin:
@@ -73,6 +73,8 @@ class DirectMessagesWindowingMixin:
 
     def _event(self, draft, character):
         source = self._source(draft["source_kind"], draft["source_id"], character)
+        if source["platform"] != draft["platform"] or source["platform_user_id"] != draft["platform_user_id"]:
+            raise ValueError("私信收件人与原始来源不一致，请重新准备草稿")
         if draft["source_kind"] == "message" and str(source.get("account_id") or "") != draft.get(
             "account_id", ""
         ):
@@ -138,13 +140,7 @@ class DirectMessagesWindowingMixin:
             + " LIMIT 30",
             (*scope, source["sequence"], source["sequence"], source["sent_at"], source["id"]),
         )
-        outgoing = self.store.all(
-            "SELECT id,message_id,content,sent_at,sequence,origin FROM dm_operator_replies WHERE "
-            + common
-            + order
-            + " LIMIT 15",
-            scope,
-        )
+        outgoing = self._outgoing_history(draft)
         trigger = json.loads(draft.get("trigger_source") or "{}")
         cutoff = (
             self.store.get(f"message_inbox_cutoff:{draft['account_id']}:{draft['character_id']}", 0)
@@ -184,7 +180,6 @@ class DirectMessagesWindowingMixin:
                 "text": item["content"],
             }
             if item["origin"] == "viewer" and item["id"] in pending_ids:
-                ref["open"] = True
                 refs[index] = item["id"]
             public.append(ref)
         for index, response in enumerate(timeline, 1):
@@ -212,10 +207,9 @@ class DirectMessagesWindowingMixin:
                 prior_settled.append((incoming_id, outgoing_msg_id))
             else:
                 unanswered_refs[i] = incoming_id
+                public[i - 1]["open"] = True
         latest_outgoing_id = None
-        if refs and not unanswered_refs and not ambiguous and timeline and timeline[-1]["origin"] in {"operator", "oc"}:
-            latest_outgoing_id = str(timeline[-1]["message_id"])
-        elif not ambiguous and links and not unanswered_refs and prior_settled:
+        if not ambiguous and not unanswered_refs and prior_settled:
             latest_outgoing_id = prior_settled[-1][1]
         fingerprint = content_hash(
             [

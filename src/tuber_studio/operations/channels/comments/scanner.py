@@ -104,6 +104,7 @@ class CommentsScannerMixin:
             if None in item:
                 raise ValueError("CSV行字段数与表头不一致")
             attachments = (item.get("attachments") or []) if platform_fetch else []
+            unverified_parent = platform_fetch and item.get("parent_verified") is False
             item = {field: item.get(mapping.get(field, field)) for field in fields}
             cid, content = str(item.get("comment_id") or ""), item.get("content")
             if (not cid or len(cid) > 100 or not isinstance(content, str) or len(content) > 4000
@@ -136,7 +137,7 @@ class CommentsScannerMixin:
                     "video_id": video_id,
                     "comment_id": cid,
                     "thread_id": thread_id,
-                    "parent_comment_id": parent_id,
+                    "parent_comment_id": None if unverified_parent else parent_id,
                     "platform_user_id": uid,
                     "display_name": name,
                     "content": content,

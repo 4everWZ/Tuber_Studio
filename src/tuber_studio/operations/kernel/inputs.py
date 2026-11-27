@@ -36,9 +36,10 @@ def bind_response_actors(data, self_actor):
         uid = str(uid or "")
         return "unknown" if not uid or not own_uid else "self" if uid == own_uid else "other"
 
-    if isinstance(data.get("video_source"), dict):
-        video = result["video_source"]
-        video["uploader_relation_to_self"] = relation(video.get("owner_uid"))
+    for key in ("video_source", "dynamic_source"):
+        if isinstance(result.get(key), dict):
+            source = result[key]
+            source["uploader_relation_to_self"] = relation(source.get("owner_uid"))
 
     thread = result.get("thread")
     roles = {
@@ -431,7 +432,7 @@ class ResponseDecisionInput:
     """Structure readable context and resolve Python-side provenance cleanly without ref aliases."""
 
     FORMAT_VERSION = "response-v3"
-    COMMENT_FORMAT_VERSION = "comment-v3"
+    COMMENT_FORMAT_VERSION = "comment-v4"
 
     def __init__(self, data):
         records = deepcopy(data.get("evidence", []))

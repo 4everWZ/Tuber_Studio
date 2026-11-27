@@ -68,6 +68,7 @@ class LiveSessionState:
         self.lookup = LiveLookup()
         self.last_activity = time.monotonic()
         self.idle_attempts = deque(maxlen=2)
+        self.idle_prompt_index = 0
 
     @property
     def busy(self):
@@ -89,6 +90,7 @@ class LiveSessionState:
         self.last_played = None
         self.timings = dict.fromkeys(self.timings)
         self.idle_attempts.clear()
+        self.idle_prompt_index = 0
         self.runtime.relationships.clear_live()
         self.last_activity = time.monotonic()
         self.session_id = str(uuid4())

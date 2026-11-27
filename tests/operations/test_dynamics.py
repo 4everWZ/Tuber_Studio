@@ -725,6 +725,38 @@ async def test_published_reply_includes_original_comment_and_receipt(service):
     assert decision["sources"][0]["fictional"] is True
 
 
+def test_confirmed_dynamic_thread_reply_preserves_both_authors_and_real_permalink(service):
+    from tuber_studio.operations.channels.dynamics.materials import dynamic_model_material, source_links
+    from tuber_studio.operations.channels.dynamics.turns import _format_dynamic_sources
+    from tuber_studio.operations.kernel.repository import BrowsingRepository
+
+    BrowsingRepository(service.store)
+    char = service._character()
+    service.account.display_account_id = lambda: "100"
+    service.runtime.browsing = SimpleNamespace(policy=lambda: {})
+    target = {"resource_type": "dynamic", "dynamic_id": "12345", "oid": "76543", "root": "42", "parent": "42",
+              "recipient": "215", "recipient_name": "观众", "source_text": "我昨天做了一锅海鲜饭"}
+    service.store.execute(
+        "INSERT INTO browsing_intents(id,account_id,character_id,character_version,source_key,kind,status,text,"
+        "target,receipt,updated_at) VALUES('sent','100',?,?,'sent','reply_public','published',?,?,?,1)",
+        (char["id"], char["version"], "下次想放点虾仁", json.dumps(target), '{"rpid":"77"}'),
+    )
+    source, = service._sources()
+    public = dynamic_model_material(source)
+    assert source_links(public) == ["https://t.bilibili.com/12345#reply42"]
+    assert public["source_url"] == "https://t.bilibili.com/12345#reply77"
+    rendered = _format_dynamic_sources([public], self_uid="100")
+    assert '@观众（UID 215）的评论 42，原话 "我昨天做了一锅海鲜饭"' in rendered
+    assert '你已发布的回复 77："下次想放点虾仁"' in rendered
+    assert "你已发布的回复" not in _format_dynamic_sources([public], self_uid="101")
+    card = service._comment_card([source], {"account_uid": "100", "character_id": char["id"]})
+    assert [row["url"] for row in card["comments"]] == [
+        "https://t.bilibili.com/12345#reply42", "https://t.bilibili.com/12345#reply77",
+    ]
+    service.store.execute("UPDATE browsing_intents SET status='publish_uncertain' WHERE id='sent'")
+    assert service._sources() == []
+
+
 @pytest.mark.parametrize("change", ["delete", "unmark", "rewrite", "version", "character"])
 async def test_changed_source_or_character_invalidates_before_write(service, change):
     mid = public_memory(service)
@@ -1045,18 +1077,24 @@ def test_memory_id_reuse_new_created_at_needs_new_public_mark(service):
 
 
 async def test_operational_prompt_contains_timezone_and_only_published_history(service):
+    service.account.display_account_id = lambda: "injected-test-account"
     public_memory(service)
     first = await service.evaluate(manual=True)
     service.review(first["post_id"], "approve", "已经发布的虚构故事")
     await service.publish(first["post_id"])
     public_memory(service, text="新公开的虚构记忆")
+    unverified = await service.evaluate(manual=True)
+    service.store.execute(
+        "UPDATE dynamic_posts SET account_id=?,status='published',content=? WHERE id=?",
+        ("injected-test-account", "状态已改但没有平台回执", unverified["post_id"]),
+    )
     await service.evaluate(manual=True)
     payload = json.loads(service.runtime.operation_llm.calls[-1][1]["content"])
     assert payload["current_time"][-6] in {"+", "-"}
     assert payload["recent_public_posts"] == [
         {
             "content": "已经发布的虚构故事",
-            "published_at": service.list_posts("published")[0]["published_at"],
+            "published_at": service._post(first["post_id"])["published_at"],
         }
     ]
 

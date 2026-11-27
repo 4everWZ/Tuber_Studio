@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
@@ -11,7 +12,7 @@ from tuber_studio.core.models import Event
 from tuber_studio.live import options
 from tuber_studio.live.avatar import SDK
 from tuber_studio.live.options import LiveOptions, WeatherLocation
-from tuber_studio.live.session import IDLE_AFTER
+from tuber_studio.live.session.state import IDLE_AFTER, IDLE_WINDOW
 
 
 class Overlay:
@@ -53,6 +54,41 @@ async def test_idle_yields_to_real_chat_before_play_and_audio_envelope(runtime, 
     assert not store.all("SELECT * FROM account_relations")
     assert not store.all("SELECT * FROM users")
     assert len(store.all("SELECT * FROM conversations")) == 1
+
+
+async def test_idle_rotates_prepared_topics_with_existing_playback_receipts(runtime, store, monkeypatch):
+    async def unexpected_generation(*args, **kwargs):
+        pytest.fail("冷场预制台词不调用模型")
+
+    monkeypatch.setattr(runtime, "generate_reply", unexpected_generation)
+    await runtime.control("start")
+    live = runtime.live
+    overlay = Overlay()
+    owner = await live.attach_overlay(overlay)
+
+    words = []
+    for custom in ("", "", "这一段乐曲聊聊听感吧。", "", ""):
+        now = time.monotonic()
+        live.last_activity = now - IDLE_AFTER - 1
+        # Let the existing cooldown window expire without changing scheduling constants.
+        for index in range(len(live.idle_attempts)):
+            live.idle_attempts[index] = now - IDLE_WINDOW - 1
+        live.set_options(LiveOptions(idle=True, idle_text=custom))
+        play = await wait_for(lambda: next(
+            (item for item in overlay.messages if item["type"] == "play" and item["job_id"] == live.current_id), None,
+        ))
+        ack = {"job_id": play["job_id"], "playback_token": play["playback_token"]}
+        assert await live.acknowledge(owner, ack | {"type": "started"})
+        assert await live.acknowledge(owner, ack | {"type": "ended"})
+        assert store.job(play["job_id"])["status"] == "completed"
+        words.append(play["text"])
+        await wait_for(lambda: not live.busy)
+        assert live.idle_deadline() > time.monotonic()
+
+    assert words[2] == "这一段乐曲聊聊听感吧。"
+    assert len({words[0], words[1], words[3]}) == 3
+    assert words[4] == words[0]
+    assert not store.all("SELECT * FROM conversations")
 
 
 async def test_mock_gift_cannot_promote_real_relationship(runtime, store):
@@ -97,6 +133,8 @@ async def test_lookup_once_only_and_timeout_still_allows_one_final(runtime, monk
     assert len(calls[0][1]["oneOf"]) == 2 and "oneOf" not in calls[1][1]
     assert any("（UTC）" in msg["content"] for msg in calls[0][0])
     assert any("没有查到" in msg["content"] for msg in calls[1][0])
+    assert any("不能证明自己的余额、停机、删档、生死或被弃养" in msg["content"] for msg in calls[1][0])
+    assert any("尖锐吐槽有实据的讨口子" in msg["content"] for msg in calls[1][0])
     assert all(call[2] == 180 for call in calls)
     assert not runtime.store.all("SELECT * FROM conversations")
 

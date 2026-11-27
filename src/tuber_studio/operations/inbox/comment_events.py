@@ -14,6 +14,7 @@ from ...infra.platforms.bilibili.client import BilibiliAccountExpired, PlatformR
 from ..channels.comments.materials import prepare_comment_materials
 from ..channels.comments.scanner import category, low_context_skip_reason
 from ..channels.comments.timeline import (
+    comment_is_third_party,
     comment_source,
     comment_thread_context,
     confirmed_bot_comment_ids,
@@ -443,15 +444,35 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
         raise ValueError("评论原文或作者已变化，未使用旧候选")
     if category(source["text"], source_row.get("attachments") or []) == "spam":
         raise ValueError("账号来源无效、本人循环或广告互动")
-    parent_id = str(source_row.get("parent_comment_id") or "")
-    parent_row = thread.get("parent") or (
-        next((r for r in items_list if str(r.get("comment_id") or "") == parent_id), None) if parent_id else None
+    group_ids = event.get("grouped_ids") or []
+    if group_ids:
+        grouped = [
+            item
+            for item in items_list
+            if str(item["comment_id"]) in group_ids
+            and str(item.get("thread_id") or item["comment_id"]) == str(target["root"])
+            and comment_source(item)["author_uid"] == str(source["author_uid"])
+            and not operator_reply(items_list, target | {"parent": item["comment_id"]}, row["account_id"])
+            and not browsing.publication.source_intent(
+                row, canonical_intent("bilibili", resource, item["comment_id"], row["character_id"])
+            )
+        ]
+        if len(grouped) > 1:
+            source_row = source_row | {"grouped_comments": grouped}
+    author_uid = thread.get("resource_author_uid") or event.get("resource_author_uid")
+    confirmed_ids = confirmed_bot_comment_ids(
+        browsing.store, row.get("account_id"), row.get("character_id"), resource_key(target), target["root"]
     )
-    parent_uid = str(
-        (parent_row.get("author_uid") or parent_row.get("platform_user_id") or parent_row.get("user_id") or "")
-        if isinstance(parent_row, dict)
-        else ""
+    discussion = comment_thread_context(
+        source_row,
+        items_list,
+        target,
+        account_id=row.get("account_id"),
+        resource_author_uid=author_uid,
+        confirmed_ids=confirmed_ids,
     )
+    third_party = source_pipeline == "discovery" and comment_is_third_party(discussion, row["account_id"])
+    parent_uid = str((discussion.get("parent") or {}).get("author_uid") or "")
     own_uid = str(row["account_id"] or "")
     mentions_list = list(source_row.get("mentions") or (thread.get("addressing") or {}).get("source_mentions") or [])
     is_direct_to_self = (
@@ -477,6 +498,7 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
         settle_aliases(browsing, event_row, row, target, source)
         return None
     like_enabled = config.get("comment_like_enabled", False)
+    reply_enabled = config["reply_enabled"] and not third_party
     like_intent = browsing.publication.comment_like_intent(row, target) if like_enabled else None
     if like_intent:
         if (
@@ -495,19 +517,19 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
     is_direct = source_pipeline == "inbox"
     admission = slots.enter_context(
         browsing.comment_admission.slot(row, "reply_public", target.get("bvid"), source["author_uid"], direct=is_direct)
-    )
+    ) if reply_enabled else None
     can_like = like_enabled and not source_row.get("liked_by_self")
     like_admission = None
     # This response can produce one action, so a reply slot also covers the
     # account quota for a possible like.
-    if can_like and (admission or not browsing.comment_admission.requires_slot(row, "reply_public")):
+    if can_like and (not reply_enabled or admission or not browsing.comment_admission.requires_slot(row, "reply_public")):
         like_admission = slots.enter_context(browsing.comment_admission.slot(row, "comment_like", direct=is_direct))
     reply_limited = bool(
         target.get("bvid")
-        and config["reply_enabled"]
+        and reply_enabled
         and browsing.comment_admission.review_reply_limit_reached(row, target["bvid"])
     )
-    allow_public = config["reply_enabled"] and not admission and not (like_enabled and reply_limited)
+    allow_public = reply_enabled and not admission and not (like_enabled and reply_limited)
     allow_like = can_like and not like_admission
     dynamic = thread.get("dynamic_source")
     if not (
@@ -523,32 +545,6 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
         (error for error in (admission, like_admission if can_like else None) if error),
         key=lambda error: error.next_at,
         default=None,
-    )
-    group_ids = event.get("grouped_ids") or []
-    if group_ids:
-        grouped = [
-            item
-            for item in items_list
-            if str(item["comment_id"]) in group_ids
-            and comment_source(item)["author_uid"] == str(source["author_uid"])
-            and not operator_reply(items_list, target | {"parent": item["comment_id"]}, row["account_id"])
-            and not browsing.publication.source_intent(
-                row, canonical_intent("bilibili", resource, item["comment_id"], row["character_id"])
-            )
-        ]
-        if len(grouped) > 1:
-            source_row = source_row | {"grouped_comments": grouped}
-    author_uid = thread.get("resource_author_uid") or event.get("resource_author_uid")
-    confirmed_ids = confirmed_bot_comment_ids(
-        browsing.store, row.get("account_id"), row.get("character_id"), resource, target["root"]
-    )
-    discussion = comment_thread_context(
-        source_row,
-        items_list,
-        target,
-        account_id=row.get("account_id"),
-        resource_author_uid=author_uid,
-        confirmed_ids=confirmed_ids,
     )
     thread.update({key: value for key, value in discussion.items() if key != "source"})
     legacy_source, source = source, discussion["source"]
@@ -639,7 +635,10 @@ async def decide_event(browsing, event_row, row, metrics, event, thread, slots):
             else:
                 reply = await browsing.decisions._response(row, material, thread, allowed, "reply_public", metrics)
         else:
-            reply = ResponseDecision(action="skip", reason="no_interest")
+            reply = ResponseDecision(
+                action="skip", reason="no_interest",
+                explanation="当前楼回复指向第三方账号" if third_party else "",
+            )
         if reply.action != "skip" or allow_public:
             browsing.decisions.comment_progress.save(row, resource, source, reply)
     if reply.action == "reply_public" and not allow_public or reply.action == "like_comment" and not allow_like:

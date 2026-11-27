@@ -3,8 +3,59 @@
 import asyncio
 import json
 
+import pytest
+
 from tests.support.operations_helpers import BV, comment, enable_comment_choices, finished
 from tests.support.operations_helpers import browsing as browsing
+
+
+async def test_discovery_uses_verified_addressee_at_enqueue_and_before_automatic_send(browsing, monkeypatch):
+    await enable_comment_choices(browsing, monkeypatch)
+    elsewhere = comment() | {
+        "content": "@Aqua 你上周的二创视频是怎么做的？",
+        "mentions": [{"uid": "299", "name": "Aqua"}],
+    }
+    current = comment("602", "602") | {
+        "content": "@Aqua 盐水浮鸡蛋要准备多少盐？",
+        "mentions": [{"uid": "100", "name": "Aqua"}],
+    }
+
+    async def fetch(video, max_pages=1, *, newest=False, start_page=1):
+        return {"items": [elsewhere, current]}
+
+    monkeypatch.setattr(browsing.adapter, "fetch", fetch)
+    await finished(browsing, automatic=True, video_only=True)
+    intent, = browsing.intents()
+    assert intent["target"]["parent"] == "602"
+    skipped = browsing.store.one(
+        "SELECT status,error FROM browsing_events WHERE kind='comment_visit' AND json_extract(payload,'$.comment_id')='601'"
+    )
+    assert skipped == {"status": "skipped", "error": "当前楼回复指向第三方账号"}
+
+    # An old candidate might already have authorization when its source is
+    # re-read and found to address a different account with the same name.
+    sent_to_other = current | {"mentions": elsewhere["mentions"]}
+
+    async def read_thread(target):
+        return {
+            "target": target,
+            "source": {"author_uid": current["platform_user_id"], "text": current["content"]},
+            "items": [sent_to_other],
+        }
+
+    monkeypatch.setattr(browsing.adapter, "read_video_thread", read_thread, raising=False)
+    await browsing.configure({"reply_auto_publish": True})
+    browsing.store.execute("UPDATE browsing_intents SET auto_authorized=1 WHERE id=?", (intent["id"],))
+    with pytest.raises(ValueError, match="当前楼回复指向第三方账号"):
+        await browsing.publish(intent["id"], automatic=True)
+    held, = browsing.intents()
+    assert held["status"] == "pending_review" and not held["auto_authorized"] and held["text"] == intent["text"]
+    assert not browsing.adapter.sent
+
+    browsing.review(intent["id"], "approve", "看到你们在讨论比例，我也想试一次。")
+    published = await browsing.publish(intent["id"])
+    assert published["status"] == "published"
+    assert len(browsing.adapter.sent) == 1
 
 
 async def test_fixed_comment_page_blocks_next_batch_and_survives_restart(browsing, monkeypatch):

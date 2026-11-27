@@ -31,7 +31,8 @@ _STRONG_REASONING_MARKERS = (
 _META_DRAFTING_CUES = (
     re.compile(r'^\s*Wait,\s+["\'“]', re.IGNORECASE | re.MULTILINE),
     re.compile(r"\bActually,?\s+let\s+me\b", re.IGNORECASE),
-    re.compile(r"\bLet\s+me\s+(?:check|refine|double-check|rethink|rewrite|adjust|verify)\b", re.IGNORECASE),
+    re.compile(r"\bLet\s+me\s+(?:check|refine|double-check|rethink|rewrite|adjust|verify|finalize|polish)\b", re.IGNORECASE),
+    re.compile(r"^\s*Final\s+draft\s*:", re.IGNORECASE | re.MULTILINE),
     re.compile(r"^\s*Another\s+consideration\s*:", re.IGNORECASE | re.MULTILINE),
     re.compile(r"\bShould\s+I\s+(?:call|use|mention|skip|keep|add|include)\b", re.IGNORECASE),
     re.compile(r"\bFine\s+as\s+is\b", re.IGNORECASE),

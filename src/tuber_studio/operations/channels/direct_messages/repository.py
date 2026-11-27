@@ -12,6 +12,15 @@ from ..attachments import image_choice, row_ref, uploads
 from .models import IncomingMessage
 from .outreach import contact_state
 
+_RECEIPT_CHARACTERS = """
+    SELECT CAST(json_extract(CASE WHEN json_valid(receipt) THEN receipt END, '$.msg_key') AS TEXT) AS message_id,
+           MIN(character_id) AS character_id
+    FROM dm_drafts
+    WHERE platform=? AND account_id=? AND platform_user_id=? AND status='published'
+    GROUP BY message_id
+    HAVING message_id IS NOT NULL AND COUNT(DISTINCT character_id)=1
+"""
+
 
 class DirectMessagesRepositoryMixin:
     def _init_storage(self, store):
@@ -144,6 +153,7 @@ class DirectMessagesRepositoryMixin:
 
     def _ingest_history(self, rows, uid, own_uid, display_name):
         count = 0
+        receipt_characters = None
         for row in sorted(rows, key=lambda row: (message_sequence(row.get("msg_seqno")), int(row.get("timestamp", 0)))):
             if row.get("receiver_type", 1) != 1 or row.get("msg_type") != 1 or row.get("msg_status", 0) != 0:
                 continue
@@ -171,30 +181,42 @@ class DirectMessagesRepositoryMixin:
                 }, sequence=sequence)
                 count += int(fresh)
             elif sender == str(own_uid) and receiver == str(uid):
-                is_system = bool(
-                    self.store.one("SELECT id FROM dm_drafts WHERE account_id=? AND platform_user_id=? "
-                        "AND platform='bilibili' AND status='published' AND json_valid(receipt) "
-                        "AND CAST(json_extract(receipt,'$.msg_key') AS TEXT)=?", (str(own_uid), str(uid), msg_key))
-                )
+                if receipt_characters is None:
+                    receipt_characters = {
+                        receipt["message_id"]: receipt["character_id"]
+                        for receipt in self.store.all(_RECEIPT_CHARACTERS, ("bilibili", str(own_uid), str(uid)))
+                    }
+                receipt_character = receipt_characters.get(msg_key)
                 self.store.execute(
-                        "INSERT OR IGNORE INTO dm_operator_replies"
-                        "(platform, account_id, platform_user_id, message_id, content, sent_at, character_id, sequence,origin) "
-                        "VALUES('bilibili', ?, ?, ?, ?, ?, ?, ?, ?) "
-                        "ON CONFLICT(platform,account_id,message_id) DO UPDATE SET sequence=excluded.sequence,origin=excluded.origin "
-                        "WHERE dm_operator_replies.origin<>excluded.origin OR dm_operator_replies.sequence=0",
-                        (
-                            str(own_uid),
-                            str(uid),
-                            msg_key,
-                            msg_text,
-                            ts,
-                            self.runtime.character["id"],
-                            sequence,
-                            "oc" if is_system else "operator",
-                        ),
-                    )
+                    """INSERT INTO dm_operator_replies AS saved
+                       (platform,account_id,platform_user_id,message_id,content,sent_at,character_id,sequence,origin)
+                       VALUES('bilibili', ?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(platform,account_id,message_id) DO UPDATE SET
+                           sequence=CASE WHEN saved.sequence=0 THEN excluded.sequence ELSE saved.sequence END,
+                           origin=CASE WHEN excluded.origin='oc' THEN 'oc' ELSE saved.origin END,
+                           character_id=CASE WHEN excluded.origin='oc' THEN excluded.character_id ELSE saved.character_id END
+                       WHERE saved.platform_user_id=excluded.platform_user_id
+                         AND ((excluded.origin='oc' AND (saved.origin<>'oc' OR saved.character_id<>excluded.character_id))
+                              OR (saved.sequence=0 AND excluded.sequence>0))""",
+                    (str(own_uid), str(uid), msg_key, msg_text, ts, receipt_character or self.runtime.character["id"],
+                     sequence, "oc" if receipt_character else "operator"),
+                )
 
         return count
+
+    def _outgoing_history(self, draft):
+        account = tuple(draft[key] for key in ("platform", "account_id", "platform_user_id"))
+        return self.store.all(
+            f"""WITH receipts AS ({_RECEIPT_CHARACTERS})
+                SELECT sent.id,sent.message_id,sent.content,sent.sent_at,sent.sequence,
+                       CASE WHEN receipts.character_id IS NULL THEN 'operator' ELSE 'oc' END AS origin
+                FROM dm_operator_replies sent LEFT JOIN receipts ON receipts.message_id=sent.message_id
+                WHERE sent.platform=? AND sent.account_id=? AND sent.platform_user_id=?
+                  AND COALESCE(receipts.character_id,sent.character_id)=?
+                  AND (receipts.character_id IS NOT NULL OR sent.origin='operator')
+                ORDER BY sent.sequence DESC,sent.sent_at DESC,sent.id DESC LIMIT 15""",
+            (*account, *account, draft["character_id"]),
+        )
 
     def _require_unchanged_draft(self, draft):
         fresh = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (draft["id"],))

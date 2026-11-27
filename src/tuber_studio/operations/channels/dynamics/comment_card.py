@@ -1,7 +1,6 @@
 """Build a shareable card from the selected dynamic's public comment sources."""
 
 import json
-import re
 from datetime import datetime
 from functools import lru_cache
 from io import BytesIO
@@ -10,10 +9,10 @@ from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw, ImageFont
 
-from ....infra.platforms.bilibili.urls import COMMENT_ID, public_discussion_url
+from ....infra.platforms.bilibili.urls import COMMENT_ID, comment_href
 from ..comments.timeline import comment_thread
+from .materials import published_reply_resource
 
-VIDEO = re.compile(r"https://www\.bilibili\.com/video/(BV[0-9A-Za-z]{10})/?")
 MAX_QUOTES = 6
 MAX_CARD_PAGES = 9
 
@@ -24,9 +23,10 @@ def _references(source):
     if source.get("type") == "public_comment" and (ref := source.get("reference")):
         resource = ref["resource"]
         return [ref | {"bvid": resource, "quote": source["text"]}]
-    if source.get("type") == "published_reply" and (video := VIDEO.fullmatch(source.get("source_url", ""))):
+    if source.get("type") == "published_reply" and (resource := published_reply_resource(source)):
         original = source.get("original_comment") or {}
-        return [{"bvid": video[1], "comment_id": original.get("id"), "quote": original.get("text")}]
+        return [dict(source.get("reference") or {}, bvid=resource,
+                     comment_id=original.get("id"), quote=original.get("text"))]
     return []
 
 
@@ -35,7 +35,7 @@ def _legacy_card(sources):
         comments, links = [], {}
         for ref in _references(source):
             bvid, comment_id, quote = (ref.get(key) for key in ("bvid", "comment_id", "quote"))
-            url = public_discussion_url(bvid, comment_id) if COMMENT_ID.fullmatch(str(comment_id)) else None
+            url = comment_href(bvid, comment_id) if COMMENT_ID.fullmatch(str(comment_id)) else None
             if url and isinstance(quote, str) and quote.strip():
                 comments.append({"quote": quote.strip(), "url": url, "author": "作者资料未保存"})
                 links.setdefault(url, {"bvid": bvid, "url": url})
@@ -54,8 +54,7 @@ def comment_card(sources, *, store=None, actor=None, legacy=False, timezone="Asi
     def add(bvid, identifier, quote, *, author=None, uid=None, created_at=None, parent=None):
         if not COMMENT_ID.fullmatch(str(identifier)) or not isinstance(quote, str) or not quote.strip():
             return
-        url = (public_discussion_url(comment_id=identifier, dynamic_id=bvid.removeprefix("dynamic:"))
-               if str(bvid).startswith("dynamic:") else public_discussion_url(bvid, identifier))
+        url = comment_href(bvid, identifier)
         if not url:
             return
         entries.setdefault(url, {
@@ -117,8 +116,8 @@ def comment_card(sources, *, store=None, actor=None, legacy=False, timezone="Asi
                                     "text": legacy["content"], "created_at": legacy["created_at"],
                                     "parent_comment_id": legacy["parent_comment_id"]}
                     if not item:
-                        if public_discussion_url(bvid, identifier) not in entries:
-                            missing.add(public_discussion_url(bvid, identifier))
+                        if link := comment_href(bvid, identifier):
+                            missing.add(link)
                         return None
                     add(bvid, identifier, item["text"], author=item["author_name"], uid=item["author_uid"],
                         created_at=item["created_at"], parent=item["parent_comment_id"])
