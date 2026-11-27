@@ -8,6 +8,7 @@ import type {
   InboxPipelineStatus,
   InboxRecordsResponse,
   OperationClaim,
+  OperationScheduleCloseoutRun,
   OperationScheduleCreateInput,
   OperationScheduleItem,
   OperationScheduleUpdateInput,
@@ -453,6 +454,38 @@ class OperationsStoreImpl {
     }, "已删除定时运营计划。");
   }
 
+  async prepareOperationScheduleVideo(scheduleId: string, runId: string): Promise<OperationScheduleCloseoutRun> {
+    const { run } = await apiPost<
+      "/api/v1/operations/automation/schedules/{schedule_id}/closeouts/{run_id}/prepare-video",
+      { run: OperationScheduleCloseoutRun },
+      never
+    >("/api/v1/operations/automation/schedules/{schedule_id}/closeouts/{run_id}/prepare-video", {
+      pathParams: { schedule_id: scheduleId, run_id: runId },
+    });
+    ++this.statusRequestSeq;
+    const current = this.state.status;
+    if (current) {
+      function updateSchedule(item: OperationScheduleItem): OperationScheduleItem {
+        if (item.id !== scheduleId) return item;
+        const runs = item.closeout_runs ?? [];
+        return {
+          ...item,
+          closeout_runs: runs.some((previous) => previous.id === run.id)
+            ? runs.map((previous) => previous.id === run.id ? run : previous)
+            : [run, ...runs],
+        };
+      }
+      this.update({
+        status: {
+          ...current,
+          schedules: current.schedules?.map(updateSchedule),
+          active_schedule: current.active_schedule ? updateSchedule(current.active_schedule) : current.active_schedule,
+        },
+      });
+    }
+    return run;
+  }
+
   reset(): void {
     this.state = { ...INITIAL_STATE };
     this.statusRequestSeq = 0;
@@ -500,6 +533,8 @@ const stableControlActions = {
   updateOperationSchedule: (scheduleId: string, patch: OperationScheduleUpdateInput) =>
     operationsStore.updateOperationSchedule(scheduleId, patch),
   deleteOperationSchedule: (scheduleId: string) => operationsStore.deleteOperationSchedule(scheduleId),
+  prepareOperationScheduleVideo: (scheduleId: string, runId: string) =>
+    operationsStore.prepareOperationScheduleVideo(scheduleId, runId),
 };
 
 export function useOperationsControl(): OperationsStoreState & typeof stableControlActions {

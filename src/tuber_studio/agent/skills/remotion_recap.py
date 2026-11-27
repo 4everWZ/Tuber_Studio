@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from pydantic import Field, StringConstraints
+from pydantic import Field, StringConstraints, model_validator
 
 from ...core.models import StrictModel, content_hash
 from .remotion_assets import PublicSourceRef, VideoLineSpec, VideoSceneSpec
@@ -17,6 +17,7 @@ class OperationsRecapHighlight(StrictModel):
     title: RecapTitle
     text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
     source_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+    credit: str = Field(default="", max_length=80)
 
 
 class OperationsRecapBrief(StrictModel):
@@ -24,10 +25,17 @@ class OperationsRecapBrief(StrictModel):
     period_label: RecapTitle
     watched_videos: RecapCount
     public_comments: RecapCount
+    accepted_comments: RecapCount | None = None
     public_dynamics: RecapCount
     sources: list[PublicSourceRef] = Field(default_factory=list, max_length=8)
     highlights: list[OperationsRecapHighlight] = Field(default_factory=list, max_length=4)
     reflection: str = Field(default="", max_length=120)
+
+    @model_validator(mode="after")
+    def validate_comment_readback(self):
+        if self.accepted_comments is not None and self.public_comments > self.accepted_comments:
+            raise ValueError("公开读回评论数不能超过取得回执的评论数")
+        return self
 
 
 def recap_plan_fields(brief: OperationsRecapBrief) -> dict:
@@ -35,16 +43,18 @@ def recap_plan_fields(brief: OperationsRecapBrief) -> dict:
     sources = {source.source_id: source for source in brief.sources}
     if len(sources) != len(brief.sources):
         raise ValueError("运营复盘素材编号须唯一")
-    metrics = (
-        ("观看记录", brief.watched_videos, "实际观看了 {count} 个视频。"),
-        ("公开评论", brief.public_comments, "平台确认公开的评论有 {count} 条。"),
-        ("公开动态", brief.public_dynamics, "平台确认公开的动态有 {count} 条。"),
-    )
-    counts_text = "，".join(f"{label} {count}" for label, count, _ in metrics)
+    metrics = [("观看记录", brief.watched_videos, "个视频", "实际观看了 {count} 个视频。")]
+    if brief.accepted_comments is not None:
+        metrics.append(("评论提交回执", brief.accepted_comments, "条评论", "评论拿到了 {count} 条提交回执。"))
+    metrics.extend((
+        ("公开页读回", brief.public_comments, "条评论", "从公开页读回的评论有 {count} 条。"),
+        ("动态发布回执", brief.public_dynamics, "条动态", "发了 {count} 条动态。"),
+    ))
+    counts_text = "，".join(f"{label} {count}" for label, count, _, _ in metrics)
     aggregate = PublicSourceRef(
         source_id=f"operations-recap:{content_hash([brief.period_label, counts_text])[:20]}",
         kind="operator_topic",
-        title="工坊观看记录与平台公开回执",
+        title="工坊观看记录、平台回执与公开读回",
         excerpt=f"{brief.period_label}。{counts_text}。",
         fetch_status="manual",
     )
@@ -68,24 +78,24 @@ def recap_plan_fields(brief: OperationsRecapBrief) -> dict:
             avatar_layout="compact",
             transition="wipe_right",
             visual_props={
-                "chart_items": [{"label": label, "value": count} for label, count, _ in metrics],
+                "chart_items": [{"label": label, "value": count, "unit": unit} for label, count, unit, _ in metrics],
                 "citation_label": aggregate.title,
             },
             lines=[
                 VideoLineSpec(text=narration.format(count=count), reveal_step=index, avatar_cue="calm")
-                for index, (_, count, narration) in enumerate(metrics)
+                for index, (_, count, _, narration) in enumerate(metrics)
             ],
         ),
     ]
     for index, highlight in enumerate(brief.highlights, 1):
         if (source := sources.get(highlight.source_id)) is None:
             raise ValueError("复盘片段缺少对应的公开来源")
-        label = source.title[:120] or source.url or source.source_id
+        label = highlight.credit.strip() or source.title[:120] or source.url or source.source_id
         scenes.append(VideoSceneSpec(
             scene_id=f"recap_highlight_{index}",
             template="QuoteSpotlight",
             heading=highlight.title,
-            chapter_title="公开互动",
+            chapter_title="投稿来源",
             theme="dark_tech" if index % 2 else "aqua_light",
             avatar_layout="compact",
             transition="fade",

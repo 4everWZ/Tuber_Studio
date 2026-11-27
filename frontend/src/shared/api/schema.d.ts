@@ -1640,6 +1640,23 @@ export interface paths {
         patch: operations["automation_schedule_update_api_v1_operations_automation_schedules__schedule_id__patch"];
         trace?: never;
     };
+    "/api/v1/operations/automation/schedules/{schedule_id}/closeouts/{run_id}/prepare-video": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Automation Schedule Prepare Video */
+        post: operations["automation_schedule_prepare_video_api_v1_operations_automation_schedules__schedule_id__closeouts__run_id__prepare_video_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/automation/settings": {
         parameters: {
             query?: never;
@@ -2947,6 +2964,23 @@ export interface paths {
         put?: never;
         /** Publish Video */
         post: operations["publish_video_api_v1_operations_videos__job_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/videos/{job_id}/publish/recheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recheck Video Publication */
+        post: operations["recheck_video_publication_api_v1_operations_videos__job_id__publish_recheck_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5036,11 +5070,33 @@ export interface components {
             /** Task Revision */
             task_revision: number;
         };
+        /** OperationCloseoutConfig */
+        OperationCloseoutConfig: {
+            /**
+             * Dynamic Mode
+             * @default off
+             * @enum {string}
+             */
+            dynamic_mode: "off" | "review" | "automatic";
+            /** Timezone */
+            timezone?: string | null;
+            /** Video End */
+            video_end?: string | null;
+            /**
+             * Video Mode
+             * @default off
+             * @enum {string}
+             */
+            video_mode: "off" | "manual" | "automatic_review" | "automatic_publish";
+            /** Video Start */
+            video_start?: string | null;
+        };
         /**
          * OperationScheduleCreate
          * @description Validated payload for creating a timed or recurring autonomous operation schedule.
          */
         OperationScheduleCreate: {
+            closeout?: components["schemas"]["OperationCloseoutConfig"];
             /** Duration Minutes */
             duration_minutes?: number | null;
             /** End At */
@@ -5128,6 +5184,7 @@ export interface components {
         OperationScheduleUpdate: {
             /** Action */
             action?: "cancel" | null;
+            closeout?: components["schemas"]["OperationCloseoutConfig"] | null;
             /** Enabled */
             enabled?: boolean | null;
             /** Label */
@@ -5687,6 +5744,8 @@ export interface components {
              * @default false
              */
             approved: boolean;
+            /** Expected Content Hash */
+            expected_content_hash?: string | null;
             /** Publish Mode */
             publish_mode?: ("preview_review" | "auto_publish") | null;
         };
@@ -16726,6 +16785,101 @@ export interface operations {
             };
         };
     };
+    automation_schedule_prepare_video_api_v1_operations_automation_schedules__schedule_id__closeouts__run_id__prepare_video_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     automation_settings_api_v1_operations_automation_settings_put: {
         parameters: {
             query?: never;
@@ -24419,6 +24573,100 @@ export interface operations {
                 "application/json": components["schemas"]["VideoPublishBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid request parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Cross-origin write forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict with active generation or environment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream inference service error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Upstream service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    recheck_video_publication_api_v1_operations_videos__job_id__publish_recheck_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

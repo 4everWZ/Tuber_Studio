@@ -8,6 +8,7 @@ import { OperationSchedulePanel } from "./OperationSchedulePanel";
 import { useOperationsControl } from "@/shared/operations/operationsStore";
 import { deriveAutomaticSendingWarning, PermissionMatrix } from "./PermissionMatrix";
 import { DynamicPolicyForm, MessagePolicyForm } from "./PolicyForms";
+import { closeoutHasWork, isCloseoutRunning } from "./ScheduleCloseout";
 import styles from "./operations.module.css";
 import type { DynamicPolicy, MessagesListResponse, MessagePolicyState } from "./types";
 
@@ -97,6 +98,18 @@ export function AutomationSettingsPage() {
   }, [control.status?.settings, roundDirty]);
 
   const status = control.status;
+  const refreshStatus = control.refreshStatus;
+  const followingCloseout = Boolean(
+    closeoutHasWork(status?.active_schedule?.closeout) || status?.schedules?.some((item) => item.closeout_runs?.some(isCloseoutRunning))
+  );
+  useEffect(() => {
+    if (!followingCloseout) return;
+    const timer = setInterval(() => {
+      if (!document.hidden) void refreshStatus({ background: true });
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [followingCloseout, refreshStatus]);
+
   const policyEnabled = status?.policy?.enabled === true;
   const emergency = Boolean(status?.policy?.emergency);
   const transitioning = Boolean(
@@ -251,6 +264,7 @@ export function AutomationSettingsPage() {
         onCreateSchedule={(input) => control.createOperationSchedule(input)}
         onUpdateSchedule={(id, patch) => control.updateOperationSchedule(id, patch)}
         onDeleteSchedule={(id) => control.deleteOperationSchedule(id)}
+        onPrepareVideo={control.prepareOperationScheduleVideo}
       />
 
       {/* Discovery Source */}

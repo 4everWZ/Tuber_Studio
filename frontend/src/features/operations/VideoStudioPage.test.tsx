@@ -237,6 +237,19 @@ describe("VideoStudioPage", () => {
     vi.restoreAllMocks();
   });
 
+  it("opens the linked job even when another job is first in the asynchronously loaded list", async () => {
+    const first = SAMPLE_OVERVIEW.jobs[0];
+    const target = { ...first, id: "rem_closeout", title: "当日运营复盘视频", plan: { ...first.plan, title: "当日运营复盘视频" } };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      jsonResponse({ ...SAMPLE_OVERVIEW, jobs: [first, target] })
+    );
+
+    render(<VideoStudioPage route={parseHashRoute("#videos/rem_closeout")} />);
+
+    expect(await screen.findByRole("heading", { name: "当日运营复盘视频" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: first.title })).not.toBeInTheDocument();
+  });
+
   it("renders job queue, contact sheet & visual review, 10-template storyboard metadata, and Remotion code artifacts", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
@@ -300,6 +313,76 @@ describe("VideoStudioPage", () => {
       expect(screen.getByText(/"totalFrames":90/)).toBeInTheDocument();
     });
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("binds the confirmed render and distinguishes a submission receipt from verified public visibility", async () => {
+    const user = userEvent.setup();
+    const contentHash = "a".repeat(64);
+    const original = { ...SAMPLE_OVERVIEW.jobs[0], content_hash: contentHash };
+    const publicUrl = "https://www.bilibili.com/video/av41002";
+    const receipt = { aid: 41002 };
+    const submitted = { ...original, status: "published", platform_state: "submitted", receipt };
+    const confirmed = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const post = vi.fn();
+    let checks = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/operations/videos")) return jsonResponse({ ...SAMPLE_OVERVIEW, jobs: [original] });
+      if (init?.method === "POST") post(url, init.body ? JSON.parse(String(init.body)) : undefined);
+      if (url.endsWith("/publish")) return jsonResponse({ ok: true, action: "published", job: submitted });
+      if (url.endsWith("/publish/recheck")) {
+        checks += 1;
+        return checks === 1 ? jsonResponse({
+          ok: true, action: "readback", reason: "公开页面暂未返回此投稿",
+          job: { ...submitted, platform_state: "unconfirmed", public_url: publicUrl },
+        }) : jsonResponse({
+          ok: true, action: "readback", job: { ...submitted, platform_state: "public_visible", public_url: publicUrl },
+        });
+      }
+      return jsonResponse({ ok: true });
+    });
+
+    render(<VideoStudioPage route={parseHashRoute("#videos")} />);
+    await user.click(await screen.findByRole("button", { name: "确认投稿到 B 站" }));
+    expect(confirmed).toHaveBeenCalledOnce();
+    expect(post).toHaveBeenCalledExactlyOnceWith("/api/v1/operations/videos/rem_demo_01/publish", {
+      approved: true, publish_mode: "auto_publish", expected_content_hash: contentHash,
+    });
+    expect(await screen.findByText("待公开")).toBeInTheDocument();
+    expect(screen.getByText("投稿编号 av41002")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "打开 B 站公开视频" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认投稿到 B 站" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "核对公开状态" }));
+    expect(await screen.findByText("公开状态未知")).toBeInTheDocument();
+    expect(screen.getByText("公开页面暂未返回此投稿")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "打开 B 站公开视频" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "核对公开状态" }));
+    expect(await screen.findByText("公开可见已核实")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "打开 B 站公开视频" })).toHaveAttribute("href", publicUrl);
+    expect(post.mock.calls.slice(1)).toEqual([
+      ["/api/v1/operations/videos/rem_demo_01/publish/recheck", undefined],
+      ["/api/v1/operations/videos/rem_demo_01/publish/recheck", undefined],
+    ]);
+  });
+
+  it("offers readback for an unknown upload receipt without enabling resubmission", async () => {
+    const user = userEvent.setup();
+    const uncertain = { ...SAMPLE_OVERVIEW.jobs[0], status: "publish_uncertain", platform_state: "unconfirmed" };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/operations/videos")) return jsonResponse({ ...SAMPLE_OVERVIEW, jobs: [uncertain] });
+      return jsonResponse({ ok: false, action: "readback", reason: "尚无有效稿件编号", job: uncertain });
+    });
+
+    render(<VideoStudioPage route={parseHashRoute("#videos")} />);
+    expect(await screen.findByText("公开状态未知")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认投稿到 B 站" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "核对公开状态" }));
+    expect(await screen.findByText("尚无有效稿件编号")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toEqual([
+      ["/api/v1/operations/videos/rem_demo_01/publish/recheck", expect.objectContaining({ method: "POST" })],
+    ]);
   });
 
   it("supports 6 video modes, duration_preset auto-sync & override, 1-20 scenes, include_workspace_docs, 30000-char brief, and up to 6 URLs", async () => {

@@ -15,6 +15,7 @@ from pydantic import Field, model_validator
 from ...core.models import StrictModel
 from ...core.store import dump
 from ...infra.inference.providers import public_error
+from .closeouts import OperationCloseoutConfig, OperationCloseouts
 
 WEEKDAY_LABELS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
@@ -113,6 +114,7 @@ class OperationScheduleCreate(StrictModel):
     timezone: str | None = Field(default=None, min_length=1, max_length=80)
     scope_discovery: bool = True
     scope_inbox: bool = True
+    closeout: OperationCloseoutConfig = Field(default_factory=OperationCloseoutConfig)
 
     @model_validator(mode="after")
     def validate_schedule(self):
@@ -155,6 +157,7 @@ class OperationScheduleUpdate(StrictModel):
     enabled: bool | None = Field(default=None, strict=True)
     action: Literal["cancel"] | None = None
     label: str | None = Field(default=None, max_length=120)
+    closeout: OperationCloseoutConfig | None = None
 
 
 class OperationSchedules:
@@ -196,6 +199,9 @@ class OperationSchedules:
                 ON operation_schedules(enabled, status, start_at, end_at);
             """
         )
+        if "closeout" not in {row[1] for row in self.store.db.execute("PRAGMA table_info(operation_schedules)")}:
+            self.store.execute("ALTER TABLE operation_schedules ADD COLUMN closeout TEXT NOT NULL DEFAULT '{}'")
+        self.closeouts = OperationCloseouts(service, daily_window_bounds)
 
     def _default_timezone(self) -> str:
         return str(self.service.policy().get("business_timezone") or "Asia/Taipei")
@@ -221,13 +227,12 @@ class OperationSchedules:
         if task is not None:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        await self.closeouts.close()
 
     def _next_wake_seconds(self, *, now: float | None = None) -> float | None:
         now = time.time() if now is None else float(now)
         rows = self.store.all("SELECT * FROM operation_schedules WHERE enabled=1")
-        if not rows:
-            return None
-        nearest: float | None = None
+        nearest = self.closeouts.next_delay(now)
         for row in rows:
             candidates: list[float] = []
             if row["kind"] in {"duration", "once_window"}:
@@ -339,6 +344,8 @@ class OperationSchedules:
             "last_error": row.get("last_error"),
             "created_at": float(row["created_at"]),
             "updated_at": float(row["updated_at"]),
+            "closeout": self.closeouts.config(row).model_dump(),
+            "closeout_runs": self.closeouts.list(row["id"]),
         }
 
     def list(self, *, now: float | None = None, include_finished: bool = True) -> list[dict]:
@@ -450,6 +457,7 @@ class OperationSchedules:
                 scope_discovery=model.scope_discovery,
                 scope_inbox=model.scope_inbox,
             )
+            account_id, character_id, character_version = self._scope_snapshot()
 
         status = "active" if activate_now else "scheduled"
         with self.store.db:
@@ -459,8 +467,8 @@ class OperationSchedules:
                     id, kind, label, status, enabled, scope_discovery, scope_inbox,
                     start_at, end_at, duration_minutes, start_time, end_time, weekdays,
                     timezone, account_id, character_id, character_version, last_run_key,
-                    last_error, created_at, updated_at
-                ) VALUES(?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,?)
+                    last_error, created_at, updated_at, closeout
+                ) VALUES(?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,?,?)
                 """,
                 (
                     schedule_id,
@@ -482,6 +490,7 @@ class OperationSchedules:
                     last_run_key,
                     now,
                     now,
+                    model.closeout.model_dump_json(),
                 ),
             )
         self._wake.set()
@@ -517,6 +526,8 @@ class OperationSchedules:
         )
         now = time.time() if now is None else float(now)
         was_active = row["status"] == "active"
+        if model.closeout is not None and row["status"] not in {"scheduled", "paused"}:
+            raise ValueError("只能修改待开始或暂停计划的收尾设置")
 
         next_label = row["label"] if model.label is None else " ".join(model.label.split())
         next_enabled = bool(row["enabled"])
@@ -547,9 +558,12 @@ class OperationSchedules:
         with self.store.db:
             self.store.db.execute(
                 "UPDATE operation_schedules SET label=?, enabled=?, status=?, start_at=?, end_at=?, "
-                "last_error=?, updated_at=? WHERE id=?",
-                (next_label, int(next_enabled), next_status, next_start, next_end, next_error, now, schedule_id),
+                "last_error=?, updated_at=?, closeout=? WHERE id=?",
+                (next_label, int(next_enabled), next_status, next_start, next_end, next_error, now,
+                 model.closeout.model_dump_json() if model.closeout else row["closeout"], schedule_id),
             )
+            if model.action == "cancel" or model.enabled is False:
+                self.closeouts.cancel(schedule_id)
         if was_active and next_status != "active":
             await self._stop_service_if_no_active()
         if next_enabled and not was_active:
@@ -567,6 +581,7 @@ class OperationSchedules:
         was_active = row["status"] == "active"
         serialized = self._serialize(row, now=now)
         with self.store.db:
+            self.closeouts.cancel(schedule_id)
             self.store.db.execute("DELETE FROM operation_schedules WHERE id=?", (schedule_id,))
         if was_active:
             await self._stop_service_if_no_active()
@@ -617,6 +632,7 @@ class OperationSchedules:
                                 (now, row["id"]),
                             )
                             if row["status"] == "active":
+                                self.closeouts.enqueue(row, start_at, end_at)
                                 expired_ids.append(row["id"])
                             continue
                         if start_at <= now < end_at:
@@ -624,6 +640,7 @@ class OperationSchedules:
                     elif row["kind"] == "daily_window" and row["start_time"] and row["end_time"]:
                         weekdays = json.loads(row["weekdays"] or "[]")
                         if row["status"] == "active" and row["end_at"] is not None and float(row["end_at"]) <= now:
+                            self.closeouts.enqueue(row, float(row["start_at"]), float(row["end_at"]))
                             self.store.db.execute(
                                 "UPDATE operation_schedules SET status='scheduled', start_at=NULL, end_at=NULL, "
                                 "last_error=NULL, updated_at=? WHERE id=?",
@@ -668,14 +685,18 @@ class OperationSchedules:
                             (public_error(error), now, row["id"]),
                         )
                 else:
+                    account_id, character_id, character_version = self._scope_snapshot()
                     with self.store.db:
                         self.store.db.execute(
                             "UPDATE operation_schedules SET status='active', start_at=?, end_at=?, "
-                            "last_run_key=?, last_error=NULL, updated_at=? WHERE id=?",
-                            (win_start, win_end, run_key or row["last_run_key"], now, row["id"]),
+                            "last_run_key=?, last_error=NULL, updated_at=?, account_id=?, character_id=?, "
+                            "character_version=? WHERE id=?",
+                            (win_start, win_end, run_key or row["last_run_key"], now, account_id,
+                             character_id, character_version, row["id"]),
                         )
                     self._wake.set()
 
+        self.closeouts.kick(now)
         return {
             "expired": expired_ids,
             "active_schedule": self.active(now=now),

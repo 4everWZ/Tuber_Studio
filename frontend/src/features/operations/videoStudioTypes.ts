@@ -206,6 +206,8 @@ export interface VideoManifest {
   cues?: VideoManifestCue[];
 }
 
+export type VideoPlatformState = "submitted" | "unconfirmed" | "check_failed" | "mismatch" | "public_visible";
+
 export interface VideoJobRecord {
   id: string;
   status: string;
@@ -220,7 +222,9 @@ export interface VideoJobRecord {
   plan?: VideoScriptPlan | null;
   manifest?: VideoManifest | null;
   qc_report?: VideoQcReport | null;
-  receipt?: { bvid?: string; aid?: string } | null;
+  receipt?: { bvid?: string; aid?: number | string } | null;
+  platform_state?: VideoPlatformState | null;
+  public_url?: string | null;
   error?: string | null;
   render_active?: boolean;
   uploads?: VideoUploadItem[];
@@ -240,6 +244,15 @@ export interface VideoJobRecord {
   >;
   created_at: number;
   updated_at: number;
+}
+
+export interface VideoPublicationResponse {
+  ok: boolean;
+  action: string;
+  status: string;
+  reason?: string | null;
+  error?: string | null;
+  job?: VideoJobRecord;
 }
 
 export interface VideoPolicy {
@@ -313,7 +326,8 @@ export const STATUS_META: Record<string, { label: string; tone: StatusPillTone }
   ready_for_review: { label: "待人工审阅", tone: "good" },
   qc_failed: { label: "质检未通过", tone: "amber" },
   render_failed: { label: "渲染失败", tone: "bad" },
-  published: { label: "已投稿发布", tone: "good" },
+  publishing: { label: "投稿中", tone: "blue" },
+  published: { label: "已投稿", tone: "blue" },
   publish_uncertain: { label: "投稿回执待核对", tone: "amber" },
   publish_failed: { label: "投稿失败", tone: "bad" },
 };

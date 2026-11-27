@@ -196,6 +196,7 @@ export function AutomationDashboardPage({ route }: { route: ParsedRoute }) {
         onCreateSchedule={(input) => control.createOperationSchedule(input)}
         onUpdateSchedule={(id, patch) => control.updateOperationSchedule(id, patch)}
         onDeleteSchedule={(id) => control.deleteOperationSchedule(id)}
+        onPrepareVideo={control.prepareOperationScheduleVideo}
       />
 
       <Stage2PipelineCards

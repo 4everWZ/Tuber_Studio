@@ -2,6 +2,8 @@
 
 import json
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from uuid import uuid4
 
@@ -24,13 +26,24 @@ def _safe_rebase_mentions(text: str, mentions: list[dict]) -> list[dict]:
     return rebase_mentions(text, kept) if kept else []
 
 
+@dataclass(frozen=True)
+class CloseoutSubmission:
+    step_id: str
+    binding: dict
+    payload: dict
+    check: Callable
+
+
 class DynamicsDrafterMixin:
     def _valid_sources(self, row):
         if _has_legacy_chat_lineage(row):
             return False
         char = self._character()
         sources = row["sources"]
-        if row.get("manual") and len(sources) == 1 and sources[0].get("type") == "operator_topic":
+        if len(sources) == 1 and (
+            (row.get("manual") and sources[0].get("type") == "operator_topic")
+            or sources[0].get("type") == "operations_closeout"
+        ):
             decision = self.store.one("SELECT sources FROM dynamic_decisions WHERE id=?", (row["decision_id"],))
             return (
                 (row["character_id"], row["character_version"]) == (char["id"], char["version"])
@@ -61,6 +74,52 @@ class DynamicsDrafterMixin:
             and row["character_version"] == char["version"]
             and all(unchanged(source) for source in originals + dependencies)
         )
+
+    def prepare_schedule_closeout(self, run, brief, character):
+        source_id = f"operations-closeout:{run['id']}"
+        existing = self.store.one(
+            "SELECT id FROM dynamic_posts WHERE account_id=? AND character_id=? AND source_ids=?",
+            (run["account_id"], character["id"], _json([source_id])),
+        )
+        if existing:
+            return self._post(existing["id"])
+        accepted_comments = brief.get("accepted_comments", brief["public_comments"])
+        body = (
+            f"这轮先收工啦。{brief['period_label']}，我看了 {brief['watched_videos']} 个投稿，"
+            f"评论有 {accepted_comments} 条收到回执，其中 {brief['public_comments']} 条已从公开页读回。"
+            f"还发了 {brief['public_dynamics']} 条动态。"
+        )
+        if brief["sources"]:
+            source = brief["sources"][0]
+            body += f"\n原片也给你们留一条。《{source['title']}》 {source['url']}"
+        snapshot = {"id": source_id, "type": "operations_closeout", "text": body}
+        decision = self._save_decision(
+            character, False, {"action": "post", "content": validate_text(body), "reason": "定时运营收尾",
+                              "source_ids": [source_id], "next_evaluation_seconds": 1,
+                              "presentation": {"image_choice": "text_only", "link_source_ids": []}},
+            [snapshot], schedule=False, account_id=run["account_id"], decide_image=False,
+        )
+        return self._post(decision["post_id"])
+
+    async def publish_schedule_closeout(self, draft, scheduled_guard):
+        character = scheduled_guard()
+        if len(draft["sources"]) != 1 or draft["content"] != draft["sources"][0].get("text"):
+            raise ValueError("收尾正文已编辑，请人工确认后发布")
+        binding = self._publication_binding(draft, draft["account_id"], character)
+        payload = self._outgoing(draft, character)
+
+        def check(row, *, publishing=False):
+            current = scheduled_guard()
+            allowed = {"publishing"} if publishing else {"pending_review", "approved"}
+            policy = self.policy()["base"]
+            if (not policy["enabled"] or not policy["auto_publish"] or row["status"] not in allowed
+                    or (not publishing and row["review_key"] != draft["review_key"]) or not self._valid_sources(row)
+                    or self._publication_binding(row, row["account_id"], current) != binding
+                    or self._outgoing(row, current) != payload):
+                raise ValueError("收尾动态的自动发布权限、正文或来源已变化，草稿已保留")
+
+        submission = CloseoutSubmission(f"schedule-closeout:{draft['id']}", binding, payload, check)
+        return await self.publish(draft["id"], expected_text=draft["content"], submission=submission)
 
     async def create_operator_draft(self, character, request_id, topic, *, account=""):
         source = {"id": f"operator-topic:{request_id}", "type": "operator_topic",
@@ -315,6 +374,7 @@ class DynamicsDrafterMixin:
 
     async def _presentation(self, data, sources):
         participants = [person for source in sources for person in source.get("participants", [])]
+        participants.extend(source["original_author"] for source in sources if source.get("original_author"))
         mentions, pending = await bind_mentions(self.account.adapter, data["content"], data["mentions"], participants)
         ambiguous = [item for item in pending if item.get("candidates")]
         demoted = [item for item in pending if not item.get("candidates")]
@@ -355,6 +415,8 @@ class DynamicsDrafterMixin:
         )
         if not self._valid_sources(row):
             raise ValueError("人物版本或公开来源已变化，需重新评估")
+        if row["sources"] and row["sources"][0].get("type") == "operations_closeout":
+            return  # The frozen report does not depend on a generated identity prompt.
         identity = await refresh(character, account)
         previous = json.loads(row.get("generation_identity") or "null")
         if previous and previous.get("identity_version") == identity["identity_version"]:
@@ -367,7 +429,6 @@ class DynamicsDrafterMixin:
                 fresh
             ):
                 raise ValueError("身份更新期间动态正文或来源已变化")
-        participants.extend(source["original_author"] for source in sources if source.get("original_author"))
             if (
                 runtime_identity(self.runtime, character, account)["identity_version"]
                 != identity["identity_version"]

@@ -1,10 +1,21 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { StatusPill, type StatusPillTone } from "@/shared";
 import type {
+  OperationScheduleCloseout,
   OperationScheduleCreateInput,
   OperationScheduleItem,
   OperationScheduleUpdateInput,
 } from "@/shared/operations/types";
+import {
+  CLOSEOUT_OFF,
+  CloseoutFields,
+  ScheduleCloseoutRuns,
+  closeoutHasWork,
+  closeoutModeSummary,
+  closeoutRequest,
+  closeoutTimeError,
+  needsCloseoutFollowup,
+} from "./ScheduleCloseout";
 import styles from "./operations.module.css";
 import type { AutomationStatus } from "./types";
 
@@ -51,6 +62,7 @@ export interface OperationSchedulePanelProps {
   onCreateSchedule: (input: OperationScheduleCreateInput) => Promise<unknown>;
   onUpdateSchedule: (scheduleId: string, patch: OperationScheduleUpdateInput) => Promise<unknown>;
   onDeleteSchedule: (scheduleId: string) => Promise<unknown>;
+  onPrepareVideo: (scheduleId: string, runId: string) => Promise<unknown>;
 }
 
 export function OperationSchedulePanel({
@@ -59,6 +71,7 @@ export function OperationSchedulePanel({
   onCreateSchedule,
   onUpdateSchedule,
   onDeleteSchedule,
+  onPrepareVideo,
 }: OperationSchedulePanelProps) {
   const [customMinutes, setCustomMinutes] = useState("60");
   const [mode, setMode] = useState<"once_window" | "daily_window">("once_window");
@@ -69,18 +82,22 @@ export function OperationSchedulePanel({
   const [label, setLabel] = useState("");
   const [scopeDiscovery, setScopeDiscovery] = useState(true);
   const [scopeInbox, setScopeInbox] = useState(true);
+  const [closeout, setCloseout] = useState<OperationScheduleCloseout>(CLOSEOUT_OFF);
+  const [closeoutEdit, setCloseoutEdit] = useState<{ id: string; value: OperationScheduleCloseout } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
   const emergency = Boolean(status?.policy?.emergency);
   const timezone = status?.settings?.business_timezone || "Asia/Taipei";
   const activeSchedule = status?.active_schedule ?? null;
-  const schedules = status?.schedules ?? [];
+  const schedules = status?.schedules;
+  const invalidCloseout = Boolean(closeoutTimeError(closeout));
+  const closeoutInput = closeoutHasWork(closeout) ? { closeout: closeoutRequest(closeout, timezone) } : {};
 
   const { pendingOrActive, finished } = useMemo(() => {
     const open: OperationScheduleItem[] = [];
     const done: OperationScheduleItem[] = [];
-    for (const item of schedules) {
-      if (item.status === "completed" || item.status === "cancelled") {
+    for (const item of schedules ?? []) {
+      if ((item.status === "completed" || item.status === "cancelled") && !item.closeout_runs?.some(needsCloseoutFollowup)) {
         done.push(item);
       } else {
         open.push(item);
@@ -96,7 +113,7 @@ export function OperationSchedulePanel({
   }
 
   async function handleQuickDuration(minutes: number) {
-    if (controlPending || emergency || !Number.isFinite(minutes) || minutes < 1) return;
+    if (controlPending || emergency || invalidCloseout || !Number.isFinite(minutes) || minutes < 1) return;
     await onCreateSchedule({
       kind: "duration",
       duration_minutes: Math.min(1440, Math.round(minutes)),
@@ -104,6 +121,7 @@ export function OperationSchedulePanel({
       timezone,
       scope_discovery: scopeDiscovery,
       scope_inbox: scopeInbox,
+      ...closeoutInput,
     });
   }
 
@@ -116,7 +134,7 @@ export function OperationSchedulePanel({
 
   async function handleCreateWindow(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (controlPending || (!scopeDiscovery && !scopeInbox)) return;
+    if (controlPending || invalidCloseout || (!scopeDiscovery && !scopeInbox)) return;
     if (mode === "once_window") {
       if (!onceDate || !startTime || !endTime) return;
       const startIso = `${onceDate} ${startTime}`;
@@ -128,7 +146,7 @@ export function OperationSchedulePanel({
           dt.getDate()
         ).padStart(2, "0")}`;
       }
-      await onCreateSchedule({
+      const saved = await onCreateSchedule({
         kind: "once_window",
         label: label.trim() || undefined,
         start_local: startIso,
@@ -136,12 +154,13 @@ export function OperationSchedulePanel({
         timezone,
         scope_discovery: scopeDiscovery,
         scope_inbox: scopeInbox,
+        ...closeoutInput,
       });
-      setLabel("");
+      if (saved) setLabel("");
       return;
     }
 
-    await onCreateSchedule({
+    const saved = await onCreateSchedule({
       kind: "daily_window",
       label: label.trim() || undefined,
       start_time: startTime,
@@ -150,8 +169,16 @@ export function OperationSchedulePanel({
       timezone,
       scope_discovery: scopeDiscovery,
       scope_inbox: scopeInbox,
+      ...closeoutInput,
     });
-    setLabel("");
+    if (saved) setLabel("");
+  }
+
+  async function handleSaveCloseout(event: FormEvent<HTMLFormElement>, item: OperationScheduleItem) {
+    event.preventDefault();
+    if (controlPending || closeoutEdit?.id !== item.id || closeoutTimeError(closeoutEdit.value)) return;
+    const saved = await onUpdateSchedule(item.id, { closeout: closeoutRequest(closeoutEdit.value, item.timezone) });
+    if (saved) setCloseoutEdit((previous) => previous?.id === item.id ? null : previous);
   }
 
   const visibleItems = showHistory ? [...pendingOrActive, ...finished] : pendingOrActive;
@@ -198,13 +225,21 @@ export function OperationSchedulePanel({
         </div>
       )}
 
+      <details className={styles.scheduleCreatorDetails}>
+        <summary>收尾设置（{closeoutHasWork(closeout) ? closeoutModeSummary(closeout) : "默认关闭"}）</summary>
+        <div className={styles.scheduleCreatorForm}>
+          <p className="hint" style={{ margin: 0 }}>用于下方新建的限时运营和时间段计划。</p>
+          <CloseoutFields value={closeout} timezone={timezone} onChange={setCloseout} />
+        </div>
+      </details>
+
       <div className={styles.quickDurationRow}>
         <span className="hint">立即定时运行：</span>
         <button
           id="schedule-quick-30m"
           type="button"
           className="win-btn"
-          disabled={!status || emergency || controlPending}
+          disabled={!status || emergency || controlPending || invalidCloseout}
           onClick={() => void handleQuickDuration(30)}
         >
           刷 30 分钟
@@ -213,7 +248,7 @@ export function OperationSchedulePanel({
           id="schedule-quick-1h"
           type="button"
           className="primary"
-          disabled={!status || emergency || controlPending}
+          disabled={!status || emergency || controlPending || invalidCloseout}
           onClick={() => void handleQuickDuration(60)}
         >
           刷 1 小时
@@ -222,7 +257,7 @@ export function OperationSchedulePanel({
           id="schedule-quick-2h"
           type="button"
           className="win-btn"
-          disabled={!status || emergency || controlPending}
+          disabled={!status || emergency || controlPending || invalidCloseout}
           onClick={() => void handleQuickDuration(120)}
         >
           刷 2 小时
@@ -243,7 +278,7 @@ export function OperationSchedulePanel({
             id="schedule-custom-submit"
             type="submit"
             className="win-btn"
-            disabled={!status || emergency || controlPending}
+            disabled={!status || emergency || controlPending || invalidCloseout}
           >
             定时启动
           </button>
@@ -363,7 +398,7 @@ export function OperationSchedulePanel({
               id="schedule-window-submit"
               type="submit"
               className="primary"
-              disabled={!status || controlPending || (!scopeDiscovery && !scopeInbox)}
+              disabled={!status || controlPending || invalidCloseout || (!scopeDiscovery && !scopeInbox)}
             >
               {mode === "daily_window" ? "添加每日计划" : "添加时间段"}
             </button>
@@ -406,8 +441,29 @@ export function OperationSchedulePanel({
                       : ""}
                     {item.last_error ? ` · ${item.last_error}` : ""}
                   </p>
+                  {(closeoutHasWork(item.closeout) || Boolean(item.closeout_runs?.length)) && (
+                    <ScheduleCloseoutRuns schedule={item} disabled={controlPending} onPrepareVideo={onPrepareVideo} />
+                  )}
+                  {closeoutEdit?.id === item.id && (
+                    <form className={styles.scheduleCreatorForm} onSubmit={(event) => void handleSaveCloseout(event, item)}>
+                      <CloseoutFields value={closeoutEdit.value} timezone={item.timezone}
+                        onChange={(value) => setCloseoutEdit({ id: item.id, value })} />
+                      <div className={styles.scheduleItemActions}>
+                        <button type="submit" className="primary" disabled={controlPending || Boolean(closeoutTimeError(closeoutEdit.value))}>
+                          保存收尾设置
+                        </button>
+                        <button type="button" className="win-btn" onClick={() => setCloseoutEdit(null)}>收起编辑</button>
+                      </div>
+                    </form>
+                  )}
                 </div>
                 <div className={styles.scheduleItemActions}>
+                  {(item.status === "scheduled" || item.status === "paused") && closeoutEdit?.id !== item.id && (
+                    <button type="button" className="win-btn" disabled={controlPending}
+                      onClick={() => setCloseoutEdit({ id: item.id, value: item.closeout || CLOSEOUT_OFF })}>
+                      编辑收尾
+                    </button>
+                  )}
                   {item.kind === "daily_window" && (item.status === "scheduled" || item.status === "paused") && (
                     <button
                       type="button"

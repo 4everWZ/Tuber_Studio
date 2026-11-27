@@ -198,6 +198,27 @@ export interface AutomationPolicySettings {
   [key: string]: unknown;
 }
 
+export interface OperationScheduleCloseout {
+  dynamic_mode: "off" | "review" | "automatic";
+  video_mode: "off" | "manual" | "automatic_review" | "automatic_publish";
+  video_start?: string | null;
+  video_end?: string | null;
+  timezone?: string | null;
+}
+
+export interface OperationScheduleCloseoutRun {
+  id: string;
+  period_start_at?: number | null;
+  period_end_at: number;
+  video_start_at?: number | null;
+  video_end_at?: number | null;
+  dynamic_status: string;
+  dynamic_id?: number | null;
+  video_status: string;
+  video_job_id?: string | null;
+  last_error?: string | null;
+}
+
 export interface OperationScheduleItem {
   id: string;
   kind: "duration" | "once_window" | "daily_window";
@@ -220,6 +241,8 @@ export interface OperationScheduleItem {
   weekdays: number[];
   weekday_labels: string[];
   timezone: string;
+  closeout?: OperationScheduleCloseout | null;
+  closeout_runs?: OperationScheduleCloseoutRun[];
   remaining_seconds?: number | null;
   last_error?: string | null;
   created_at: number;
@@ -240,12 +263,14 @@ export interface OperationScheduleCreateInput {
   timezone?: string | null;
   scope_discovery?: boolean;
   scope_inbox?: boolean;
+  closeout?: OperationScheduleCloseout;
 }
 
 export interface OperationScheduleUpdateInput {
   enabled?: boolean | null;
   action?: "cancel" | null;
   label?: string | null;
+  closeout?: OperationScheduleCloseout | null;
 }
 
 export interface AutomationStatus extends OperationCapabilityStatus {

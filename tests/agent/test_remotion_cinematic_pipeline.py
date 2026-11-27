@@ -76,6 +76,7 @@ def test_operations_recap_uses_public_receipt_counts_and_freezes_the_scheduled_d
         "title": "一段运营回放",
         "period_label": "2026-11-20 至 2026-11-22",
         "watched_videos": 12,
+        "accepted_comments": 2,
         "public_comments": 0,
         "public_dynamics": 3,
         "sources": [source],
@@ -91,15 +92,18 @@ def test_operations_recap_uses_public_receipt_counts_and_freezes_the_scheduled_d
     assert (saved["plan"]["width"], saved["plan"]["height"]) == (1280, 720)
     title, counts, excerpt, reflection = saved["plan"]["scenes"]
     assert title["visual_props"]["subtitle"] == brief["period_label"]
-    assert [item["value"] for item in counts["visual_props"]["chart_items"]] == [12, 0, 3]
-    assert [line["reveal_step"] for line in counts["lines"]] == [0, 1, 2]
-    assert counts["lines"][1]["text"] == "平台确认公开的评论有 0 条。"
+    assert [item["value"] for item in counts["visual_props"]["chart_items"]] == [12, 2, 0, 3]
+    assert [line["reveal_step"] for line in counts["lines"]] == [0, 1, 2, 3]
+    assert counts["lines"][1]["text"] == "评论拿到了 2 条提交回执。"
+    assert counts["lines"][2]["text"] == "从公开页读回的评论有 0 条。"
     assert excerpt["visual_props"]["subtitle"] == highlight["text"]
     assert excerpt["visual_props"]["citation_label"] == source["title"]
     assert reflection["heading"] == "我的复盘感想"
     assert source["url"] in saved["plan"]["summary"]
     with pytest.raises(ValueError, match="公开来源"):
         skill.plan_operations_recap(brief | {"sources": []})
+    with pytest.raises(ValueError, match="超过取得回执"):
+        skill.plan_operations_recap(brief | {"public_comments": 3})
     with pytest.raises(ValueError, match="私"):
         skill.plan_operations_recap(brief | {
             "sources": [source | {"source_id": "dm:900"}],

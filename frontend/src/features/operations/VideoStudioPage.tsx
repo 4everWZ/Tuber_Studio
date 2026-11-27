@@ -41,6 +41,7 @@ import {
   type VideoListResponse,
   type VideoMode,
   type VideoPolicy,
+  type VideoPublicationResponse,
   type VideoUploadItem,
   type VideoVisualReview,
 } from "./videoStudioTypes";
@@ -103,6 +104,7 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
   // Action busy flags
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
+  const [publicationReadback, setPublicationReadback] = useState<{ jobId: string; reason: string | null } | null>(null);
 
   // Policy draft
   const [policyDraft, setPolicyDraft] = useState<VideoPolicy | null>(null);
@@ -146,7 +148,7 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
   );
 
   useEffect(() => {
-    if (selectedJobId && jobs.some((job) => job.id === selectedJobId)) return;
+    if (loading || (selectedJobId && jobs.some((job) => job.id === selectedJobId))) return;
     if (filteredJobs.length > 0) {
       setSelectedJobId(filteredJobs[0].id);
     } else if (jobs.length > 0) {
@@ -154,7 +156,7 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
     } else {
       setSelectedJobId(null);
     }
-  }, [jobs, filteredJobs, selectedJobId]);
+  }, [jobs, filteredJobs, selectedJobId, loading]);
 
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === selectedJobId) || null,
@@ -670,29 +672,23 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
   async function handleStageOrPublish(job: VideoJobRecord, approved: boolean) {
     if (
       approved &&
-      !window.confirm(`确认将成片「${job.title}」投稿到当前 B 站账号？`)
+      (!job.content_hash || !window.confirm(`确认将成片「${job.title}」投稿到当前 B 站账号？`))
     ) {
       return;
     }
     setBusyAction(approved ? "publish" : "stage");
     setActionError("");
     try {
-      const res = await videoRequest<{
-        ok: boolean;
-        action?: string;
-        status?: string;
-        reason?: string;
-        error?: string;
-        receipt?: { bvid?: string };
-      }>(`/api/v1/operations/videos/${encodeURIComponent(job.id)}/publish`, {
+      const res = await videoRequest<VideoPublicationResponse>(`/api/v1/operations/videos/${encodeURIComponent(job.id)}/publish`, {
         method: "POST",
         body: {
           publish_mode: approved ? "auto_publish" : "preview_review",
           approved,
+          expected_content_hash: approved ? job.content_hash : undefined,
         },
       });
-      if (res.action === "published" && res.receipt?.bvid) {
-        emitNotice(`视频已投稿成功：${res.receipt.bvid}`);
+      if (res.action === "published" || res.action === "already_published") {
+        emitNotice("平台已收稿。可在成片预览中核对公开状态。");
       } else if (res.action === "staged_for_review") {
         emitNotice("已保持在人工审阅队列（未触发平台投稿）。");
       } else if (!res.ok) {
@@ -702,7 +698,34 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
       } else {
         emitNotice(`操作完成：${res.action || res.status || "ok"}`);
       }
+      await applyPublicationJob(res.job);
+    } catch (err) {
+      const msg = errorMessage(err);
+      setActionError(msg);
+      emitNotice(msg, true);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function applyPublicationJob(job: VideoJobRecord | undefined) {
+    if (job) {
+      setJobs((current) => current.map((item) => item.id === job.id ? job : item));
+    } else {
       await fetchOverview(true);
+    }
+  }
+
+  async function handleRecheckPublication(job: VideoJobRecord) {
+    setBusyAction("recheck_publish");
+    setActionError("");
+    setPublicationReadback(null);
+    try {
+      const res = await videoRequest<VideoPublicationResponse>(
+        `/api/v1/operations/videos/${encodeURIComponent(job.id)}/publish/recheck`, { method: "POST" },
+      );
+      await applyPublicationJob(res.job);
+      setPublicationReadback({ jobId: job.id, reason: res.reason || null });
     } catch (err) {
       const msg = errorMessage(err);
       setActionError(msg);
@@ -785,6 +808,14 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
   const selectedStatusMeta = selectedJob
     ? STATUS_META[selectedJob.status] || { label: selectedJob.status, tone: "neutral" as StatusPillTone }
     : null;
+  const hasPublication = selectedJob && (
+    ["publishing", "published", "publish_uncertain"].includes(selectedJob.status) || Boolean(selectedJob.receipt)
+  );
+  const isPubliclyVisible = selectedJob?.platform_state === "public_visible";
+  const publicVideoUrl = isPubliclyVisible ? safeHttpsUrl(selectedJob?.public_url) : null;
+  const publicationLabel = isPubliclyVisible ? "公开可见已核实" :
+    selectedJob?.status === "published" && (!selectedJob.platform_state || selectedJob.platform_state === "submitted")
+      ? "待公开" : "公开状态未知";
   const selectedEditorialFit = selectedJob
     ? selectedJob.editorial_fit || editorialFitsByJobId[selectedJob.id] || null
     : null;
@@ -1212,7 +1243,7 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
               { key: "rendering", label: "渲染中" },
               { key: "ready_for_review", label: "待审阅" },
               { key: "qc_failed", label: "质检未过" },
-              { key: "published", label: "已发布" },
+              { key: "published", label: "已投稿" },
             ].map((opt) => (
               <button
                 key={opt.key}
@@ -1320,7 +1351,7 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                 <div className="actions">
                   <button
                     type="button"
-                    disabled={busyAction !== null || selectedJob.status === "rendering"}
+                    disabled={busyAction !== null || selectedJob.status === "rendering" || Boolean(hasPublication)}
                     onClick={() => void handleGenerate(selectedJob)}
                   >
                     {busyAction === "generate" ? "生成中…" : "生成工程与配音"}
@@ -1331,7 +1362,8 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                     disabled={
                       busyAction !== null ||
                       !selectedJob.manifest ||
-                      selectedJob.status === "rendering"
+                      selectedJob.status === "rendering" ||
+                      Boolean(hasPublication)
                     }
                     onClick={() => void handleRender(selectedJob, false)}
                   >
@@ -1595,20 +1627,32 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                     </div>
                   )}
 
-                  {selectedJob.receipt?.bvid && (
+                  {hasPublication && (
                     <div className="panel">
-                      <strong>平台回执：</strong>
-                      <a
-                        href={`https://www.bilibili.com/video/${encodeURIComponent(selectedJob.receipt.bvid)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {selectedJob.receipt.bvid}
-                      </a>
+                      <div className="panel-heading">
+                        <strong>平台投稿状态</strong>
+                        <StatusPill tone={isPubliclyVisible ? "good" : "amber"} label={publicationLabel} />
+                      </div>
+                      {(selectedJob.receipt?.bvid || selectedJob.receipt?.aid) && (
+                        <p className="hint">投稿编号 {selectedJob.receipt.bvid || `av${selectedJob.receipt.aid}`}</p>
+                      )}
+                      <div className="actions">
+                        {publicVideoUrl && (
+                          <a href={publicVideoUrl} target="_blank" rel="noopener noreferrer">打开 B 站公开视频</a>
+                        )}
+                        <button type="button" disabled={busyAction !== null}
+                          onClick={() => void handleRecheckPublication(selectedJob)}>
+                          {busyAction === "recheck_publish" ? "正在核对…" : "核对公开状态"}
+                        </button>
+                      </div>
+                      <p className="hint">只读核对原投稿回执和公开页面。</p>
+                      {publicationReadback?.jobId === selectedJob.id && (
+                        <p className="hint" role="status">{publicationReadback.reason || "已核对公开状态。"}</p>
+                      )}
                     </div>
                   )}
 
-                  {selectedJob.status !== "published" && selectedJob.status !== "publish_uncertain" && (
+                  {!hasPublication && (
                     <div className="panel">
                       <div className="panel-heading">
                         <strong>
@@ -1748,7 +1792,7 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                     </div>
                   )}
 
-                  {selectedJob.status !== "published" && selectedJob.status !== "publish_uncertain" && (
+                  {!hasPublication && (
                     <div className="panel">
                       <strong>稿件元数据（发布前可微调）</strong>
                       <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
@@ -1798,11 +1842,12 @@ export function VideoStudioPage({ route }: { route: ParsedRoute }) {
                               <button
                                 type="button"
                                 className="primary"
-                                disabled={busyAction !== null}
+                                disabled={busyAction !== null || !selectedJob.content_hash}
                                 onClick={() => void handleStageOrPublish(selectedJob, true)}
                               >
                                 确认投稿到 B 站
                               </button>
+                              {!selectedJob.content_hash && <span className="hint">请重新渲染，获取可确认的成片版本。</span>}
                             </>
                           )}
                           <button
