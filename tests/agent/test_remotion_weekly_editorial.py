@@ -107,7 +107,8 @@ def test_weekly_editorial_plan_builds_rich_90_to_300s_show_and_keeps_attribution
     example = WeeklyExample()
     brief = example.brief()
 
-    assert DEFAULT_VIDEO_PRODUCTION_POLICY["render_timeout_seconds"] == 600.0
+    assert DEFAULT_VIDEO_PRODUCTION_POLICY["render_timeout_seconds"] == 1800.0
+    assert DEFAULT_VIDEO_PRODUCTION_POLICY["max_render_concurrency"] == 4
     plan = skill.plan_operations_recap(brief, job_key="weekly-editorial")["plan"]
     scenes = plan["scenes"]
     assert RECAP_MIN_SCENES <= len(scenes) <= RECAP_MAX_SCENES

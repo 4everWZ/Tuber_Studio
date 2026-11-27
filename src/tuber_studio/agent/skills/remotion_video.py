@@ -70,7 +70,7 @@ DEFAULT_VIDEO_PRODUCTION_POLICY = {
     "publish_mode": "preview_review", "auto_publish_enabled": False, "default_fps": 30, "default_width": 1920,
     "default_height": 1080, "default_include_avatar": True, "default_bgm_enabled": True,
     "default_line_pause_seconds": DEFAULT_LINE_PAUSE_SECONDS, "default_scene_pause_seconds": DEFAULT_SCENE_PAUSE_SECONDS,
-    "max_render_concurrency": 2, "render_timeout_seconds": 600.0, "upload_timeout_seconds": 600.0,
+    "max_render_concurrency": 4, "render_timeout_seconds": 1800.0, "upload_timeout_seconds": 600.0,
 }
 _ALLOWED_PUBLIC_KINDS = frozenset({"watched_video", "public_incident", "operator_topic", "web_research", "public_memory", "public_comment"})
 _FORBIDDEN_SOURCE_PREFIXES = ("owner:", "private:", "dm:", "dm_", "chat:", "turn:", "daily-chat:")
@@ -111,8 +111,8 @@ class VideoProductionPolicy(StrictModel):
     default_bgm_enabled: bool = True
     default_line_pause_seconds: float = Field(default=DEFAULT_LINE_PAUSE_SECONDS, ge=0.0, le=2.0)
     default_scene_pause_seconds: float = Field(default=DEFAULT_SCENE_PAUSE_SECONDS, ge=0.0, le=3.0)
-    max_render_concurrency: int = Field(default=2, ge=1, le=4)
-    render_timeout_seconds: float = Field(default=600.0, ge=5.0, le=3600.0)
+    max_render_concurrency: int = Field(default=4, ge=1, le=4)
+    render_timeout_seconds: float = Field(default=1800.0, ge=5.0, le=3600.0)
     upload_timeout_seconds: float = Field(default=600.0, ge=5.0, le=3600.0)
 
 
