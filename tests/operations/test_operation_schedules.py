@@ -355,10 +355,13 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
     assert run["video_status"] == "render_failed" and not run["video_job_id"]
     with pytest.raises(ValueError, match="原自动投稿授权时段"):
         browsing.schedules.closeouts.request_video(schedule["id"], run["id"], automatic=True, now=_at(23, 0))
+    browsing.bilibili_account.verified_account_id = ""
+    browsing.bilibili_account.verified_credential = None
     browsing.schedules.closeouts.request_video(schedule["id"], run["id"], automatic=True, now=_at(22, 1))
     await browsing.schedules.closeouts._worker
     run = browsing.schedules.closeouts.list(schedule["id"])[0]
     assert run["video_status"] == "submitted", run["last_error"]
+    assert browsing.bilibili_account.display_account_id() == scope[0]
     assert plan_attempts == [run["id"], run["id"]]
     assert run["dynamic_status"] == "pending" and len(quotas) == 1
     assert clips[0][1]["public_comments"] == 1

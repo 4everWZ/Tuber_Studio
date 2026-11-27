@@ -211,6 +211,12 @@ class OperationCloseouts:
             self.service.operations.assert_review_writable(account)
         return char
 
+    async def _verified_character(self, row):
+        account = self.service.bilibili_account
+        if not account.display_account_id():
+            await account.account_id()
+        return self._guard(row)
+
     async def _brief(self, row, character):
         if row["brief"]:
             brief = json.loads(row["brief"])
@@ -238,7 +244,7 @@ class OperationCloseouts:
     async def _dynamic(self, row, config, clock):
         dynamics = self.service.dynamics
         try:
-            character = self._guard(row)
+            character = await self._verified_character(row)
             brief = await self._brief(row, character)
             self._guard(row)
             draft = dynamics.prepare_schedule_closeout(row, brief, character)
@@ -285,7 +291,7 @@ class OperationCloseouts:
             self._save(row["id"], video_status="window_missed", video_error="制作与自动投稿时段已结束")
             return
         try:
-            character = self._guard(row)
+            character = await self._verified_character(row)
             if not skill:
                 raise ValueError("Remotion 视频制作服务未启动")
             job = skill.get_job(job_id) if job_id else None
