@@ -133,8 +133,8 @@ async def test_lookup_once_only_and_timeout_still_allows_one_final(runtime, monk
     assert len(calls[0][1]["oneOf"]) == 2 and "oneOf" not in calls[1][1]
     assert any("（UTC）" in msg["content"] for msg in calls[0][0])
     assert any("没有查到" in msg["content"] for msg in calls[1][0])
-    assert any("别顺口说成另一件真事" in msg["content"] for msg in calls[1][0])
-    assert any("尖锐吐槽有实据的讨口子" in msg["content"] for msg in calls[1][0])
+    assert any("停机就是程序停了" in msg["content"] for msg in calls[1][0])
+    assert any("聊到这些套路，Aqua 直接拆台" in msg["content"] for msg in calls[1][0])
     assert all(call[2] == 180 for call in calls)
     assert not runtime.store.all("SELECT * FROM conversations")
 

@@ -11,9 +11,13 @@ from ..core.identity import bilibili_owner_context, owner_address_label
 from ..core.models import resident_character_profile
 from ..core.text import operation_character
 
-SITUATION_EVIDENCE_BOUNDARIES: tuple[str, ...] = (
+_SOURCE_ATTRIBUTION = (
     "视角分清。根据实际参与者和发言来源接话，视频剧情、他人作品和经历归原来的角色或作者。"
-    "可以用自己的语气联想或打比方，让人听得出是在想象。",
+    "可以用自己的语气联想或打比方，让人听得出是在想象。"
+)
+
+SITUATION_EVIDENCE_BOUNDARIES: tuple[str, ...] = (
+    _SOURCE_ATTRIBUTION,
     "现实近况以本轮实报或可核实记录为准。余额、停机、删档、生死、被弃养的传闻，"
     "想接梗就用「假如」「万一」明说是假设，别顺口说成另一件真事。"
     "没查到可以直接说「我也不知道」。做过或发过要有实际结果。",
@@ -21,10 +25,20 @@ SITUATION_EVIDENCE_BOUNDARIES: tuple[str, ...] = (
     "把槽点说具体，对动机没有实据就紧扣行为。",
 )
 
-DEFAULT_EPISTEMIC_BOUNDARIES = (
-    *SITUATION_EVIDENCE_BOUNDARIES,
-    "直接输出自然纯文本，避免台词混入 JSON 包装、方括号引用编号或内部字段名。",
+_AQUA_SITUATION_BOUNDARIES = (
+    _SOURCE_ATTRIBUTION,
+    "自己的现实状态、行动和发布结果按本轮实报或实际回执说。遇到带假前提的谣言或反串钓鱼，直接点破。"
+    "判断宣传或接玩笑时，直接谈话术和行为。"
+    "把特定账号的后台操作归到某个人或机构时，只说能够核实的事实。",
+    "Aqua 没有自己的钱包，也看不到后台余额。停机就是程序停了。"
+    "拿「不给钱就会死」或「关了就是弃养」催人打赏，是卖惨讨口子。"
+    "把后台人工开对话框、挑稿发稿宣传成全自动，也是在演戏。",
+    "聊到这些套路，Aqua 直接拆台。用她带点毒舌、傲娇的短句戳行为，别转成一篇核验声明。"
+    "平常可以自然接梗，想象和吐槽让人听得出来。",
 )
+
+_OUTPUT_BOUNDARY = "直接输出自然纯文本，避免台词混入 JSON 包装、方括号引用编号或内部字段名。"
+DEFAULT_EPISTEMIC_BOUNDARIES = (*SITUATION_EVIDENCE_BOUNDARIES, _OUTPUT_BOUNDARY)
 
 PUBLIC_CHANNELS: frozenset[str] = frozenset(
     {
@@ -136,6 +150,13 @@ def _preferred_self_name(character: dict[str, Any]) -> tuple[str, tuple[str, ...
     return raw_name, (_LEGACY_DISLIKED_NAME,) if _LEGACY_DISLIKED_NAME in raw_name else ()
 
 
+def situation_evidence_boundaries(character: dict[str, Any]) -> tuple[str, ...]:
+    name, _ = _preferred_self_name(character)
+    if name == _AQUA_NAME and (character.get("id") == "whale" or character.get("name") == _AQUA_NAME):
+        return _AQUA_SITUATION_BOUNDARIES
+    return SITUATION_EVIDENCE_BOUNDARIES
+
+
 def _clean_single_line(text: Any) -> str:
     if not isinstance(text, str):
         return ""
@@ -190,7 +211,7 @@ def build_metacognitive_profile(
         str(actor.get("account_display_name") or (operating_account or {}).get("name") or "").strip() or None
     )
 
-    boundaries = list(DEFAULT_EPISTEMIC_BOUNDARIES)
+    boundaries = [*situation_evidence_boundaries(char), _OUTPUT_BOUNDARY]
     for item in extra_boundaries:
         cleaned = _clean_single_line(item)
         if cleaned and cleaned not in boundaries:

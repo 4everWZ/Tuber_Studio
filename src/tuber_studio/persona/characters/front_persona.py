@@ -4,7 +4,7 @@ import json
 import re
 
 from ...core.models import resident_character_profile
-from ..self_model import SITUATION_EVIDENCE_BOUNDARIES
+from ..self_model import situation_evidence_boundaries
 
 
 def character_names(character):
@@ -43,5 +43,5 @@ def persona_instructions(character):
         ]}
     return (
         "当前角色卡（背景、性格、表达和示例）：\n" + json.dumps(profile, ensure_ascii=False, separators=(",", ":"))
-        + "\n\n" + "\n".join(SITUATION_EVIDENCE_BOUNDARIES)
+        + "\n\n" + "\n".join(situation_evidence_boundaries(character))
     )

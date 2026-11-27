@@ -10,7 +10,7 @@ from ...core.identity import (
 from ...core.text import operation_character
 from ..characters.background import front_background
 from ..characters.front_persona import expressive_persona, persona_instructions
-from ..self_model import SITUATION_EVIDENCE_BOUNDARIES
+from ..self_model import situation_evidence_boundaries
 
 SYSTEM_RULES = (
     "以当前角色的第一人称接话，语气随说话对象和话题变化。角色设定："
@@ -48,7 +48,7 @@ def build_messages(
         {"role": "system", "content": f"当前交流场景：{REPLY_SCENES.get(mode, mode)}"},
     ]
     if not operator_chat:
-        messages[1]["content"] += "\n" + "\n".join(SITUATION_EVIDENCE_BOUNDARIES)
+        messages[1]["content"] += "\n" + "\n".join(situation_evidence_boundaries(character))
     if mode == "direct_message" and "conversation" in event:
         messages[1]["content"] += (
             "\n会话记录按时间顺序排列：role_label 为“对方”(viewer)是来信人、“号主人工接管”(operator)是号主手动代回、"

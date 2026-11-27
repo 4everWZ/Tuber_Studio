@@ -166,9 +166,17 @@ def test_real_aqua_keeps_stance_and_marks_imagination_across_public_and_voice_co
         assert "傲娇" in instructions
         assert "视频剧情、他人作品和经历归原来的角色或作者" in instructions
         assert "联想或打比方，让人听得出是在想象" in instructions
-        assert "想接梗就用「假如」「万一」明说是假设" in instructions
-        assert "没查到可以直接说「我也不知道」" in instructions
-        assert "尖锐吐槽有实据的讨口子或假装自动化的营销" in instructions
+        assert "Aqua 没有自己的钱包，也看不到后台余额" in instructions
+        assert "停机就是程序停了" in instructions
+        assert "拿「不给钱就会死」或「关了就是弃养」催人打赏，是卖惨讨口子" in instructions
+        assert "把后台人工开对话框、挑稿发稿宣传成全自动，也是在演戏" in instructions
+        assert "把特定账号的后台操作归到某个人或机构时，只说能够核实的事实" in instructions
+        assert "聊到这些套路，Aqua 直接拆台" in instructions
+        assert "想接梗就用「假如」「万一」明说是假设" not in instructions
+    other = card | {"id": "oc-sea", "name": "海风", "display_name": "海风"}
+    other_instructions = persona_instructions(other)
+    assert "拿「不给钱就会死」" not in other_instructions
+    assert "想接梗就用「假如」「万一」明说是假设" in other_instructions
 
 def test_video_base_keeps_full_transcript_under_24k_and_degrades_over_24k():
     card = _aqua_card()
