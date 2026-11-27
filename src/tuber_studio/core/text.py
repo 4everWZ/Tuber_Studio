@@ -22,9 +22,15 @@ _COMMENT_PROTOCOL_FIELDS = {
 
 _STRONG_REASONING_MARKERS = (
     re.compile(r"\bcheck\s+for\s+banned\s+phrases\b", re.IGNORECASE),
-    re.compile(r"^\s*Final\s+text\s*:", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\s*Final\s+(?:text|version|draft|output|reply)\s*:", re.IGNORECASE | re.MULTILINE),
     re.compile(r"^\s*Self-reference\s*:", re.IGNORECASE | re.MULTILINE),
     re.compile(r"\bNo\s+need\s+to\s+skip\b", re.IGNORECASE),
+    re.compile(r"\bNo\s+tool\s+call\s+needed\b", re.IGNORECASE),
+    re.compile(r"\bOutput\s+plain\s+text\b", re.IGNORECASE),
+    re.compile(r"^\s*One\s+more\s+consideration\s*:", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\s*Quote\s+marks\s*:", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"\bdedup-safe\b", re.IGNORECASE),
+    re.compile(r"\bPer\s+the\s+rules\b", re.IGNORECASE),
     re.compile(r"</(?:think|thought|analysis)>", re.IGNORECASE),
 )
 
@@ -32,12 +38,13 @@ _META_DRAFTING_CUES = (
     re.compile(r'^\s*Wait,\s+["\'“]', re.IGNORECASE | re.MULTILINE),
     re.compile(r"\bActually,?\s+let\s+me\b", re.IGNORECASE),
     re.compile(r"\bLet\s+me\s+(?:check|refine|double-check|rethink|rewrite|adjust|verify|finalize|polish)\b", re.IGNORECASE),
-    re.compile(r"^\s*Final\s+draft\s*:", re.IGNORECASE | re.MULTILINE),
     re.compile(r"^\s*Another\s+consideration\s*:", re.IGNORECASE | re.MULTILINE),
-    re.compile(r"\bShould\s+I\s+(?:call|use|mention|skip|keep|add|include)\b", re.IGNORECASE),
+    re.compile(r"\bShould\s+I\s+(?:call|use|mention|skip\??|keep|add|include)\b", re.IGNORECASE),
     re.compile(r"\bFine\s+as\s+is\b", re.IGNORECASE),
-    re.compile(r"^\s*Hmm,\s+good\b", re.IGNORECASE | re.MULTILINE),
+    re.compile(r'^\s*Hmm,\s+(?:good\b|["\'“])', re.IGNORECASE | re.MULTILINE),
     re.compile(r"\bThis\s+is\s+good\s*[—–-]", re.IGNORECASE),
+    re.compile(r"\ba\s+bit\s+awkward\b", re.IGNORECASE),
+    re.compile(r"\bwill\s+treat\s+it\s+as\b", re.IGNORECASE),
 )
 
 

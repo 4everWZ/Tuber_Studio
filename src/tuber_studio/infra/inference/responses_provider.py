@@ -82,8 +82,10 @@ def _turn(data, allowed, output_budget):
 
 
 def thinking_budget(max_tokens):
-    """Leave most of the output allowance for the tool call or visible text."""
-    return min(1024, max_tokens // 4)
+    """Leave at least half of the output allowance for the tool call or visible text."""
+    if max_tokens < 1024:
+        return max_tokens // 4
+    return min(2048, max_tokens // 2)
 
 
 async def generate_image_json(client, model, messages, schema, max_tokens, *, thinking_tokens):
