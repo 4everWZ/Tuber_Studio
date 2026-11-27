@@ -94,6 +94,18 @@ async def evaluate_comment_visit(browsing, result, row, metrics):
             key,
         )
     except Exception as error:
+        terminal_kind = getattr(error, "kind", "")
+        if terminal_kind in {"not_found", "closed"}:
+            browsing.repo.complete(
+                identity,
+                result["owner"],
+                result["generation"],
+                "skipped",
+                payload | {"reason": terminal_kind},
+                key,
+                public_error(error),
+            )
+            return
         metrics["failures"] += 1
         continuation = getattr(error, "continuation", None)
         deferred = isinstance(error, BrowsingBudgetDeferred)

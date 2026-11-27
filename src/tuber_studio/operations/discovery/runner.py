@@ -60,8 +60,12 @@ class DiscoveryRunner:
                 return max(0.5, min(float(delay), remaining))
             try:
                 await browsing.run_discovery_revisits_once()
+                if not browsing.operations.accepting_work or not browsing.discovery.enabled:
+                    return float(delay)
                 result = await browsing.run(automatic=True, video_only=True)
             except Exception as error:
+                if browsing.closed or not browsing.operations.accepting_work:
+                    return float(delay)
                 message = public_error(error)
                 browsing.discovery.error = message
                 browsing.discovery.attention = {

@@ -663,10 +663,13 @@ class VideoDecisionMixin:
             if isinstance(error, GenerationInvalid):
                 self.browsing.repo.mark_watch_result(row, material["metadata"]["bvid"], fully_read=False)
                 metrics["viewed"] += 1
-            metrics["failures"] += 1
-            continuation = getattr(error, "continuation", None)
-            round_budget = isinstance(error, BrowsingBudgetDeferred) or (
-                continuation and continuation["feedback"].get("kind") == "round_budget"
+            terminal_kind = getattr(error, "kind", "") if getattr(error, "kind", "") in {"not_found", "closed"} else ""
+            if not terminal_kind:
+                metrics["failures"] += 1
+            continuation = None if terminal_kind else getattr(error, "continuation", None)
+            round_budget = not terminal_kind and (
+                isinstance(error, BrowsingBudgetDeferred)
+                or (continuation and continuation["feedback"].get("kind") == "round_budget")
             )
             if continuation:
                 self.browsing.runtime.continuations.bind_source_view(
@@ -679,7 +682,9 @@ class VideoDecisionMixin:
                 identity,
                 result["owner"],
                 result["generation"],
-                "invalid"
+                "skipped"
+                if terminal_kind
+                else "invalid"
                 if isinstance(error, GenerationInvalid)
                 else "checkpoint"
                 if continuation or round_budget or isinstance(error, ContextWindowExceeded)
@@ -689,7 +694,9 @@ class VideoDecisionMixin:
                 )
                 | payload
                 | {
-                    "reason": (payload.get("reason") or public_error(error))
+                    "reason": terminal_kind
+                    if terminal_kind
+                    else (payload.get("reason") or public_error(error))
                     if isinstance(error, GenerationInvalid)
                     else "生成进度已保存，可继续"
                     if continuation

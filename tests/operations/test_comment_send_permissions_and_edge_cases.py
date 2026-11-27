@@ -443,3 +443,56 @@ async def test_disappeared_video_and_terminal_rejections_settle_cleanly_without_
     assert settled_reply["status"] == "rejected_by_platform"
     assert "12002" in (settled_reply["error"] or "")
     assert not browsing.store.one("SELECT 1 FROM operation_send_queue WHERE source_id=?", (reply_id,))
+
+
+async def test_cached_comment_visit_disappeared_video_skips_without_retry_wait(browsing, monkeypatch):
+    await authorize(browsing)
+    row, _ = browsing.repo.create_round(
+        browsing.account,
+        browsing.runtime.character,
+        browsing.effective() | {"discovery_enabled": True, "reply_enabled": True, "autonomous_batch": True},
+        browsing.operations.policy()["epoch"],
+        preview=False,
+    )
+    material = {
+        "metadata": {"bvid": BV, "aid": 1, "owner": "UP", "owner_uid": "99", "title": "t", "duration": 60.0},
+        "parts": [{"cid": "11", "segments": [{"id": "s1", "start": 0.0, "end": 5.0, "text": "字幕"}]}],
+        "coverage": "all_available_cc",
+        "source_version": "sv-1",
+    }
+    browsing.repo.save_content_progress(row, material, [])
+
+    async def missing_comments(*args, **kwargs):
+        raise PlatformReadError("not_found", "视频已删除或设为不可见（code 62002）", code=62002)
+
+    monkeypatch.setattr(browsing.adapter, "fetch", missing_comments)
+    candidate = {"bvid": BV, "task_kind": "comment_visit"}
+    metrics = {"prepared": 0, "failures": 0, "viewed": 0, "skipped": 0, "selected": 0, "drafts": 0}
+    await run_discovery_video(browsing, row, candidate, metrics)
+
+    task_row = browsing.store.one("SELECT status, error, payload FROM browsing_tasks WHERE round_id=? AND bvid=?", (row["id"], BV))
+    assert task_row["status"] == "skipped"
+    assert json.loads(task_row["payload"]).get("reason") == "not_found"
+    assert "62002" in (task_row["error"] or "")
+    assert browsing.repo.video_retry(row, BV) is None
+    assert metrics["failures"] == 0
+
+
+async def test_discovery_runner_ignores_stop_transition_without_setting_error(browsing, monkeypatch):
+    await authorize(browsing)
+    browsing.operations.configure({"enabled": True}, account_id=browsing.account, character=browsing.runtime.character)
+    await browsing.configure({"discovery_enabled": True})
+
+    async def revisit_and_stop():
+        browsing.operations.configure({"enabled": False})
+        return 0
+
+    async def should_not_start_run(**kwargs):
+        raise AssertionError("browsing.run must not be called once accepting_work is False")
+
+    monkeypatch.setattr(browsing, "run_discovery_revisits_once", revisit_and_stop)
+    monkeypatch.setattr(browsing, "run", should_not_start_run)
+
+    await browsing.discovery_runner.run_once()
+    assert browsing.discovery.error is None
+    assert browsing.discovery.attention is None
