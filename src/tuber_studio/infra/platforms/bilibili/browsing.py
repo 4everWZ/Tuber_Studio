@@ -154,6 +154,10 @@ class BrowsingAdapter(BilibiliAdapter):
         async with self.anon_client.stream("GET", path, params=params, follow_redirects=False) as response:
             yield response
 
+    async def _video(self, video: str) -> dict:
+        info = await super()._video(video)
+        return info
+
     async def _get_payload(self, path, params, *, anonymous: bool = False):
         await self._pace()
         try:
@@ -394,6 +398,7 @@ class BrowsingAdapter(BilibiliAdapter):
             items.append(root)
             items.extend(self._comment(item, thread_id=root["thread_id"], parent_comment_id=root["comment_id"])
                          for item in reply.get("replies") or [])
+        self._record_comment_read(target["oid"], target["type"], "0")
         return items
 
     async def discover(self, source, keyword="", page=1, limit=20):
@@ -498,7 +503,7 @@ class BrowsingAdapter(BilibiliAdapter):
         ) if self.read_video_tags else []
         if not isinstance(tags, list):
             raise PlatformReadError("invalid", "平台标签格式无效")
-        return {
+        result = {
             "bvid": bvid,
             "aid": aid,
             "title": _text(data.get("title"), 1000),
@@ -514,6 +519,8 @@ class BrowsingAdapter(BilibiliAdapter):
             "fetched_at": time.time(),
             "description_complete": True,
         }
+        self._record_video_read(result)
+        return result
 
     @staticmethod
     def _subtitle_url(value):
@@ -792,6 +799,7 @@ class BrowsingAdapter(BilibiliAdapter):
                     page = resume["next_page"] - 1
             items.update((item["comment_id"], item) for item in normalized)
             if not has_more:
+                self._record_comment_read(target["oid"], target["type"], root_id)
                 return list(items.values()), {"complete": type(count) is int, "page": page,
                                               "reason": "thread_pages"}
             page += 1
@@ -821,6 +829,7 @@ class BrowsingAdapter(BilibiliAdapter):
         count, size = info.get("count"), info.get("size") or 20
         has_more = bool(replies) and (page * size < count if type(count) is int and type(size) is int
                                        else len(replies) >= 20)
+        self._record_comment_read(scoped["oid"], 1, root_id)
         return {"items": items, "next_page": page + 1 if has_more else None}
 
     async def read_public_thread(self, event, *, resume=None, checkpoint=None):
@@ -933,10 +942,18 @@ class BrowsingAdapter(BilibiliAdapter):
             raise ValueError("发布需要当前账号SESSDATA及CSRF")
         text = validate_comment_body(text)
         mention_form = comment_mention_form(text, target.get("mentions", []))
+        await self.ensure_session_cookies()
         params = await self.wbi_params()
         from .images import comment_pictures
 
         pictures = await comment_pictures(self, image, prepare_authorized, on_uploaded)
+        await self._prepare_comment_engagement(
+            oid=target["oid"],
+            comment_type=target["type"],
+            root=target["root"],
+            bvid=target.get("bvid"),
+            cid=target.get("cid"),
+        )
         if before_send is not None:
             before_send()
         bvid_raw = str(target.get("bvid") or "").strip()
@@ -998,13 +1015,19 @@ class BrowsingAdapter(BilibiliAdapter):
         }
 
     async def publish_top_level(self, target, text, before_send=None, **images):
+        cid = target.get("cid") if isinstance(target, dict) else None
         target = self._target(target, top_level=True) | {"mentions": target.get("mentions", [])}
+        if cid:
+            target["cid"] = cid
         if images.get("image") is not None and target["type"] != 1:
             raise ValueError("仅视频一级评论提供配图能力")
         return await self._publish_target(target, text, before_send, **images)
 
     async def publish_resource_reply(self, target, text, before_send=None):
+        cid = target.get("cid") if isinstance(target, dict) else None
         target = self._target(target) | {"mentions": target.get("mentions", [])}
+        if cid:
+            target["cid"] = cid
         return await self._publish_target(target, text, before_send)
 
     async def like_comment(self, target, *, before_send=None):

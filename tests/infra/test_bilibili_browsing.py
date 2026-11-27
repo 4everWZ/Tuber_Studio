@@ -943,3 +943,75 @@ async def test_reply_add_sends_standard_browser_headers_and_video_referer(adapte
     assert captured["accept_language"] == "zh-CN,zh;q=0.9"
     assert captured["origin"] == "https://www.bilibili.com"
     assert captured["referer"] == f"https://www.bilibili.com/video/{BV}/"
+
+
+async def test_pre_comment_engagement_sends_heartbeat_reads_missing_thread_and_respects_dwell(
+    adapter_factory, monkeypatch
+):
+    seen = []
+    sleeps = []
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr("tuber_studio.infra.platforms.bilibili.client.asyncio.sleep", fake_sleep)
+
+    def handle(request):
+        seen.append((request.method, request.url.path))
+        if request.url.path == "/x/web-interface/nav":
+            return nav()
+        if request.url.path == "/x/web-interface/view":
+            return result(metadata())
+        if request.url.path == "/x/click-interface/web/heartbeat":
+            form = parse_qs(request.content.decode())
+            assert form["aid"] == ["123"]
+            assert form["cid"] == ["456"]
+            assert 15 <= int(form["played_time"][0]) <= 45
+            return result({})
+        if request.url.path == "/x/v2/reply":
+            return result({"replies": [], "page": {"count": 0}})
+        if request.url.path == "/x/v2/reply/reply":
+            return result({"root": comment(100), "replies": [], "page": {"count": 1}})
+        if request.method == "POST" and request.url.path == "/x/v2/reply/add":
+            form = parse_qs(request.content.decode())
+            assert "at_name_to_mid" not in form
+            return result({"rpid": 777})
+        raise AssertionError(f"Unexpected: {request.method} {request.url}")
+
+    adapter = await adapter_factory(handle)
+    # Under default MockTransport, pre-comment engagement & dwell are bypassed.
+    receipt_mock = await adapter.publish_top_level({"resource_type": "video", "oid": "123", "bvid": BV}, "默认跳过")
+    assert receipt_mock["rpid"] == "777"
+    assert [p for _, p in seen] == ["/x/web-interface/nav", "/x/v2/reply/add"]
+    assert [s for s in sleeps if s > 0] == []
+
+    # When pre_comment_engagement is enabled, it fetches metadata, sends heartbeat, reads /x/v2/reply, and dwells.
+    seen.clear()
+    sleeps.clear()
+    adapter._pre_comment_engagement = True
+    adapter._pre_comment_dwell_range = (4.0, 12.0)
+    receipt_real = await adapter.publish_top_level({"resource_type": "video", "oid": "123", "bvid": BV}, "真实观影后留言")
+    assert receipt_real["rpid"] == "777"
+    paths = [p for _, p in seen]
+    assert "/x/web-interface/view" in paths
+    assert "/x/click-interface/web/heartbeat" in paths
+    assert "/x/v2/reply" in paths
+    assert paths[-1] == "/x/v2/reply/add"
+    dwells = [s for s in sleeps if s > 0]
+    assert len(dwells) == 1 and 4.0 <= dwells[0] <= 12.0
+
+    # If thread was just read via read_video_thread(), pre-comment engagement skips redundant /x/v2/reply/reply.
+    seen.clear()
+    sleeps.clear()
+    await adapter.read_video_thread({"oid": "123", "bvid": BV, "type": 1, "root": "100", "parent": "100"})
+    seen.clear()
+    await adapter.publish_resource_reply(
+        {"resource_type": "video", "oid": "123", "bvid": BV, "root": "100", "parent": "100"},
+        "刚读过楼就直接回",
+    )
+    paths_reply = [p for _, p in seen]
+    assert "/x/click-interface/web/heartbeat" in paths_reply
+    assert "/x/v2/reply/reply" not in paths_reply
+    assert paths_reply[-1] == "/x/v2/reply/add"
+    dwells_reply = [s for s in sleeps if s > 0]
+    assert len(dwells_reply) == 1 and 4.0 <= dwells_reply[0] <= 12.0
