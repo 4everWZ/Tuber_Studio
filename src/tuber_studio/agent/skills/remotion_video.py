@@ -45,7 +45,13 @@ from .remotion_assets import (
     VideoSceneSpec,
 )
 from .remotion_audio_qc import MAX_DURATION_DRIFT_SECONDS, MAX_RENDERED_VIDEO_BYTES
-from .remotion_recap import OperationsRecapBrief, recap_plan_fields
+from .remotion_recap import (
+    RECAP_TARGET_MAX_SECONDS,
+    RECAP_TARGET_MIN_SECONDS,
+    OperationsRecapBrief,
+    estimate_recap_duration_seconds,
+    recap_plan_fields,
+)
 from .remotion_publication import StageOrPublishVideoArgs, StageVideoToolArgs, VideoPublicationMixin
 
 __all__ = [
@@ -64,7 +70,7 @@ DEFAULT_VIDEO_PRODUCTION_POLICY = {
     "publish_mode": "preview_review", "auto_publish_enabled": False, "default_fps": 30, "default_width": 1920,
     "default_height": 1080, "default_include_avatar": True, "default_bgm_enabled": True,
     "default_line_pause_seconds": DEFAULT_LINE_PAUSE_SECONDS, "default_scene_pause_seconds": DEFAULT_SCENE_PAUSE_SECONDS,
-    "max_render_concurrency": 2, "render_timeout_seconds": 300.0, "upload_timeout_seconds": 600.0,
+    "max_render_concurrency": 2, "render_timeout_seconds": 600.0, "upload_timeout_seconds": 600.0,
 }
 _ALLOWED_PUBLIC_KINDS = frozenset({"watched_video", "public_incident", "operator_topic", "web_research", "public_memory", "public_comment"})
 _FORBIDDEN_SOURCE_PREFIXES = ("owner:", "private:", "dm:", "dm_", "chat:", "turn:", "daily-chat:")
@@ -106,7 +112,7 @@ class VideoProductionPolicy(StrictModel):
     default_line_pause_seconds: float = Field(default=DEFAULT_LINE_PAUSE_SECONDS, ge=0.0, le=2.0)
     default_scene_pause_seconds: float = Field(default=DEFAULT_SCENE_PAUSE_SECONDS, ge=0.0, le=3.0)
     max_render_concurrency: int = Field(default=2, ge=1, le=4)
-    render_timeout_seconds: float = Field(default=300.0, ge=5.0, le=3600.0)
+    render_timeout_seconds: float = Field(default=600.0, ge=5.0, le=3600.0)
     upload_timeout_seconds: float = Field(default=600.0, ge=5.0, le=3600.0)
 
 
@@ -427,6 +433,16 @@ class RemotionVideoSkill(VideoPublicationMixin):
                 unified_memory=getattr(self.runtime, "unified_memory", None),
                 character_id=character_id,
             )
+            if args.editorial is not None:
+                estimated = estimate_recap_duration_seconds(
+                    plan.scenes,
+                    line_pause_seconds=plan.line_pause_seconds,
+                    scene_pause_seconds=plan.scene_pause_seconds,
+                )
+                if not RECAP_TARGET_MIN_SECONDS <= estimated <= RECAP_TARGET_MAX_SECONDS:
+                    raise ValueError(
+                        f"复盘视频预估时长 {estimated:.1f}s 超出 {RECAP_TARGET_MIN_SECONDS:.0f}~{RECAP_TARGET_MAX_SECONDS:.0f}s 允许范围"
+                    )
             now = time.time()
             with self.store.db:
                 self.store.db.execute(
