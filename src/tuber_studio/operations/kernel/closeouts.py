@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import time
-from datetime import datetime
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -15,6 +13,8 @@ from pydantic import Field, model_validator
 from ...core.models import StrictModel
 from ...core.store import dump
 from ...infra.inference.providers import public_error
+from .closeout_editorial import compose_closeout
+from .closeout_material import public_period_brief
 
 _CLOCK = r"^(?:[01]\d|2[0-3]):[0-5]\d$"
 _VIDEO_WAITING = ("scheduled", "preparing", "submitted", "publish_uncertain")
@@ -37,78 +37,6 @@ class OperationCloseoutConfig(StrictModel):
             except (ValueError, ZoneInfoNotFoundError) as error:
                 raise ValueError("视频制作时段需要有效的 IANA 时区") from error
         return self
-
-
-def public_period_brief(store, run):
-    """Use actual viewing and publication, with no input from private channels."""
-    args = (run["account_id"], run["character_id"], run["period_start_at"], run["period_end_at"])
-    videos = store.all(
-        "SELECT w.bvid, json_extract(p.material,'$.metadata.title') AS title, "
-        "json_extract(p.material,'$.metadata.owner') AS creator, MAX(w.started_at) AS last_seen "
-        "FROM browsing_watch_starts w JOIN browsing_tasks t ON t.id=w.task_id "
-        "JOIN browsing_rounds r ON r.id=t.round_id "
-        "JOIN browsing_video_progress p ON p.account_id=w.account_id AND p.character_id=w.character_id AND p.bvid=w.bvid "
-        "WHERE w.account_id=? AND w.character_id=? AND w.started_at>=? AND w.started_at<? "
-        "AND r.preview=0 AND t.status IN ('completed','partial','selected','viewed_without_comment','comments_checked') "
-        "AND p.read_state IN ('viewed','complete') "
-        "GROUP BY w.bvid ORDER BY last_seen DESC, w.bvid", args,
-    )
-    comments = store.one(
-        "SELECT COUNT(*) AS accepted, COALESCE(SUM(is_public),0) AS visible FROM ("
-        " SELECT rpid,MAX(is_public) AS is_public FROM ("
-        " SELECT CAST(json_extract(i.receipt,'$.rpid') AS TEXT) AS rpid, "
-        " COALESCE(i.visibility='public_visible',0) AS is_public FROM browsing_intents i "
-        " JOIN browsing_rounds r ON r.id=i.round_id "
-        " WHERE i.account_id=:account AND i.character_id=:character AND r.preview=0 "
-        " AND i.kind IN ('top_level','reply_public') AND i.status='published' "
-        " AND COALESCE(json_extract(i.receipt,'$.published_at'), i.updated_at)>=:start "
-        " AND COALESCE(json_extract(i.receipt,'$.published_at'), i.updated_at)<:end "
-        " UNION ALL SELECT CAST(json_extract(receipt,'$.rpid') AS TEXT), COALESCE(visibility='public_visible',0) FROM drafts "
-        " WHERE account_id=:account AND character_id=:character AND status='published' "
-        " AND COALESCE(json_extract(receipt,'$.published_at'), updated_at)>=:start "
-        " AND COALESCE(json_extract(receipt,'$.published_at'), updated_at)<:end) "
-        " WHERE rpid IS NOT NULL AND rpid<>'' GROUP BY rpid)",
-        dict(zip(("account", "character", "start", "end"), args, strict=True)),
-    )
-    dynamics = store.one(
-        "SELECT COUNT(DISTINCT json_extract(receipt,'$.dynamic_id')) AS n FROM dynamic_posts "
-        "WHERE account_id=? AND character_id=? AND published_at>=? AND published_at<? AND status='published'",
-        args,
-    )["n"]
-    activity = store.one(
-        "SELECT "
-        "COUNT(CASE WHEN i.kind IN ('top_level','reply_public') AND i.status='pending_review' "
-        " AND i.created_at>=:start AND i.created_at<:end THEN 1 END) AS review_comments, "
-        "COUNT(CASE WHEN i.kind IN ('comment_like','video_like','dynamic_like') AND i.status='published' "
-        " AND i.receipt IS NOT NULL AND i.updated_at>=:start AND i.updated_at<:end THEN 1 END) AS confirmed_likes "
-        "FROM browsing_intents i JOIN browsing_rounds r ON r.id=i.round_id "
-        "WHERE i.account_id=:account AND i.character_id=:character AND r.preview=0 "
-        "AND ((i.created_at>=:start AND i.created_at<:end) OR (i.updated_at>=:start AND i.updated_at<:end))",
-        dict(zip(("account", "character", "start", "end"), args, strict=True)),
-    )
-    zone = ZoneInfo(run["period_timezone"])
-    start, end = (datetime.fromtimestamp(run[f"period_{key}_at"], zone) for key in ("start", "end"))
-    period = f"{start:%Y-%m-%d %H:%M} 至 {end:%m-%d %H:%M}（{zone.key}）"
-    sources, highlights = [], []
-    for video in videos[:4]:
-        bvid = str(video["bvid"])
-        title = " ".join(str(video["title"] or "").split())[:80]
-        if not title or re.fullmatch(r"BV[0-9A-Za-z]{10}", bvid) is None:
-            continue
-        sid = f"watch:{bvid}"
-        creator = video["creator"]
-        byline = " ".join(creator.split())[:32] if isinstance(creator, str) else ""
-        sources.append({"source_id": sid, "kind": "watched_video", "title": title,
-                        "bvid": bvid, "url": f"https://www.bilibili.com/video/{bvid}/", "excerpt": byline})
-        highlights.append({"title": title, "text": f"看过《{title}》。", "source_id": sid,
-                           "credit": f"UP 主 {byline}" if byline else "B 站投稿"})
-    character = store.character(run["character_id"], run["character_version"])
-    name = str(character.get("name") or "").strip()[:32]
-    return {"title": f"{start:%m月%d日} {name}运营复盘", "period_label": period,
-            "watched_videos": len(videos), "accepted_comments": comments["accepted"],
-            "public_comments": comments["visible"], "public_dynamics": dynamics,
-            "review_comments": activity["review_comments"], "confirmed_likes": activity["confirmed_likes"],
-            "sources": sources, "highlights": highlights}
 
 
 class OperationCloseouts:
@@ -259,11 +187,15 @@ class OperationCloseouts:
             self.service.operations.assert_review_writable(account)
         return char
 
-    def _brief(self, row):
+    async def _brief(self, row, character):
         if row["brief"]:
-            return json.loads(row["brief"])
-        brief = public_period_brief(self.store, row)
-        self._save(row["id"], brief=dump(brief))
+            brief = json.loads(row["brief"])
+        else:
+            brief = public_period_brief(self.store, row)
+            self._save(row["id"], brief=dump(brief))
+        if "editorial_items" in brief and "editorial" not in brief:
+            brief["editorial"] = await compose_closeout(self.service.runtime, character, brief)
+            self._save(row["id"], brief=dump(brief))
         return brief
 
     async def _run(self, rows, now):
@@ -283,7 +215,8 @@ class OperationCloseouts:
         dynamics = self.service.dynamics
         try:
             character = self._guard(row)
-            brief = self._brief(row)
+            brief = await self._brief(row, character)
+            self._guard(row)
             draft = dynamics.prepare_schedule_closeout(row, brief, character)
             self._save(row["id"], dynamic_id=draft["id"])
             if config.dynamic_mode == "automatic" and draft["status"] in {"pending_review", "approved"}:
@@ -319,7 +252,7 @@ class OperationCloseouts:
             self._save(row["id"], video_status="window_missed", video_error="制作与自动投稿时段已结束")
             return
         try:
-            self._guard(row)
+            character = self._guard(row)
             if not skill:
                 raise ValueError("Remotion 视频制作服务未启动")
             job = skill.get_job(job_id) if job_id else None
@@ -327,7 +260,9 @@ class OperationCloseouts:
                 self._save_video_publication(row["id"], await skill.refresh_video_publication(job_id), clock())
                 return
             if job is None:
-                job_id = skill.plan_operations_recap(self._brief(row), job_key=row["id"])["job_id"]
+                brief = await self._brief(row, character)
+                self._guard(row)
+                job_id = skill.plan_operations_recap(brief, job_key=row["id"])["job_id"]
                 self._save(row["id"], video_job_id=job_id)
                 job = skill.get_job(job_id)
             if job["status"] not in {"rendered", "ready_for_review"}:

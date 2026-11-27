@@ -12,6 +12,7 @@ from ....core.meter import budgeted_json
 from ....core.models import content_hash
 from ....core.text import detect_reasoning_leak, operation_output_diagnostics
 from ....infra.platforms.bilibili.dynamics import read_dynamic_caption, validate_text
+from ...kernel.closeout_editorial import editorial_dynamic_body
 from ...kernel.feedback import FeedbackPublication
 from ...kernel.generation import generate_with_recovery
 from ..mentions import MENTION_INSTRUCTION, MENTION_REQUESTS, bind_mentions, rebase_mentions
@@ -83,20 +84,26 @@ class DynamicsDrafterMixin:
         )
         if existing:
             return self._post(existing["id"])
-        accepted_comments = brief.get("accepted_comments", brief["public_comments"])
-        body = (
-            f"这轮先收工啦。{brief['period_label']}，我看了 {brief['watched_videos']} 个投稿，"
-            f"评论有 {accepted_comments} 条收到回执，其中 {brief['public_comments']} 条已从公开页读回。"
-            f"还发了 {brief['public_dynamics']} 条动态。"
-        )
-        if pending := brief.get("review_comments"):
-            body += f"有 {pending} 条评论草稿，先留审核。"
-        if likes := brief.get("confirmed_likes"):
-            body += f"这轮还点了 {likes} 个赞。"
-        if brief["sources"]:
-            source = brief["sources"][0]
-            body += f"\n原片也给你们留一条。《{source['title']}》 {source['url']}"
-        snapshot = {"id": source_id, "type": "operations_closeout", "text": body}
+        if "editorial" in brief:
+            body = editorial_dynamic_body(brief)
+            selected = {p["source_id"] for p in brief["editorial"]["passages"]}
+            refs = [source for source in brief["sources"] if source["source_id"] in selected]
+        else:
+            accepted_comments = brief.get("accepted_comments", brief["public_comments"])
+            body = (
+                f"这轮先收工啦。{brief['period_label']}，我看了 {brief['watched_videos']} 个投稿，"
+                f"评论有 {accepted_comments} 条收到回执，其中 {brief['public_comments']} 条已从公开页读回。"
+                f"还发了 {brief['public_dynamics']} 条动态。"
+            )
+            if pending := brief.get("review_comments"):
+                body += f"有 {pending} 条评论草稿，先留审核。"
+            if likes := brief.get("confirmed_likes"):
+                body += f"这轮还点了 {likes} 个赞。"
+            if brief["sources"]:
+                source = brief["sources"][0]
+                body += f"\n原片也给你们留一条。《{source['title']}》 {source['url']}"
+            refs = brief["sources"][:1]
+        snapshot = {"id": source_id, "type": "operations_closeout", "text": body, "references": refs}
         decision = self._save_decision(
             character, False, {"action": "post", "content": validate_text(body), "reason": "定时运营收尾",
                               "source_ids": [source_id], "next_evaluation_seconds": 1,

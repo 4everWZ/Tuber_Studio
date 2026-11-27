@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -13,6 +14,7 @@ from tests.support.operations_helpers import browsing as browsing
 from tuber_studio.app import create_app
 from tuber_studio.core.store import dump
 from tuber_studio.operations.channels.dynamics import publisher
+from tuber_studio.operations.kernel import closeout_editorial
 
 
 async def _prepare_ready(svc):
@@ -222,7 +224,25 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
     store.set("dynamic_policy", {"enabled": True, "auto_publish": True})
     sent = []
     clips = []
+    editorial_inputs = []
     job = {"id": "recap-video", "status": "script_planned"}
+    video_id, earlier_id = "BV1d8pU6xEZX", "BV1J7sm6YE6K"
+
+    async def editorial_reply(_provider, messages, _schema, *, max_tokens):
+        evidence = json.loads(messages[-1]["content"])
+        editorial_inputs.append(evidence)
+        assert "尚未发出的原稿" not in dump(evidence)
+        assert "只在账号可见的旧回复" not in dump(evidence)
+        items = {item["kind"]: item for item in reversed(evidence["items"])}
+        return {
+            "title": "盐水里能浮起什么", "opening": "我本来想看一个盐水实验，结果评论区先给我出了道题。",
+            "passages": [{"source_id": items[kind]["source_id"], "narration": line} for kind, line in (
+                ("watched_video", "我看到了杯子里盐分变化以后，鸡蛋慢慢浮起来。"),
+                ("public_reply", "我回了楼里关于加盐顺序的问题，回去看才发现大家盯着不同的步骤。"),
+                ("pending_comment", "有人想看糖能不能做到一样的事，我留了个想法请人先看看。"),
+            )],
+            "closing": "下次泡茶以前，我会先把两袋粉分清楚。", "description": "看一个盐水实验，又翻回评论区找大家争的是哪一步。",
+        }
 
     async def dynamic_text(_, text, *, before_send):
         before_send()
@@ -250,6 +270,7 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
         return {"status": "published", "platform_state": "public_visible"}
 
     monkeypatch.setattr(publisher, "publish_text", dynamic_text)
+    monkeypatch.setattr(closeout_editorial, "budgeted_json", editorial_reply)
     browsing.runtime.remotion_skill = SimpleNamespace(
         status=dict, get_job=lambda _: job, plan_operations_recap=plan, generate_remotion_project=generate,
         render_remotion_video=render, stage_or_publish_bilibili_video=publish, refresh_video_publication=refresh,
@@ -261,37 +282,59 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
     }, now=_at(20, 0))
     char = browsing.runtime.character
     scope = (browsing.account, char["id"], char["version"])
-    store.execute("INSERT INTO browsing_rounds(id,preview,status) VALUES('actual-watch',0,'completed')")
+    store.execute("INSERT INTO browsing_rounds(id,account_id,character_id,preview,status,config,created_at) VALUES"
+                  "('actual-watch',?,?,0,'completed','{}',?),('preview-watch',?,?,1,'completed','{}',?)",
+                  (*scope[:2], _at(20, 0), *scope[:2], _at(20, 50)))
+    target = {"bvid": video_id, "root": "201", "parent": "201", "recipient": "301",
+              "source_discussion": {"source": {"comment_id": "201", "author_uid": "301", "author_name": "砂糖",
+                                                "text": "换成糖也能让鸡蛋浮起来吗？"}}}
     store.execute(
-        "INSERT INTO browsing_intents(id,account_id,character_id,source_key,round_id,kind,status,receipt,created_at,updated_at) "
-        "VALUES('reviewed-draft',?,?, 'reviewed-source','actual-watch','reply_public','pending_review',NULL,?,?), "
-        "('liked-video',?,?, 'liked-source','actual-watch','video_like','published',?, ?,?)",
-        (browsing.account, char["id"], _at(20, 10), _at(20, 10), browsing.account, char["id"],
-         dump({"code": 0, "action": "like"}), _at(20, 20), _at(20, 20)),
+        "INSERT INTO browsing_intents(id,account_id,character_id,source_key,round_id,kind,status,receipt,target,text,created_at,updated_at) "
+        "VALUES('reviewed-draft',?,?, 'reviewed-source','actual-watch','reply_public','pending_review',NULL,?,'尚未发出的原稿',?,?), "
+        "('liked-video',?,?, 'liked-source','actual-watch','video_like','published',?,?,NULL,?,?)",
+        (*scope[:2], dump(target), _at(20, 10), _at(20, 10), *scope[:2],
+         dump({"code": 0, "action": "like", "video_id": video_id}), dump({"bvid": video_id}), _at(20, 20), _at(20, 20)),
     )
-    video_id = "BV1d8pU6xEZX"
     store.execute(
         "INSERT INTO browsing_tasks(id,round_id,bvid,status) VALUES('viewed','actual-watch',?,'selected')", (video_id,),
     )
     store.execute("INSERT INTO browsing_watch_starts VALUES(?,?,'viewed',?,'2026-11-27',?)",
                   (browsing.account, char["id"], video_id, _at(20, 15)))
+    for identity, title, round_id, task_kind, at in (
+        (video_id, "盐水实验", "actual-watch", None, _at(20, 15)),
+        (earlier_id, "本周较早的沉浮实验", "actual-watch", "new_video", _at(20, 15) - 3 * 86400),
+        ("BV1HVsm6KEWp", "上周旧片", "actual-watch", "new_video", _at(20, 15) - 8 * 86400),
+        ("BV1B6s26ZEZf", "本轮仅回访评论", "actual-watch", "comment_visit", _at(20, 40)),
+        ("BV1RNs26QEsC", "只有预览的任务", "preview-watch", "new_video", _at(20, 50)),
+    ):
+        store.execute(
+            "INSERT INTO browsing_video_progress(account_id,character_id,bvid,material,decisions,updated_at,read_state) "
+            "VALUES(?,?,?,?,'[]',?,'viewed')",
+            (*scope[:2], identity, dump({"metadata": {"bvid": identity, "title": title, "owner": "实验员"}}), at),
+        )
+        if task_kind:
+            store.execute(
+                "INSERT INTO browsing_tasks(id,round_id,bvid,status,payload,material_key,updated_at) "
+                "VALUES(?,?,?,'selected',?,'preserved-material',?)",
+                (identity, round_id, identity, dump({"task_kind": task_kind}), at),
+            )
     store.execute(
-        "INSERT INTO browsing_video_progress(account_id,character_id,bvid,material,decisions,updated_at,read_state) "
-        "VALUES(?,?,?,?,'[]',?,'viewed')",
-        (browsing.account, char["id"], video_id, dump({"metadata": {"title": "盐水实验"}}), _at(20, 30)),
+        "INSERT INTO comments(id,video_id,comment_id,thread_id,platform_user_id,display_name,content) "
+        "VALUES(1,?,'202','202','302','瓶子','加盐的顺序会影响结果吗？')", (video_id,),
     )
     store.execute(
         "INSERT INTO drafts(comment_id,text,status,account_id,character_id,character_version,receipt,visibility,updated_at) "
         "VALUES (1,'公开测试','published',?,?,?,?, 'public_visible', ?)"
-        ", (2,'无公开回读','published',?,?,?,?, 'self_only', ?)",
+        ", (2,'只在账号可见的旧回复','published',?,?,?,?, 'self_only', ?)",
         (*scope, dump({"rpid": "101"}), _at(20, 30), *scope, dump({"rpid": "102"}), _at(20, 30)),
     )
     await _tick_with_closeout(browsing, _at(21, 0))
     run = browsing.schedules.closeouts.list(schedule["id"])[0]
     assert run["dynamic_status"] == "published", run["last_error"]
     assert run["video_status"] == "scheduled"
-    assert sent and "2 条收到回执，其中 1 条" in sent[0]
-    assert "1 条评论草稿" in sent[0] and "1 个赞" in sent[0]
+    assert sent and "待审 · 《盐水实验》" in sent[0]
+    assert f"https://www.bilibili.com/video/{video_id}#reply101" in sent[0]
+    assert "尚未发出的原稿" not in sent[0] and "只在账号可见的旧回复" not in sent[0]
     assert not clips
     await _tick_with_closeout(browsing, _at(22, 0))
     run = browsing.schedules.closeouts.list(schedule["id"])[0]
@@ -299,9 +342,20 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
     assert clips[0][1]["public_comments"] == 1
     assert clips[0][1]["accepted_comments"] == 2
     assert clips[0][1]["public_dynamics"] == 0
-    assert clips[0][1]["watched_videos"] == 1
+    assert len(editorial_inputs) == 1
+    assert clips[0][1]["watched_videos"] == 2
+    assert clips[0][1]["current_run"]["watched_videos"] == 1
     assert clips[0][1]["review_comments"] == clips[0][1]["confirmed_likes"] == 1
     assert clips[0][1]["sources"][0]["title"] == "盐水实验"
+    assert {item["title"] for item in clips[0][1]["editorial_items"]} == {"盐水实验", "本周较早的沉浮实验"}
+    reply = next(item for item in clips[0][1]["editorial_items"] if item["kind"] == "public_reply")
+    pending = next(item for item in clips[0][1]["editorial_items"] if item["kind"] == "pending_comment")
+    assert (reply["status"], reply["target_author"], reply["target_excerpt"]) == (
+        "public_visible", "瓶子", "加盐的顺序会影响结果吗？",
+    )
+    assert (pending["status"], pending["excerpt"], pending["target_excerpt"]) == (
+        "pending_review", "", "换成糖也能让鸡蛋浮起来吗？",
+    )
     await _tick_with_closeout(browsing, _at(22, 6))
     await _tick_with_closeout(browsing, _at(22, 7))
     assert browsing.schedules.closeouts.list(schedule["id"])[0]["video_status"] == "published"
