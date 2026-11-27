@@ -166,7 +166,8 @@ def test_real_aqua_keeps_stance_and_marks_imagination_across_public_and_voice_co
         assert "傲娇" in instructions
         assert "视频剧情、他人作品和经历归原来的角色或作者" in instructions
         assert "联想或打比方，让人听得出是在想象" in instructions
-        assert "不能证明自己的余额、停机、删档、生死或被弃养" in instructions
+        assert "想接梗就用「假如」「万一」明说是假设" in instructions
+        assert "没查到可以直接说「我也不知道」" in instructions
         assert "尖锐吐槽有实据的讨口子或假装自动化的营销" in instructions
 
 def test_video_base_keeps_full_transcript_under_24k_and_degrades_over_24k():

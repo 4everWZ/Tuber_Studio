@@ -144,10 +144,11 @@ class APIProvider:
         payload = self.chat_payload(messages, enable_thinking=enable_thinking) | {"max_tokens": budget, "stream": False}
         if self.background and self.config.get("enable_thinking"):
             payload["thinking_token_budget"] = self._thinking_budget(budget)
-        # Suppressing reasoning at the background engine also suppresses the
-        # structured answer on its Qwen parser. Only message.content is consumed.
+        # Structured thinking can lose the final answer when the gateway
+        # suppresses its separate reasoning field. Consumers read only content.
         if self.uses_model_card and not self.background:
-            payload["include_reasoning"] = False
+            thinking = payload.get("chat_template_kwargs", {}).get("enable_thinking") is True
+            payload["include_reasoning"] = structured and thinking
         if not probe:
             payload["temperature"] = temperature if temperature is not None else self.config.get(
                 "summary_temperature" if summary else "temperature", 0.2 if summary else 0.7

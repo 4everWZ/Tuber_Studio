@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
+from tuber_studio.infra.inference.omni_speech import render, sentences, spoken_words
 from tuber_studio.infra.inference.providers import VoiceService
 
 
@@ -147,3 +148,35 @@ def test_preview_returns_real_sample_or_verified_omni_audio_and_redacts_errors(s
         resp = client.post(route, json={"voice_id": "whale_reference", "text": "新的试听。"})
         assert resp.status_code == 502 and "HTTP 401" in resp.json()["message"]
         assert "private-upstream-details" not in resp.text and "test-omni-key" not in resp.text
+
+
+async def test_read_aloud_keeps_title_closing_punctuation_in_the_preceding_request():
+    text = "LTCyberLab的投稿，《研发揭秘！大肥鱼机器人是怎样做出来的？》。"
+    pcm = b"\x01\x00" * 32
+    audio = io.BytesIO()
+    with wave.open(audio, "wb") as output:
+        output.setparams((1, 2, 16_000, 0, "NONE", "PCM"))
+        output.writeframes(pcm)
+    requested = []
+
+    def speech(request):
+        part = json.loads(request.content)["input"]
+        requested.append(part)
+        if not spoken_words(part):
+            return httpx.Response(400)
+        transcript = base64.b64encode(part.encode()).decode()
+        return httpx.Response(200, content=audio.getvalue(), headers={"X-Omni-Transcript": transcript})
+
+    async with httpx.AsyncClient(base_url="http://omni.test/", transport=httpx.MockTransport(speech)) as client:
+        rendered = await render(client, "omni", text, b"reference")
+
+    assert requested == ["LTCyberLab的投稿，《研发揭秘！", "大肥鱼机器人是怎样做出来的？》。"]
+    assert "".join(requested) == text
+    with wave.open(io.BytesIO(rendered), "rb") as result:
+        assert result.readframes(result.getnframes()) == pcm * 2
+
+
+async def test_read_aloud_requires_spoken_content():
+    assert sentences("\n\n《。大肥鱼来啦。\n") == ["\n\n《。大肥鱼来啦。\n"]
+    with pytest.raises(ValueError, match="缺少可发声内容"):
+        await render(None, "omni", "》。", b"reference")

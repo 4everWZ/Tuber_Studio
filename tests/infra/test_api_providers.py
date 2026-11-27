@@ -134,6 +134,35 @@ async def test_external_provider_uses_bearer_and_real_usage_without_broker_heade
         await provider.close()
 
 
+@pytest.mark.parametrize("thinking", [True, False])
+async def test_live_structured_reply_reads_only_visible_content(settings, store, transport, thinking):
+    captured, state = transport
+    state.update(model_card={"max_model_len": 40960}, extra={"reasoning": "private-reasoning-sentinel"})
+    settings.data["omni"].update(
+        model="remote-model", context_source="model_card", prompt_token_endpoint=True,
+        enable_thinking=thinking, structured_output="structural_tag",
+    )
+    provider = create_llm(settings)
+    messages = [{"role": "user", "content": "鱼鱼，接着聊吧"}]
+    try:
+        reply = await provider.generate(messages, store.character(), "live-event-42")
+        assert "海底的小灯" in reply.spoken_text
+        assert "private-reasoning" not in provider.last_content
+        request = json.loads(captured[-1].content)
+        assert request["model"] == "remote-model"
+        assert request["chat_template_kwargs"] == {"enable_thinking": thinking}
+        assert request["include_reasoning"] is thinking
+        schema = json.loads(request["structured_outputs"]["structural_tag"])["format"]["json_schema"]
+        assert schema["properties"]["reply_to"]["items"]["enum"] == ["live-event-42"]
+
+        state["text"] = None
+        with pytest.raises(ValueError, match="API未返回文本内容"):
+            await provider.generate(messages, store.character(), "live-event-42")
+        assert provider.last_content is None
+    finally:
+        await provider.close()
+
+
 @pytest.mark.parametrize("structured_output", ["json_object", "json_schema", "structural_tag"])
 async def test_structured_schema_uses_the_selected_provider_contract(settings, transport, structured_output):
     captured, _ = transport

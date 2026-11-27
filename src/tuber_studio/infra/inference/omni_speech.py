@@ -10,7 +10,17 @@ from .http_api import check_response_status
 
 
 def sentences(text):
-    return re.findall(r'.+?(?:(?:[。！？!?]+|\.(?=\s|$))[”’」』）]*\s*|\n+|\Z)', text, re.DOTALL)
+    parts = []
+    leading_punctuation = ""
+    for fragment in re.findall(r'.+?(?:(?:[。！？!?]+|\.(?=\s|$))[”’」』）]*\s*|\n+|\Z)', text, re.DOTALL):
+        if spoken_words(fragment):
+            parts.append(leading_punctuation + fragment)
+            leading_punctuation = ""
+        elif parts:
+            parts[-1] += fragment
+        else:
+            leading_punctuation += fragment
+    return parts
 
 
 def spoken_words(value):
@@ -55,10 +65,13 @@ async def read_sentence(client, model, text, reference):
 
 
 async def render(client, model, text, reference):
+    parts = sentences(text)
+    if not parts:
+        raise ValueError("朗读文本缺少可发声内容")
     source = {"format": "wav", "data": base64.b64encode(reference).decode("ascii")}
     frames = bytearray()
     format_ = None
-    for part in sentences(text):
+    for part in parts:
         data = await read_sentence(client, model, part, source)
         with wave.open(io.BytesIO(data), "rb") as reader:
             params = reader.getparams()
