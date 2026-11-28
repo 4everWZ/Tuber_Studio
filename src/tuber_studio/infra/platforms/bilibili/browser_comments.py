@@ -18,7 +18,7 @@ from pathlib import Path
 
 from ....core.errors import PlatformRejected, PublishUncertain, platform_rejection
 from ....core.text import validate_comment_body
-from .client import BILIBILI_WEB_USER_AGENT, BilibiliAccountExpired, PlatformReadError, _BV, _positive_id
+from .client import _BV, BILIBILI_WEB_USER_AGENT, BilibiliAccountExpired, PlatformReadError, _positive_id
 
 try:
     from playwright.async_api import async_playwright
