@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiGet, apiPut, studioPath } from "@/shared/api/client";
+import { apiGet, apiPut, apiRequest, studioPath } from "@/shared/api/client";
 import { useUnsavedGuard } from "@/shared/hooks/useUnsavedGuard";
 import { errorMessage } from "@/shared/lib/errors";
+import type { ObsLayoutId, SceneProfilesResponse } from "./consoleTypes";
+import sceneStyles from "./LiveRulesScene.module.css";
 import { clampSceneItem, LiveSceneCanvas } from "./LiveSceneCanvas";
 import styles from "./LiveWorkbench.module.css";
 import type { LiveViewData, SceneBackground, SceneData, SceneItem, SceneItemKind } from "./types";
@@ -47,6 +49,12 @@ export function LiveScenePage({
 }: LiveScenePageProps) {
   const [view, setView] = useState<LiveViewData | null>(null);
   const [voiceProfile, setVoiceProfile] = useState<string>("");
+  const [selectedLayout, setSelectedLayout] = useState<ObsLayoutId>("chat");
+  const [activeLayout, setActiveLayout] = useState<ObsLayoutId>("chat");
+  const [layoutLocked, setLayoutLocked] = useState(false);
+  const [profilesSupported, setProfilesSupported] = useState(false);
+  const [profilesMap, setProfilesMap] = useState<Partial<Record<ObsLayoutId, SceneData>>>({});
+
   const [draftScene, setDraftScene] = useState<SceneData | null>(null);
   const [savedScene, setSavedScene] = useState<SceneData | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -56,6 +64,8 @@ export function LiveScenePage({
 
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
+  const selectedLayoutRef = useRef<ObsLayoutId>(selectedLayout);
+  selectedLayoutRef.current = selectedLayout;
   const loadedSignatureRef = useRef("");
   const pollingRef = useRef(false);
 
@@ -74,12 +84,33 @@ export function LiveScenePage({
     if (typeof document !== "undefined" && document.hidden) return;
     pollingRef.current = true;
     try {
-      const [nextView, sysStatus] = await Promise.all([
+      const [nextView, sysStatus, profilesRes] = await Promise.all([
         apiGet<"/api/v1/live/view", LiveViewData>("/api/v1/live/view"),
         apiGet<"/api/v1/system/status", SystemStatusCharacter>("/api/v1/system/status"),
+        apiRequest<Partial<SceneProfilesResponse>>("/api/v1/live/scene/profiles", { method: "GET" }).catch(
+          () => null
+        ),
       ]);
       setView(nextView);
       setVoiceProfile(sysStatus?.character?.voice_profile || "");
+
+      if (profilesRes && profilesRes.profiles && (profilesRes.profiles.chat || profilesRes.profiles.game)) {
+        setProfilesSupported(true);
+        setProfilesMap(profilesRes.profiles);
+        if (profilesRes.active_layout === "chat" || profilesRes.active_layout === "game") {
+          setActiveLayout(profilesRes.active_layout);
+        }
+        setLayoutLocked(Boolean(profilesRes.layout_locked));
+
+        const targetProfile = profilesRes.profiles[selectedLayoutRef.current];
+        if (targetProfile) {
+          const nextSig = JSON.stringify(targetProfile);
+          if (!dirtyRef.current && nextSig !== loadedSignatureRef.current) {
+            applySavedScene(targetProfile);
+          }
+          return;
+        }
+      }
 
       const nextSig = JSON.stringify(nextView.scene);
       if (!dirtyRef.current && nextSig !== loadedSignatureRef.current) {
@@ -106,6 +137,45 @@ export function LiveScenePage({
     setDirty(true);
   }, []);
 
+  const handleSelectProfile = async (nextLayout: ObsLayoutId) => {
+    if (nextLayout === selectedLayout || busy) return;
+    if (dirtyRef.current && typeof window !== "undefined") {
+      if (!window.confirm("当前布局有未保存的修改，切换布局将放弃这些修改。确定切换？")) {
+        return;
+      }
+    }
+    selectedLayoutRef.current = nextLayout;
+    setSelectedLayout(nextLayout);
+    setSelectedId(null);
+
+    const cached = profilesMap[nextLayout];
+    if (cached) {
+      applySavedScene(cached);
+    } else {
+      setDirty(false);
+    }
+
+    try {
+      const profilesRes = await apiRequest<Partial<SceneProfilesResponse>>("/api/v1/live/scene/profiles", {
+        method: "GET",
+      });
+      if (profilesRes?.profiles) {
+        setProfilesSupported(true);
+        setProfilesMap(profilesRes.profiles);
+        if (profilesRes.active_layout === "chat" || profilesRes.active_layout === "game") {
+          setActiveLayout(profilesRes.active_layout);
+        }
+        setLayoutLocked(Boolean(profilesRes.layout_locked));
+        const loaded = profilesRes.profiles[nextLayout];
+        if (loaded) {
+          applySavedScene(loaded);
+        }
+      }
+    } catch {
+      // Keep cached profile if refresh fails
+    }
+  };
+
   const selectedItem: SceneItem | null =
     draftScene?.items.find((item) => item.id === selectedId) ?? null;
 
@@ -113,10 +183,19 @@ export function LiveScenePage({
     if (!draftScene || busy) return;
     setBusy(true);
     try {
-      const saved = await apiPut<"/api/v1/live/scene", SceneData, SceneData>("/api/v1/live/scene", {
-        body: draftScene,
-      });
+      const saved = profilesSupported
+        ? await apiRequest<SceneData, SceneData>("/api/v1/live/scene", {
+            method: "PUT",
+            query: { layout: selectedLayout },
+            body: draftScene,
+          })
+        : await apiPut<"/api/v1/live/scene", SceneData, SceneData>("/api/v1/live/scene", {
+            body: draftScene,
+          });
       applySavedScene(saved);
+      if (profilesSupported) {
+        setProfilesMap((prev) => ({ ...prev, [selectedLayout]: saved }));
+      }
       onFeedback?.("布局已保存，OBS画面将同步更新。");
     } catch (error) {
       onFeedback?.(errorMessage(error), true);
@@ -137,9 +216,12 @@ export function LiveScenePage({
     }
     setBusy(true);
     try {
-      const defScene = await apiGet<"/api/v1/live/scene/default", SceneData>(
-        "/api/v1/live/scene/default"
-      );
+      const defScene = profilesSupported
+        ? await apiRequest<SceneData>("/api/v1/live/scene/default", {
+            method: "GET",
+            query: { layout: selectedLayout },
+          })
+        : await apiGet<"/api/v1/live/scene/default", SceneData>("/api/v1/live/scene/default");
       markChanged(defScene);
     } catch (error) {
       onFeedback?.(errorMessage(error), true);
@@ -216,6 +298,8 @@ export function LiveScenePage({
     markChanged({ ...draftScene, [dimension]: value, items });
   };
 
+  const isTransparent = draftScene?.background === "transparent";
+
   return (
     <div data-live-page="scene">
       {showWorkbenchHeading ? (
@@ -252,6 +336,49 @@ export function LiveScenePage({
           >
             保存布局
           </button>
+        </div>
+      </div>
+
+      <div id="scene-profile-switcher" className={sceneStyles.profileSwitcherBar}>
+        <div className={sceneStyles.profileTabs} role="group" aria-label="OBS 布局方案切换">
+          <button
+            type="button"
+            className={sceneStyles.profileBtn}
+            data-scene-profile="chat"
+            aria-pressed={selectedLayout === "chat"}
+            onClick={() => void handleSelectProfile("chat")}
+          >
+            <span>💬 闲聊 OBS 布局 (chat)</span>
+            {activeLayout === "chat" && (
+              <span className={sceneStyles.activeBadge}>当前直播生效</span>
+            )}
+          </button>
+          <button
+            type="button"
+            className={sceneStyles.profileBtn}
+            data-scene-profile="game"
+            aria-pressed={selectedLayout === "game"}
+            onClick={() => void handleSelectProfile("game")}
+          >
+            <span>🎮 游戏 OBS 布局 (game)</span>
+            {activeLayout === "game" && (
+              <span className={sceneStyles.activeBadge}>当前直播生效</span>
+            )}
+          </button>
+        </div>
+        <div className={sceneStyles.profileStatusMeta}>
+          <span id="scene-active-layout-label">
+            直播间当前输出：{activeLayout === "game" ? "🎮 游戏布局 (game)" : "💬 闲聊布局 (chat)"}
+          </span>
+          {layoutLocked ? (
+            <span id="scene-layout-locked-badge" className={sceneStyles.lockedBadge}>
+              🔒 已手动锁定
+            </span>
+          ) : (
+            <span className="hint" style={{ margin: 0 }}>
+              随节目单自动切换
+            </span>
+          )}
         </div>
       </div>
 
@@ -354,7 +481,13 @@ export function LiveScenePage({
         <section className={styles.stageArea}>
           <div className={styles.stageToolbar}>
             <span>
-              <i className={styles.dot} /> 场景编排 <small>预览静音</small>
+              <i className={styles.dot} /> 场景编排（{selectedLayout === "game" ? "游戏 PiP" : "闲聊主舞台"}）{" "}
+              <small>预览静音</small>
+              {isTransparent && (
+                <span className={sceneStyles.transparentTag} data-transparent-preview="true" style={{ marginLeft: 8 }}>
+                  透明棋盘预览 · OBS 叠加
+                </span>
+              )}
             </span>
             <button
               type="button"
@@ -365,7 +498,11 @@ export function LiveScenePage({
               {editable ? "完成编排" : "编辑场景"}
             </button>
           </div>
-          <div className={styles.canvasShell}>
+          <div
+            className={`${styles.canvasShell} ${isTransparent ? sceneStyles.transparentCanvasShell : ""}`}
+            data-scene-background={draftScene?.background ?? "ocean"}
+            data-selected-layout={selectedLayout}
+          >
             <LiveSceneCanvas
               id="scene"
               scene={draftScene}
