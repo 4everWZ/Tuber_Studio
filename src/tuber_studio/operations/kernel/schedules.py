@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from datetime import date, datetime, timedelta
 from typing import Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -14,88 +13,9 @@ from pydantic import Field, model_validator
 
 from ...core.models import StrictModel
 from ...core.store import dump
+from ...core.time import WEEKDAY_LABELS, daily_window_bounds, format_local_datetime, parse_local_datetime
 from ...infra.inference.providers import public_error
 from .closeouts import OperationCloseoutConfig, OperationCloseouts
-
-WEEKDAY_LABELS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
-
-
-def _parse_local_datetime(value: str, timezone: str) -> float:
-    text = value.strip()
-    if not text:
-        raise ValueError("请填写有效的时间")
-    normalized = text.replace(" ", "T")
-    try:
-        dt = datetime.fromisoformat(normalized)
-    except ValueError as error:
-        raise ValueError("时间格式须为 YYYY-MM-DD HH:MM") from error
-    if dt.tzinfo is not None:
-        return dt.timestamp()
-    zone = ZoneInfo(timezone)
-    local = dt.replace(tzinfo=zone, fold=0)
-    if datetime.fromtimestamp(local.timestamp(), zone).replace(tzinfo=None) != dt.replace(tzinfo=None):
-        raise ValueError("该本地时间在时区切换中不存在")
-    return local.timestamp()
-
-
-def _format_local(timestamp: float | None, timezone: str) -> str | None:
-    if timestamp is None:
-        return None
-    try:
-        zone = ZoneInfo(timezone)
-    except (ValueError, ZoneInfoNotFoundError):
-        zone = ZoneInfo("Asia/Taipei")
-    return datetime.fromtimestamp(float(timestamp), zone).strftime("%Y-%m-%d %H:%M")
-
-
-def daily_window_bounds(
-    now: float,
-    start_time: str,
-    end_time: str,
-    timezone: str,
-    weekdays: list[int] | tuple[int, ...] = (),
-) -> tuple[str | None, float | None, float | None, float | None, float | None]:
-    """Return `(active_run_key, active_start, active_end, next_start, next_end)` for a daily window."""
-    zone = ZoneInfo(timezone)
-    sh, sm = map(int, start_time.split(":"))
-    eh, em = map(int, end_time.split(":"))
-    overnight = (eh, em) < (sh, sm)
-    today = datetime.fromtimestamp(now, zone).date()
-    allowed = set(weekdays)
-
-    def _window_for_anchor(anchor: date) -> tuple[float, float] | None:
-        if allowed and anchor.weekday() not in allowed:
-            return None
-        end_day = anchor + timedelta(days=1 if overnight else 0)
-        start_wall = datetime(anchor.year, anchor.month, anchor.day, sh, sm)
-        end_wall = datetime(end_day.year, end_day.month, end_day.day, eh, em)
-        start_ts = start_wall.replace(tzinfo=zone, fold=0).timestamp()
-        end_ts = end_wall.replace(tzinfo=zone, fold=0).timestamp()
-        if end_ts <= start_ts:
-            return None
-        return start_ts, end_ts
-
-    active_key = None
-    active_start = None
-    active_end = None
-    for delta in (-1, 0):
-        anchor = today + timedelta(days=delta)
-        bounds = _window_for_anchor(anchor)
-        if bounds and bounds[0] <= now < bounds[1]:
-            active_key = anchor.isoformat()
-            active_start, active_end = bounds
-            break
-
-    next_start = None
-    next_end = None
-    for delta in range(0, 15):
-        anchor = today + timedelta(days=delta)
-        bounds = _window_for_anchor(anchor)
-        if bounds and bounds[0] > now:
-            next_start, next_end = bounds
-            break
-
-    return active_key, active_start, active_end, next_start, next_end
 
 
 class OperationScheduleCreate(StrictModel):
@@ -328,12 +248,12 @@ class OperationSchedules:
             "scope_inbox": bool(row["scope_inbox"]),
             "start_at": start_at,
             "end_at": end_at,
-            "start_local_display": _format_local(start_at, tz),
-            "end_local_display": _format_local(end_at, tz),
+            "start_local_display": format_local_datetime(start_at, tz),
+            "end_local_display": format_local_datetime(end_at, tz),
             "next_start_at": next_start_at,
             "next_end_at": next_end_at,
-            "next_start_local_display": _format_local(next_start_at, tz),
-            "next_end_local_display": _format_local(next_end_at, tz),
+            "next_start_local_display": format_local_datetime(next_start_at, tz),
+            "next_end_local_display": format_local_datetime(next_end_at, tz),
             "duration_minutes": row.get("duration_minutes"),
             "start_time": row.get("start_time"),
             "end_time": row.get("end_time"),
@@ -426,12 +346,12 @@ class OperationSchedules:
             start_at = (
                 float(model.start_at)
                 if model.start_at is not None
-                else _parse_local_datetime(model.start_local or "", tz)
+                else parse_local_datetime(model.start_local or "", tz)
             )
             if model.end_at is not None:
                 end_at = float(model.end_at)
             elif model.end_local:
-                end_at = _parse_local_datetime(model.end_local, tz)
+                end_at = parse_local_datetime(model.end_local, tz)
             else:
                 end_at = start_at + int(model.duration_minutes or 0) * 60
             if end_at <= start_at:

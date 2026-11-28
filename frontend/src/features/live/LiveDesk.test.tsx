@@ -192,10 +192,367 @@ describe("LiveDesk", () => {
       });
     });
 
-    // Switch feed tab via keyboard ArrowRight
+    // Switch feed tab via keyboard ArrowRight (chat -> dialogue -> queue)
     const chatTab = document.getElementById("desk-chat-tab") as HTMLButtonElement;
     fireEvent.keyDown(chatTab, { key: "ArrowRight" });
     expect(document.getElementById("desk-dialogue-tab")?.getAttribute("aria-selected")).toBe("true");
+    const dialogueTab = document.getElementById("desk-dialogue-tab") as HTMLButtonElement;
+    fireEvent.keyDown(dialogueTab, { key: "ArrowRight" });
+    expect(document.getElementById("desk-queue-tab")?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("drives BroadcastTopBar OBS layout & URLs, StageMonitor layers, ShowDock 6 tabs, and ContextualMockRail", async () => {
+    let currentView = makeStudioView({ state: "live" });
+    let sceneLayout = { active_layout: "chat" as "chat" | "game", layout_locked: false };
+    let activePoll: Record<string, unknown> | null = null;
+    let rundownState: Record<string, unknown> = {
+      active: false,
+      paused: false,
+      status: "idle",
+      current_index: 0,
+      current_segment: null,
+      remaining_seconds: 0,
+      hot_chat_prompt: false,
+    };
+    const rundownPlan = {
+      name: "多游戏轮播→闲聊",
+      enabled_games: ["draw_and_guess", "turtle_soup", "roast_radio", "song_party"],
+      hold_on_last: true,
+      auto_switch_layout: true,
+      chat_entry: {
+        opening_mode: "chat_opening",
+        opening_chat_minutes: 15,
+        poll_duration_seconds: 90,
+        min_votes: 1,
+        include_continue_chat: true,
+        avoid_repeat: true,
+        allow_chat_vote_trigger: true,
+        vote_trigger_threshold: 2,
+        allow_chat_extend: true,
+        chat_adaptive_enabled: true,
+        chat_hot_threshold_per_2m: 12,
+      },
+      segments: [
+        {
+          id: "seg-open",
+          title: "开场闲聊",
+          kind: "chat",
+          duration_minutes: 15,
+          obs_layout: "chat",
+          auto_start_show: false,
+          graceful_finish: true,
+          settings: {},
+        },
+        {
+          id: "seg-dg",
+          title: "你画我猜 2.0",
+          kind: "draw_and_guess",
+          duration_minutes: 25,
+          obs_layout: "game",
+          auto_start_show: true,
+          graceful_finish: true,
+          settings: {},
+        },
+      ],
+    };
+
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    const writeTextMock = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: writeTextMock },
+      configurable: true,
+    });
+    const openedWindow = { opener: {} as unknown, location: "" };
+    const windowOpenSpy = vi.fn(() => openedWindow as unknown as Window);
+    vi.stubGlobal("open", windowOpenSpy);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method || "GET";
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        requests.push({ url, method, body });
+
+        if (url.endsWith("/api/v1/live/studio")) return Response.json(currentView);
+        if (url.endsWith("/api/v1/live/shows/status")) {
+          return Response.json({
+            character: { id: "whale", name: "Aqua" },
+            draw_and_guess: { active: false, state: "idle", word: "机械键盘" },
+            turtle_soup: { active: false, state: "idle", surface: "深夜电梯", answer: "测试汤底" },
+            roast_radio: { active: false, mode: "debate", topic: "宵夜白饭", votes_a: 2, votes_b: 1 },
+            cold_director: { tier: 2, tier_label: "自娱整活", elapsed_seconds: 310 },
+            overtime: {
+              active: true,
+              energy: 40,
+              threshold: 100,
+              overtime_minutes: 15,
+              max_overtime_minutes: 120,
+              remaining_seconds: 900,
+            },
+            poll: activePoll,
+            rundown: rundownState,
+            scene_layout: sceneLayout,
+          });
+        }
+        if (url.endsWith("/api/v1/live/games/status")) {
+          return Response.json({
+            active_game_id: "stardew_valley",
+            owner: "studio",
+            active_status: { display_name: "星露谷物语", summary: "正在浇水" },
+          });
+        }
+        if (url.endsWith("/api/v1/live/rundown")) {
+          return Response.json({
+            plan: rundownPlan,
+            state: rundownState,
+            presets: [],
+            game_catalog: [
+              { kind: "draw_and_guess", label: "你画我猜 2.0", default_layout: "game", description: "" },
+              { kind: "turtle_soup", label: "灵魂海龟汤", default_layout: "game", description: "" },
+            ],
+          });
+        }
+        if (url.endsWith("/api/v1/live/scene/layout") && method === "POST") {
+          const patch = body as { layout?: "chat" | "game"; locked?: boolean };
+          sceneLayout = {
+            active_layout: patch.layout ?? sceneLayout.active_layout,
+            layout_locked: patch.locked ?? sceneLayout.layout_locked,
+          };
+          currentView = {
+            ...currentView,
+            scene: {
+              ...currentView.scene,
+              background: sceneLayout.active_layout === "game" ? "transparent" : "ocean",
+            },
+          };
+          return Response.json(sceneLayout);
+        }
+        if (url.endsWith("/api/v1/live/rundown/start") && method === "POST") {
+          rundownState = {
+            active: true,
+            paused: false,
+            status: "running",
+            current_index: 0,
+            current_segment: rundownPlan.segments[0],
+            remaining_seconds: 900,
+            hot_chat_prompt: true,
+          };
+          return Response.json({ state: rundownState });
+        }
+        if (url.endsWith("/api/v1/live/rundown/vote-now") && method === "POST") {
+          activePoll = {
+            id: "poll-1",
+            topic: "接下来玩什么？",
+            options: ["你画我猜", "灵魂海龟汤"],
+            counts: { 你画我猜: 1, 灵魂海龟汤: 0 },
+            total_votes: 1,
+            remaining_seconds: 90,
+            phase: "started",
+          };
+          return Response.json({ poll: activePoll });
+        }
+        if (url.endsWith("/api/v1/live/rundown/settle-vote") && method === "POST") {
+          activePoll = null;
+          rundownState = {
+            ...rundownState,
+            current_index: 1,
+            current_segment: rundownPlan.segments[1],
+          };
+          return Response.json({ spoken_text: "投票结果：你画我猜胜出！" });
+        }
+        if (url.endsWith("/api/v1/live/rundown/next") && method === "POST") {
+          return Response.json({ spoken_text: "切到下一环节" });
+        }
+        if (url.endsWith("/api/v1/live/cold-director/trigger") && method === "POST") {
+          return Response.json({ spoken_text: "暖场小剧场启动！" });
+        }
+        if (url.endsWith("/api/v1/live/mock-event") && method === "POST") {
+          const parsed = body as { text?: string } | undefined;
+          if (parsed?.text === "1") {
+            return Response.json({ status: "recorded", reason: "已计票" });
+          }
+          return Response.json({ status: "queued" });
+        }
+        return Response.json({});
+      })
+    );
+
+    render(
+      <LiveDesk
+        settings={{
+          overlay_url: "http://127.0.0.1:8020/overlay#token=xyz",
+          features: { live_enabled: true },
+        }}
+        visible
+      />
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-desk-cold-tier]")?.textContent).toContain("T2");
+      expect(document.querySelector("[data-desk-overtime-pill]")?.textContent).toContain("+15m · 40%");
+    });
+
+    // OBS layout switch & lock
+    fireEvent.click(document.querySelector('[data-layout-btn="game"]') as HTMLButtonElement);
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (r) =>
+            r.url.endsWith("/api/v1/live/scene/layout") &&
+            (r.body as { layout?: string })?.layout === "game"
+        )
+      ).toBe(true);
+      expect(document.querySelector("[data-stage-layout-badge]")?.textContent).toContain("游戏布局");
+    });
+
+    fireEvent.click(document.querySelector("[data-layout-lock]") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.querySelector("[data-layout-lock]")?.getAttribute("aria-pressed")).toBe("true");
+    });
+
+    // Copy OBS URLs menu
+    fireEvent.click(document.querySelector("[data-obs-menu-toggle]") as HTMLButtonElement);
+    fireEvent.click(document.querySelector('[data-copy-obs="game"]') as HTMLButtonElement);
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8020/overlay?layout=game#token=xyz"
+      );
+    });
+    fireEvent.click(document.querySelector("[data-obs-menu-toggle]") as HTMLButtonElement);
+    fireEvent.click(document.querySelector("[data-open-draw-guess-preview]") as HTMLButtonElement);
+    expect(openedWindow.location).toBe("http://127.0.0.1:8020/overlay/draw-guess?preview=1");
+
+    // StageMonitor 3-way layer switcher -> show_only renders standby placeholder
+    fireEvent.click(document.querySelector('[data-stage-layer="show_only"]') as HTMLButtonElement);
+    expect(document.getElementById("show-standby-placeholder")).not.toBeNull();
+    fireEvent.click(document.querySelector('[data-stage-layer="all"]') as HTMLButtonElement);
+
+    // Rundown start & poll -> StageMonitor renders #live-poll-card & ContextualMockRail adapts to poll
+    fireEvent.click(document.querySelector("[data-rundown-start]") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.querySelector("[data-rundown-hot-chat]")).not.toBeNull();
+    });
+    fireEvent.click(document.querySelector("[data-rundown-vote-now]") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.getElementById("live-poll-card")).not.toBeNull();
+      expect(document.querySelector("[data-simulator-context]")?.textContent).toBe("投票进行中");
+      expect(document.querySelector('[data-quick-mock="poll-vote-1"]')).not.toBeNull();
+      expect(document.querySelector('[data-quick-mock="poll-settle-empty"]')).not.toBeNull();
+    });
+
+    // Vote 1 and settle vote
+    fireEvent.click(document.querySelector('[data-quick-mock="poll-vote-1"]') as HTMLButtonElement);
+    await waitFor(() => {
+      expect(
+        requests.some((r) => r.url.endsWith("/api/v1/live/mock-event") && (r.body as { text?: string })?.text === "1")
+      ).toBe(true);
+    });
+    fireEvent.click(document.querySelector("[data-rundown-settle-vote]") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.getElementById("live-poll-card")).toBeNull();
+    });
+
+    // Switch ShowDock tabs -> ContextualMockRail adapts + host-only secret toggle + Cold Director trigger
+    fireEvent.click(document.querySelector('[data-dock-tab="draw_guess"]') as HTMLButtonElement);
+    expect(document.querySelector("[data-simulator-context]")?.textContent).toBe("你画我猜 2.0");
+    expect(document.querySelector('[data-quick-mock="chat-guess"]')).not.toBeNull();
+    fireEvent.click(document.querySelector("[data-dg-toggle-secret]") as HTMLButtonElement);
+    expect(screen.getByText("机械键盘")).toBeInTheDocument();
+
+    fireEvent.click(document.querySelector('[data-dock-tab="cold_director"]') as HTMLButtonElement);
+    fireEvent.click(document.getElementById("desk-cold-trigger-btn") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.querySelector("[data-desk-action-state]")?.textContent).toBe("暖场小剧场启动！");
+    });
+
+    // Pinned gift button -> sends price & count matching InteractiveRulesService.extract_gift_info
+    fireEvent.click(document.querySelector('[data-quick-mock="gift-rice"]') as HTMLButtonElement);
+    await waitFor(() => {
+      const giftReq = requests.find(
+        (r) =>
+          r.url.endsWith("/api/v1/live/mock-event") &&
+          (r.body as { type?: string })?.type === "gift"
+      );
+      expect(giftReq?.body).toMatchObject({
+        type: "gift",
+        text: "白饭应援",
+        metadata: { gift_name: "白饭应援", count: 1, price: 100 },
+      });
+    });
+
+    // Layout mode switcher (cockpit -> theater -> cockpit) & collapsible simulator
+    expect(document.querySelector('[data-console-grid-mode]')?.getAttribute("data-console-grid-mode")).toBe(
+      "cockpit"
+    );
+    fireEvent.click(document.querySelector('[data-console-layout="theater"]') as HTMLButtonElement);
+    expect(document.querySelector('[data-console-grid-mode]')?.getAttribute("data-console-grid-mode")).toBe(
+      "theater"
+    );
+    fireEvent.click(document.querySelector('[data-console-layout="cockpit"]') as HTMLButtonElement);
+    expect(document.querySelector('[data-console-grid-mode]')?.getAttribute("data-console-grid-mode")).toBe(
+      "cockpit"
+    );
+
+    fireEvent.click(document.querySelector("[data-simulator-toggle]") as HTMLButtonElement);
+    expect(document.querySelector('[data-quick-mock="gift-rice"]')).toBeNull();
+    fireEvent.click(document.querySelector("[data-simulator-toggle]") as HTMLButtonElement);
+    expect(document.querySelector('[data-quick-mock="gift-rice"]')).not.toBeNull();
+
+    // Live time adjustments, custom vote duration & custom extend-chat minutes in ShowDock
+    fireEvent.click(document.querySelector('[data-dock-tab="rundown"]') as HTMLButtonElement);
+    fireEvent.click(document.querySelector('[data-rundown-delta="5"]') as HTMLButtonElement);
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (r) =>
+            r.url.endsWith("/api/v1/live/rundown/adjust-time") &&
+            (r.body as { delta_minutes?: number })?.delta_minutes === 5
+        )
+      ).toBe(true);
+    });
+
+    fireEvent.change(document.querySelector("[data-rundown-set-remaining-input]") as HTMLInputElement, {
+      target: { value: "25" },
+    });
+    fireEvent.click(document.querySelector("[data-rundown-set-remaining-btn]") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (r) =>
+            r.url.endsWith("/api/v1/live/rundown/adjust-time") &&
+            (r.body as { set_remaining_minutes?: number })?.set_remaining_minutes === 25
+        )
+      ).toBe(true);
+    });
+
+    fireEvent.change(document.querySelector("[data-rundown-extend-minutes]") as HTMLInputElement, {
+      target: { value: "8" },
+    });
+    fireEvent.click(document.querySelector("[data-rundown-extend-chat]") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (r) =>
+            r.url.endsWith("/api/v1/live/rundown/extend-chat") &&
+            (r.body as { minutes?: number })?.minutes === 8
+        )
+      ).toBe(true);
+    });
+
+    fireEvent.change(document.querySelector("[data-rundown-vote-duration]") as HTMLInputElement, {
+      target: { value: "45" },
+    });
+    fireEvent.click(document.querySelector("[data-rundown-vote-now]") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (r) =>
+            r.url.endsWith("/api/v1/live/rundown/vote-now") &&
+            (r.body as { duration_seconds?: number })?.duration_seconds === 45
+        )
+      ).toBe(true);
+    });
   });
 });
 
@@ -629,6 +986,16 @@ describe("LiveMusicPage and LiveSettingsPage", () => {
     await waitFor(() => {
       expect(document.getElementById("live-desk")).not.toBeNull();
       expect(document.querySelector("[data-desk-session]")?.textContent).toBe("未开播");
+      expect(screen.getByText("Aqua 直播工坊")).toBeInTheDocument();
+      const tabs = [...document.querySelectorAll("[data-live-tab]")].map((el) =>
+        el.textContent?.trim()
+      );
+      expect(tabs).toEqual(["导播台", "排班与规则", "场景编排", "曲库与点歌", "直播设置"]);
+    });
+
+    fireEvent.click(document.querySelector('[data-live-tab="interaction"]') as HTMLAnchorElement);
+    await waitFor(() => {
+      expect(document.querySelector('[data-live-page="live-interaction"]')).not.toBeNull();
     });
   });
 });

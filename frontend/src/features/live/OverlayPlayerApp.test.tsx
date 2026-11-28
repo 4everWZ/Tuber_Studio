@@ -1,6 +1,5 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DrawGuessOverlayApp } from "./DrawGuessOverlayApp";
 import { Live2DAvatarCanvas, resetLive2DScriptCacheForTest } from "./Live2DAvatarCanvas";
 import { OverlayPlayerApp } from "./OverlayPlayerApp";
 import type { Live2DManifest } from "./types";
@@ -328,6 +327,104 @@ describe("OverlayPlayerApp", () => {
     });
     expect(MockWebSocket.instances).toHaveLength(2);
   });
+
+  it("renders transparent Overtime HUD and Cold-Room Tier badge from /api/v1/live/shows/status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/live/view")) {
+          return Response.json(buildViewPayload());
+        }
+        if (url.endsWith("/api/v1/live/shows/status")) {
+          return Response.json({
+            overtime: {
+              active: true,
+              energy: 75,
+              threshold: 100,
+              overtime_minutes: 30,
+              max_overtime_minutes: 120,
+              remaining_seconds: 185,
+              stage: "overtime",
+              last_event_line: "白饭还没咽下去呢又被投喂续钟了！",
+            },
+            cold_director: {
+              tier: 2,
+              elapsed_seconds: 360,
+            },
+          });
+        }
+        return Response.json({});
+      })
+    );
+
+    render(<OverlayPlayerApp />);
+
+    await waitFor(() => {
+      const hud = document.getElementById("overtime-hud");
+      expect(hud).not.toBeNull();
+      expect(document.getElementById("overtime-energy-pct")?.textContent).toBe("能量 75%");
+      expect(document.getElementById("overtime-minutes")?.textContent).toContain("+30 分钟");
+      expect(document.getElementById("overtime-countdown")?.textContent).toContain("03:05");
+      expect(document.getElementById("overtime-status-line")?.textContent).toContain("白饭还没咽下去");
+
+      const badge = document.getElementById("cold-director-badge");
+      expect(badge?.getAttribute("data-cold-tier")).toBe("2");
+      expect(badge?.textContent).toContain("Tier 2");
+    });
+  });
+
+  it("appends ?layout=game to /api/v1/live/view and renders #rundown-stage-pill when rundown is active", async () => {
+    window.history.replaceState(null, "", "/overlay?layout=game");
+    const requestedUrls: string[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        requestedUrls.push(url);
+        if (url.endsWith("/api/v1/live/view?layout=game")) {
+          const payload = buildViewPayload();
+          payload.scene.background = "transparent";
+          return Response.json(payload);
+        }
+        if (url.endsWith("/api/v1/live/shows/status")) {
+          return Response.json({
+            overtime: { active: false },
+            cold_director: { tier: 0 },
+            rundown: {
+              active: true,
+              paused: false,
+              status: "running",
+              current_index: 1,
+              remaining_seconds: 725,
+              current_segment: {
+                id: "seg-dg",
+                title: "你画我猜专场",
+                kind: "draw_and_guess",
+                duration_minutes: 20,
+                obs_layout: "game",
+                auto_start_show: true,
+                graceful_finish: true,
+                settings: {},
+              },
+            },
+          });
+        }
+        return Response.json({});
+      })
+    );
+
+    render(<OverlayPlayerApp />);
+
+    await waitFor(() => {
+      expect(requestedUrls.some((u) => u.endsWith("/api/v1/live/view?layout=game"))).toBe(true);
+      const pill = document.getElementById("rundown-stage-pill");
+      expect(pill).not.toBeNull();
+      expect(pill?.textContent).toContain("你画我猜专场");
+      expect(pill?.textContent).toContain("12:05");
+    });
+  });
 });
 
 describe("Live2DAvatarCanvas", () => {
@@ -427,75 +524,5 @@ describe("Live2DAvatarCanvas", () => {
     fireEvent(canvas, new Event("webglcontextlost"));
     expect(destroyApp).toHaveBeenCalled();
     expect(onState).toHaveBeenCalledWith(false);
-  });
-});
-
-describe("DrawGuessOverlayApp", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-  });
-
-  it("renders SVG strokes in #draw-guess-container and hides 4s after round ends", async () => {
-    vi.useFakeTimers();
-    let payload: Record<string, unknown> = {
-      active: true,
-      state: "drawing",
-      remaining: 25.2,
-      category: "水果",
-      hint: "圆滚滚",
-      trigger_user: "小明",
-      character: "大肥鱼",
-      revealed_strokes: [
-        { type: "path", d: "M 0 0 L 10 10", stroke: "#38bdf8", width: 4 },
-        { type: "circle", cx: 20, cy: 20, r: 5, fill: "#ef4444" },
-        { type: "ellipse", cx: 40, cy: 40, rx: 8, ry: 4 },
-      ],
-    };
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json(payload))
-    );
-
-    render(<DrawGuessOverlayApp />);
-
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    const container = document.getElementById("draw-guess-container") as HTMLElement;
-    expect(container.hidden).toBe(false);
-    expect(document.getElementById("draw-guess-title")?.textContent).toBe("大肥鱼 · 你画我猜");
-    expect(document.getElementById("timer-badge")?.textContent).toBe("26s");
-    const svg = document.querySelector("svg#drawing-board") as SVGSVGElement;
-    expect(svg.querySelectorAll("path, circle, ellipse")).toHaveLength(3);
-
-    // Finished state shows winner banner
-    payload = {
-      active: false,
-      state: "finished",
-      word: "西瓜",
-      winner: "小红",
-      remaining: 0,
-      revealed_strokes: [],
-    };
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(800);
-    });
-    expect(document.getElementById("winner-banner")?.classList.contains("hidden")).toBe(false);
-    expect(document.getElementById("banner-answer")?.textContent).toBe("答案：【西瓜】");
-
-    // Idle hides after 4000ms
-    payload = { active: false, state: "idle" };
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(800);
-    });
-    expect(container.hidden).toBe(false);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(4000);
-    });
-    expect(container.hidden).toBe(true);
   });
 });

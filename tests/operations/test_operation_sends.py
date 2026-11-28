@@ -477,3 +477,73 @@ async def test_send_queue_enforces_comment_same_video_and_reaction_pacing(browsi
     browsing.sends.enqueue("browsing", "c-a3", approval="app-z")
     await _step_wait()
     assert sent[-1][0] == "c-a3"
+
+
+async def test_widened_jitter_and_interleaved_same_floor_pacing(browsing, monkeypatch):
+    samples = [browsing.sends._pacing_jitter(45) for _ in range(40)]
+    assert all(45 * 0.25 <= val <= 45 * 1.15 for val in samples)
+    assert max(samples) - min(samples) > 10.0
+    assert browsing.sends._pacing_jitter(0) == 0.0
+
+    clock = [3_000_000.0]
+    monkeypatch.setattr(time, "time", lambda: clock[0])
+    monkeypatch.setattr(browsing.sends, "_pacing_jitter", lambda _base: 0.0)
+    await browsing.configure({"top_level_auto_publish": True, "reply_auto_publish": True})
+    await browsing.set_enabled(True)
+    browsing.operations.configure({"min_comment_interval_seconds": 30, "min_reaction_interval_seconds": 0})
+    await browsing.sends.close()
+
+    def _insert(intent_id: str, bvid: str, root: str, parent: str):
+        target = json.dumps({"resource_type": "video", "oid": "42", "bvid": bvid, "root": root, "parent": parent})
+        browsing.store.execute(
+            "INSERT INTO browsing_intents(id,account_id,character_id,character_version,source_key,kind,round_id,"
+            "epoch,auto_authorized,status,text,reason,target,evidence,material_keys,input_version,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                intent_id, "100", "whale", 1, f"k-{intent_id}", "reply_public", "r-2",
+                browsing.operations.policy()["epoch"], 0, "approved", "好耶", "", target,
+                "[]", "[]", "v1", clock[0], clock[0],
+            ),
+        )
+
+    browsing.store.execute(
+        "INSERT OR IGNORE INTO browsing_rounds(id,account_id,character_id,character_version,status,preview,epoch,config,created_at,updated_at) "
+        "VALUES('r-2','100','whale',1,'finished',0,0,'{}',?,?)",
+        (clock[0], clock[0]),
+    )
+    bv_a = BV
+    bv_b = "BV1other00002"
+    _insert("f-a1", bv_a, "101", "101")
+    _insert("f-b1", bv_b, "201", "201")
+    _insert("f-a1-dup", bv_a, "101", "102")
+
+    sent = []
+
+    async def fake_dispatch(item):
+        sent.append(item["source_id"])
+        return True
+
+    browsing.sends.dispatch = fake_dispatch
+    for idx, sid in enumerate(("f-a1", "f-b1", "f-a1-dup")):
+        browsing.sends.enqueue("browsing", sid, approval=f"app-{idx}")
+
+    await asyncio.sleep(0.05)
+    assert sent == ["f-a1"]
+
+    # At +31s: f-b1 sends, but f-a1-dup is in the same floor (bv_a/101) so it stays blocked even after f-b1.
+    clock[0] += 31
+    browsing.sends.changed.set()
+    await asyncio.sleep(0.05)
+    assert sent == ["f-a1", "f-b1"]
+
+    # At +65s (>= 30s after f-b1 and >= 60s same-video, but < 90s same-floor): f-a1-dup is STILL deferred!
+    clock[0] += 34
+    browsing.sends.changed.set()
+    await asyncio.sleep(0.05)
+    assert sent == ["f-a1", "f-b1"]
+
+    # At +92s (>= 90s same-floor window): f-a1-dup sends.
+    clock[0] += 27
+    browsing.sends.changed.set()
+    await asyncio.sleep(0.05)
+    assert sent == ["f-a1", "f-b1", "f-a1-dup"]

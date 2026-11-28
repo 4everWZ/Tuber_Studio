@@ -505,3 +505,74 @@ async def test_favorite_video_success_and_duplicate(adapter_factory):
     res2 = await adapter.favorite_video(BV)
     assert res2["code"] == 0
     assert res2["already_favorited"]
+
+
+async def test_comment_ingestion_unescapes_html_entities(adapter_factory):
+    def handle(request):
+        if request.url.path == "/x/web-interface/view":
+            return video_response()
+        reply = comment(55, 1001) | {
+            "content": {"message": "她说&#34;这波稳了&#34; &amp; &lt;3&#39;s"}
+        }
+        return httpx.Response(200, json={"code": 0, "data": {"replies": [reply], "page": {"count": 1}}})
+
+    adapter = await adapter_factory(handle)
+    fetched = await adapter.fetch(BV)
+    assert fetched["items"][0]["content"] == '她说"这波稳了" & <3\'s'
+
+
+def test_bilibili_web_headers_include_coherent_chrome_desktop_hints():
+    from tuber_studio.infra.platforms.bilibili.client import bilibili_web_headers
+
+    headers = bilibili_web_headers(origin="https://www.bilibili.com")
+    assert "Chrome/131" in headers["User-Agent"]
+    assert "Chromium" in headers["sec-ch-ua"] and "131" in headers["sec-ch-ua"]
+    assert headers["sec-ch-ua-mobile"] == "?0"
+    assert headers["sec-ch-ua-platform"] == '"Windows"'
+    assert headers["Sec-Fetch-Site"] == "same-site"
+    assert headers["Sec-Fetch-Mode"] == "cors"
+    assert headers["Sec-Fetch-Dest"] == "empty"
+    assert headers["Origin"] == "https://www.bilibili.com"
+
+
+async def test_session_cookie_bootstrap_skips_mock_transport_and_populates_on_spi_route(adapter_factory):
+    seen = []
+
+    def handle(request):
+        seen.append((request.method, str(request.url)))
+        if request.url.host == "www.bilibili.com" and request.url.path == "/":
+            return httpx.Response(
+                200,
+                text="<html></html>",
+                headers=[("set-cookie", "b_nut=1700001234; Domain=.bilibili.com; Path=/")],
+            )
+        if request.url.host == "api.bilibili.com" and request.url.path == "/x/frontend/finger/spi":
+            return httpx.Response(
+                200,
+                json={"code": 0, "data": {"b_3": "SERVER-B3-VAL", "b_4": "SERVER-B4-VAL"}},
+            )
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    adapter = await adapter_factory(handle, SECRETS)
+    # Default MockTransport skips session bootstrap without making network calls.
+    skipped = await adapter.ensure_session_cookies()
+    assert skipped == {}
+    assert seen == []
+
+    # When explicitly enabled/forced, bootstrap visits homepage + SPI once and caches cookies.
+    adapter._bootstrap_session_cookies = True
+    populated = await adapter.ensure_session_cookies()
+    assert populated == {
+        "buvid3": "SERVER-B3-VAL",
+        "buvid4": "SERVER-B4-VAL",
+        "b_nut": "1700001234",
+    }
+    assert adapter.client.cookies.get("buvid3") == "SERVER-B3-VAL"
+    assert adapter.client.cookies.get("buvid4") == "SERVER-B4-VAL"
+    assert adapter.client.cookies.get("b_nut") == "1700001234"
+    assert len(seen) == 2
+
+    # Second call uses cached session cookies without hitting the network again.
+    cached = await adapter.ensure_session_cookies()
+    assert cached == populated
+    assert len(seen) == 2

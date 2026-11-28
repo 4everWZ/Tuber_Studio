@@ -146,7 +146,10 @@ class OperationSends:
 
     @staticmethod
     def _pacing_jitter(base_seconds):
-        return random.uniform(0.0, float(base_seconds) * 0.35) if base_seconds > 0 else 0.0
+        if base_seconds <= 0:
+            return 0.0
+        base = float(base_seconds)
+        return random.uniform(base * 0.25, base * 1.15)
 
     def _item_bvid(self, item):
         if item["channel"] == "browsing":
@@ -163,7 +166,50 @@ class OperationSends:
             return str((row or {}).get("bvid") or "")
         return ""
 
-    def _record_send_pacing(self, account, item, *, sent_at, item_bvid=""):
+    def _item_comment_scope(self, item) -> tuple[str, str]:
+        """Return (resource_key, floor_key) for per-video/per-floor pacing."""
+        if item["channel"] == "browsing":
+            row = self.store.one(
+                "SELECT target FROM browsing_intents WHERE id=?",
+                (item["source_id"],),
+            )
+            try:
+                target = json.loads((row or {}).get("target") or "{}")
+            except (TypeError, ValueError):
+                target = {}
+            if not isinstance(target, dict):
+                return "", ""
+            bvid = str(target.get("bvid") or "").strip()
+            oid = str(target.get("oid") or "").strip()
+            root = str(target.get("root") or "0").strip()
+            resource_key = bvid or (f"dynamic:{oid}" if oid else "")
+            floor_key = f"{resource_key}/{root}" if resource_key and root not in ("", "0") else ""
+            return resource_key, floor_key
+        if item["channel"] == "comments":
+            row = self.store.one(
+                "SELECT c.video_id AS bvid, c.thread_id AS thread_id "
+                "FROM drafts d JOIN comments c ON c.id=d.comment_id WHERE d.id=?",
+                (item["source_id"],),
+            )
+            if not row:
+                return "", ""
+            bvid = str(row.get("bvid") or "").strip()
+            root = str(row.get("thread_id") or "0").strip()
+            floor_key = f"{bvid}/{root}" if bvid and root not in ("", "0") else ""
+            return bvid, floor_key
+        return "", ""
+
+    def recent_comment_targets(self, account) -> dict:
+        if not account:
+            return {"resources": {}, "floors": {}}
+        saved = self.store.get(f"operation_recent_comment_targets:{account}")
+        if not isinstance(saved, dict):
+            return {"resources": {}, "floors": {}}
+        resources = saved.get("resources") if isinstance(saved.get("resources"), dict) else {}
+        floors = saved.get("floors") if isinstance(saved.get("floors"), dict) else {}
+        return {"resources": resources, "floors": floors}
+
+    def _record_send_pacing(self, account, item, *, sent_at, item_bvid="", item_scope=("", "")):
         if not account:
             return
         policy = self.control.policy()
@@ -177,8 +223,40 @@ class OperationSends:
             if cbase > 0:
                 due = max(self.comments_pacing_until(account), sent_at + cbase + self._pacing_jitter(cbase))
                 self.store.set(f"operation_comments_pacing:{account}", due)
-                if item_bvid:
-                    self.store.set(f"operation_last_comment_target:{account}", {"bvid": item_bvid, "at": sent_at})
+                resource_key, floor_key = item_scope
+                resource_key = resource_key or item_bvid
+                if item_bvid or resource_key:
+                    self.store.set(
+                        f"operation_last_comment_target:{account}",
+                        {"bvid": item_bvid or resource_key, "resource": resource_key, "floor": floor_key, "at": sent_at},
+                    )
+                if resource_key or floor_key:
+                    recent = self.recent_comment_targets(account)
+                    cutoff = sent_at - max(600.0, float(cbase) * 6.0)
+                    resources = {
+                        k: float(v)
+                        for k, v in recent["resources"].items()
+                        if isinstance(v, (int, float)) and float(v) > sent_at and float(v) >= cutoff
+                    }
+                    floors = {
+                        k: float(v)
+                        for k, v in recent["floors"].items()
+                        if isinstance(v, (int, float)) and float(v) > sent_at and float(v) >= cutoff
+                    }
+                    if resource_key:
+                        resources[resource_key] = max(
+                            resources.get(resource_key, 0.0),
+                            sent_at + cbase * 2 + self._pacing_jitter(cbase),
+                        )
+                    if floor_key:
+                        floors[floor_key] = max(
+                            floors.get(floor_key, 0.0),
+                            sent_at + cbase * 3 + self._pacing_jitter(cbase),
+                        )
+                    self.store.set(
+                        f"operation_recent_comment_targets:{account}",
+                        {"resources": dict(list(resources.items())[-24:]), "floors": dict(list(floors.items())[-24:])},
+                    )
 
     def visibility_risk_status(self, account, *, now=None):
         if not account:
@@ -539,6 +617,7 @@ class OperationSends:
                     self.comments_pacing_until(scope[0]) if cbase > 0 else 0.0,
                 )
                 last_target = self.last_comment_target(scope[0]) if cbase > 0 else None
+                recent_targets = self.recent_comment_targets(scope[0]) if cbase > 0 else {"resources": {}, "floors": {}}
                 same_video_due = 0.0
                 # Keep background FIFO and preserve order within each direct
                 # channel. An image wait leaves the sender free for other heads.
@@ -549,10 +628,18 @@ class OperationSends:
                     if self._is_comment_head(head):
                         if comments_due > now:
                             continue
-                        if cbase > 0 and isinstance(last_target, dict) and last_target.get("bvid"):
-                            head_bvid = self._item_bvid(head)
-                            sv_due = float(last_target.get("at") or 0) + cbase * 2
-                            if head_bvid and head_bvid == last_target["bvid"] and sv_due > now:
+                        if cbase > 0:
+                            head_resource, head_floor = self._item_comment_scope(head)
+                            sv_due = 0.0
+                            if head_floor and head_floor in recent_targets["floors"]:
+                                sv_due = max(sv_due, float(recent_targets["floors"][head_floor]))
+                            if head_resource and head_resource in recent_targets["resources"]:
+                                sv_due = max(sv_due, float(recent_targets["resources"][head_resource]))
+                            if sv_due == 0.0 and isinstance(last_target, dict) and last_target.get("bvid"):
+                                head_bvid = head_resource or self._item_bvid(head)
+                                if head_bvid and head_bvid == last_target["bvid"]:
+                                    sv_due = float(last_target.get("at") or 0) + cbase * 2
+                            if sv_due > now:
                                 same_video_due = sv_due if same_video_due == 0.0 else min(same_video_due, sv_due)
                                 continue
                     heads.append(head)
@@ -571,10 +658,11 @@ class OperationSends:
                             self.active = item
                             token = current_send.set(item)
                             item_bvid = self._item_bvid(item) if self._is_comment_head(item) else ""
+                            item_scope = self._item_comment_scope(item) if self._is_comment_head(item) else ("", "")
                             try:
                                 if await self.dispatch(item):
                                     self._record_send_pacing(
-                                        scope[0], item, sent_at=time.time(), item_bvid=item_bvid
+                                        scope[0], item, sent_at=time.time(), item_bvid=item_bvid, item_scope=item_scope
                                     )
                                     self._remove(item)
                             except ReconciliationPending as error:

@@ -86,23 +86,45 @@ class DynamicsDrafterMixin:
             return self._post(existing["id"])
         if "editorial" in brief:
             body = editorial_dynamic_body(brief)
-            selected = {p["source_id"] for p in brief["editorial"]["passages"]}
-            refs = [source for source in brief["sources"] if source["source_id"] in selected]
+            editorial = brief["editorial"]
+            items_by_id = {item["source_id"]: item for item in brief.get("editorial_items") or ()}
+            selected = set(editorial.get("dynamic_source_ids") or ())
+            if not selected:
+                selected = {
+                    p["source_id"]
+                    for p in editorial.get("passages", ())
+                    if items_by_id.get(p["source_id"], {}).get("status") != "pending_review"
+                }
+            refs = [
+                source for source in brief.get("sources", ())
+                if source["source_id"] in selected
+                and items_by_id.get(source["source_id"], {}).get("status") != "pending_review"
+            ][:2]
         else:
-            accepted_comments = brief.get("accepted_comments", brief["public_comments"])
-            body = (
-                f"这轮先收工啦。{brief['period_label']}，我看了 {brief['watched_videos']} 个投稿，"
-                f"评论有 {accepted_comments} 条收到回执，其中 {brief['public_comments']} 条已从公开页读回。"
-                f"还发了 {brief['public_dynamics']} 条动态。"
-            )
-            if pending := brief.get("review_comments"):
-                body += f"有 {pending} 条评论草稿，先留审核。"
-            if likes := brief.get("confirmed_likes"):
-                body += f"这轮还点了 {likes} 个赞。"
-            if brief["sources"]:
-                source = brief["sources"][0]
-                body += f"\n原片也给你们留一条。《{source['title']}》 {source['url']}"
-            refs = brief["sources"][:1]
+            watched = int(brief.get("watched_videos") or 0)
+            public_comments = int(brief.get("public_comments") or 0)
+            public_dynamics = int(brief.get("public_dynamics") or 0)
+            confirmed_likes = int(brief.get("confirmed_likes") or 0)
+            if watched == 0 and public_comments == 0 and public_dynamics == 0 and confirmed_likes == 0:
+                raise ValueError("本轮没有可分享的公开观看或互动记录")
+            bits = []
+            if watched:
+                bits.append(f"刷了 {watched} 个投稿")
+            if public_comments:
+                bits.append(f"在评论区聊了 {public_comments} 条")
+            if public_dynamics:
+                bits.append(f"发了 {public_dynamics} 条动态")
+            if confirmed_likes and not bits:
+                bits.append(f"顺手点了 {confirmed_likes} 个赞")
+            body = f"这轮逛完 B 站回来啦，{'，'.join(bits)}。记一下这阵子看到的东西，继续低功耗保鲜。"
+            items_by_id = {item["source_id"]: item for item in brief.get("editorial_items") or ()}
+            refs = [
+                source for source in brief.get("sources", ())
+                if items_by_id.get(source["source_id"], {}).get("status") != "pending_review"
+                and source.get("url")
+            ][:2]
+            for source in refs:
+                body += f"\n《{source['title']}》 {source['url']}"
         snapshot = {"id": source_id, "type": "operations_closeout", "text": body, "references": refs}
         decision = self._save_decision(
             character, False, {"action": "post", "content": validate_text(body), "reason": "定时运营收尾",

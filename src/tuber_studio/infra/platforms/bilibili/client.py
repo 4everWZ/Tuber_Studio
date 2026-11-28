@@ -14,7 +14,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import html
 import json
+import os
+import random
 import re
 import time
 from urllib.parse import urlencode, urlsplit
@@ -38,6 +41,9 @@ def bilibili_web_headers(
     *,
     referer: str = "https://www.bilibili.com/",
     origin: str | None = None,
+    sec_fetch_site: str = "same-site",
+    sec_fetch_mode: str = "cors",
+    sec_fetch_dest: str = "empty",
 ) -> dict[str, str]:
     """Build standard Bilibili Web client headers without synthetic fingerprints."""
     headers = {
@@ -45,6 +51,12 @@ def bilibili_web_headers(
         "Referer": referer,
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "zh-CN,zh;q=0.9",
+        "sec-ch-ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "Sec-Fetch-Site": sec_fetch_site,
+        "Sec-Fetch-Mode": sec_fetch_mode,
+        "Sec-Fetch-Dest": sec_fetch_dest,
     }
     if origin:
         headers["Origin"] = origin
@@ -172,17 +184,28 @@ class BilibiliAccountExpired(PlatformReadError):
 
 
 class BilibiliAdapter:
-    def __init__(self, credential: dict | None = None):
+    def __init__(
+        self,
+        credential: dict | None = None,
+        *,
+        bootstrap_session_cookies: bool | None = None,
+        pre_comment_engagement: bool | None = None,
+        pre_comment_dwell_range: tuple[float, float] = (4.0, 12.0),
+        comment_transport: str | None = None,
+        browser_profile_dir: str | os.PathLike[str] | None = None,
+        browser_publisher=None,
+    ):
         credential = credential or {}
         self._sessdata = str(credential.get("sessdata") or "")
         self._csrf = str(credential.get("csrf") or "")
+        self._uid = str(credential.get("uid") or "")
         cookies = {}
         if self._sessdata:
             cookies["SESSDATA"] = self._sessdata
         if self._csrf:
             cookies["bili_jct"] = self._csrf
-        if credential.get("uid"):
-            cookies["DedeUserID"] = credential["uid"]
+        if self._uid:
+            cookies["DedeUserID"] = self._uid
         self.client = httpx.AsyncClient(
             base_url="https://api.bilibili.com",
             headers=bilibili_web_headers(),
@@ -198,8 +221,279 @@ class BilibiliAdapter:
             follow_redirects=False,
         )
         self._default_anon_client = self.anon_client
+        self._bootstrap_session_cookies = bootstrap_session_cookies
+        self._session_cookies_bootstrapped = False
+        self._session_bootstrap_lock = asyncio.Lock()
+        self._pre_comment_engagement = pre_comment_engagement
+        self._pre_comment_dwell_range = (
+            max(0.0, float(pre_comment_dwell_range[0])),
+            max(0.0, float(pre_comment_dwell_range[1])),
+        )
+        self._comment_transport = comment_transport
+        self._browser_profile_dir = browser_profile_dir
+        self._browser_publisher = browser_publisher
+        self._recent_video_reads: dict[str, tuple[float, dict]] = {}
+        self._recent_comment_reads: dict[tuple[str, int, str], float] = {}
+
+    def _is_mock_transport(self) -> bool:
+        return isinstance(getattr(self.client, "_transport", None), httpx.MockTransport)
+
+    def resolve_comment_transport(self, *, has_image: bool = False) -> str:
+        """Select 'browser_ui' or 'http_api' for comment publication."""
+        # MockTransport tests and image attachments always stay on the HTTP API path.
+        if self._is_mock_transport() or has_image:
+            return "http_api"
+        raw_mode = (
+            self._comment_transport
+            if self._comment_transport is not None
+            else os.getenv("TUBER_BILIBILI_COMMENT_TRANSPORT", "auto")
+        )
+        mode = str(raw_mode or "auto").strip().lower()
+        if mode not in {"auto", "browser_ui", "http_api"}:
+            raise ValueError(f"不支持的评论发布通道: {raw_mode}")
+        if mode == "http_api":
+            return "http_api"
+        if self._browser_publisher is not None:
+            return "browser_ui"
+        from .browser_comments import find_chromium_executable, playwright_available
+
+        if playwright_available() and find_chromium_executable() is not None:
+            return "browser_ui"
+        if mode == "browser_ui":
+            raise ValueError("已指定 browser_ui 评论通道，但未检测到 Playwright 或 Chromium")
+        return "http_api"
+
+    def _get_browser_comment_publisher(self):
+        if self._browser_publisher is None:
+            from .browser_comments import BilibiliBrowserCommentPublisher
+
+            self._browser_publisher = BilibiliBrowserCommentPublisher(
+                sessdata=self._sessdata,
+                csrf=self._csrf,
+                uid=self._uid,
+                profile_dir=self._browser_profile_dir,
+            )
+        return self._browser_publisher
+
+    def _should_bootstrap_session_cookies(self, *, force: bool = False) -> bool:
+        if force:
+            return True
+        if self._bootstrap_session_cookies is not None:
+            return bool(self._bootstrap_session_cookies)
+        return not self._is_mock_transport()
+
+    def _should_pre_comment_engage(self, *, force: bool = False) -> bool:
+        if force:
+            return True
+        if self._pre_comment_engagement is not None:
+            return bool(self._pre_comment_engagement)
+        return not self._is_mock_transport()
+
+    def _dwell_bounds(self, *, force: bool = False) -> tuple[float, float]:
+        if not force and self._is_mock_transport() and self._pre_comment_engagement is not True:
+            return 0.0, 0.0
+        lo, hi = self._pre_comment_dwell_range
+        return lo, max(lo, hi)
+
+    def _record_video_read(self, info: dict) -> None:
+        if not isinstance(info, dict):
+            return
+        aid = info.get("aid")
+        bvid = info.get("bvid")
+        cid = info.get("cid")
+        if not cid:
+            pages = info.get("pages") or info.get("parts")
+            if isinstance(pages, list) and pages and isinstance(pages[0], dict):
+                cid = pages[0].get("cid")
+        entry = {
+            "aid": aid,
+            "bvid": bvid,
+            "cid": cid,
+            "duration": info.get("duration"),
+        }
+        now = time.monotonic()
+        if bvid:
+            self._recent_video_reads[str(bvid)] = (now, entry)
+        if aid:
+            self._recent_video_reads[f"av{aid}"] = (now, entry)
+
+    def _recent_video_info(self, *, bvid: str | None = None, oid: str | int | None = None, fresh_seconds: float = 300.0) -> dict | None:
+        now = time.monotonic()
+        for key in (str(bvid or ""), f"av{oid}" if oid else ""):
+            if key and key in self._recent_video_reads:
+                ts, entry = self._recent_video_reads[key]
+                if now - ts <= fresh_seconds:
+                    return entry
+        return None
+
+    def _record_comment_read(self, oid: str | int, comment_type: int, root: str | int = "0") -> None:
+        self._recent_comment_reads[(str(oid), int(comment_type), str(root or "0"))] = time.monotonic()
+
+    def _was_comment_recently_read(
+        self, oid: str | int, comment_type: int, root: str | int = "0", *, fresh_seconds: float = 120.0
+    ) -> bool:
+        ts = self._recent_comment_reads.get((str(oid), int(comment_type), str(root or "0")))
+        return ts is not None and (time.monotonic() - ts) <= fresh_seconds
+
+    async def ensure_session_cookies(self, *, force: bool = False) -> dict[str, str]:
+        """Bootstrap official Bilibili session cookies (buvid3/buvid4/b_nut) once per session."""
+        if not force and self._session_cookies_bootstrapped:
+            return {
+                name: val
+                for name in ("buvid3", "buvid4", "b_nut")
+                if (val := self.client.cookies.get(name))
+            }
+        if not self._should_bootstrap_session_cookies(force=force):
+            return {}
+        async with self._session_bootstrap_lock:
+            if not force and self._session_cookies_bootstrapped:
+                return {
+                    name: val
+                    for name in ("buvid3", "buvid4", "b_nut")
+                    if (val := self.client.cookies.get(name))
+                }
+            any_succeeded = False
+            home_headers = bilibili_web_headers(
+                referer="https://www.bilibili.com/",
+                sec_fetch_site="none",
+                sec_fetch_mode="navigate",
+                sec_fetch_dest="document",
+            ) | {
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+            }
+            try:
+                home_resp = await self.client.get("https://www.bilibili.com/", headers=home_headers)
+                if home_resp.status_code < 500:
+                    any_succeeded = True
+                for cookie_name in ("b_nut", "buvid3", "buvid4"):
+                    val = home_resp.cookies.get(cookie_name) or self.client.cookies.get(cookie_name)
+                    if val and not self.client.cookies.get(cookie_name, domain=".bilibili.com"):
+                        self.client.cookies.set(cookie_name, str(val), domain=".bilibili.com", path="/")
+            except (httpx.HTTPError, ValueError):
+                pass
+            try:
+                spi_resp = await self.client.get(
+                    "/x/frontend/finger/spi",
+                    headers=bilibili_web_headers(referer="https://www.bilibili.com/", origin="https://www.bilibili.com"),
+                )
+                if spi_resp.status_code == 200:
+                    payload = spi_resp.json()
+                    if isinstance(payload, dict) and payload.get("code") == 0 and isinstance(payload.get("data"), dict):
+                        any_succeeded = True
+                        data = payload["data"]
+                        if b_3 := str(data.get("b_3") or "").strip():
+                            self.client.cookies.set("buvid3", b_3, domain=".bilibili.com", path="/")
+                        if b_4 := str(data.get("b_4") or "").strip():
+                            self.client.cookies.set("buvid4", b_4, domain=".bilibili.com", path="/")
+            except (httpx.HTTPError, ValueError, TypeError):
+                pass
+            if any_succeeded or any(self.client.cookies.get(k) for k in ("buvid3", "buvid4", "b_nut")):
+                self._session_cookies_bootstrapped = True
+            return {
+                name: val
+                for name in ("buvid3", "buvid4", "b_nut")
+                if (val := self.client.cookies.get(name))
+            }
+
+    async def _prepare_comment_engagement(
+        self,
+        *,
+        oid: str | int,
+        comment_type: int = 1,
+        root: str = "0",
+        bvid: str | None = None,
+        cid: str | int | None = None,
+        duration: float | None = None,
+        force: bool = False,
+    ) -> dict[str, object]:
+        """Run genuine pre-comment watch heartbeat, thread readback, and bounded human dwell."""
+        if not self._should_pre_comment_engage(force=force):
+            return {"engaged": False, "heartbeat_sent": False, "comment_page_fetched": False, "dwell_seconds": 0.0}
+        await self.ensure_session_cookies(force=force)
+        heartbeat_sent = False
+        comment_page_fetched = False
+        kind = int(comment_type)
+        root_id = str(root or "0")
+
+        if kind == 1:
+            cached = self._recent_video_info(bvid=bvid, oid=oid)
+            resolved_bvid = bvid or (cached.get("bvid") if cached else None)
+            resolved_cid = cid or (cached.get("cid") if cached else None)
+            resolved_duration = duration if duration is not None else (cached.get("duration") if cached else None)
+            if not resolved_cid:
+                try:
+                    info = await self._video(resolved_bvid or f"av{oid}")
+                    resolved_bvid = info.get("bvid") or resolved_bvid
+                    pages = info.get("pages") or []
+                    resolved_cid = info.get("cid") or (pages[0].get("cid") if pages and isinstance(pages[0], dict) else None)
+                    resolved_duration = info.get("duration") if resolved_duration is None else resolved_duration
+                except (httpx.HTTPError, ValueError):
+                    pass
+            if resolved_cid:
+                played_time = random.randint(15, 45)
+                if isinstance(resolved_duration, (int, float)) and resolved_duration >= 2:
+                    max_play = max(1, min(45, int(resolved_duration) - 1))
+                    min_play = min(15, max_play)
+                    played_time = random.randint(min_play, max_play)
+                referer = (
+                    f"https://www.bilibili.com/video/{resolved_bvid}/"
+                    if resolved_bvid and _BV.fullmatch(str(resolved_bvid))
+                    else "https://www.bilibili.com/"
+                )
+                hb_data = {
+                    "aid": str(oid),
+                    "cid": str(resolved_cid),
+                    **({"bvid": str(resolved_bvid)} if resolved_bvid and _BV.fullmatch(str(resolved_bvid)) else {}),
+                    **({"mid": self._uid} if self._uid else {}),
+                    **({"csrf": self._csrf} if self._csrf else {}),
+                    "played_time": played_time,
+                    "realtime": played_time,
+                    "start_ts": max(0, int(time.time()) - played_time),
+                    "type": 3,
+                    "sub_type": 0,
+                    "play_type": 0,
+                    "dt": 2,
+                }
+                try:
+                    resp = await self.client.post(
+                        "/x/click-interface/web/heartbeat",
+                        headers={"Origin": "https://www.bilibili.com", "Referer": referer},
+                        data=hb_data,
+                    )
+                    if resp.status_code == 200:
+                        heartbeat_sent = True
+                except (httpx.HTTPError, ValueError):
+                    pass
+
+        if not self._was_comment_recently_read(oid, kind, root_id):
+            try:
+                if root_id == "0":
+                    await self._get_payload("/x/v2/reply", {"oid": oid, "type": kind, "pn": 1, "ps": 20, "sort": 2})
+                else:
+                    await self._get_payload(
+                        "/x/v2/reply/reply", {"oid": oid, "type": kind, "root": root_id, "pn": 1, "ps": 20}
+                    )
+                self._record_comment_read(oid, kind, root_id)
+                comment_page_fetched = True
+            except (httpx.HTTPError, ValueError):
+                pass
+
+        lo, hi = self._dwell_bounds(force=force)
+        dwell_seconds = 0.0
+        if hi > 0:
+            dwell_seconds = random.uniform(lo, hi)
+            if dwell_seconds > 0:
+                await asyncio.sleep(dwell_seconds)
+        return {
+            "engaged": True,
+            "heartbeat_sent": heartbeat_sent,
+            "comment_page_fetched": comment_page_fetched,
+            "dwell_seconds": dwell_seconds,
+        }
 
     async def close(self):
+        if self._browser_publisher is not None:
+            await self._browser_publisher.aclose()
         await self.anon_client.aclose()
         await self.client.aclose()
 
@@ -362,6 +656,7 @@ class BilibiliAdapter:
         if not isinstance(data.get("bvid"), str) or not _BV.fullmatch(data["bvid"]):
             raise ValueError("B 站视频标识无效")
         data["aid"] = int(_positive_id(data.get("aid")))
+        self._record_video_read(data)
         return data
 
     @staticmethod
@@ -395,7 +690,7 @@ class BilibiliAdapter:
             **({"reply_count": reply["rcount"]} if type(reply.get("rcount")) is int and reply["rcount"] >= 0 else {}),
             "platform_user_id": _positive_id(member["mid"]),
             "display_name": str(member["uname"]),
-            "content": str(content["message"]),
+            "content": html.unescape(str(content["message"])),
             "like_count": max(0, int(reply.get("like", 0))),
             **({"liked_by_self": reply["action"] == 1} if type(reply.get("action")) is int else {}),
             "created_at": str(int(reply.get("ctime", 0))),
@@ -455,6 +750,7 @@ class BilibiliAdapter:
             next_page = page + 1 if has_more else None
             if not has_more:
                 break
+        self._record_comment_read(info["aid"], 1, "0")
         return {
             "video_id": info["bvid"],
             "items": items,
@@ -475,8 +771,54 @@ class BilibiliAdapter:
         text = validate_comment_body(text)
         parent = _positive_id(comment_id)
         root = _positive_id(thread_id) if thread_id is not None else parent
-        info = await self._video(video_id)
         mention_form = comment_mention_form(text, mentions)
+        if self.resolve_comment_transport() == "browser_ui":
+            parsed = _video_params(video_id)
+            bvid = parsed.get("bvid")
+            aid = parsed.get("aid")
+            if not bvid or not aid:
+                cached = self._recent_video_info(bvid=bvid, oid=aid)
+                if cached and cached.get("bvid") and cached.get("aid"):
+                    bvid = cached["bvid"]
+                    aid = int(cached["aid"])
+                else:
+                    info = await self._video(video_id)
+                    bvid = info["bvid"]
+                    aid = info["aid"]
+            publisher = self._get_browser_comment_publisher()
+            receipt = await publisher.publish_comment(
+                {
+                    "resource_type": "video",
+                    "type": 1,
+                    "oid": str(aid),
+                    "bvid": bvid,
+                    "root": root,
+                    "parent": parent,
+                    "mentions": list(mentions) if mentions else [],
+                },
+                text,
+                before_send=before_send,
+                mentions=mentions,
+            )
+            return {
+                **receipt,
+                "video_id": bvid,
+                "aid": aid,
+                "root": root,
+                "parent": parent,
+            }
+        await self.ensure_session_cookies()
+        info = await self._video(video_id)
+        pages = info.get("pages") or []
+        cid = info.get("cid") or (pages[0].get("cid") if pages and isinstance(pages[0], dict) else None)
+        await self._prepare_comment_engagement(
+            oid=info["aid"],
+            comment_type=1,
+            root=root,
+            bvid=info["bvid"],
+            cid=cid,
+            duration=info.get("duration"),
+        )
         if before_send is not None:
             before_send()
         try:

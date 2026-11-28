@@ -32,9 +32,11 @@ describe("shell workspace navigation", () => {
 
     const allSubTabs = Object.values(SUB_NAV_TABS).flat();
     for (const expectedRoute of [
+      "live",
+      "live-interaction",
       "live-scene",
       "live-music",
-      "live-interaction",
+      "live-settings",
       "characters",
       "voices",
       "assets",
@@ -46,6 +48,21 @@ describe("shell workspace navigation", () => {
     ]) {
       expect(allSubTabs.some((t) => t.page === expectedRoute)).toBe(true);
     }
+
+    expect(SUB_NAV_TABS.live.map((tab) => tab.label)).toEqual([
+      "导播台",
+      "排班与规则",
+      "场景编排",
+      "曲库与点歌",
+      "直播设置",
+    ]);
+    expect(SUB_NAV_TABS.live.map((tab) => tab.page)).toEqual([
+      "live",
+      "live-interaction",
+      "live-scene",
+      "live-music",
+      "live-settings",
+    ]);
 
     const onToggleCollapse = vi.fn();
     render(
@@ -104,7 +121,12 @@ describe("shell workspace navigation", () => {
         "operations",
         { routeKind: "round", routeId: "round", taskId: "task" },
       ],
+      ["#live", "live", "live", {}],
       ["#live-interaction", "live-interaction", "live", {}],
+      ["#live-game-panel", "live-interaction", "live", { anchor: "live-game-panel" }],
+      ["#live-scene", "live-scene", "live", {}],
+      ["#live-music", "live-music", "live", {}],
+      ["#live-settings", "live-settings", "live", {}],
       ["#voices", "voices", "characters", {}],
       ["#accounts", "accounts", "settings", {}],
       ["#issues", "issues", "settings", {}],

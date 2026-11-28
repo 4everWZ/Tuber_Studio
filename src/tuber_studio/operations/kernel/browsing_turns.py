@@ -98,8 +98,9 @@ def _build_browsing_tree(
     if dynamic_source:
         lines = [
             f"当前动态（dynamic_id {dynamic_source.get('dynamic_id')}）：{dynamic_source.get('text') or ''}",
-            "请判断这条动态是否值得互动。你可以调用 search_web / recall_history / save_memory，"
-            "如果想回复，请直接自然写出公开回复；如果觉得不合适发言，请调用 skip_reply。",
+            "请判断这条动态是否值得搭话。你可以调用 search_web / recall_history / save_memory，"
+            "如果想回复，请像平时刷到熟人动态那样自然写 1-2 句有活人感的话（绝不说脏话、不套八股起手式）；"
+            "如果觉得不合适发言，请调用 skip_reply。",
         ]
         branch = tree.add_node(
             ContextNode(
@@ -137,7 +138,9 @@ def _build_browsing_tree(
         if bound.get("actor_roles"):
             extra_ctx["actor_roles"] = bound["actor_roles"]
         objective = (
-            "请像 B 站楼里顺手回一句那样，用 1-2 句简短口语（通常 10-50 字）直接接住当前评论的话头，别写长段分析或套模板；"
+            "请像 B 站楼里顺手回一句那样，用 1-2 句鲜活简短的口语（通常 10-50 字）直接接住当前评论的话头；"
+            "遇到卖惨讨口子、假装全自动、低俗擦边或「哦鲸鲸」谐音梗可以直接机灵拆台（绝不说脏话），"
+            "别套模板起手式（如「这设定太损了」「先吃为敬」「白饭已经揭盖」），也别写长段分析或说教；"
             "若不想回、对方没跟本账号说话、或不需要插话，请调用 skip_reply。"
             if allow_public
             else "当前只允许观察或跳过（不可公开发言），决定不回复请调用 skip_reply。"
@@ -169,8 +172,9 @@ def _build_browsing_tree(
     objectives = []
     if allow_public:
         objectives.append(
-            "如果你想发表一条视频主评，请像真实 B 站观众一样直接写 1-2 句自然短评（通常 15-55 字），"
-            "挑一个最戳人的具体画面、细节或槽点开聊，不要写复述全片或分点总结的长评。"
+            "如果你想发表一条视频主评，请像真实 B 站年轻观众一样直接写 1-2 句有活人感的自然短评（通常 15-55 字），"
+            "挑一个最戳人的具体画面、细节或槽点开聊，也可以顺着画面自然联想或俏皮锐评（但绝不说脏话）；"
+            "每条换着用不同句式开局，避开「这设定太损了」「先吃为敬」「白饭已经揭盖」等重复起手式，不要写复述全片或分点总结的长评。"
         )
     else:
         objectives.append("本次仅观看与评估，不可发表公开留言；处理完互动偏好后请调用 skip_reply。")

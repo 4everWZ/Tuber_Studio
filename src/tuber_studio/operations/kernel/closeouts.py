@@ -21,6 +21,21 @@ _CLOCK = r"^(?:[01]\d|2[0-3]):[0-5]\d$"
 _VIDEO_WAITING = ("scheduled", "preparing", "submitted", "publish_uncertain")
 
 
+def has_shareable_closeout_material(brief: dict) -> bool:
+    """Return True when the closeout brief contains real watched videos or confirmed public interactions."""
+    if not isinstance(brief, dict):
+        return False
+    if any(
+        int(brief.get(key) or 0) > 0
+        for key in ("watched_videos", "public_comments", "public_dynamics", "confirmed_likes")
+    ):
+        return True
+    return any(
+        isinstance(item, dict) and item.get("status") in {"watched", "public_visible", "confirmed"}
+        for item in (brief.get("editorial_items") or ())
+    )
+
+
 class OperationCloseoutConfig(StrictModel):
     dynamic_mode: Literal["off", "review", "automatic"] = "off"
     video_mode: Literal["off", "manual", "automatic_review", "automatic_publish"] = "off"
@@ -223,7 +238,7 @@ class OperationCloseouts:
         else:
             brief = public_period_brief(self.store, row)
             self._save(row["id"], brief=dump(brief))
-        if "editorial_items" in brief and "editorial" not in brief:
+        if brief.get("editorial_items") and "editorial" not in brief and has_shareable_closeout_material(brief):
             brief["editorial"] = await compose_closeout(self.service.runtime, character, brief)
             self._save(row["id"], brief=dump(brief))
         return brief
@@ -247,6 +262,9 @@ class OperationCloseouts:
             character = await self._verified_character(row)
             brief = await self._brief(row, character)
             self._guard(row)
+            if not has_shareable_closeout_material(brief):
+                self._save(row["id"], dynamic_status="skipped", dynamic_error=None, dynamic_retry_at=0)
+                return
             draft = dynamics.prepare_schedule_closeout(row, brief, character)
             self._save(row["id"], dynamic_id=draft["id"])
             if config.dynamic_mode == "automatic" and draft["status"] in {"pending_review", "approved"}:

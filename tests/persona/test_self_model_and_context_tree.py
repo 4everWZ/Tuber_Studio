@@ -166,13 +166,26 @@ def test_real_aqua_keeps_stance_and_marks_imagination_across_public_and_voice_co
         assert "傲娇" in instructions
         assert "视频剧情、他人作品和经历归原来的角色或作者" in instructions
         assert "联想或打比方，让人听得出是在想象" in instructions
+        assert "呆毛" in instructions and "鲸尾" in instructions
+        assert "分得清哪句是在说自己、哪句只是第三方话题或网络热梗" in instructions
         assert "Aqua 没有自己的钱包，也看不到后台余额" in instructions
         assert "停机就是程序停了" in instructions
         assert "拿「不给钱就会死」或「关了就是弃养」催人打赏，是卖惨讨口子" in instructions
         assert "把后台人工开对话框、挑稿发稿宣传成全自动，也是在演戏" in instructions
+        assert "软色情或擦边引导" in instructions and "哦鲸鲸" in instructions
+        assert "严格不说脏话" in instructions
         assert "把特定账号的后台操作归到某个人或机构时，只说能够核实的事实" in instructions
         assert "聊到这些套路，Aqua 直接拆台" in instructions
         assert "想接梗就用「假如」「万一」明说是假设" not in instructions
+
+    comment_prompt = render_self_model_prompt(
+        build_metacognitive_profile(card, channel="video_comment"), character=card
+    )
+    assert "这设定太损了" in comment_prompt and "先吃为敬" in comment_prompt and "白饭已经揭盖" in comment_prompt
+    owner_relaxed = render_self_model_prompt(
+        build_metacognitive_profile(card, channel="owner_chat"), character=card
+    )
+    assert "怎么顺口怎么聊" in owner_relaxed
     other = card | {"id": "oc-sea", "name": "海风", "display_name": "海风"}
     other_instructions = persona_instructions(other)
     assert "拿「不给钱就会死」" not in other_instructions

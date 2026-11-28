@@ -1,18 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiGet, apiPost, studioPath, studioWsUrl } from "@/shared/api/client";
+import { apiPost, apiRequest, studioPath, studioWsUrl } from "@/shared/api/client";
 import { errorMessage } from "@/shared/lib/errors";
 import { LiveSceneCanvas } from "./LiveSceneCanvas";
-import { buildSilentWavBlob } from "./liveControls";
+import { OvertimeHud } from "./OvertimeHud";
 import styles from "./OverlayPlayer.module.css";
 import type {
+  ExtendedLiveShowsStatusData,
+  ObsLayoutId,
+  RundownRuntimeState,
+} from "./consoleTypes";
+import { buildSilentWavBlob } from "./liveControls";
+import type {
+  ColdDirectorStatusData,
   LiveViewData,
   OverlayActiveJob,
   OverlayPlayMessage,
   OverlayWsMessage,
+  OvertimeStatusData,
   PlaybackSnapshot,
 } from "./types";
 
 const AUTH_CLOSE_CODES = new Set([1008, 4401, 4403]);
+
+function readRequestedLayout(): ObsLayoutId | null {
+  if (typeof window === "undefined") return null;
+  const raw = new URLSearchParams(window.location.search).get("layout");
+  if (raw === "game" || raw === "chat") return raw;
+  return null;
+}
 
 function computeMouth(job: OverlayActiveJob | null, audio: HTMLAudioElement): number {
   if (!job?.started || audio.paused || audio.ended || audio.muted || audio.volume === 0) {
@@ -43,6 +58,9 @@ function buildProjectionPlayback(
 
 export function OverlayPlayerApp() {
   const [projectionView, setProjectionView] = useState<LiveViewData | null>(null);
+  const [overtime, setOvertime] = useState<OvertimeStatusData | null>(null);
+  const [coldDirector, setColdDirector] = useState<ColdDirectorStatusData | null>(null);
+  const [rundown, setRundown] = useState<RundownRuntimeState | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<{
     text: string;
     error: boolean;
@@ -217,10 +235,29 @@ export function OverlayPlayerApp() {
     if (loadingRef.current || unmountedRef.current) return;
     loadingRef.current = true;
     try {
-      const nextView = await apiGet<"/api/v1/live/view", LiveViewData>("/api/v1/live/view");
+      const requestedLayout = readRequestedLayout();
+      const viewPath = requestedLayout
+        ? `/api/v1/live/view?layout=${requestedLayout}`
+        : "/api/v1/live/view";
+
+      const [viewRes, showsRes] = await Promise.allSettled([
+        apiRequest<LiveViewData>(viewPath, { method: "GET" }),
+        apiRequest<ExtendedLiveShowsStatusData>("/api/v1/live/shows/status", {
+          method: "GET",
+          cache: "no-store",
+        }),
+      ]);
       if (unmountedRef.current) return;
-      viewRef.current = nextView;
-      draw();
+      if (viewRes.status === "fulfilled") {
+        viewRef.current = viewRes.value;
+        draw();
+      }
+      if (showsRes.status === "fulfilled" && showsRes.value && typeof showsRes.value === "object") {
+        const shows = showsRes.value;
+        if ("overtime" in shows) setOvertime(shows.overtime ?? null);
+        if ("cold_director" in shows) setColdDirector(shows.cold_director ?? null);
+        if ("rundown" in shows) setRundown(shows.rundown ?? null);
+      }
     } catch {
       // The playback websocket owns connection failure and cancellation.
     } finally {
@@ -245,9 +282,9 @@ export function OverlayPlayerApp() {
 
     socket.onmessage = (event) => {
       if (socketRef.current !== socket || unmountedRef.current) return;
-      let message: OverlayWsMessage;
+      let message: OverlayWsMessage | { type: "scene" };
       try {
-        message = JSON.parse(String(event.data)) as OverlayWsMessage;
+        message = JSON.parse(String(event.data)) as OverlayWsMessage | { type: "scene" };
       } catch {
         return;
       }
@@ -280,6 +317,8 @@ export function OverlayPlayerApp() {
         }
       } else if (message.type === "character") {
         stopPlayback();
+        void sync();
+      } else if (message.type === "scene") {
         void sync();
       } else if (
         message.type === "media-control" &&
@@ -430,6 +469,7 @@ export function OverlayPlayerApp() {
         editable={false}
         readMouth={readCurrentMouth}
       />
+      <OvertimeHud overtime={overtime} coldDirector={coldDirector} rundown={rundown} />
       <span
         id="connection"
         className={

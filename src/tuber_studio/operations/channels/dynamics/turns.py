@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from ....core.identity import runtime_identity
 from ....core.models import content_hash
-from ....core.text import operation_output_diagnostics, validate_operation_text
+from ....core.text import detect_reasoning_leak, operation_output_diagnostics, validate_operation_text
 from ....infra.platforms.bilibili.urls import COMMENT_ID
 from ...kernel.generation import generate_with_recovery
 from ...kernel.l2_bridge import (
@@ -149,16 +149,56 @@ def _format_dynamic_sources(public_sources: list[dict[str, Any]], *, self_uid: s
     return "\n".join(lines)
 
 
+_QUOTED_SNIPPET_RE = re.compile(r'「([^「」]+)」|“([^“”]+)”|"([^"\n]+)"')
+_GENERIC_AUTHOR_NAMES = frozenset({"路人", "作者", "用户", "观众", "网友", "匿名", "UP", "UP主", "资料缺失", "作者资料未保存", "未知"})
+_AUTHOR_REF_CUES = ("评论", "刚才", "视频", "那条", "说", "留言", "回复", "吐槽", "提到")
+
+
+def _nontrivial_chars(text: str) -> str:
+    return "".join(ch for ch in text if ch.isalnum())
+
+
+def _has_distinctive_author_ref(content: str, author: str) -> bool:
+    name = str(author or "").strip()
+    if not name or name in _GENERIC_AUTHOR_NAMES:
+        return False
+    if name.isascii():
+        if len(name) < 3 or not re.search(rf"(?<![0-9A-Za-z_]){re.escape(name)}(?![0-9A-Za-z_])", content):
+            return False
+    elif len(name) < 2 or name not in content:
+        return False
+    return any(cue in content for cue in _AUTHOR_REF_CUES)
+
+
 def _has_fragment_match(content: str, snippet: str) -> bool:
+    """Match only verbatim quoted snippets (>= 8 chars) or exact distinctive phrases (>= 10 chars)."""
     text = str(snippet or "").strip()
-    if len(text) < 4:
+    if not text:
+        return False
+    for match in _QUOTED_SNIPPET_RE.finditer(content):
+        quoted = next((group for group in match.groups() if group is not None), "").strip()
+        nontrivial = _nontrivial_chars(quoted)
+        if len(nontrivial) >= 8 and len(set(nontrivial)) >= 4 and quoted in text:
+            return True
+    full_nontrivial = _nontrivial_chars(text)
+    if len(full_nontrivial) < 10 or len(set(full_nontrivial)) < 5:
         return False
     if text in content:
         return True
-    for idx in range(0, max(1, len(text) - 3), 2):
-        frag = text[idx : idx + 4].strip()
-        if len(frag) >= 4 and not frag.isascii() and frag in content:
-            return True
+    for start, ch in enumerate(text):
+        if not ch.isalnum():
+            continue
+        chars: list[str] = []
+        for end in range(start, len(text)):
+            cur = text[end]
+            if cur in "。！？!?\n":
+                break
+            if cur.isalnum():
+                chars.append(cur)
+                if len(chars) == 10:
+                    if len(set(chars)) >= 5 and text[start : end + 1] in content:
+                        return True
+                    break
     return False
 
 
@@ -196,8 +236,8 @@ def _match_grounded_sources(content: str, public_sources: list[dict[str, Any]], 
             (not discussion and bvid and bvid.casefold() in lowered)
             or any(re.search(re.escape(link) + r"(?![0-9A-Za-z_/#])", content) for link in links)
             or (author and f"@{author}" in content)
-            or (not discussion and len(title) >= 4 and title.casefold() in lowered)
-            or (author and len(author) >= 2 and author in content and any(w in content for w in ("评论", "刚才", "视频", "那条", "说")))
+            or (not discussion and len(title) >= 6 and title.casefold() in lowered)
+            or _has_distinctive_author_ref(content, author)
             or _has_fragment_match(content, quote)
             or _has_fragment_match(content, src.get("reply") or "")
             or any(_has_fragment_match(content, piece) for piece in incident_texts)
@@ -371,8 +411,11 @@ async def evaluate_native_dynamic(
 
     def diagnose(decision: dict[str, Any]) -> str | None:
         content = str(decision.get("content") or "")
-        if decision.get("action") == "post" and content and operation_output_diagnostics(content)["needs_review"]:
-            return "正文包含大量重复内容，保留原文待审"
+        if decision.get("action") == "post" and content:
+            if leak := detect_reasoning_leak(content):
+                return leak
+            if operation_output_diagnostics(content)["needs_review"]:
+                return "正文包含大量重复内容，保留原文待审"
         return None
 
     return await generate_with_recovery(

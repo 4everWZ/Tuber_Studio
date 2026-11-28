@@ -1,5 +1,6 @@
 """Build a shareable card from the selected dynamic's public comment sources."""
 
+import html
 import json
 from datetime import datetime
 from functools import lru_cache
@@ -30,14 +31,19 @@ def _references(source):
     return []
 
 
+def _unescape(value):
+    return html.unescape(value) if isinstance(value, str) else ""
+
+
 def _legacy_card(sources):
     for source in sources:
         comments, links = [], {}
         for ref in _references(source):
             bvid, comment_id, quote = (ref.get(key) for key in ("bvid", "comment_id", "quote"))
             url = comment_href(bvid, comment_id) if COMMENT_ID.fullmatch(str(comment_id)) else None
-            if url and isinstance(quote, str) and quote.strip():
-                comments.append({"quote": quote.strip(), "url": url, "author": "作者资料未保存"})
+            cleaned_quote = _unescape(quote).strip() if isinstance(quote, str) else ""
+            if url and cleaned_quote:
+                comments.append({"quote": cleaned_quote, "url": url, "author": "作者资料未保存"})
                 links.setdefault(url, {"bvid": bvid, "url": url})
         if comments:
             return {"comments": comments, "links": list(links.values()), "omitted": 0, "legacy": True}
@@ -52,13 +58,17 @@ def comment_card(sources, *, store=None, actor=None, legacy=False, timezone="Asi
     actor = actor or {}
 
     def add(bvid, identifier, quote, *, author=None, uid=None, created_at=None, parent=None):
-        if not COMMENT_ID.fullmatch(str(identifier)) or not isinstance(quote, str) or not quote.strip():
+        if not COMMENT_ID.fullmatch(str(identifier)) or not isinstance(quote, str):
+            return
+        cleaned_quote = _unescape(quote)
+        if not cleaned_quote.strip():
             return
         url = comment_href(bvid, identifier)
         if not url:
             return
+        cleaned_author = _unescape(author).strip() if isinstance(author, str) else ""
         entries.setdefault(url, {
-            "quote": quote, "url": url, "author": author or "作者资料未保存",
+            "quote": cleaned_quote, "url": url, "author": cleaned_author or "作者资料未保存",
             "uid": str(uid) if uid else None, "created_at": _time(created_at),
             "comment_id": str(identifier), "parent_comment_id": str(parent) if parent else None,
         })
@@ -71,7 +81,7 @@ def comment_card(sources, *, store=None, actor=None, legacy=False, timezone="Asi
             original = _original(store, bvid, comment_id, quote, ref.get("thread_id"))
             captured = published.get("source_discussion") or {}
             anchor = captured.get("source") or {}
-            if str(anchor.get("comment_id")) != str(comment_id) or anchor.get("text") != quote:
+            if str(anchor.get("comment_id")) != str(comment_id) or _unescape(anchor.get("text")) != _unescape(quote):
                 anchor = {}
             url = add(
                 bvid, comment_id, quote,
@@ -96,9 +106,10 @@ def comment_card(sources, *, store=None, actor=None, legacy=False, timezone="Asi
                 )
                 known = {row["comment_id"]: row for row in thread["comments"]}
                 known_anchor = known.get(str(comment_id))
-                if known_anchor and known_anchor["text"] == quote:
+                if known_anchor and _unescape(known_anchor["text"]) == _unescape(quote):
                     item = entries[url]
-                    item.update(author=known_anchor["author_name"] or item["author"],
+                    known_author = _unescape(known_anchor["author_name"]).strip() if isinstance(known_anchor["author_name"], str) else ""
+                    item.update(author=known_author or item["author"],
                                 uid=known_anchor["author_uid"] or item["uid"],
                                 created_at=known_anchor["created_at"] or item["created_at"],
                                 parent_comment_id=known_anchor["parent_comment_id"] or item["parent_comment_id"])
@@ -195,7 +206,9 @@ def _original(store, bvid, identifier, quote, thread):
         "SELECT comment_id,thread_id,parent_comment_id,platform_user_id,display_name,content,created_at "
         "FROM comments WHERE platform='bilibili' AND video_id=? AND comment_id=?", (bvid, identifier),
     )
-    if not row or (thread and str(row["thread_id"]) != str(thread)) or (quote is not None and row["content"] != quote):
+    if not row or (thread and str(row["thread_id"]) != str(thread)) or (
+        quote is not None and _unescape(row["content"]) != _unescape(quote)
+    ):
         return {}
     return row
 
@@ -268,23 +281,35 @@ def render_comment_card(card, page=0):
     if not 0 <= page < card.get("page_count", 1):
         raise ValueError("原评论图页码无效")
     if card.get("legacy"):
-        quotes = [" ".join(comment["quote"].split()) for comment in card["comments"][:4]]
+        quotes = [" ".join(_unescape(comment["quote"]).split()) for comment in card["comments"][:4]]
         return _render(tuple(quote[:177] + "…" if len(quote) > 178 else quote for quote in quotes))
     comments = card["comments"]
     if card.get("version") == 3:
-        entries = tuple((item["author"], item["uid"], item["quote"], item["parent_comment_id"],
-                         item["reply_to"], item["time_label"])
-                        for item in comments[page * MAX_QUOTES:(page + 1) * MAX_QUOTES])
+        entries = tuple(
+            (
+                _unescape(item["author"]),
+                item["uid"],
+                _unescape(item["quote"]),
+                item["parent_comment_id"],
+                _unescape(item["reply_to"]) if item.get("reply_to") else None,
+                item["time_label"],
+            )
+            for item in comments[page * MAX_QUOTES:(page + 1) * MAX_QUOTES]
+        )
         return _render_thread(entries, page + 1, card["page_count"],
                               card["omitted"] if page + 1 == card["page_count"] else 0,
                               card["missing"] if page == 0 else 0)
     if card.get("version") == 2:
-        entries = tuple((item["author"], item["uid"], item["quote"], item["parent_comment_id"] is not None)
-                        for item in comments[page * MAX_QUOTES:(page + 1) * MAX_QUOTES])
+        entries = tuple(
+            (_unescape(item["author"]), item["uid"], _unescape(item["quote"]), item["parent_comment_id"] is not None)
+            for item in comments[page * MAX_QUOTES:(page + 1) * MAX_QUOTES]
+        )
         return _render_discussion(entries, card["omitted"] if page + 1 == card["page_count"] else 0,
                                   page + 1, card["page_count"], card["missing"] if page == 0 else 0)
-    entries = tuple((item["author"], item["uid"], item["quote"], item["parent_comment_id"] is not None)
-                    for item in comments)
+    entries = tuple(
+        (_unescape(item["author"]), item["uid"], _unescape(item["quote"]), item["parent_comment_id"] is not None)
+        for item in comments
+    )
     return _render_discussion(entries, card["omitted"])
 
 

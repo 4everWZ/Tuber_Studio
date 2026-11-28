@@ -1,87 +1,117 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiGet } from "@/shared/api/client";
+import { apiGet, apiRequest } from "@/shared/api/client";
 import styles from "./DrawGuessOverlay.module.css";
-import type { DrawGuessStatusData, DrawGuessStroke } from "./types";
+import { ShowStageLayer } from "./ShowStageLayer";
+import type {
+  ExtendedLiveShowsStatusData,
+  LivePollState,
+  RundownRuntimeState,
+} from "./consoleTypes";
+import type {
+  DrawGuessStatusData,
+  LiveShowsStatusData,
+  RoastRadioStatusData,
+  TurtleSoupStatusData,
+} from "./types";
 
-function renderStroke(stroke: DrawGuessStroke, index: number) {
-  if (stroke.type === "path") {
-    return (
-      <path
-        key={index}
-        d={stroke.d}
-        fill={stroke.fill || "none"}
-        stroke={stroke.stroke || "#38bdf8"}
-        strokeWidth={stroke.width || 4}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    );
-  }
-  if (stroke.type === "circle") {
-    return (
-      <circle
-        key={index}
-        cx={stroke.cx}
-        cy={stroke.cy}
-        r={stroke.r}
-        fill={stroke.fill || "#38bdf8"}
-        stroke={stroke.stroke}
-        strokeWidth={stroke.stroke ? stroke.width || 2 : undefined}
-      />
-    );
-  }
-  if (stroke.type === "ellipse") {
-    return (
-      <ellipse
-        key={index}
-        cx={stroke.cx}
-        cy={stroke.cy}
-        rx={stroke.rx}
-        ry={stroke.ry}
-        fill={stroke.fill || "#38bdf8"}
-      />
-    );
-  }
-  return null;
+function resolveCharacterName(character: LiveShowsStatusData["character"]): string | undefined {
+  if (!character) return undefined;
+  if (typeof character === "string") return character;
+  return character.name;
+}
+
+function isPreviewModeEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("preview") === "1";
 }
 
 export function DrawGuessOverlayApp() {
   const [overlayState, setOverlayState] = useState<DrawGuessStatusData | null>(null);
   const [visible, setVisible] = useState(false);
+  const [turtleSoup, setTurtleSoup] = useState<TurtleSoupStatusData | null>(null);
+  const [roastRadio, setRoastRadio] = useState<RoastRadioStatusData | null>(null);
+  const [livePoll, setLivePoll] = useState<LivePollState | null>(null);
+  const [rundown, setRundown] = useState<RundownRuntimeState | null>(null);
 
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountedRef = useRef(false);
 
+  const previewMode = isPreviewModeEnabled();
+
+  const applyDrawGuess = useCallback((data: DrawGuessStatusData | null | undefined) => {
+    if (data && (data.active || (data.state === "finished" && data.word))) {
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+      setVisible(true);
+      setOverlayState(data);
+    } else if (visibleRef.current && !hideTimerRef.current) {
+      hideTimerRef.current = setTimeout(() => {
+        hideTimerRef.current = null;
+        if (!unmountedRef.current) {
+          setVisible(false);
+          setOverlayState(null);
+        }
+      }, 4000);
+    }
+  }, []);
+
   const poll = useCallback(async () => {
+    try {
+      const shows = await apiRequest<ExtendedLiveShowsStatusData | DrawGuessStatusData>(
+        "/api/v1/live/shows/status",
+        { method: "GET", cache: "no-store" }
+      );
+      if (unmountedRef.current) return;
+
+      const isCombinedPayload =
+        shows &&
+        typeof shows === "object" &&
+        ("draw_and_guess" in shows ||
+          "turtle_soup" in shows ||
+          "roast_radio" in shows ||
+          "poll" in shows ||
+          "rundown" in shows);
+
+      if (isCombinedPayload) {
+        const combined = shows as ExtendedLiveShowsStatusData;
+        const charName = resolveCharacterName(combined.character);
+        const dg = combined.draw_and_guess
+          ? {
+              ...combined.draw_and_guess,
+              character: combined.draw_and_guess.character ?? charName,
+            }
+          : null;
+        applyDrawGuess(dg);
+        setTurtleSoup(combined.turtle_soup ?? null);
+        setRoastRadio(combined.roast_radio ?? null);
+        setLivePoll(combined.poll ?? null);
+        setRundown(combined.rundown ?? null);
+        return;
+      }
+
+      if (shows && typeof shows === "object" && ("active" in shows || "state" in shows)) {
+        applyDrawGuess(shows as DrawGuessStatusData);
+        return;
+      }
+    } catch {
+      // Fallback to legacy draw-and-guess overlay endpoint
+    }
+
     try {
       const data = await apiGet<"/api/v1/live/draw-and-guess/overlay", DrawGuessStatusData>(
         "/api/v1/live/draw-and-guess/overlay",
         { cache: "no-store" }
       );
       if (unmountedRef.current) return;
-
-      if (data.active || (data.state === "finished" && data.word)) {
-        if (hideTimerRef.current) {
-          clearTimeout(hideTimerRef.current);
-          hideTimerRef.current = null;
-        }
-        setVisible(true);
-        setOverlayState(data);
-      } else if (visibleRef.current && !hideTimerRef.current) {
-        hideTimerRef.current = setTimeout(() => {
-          hideTimerRef.current = null;
-          if (!unmountedRef.current) {
-            setVisible(false);
-            setOverlayState(null);
-          }
-        }, 4000);
-      }
+      applyDrawGuess(data);
     } catch {
       // Transient network error ignored in OBS overlay
     }
-  }, []);
+  }, [applyDrawGuess]);
 
   useEffect(() => {
     unmountedRef.current = false;
@@ -99,64 +129,20 @@ export function DrawGuessOverlayApp() {
     };
   }, [poll]);
 
-  const finished = overlayState?.state === "finished";
-  const strokes = overlayState?.revealed_strokes ?? [];
-
   return (
-    <div className={styles.root}>
-      <div id="draw-guess-container" className={styles.container} hidden={!visible}>
-        <div className={styles.header}>
-          <div className={styles.titleRow}>
-            <span>🎨</span>
-            <h3 id="draw-guess-title">
-              {overlayState?.character ? `${overlayState.character} · 你画我猜` : "你画我猜"}
-            </h3>
-            <span id="category-badge" className={styles.badge}>
-              分类: {overlayState?.category || "趣味猜猜看"}
-            </span>
-          </div>
-          <div id="timer-badge" className={styles.timerBadge}>
-            {overlayState?.remaining != null ? `${Math.ceil(overlayState.remaining)}s` : "60s"}
-          </div>
-        </div>
-        <div className={styles.canvasWrap}>
-          <svg id="drawing-board" className={`drawing-board ${styles.drawingBoard}`} viewBox="0 0 400 300">
-            {strokes.map((stroke, idx) => renderStroke(stroke, idx))}
-          </svg>
-          <div
-            id="winner-banner"
-            className={
-              finished
-                ? `winner-banner ${styles.winnerBanner}`
-                : `winner-banner hidden ${styles.winnerBanner} ${styles.winnerBannerHidden}`
-            }
-          >
-            <h4 id="banner-title">{overlayState?.winner ? "🎉 抢答成功！" : "⏰ 时间到！"}</h4>
-            <p id="banner-winner">
-              {overlayState?.winner ? (
-                <>
-                  恭喜 <strong>{overlayState.winner}</strong> 猜对！
-                </>
-              ) : (
-                "没有人猜出来哦~"
-              )}
-            </p>
-            <div id="banner-answer" className={styles.answerTag}>
-              {overlayState?.winner
-                ? `答案：【${overlayState?.word ?? ""}】`
-                : `答案其实是：【${overlayState?.word ?? ""}】`}
-            </div>
-          </div>
-        </div>
-        <div className={styles.hintBar}>
-          <span>
-            发起：<span id="trigger-user">{overlayState?.trigger_user || "观众"}</span>
-          </span>
-          <span id="clue-text" className={styles.clue}>
-            {overlayState?.hint ? `提示: ${overlayState.hint}` : ""}
-          </span>
-        </div>
-      </div>
+    <div
+      id="draw-guess-overlay-root"
+      className={previewMode ? `${styles.root} ${styles.rootPreview}` : styles.root}
+    >
+      <ShowStageLayer
+        drawGuess={overlayState}
+        drawGuessVisible={visible}
+        turtleSoup={turtleSoup}
+        roastRadio={roastRadio}
+        poll={livePoll}
+        rundown={rundown}
+        previewStandby={previewMode}
+      />
     </div>
   );
 }

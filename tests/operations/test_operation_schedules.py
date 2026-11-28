@@ -240,14 +240,46 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
         assert "只在账号可见的旧回复" not in dump(evidence)
         items = {item["kind"]: item for item in reversed(evidence["items"])}
         return {
-            "title": "盐水里能浮起什么", "opening": "我本来想看一个盐水实验，结果评论区先给我出了道题。",
-            "passages": [{"source_id": f"watch:{earlier_id}", "narration": "这让我想起周初看过的另一次沉浮实验。"}]
-            + [{"source_id": items[kind]["source_id"], "narration": line} for kind, line in (
-                ("watched_video", "我看到了杯子里盐分变化以后，鸡蛋慢慢浮起来。"),
-                ("public_reply", "我回了楼里关于加盐顺序的问题，回去看才发现大家盯着不同的步骤。"),
-                ("pending_comment", "有人想看糖能不能做到一样的事，我留了个想法请人先看看。"),
-            )],
-            "closing": "下次泡茶以前，我会先把两袋粉分清楚。", "description": "看一个盐水实验，又翻回评论区找大家争的是哪一步。",
+            "title": "盐水里能浮起什么",
+            "opening": "本来我只是想随手点开一个盐水浮鸡蛋的小实验，结果翻进评论区一看，大家居然为了先放盐还是先搅匀吵出了两派。",
+            "passages": [
+                {
+                    "source_id": f"watch:{earlier_id}",
+                    "section": "deep_dive",
+                    "chapter_title": "周初那场沉浮对比",
+                    "template_hint": "UIShowcase",
+                    "key_points": ["密度变化", "沉浮对照", "周初实验"],
+                    "narration": "先把时间拨回周初我看过的一场沉浮实验。那期 UP 主把不同浓度的液体排成一排对照，只要密度差稍微拉开一点，物体的姿态立刻完全不同。当时我就记了一笔，这种看起来简单的物理直觉，真动手的时候最容易在细节上翻车，结果这周刷到盐水实验果然又对上了。",
+                },
+                {
+                    "source_id": items["watched_video"]["source_id"],
+                    "section": "deep_dive",
+                    "chapter_title": "盐水实验里的关键一步",
+                    "template_hint": "QuoteSpotlight",
+                    "key_points": ["盐分变化", "鸡蛋浮起", "搅拌溶解"],
+                    "narration": "回到本轮看的这条盐水实验，画面里能明显看到杯底的盐分慢慢化开之后，鸡蛋才一点点抬起头来。很多人只盯着最后浮起来那一刻，却漏掉了溶解速度本身就在决定浮力节奏。我盯着进度条来回拉了两遍，发现镜头其实把这层微妙的过渡拍得很老实。",
+                },
+                {
+                    "source_id": items["public_reply"]["source_id"],
+                    "section": "deep_dive",
+                    "chapter_title": "评论区的步骤之争",
+                    "template_hint": "QuoteSpotlight",
+                    "key_points": ["加盐顺序", "楼里讨论", "步骤差异"],
+                    "narration": "更好玩的是评论区，我顺手回复了楼里关于加盐顺序的疑问，结果回头再看才发现大家根本不是在争同一个结论，而是各自盯着完全不同的操作步骤。有人先倒水再慢慢补盐，有人干脆先把浓盐水调好再兑清水，难怪互相说服不了对方。",
+                },
+                {
+                    "source_id": items["pending_comment"]["source_id"],
+                    "section": "side_cut",
+                    "chapter_title": "顺带本周切片",
+                    "template_hint": "MemeCutaway",
+                    "key_points": ["糖水对比", "待审新坑"],
+                    "narration": "顺带记一个还在打磨的衍生坑，有观众提起换成糖水能不能做到差不多的效果，我还特意查了一下两种溶液的饱和度差异，先把这个对比方向留在了待审选题里，等后面有空再细捋成片。",
+                },
+            ],
+            "closing": "其实日常做小实验最怕把顺序弄混，哪怕只差一步，出来的结果都会完全走样。你们平时自己动手的时候，是按步骤一步步试，还是喜欢先把变量一次拉满？评论区聊聊看。",
+            "description": "从一个盐水实验翻进评论区，顺手把周初看过的沉浮对比也串了起来。",
+            "dynamic_post": "刚又翻完一个盐水浮鸡蛋的小实验，结果评论区里大家为了加盐顺序能聊出两套完全不同的流派，连带着我想起周初看的那场沉浮对照。果然动手细节才是最容易让人上头的地方呀。",
+            "dynamic_source_ids": [items["watched_video"]["source_id"], f"watch:{earlier_id}"],
         }
 
     async def dynamic_text(_, text, *, before_send):
@@ -385,8 +417,13 @@ async def test_natural_closeout_publishes_one_dynamic_and_video_in_its_own_windo
     run = browsing.schedules.closeouts.list(schedule["id"])[0]
     assert run["dynamic_status"] == "published", run["last_error"]
     assert run["dynamic_id"] == dynamic_id and len(editorial_inputs) == 1
-    assert sent and "待审 · 《盐水实验》" in sent[0] and "本周较早的沉浮实验" in sent[0]
-    assert f"https://www.bilibili.com/video/{video_id}#reply101" in sent[0]
+    assert sent
+    assert "待审" not in sent[0]
+    assert "收到回执" not in sent[0] and "公开页读回" not in sent[0] and "运营收尾" not in sent[0]
+    assert "《盐水实验》" in sent[0] and "《本周较早的沉浮实验》" in sent[0]
+    assert f"https://www.bilibili.com/video/{video_id}" in sent[0]
+    assert f"https://www.bilibili.com/video/{earlier_id}" in sent[0]
+    assert f"https://www.bilibili.com/video/{video_id}#reply101" not in sent[0]
     assert "尚未发出的原稿" not in sent[0] and "只在账号可见的旧回复" not in sent[0]
     await _tick_with_closeout(browsing, _at(22, 6))
     await _tick_with_closeout(browsing, _at(22, 7))
@@ -409,6 +446,73 @@ async def test_video_window_rolls_after_overnight_operations_and_does_not_submit
     run = browsing.schedules.closeouts.list(schedule["id"])[0]
     assert run["video_status"] == "window_missed"
     assert run["video_job_id"] is None
+
+
+async def test_empty_closeout_skips_dynamic_and_rejects_pending_or_receipt_copy(browsing, monkeypatch):
+    await _prepare_ready(browsing)
+    browsing.store.set("dynamic_policy", {"enabled": True, "auto_publish": True})
+    called = []
+
+    async def fail_if_called(*_args, **_kwargs):
+        called.append(True)
+        raise AssertionError("empty closeout should not compose or publish")
+
+    monkeypatch.setattr(closeout_editorial, "budgeted_json", fail_if_called)
+    monkeypatch.setattr(publisher, "publish_text", fail_if_called)
+
+    schedule = await browsing.schedules.create({
+        "kind": "duration", "duration_minutes": 30, "scope_discovery": False,
+        "closeout": {"dynamic_mode": "automatic", "video_mode": "off"},
+    }, now=_at(18, 0))
+    await _tick_with_closeout(browsing, _at(18, 30))
+    run = browsing.schedules.closeouts.list(schedule["id"])[0]
+    assert run["dynamic_status"] == "skipped"
+    assert run["dynamic_id"] is None
+    assert not called
+
+    # Pending-only drafts without any watched videos or confirmed public interactions also skip.
+    schedule2 = await browsing.schedules.create({
+        "kind": "duration", "duration_minutes": 30, "scope_discovery": False,
+        "closeout": {"dynamic_mode": "automatic", "video_mode": "off"},
+    }, now=_at(19, 0))
+    char = browsing.runtime.character
+    browsing.store.execute(
+        "INSERT INTO browsing_rounds(id,account_id,character_id,preview,status,config,created_at) VALUES"
+        "('pending-only-round',?,?,0,'completed','{}',?)",
+        (browsing.account, char["id"], _at(19, 5)),
+    )
+    browsing.store.execute(
+        "INSERT INTO browsing_intents(id,account_id,character_id,source_key,round_id,kind,status,receipt,target,text,created_at,updated_at) "
+        "VALUES('only-draft',?,?, 'draft-key','pending-only-round','reply_public','pending_review',NULL,?,'未审草稿',?,?)",
+        (browsing.account, char["id"], dump({"bvid": "BV1d8pU6xEZX", "parent": "99", "recipient": "1"}), _at(19, 10), _at(19, 10)),
+    )
+    await _tick_with_closeout(browsing, _at(19, 30))
+    run2 = browsing.schedules.closeouts.list(schedule2["id"])[0]
+    assert run2["dynamic_status"] == "skipped"
+    assert run2["dynamic_id"] is None
+    assert not called
+
+    # CloseoutEditorial rejects banned receipt/pending phrases and fallback drafter rejects empty runs.
+    with pytest.raises(ValueError, match="内部审核或回执"):
+        closeout_editorial.CloseoutEditorial.model_validate({
+            "title": "标题",
+            "opening": "这是一个足够长的开场白用来验证文案约束。",
+            "passages": [
+                {"source_id": "s1", "section": "deep_dive", "chapter_title": "第一章", "narration": "这里展开第一段足够长的深聊口播内容，确保满足单段最小字数要求并能顺利通过基础校验。" * 2},
+                {"source_id": "s2", "section": "deep_dive", "chapter_title": "第二章", "narration": "这里展开第二段足够长的深聊口播内容，确保满足单段最小字数要求并能顺利通过基础校验。" * 2},
+                {"source_id": "s3", "section": "side_cut", "chapter_title": "切片", "narration": "这里是一段足够长的本周切片口播内容，用于凑齐整期复盘所需的字数下限与段落结构要求。" * 2},
+            ],
+            "closing": "最后留个问题给大家，欢迎在评论区一起慢慢讨论吧。",
+            "description": "第一人称简介。",
+            "dynamic_post": "待审 · 这条动态今天收到回执啦。",
+            "dynamic_source_ids": ["s1"],
+        })
+    with pytest.raises(ValueError, match="没有可分享"):
+        browsing.dynamics.prepare_schedule_closeout(
+            {"id": "empty-run", "account_id": browsing.account},
+            {"period_label": "11月27日", "watched_videos": 0, "public_comments": 0, "public_dynamics": 0, "sources": []},
+            char,
+        )
 
 
 def test_operation_schedule_rest_routes_crud(settings):

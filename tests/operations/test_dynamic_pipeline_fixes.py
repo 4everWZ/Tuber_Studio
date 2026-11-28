@@ -144,7 +144,265 @@ def test_visible_planning_and_final_draft_sequence_is_rejected():
     assert operation_output_diagnostics(leaked)["reasoning_leak"] is True
     with pytest.raises(ValueError, match="思考过程"):
         validate_spoken_output(leaked, kind="dynamic")
-    assert validate_spoken_output("Final draft:\n今天终于写完了那份读书笔记。", kind="dynamic")
+    with pytest.raises(ValueError, match="思考过程"):
+        validate_spoken_output("Final draft:\n今天终于写完了那份读书笔记。", kind="dynamic")
+    assert validate_spoken_output("今天终于写完了那份读书笔记，风也挺温柔。", kind="dynamic")
+
+
+def test_post22_english_meta_drafting_markers_and_cues_are_detected():
+    strong_samples = [
+        "Final version:\n今天水波真好看。",
+        "Final output:\n今天水波真好看。",
+        "Final reply:\n今天水波真好看。",
+        "No tool call needed.\n今天水波真好看。",
+        "Output plain text.\n今天水波真好看。",
+        "One more consideration: keep it short.\n今天水波真好看。",
+        "Quote marks: should I drop them?\n今天水波真好看。",
+        "This looks dedup-safe enough.\n今天水波真好看。",
+        "Per the rules I can post now.\n今天水波真好看。",
+    ]
+    for sample in strong_samples:
+        assert detect_reasoning_leak(sample) is not None, sample
+        assert operation_output_diagnostics(sample)["reasoning_leak"] is True
+        with pytest.raises(ValueError, match="思考过程"):
+            validate_spoken_output(sample, kind="dynamic")
+
+    multi_cue_post22 = (
+        'Hmm, "这谁顶得住" sounds a bit awkward here.\n'
+        "Should I skip? No, will treat it as casual banter.\n"
+        "刚刷到一个很有意思的切片。"
+    )
+    assert detect_reasoning_leak(multi_cue_post22) is not None
+    assert operation_output_diagnostics(multi_cue_post22)["needs_review"] is True
+    # Single benign cue alone should not false-positive
+    assert detect_reasoning_leak("这段英语台词听着 a bit awkward，但配音很可爱。") is None
+
+
+async def test_native_dynamic_diagnose_reports_cot_leak_and_blocks_auto_publish(settings, store, monkeypatch):
+    from tuber_studio.operations.channels.dynamics.turns import evaluate_native_dynamic
+
+    leaked = (
+        "No tool call needed. One more consideration: keep it dedup-safe.\n\n"
+        "今天去海边散了一会儿步。"
+    )
+
+    async def fake_run_tool_session(*args, **kwargs):
+        return SimpleNamespace(
+            action="speak",
+            text=leaked,
+            skip_reason="",
+            skip_explanation="",
+            tool_calls=[],
+        )
+
+    monkeypatch.setattr(
+        "tuber_studio.operations.channels.dynamics.turns.run_tool_session",
+        fake_run_tool_session,
+    )
+
+    account = SimpleNamespace(
+        adapter=SimpleNamespace(),
+        credential_lock=asyncio.Lock(),
+        credentials={"sessdata": "s", "csrf": "c"},
+        credentials_configured=True,
+        display_account_id=lambda: "100",
+    )
+    runtime = SimpleNamespace(
+        operation_llm=SimpleNamespace(config={}),
+        operation_responses=SimpleNamespace(),
+        generation_lock=asyncio.Lock(),
+    )
+    dynamics = Dynamics(settings, store, runtime, SimpleNamespace(account=account), account=account)
+    await dynamics.set_policy({"enabled": True, "auto_publish": True, "evaluate_interval_seconds": 300})
+    char = store.character()
+    dynamics.operations.configure({"enabled": True}, account_id="100", character=char)
+
+    decision, cont = await evaluate_native_dynamic(
+        dynamics,
+        char=char,
+        evaluation_account="100",
+        recent_posts=[],
+        related_posts=[],
+        public_sources=[],
+        unified_public=[],
+        current_time="2026-11-28T00:00:00+08:00",
+    )
+    assert cont["state"] == "awaiting_review"
+    assert cont["feedback"]["kind"] == "style_diagnostic"
+    assert "思考过程" in cont["feedback"]["message"]
+    assert "重复" not in cont["feedback"]["message"]
+
+    # Automatic publishing must refuse leaked drafts
+    saved = dynamics._save_decision(
+        char,
+        False,
+        decision,
+        [],
+        schedule=False,
+        account_id="100",
+        decide_image=False,
+    )
+    dynamics._automatic_post_id = saved["post_id"]
+    with pytest.raises(ValueError, match="正文诊断尚待审核"):
+        await dynamics.publish(saved["post_id"], automatic=True)
+
+
+def test_grounded_source_matching_rejects_loose_four_char_cross_video_overlap():
+    sources = [
+        {
+            "id": "comment:BV1q5sa6JEyt:101:202",
+            "type": "public_comment",
+            "fictional": False,
+            "participants": [{"name": "路人甲乙", "uid": "222"}],
+            "reference": {
+                "author_name": "路人甲乙",
+                "author_uid": "222",
+                "comment_id": "202",
+                "resource": "BV1q5sa6JEyt",
+                "thread_id": "101",
+            },
+            "source_url": "https://www.bilibili.com/video/BV1q5sa6JEyt#reply202",
+            "text": "这谁顶得住啊，凌晨三点还在看海鲜吃播。",
+        },
+        {
+            "id": "video:BV1gMsM6TE9u",
+            "type": "watched_video",
+            "fictional": False,
+            "source_url": "https://www.bilibili.com/video/BV1gMsM6TE9u",
+            "text": "深夜海鲜大排档 · 已读片段\nCID 1 · 10s · 画面 · 炭火烤生蚝",
+            "participants": [{"uid": "333", "name": "炭火厨师"}],
+        },
+        {
+            "id": "video:BV1short12345",
+            "type": "watched_video",
+            "fictional": False,
+            "source_url": "https://www.bilibili.com/video/BV1short12345",
+            "text": "短标题 · 已读片段\nCID 1 · 5s · 画面 · 随便拍拍",
+            "participants": [{"uid": "444", "name": "路人"}],
+        },
+    ]
+
+    # #24 regression: "这谁顶得住" in a post about BV1gMsM6TE9u must NOT attach unrelated BV1q5sa6JEyt
+    post = "刚看完 BV1gMsM6TE9u 的炭火烤生蚝，这谁顶得住啊！顺带一提那个短标题也挺常见。"
+    matched, link_ids, illustration = _match_grounded_sources(post, sources)
+    assert matched == ["video:BV1gMsM6TE9u"]
+    assert link_ids == ["video:BV1gMsM6TE9u"]
+    assert illustration == "none"
+
+    # Quoted snippet < 8 non-trivial chars must NOT match, >= 8 non-trivial chars in quotes DOES match
+    short_quote_post = "今天刷到一句「这谁顶得住」，笑死。"
+    assert _match_grounded_sources(short_quote_post, sources) == ([], [], "none")
+
+    long_quote_post = "今天在评论区看到有人说「凌晨三点还在看」，太真实了。"
+    assert _match_grounded_sources(long_quote_post, sources) == ([], [], "none")
+
+    exact_quote_post = "今天在评论区看到有人说「点还在看海鲜吃播」，太真实了。"
+    matched_q, links_q, ill_q = _match_grounded_sources(exact_quote_post, sources)
+    assert matched_q == ["comment:BV1q5sa6JEyt:101:202"]
+    assert links_q == ["comment:BV1q5sa6JEyt:101:202"]
+    assert ill_q == "comment_card"
+
+    # Unquoted < 10 non-trivial chars does NOT match; >= 10 non-trivial chars matches; explicit video title >= 6 chars matches
+    assert _match_grounded_sources("今天也点还在看海鲜吃播呢。", sources) == ([], [], "none")
+    phrase_post = "突然想起深夜海鲜大排档那个视频，还看到有人说凌晨三点还在看海鲜吃播。"
+    matched_p, _, _ = _match_grounded_sources(phrase_post, sources)
+    assert set(matched_p) == {"comment:BV1q5sa6JEyt:101:202", "video:BV1gMsM6TE9u"}
+
+
+def test_comment_card_unescapes_html_entities_across_build_legacy_and_render(monkeypatch):
+    from io import BytesIO
+
+    from PIL import Image, ImageFont
+
+    monkeypatch.setattr(comment_card_module, "_font", lambda size: ImageFont.load_default())
+    escaped_sources = [
+        {
+            "id": "comment:BV1q5WZ6HEFD:100:200",
+            "type": "public_comment",
+            "reference": {
+                "author_name": "小鱼&#34;一号&#34;",
+                "author_uid": "555",
+                "comment_id": "200",
+                "resource": "BV1q5WZ6HEFD",
+                "thread_id": "100",
+            },
+            "text": "他说&#34;十袋米&#34; &amp; 两碗汤",
+        }
+    ]
+    clean_sources = [
+        {
+            "id": "comment:BV1q5WZ6HEFD:100:200",
+            "type": "public_comment",
+            "reference": {
+                "author_name": '小鱼"一号"',
+                "author_uid": "555",
+                "comment_id": "200",
+                "resource": "BV1q5WZ6HEFD",
+                "thread_id": "100",
+            },
+            "text": '他说"十袋米" & 两碗汤',
+        }
+    ]
+
+    card = comment_card_module.comment_card(escaped_sources)
+    assert card == comment_card_module.comment_card(clean_sources)
+    assert card["comments"][0]["quote"] == '他说"十袋米" & 两碗汤'
+    assert card["comments"][0]["author"] == '小鱼"一号"'
+
+    legacy = comment_card_module.comment_card(escaped_sources, legacy=True)
+    assert legacy["comments"][0]["quote"] == '他说"十袋米" & 两碗汤'
+
+    # Even a previously stored card dict containing literal &#34; renders identically to the unescaped card
+    stale_snapshot = {
+        "version": 3,
+        "comments": [
+            {
+                "quote": "他说&#34;十袋米&#34; &amp; 两碗汤",
+                "url": "https://www.bilibili.com/video/BV1q5WZ6HEFD#reply200",
+                "author": "小鱼&#34;一号&#34;",
+                "uid": "555",
+                "created_at": None,
+                "comment_id": "200",
+                "parent_comment_id": None,
+                "reply_to": "前排&#34;路人&#34;",
+                "time_label": None,
+            }
+        ],
+        "links": [{"bvid": "BV1q5WZ6HEFD", "url": "https://www.bilibili.com/video/BV1q5WZ6HEFD#reply200"}],
+        "omitted": 0,
+        "missing": 0,
+        "page_count": 1,
+    }
+    clean_snapshot = {
+        **stale_snapshot,
+        "comments": [
+            {
+                **stale_snapshot["comments"][0],
+                "quote": '他说"十袋米" & 两碗汤',
+                "author": '小鱼"一号"',
+                "reply_to": '前排"路人"',
+            }
+        ],
+    }
+    rendered_stale = comment_card_module.render_comment_card(stale_snapshot)
+    rendered_clean = comment_card_module.render_comment_card(clean_snapshot)
+    assert rendered_stale == rendered_clean
+    with Image.open(BytesIO(rendered_stale)) as img:
+        assert img.format == "PNG"
+
+    rendered_legacy_stale = comment_card_module.render_comment_card({
+        "legacy": True,
+        "comments": [{"quote": "他说&#34;十袋米&#34;", "url": "https://x.invalid", "author": "作者资料未保存"}],
+        "links": [],
+        "omitted": 0,
+    })
+    rendered_legacy_clean = comment_card_module.render_comment_card({
+        "legacy": True,
+        "comments": [{"quote": '他说"十袋米"', "url": "https://x.invalid", "author": "作者资料未保存"}],
+        "links": [],
+        "omitted": 0,
+    })
+    assert rendered_legacy_stale == rendered_legacy_clean
 
 
 def test_organized_third_party_quote_keeps_its_author_in_dynamic_context():

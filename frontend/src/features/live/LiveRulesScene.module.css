@@ -1,0 +1,446 @@
+.rulesRoot {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pageHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.pageHeaderSub {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.deskJumpLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: 10px;
+  border: 1px solid #8fc2ba;
+  background: #edf6f4;
+  color: #1f5c63;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.deskJumpLink:hover {
+  background: #e1f0ed;
+  color: #16484e;
+}
+
+.subTabBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f6faf9;
+}
+
+.subTabBtn {
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #46636b;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.subTabBtn:hover:not(:disabled) {
+  background: #eaf3f1;
+  border-color: #d0e3df;
+}
+
+.subTabBtn[aria-selected="true"] {
+  background: #ffffff;
+  border-color: #8cc2b9;
+  color: #1b565e;
+  font-weight: 650;
+  box-shadow: 0 1px 3px rgba(20, 60, 68, 0.08);
+}
+
+.tabPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.twoColGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.compactFormGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  gap: 10px 12px;
+  margin-top: 8px;
+}
+
+.presetGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.presetCard {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fbfa;
+}
+
+.presetCardActive {
+  border-color: #5ca59b;
+  background: #eef7f5;
+}
+
+.presetHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gamePoolGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.gamePoolCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfdfc;
+  cursor: pointer;
+  margin-top: 0;
+  font-weight: 500;
+}
+
+.gamePoolCardChecked {
+  border-color: #5ca59b;
+  background: #eef7f5;
+}
+
+.gamePoolInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.gamePoolTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.layoutTag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.layoutTagGame {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.layoutTagChat {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.segmentList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.segmentCard {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  background: #fbfdfc;
+}
+
+.segmentHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e6efec;
+}
+
+.segmentTitleBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+}
+
+.segmentIndex {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: #e3f0ec;
+  color: #215a61;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rowActions button {
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.segmentFineBox {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px dashed #c2dad5;
+  background: #f5faf8;
+}
+
+.checksRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-top: 10px;
+}
+
+.saveBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f5faf8;
+}
+
+.dirtyPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.cleanPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #e6f3e9;
+  color: #2c6b58;
+}
+
+.matrixGroup {
+  border: 1px solid var(--win-border-light);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.matrixGroup legend {
+  font-weight: 650;
+  padding: 0 6px;
+}
+
+.scheduleList {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.scheduleRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7fbfa;
+}
+
+.scheduleMeta {
+  min-width: 0;
+  flex: 1;
+}
+
+.scheduleMeta strong,
+.scheduleMeta small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.scheduleMeta small {
+  color: #49676e;
+  font-size: 12px;
+}
+
+.quickActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+
+.showSubBox {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7fbfa;
+  font-size: 12px;
+}
+
+.showSubBox p {
+  margin: 4px 0;
+}
+
+/* Dual OBS Layout Switcher & Transparent Checkerboard Preview in LiveScenePage */
+.profileSwitcherBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f6faf9;
+}
+
+.profileTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profileBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #ffffff;
+  color: #3a5961;
+  font-weight: 550;
+}
+
+.profileBtn[aria-pressed="true"] {
+  border-color: #4b968c;
+  background: #e9f5f3;
+  color: #184f57;
+  font-weight: 650;
+}
+
+.profileStatusMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #48676e;
+}
+
+.activeBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.lockedBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.transparentCanvasShell {
+  background-color: #f3f7f5;
+  background-image:
+    linear-gradient(45deg, #dce6e2 25%, transparent 25%),
+    linear-gradient(-45deg, #dce6e2 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #dce6e2 75%),
+    linear-gradient(-45deg, transparent 75%, #dce6e2 75%);
+  background-size: 24px 24px;
+  background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+}
+
+.transparentTag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-weight: 600;
+}

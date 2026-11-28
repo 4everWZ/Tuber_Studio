@@ -16,7 +16,7 @@ from tuber_studio.infra.inference.http_api import (
     response_json,
 )
 from tuber_studio.infra.inference.providers import read_chat_stream
-from tuber_studio.infra.inference.responses_provider import ResponsesClient
+from tuber_studio.infra.inference.responses_provider import ResponsesClient, thinking_budget
 
 TOOL = {"type": "function", "name": "lookup", "description": "Read the status of a ticket.",
         "parameters": {"type": "object", "properties": {"ticket": {"type": "string"}}, "required": ["ticket"],
@@ -150,6 +150,33 @@ async def test_responses_client_forwards_explicit_temperature_only(monkeypatch):
         await client.create("zero temp", tools=[TOOL], temperature=0.0)
     assert "temperature" not in payloads[0]
     assert payloads[1]["temperature"] == 0.0
+
+
+async def test_thinking_budget_scales_up_to_2048_preserving_half_output_and_overrides(monkeypatch):
+    assert thinking_budget(8192) == 2048
+    assert thinking_budget(4096) == 2048
+    assert thinking_budget(2048) == 1024
+    assert thinking_budget(1024) == 512
+    assert thinking_budget(768) == 192
+    assert thinking_budget(128) == 32
+    assert thinking_budget(1) == 0
+
+    payloads = []
+
+    async def transport(client, method, path, *, payload=None):
+        payloads.append(payload)
+        return completed([call_item("tb", "A")])
+
+    monkeypatch.setattr("tuber_studio.infra.inference.responses_provider.response_json", transport)
+    async with ResponsesClient({"base_url": "https://api.example/llm/v1", "model": "worker"}) as client:
+        await client.create("default 8k", tools=[TOOL], max_output_tokens=8192)
+        await client.create("explicit small", tools=[TOOL], max_output_tokens=640, thinking_budget_tokens=160)
+        await client.create("explicit mid", tools=[TOOL], max_output_tokens=8192, thinking_budget_tokens=1500)
+        await client.create("oversized override", tools=[TOOL], max_output_tokens=8192, thinking_budget_tokens=6000)
+    assert payloads[0]["thinking_token_budget"] == 2048
+    assert payloads[1]["thinking_token_budget"] == 160
+    assert payloads[2]["thinking_token_budget"] == 1500
+    assert payloads[3]["thinking_token_budget"] == 2048
 
 
 @pytest.mark.skipif(os.getenv("TUBER_TEST_LIVE_RESPONSES") != "1", reason="explicit workstation test only")
