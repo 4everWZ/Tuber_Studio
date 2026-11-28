@@ -576,11 +576,11 @@ class DynamicModel:
                 text="",
                 raw={},
             )
-        if "[公开经历 ·" in user_text:
+        if "[公开经历记录 ·" in user_text:
             return ResponseTurn(id="dyn-incident", calls=(), text="刚才回评论接错楼了，你消息是不是回错了那条赶紧记录一下。", raw={})
         if "[评论区互动" in user_text:
-            match = re.search(r"说：「([^」]+)」", user_text)
-            frag = (match.group(1)[:8] if match else "评论区")
+            match = re.search(r'\[评论区互动[^\n]*?，原话 ("(?:\\.|[^"\\])*")', user_text)
+            frag = json.loads(match.group(1))[:8] if match else "评论区"
             return ResponseTurn(id="dyn-reply", calls=(), text=f"海底小剧场：今天又多盛了一碗饭，刚和人聊到「{frag}」。", raw={})
         return ResponseTurn(id="dyn-story", calls=(), text="海底小剧场：今天又多盛了一碗饭。", raw={})
 

@@ -22,7 +22,12 @@ from tuber_studio.infra.platforms.bilibili.browser_comments import (
     resolve_browser_profile_dir,
 )
 from tuber_studio.infra.platforms.bilibili.browsing import BrowsingAdapter
-from tuber_studio.infra.platforms.bilibili.client import BILIBILI_WEB_USER_AGENT, BilibiliAccountExpired, BilibiliAdapter, PlatformReadError
+from tuber_studio.infra.platforms.bilibili.client import (
+    BILIBILI_WEB_USER_AGENT,
+    BilibiliAccountExpired,
+    BilibiliAdapter,
+    PlatformReadError,
+)
 
 BV = "BV1wQs16aEF3"
 CREDS = {"sessdata": "sess-secret", "csrf": "csrf-secret", "uid": "10086"}
@@ -292,8 +297,6 @@ async def test_top_level_video_and_dynamic_publish_order_and_receipt(tmp_path):
     page = FakePage()
     publisher, _, _ = _make_publisher(tmp_path, page=page)
     order: list[str] = []
-
-    orig_click = page.locator(TOP_LEVEL_PUBLISH_SELECTOR).click
 
     def record_pub_click():
         order.append("publish_click")
