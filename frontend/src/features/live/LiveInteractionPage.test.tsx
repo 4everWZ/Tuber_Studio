@@ -222,12 +222,18 @@ describe("LiveInteractionPage & Dual-Layout LiveScenePage", () => {
     fireEvent.click(stardewToggle);
     expect(stardewToggle.checked).toBe(true);
 
-    // Edit chat_entry opening mode, opening minutes, min_votes = 0, and hot-chat threshold
+    // Edit & save custom short/flexible durations (1m opening chat, 2m segment, 10m extend chat, 30m default game)
     fireEvent.change(document.getElementById("rundown-opening-mode") as HTMLSelectElement, {
       target: { value: "direct_rundown" },
     });
     fireEvent.change(document.getElementById("rundown-opening-minutes") as HTMLInputElement, {
-      target: { value: "20" },
+      target: { value: "1" },
+    });
+    fireEvent.change(document.getElementById("rundown-extend-chat-minutes") as HTMLInputElement, {
+      target: { value: "10" },
+    });
+    fireEvent.change(document.getElementById("rundown-default-game-minutes") as HTMLInputElement, {
+      target: { value: "30" },
     });
     fireEvent.change(document.getElementById("rundown-min-votes") as HTMLInputElement, {
       target: { value: "0" },
@@ -236,7 +242,7 @@ describe("LiveInteractionPage & Dual-Layout LiveScenePage", () => {
       target: { value: "18" },
     });
 
-    // Add a new segment, move up, edit title & kind to draw_and_guess, edit fine duration
+    // Add a new segment, move up, edit title & kind to draw_and_guess, edit segment duration (2m) & fine duration
     const beforeSegCount = document.querySelectorAll("[data-rundown-segment]").length;
     fireEvent.click(document.getElementById("rundown-add-segment-btn") as HTMLButtonElement);
     const segCards = document.querySelectorAll("[data-rundown-segment]");
@@ -255,6 +261,10 @@ describe("LiveInteractionPage & Dual-Layout LiveScenePage", () => {
       { target: { value: "draw_and_guess" } }
     );
     fireEvent.change(
+      document.querySelector(`[data-segment-duration="${newSegId}"]`) as HTMLInputElement,
+      { target: { value: "2" } }
+    );
+    fireEvent.change(
       document.querySelector(`[data-segment-dg-duration="${newSegId}"]`) as HTMLInputElement,
       { target: { value: "90" } }
     );
@@ -270,7 +280,9 @@ describe("LiveInteractionPage & Dual-Layout LiveScenePage", () => {
     const savedBody = putReq?.body as RundownStatusResponse["plan"];
     expect(savedBody.enabled_games).toContain("stardew_valley");
     expect(savedBody.chat_entry.opening_mode).toBe("direct_rundown");
-    expect(savedBody.chat_entry.opening_chat_minutes).toBe(20);
+    expect(savedBody.chat_entry.opening_chat_minutes).toBe(1);
+    expect(savedBody.chat_entry.extend_chat_minutes).toBe(10);
+    expect(savedBody.chat_entry.default_game_duration_minutes).toBe(30);
     expect(savedBody.chat_entry.min_votes).toBe(0);
     expect(savedBody.chat_entry.chat_hot_threshold_per_2m).toBe(18);
     expect(
@@ -279,6 +291,7 @@ describe("LiveInteractionPage & Dual-Layout LiveScenePage", () => {
           s.id === newSegId &&
           s.title === "加赛你画我猜" &&
           s.kind === "draw_and_guess" &&
+          s.duration_minutes === 2 &&
           s.obs_layout === "game" &&
           s.settings.round_duration_sec === 90
       )

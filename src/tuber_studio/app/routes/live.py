@@ -424,8 +424,8 @@ def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None
         return runtime.live.rundown.snapshot()
 
     @app.post(prefix + "/rundown/vote-now", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
-    async def vote_now_rundown():
-        res = await runtime.live.rundown.open_game_vote()
+    async def vote_now_rundown(data: dict = Body(default_factory=dict)):
+        res = await runtime.live.rundown.open_game_vote(duration_seconds=data.get("duration_seconds"))
         return runtime.live.rundown.snapshot() | {"poll": res["poll"]}
 
     @app.post(prefix + "/rundown/settle-vote", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
@@ -439,8 +439,19 @@ def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None
 
     @app.post(prefix + "/rundown/extend-chat", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def extend_chat_rundown(data: dict = Body(default_factory=dict)):
-        res = await runtime.live.rundown.extend_chat(minutes=int(data.get("minutes", 15)))
+        raw_mins = data.get("minutes")
+        res = await runtime.live.rundown.extend_chat(
+            minutes=None if raw_mins is None else int(raw_mins)
+        )
         await _push_scene_if_changed(res)
+        return runtime.live.rundown.snapshot()
+
+    @app.post(prefix + "/rundown/adjust-time", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def adjust_time_rundown(data: dict = Body(...)):
+        runtime.live.rundown.adjust_time(
+            delta_minutes=data.get("delta_minutes"),
+            set_remaining_minutes=data.get("set_remaining_minutes"),
+        )
         return runtime.live.rundown.snapshot()
 
     @app.get(prefix + "/fine-settings", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])

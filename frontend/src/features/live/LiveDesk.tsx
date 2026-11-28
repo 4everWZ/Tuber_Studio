@@ -66,6 +66,27 @@ export function LiveDesk({
   const [actionError, setActionError] = useState("");
   const [actionState, setActionState] = useState("");
   const [activeDockTab, setActiveDockTab] = useState<DockTabId>("rundown");
+  const [layoutMode, setLayoutMode] = useState<"cockpit" | "theater">(() => {
+    if (typeof window === "undefined") return "cockpit";
+    try {
+      return window.localStorage.getItem("live_console_layout_mode") === "theater"
+        ? "theater"
+        : "cockpit";
+    } catch {
+      return "cockpit";
+    }
+  });
+
+  const handleLayoutModeChange = useCallback((nextMode: "cockpit" | "theater") => {
+    setLayoutMode(nextMode);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem("live_console_layout_mode", nextMode);
+      } catch {
+        // Ignore storage errors
+      }
+    }
+  }, []);
 
   const pollTaskRef = useRef<Promise<void> | null>(null);
   const queueListRef = useRef<HTMLOListElement | null>(null);
@@ -377,6 +398,8 @@ export function LiveDesk({
         shows={shows}
         rundown={rundownState}
         sceneLayout={sceneLayout}
+        layoutMode={layoutMode}
+        onLayoutModeChange={handleLayoutModeChange}
         canAct={canAct}
         enabled={enabled}
         overlayUrl={settings?.overlay_url ?? undefined}
@@ -411,14 +434,15 @@ export function LiveDesk({
         </p>
       </div>
 
-      <div className={styles.consoleGrid}>
-        <div className={styles.consoleMainCol}>
+      {layoutMode === "cockpit" ? (
+        <div className={styles.cockpitGrid} data-console-grid-mode="cockpit">
           <StageMonitor
             view={view}
             shows={shows}
             poll={poll}
             rundown={rundownState}
             activeLayout={sceneLayout.active_layout}
+            compactViewport
             mediaDisabled={mediaDisabled}
             skipDisabled={skipDisabled}
             onMediaToggle={() => handleControl("media")}
@@ -437,9 +461,7 @@ export function LiveDesk({
             canAct={canAct}
             onPostAction={handlePostAction}
           />
-        </div>
 
-        <div className={styles.consoleRailCol}>
           <ContextualMockRail
             view={view}
             poll={poll}
@@ -458,7 +480,56 @@ export function LiveDesk({
             queueHeadingRef={queueHeadingRef}
           />
         </div>
-      </div>
+      ) : (
+        <div className={styles.consoleGrid} data-console-grid-mode="theater">
+          <div className={styles.consoleMainCol}>
+            <StageMonitor
+              view={view}
+              shows={shows}
+              poll={poll}
+              rundown={rundownState}
+              activeLayout={sceneLayout.active_layout}
+              mediaDisabled={mediaDisabled}
+              skipDisabled={skipDisabled}
+              onMediaToggle={() => handleControl("media")}
+              onSkip={() => handleControl("skip")}
+              sceneLinkProps={renderViewLink("scene")}
+            />
+
+            <ShowDock
+              activeTab={activeDockTab}
+              onTabChange={setActiveDockTab}
+              shows={shows}
+              poll={poll}
+              rundownStatus={rundownStatus}
+              gameStatus={gameStatus}
+              busy={pending}
+              canAct={canAct}
+              onPostAction={handlePostAction}
+            />
+          </div>
+
+          <div className={styles.consoleRailCol}>
+            <ContextualMockRail
+              view={view}
+              poll={poll}
+              activeDockTab={activeDockTab}
+              canAct={canAct}
+              enabled={enabled}
+              clearDisabled={clearDisabled}
+              onQueueChange={handleQueueChange}
+              onClearQueue={() => handleControl("clear")}
+              onInjectMock={handleInjectMock}
+              onSettleVote={() =>
+                void handlePostAction("/api/v1/live/rundown/settle-vote", {}, "已结算投票并执行兜底推进。")
+              }
+              musicLinkProps={renderViewLink("music")}
+              queueListRef={queueListRef}
+              queueHeadingRef={queueHeadingRef}
+            />
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -42,6 +42,7 @@ export interface StageMonitorProps {
   poll: LivePollState | null;
   rundown: RundownRuntimeState | null;
   activeLayout: ObsLayoutId;
+  compactViewport?: boolean;
   mediaDisabled: boolean;
   skipDisabled: boolean;
   onMediaToggle: () => void;
@@ -58,6 +59,7 @@ export function StageMonitor({
   poll,
   rundown,
   activeLayout,
+  compactViewport = false,
   mediaDisabled,
   skipDisabled,
   onMediaToggle,
@@ -105,7 +107,10 @@ export function StageMonitor({
   );
 
   return (
-    <section className={`panel ${styles.deskPanel}`} aria-labelledby="desk-program-title">
+    <section
+      className={`panel ${styles.deskPanel} ${compactViewport ? styles.cockpitPanel : ""}`}
+      aria-labelledby="desk-program-title"
+    >
       <div className={styles.deskPanelHeading}>
         <div className={styles.topBarCluster}>
           <h2 id="desk-program-title">主舞台监视器</h2>
@@ -135,7 +140,7 @@ export function StageMonitor({
       </div>
 
       <div
-        className={`${styles.stageViewport} ${isTransparentStage ? styles.stageCheckerboard : ""}`}
+        className={`${styles.stageViewport} ${compactViewport ? styles.stageViewportCockpit : ""} ${isTransparentStage ? styles.stageCheckerboard : ""}`}
         data-desk-preview
         data-layer-mode={layerMode}
       >

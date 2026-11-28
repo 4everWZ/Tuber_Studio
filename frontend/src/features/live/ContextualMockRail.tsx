@@ -98,11 +98,33 @@ export function ContextualMockRail({
   const [feedTab, setFeedTab] = useState<FeedTabId>("chat");
   const [follow, setFollow] = useState(true);
   const [unread, setUnread] = useState(0);
+  const [simCollapsed, setSimCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem("live_console_sim_collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
 
   const [mockType, setMockType] = useState<MockEventType>("chat");
   const [mockName, setMockName] = useState("测试观众");
   const [mockText, setMockText] = useState("");
   const [mockAsset, setMockAsset] = useState("");
+
+  const toggleSimulator = () => {
+    setSimCollapsed((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem("live_console_sim_collapsed", String(next));
+        } catch {
+          // Ignore storage quota / privacy mode errors
+        }
+      }
+      return next;
+    });
+  };
 
   const sessionIdRef = useRef<string | null | undefined>(undefined);
   const chatIdsRef = useRef<Set<string | number>>(new Set());
@@ -207,7 +229,10 @@ export function ContextualMockRail({
   const mockDisabled = !canAct || !enabled;
 
   return (
-    <aside className={`panel ${styles.deskPanel}`} aria-label="直播流与场景模拟器">
+    <aside
+      className={`panel ${styles.deskPanel} ${styles.cockpitPanel} ${styles.railPanel}`}
+      aria-label="直播流与场景模拟器"
+    >
       <div className={styles.deskPanelHeading}>
         <h2>直播流与队列</h2>
         <button
@@ -434,13 +459,26 @@ export function ContextualMockRail({
 
       <div className={styles.simSection} data-desk-quick-mock>
         <div className={styles.deskPanelHeading} style={{ marginBottom: 0 }}>
-          <strong style={{ fontSize: 13 }}>场景模拟器</strong>
-          <span className={styles.deskChip} data-simulator-context>
-            {pollActive ? "投票进行中" : DOCK_CONTEXT_LABELS[activeDockTab]}
-          </span>
+          <div className={styles.topBarCluster}>
+            <strong style={{ fontSize: 13 }}>场景模拟器</strong>
+            <span className={styles.deskChip} data-simulator-context>
+              {pollActive ? "投票进行中" : DOCK_CONTEXT_LABELS[activeDockTab]}
+            </span>
+          </div>
+          <button
+            type="button"
+            className={styles.compactBtn}
+            data-simulator-toggle
+            aria-expanded={!simCollapsed}
+            onClick={toggleSimulator}
+          >
+            {simCollapsed ? "展开模拟器 ▸" : "收起模拟器 ▾"}
+          </button>
         </div>
 
-        <div className={styles.quickActions}>
+        {!simCollapsed && (
+          <>
+            <div className={styles.quickActions}>
           {pollActive ? (
             <>
               {(poll?.options ?? []).slice(0, 4).map((opt, idx) => (
@@ -727,6 +765,8 @@ export function ContextualMockRail({
             </fieldset>
           </form>
         </details>
+          </>
+        )}
       </div>
     </aside>
   );

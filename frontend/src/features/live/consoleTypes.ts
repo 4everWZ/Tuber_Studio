@@ -67,6 +67,8 @@ export interface ChatEntryConfig {
   allow_chat_vote_trigger: boolean;
   vote_trigger_threshold: number;
   allow_chat_extend: boolean;
+  extend_chat_minutes?: number;
+  default_game_duration_minutes?: number;
   chat_adaptive_enabled: boolean;
   chat_hot_threshold_per_2m: number;
 }

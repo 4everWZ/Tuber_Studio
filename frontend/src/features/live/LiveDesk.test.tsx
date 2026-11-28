@@ -480,6 +480,79 @@ describe("LiveDesk", () => {
         metadata: { gift_name: "白饭应援", count: 1, price: 100 },
       });
     });
+
+    // Layout mode switcher (cockpit -> theater -> cockpit) & collapsible simulator
+    expect(document.querySelector('[data-console-grid-mode]')?.getAttribute("data-console-grid-mode")).toBe(
+      "cockpit"
+    );
+    fireEvent.click(document.querySelector('[data-console-layout="theater"]') as HTMLButtonElement);
+    expect(document.querySelector('[data-console-grid-mode]')?.getAttribute("data-console-grid-mode")).toBe(
+      "theater"
+    );
+    fireEvent.click(document.querySelector('[data-console-layout="cockpit"]') as HTMLButtonElement);
+    expect(document.querySelector('[data-console-grid-mode]')?.getAttribute("data-console-grid-mode")).toBe(
+      "cockpit"
+    );
+
+    fireEvent.click(document.querySelector("[data-simulator-toggle]") as HTMLButtonElement);
+    expect(document.querySelector('[data-quick-mock="gift-rice"]')).toBeNull();
+    fireEvent.click(document.querySelector("[data-simulator-toggle]") as HTMLButtonElement);
+    expect(document.querySelector('[data-quick-mock="gift-rice"]')).not.toBeNull();
+
+    // Live time adjustments, custom vote duration & custom extend-chat minutes in ShowDock
+    fireEvent.click(document.querySelector('[data-dock-tab="rundown"]') as HTMLButtonElement);
+    fireEvent.click(document.querySelector('[data-rundown-delta="5"]') as HTMLButtonElement);
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (r) =>
+            r.url.endsWith("/api/v1/live/rundown/adjust-time") &&
+            (r.body as { delta_minutes?: number })?.delta_minutes === 5
+        )
+      ).toBe(true);
+    });
+
+    fireEvent.change(document.querySelector("[data-rundown-set-remaining-input]") as HTMLInputElement, {
+      target: { value: "25" },
+    });
+    fireEvent.click(document.querySelector("[data-rundown-set-remaining-btn]") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (r) =>
+            r.url.endsWith("/api/v1/live/rundown/adjust-time") &&
+            (r.body as { set_remaining_minutes?: number })?.set_remaining_minutes === 25
+        )
+      ).toBe(true);
+    });
+
+    fireEvent.change(document.querySelector("[data-rundown-extend-minutes]") as HTMLInputElement, {
+      target: { value: "8" },
+    });
+    fireEvent.click(document.querySelector("[data-rundown-extend-chat]") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (r) =>
+            r.url.endsWith("/api/v1/live/rundown/extend-chat") &&
+            (r.body as { minutes?: number })?.minutes === 8
+        )
+      ).toBe(true);
+    });
+
+    fireEvent.change(document.querySelector("[data-rundown-vote-duration]") as HTMLInputElement, {
+      target: { value: "45" },
+    });
+    fireEvent.click(document.querySelector("[data-rundown-vote-now]") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (r) =>
+            r.url.endsWith("/api/v1/live/rundown/vote-now") &&
+            (r.body as { duration_seconds?: number })?.duration_seconds === 45
+        )
+      ).toBe(true);
+    });
   });
 });
 

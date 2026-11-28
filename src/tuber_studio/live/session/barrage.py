@@ -529,11 +529,12 @@ class LiveSessionBarrageMixin:
         if cmd == "#继续聊" or cmd.startswith("#继续聊 "):
             if not plan.chat_entry.allow_chat_extend or not self.rundown.active:
                 return event, None
+            ext_mins = plan.chat_entry.extend_chat_minutes
             if time.time() - self.rundown._last_chat_extend_at >= 60.0:
-                ext = await self.rundown.extend_chat(minutes=15)
+                ext = await self.rundown.extend_chat(minutes=ext_mins)
                 if ext.get("scene_changed"):
                     await self.send_overlay({"type": "scene", "scene": self.media.scene()})
-                spoken = f"好啦好啦，看在{event.display_name}这么想聊的份上，再继续闲聊 15 分钟！"
+                spoken = f"好啦好啦，看在{event.display_name}这么想聊的份上，再继续闲聊 {ext_mins} 分钟！"
             else:
                 spoken = "刚刚已经加过聊天时间啦，咱们先把当前这段聊完～"
             updated = event.model_copy(

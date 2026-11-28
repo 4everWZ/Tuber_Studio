@@ -67,6 +67,8 @@ export interface BroadcastTopBarProps {
   shows: ExtendedLiveShowsStatusData | null;
   rundown: RundownRuntimeState | null;
   sceneLayout: SceneLayoutState;
+  layoutMode?: "cockpit" | "theater";
+  onLayoutModeChange?: (mode: "cockpit" | "theater") => void;
   canAct: boolean;
   enabled: boolean;
   overlayUrl?: string;
@@ -87,6 +89,8 @@ export function BroadcastTopBar({
   shows,
   rundown,
   sceneLayout,
+  layoutMode = "cockpit",
+  onLayoutModeChange,
   canAct,
   enabled,
   overlayUrl,
@@ -183,6 +187,27 @@ export function BroadcastTopBar({
           >
             配置排班与规则 →
           </a>
+
+          {onLayoutModeChange && (
+            <div className={styles.segmentedGroup} role="group" aria-label="导播台排版模式">
+              <button
+                type="button"
+                data-console-layout="cockpit"
+                aria-pressed={layoutMode === "cockpit"}
+                onClick={() => onLayoutModeChange("cockpit")}
+              >
+                三栏一屏
+              </button>
+              <button
+                type="button"
+                data-console-layout="theater"
+                aria-pressed={layoutMode === "theater"}
+                onClick={() => onLayoutModeChange("theater")}
+              >
+                大屏监视
+              </button>
+            </div>
+          )}
 
           <div className={styles.obsMenuWrap} ref={obsMenuRef}>
             <button

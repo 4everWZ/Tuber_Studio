@@ -73,6 +73,8 @@ export const DEFAULT_CHAT_ENTRY: ChatEntryConfig = {
   allow_chat_vote_trigger: true,
   vote_trigger_threshold: 2,
   allow_chat_extend: true,
+  extend_chat_minutes: 15,
+  default_game_duration_minutes: 20,
   chat_adaptive_enabled: true,
   chat_hot_threshold_per_2m: 12,
 };
@@ -490,12 +492,12 @@ export function RundownBuilderPanel({
             <input
               id="rundown-opening-minutes"
               type="number"
-              min={5}
-              max={180}
+              min={1}
+              max={360}
               value={plan.chat_entry.opening_chat_minutes}
               onChange={(e) =>
                 updateChatEntry({
-                  opening_chat_minutes: parseIntOrFallback(e.target.value, 15, 5, 180),
+                  opening_chat_minutes: parseIntOrFallback(e.target.value, 15, 1, 360),
                 })
               }
             />
@@ -505,12 +507,42 @@ export function RundownBuilderPanel({
             <input
               id="rundown-poll-duration"
               type="number"
-              min={15}
+              min={10}
               max={600}
               value={plan.chat_entry.poll_duration_seconds}
               onChange={(e) =>
                 updateChatEntry({
-                  poll_duration_seconds: parseIntOrFallback(e.target.value, 90, 15, 600),
+                  poll_duration_seconds: parseIntOrFallback(e.target.value, 90, 10, 600),
+                })
+              }
+            />
+          </label>
+          <label>
+            「继续闲聊」默认延长（分钟）
+            <input
+              id="rundown-extend-chat-minutes"
+              type="number"
+              min={1}
+              max={360}
+              value={plan.chat_entry.extend_chat_minutes ?? 15}
+              onChange={(e) =>
+                updateChatEntry({
+                  extend_chat_minutes: parseIntOrFallback(e.target.value, 15, 1, 360),
+                })
+              }
+            />
+          </label>
+          <label>
+            投票切入游戏默认时长（分钟）
+            <input
+              id="rundown-default-game-minutes"
+              type="number"
+              min={1}
+              max={360}
+              value={plan.chat_entry.default_game_duration_minutes ?? 20}
+              onChange={(e) =>
+                updateChatEntry({
+                  default_game_duration_minutes: parseIntOrFallback(e.target.value, 20, 1, 360),
                 })
               }
             />
@@ -729,12 +761,12 @@ export function RundownBuilderPanel({
                   <input
                     type="number"
                     data-segment-duration={seg.id}
-                    min={5}
-                    max={180}
+                    min={1}
+                    max={360}
                     value={seg.duration_minutes}
                     onChange={(e) =>
                       updateSegment(idx, {
-                        duration_minutes: parseIntOrFallback(e.target.value, 15, 5, 180),
+                        duration_minutes: parseIntOrFallback(e.target.value, 15, 1, 360),
                       })
                     }
                   />

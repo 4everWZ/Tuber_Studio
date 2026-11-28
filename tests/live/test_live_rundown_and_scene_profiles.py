@@ -337,3 +337,92 @@ def test_live_rundown_scene_profiles_and_fine_settings_routes(settings):
             "rundown",
             "scene_layout",
         }
+
+
+def test_rundown_custom_times_adjust_and_overrides(settings):
+    with TestClient(create_app(settings)) as client:
+        client.post("/api/v1/system/auth/login", json={"token": settings.admin_token}).raise_for_status()
+        client.post("/api/v1/live/start").raise_for_status()
+
+        # Cannot adjust time before rundown starts
+        inactive_adj = client.post("/api/v1/live/rundown/adjust-time", json={"delta_minutes": 5})
+        assert inactive_adj.status_code == 400
+
+        rd = client.get("/api/v1/live/rundown").raise_for_status().json()
+        custom_plan = rd["plan"]
+        custom_plan["enabled_games"] = ["roast_radio", "song_party"]
+        custom_plan["chat_entry"]["opening_chat_minutes"] = 1
+        custom_plan["chat_entry"]["poll_duration_seconds"] = 20
+        custom_plan["chat_entry"]["extend_chat_minutes"] = 8
+        custom_plan["chat_entry"]["default_game_duration_minutes"] = 32
+        custom_plan["segments"] = [
+            {
+                "id": "seg-1m",
+                "title": "极速开场",
+                "kind": "chat",
+                "duration_minutes": 1,
+                "obs_layout": "chat",
+                "auto_start_show": False,
+                "graceful_finish": False,
+                "settings": {},
+            },
+            {
+                "id": "seg-360m",
+                "title": "超长耐久",
+                "kind": "draw_and_guess",
+                "duration_minutes": 360,
+                "obs_layout": "game",
+                "auto_start_show": False,
+                "graceful_finish": False,
+                "settings": {},
+            },
+        ]
+        saved = client.put("/api/v1/live/rundown", json=custom_plan).raise_for_status().json()
+        assert saved["plan"]["chat_entry"]["opening_chat_minutes"] == 1
+        assert saved["plan"]["chat_entry"]["extend_chat_minutes"] == 8
+        assert saved["plan"]["chat_entry"]["default_game_duration_minutes"] == 32
+        assert saved["plan"]["segments"][1]["duration_minutes"] == 360
+
+        started = client.post("/api/v1/live/rundown/start", json={}).raise_for_status().json()
+        assert 45 <= started["state"]["remaining_seconds"] <= 65
+
+        # Adjust +5m, -2m, and set_remaining_minutes=12 (also while paused)
+        plus5 = client.post("/api/v1/live/rundown/adjust-time", json={"delta_minutes": 5}).raise_for_status().json()
+        assert 340 <= plus5["state"]["remaining_seconds"] <= 365
+        minus2 = client.post("/api/v1/live/rundown/adjust-time", json={"delta_minutes": -2}).raise_for_status().json()
+        assert 220 <= minus2["state"]["remaining_seconds"] <= 245
+
+        client.post("/api/v1/live/rundown/pause").raise_for_status()
+        paused_set = client.post(
+            "/api/v1/live/rundown/adjust-time", json={"set_remaining_minutes": 12}
+        ).raise_for_status().json()
+        assert paused_set["state"]["paused"] is True
+        assert paused_set["state"]["remaining_seconds"] == pytest.approx(720.0, abs=1.0)
+        client.post("/api/v1/live/rundown/resume").raise_for_status()
+
+        # Custom extend-chat default (uses chat_entry.extend_chat_minutes=8 when omitted) & explicit override
+        ext_default = client.post("/api/v1/live/rundown/extend-chat", json={}).raise_for_status().json()
+        assert ext_default["state"]["remaining_seconds"] >= 720 + 8 * 60 - 5
+        ext_explicit = client.post("/api/v1/live/rundown/extend-chat", json={"minutes": 3}).raise_for_status().json()
+        assert ext_explicit["state"]["remaining_seconds"] >= 720 + 11 * 60 - 10
+
+        # Custom vote-now duration_seconds override & voted game not in plan.segments uses default_game_duration_minutes (32m)
+        voted = client.post("/api/v1/live/rundown/vote-now", json={"duration_seconds": 30}).raise_for_status().json()
+        assert voted["poll"]["duration"] == pytest.approx(30.0)
+        client.post("/api/v1/live/mock-event", json={"text": "1", "platform_user_id": "v-custom-1"}).raise_for_status()
+        settled = client.post("/api/v1/live/rundown/settle-vote").raise_for_status().json()
+        assert settled["state"]["current_segment"]["kind"] == "roast_radio"
+        assert settled["state"]["current_segment"]["duration_minutes"] == 32
+
+        # Chat vote winning uses extend_chat_minutes=8
+        client.post("/api/v1/live/rundown/vote-now", json={"duration_seconds": 25}).raise_for_status()
+        client.post("/api/v1/live/mock-event", json={"text": "继续聊", "platform_user_id": "v-custom-2"}).raise_for_status()
+        settled_chat = client.post("/api/v1/live/rundown/settle-vote").raise_for_status().json()
+        assert settled_chat["state"]["current_segment"]["kind"] == "chat"
+        assert 7 * 60 + 50 <= settled_chat["state"]["remaining_seconds"] <= 8 * 60 + 2
+
+        # #继续聊 barrage command uses extend_chat_minutes=8 (reset cooldown to simulate separate interval)
+        client.app.state.runtime.live.rundown._last_chat_extend_at = 0.0
+        client.post("/api/v1/live/mock-event", json={"text": "#继续聊", "platform_user_id": "v-custom-3"}).raise_for_status()
+        after_barrage = client.get("/api/v1/live/rundown").raise_for_status().json()
+        assert after_barrage["state"]["remaining_seconds"] >= 15 * 60 + 45

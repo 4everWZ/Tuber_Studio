@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   ExtendedLiveShowsStatusData,
   LivePollState,
@@ -7,6 +7,12 @@ import type {
 import { formatElapsed } from "./liveControls";
 import styles from "./LiveWorkbench.module.css";
 import type { GameStatusData } from "./types";
+
+function clampIntInput(raw: string, fallback: number, min: number, max: number): number {
+  const n = Number.parseInt(raw, 10);
+  if (Number.isNaN(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
 
 export type DockTabId =
   | "rundown"
@@ -79,6 +85,32 @@ export function ShowDock({
 
   const rundownState = rundownStatus?.state ?? shows?.rundown ?? null;
   const rundownPlan = rundownStatus?.plan ?? null;
+
+  const [extendMinutes, setExtendMinutes] = useState("15");
+  const extendEditedRef = useRef(false);
+  const [voteDurationSec, setVoteDurationSec] = useState("90");
+  const voteEditedRef = useRef(false);
+  const [targetRemainingMin, setTargetRemainingMin] = useState("15");
+
+  const planExtendMins = rundownPlan?.chat_entry?.extend_chat_minutes;
+  const planPollSec = rundownPlan?.chat_entry?.poll_duration_seconds;
+
+  useEffect(() => {
+    if (!extendEditedRef.current && typeof planExtendMins === "number") {
+      setExtendMinutes(String(planExtendMins));
+    }
+  }, [planExtendMins]);
+
+  useEffect(() => {
+    if (!voteEditedRef.current && typeof planPollSec === "number") {
+      setVoteDurationSec(String(planPollSec));
+    }
+  }, [planPollSec]);
+
+  const parsedExtendMin = clampIntInput(extendMinutes, planExtendMins ?? 15, 1, 360);
+  const parsedVoteSec = clampIntInput(voteDurationSec, planPollSec ?? 90, 10, 600);
+  const parsedTargetRemMin = clampIntInput(targetRemainingMin, 15, 1, 360);
+
   const drawGuess = shows?.draw_and_guess ?? null;
   const turtleSoup = shows?.turtle_soup ?? null;
   const roastRadio = shows?.roast_radio ?? null;
@@ -105,7 +137,7 @@ export function ShowDock({
   const pctA = totalVotes > 0 ? Math.round((votesA / totalVotes) * 100) : 50;
 
   return (
-    <section className={`panel ${styles.deskPanel}`} aria-label="节目控制台">
+    <section className={`panel ${styles.deskPanel} ${styles.cockpitPanel}`} aria-label="节目控制台">
       <div className={styles.dockTabs} role="tablist" aria-label="节目子控制台">
         {tabs.map((tab) => (
           <button
@@ -125,7 +157,11 @@ export function ShowDock({
       </div>
 
       {activeTab === "rundown" && (
-        <div className={styles.dockBody} role="tabpanel" aria-labelledby="dock-tab-rundown">
+        <div
+          className={`${styles.dockBody} ${styles.dockBodyScroll}`}
+          role="tabpanel"
+          aria-labelledby="dock-tab-rundown"
+        >
           <div className="actions">
             {!rundownState?.active ? (
               <button
@@ -167,17 +203,38 @@ export function ShowDock({
                 </button>
               </>
             )}
-            <button
-              type="button"
-              className={styles.compactBtn}
-              data-rundown-vote-now
-              disabled={actionDisabled}
-              onClick={() =>
-                void onPostAction("/api/v1/live/rundown/vote-now", {}, "已发起观众选游戏投票。")
-              }
-            >
-              发起选游戏投票
-            </button>
+            <div className={styles.inlineInputGroup}>
+              <input
+                type="number"
+                className={styles.inlineNumInput}
+                data-rundown-vote-duration
+                aria-label="投票秒数"
+                title="自定义投票时长（秒）"
+                min={10}
+                max={600}
+                value={voteDurationSec}
+                onChange={(e) => {
+                  voteEditedRef.current = true;
+                  setVoteDurationSec(e.target.value);
+                }}
+              />
+              <span className={styles.deskHint}>s</span>
+              <button
+                type="button"
+                className={styles.compactBtn}
+                data-rundown-vote-now
+                disabled={actionDisabled}
+                onClick={() =>
+                  void onPostAction(
+                    "/api/v1/live/rundown/vote-now",
+                    { duration_seconds: parsedVoteSec },
+                    `已发起 ${parsedVoteSec} 秒选游戏投票。`
+                  )
+                }
+              >
+                发起选游戏投票
+              </button>
+            </div>
             <button
               type="button"
               className={styles.compactBtn}
@@ -189,17 +246,122 @@ export function ShowDock({
             >
               立即结算投票
             </button>
+            <div className={styles.inlineInputGroup}>
+              <input
+                type="number"
+                className={styles.inlineNumInput}
+                data-rundown-extend-minutes
+                aria-label="延长闲聊分钟数"
+                title="自定义再聊分钟数"
+                min={1}
+                max={360}
+                value={extendMinutes}
+                onChange={(e) => {
+                  extendEditedRef.current = true;
+                  setExtendMinutes(e.target.value);
+                }}
+              />
+              <span className={styles.deskHint}>m</span>
+              <button
+                type="button"
+                className={styles.compactBtn}
+                data-rundown-extend-chat
+                disabled={actionDisabled}
+                onClick={() =>
+                  void onPostAction(
+                    "/api/v1/live/rundown/extend-chat",
+                    { minutes: parsedExtendMin },
+                    `已延长 ${parsedExtendMin} 分钟闲聊时间。`
+                  )
+                }
+              >
+                再聊 {parsedExtendMin}m
+              </button>
+            </div>
+          </div>
+
+          <div className={styles.timeAdjustBar} data-rundown-time-controls>
+            <span className={styles.deskChip}>
+              ⏱ 剩余：
+              {rundownState?.active
+                ? rundownState.paused
+                  ? `${formatElapsed(rundownState.remaining_seconds)}（暂停）`
+                  : formatElapsed(rundownState.remaining_seconds)
+                : "未启动"}
+            </span>
             <button
               type="button"
               className={styles.compactBtn}
-              data-rundown-extend-chat
-              disabled={actionDisabled}
+              data-rundown-delta="-5"
+              disabled={actionDisabled || !rundownState?.active}
               onClick={() =>
-                void onPostAction("/api/v1/live/rundown/extend-chat", {}, "已延长 15 分钟闲聊时间。")
+                void onPostAction(
+                  "/api/v1/live/rundown/adjust-time",
+                  { delta_minutes: -5 },
+                  "当前环节已减少 5 分钟。"
+                )
               }
             >
-              再聊 15 分钟
+              -5m
             </button>
+            <button
+              type="button"
+              className={styles.compactBtn}
+              data-rundown-delta="5"
+              disabled={actionDisabled || !rundownState?.active}
+              onClick={() =>
+                void onPostAction(
+                  "/api/v1/live/rundown/adjust-time",
+                  { delta_minutes: 5 },
+                  "当前环节已延长 5 分钟。"
+                )
+              }
+            >
+              +5m
+            </button>
+            <button
+              type="button"
+              className={styles.compactBtn}
+              data-rundown-delta="15"
+              disabled={actionDisabled || !rundownState?.active}
+              onClick={() =>
+                void onPostAction(
+                  "/api/v1/live/rundown/adjust-time",
+                  { delta_minutes: 15 },
+                  "当前环节已延长 15 分钟。"
+                )
+              }
+            >
+              +15m
+            </button>
+            <div className={styles.inlineInputGroup}>
+              <input
+                type="number"
+                className={styles.inlineNumInput}
+                data-rundown-set-remaining-input
+                aria-label="设定当前环节剩余分钟数"
+                min={1}
+                max={360}
+                value={targetRemainingMin}
+                onChange={(e) => setTargetRemainingMin(e.target.value)}
+              />
+              <span className={styles.deskHint}>m</span>
+              <button
+                type="button"
+                className={styles.compactBtn}
+                data-rundown-set-remaining-btn
+                disabled={actionDisabled || !rundownState?.active}
+                onClick={() =>
+                  void onPostAction(
+                    "/api/v1/live/rundown/adjust-time",
+                    { set_remaining_minutes: parsedTargetRemMin },
+                    `已将当前环节剩余时间设为 ${parsedTargetRemMin} 分钟。`
+                  )
+                }
+              >
+                设剩余
+              </button>
+            </div>
           </div>
 
           {poll?.phase === "started" && (

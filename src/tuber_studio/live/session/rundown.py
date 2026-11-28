@@ -84,7 +84,7 @@ class RundownSegment(StrictModel):
     id: str = Field(default_factory=lambda: f"seg-{uuid4().hex[:8]}", min_length=1, max_length=60)
     title: str = Field(min_length=1, max_length=80)
     kind: RundownSegmentKind
-    duration_minutes: int = Field(default=15, ge=5, le=180)
+    duration_minutes: int = Field(default=15, ge=1, le=360)
     obs_layout: ObsLayoutId = "chat"
     auto_start_show: bool = True
     graceful_finish: bool = True
@@ -101,14 +101,16 @@ class RundownSegment(StrictModel):
 
 class ChatEntryConfig(StrictModel):
     opening_mode: Literal["chat_opening", "direct_rundown", "manual"] = "chat_opening"
-    opening_chat_minutes: int = Field(default=15, ge=5, le=180)
-    poll_duration_seconds: int = Field(default=90, ge=15, le=600)
+    opening_chat_minutes: int = Field(default=15, ge=1, le=360)
+    poll_duration_seconds: int = Field(default=90, ge=10, le=600)
     min_votes: int = Field(default=1, ge=0, le=100)
     include_continue_chat: bool = True
     avoid_repeat: bool = True
     allow_chat_vote_trigger: bool = True
     vote_trigger_threshold: int = Field(default=2, ge=1, le=50)
     allow_chat_extend: bool = True
+    extend_chat_minutes: int = Field(default=15, ge=1, le=360)
+    default_game_duration_minutes: int = Field(default=20, ge=1, le=360)
     chat_adaptive_enabled: bool = True
     chat_hot_threshold_per_2m: int = Field(default=12, ge=1, le=200)
 
@@ -645,13 +647,14 @@ class RundownManager:
     async def extend_chat(
         self,
         *,
-        minutes: int = 15,
+        minutes: int | None = None,
         now: float | None = None,
         transition_line: str | None = None,
     ) -> dict[str, Any]:
         now_ts = time.time() if now is None else float(now)
         plan = self.plan()
-        mins = max(5, min(180, int(minutes)))
+        raw_mins = plan.chat_entry.extend_chat_minutes if minutes is None else minutes
+        mins = max(1, min(360, int(raw_mins)))
         self._last_chat_extend_at = now_ts
         if self.active and self.active_segment and self.active_segment.get("kind") == "chat":
             rem = max(0.0, (self.segment_end_at or now_ts) - now_ts)
@@ -683,9 +686,58 @@ class RundownManager:
             transition_line=transition_line or f"切换回闲聊，延长 {mins} 分钟",
         )
 
-    async def open_game_vote(self, *, now: float | None = None) -> dict[str, Any]:
+    def adjust_time(
+        self,
+        *,
+        delta_minutes: float | None = None,
+        set_remaining_minutes: float | None = None,
+        now: float | None = None,
+    ) -> dict[str, Any]:
+        if not self.active:
+            raise ValueError("当前没有运行中的节目单环节")
+        now_ts = time.time() if now is None else float(now)
+        current_rem = (
+            float(self.paused_remaining or 0.0)
+            if self.paused
+            else max(0.0, float((self.segment_end_at or now_ts) - now_ts))
+        )
+        if set_remaining_minutes is not None:
+            val = float(set_remaining_minutes)
+            if not (0.5 <= val <= 360.0):
+                raise ValueError("剩余时长须在 0.5 到 360 分钟之间")
+            new_rem = val * 60.0
+        elif delta_minutes is not None:
+            delta = float(delta_minutes)
+            new_rem = max(30.0, min(360.0 * 60.0, current_rem + delta * 60.0))
+        else:
+            raise ValueError("请提供 delta_minutes 或 set_remaining_minutes")
+
+        if self.paused:
+            self.paused_remaining = new_rem
+        else:
+            self.segment_end_at = now_ts + new_rem
+        if new_rem > 0:
+            self.waiting_graceful_finish = False
+            if self.status_label == "waiting_graceful":
+                self.status_label = "paused" if self.paused else ("voting" if self._pending_vote else "running")
+        self.last_transition_line = f"当前环节剩余时间已调整为 {round(new_rem / 60.0, 1):g} 分钟"
+        return {
+            "transition": "adjust_time",
+            "remaining_seconds": round(new_rem, 1),
+            "scene_changed": False,
+        }
+
+    async def open_game_vote(
+        self, *, duration_seconds: int | None = None, now: float | None = None
+    ) -> dict[str, Any]:
         now_ts = time.time() if now is None else float(now)
         plan = self.plan()
+        if duration_seconds is not None:
+            dur = int(duration_seconds)
+            if not (10 <= dur <= 600):
+                raise ValueError("投票时长须在 10 到 600 秒之间")
+        else:
+            dur = int(plan.chat_entry.poll_duration_seconds)
         enabled = [g for g in plan.enabled_games if g in GAME_CATALOG_MAP]
         if not enabled:
             enabled = ["draw_and_guess", "turtle_soup", "roast_radio", "song_party"]
@@ -720,7 +772,7 @@ class RundownManager:
             room_id="*",
             topic="下一环节玩什么？",
             options=options,
-            duration_seconds=float(plan.chat_entry.poll_duration_seconds),
+            duration_seconds=float(dur),
             aliases=aliases,
             fallback_label="无人投票将按默认节目单推进",
         )
@@ -733,7 +785,7 @@ class RundownManager:
             self.current_index = 0
             self.active_segment = plan.segments[0].model_dump()
             self.segment_started_at = now_ts
-            self.segment_end_at = now_ts + plan.chat_entry.poll_duration_seconds
+            self.segment_end_at = now_ts + dur
         self.status_label = "voting"
         self.last_transition_line = "已发起游戏池投票！发送数字或游戏名即可参与投票"
         return {"poll": activity, "option_to_kind": option_to_kind}
@@ -750,7 +802,7 @@ class RundownManager:
             id=f"seg-vote-{kind}",
             title=cat["label"],
             kind=kind,  # type: ignore[arg-type]
-            duration_minutes=20,
+            duration_minutes=plan.chat_entry.default_game_duration_minutes,
             obs_layout=cat["default_layout"],  # type: ignore[arg-type]
             auto_start_show=kind in {"draw_and_guess", "turtle_soup", "roast_radio", "stardew_valley", "pvz"},
             graceful_finish=kind in {"draw_and_guess", "turtle_soup"},
@@ -807,10 +859,11 @@ class RundownManager:
             return entered | {"fallback": True, "vote_result": result}
 
         if chosen_kind == "chat":
+            ext_mins = plan.chat_entry.extend_chat_minutes
             ext = await self.extend_chat(
-                minutes=15,
+                minutes=ext_mins,
                 now=now_ts,
-                transition_line="观众投票选择继续闲聊，再聊 15 分钟！",
+                transition_line=f"观众投票选择继续闲聊，再聊 {ext_mins} 分钟！",
             )
             return ext | {"fallback": False, "chosen_kind": "chat", "vote_result": result}
 
