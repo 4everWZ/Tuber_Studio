@@ -16787,7 +16787,9 @@ export interface operations {
     };
     automation_schedule_prepare_video_api_v1_operations_automation_schedules__schedule_id__closeouts__run_id__prepare_video_post: {
         parameters: {
-            query?: never;
+            query?: {
+                automatic?: boolean;
+            };
             header?: never;
             path: {
                 schedule_id: string;
