@@ -8,6 +8,17 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif;
 }
 
+.rootPreview {
+  background-color: #0b1120;
+  background-image:
+    linear-gradient(45deg, rgba(148, 163, 184, 0.14) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(148, 163, 184, 0.14) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.14) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.14) 75%);
+  background-size: 24px 24px;
+  background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+}
+
 .overlayStack {
   position: absolute;
   top: 24px;
@@ -16,6 +27,31 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.stageLayerCompact {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: min(350px, 46%);
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.stageLayerCompact .container,
+.stageLayerCompact .showCard,
+.stageLayerCompact .standbyCard {
+  padding: 11px 12px;
+  border-radius: 12px;
+}
+
+.stageLayerCompact .canvasWrap {
+  height: 168px;
 }
 
 .container {
@@ -86,6 +122,7 @@
   font-weight: 700;
   min-width: 42px;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .canvasWrap {
@@ -157,6 +194,10 @@
   border-color: rgba(251, 146, 60, 0.45);
 }
 
+.showCardPoll {
+  border-color: rgba(129, 140, 248, 0.5);
+}
+
 .showTitle {
   margin: 0;
   font-size: 15px;
@@ -168,6 +209,10 @@
   color: #fdba74;
 }
 
+.showTitlePoll {
+  color: #a5b4fc;
+}
+
 .surfaceBox {
   background: rgba(9, 13, 22, 0.85);
   border: 1px solid rgba(148, 163, 184, 0.2);
@@ -177,6 +222,97 @@
   line-height: 1.55;
   color: #e2e8f0;
   margin: 0 0 10px;
+}
+
+.pollOptions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.pollOptionRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  padding: 7px 10px;
+}
+
+.pollOptionTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.pollOptionLabel {
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.pollOptionMeta {
+  font-size: 11px;
+  color: #a5b4fc;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pollTrack {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.9);
+  overflow: hidden;
+}
+
+.pollFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #6366f1, #38bdf8);
+  transition: width 0.3s ease;
+}
+
+.pollFallbackNote {
+  margin: 9px 0 0;
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.standbyCard {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.84);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px dashed rgba(148, 163, 184, 0.42);
+  border-radius: 16px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  color: #e2e8f0;
+  padding: 15px 16px;
+}
+
+.standbyDesc {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #cbd5e1;
+}
+
+.standbyStatusBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(9, 13, 22, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.45;
 }
 
 .cluesList {

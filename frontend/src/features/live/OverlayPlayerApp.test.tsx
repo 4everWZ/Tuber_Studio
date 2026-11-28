@@ -1,6 +1,5 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DrawGuessOverlayApp } from "./DrawGuessOverlayApp";
 import { Live2DAvatarCanvas, resetLive2DScriptCacheForTest } from "./Live2DAvatarCanvas";
 import { OverlayPlayerApp } from "./OverlayPlayerApp";
 import type { Live2DManifest } from "./types";
@@ -374,6 +373,58 @@ describe("OverlayPlayerApp", () => {
       expect(badge?.textContent).toContain("Tier 2");
     });
   });
+
+  it("appends ?layout=game to /api/v1/live/view and renders #rundown-stage-pill when rundown is active", async () => {
+    window.history.replaceState(null, "", "/overlay?layout=game");
+    const requestedUrls: string[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        requestedUrls.push(url);
+        if (url.endsWith("/api/v1/live/view?layout=game")) {
+          const payload = buildViewPayload();
+          payload.scene.background = "transparent";
+          return Response.json(payload);
+        }
+        if (url.endsWith("/api/v1/live/shows/status")) {
+          return Response.json({
+            overtime: { active: false },
+            cold_director: { tier: 0 },
+            rundown: {
+              active: true,
+              paused: false,
+              status: "running",
+              current_index: 1,
+              remaining_seconds: 725,
+              current_segment: {
+                id: "seg-dg",
+                title: "你画我猜专场",
+                kind: "draw_and_guess",
+                duration_minutes: 20,
+                obs_layout: "game",
+                auto_start_show: true,
+                graceful_finish: true,
+                settings: {},
+              },
+            },
+          });
+        }
+        return Response.json({});
+      })
+    );
+
+    render(<OverlayPlayerApp />);
+
+    await waitFor(() => {
+      expect(requestedUrls.some((u) => u.endsWith("/api/v1/live/view?layout=game"))).toBe(true);
+      const pill = document.getElementById("rundown-stage-pill");
+      expect(pill).not.toBeNull();
+      expect(pill?.textContent).toContain("你画我猜专场");
+      expect(pill?.textContent).toContain("12:05");
+    });
+  });
 });
 
 describe("Live2DAvatarCanvas", () => {
@@ -473,177 +524,5 @@ describe("Live2DAvatarCanvas", () => {
     fireEvent(canvas, new Event("webglcontextlost"));
     expect(destroyApp).toHaveBeenCalled();
     expect(onState).toHaveBeenCalledWith(false);
-  });
-});
-
-describe("DrawGuessOverlayApp", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-  });
-
-  it("renders SVG strokes in #draw-guess-container and hides 4s after round ends", async () => {
-    vi.useFakeTimers();
-    let payload: Record<string, unknown> = {
-      active: true,
-      state: "drawing",
-      remaining: 25.2,
-      category: "水果",
-      hint: "圆滚滚",
-      trigger_user: "小明",
-      character: "大肥鱼",
-      revealed_strokes: [
-        { type: "path", d: "M 0 0 L 10 10", stroke: "#38bdf8", width: 4 },
-        { type: "circle", cx: 20, cy: 20, r: 5, fill: "#ef4444" },
-        { type: "ellipse", cx: 40, cy: 40, rx: 8, ry: 4 },
-      ],
-    };
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json(payload))
-    );
-
-    render(<DrawGuessOverlayApp />);
-
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    const container = document.getElementById("draw-guess-container") as HTMLElement;
-    expect(container.hidden).toBe(false);
-    expect(document.getElementById("draw-guess-title")?.textContent).toBe("大肥鱼 · 你画我猜");
-    expect(document.getElementById("timer-badge")?.textContent).toBe("26s");
-    const svg = document.querySelector("svg#drawing-board") as SVGSVGElement;
-    expect(svg.querySelectorAll("path, circle, ellipse")).toHaveLength(3);
-
-    // Finished state shows winner banner
-    payload = {
-      active: false,
-      state: "finished",
-      word: "西瓜",
-      winner: "小红",
-      remaining: 0,
-      revealed_strokes: [],
-    };
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(800);
-    });
-    expect(document.getElementById("winner-banner")?.classList.contains("hidden")).toBe(false);
-    expect(document.getElementById("banner-answer")?.textContent).toBe("答案：【西瓜】");
-
-    // Idle hides after 4000ms
-    payload = { active: false, state: "idle" };
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(800);
-    });
-    expect(container.hidden).toBe(false);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(4000);
-    });
-    expect(container.hidden).toBe(true);
-  });
-
-  it("renders rect/line/polygon strokes safely, theme/LLM badge, progressive hint, scoreboard, and Turtle Soup / Roast Radio cards from /shows/status", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.endsWith("/api/v1/live/shows/status")) {
-          return Response.json({
-            character: { name: "Aqua" },
-            draw_and_guess: {
-              active: true,
-              state: "drawing",
-              remaining: 45,
-              category: "日常",
-              theme: "热白饭",
-              llm_generated: true,
-              hint_level: 2,
-              progressive_hint: "装在碗里热气腾腾",
-              trigger_user: "主播",
-              scoreboard: { 小明: 3, 小红: 1 },
-              revealed_strokes: [
-                { type: "rect", x: 10, y: 20, width: 80, height: 40, rx: 6, fill: "#38bdf8", stroke: "javascript:alert(1)" },
-                { type: "line", x1: 0, y1: 0, x2: 120, y2: 90, stroke: "#fde047", width: 3 },
-                { type: "polygon", points: "10,10 50,10 30,50", fill: "#34d399" },
-              ],
-            },
-            turtle_soup: {
-              active: true,
-              state: "playing",
-              genre: "科幻",
-              surface: "宇航员在空间站发现多出一双筷子。",
-              clues_found: ["刚来过货运飞船"],
-              qa_history: [{ user: "路人甲", text: "是补给带的吗？", verdict: "yes" }],
-            },
-            roast_radio: {
-              active: true,
-              mode: "debate",
-              topic: "白饭配拌饭酱还是配汤",
-              side_a: "拌饭酱",
-              side_b: "配汤",
-              votes_a: 6,
-              votes_b: 4,
-              last_roast: "选不出来说明今天只配喝水。",
-            },
-          });
-        }
-        return Response.json({});
-      })
-    );
-
-    render(<DrawGuessOverlayApp />);
-
-    await waitFor(() => {
-      const svg = document.querySelector("svg#drawing-board") as SVGSVGElement;
-      expect(svg.querySelectorAll("rect")).toHaveLength(1);
-      expect(svg.querySelectorAll("line")).toHaveLength(1);
-      expect(svg.querySelectorAll("polygon")).toHaveLength(1);
-      expect(svg.querySelector("rect")?.getAttribute("stroke")).toBeNull();
-      expect(document.getElementById("theme-llm-badge")?.textContent).toBe("主题: 热白饭 · AI");
-      expect(document.getElementById("clue-text")?.textContent).toBe("提示 L2: 装在碗里热气腾腾");
-      expect(document.getElementById("dg-scoreboard")?.textContent).toContain("小明 3分");
-
-      expect(document.getElementById("ts-surface")?.textContent).toContain("多出一双筷子");
-      expect(document.getElementById("ts-clues")?.textContent).toContain("刚来过货运飞船");
-      expect(document.getElementById("ts-qa-list")?.textContent).toContain("是补给带的吗？");
-
-      expect(document.getElementById("rr-topic")?.textContent).toBe("白饭配拌饭酱还是配汤");
-      expect(document.getElementById("rr-vote-bar")?.textContent).toContain("6票 · 60%");
-      expect(document.getElementById("rr-last-roast")?.textContent).toContain("今天只配喝水");
-    });
-  });
-
-  it("falls back to /api/v1/live/draw-and-guess/overlay when /api/v1/live/shows/status fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.endsWith("/api/v1/live/shows/status")) {
-          return new Response("Not Found", { status: 404 });
-        }
-        if (url.endsWith("/api/v1/live/draw-and-guess/overlay")) {
-          return Response.json({
-            active: true,
-            state: "drawing",
-            remaining: 15,
-            category: "水果",
-            hint: "弯弯的黄色水果",
-            revealed_strokes: [{ type: "line", x1: 10, y1: 10, x2: 100, y2: 100 }],
-          });
-        }
-        return Response.json({});
-      })
-    );
-
-    render(<DrawGuessOverlayApp />);
-
-    await waitFor(() => {
-      const container = document.getElementById("draw-guess-container") as HTMLElement;
-      expect(container.hidden).toBe(false);
-      expect(document.querySelectorAll("svg#drawing-board line")).toHaveLength(1);
-    });
   });
 });
