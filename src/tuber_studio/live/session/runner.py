@@ -11,11 +11,12 @@ from ...infra.inference.providers import public_error
 from ...persona.memory.daily import MemoryChanged
 from .state import HANDOFF_PLATFORM, IDLE_AFTER, IDLE_COOLDOWN, IDLE_WINDOW, TERMINAL
 
-IDLE_PROMPTS = (
-    "想聊的话，随时在弹幕里说。",
-    "最近刷到过什么让你想倒回去看一眼的片段？",
-    "想吐槽的话，讲一件今天遇到的离谱小事吧。",
-)
+
+def _bounded_spoken(text: str, limit: int = 120) -> str:
+    cleaned = (text or "").strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: limit - 1].rstrip() + "…"
 
 
 class LiveSessionRunnerMixin:
@@ -77,7 +78,12 @@ class LiveSessionRunnerMixin:
     def idle_deadline(self):
         if self.state != "live" or self.muted or not self.overlay or not self.options().idle:
             return None
-        due = self.last_activity + IDLE_AFTER
+        if self.last_activity < self.cold_director.last_viewer_activity:
+            self.cold_director.last_viewer_activity = self.last_activity
+        if self.cold_director.current_tier() >= 2:
+            due = self.cold_director.next_action_due()
+        else:
+            due = self.last_activity + IDLE_AFTER
         if self.idle_attempts:
             due = max(due, self.idle_attempts[-1] + IDLE_COOLDOWN)
         if len(self.idle_attempts) == self.idle_attempts.maxlen:
@@ -118,12 +124,33 @@ class LiveSessionRunnerMixin:
                 if self.runtime.generation_lock.locked():
                     self.last_activity = time.monotonic()
                 else:
-                    self.idle_attempts.append(time.monotonic())
-                    line = self.options().idle_text
-                    if not line.strip():
-                        line = IDLE_PROMPTS[self.idle_prompt_index]
-                        self.idle_prompt_index = (self.idle_prompt_index + 1) % len(IDLE_PROMPTS)
-                    await self._submit(Event(type="idle", text=line), internal=True)
+                    now_mono = time.monotonic()
+                    if self.last_activity < self.cold_director.last_viewer_activity:
+                        self.cold_director.last_viewer_activity = self.last_activity
+                    if (
+                        self.cold_director.last_action_at is not None
+                        and self.idle_attempts
+                        and self.idle_attempts[-1] < self.cold_director.last_action_at
+                    ):
+                        self.cold_director.last_action_at = None
+                    self.idle_attempts.append(now_mono)
+                    custom_line = self.options().idle_text.strip()
+                    if custom_line:
+                        line = custom_line
+                    else:
+                        due = self.cold_director.next_action_due(now_mono)
+                        director_now = max(now_mono, due) if due is not None else now_mono
+                        segment = await self.cold_director.next_segment(
+                            now=director_now,
+                            llm=self.runtime.llm,
+                            draw_and_guess=self.draw_and_guess,
+                            turtle_soup=self.turtle_soup,
+                            roast_radio=self.roast_radio,
+                            store=self.store,
+                            options=self.options(),
+                        )
+                        line = (segment or {}).get("spoken_text") or "想聊的话，随时在弹幕里说。"
+                    await self._submit(Event(type="idle", text=_bounded_spoken(line)), internal=True)
             while self.queue and self.state == "live" and not self.muted:
                 self.current_id = self.pick()
                 self.online_songs.sync()
@@ -183,12 +210,23 @@ class LiveSessionRunnerMixin:
                     self.store.update_job(job_id, status="generating")
                     meta = event.get("metadata") or {}
                     if event["type"] == "idle":
-                        reply = Reply(spoken_text=event["text"], emotion="cheerful", animation_id="talk")
+                        reply = Reply(spoken_text=_bounded_spoken(event["text"]), emotion="cheerful", animation_id="talk")
                         answer_check = None
                         self.timings["llm_ms"] = 0
-                    elif announcement := meta.get("draw_guess_start") or meta.get("game_switch"):
+                    elif announcement := (
+                        meta.get("draw_guess_start")
+                        or meta.get("turtle_soup_start")
+                        or meta.get("turtle_soup_solved")
+                        or meta.get("turtle_soup_qa")
+                        or meta.get("roast_radio_debate")
+                        or meta.get("roast_radio_roast")
+                        or meta.get("game_switch")
+                        or meta.get("draw_guess_near_miss")
+                        or (meta.get("overtime_extended") if not any(k in meta for k in ("draw_guess_won", "game_action")) else None)
+                    ):
+                        spoken = announcement.get("spoken_text") or announcement.get("roast") or event["text"]
                         reply = Reply(
-                            spoken_text=announcement["spoken_text"],
+                            spoken_text=_bounded_spoken(spoken),
                             emotion="cheerful",
                             animation_id="talk",
                             reply_to=[event["event_id"]],
@@ -196,7 +234,13 @@ class LiveSessionRunnerMixin:
                         answer_check = None
                         self.timings["llm_ms"] = 0
                     else:
-                        for kind in ("draw_guess_won", "game_action"):
+                        for kind in (
+                            "draw_guess_won",
+                            "game_action",
+                            "roast_radio_vote",
+                            "overtime_extended",
+                            "cold_wakeup",
+                        ):
                             if kind in meta:
                                 event["live_outcome"] = {"kind": kind, **meta[kind]}
                         started = time.perf_counter()
@@ -219,7 +263,7 @@ class LiveSessionRunnerMixin:
                         llm_ms=self.timings["llm_ms"],
                         answer_check=answer_check,
                     )
-                    parts = sentences(reply.spoken_text)
+                    parts = [reply.spoken_text] if event["type"] == "idle" else sentences(reply.spoken_text)
                     if len(parts) == 1:
                         started = time.perf_counter()
                         audio = await self.runtime.voices.synthesize_live(

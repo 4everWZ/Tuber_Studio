@@ -55,10 +55,32 @@ class GameLivestreamRule(BaseModel):
     games: dict[str, GameConfig] = Field(default_factory=dict)
 
 
+class TurtleSoupRule(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = True
+    trigger_mode: Literal["danmaku_or_gift", "gift_only", "host_only"] = "danmaku_or_gift"
+    min_coin: int = Field(default=10, ge=0, le=100000)
+    gift_names: list[str] = Field(default_factory=lambda: ["海龟汤", "放大镜"], max_length=20)
+    danmaku_command: str = Field(default="#海龟汤", max_length=30)
+    hint_command: str = Field(default="#提示", max_length=30)
+
+
+class RoastRadioRule(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = True
+    trigger_mode: Literal["danmaku_or_gift", "gift_only", "host_only"] = "danmaku_or_gift"
+    min_coin: int = Field(default=10, ge=0, le=100000)
+    gift_names: list[str] = Field(default_factory=lambda: ["麦克风", "大喇叭"], max_length=20)
+    debate_command: str = Field(default="#开辩论", max_length=30)
+    roast_command: str = Field(default="#吐槽", max_length=30)
+
+
 class InteractiveRules(BaseModel):
     model_config = ConfigDict(extra="forbid")
     song_request: SongRequestRule = Field(default_factory=SongRequestRule)
     draw_and_guess: DrawAndGuessRule = Field(default_factory=DrawAndGuessRule)
+    turtle_soup: TurtleSoupRule = Field(default_factory=TurtleSoupRule)
+    roast_radio: RoastRadioRule = Field(default_factory=RoastRadioRule)
     game_livestream: GameLivestreamRule = Field(default_factory=GameLivestreamRule)
 
 
@@ -241,8 +263,13 @@ class InteractiveRulesService:
 
         if event.type == "chat":
             if rules.trigger_mode == "danmaku_or_gift":
-                if event.text.strip().lower() == rules.danmaku_command.lower():
+                stripped = event.text.strip()
+                cmd = rules.danmaku_command.strip()
+                if stripped.lower() == cmd.lower():
                     return True, None
+                if cmd and stripped.lower().startswith(cmd.lower() + " "):
+                    theme = stripped[len(cmd) :].strip() or None
+                    return True, theme
             return False, None
 
         if event.type == "gift":
@@ -311,3 +338,88 @@ class InteractiveRulesService:
                 return rule.action, rule.label
 
         return None, None
+
+    def match_turtle_soup_start(self, event: Event) -> tuple[bool, str | None]:
+        """Check if event triggers starting a Turtle Soup puzzle; returns `(should_start, genre)`."""
+        rules = self.get_rules().turtle_soup
+        if not rules.enabled or rules.trigger_mode == "host_only":
+            return False, None
+        cmd = rules.danmaku_command.strip() or "#海龟汤"
+        text = event.text.strip()
+        if event.type == "chat":
+            if rules.trigger_mode == "danmaku_or_gift":
+                if text.lower() == cmd.lower():
+                    return True, None
+                if text.lower().startswith(cmd.lower() + " "):
+                    return True, text[len(cmd) :].strip() or None
+            return False, None
+        if event.type == "gift":
+            gift_name, coin, _ = self.extract_gift_info(event)
+            is_cmd = text.lower() == cmd.lower() or text.lower().startswith(cmd.lower() + " ")
+            is_named = bool(rules.gift_names and gift_name in rules.gift_names)
+            is_coin = bool(coin >= rules.min_coin > 0)
+            if is_cmd or is_named or is_coin:
+                genre = text[len(cmd) :].strip() if text.lower().startswith(cmd.lower() + " ") else None
+                return True, genre or None
+        return False, None
+
+    def match_turtle_soup_hint(self, event: Event) -> bool:
+        """Check if viewer chat requests a Turtle Soup hint."""
+        if event.type != "chat":
+            return False
+        rules = self.get_rules().turtle_soup
+        if not rules.enabled:
+            return False
+        cmd = (rules.hint_command or "#提示").strip().lower()
+        return event.text.strip().lower() in {cmd, "提示", "给个提示"}
+
+    def match_roast_radio_debate(self, event: Event) -> tuple[bool, dict | None]:
+        """Check if event starts a Roast Radio debate; returns `(matched, {topic, side_a, side_b})`."""
+        rules = self.get_rules().roast_radio
+        if not rules.enabled or rules.trigger_mode == "host_only":
+            return False, None
+        cmd = rules.debate_command.strip() or "#开辩论"
+        text = event.text.strip()
+        matched_cmd = text.lower() == cmd.lower() or text.lower().startswith(cmd.lower() + " ")
+        if event.type == "chat":
+            if rules.trigger_mode != "danmaku_or_gift" or not matched_cmd:
+                return False, None
+        elif event.type == "gift":
+            gift_name, coin, _ = self.extract_gift_info(event)
+            is_named = bool(rules.gift_names and gift_name in rules.gift_names)
+            if not (matched_cmd or (is_named and "辩论" in text) or (coin >= rules.min_coin > 0 and "辩论" in text)):
+                return False, None
+        else:
+            return False, None
+
+        rest = text[len(cmd) :].strip() if matched_cmd else text
+        topic = rest or "今晚宵夜吃白饭还是泡面"
+        side_a, side_b = "正方", "反方"
+        vs_match = re.match(r"^(.+?)\s+(?:vs|VS|对)\s+(.+)$", rest)
+        if vs_match:
+            side_a = vs_match.group(1).strip() or "正方"
+            side_b = vs_match.group(2).strip() or "反方"
+            topic = f"{side_a} vs {side_b}"
+        return True, {"topic": topic, "side_a": side_a, "side_b": side_b}
+
+    def match_roast_radio_roast(self, event: Event) -> tuple[bool, str | None]:
+        """Check if event triggers a Roast Radio commentary segment; returns `(matched, topic)`."""
+        rules = self.get_rules().roast_radio
+        if not rules.enabled or rules.trigger_mode == "host_only":
+            return False, None
+        cmd = rules.roast_command.strip() or "#吐槽"
+        text = event.text.strip()
+        matched_cmd = text.lower() == cmd.lower() or text.lower().startswith(cmd.lower() + " ")
+        if event.type == "chat":
+            if rules.trigger_mode != "danmaku_or_gift" or not matched_cmd:
+                return False, None
+        elif event.type == "gift":
+            gift_name, coin, _ = self.extract_gift_info(event)
+            is_named = bool(rules.gift_names and gift_name in rules.gift_names)
+            if not (matched_cmd or is_named):
+                return False, None
+        else:
+            return False, None
+
+        topic = text[len(cmd) :].strip() if matched_cmd else None
+        return True, topic or None

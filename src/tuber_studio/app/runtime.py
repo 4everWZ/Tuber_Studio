@@ -387,6 +387,7 @@ class Runtime:
         await self.cleanup_retention(automatic=True)
         self.retention_worker = asyncio.create_task(self._retention_loop())
         self.live.start_worker()
+        self.live.live_schedules.start()
         self.heartbeat.start(initial_delay=self.heartbeat.policy().tick_interval_seconds)
 
     @staticmethod
@@ -444,6 +445,7 @@ class Runtime:
         if self.retention_worker:
             self.retention_worker.cancel()
             await asyncio.gather(self.retention_worker, return_exceptions=True)
+        await self.live.live_schedules.close()
         await self.control("stop")
         await self.live.online_songs.close()
         await self.live.stop_worker()

@@ -73,36 +73,155 @@ class LiveSessionBarrageMixin:
                     "at": event.timestamp.timestamp(),
                 })
             try:
+                if event.type in {"chat", "gift", "song"} and event.platform != HANDOFF_PLATFORM:
+                    wakeup = self.cold_director.on_viewer_activity()
+                    if wakeup:
+                        event = event.model_copy(
+                            update={"metadata": {**event.metadata, "cold_wakeup": wakeup}}
+                        )
+                    if self.overtime_theater.active:
+                        ot_res = None
+                        if event.type == "gift":
+                            gname, coin, _ = self.interactive_rules.extract_gift_info(event)
+                            ot_res = self.overtime_theater.on_gift(
+                                user_id=event.platform_user_id or event.display_name,
+                                display_name=event.display_name,
+                                gift_name=gname,
+                                coins=coin,
+                            )
+                        elif event.type == "chat":
+                            ot_res = self.overtime_theater.on_chat(
+                                user_id=event.platform_user_id or event.display_name,
+                                display_name=event.display_name,
+                                text=event.text,
+                            )
+                        if ot_res and ot_res.get("extended"):
+                            event = event.model_copy(
+                                update={"metadata": {**event.metadata, "overtime_extended": ot_res}}
+                            )
+
                 if event.type == "chat" and event.platform != HANDOFF_PLATFORM:
-                    # 1. Check if Draw & Guess is active and user guessed correctly
+                    # 1. Check if Draw & Guess is active and evaluate guess (fast-path + LLM)
                     if self.draw_and_guess.is_active():
-                        matched_win = self.draw_and_guess.check_guess(
+                        guess_res = await self.draw_and_guess.evaluate_guess_llm(
+                            self.runtime.llm,
                             user_id=event.platform_user_id,
                             display_name=event.display_name,
                             text=event.text,
                             character_id=self.runtime.character["id"],
                             character_version=self.runtime.character["version"],
                         )
-                        if matched_win:
+                        if guess_res:
+                            if guess_res.get("won") or guess_res.get("status") == "won":
+                                event = event.model_copy(
+                                    update={"metadata": {**event.metadata, "draw_guess_won": guess_res}}
+                                )
+                            elif guess_res.get("near_miss"):
+                                event = event.model_copy(
+                                    update={"metadata": {**event.metadata, "draw_guess_near_miss": guess_res}}
+                                )
+
+                    # 2. Check if Turtle Soup is active and judge Q&A / solve
+                    if self.turtle_soup.is_active() and not event.metadata.get("draw_guess_won"):
+                        if self.interactive_rules.match_turtle_soup_hint(event):
+                            ts_res = self.turtle_soup.give_hint()
                             event = event.model_copy(
-                                update={
-                                    "metadata": {**event.metadata, "draw_guess_won": matched_win},
-                                }
+                                update={"metadata": {**event.metadata, "turtle_soup_qa": ts_res}}
+                            )
+                        else:
+                            ts_res = await self.turtle_soup.handle_danmaku(
+                                self.runtime.llm,
+                                user_id=event.platform_user_id or event.display_name,
+                                display_name=event.display_name,
+                                text=event.text,
+                            )
+                            if ts_res:
+                                ts_key = (
+                                    "turtle_soup_solved"
+                                    if ts_res.get("verdict") == "solved"
+                                    else "turtle_soup_qa"
+                                )
+                                event = event.model_copy(
+                                    update={"metadata": {**event.metadata, ts_key: ts_res}}
+                                )
+
+                    # 3. Check if Roast Radio debate is active and record votes
+                    if self.roast_radio.is_active() and not (
+                        event.metadata.get("draw_guess_won") or event.metadata.get("turtle_soup_solved")
+                    ):
+                        vote = self.roast_radio.record_vote(
+                            user_id=event.platform_user_id or event.display_name,
+                            display_name=event.display_name,
+                            text=event.text,
+                        )
+                        if vote:
+                            if not clean_barrage(event.text):
+                                return {"id": None, "status": "recorded", "reason": "辩论已计票", "vote": vote}
+                            event = event.model_copy(
+                                update={"metadata": {**event.metadata, "roast_radio_vote": vote}}
                             )
 
-                    # 2. Check if chat command requests to start Draw & Guess
-                    if not event.metadata.get("draw_guess_won"):
-                        should_start, _ = self.interactive_rules.match_draw_and_guess_start(event)
+                    # 4. Check if chat command requests starting Draw & Guess / Turtle Soup / Roast Radio / Game switch
+                    if not (
+                        event.metadata.get("draw_guess_won")
+                        or event.metadata.get("turtle_soup_solved")
+                        or event.metadata.get("turtle_soup_qa")
+                    ):
+                        should_start, theme = self.interactive_rules.match_draw_and_guess_start(event)
                         if should_start:
-                            start_info = self.draw_and_guess.start_round(trigger_user=event.display_name)
+                            start_info = await self.draw_and_guess.start_round_llm(
+                                self.runtime.llm,
+                                trigger_user=event.display_name,
+                                theme=theme,
+                            )
                             event = event.model_copy(
                                 update={
                                     "metadata": {**event.metadata, "draw_guess_start": start_info},
                                 }
                             )
+                        else:
+                            should_ts, genre = self.interactive_rules.match_turtle_soup_start(event)
+                            if should_ts:
+                                ts_start = await self.turtle_soup.start_round_llm(
+                                    self.runtime.llm,
+                                    trigger_user=event.display_name,
+                                    genre=genre,
+                                )
+                                event = event.model_copy(
+                                    update={"metadata": {**event.metadata, "turtle_soup_start": ts_start}}
+                                )
+                            else:
+                                should_debate, debate_args = self.interactive_rules.match_roast_radio_debate(event)
+                                if should_debate and debate_args:
+                                    debate_info = self.roast_radio.start_debate(
+                                        topic=debate_args["topic"],
+                                        side_a=debate_args.get("side_a", "正方"),
+                                        side_b=debate_args.get("side_b", "反方"),
+                                        trigger_user=event.display_name,
+                                    )
+                                    event = event.model_copy(
+                                        update={"metadata": {**event.metadata, "roast_radio_debate": debate_info}}
+                                    )
+                                else:
+                                    should_roast, roast_topic = self.interactive_rules.match_roast_radio_roast(event)
+                                    if should_roast:
+                                        roast_info = await self.roast_radio.generate_roast_segment(
+                                            self.runtime.llm,
+                                            self.store,
+                                            topic=roast_topic,
+                                        )
+                                        event = event.model_copy(
+                                            update={"metadata": {**event.metadata, "roast_radio_roast": roast_info}}
+                                        )
 
-                    # 3. Check if chat command requests switching game
-                    if not (event.metadata.get("draw_guess_won") or event.metadata.get("draw_guess_start")):
+                    # 5. Check if chat command requests switching game
+                    if not (
+                        event.metadata.get("draw_guess_won")
+                        or event.metadata.get("draw_guess_start")
+                        or event.metadata.get("turtle_soup_start")
+                        or event.metadata.get("roast_radio_debate")
+                        or event.metadata.get("roast_radio_roast")
+                    ):
                         target_gid, _ = self.interactive_rules.match_game_switch(event)
                         if target_gid and target_gid != self.game_livestream.active_game_id:
                             sw_info = self.game_livestream.switch_game(
@@ -156,18 +275,55 @@ class LiveSessionBarrageMixin:
                                 }
                             )
                         else:
-                            # 3. Draw & Guess via gift
-                            should_start, _ = self.interactive_rules.match_draw_and_guess_start(event)
+                            # 3. Draw & Guess / Turtle Soup / Roast Radio via gift
+                            gname, _, _ = self.interactive_rules.extract_gift_info(event)
+                            should_start, theme = self.interactive_rules.match_draw_and_guess_start(event)
                             if should_start:
-                                gname, _, _ = self.interactive_rules.extract_gift_info(event)
-                                start_info = self.draw_and_guess.start_round(
-                                    trigger_user=event.display_name, gift_name=gname
+                                start_info = await self.draw_and_guess.start_round_llm(
+                                    self.runtime.llm,
+                                    trigger_user=event.display_name,
+                                    gift_name=gname,
+                                    theme=theme,
                                 )
                                 event = event.model_copy(
                                     update={
                                         "metadata": {**event.metadata, "draw_guess_start": start_info},
                                     }
                                 )
+                            else:
+                                should_ts, genre = self.interactive_rules.match_turtle_soup_start(event)
+                                if should_ts:
+                                    ts_start = await self.turtle_soup.start_round_llm(
+                                        self.runtime.llm,
+                                        trigger_user=event.display_name,
+                                        genre=genre,
+                                    )
+                                    event = event.model_copy(
+                                        update={"metadata": {**event.metadata, "turtle_soup_start": ts_start}}
+                                    )
+                                else:
+                                    should_debate, debate_args = self.interactive_rules.match_roast_radio_debate(event)
+                                    if should_debate and debate_args:
+                                        debate_info = self.roast_radio.start_debate(
+                                            topic=debate_args["topic"],
+                                            side_a=debate_args.get("side_a", "正方"),
+                                            side_b=debate_args.get("side_b", "反方"),
+                                            trigger_user=event.display_name,
+                                        )
+                                        event = event.model_copy(
+                                            update={"metadata": {**event.metadata, "roast_radio_debate": debate_info}}
+                                        )
+                                    else:
+                                        should_roast, roast_topic = self.interactive_rules.match_roast_radio_roast(event)
+                                        if should_roast:
+                                            roast_info = await self.roast_radio.generate_roast_segment(
+                                                self.runtime.llm,
+                                                self.store,
+                                                topic=roast_topic,
+                                            )
+                                            event = event.model_copy(
+                                                update={"metadata": {**event.metadata, "roast_radio_roast": roast_info}}
+                                            )
                 elif event.type == "song" and "online_id" in event.metadata:
                     online_snapshot = await self.online_songs.selection(event.metadata["online_id"], event)
             except ValueError as error:

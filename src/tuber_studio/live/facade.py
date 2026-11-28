@@ -16,10 +16,14 @@ from .games.interactive_rules import (
     GiftActionRule,
     InteractiveRules,
     InteractiveRulesService,
+    RoastRadioRule,
     SongRequestRule,
+    TurtleSoupRule,
     default_rules,
 )
+from .games.roast_radio import RoastRadioService
 from .games.stardew_device import DeviceCommand, StardewDevice, create_stardew_device
+from .games.turtle_soup import TurtleSoupService
 from .media import (
     MAX_UPLOAD,
     MEDIA_TYPES,
@@ -37,9 +41,13 @@ from .music.song_download import public_address
 from .options import LiveLookup, LiveOptions, WeatherLocation
 from .scene import LiveScene
 from .session import HANDOFF_PLATFORM, IDLE_AFTER, LiveSession, clean_barrage
+from .session.cold_director import ColdRoomDirector
+from .session.overtime_theater import OvertimeTheater
+from .session.schedules import LiveScheduleCreate, LiveSchedules, LiveScheduleUpdate
 from .studio import room_feed
 
 __all__ = [
+    "ColdRoomDirector",
     "DeviceCommand",
     "DrawAndGuessRule",
     "DrawAndGuessService",
@@ -59,13 +67,19 @@ __all__ = [
     "LiveMedia",
     "LiveOptions",
     "LivePoll",
+    "LiveScheduleCreate",
+    "LiveScheduleUpdate",
+    "LiveSchedules",
     "LiveScene",
     "LiveSession",
     "MAX_UPLOAD",
     "MEDIA_TYPES",
     "MusicSettings",
     "OnlineSongs",
+    "OvertimeTheater",
     "PvZAdapter",
+    "RoastRadioRule",
+    "RoastRadioService",
     "SDK",
     "Scene",
     "SingingResult",
@@ -74,6 +88,8 @@ __all__ = [
     "SongRequestSettings",
     "StardewDevice",
     "StardewValleyAdapter",
+    "TurtleSoupRule",
+    "TurtleSoupService",
     "WORD_BANK",
     "WeatherLocation",
     "avatar_package",
@@ -295,6 +311,29 @@ class LiveFacade:
         if device is None:
             return None
         return device.cancel(session, identity)
+
+    # Phase 2 Live Shows, Cold-Room Director, Overtime Theater & Schedules
+    def shows_status(self) -> dict:
+        session = self._session
+        return {
+            "draw_and_guess": session.draw_and_guess.get_overlay_state(),
+            "turtle_soup": session.turtle_soup.get_overlay_state(),
+            "roast_radio": session.roast_radio.get_overlay_state(),
+            "cold_director": session.cold_director.status(),
+            "overtime": session.overtime_theater.status(),
+        }
+
+    def overtime_status(self) -> dict:
+        return self._session.overtime_theater.status()
+
+    def start_overtime(self, **kwargs) -> dict:
+        return self._session.overtime_theater.start_window(**kwargs)
+
+    def stop_overtime(self) -> dict:
+        return self._session.overtime_theater.stop()
+
+    def live_schedules_status(self) -> dict:
+        return self._session.live_schedules.status()
 
 
 def create_live_facade(session: LiveSession, *, stardew_device: StardewDevice | None = None) -> LiveFacade:

@@ -12,16 +12,35 @@ from ..activity_filter import LiveActivityFilter
 from ..games.draw_and_guess import DrawAndGuessService
 from ..games.game_livestream import GameLivestreamService
 from ..games.interactive_rules import InteractiveRulesService
+from ..games.roast_radio import RoastRadioService
+from ..games.turtle_soup import TurtleSoupService
 from ..media import LiveMedia
 from ..music.online_songs import OnlineSongs
 from ..options import LiveLookup, LiveOptions
+from .cold_director import ColdRoomDirector
+from .overtime_theater import OvertimeTheater
+from .schedules import LiveSchedules
 
 TERMINAL = {"completed", "failed", "cancelled", "expired"}
 HANDOFF_PLATFORM = "operator_handoff"
 IDLE_AFTER = 90
 IDLE_COOLDOWN = 180
 IDLE_WINDOW = 600
-LIVE_OUTCOMES = ("draw_guess_won", "draw_guess_start", "game_switch", "game_action")
+LIVE_OUTCOMES = (
+    "draw_guess_won",
+    "draw_guess_near_miss",
+    "draw_guess_start",
+    "game_switch",
+    "game_action",
+    "turtle_soup_start",
+    "turtle_soup_qa",
+    "turtle_soup_solved",
+    "roast_radio_debate",
+    "roast_radio_vote",
+    "roast_radio_roast",
+    "overtime_extended",
+    "cold_wakeup",
+)
 
 
 class LiveSessionState:
@@ -38,7 +57,12 @@ class LiveSessionState:
         self.settings, self.store = runtime.settings, runtime.store
         self.interactive_rules = InteractiveRulesService(self.store)
         self.draw_and_guess = DrawAndGuessService(daily_memory=runtime.daily_memory)
+        self.turtle_soup = TurtleSoupService(daily_memory=runtime.daily_memory)
+        self.roast_radio = RoastRadioService()
         self.game_livestream = GameLivestreamService(interactive_rules=self.interactive_rules, store=self.store)
+        self.cold_director = ColdRoomDirector()
+        self.overtime_theater = OvertimeTheater()
+        self.live_schedules = LiveSchedules(self)
         self.live_scene = live_scene
         self.state = "stopped"
         self.muted = False
@@ -91,6 +115,7 @@ class LiveSessionState:
         self.timings = dict.fromkeys(self.timings)
         self.idle_attempts.clear()
         self.idle_prompt_index = 0
+        self.cold_director.reset()
         self.runtime.relationships.clear_live()
         self.last_activity = time.monotonic()
         self.session_id = str(uuid4())
@@ -120,6 +145,7 @@ class LiveSessionState:
                 self.new_session()
             self.state = "live"
             self.runtime.error = None
+            self.cold_director.reset()
         elif action == "pause":
             if self.state != "stopped":
                 self.state = "paused"
@@ -135,6 +161,10 @@ class LiveSessionState:
             self.recent_barrage.clear()
             self.recent_activities.clear()
             self.runtime.relationships.clear_live()
+            if self.overtime_theater.active:
+                self.overtime_theater.stop()
+            self.cold_director.reset()
+            self.live_schedules.on_manual_stop()
             self.clear_queue()
             await self.cancel_current("停止会话")
         elif action == "mute":

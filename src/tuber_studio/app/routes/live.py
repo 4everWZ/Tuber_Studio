@@ -22,6 +22,7 @@ from ...live.games.stardew_device import DeviceCommand, create_stardew_device
 from ...live.media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
 from ...live.music.online_songs import SongRequestSettings
 from ...live.options import LiveOptions
+from ...live.session.schedules import LiveScheduleCreate, LiveScheduleUpdate
 from ...live.studio import room_feed
 from ...persona.characters.performance import performance
 from .system import ERROR_RESPONSES
@@ -33,7 +34,7 @@ class ConfirmSong(StrictModel):
 
 
 def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None) -> None:
-    """Register all 38 `/api/v1/live/*` routes, live media routes, and `WS /ws/overlay`."""
+    """Register all `/api/v1/live/*` routes, live media routes, and `WS /ws/overlay`."""
     device = create_stardew_device()
     app.state.stardew_device = device
     if device.directory and on_stardew_device is not None:
@@ -269,6 +270,145 @@ def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None
     async def finish_poll():
         return runtime.live.finish_poll()
 
+    def cold_director_snapshot() -> dict:
+        raw = runtime.live.cold_director.status()
+        return raw | {
+            "idle_seconds": raw.get("elapsed_seconds", 0.0),
+            "next_action_in_seconds": raw.get("seconds_until_next"),
+            "cadence_seconds": getattr(runtime.live.cold_director, "tier3_cadence", 300.0),
+            "active": runtime.live.state == "live",
+        }
+
+    @app.get(prefix + "/schedules", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def list_live_schedules():
+        return runtime.live.live_schedules.status()
+
+    @app.post(prefix + "/schedules", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def create_live_schedule(body: LiveScheduleCreate):
+        schedule = await runtime.live.live_schedules.create(body)
+        return {
+            "schedule": schedule,
+            "status": runtime.live.live_schedules.status(),
+        }
+
+    @app.patch(prefix + "/schedules/{schedule_id}", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def update_live_schedule(schedule_id: str, body: LiveScheduleUpdate):
+        schedule = await runtime.live.live_schedules.update(schedule_id, body)
+        return {
+            "schedule": schedule,
+            "status": runtime.live.live_schedules.status(),
+        }
+
+    @app.delete(prefix + "/schedules/{schedule_id}", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def delete_live_schedule(schedule_id: str):
+        deleted = await runtime.live.live_schedules.delete(schedule_id)
+        return {
+            "deleted": deleted["id"],
+            "status": runtime.live.live_schedules.status(),
+        }
+
+    @app.get(prefix + "/overtime", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def get_overtime_status():
+        return runtime.live.overtime_theater.status()
+
+    @app.post(prefix + "/overtime/start", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def start_overtime_window(data: dict = Body(default_factory=dict)):
+        return runtime.live.overtime_theater.start_window(
+            base_duration_minutes=int(data.get("base_duration_minutes", 60)),
+            max_overtime_minutes=int(data.get("max_overtime_minutes", 120)),
+            extension_step_minutes=int(data.get("extension_step_minutes", 15)),
+        )
+
+    @app.post(prefix + "/overtime/stop", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def stop_overtime_window():
+        return runtime.live.overtime_theater.stop()
+
+    @app.get(prefix + "/shows/status", responses=ERROR_RESPONSES, tags=["live"])
+    async def get_live_shows_status():
+        return {
+            "character": store.display_name(runtime.character["id"]),
+            "draw_and_guess": runtime.live.draw_and_guess.get_overlay_state(),
+            "turtle_soup": runtime.live.turtle_soup.get_overlay_state(),
+            "roast_radio": runtime.live.roast_radio.get_overlay_state(),
+            "cold_director": cold_director_snapshot(),
+            "overtime": runtime.live.overtime_theater.status(),
+        }
+
+    @app.post(prefix + "/shows/turtle-soup/start", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def start_turtle_soup(data: dict = Body(default_factory=dict)):
+        trigger_user = str(data.get("trigger_user") or "主播")
+        genre = data.get("genre")
+        use_llm = bool(data.get("use_llm", True))
+        if use_llm:
+            return await runtime.live.turtle_soup.start_round_llm(
+                runtime.llm, trigger_user=trigger_user, genre=genre
+            )
+        return runtime.live.turtle_soup.start_round(trigger_user=trigger_user, genre=genre)
+
+    @app.post(prefix + "/shows/turtle-soup/hint", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def hint_turtle_soup():
+        return runtime.live.turtle_soup.give_hint()
+
+    @app.post(prefix + "/shows/turtle-soup/reveal", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def reveal_turtle_soup(data: dict = Body(default_factory=dict)):
+        return runtime.live.turtle_soup.reveal_and_stop(winner=data.get("winner"))
+
+    @app.post(prefix + "/shows/roast-radio/start-debate", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def start_roast_radio_debate(data: dict = Body(default_factory=dict)):
+        topic = str(data.get("topic") or "今晚宵夜吃白饭还是泡面")
+        return runtime.live.roast_radio.start_debate(
+            topic=topic,
+            side_a=str(data.get("side_a") or "正方"),
+            side_b=str(data.get("side_b") or "反方"),
+            trigger_user=str(data.get("trigger_user") or "主播"),
+        )
+
+    @app.post(prefix + "/shows/roast-radio/roast", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def trigger_roast_radio(data: dict = Body(default_factory=dict)):
+        return await runtime.live.roast_radio.generate_roast_segment(
+            runtime.llm, store, topic=data.get("topic")
+        )
+
+    @app.post(prefix + "/shows/roast-radio/stop", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def stop_roast_radio():
+        return runtime.live.roast_radio.stop()
+
+    @app.get(prefix + "/cold-director/status", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def get_cold_director_status():
+        return cold_director_snapshot()
+
+    @app.post(prefix + "/cold-director/trigger", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def trigger_cold_director(data: dict = Body(default_factory=dict)):
+        director = runtime.live.cold_director
+        tier_override = data.get("tier")
+        now_ts = time.monotonic()
+        if tier_override is not None:
+            tier_val = int(tier_override)
+            tier_offsets = {1: 95.0, 2: 305.0, 3: 905.0}
+            offset = tier_offsets.get(tier_val, 95.0)
+            director.last_viewer_activity = now_ts - offset
+            director.last_action_at = None
+            target_now = now_ts
+        else:
+            if director.current_tier(now_ts) == 0:
+                director.last_viewer_activity = now_ts - 95.0
+            due = director.next_action_due(now_ts)
+            target_now = max(now_ts, due) if due is not None else now_ts
+        segment = await director.next_segment(
+            now=target_now,
+            llm=runtime.llm,
+            draw_and_guess=runtime.live.draw_and_guess,
+            turtle_soup=runtime.live.turtle_soup,
+            roast_radio=runtime.live.roast_radio,
+            store=store,
+            options=runtime.live.options(),
+        )
+        return {
+            "spoken_text": (segment or {}).get("spoken_text"),
+            "segment": segment,
+            "status": cold_director_snapshot(),
+        }
+
     @app.post(prefix + "/{action}", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def control(action: str):
         return await runtime.control(action)
@@ -326,10 +466,26 @@ def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None
         return runtime.live.draw_and_guess.get_overlay_state()
 
     @app.post(prefix + "/draw-and-guess/start", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
-    async def start_draw_and_guess(data: dict = Body(...)):
-        user = data.get("trigger_user", "主播")
+    async def start_draw_and_guess(data: dict = Body(default_factory=dict)):
+        user = str(data.get("trigger_user") or "主播")
         duration = int(data.get("duration_sec", 60))
-        return runtime.live.draw_and_guess.start_round(trigger_user=user, duration_sec=duration)
+        theme = data.get("theme")
+        mode = str(data.get("mode") or "aqua_draws")
+        use_llm = bool(data.get("use_llm", False))
+        if use_llm:
+            return await runtime.live.draw_and_guess.start_round_llm(
+                runtime.llm,
+                trigger_user=user,
+                duration_sec=duration,
+                theme=theme,
+                mode=mode,
+            )
+        return runtime.live.draw_and_guess.start_round(
+            trigger_user=user,
+            duration_sec=duration,
+            theme=theme,
+            mode=mode,
+        )
 
     @app.post(prefix + "/draw-and-guess/stop", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def stop_draw_and_guess():
