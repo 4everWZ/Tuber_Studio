@@ -12,7 +12,10 @@ import httpx
 import pytest
 
 from tuber_studio.infra.platforms.bilibili.client import BILIBILI_WEB_USER_AGENT
-from tuber_studio.infra.platforms.bilibili.video_upload import upload_bilibili_video_web, verify_bilibili_video_publication
+from tuber_studio.infra.platforms.bilibili.video_upload import (
+    upload_bilibili_video_web,
+    verify_bilibili_video_publication,
+)
 
 SECRETS = {"sessdata": "secret_sess_123", "csrf": "secret_csrf_456", "uid": "998877"}
 

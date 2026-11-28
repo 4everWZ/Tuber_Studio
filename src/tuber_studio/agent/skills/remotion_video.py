@@ -45,6 +45,7 @@ from .remotion_assets import (
     VideoSceneSpec,
 )
 from .remotion_audio_qc import MAX_DURATION_DRIFT_SECONDS, MAX_RENDERED_VIDEO_BYTES
+from .remotion_publication import StageOrPublishVideoArgs, StageVideoToolArgs, VideoPublicationMixin
 from .remotion_recap import (
     RECAP_TARGET_MAX_SECONDS,
     RECAP_TARGET_MIN_SECONDS,
@@ -52,7 +53,6 @@ from .remotion_recap import (
     estimate_recap_duration_seconds,
     recap_plan_fields,
 )
-from .remotion_publication import StageOrPublishVideoArgs, StageVideoToolArgs, VideoPublicationMixin
 
 __all__ = [
     "DEFAULT_VIDEO_PRODUCTION_POLICY", "MAX_DURATION_DRIFT_SECONDS", "MAX_RENDERED_VIDEO_BYTES", "VIDEO_PRODUCTION_POLICY_KEY",
