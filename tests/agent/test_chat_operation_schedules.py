@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from tests.support.operations_helpers import ControlledPlatform
 from tuber_studio.agent.chat.lookup import operator_facts
 from tuber_studio.app import create_app
+from tuber_studio.operations.kernel import schedules as schedule_kernel
 
 
 def _make_dual_router(route_fn):
@@ -111,17 +112,21 @@ def test_chat_conversational_duration_window_daily_list_and_cancel(settings, mon
         r4 = client.post(path, json={"request_id": str(uuid4()), "message": "取消所有定时运营计划"})
         assert r4.status_code == 200
         assert "已取消" in r4.json()["reply_text"]
-        assert app.state.browsing.schedules.list(include_finished=False) == []
+        schedules = client.get("/api/v1/operations/automation/schedules")
+        assert not any(item["status"] in {"active", "scheduled"} for item in schedules.raise_for_status().json()["items"])
         for _ in range(40):
-            if not app.state.browsing.operations.policy()["enabled"]:
+            policy = client.get("/api/v1/operations/automation").raise_for_status().json()["policy"]
+            if not policy["enabled"]:
                 break
             time.sleep(0.05)
-        assert app.state.browsing.operations.policy()["enabled"] is False
+        assert policy["enabled"] is False
 
 
 def test_chat_once_window_schedule_rolls_overnight_and_future_day(settings, monkeypatch):
     app = create_app(settings, adapter=ControlledPlatform())
-    monkeypatch.setattr(operator_facts, "now", lambda _browsing: operator_facts.datetime(2026, 11, 27, 21, 0, tzinfo=operator_facts.ZoneInfo("Asia/Taipei")))
+    now = operator_facts.datetime(2026, 11, 27, 21, 0, tzinfo=operator_facts.ZoneInfo("Asia/Taipei"))
+    monkeypatch.setattr(operator_facts, "now", lambda _browsing: now)
+    monkeypatch.setattr(schedule_kernel, "time", SimpleNamespace(time=now.timestamp))
 
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         path = "/api/v1/agent/chat"
@@ -145,6 +150,6 @@ def test_chat_once_window_schedule_rolls_overnight_and_future_day(settings, monk
         body = res.json()
         assert "2026-11-27 23:00" in body["reply_text"]
         assert "2026-11-28 00:30" in body["reply_text"]
-        items = app.state.browsing.schedules.list(include_finished=False)
+        items = client.get("/api/v1/operations/automation/schedules").raise_for_status().json()["items"]
         assert len(items) == 1
         assert items[0]["status"] == "scheduled"
