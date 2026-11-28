@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ApiError, apiDelete, apiGet, apiPost, apiPut, studioPath } from "@/shared/api/client";
+import {
+  ApiError,
+  apiDelete,
+  apiGet,
+  apiPost,
+  apiPut,
+  apiRequest,
+  studioPath,
+} from "@/shared/api/client";
 import type { SystemSettings } from "@/shared/hooks/useAppSession";
 import { errorMessage } from "@/shared/lib/errors";
 import { LiveSceneCanvas } from "./LiveSceneCanvas";
@@ -11,7 +19,12 @@ import {
   type LiveControlAction,
 } from "./liveControls";
 import styles from "./LiveWorkbench.module.css";
-import type { LiveStudioData } from "./types";
+import type {
+  ColdDirectorStatusData,
+  LiveScheduleItem,
+  LiveStudioData,
+  OvertimeStatusData,
+} from "./types";
 
 const JOB_LABELS: Record<string, string> = {
   received: "已收到",
@@ -59,6 +72,33 @@ function formatTime(timestamp: number | undefined): string {
   });
 }
 
+function formatLocalDateTime(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function defaultOnceWindow(): { start: string; end: string } {
+  const now = Date.now();
+  return {
+    start: formatLocalDateTime(now + 5 * 60 * 1000),
+    end: formatLocalDateTime(now + 65 * 60 * 1000),
+  };
+}
+
+function isAcceptedMockResult(
+  result: { status?: string; reason?: string | null },
+  submittedType?: string
+): boolean {
+  return (
+    result.status === "queued" ||
+    result.status === "recorded" ||
+    result.reason === "已计票" ||
+    result.reason === "辩论已计票" ||
+    (submittedType === "disconnect" && result.status === "filtered")
+  );
+}
+
 export interface LiveDeskProps {
   settings: SystemSettings | null;
   mode?: "workbench" | "standalone";
@@ -88,6 +128,31 @@ type MockEventType = "chat" | "gift" | "song" | "sfx" | "disconnect";
   const [mockText, setMockText] = useState("");
   const [mockAsset, setMockAsset] = useState("");
 
+  const [schedules, setSchedules] = useState<LiveScheduleItem[]>([]);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
+  const [scheduleLabel, setScheduleLabel] = useState("晚间直播");
+  const [scheduleKind, setScheduleKind] = useState<"duration" | "daily_window" | "once_window">("duration");
+  const [scheduleDuration, setScheduleDuration] = useState("60");
+  const [scheduleStartLocal, setScheduleStartLocal] = useState("20:00");
+  const [scheduleEndLocal, setScheduleEndLocal] = useState("22:00");
+  const [scheduleOnceStart, setScheduleOnceStart] = useState(() => defaultOnceWindow().start);
+  const [scheduleOnceEnd, setScheduleOnceEnd] = useState(() => defaultOnceWindow().end);
+  const [scheduleWeekdays, setScheduleWeekdays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [scheduleTimezone, setScheduleTimezone] = useState("Asia/Shanghai");
+  const [scheduleBaseMinutes, setScheduleBaseMinutes] = useState("60");
+  const [scheduleMaxOvertime, setScheduleMaxOvertime] = useState("120");
+  const [scheduleExtStep, setScheduleExtStep] = useState("15");
+  const [scheduleAutoPause, setScheduleAutoPause] = useState(true);
+
+  const [overtime, setOvertime] = useState<OvertimeStatusData | null>(null);
+  const [overtimeBusy, setOvertimeBusy] = useState(false);
+  const [overtimeBaseMinutes, setOvertimeBaseMinutes] = useState("60");
+  const [overtimeMaxMinutes, setOvertimeMaxMinutes] = useState("120");
+  const [overtimeStepMinutes, setOvertimeStepMinutes] = useState("15");
+
+  const [coldDirector, setColdDirector] = useState<ColdDirectorStatusData | null>(null);
+  const [coldBusy, setColdBusy] = useState(false);
+
   const pollTaskRef = useRef<Promise<void> | null>(null);
   const sessionIdRef = useRef<string | null | undefined>(undefined);
   const chatIdsRef = useRef<Set<string | number>>(new Set());
@@ -106,6 +171,42 @@ type MockEventType = "chat" | "gift" | "song" | "sfx" | "disconnect";
     if (typeof document !== "undefined" && document.hidden) return false;
     return true;
   }, [visible]);
+
+  const loadAuxiliary = useCallback(async () => {
+    const [schedRes, overtimeRes, coldRes] = await Promise.allSettled([
+      apiRequest<LiveScheduleItem[] | { schedules?: LiveScheduleItem[] }>("/api/v1/live/schedules", {
+        method: "GET",
+      }),
+      apiRequest<OvertimeStatusData>("/api/v1/live/overtime", { method: "GET" }),
+      apiRequest<ColdDirectorStatusData>("/api/v1/live/cold-director/status", { method: "GET" }),
+    ]);
+
+    if (schedRes.status === "fulfilled" && schedRes.value) {
+      const raw = schedRes.value;
+      const list = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw.schedules)
+          ? raw.schedules
+          : [];
+      setSchedules(list);
+    }
+    if (
+      overtimeRes.status === "fulfilled" &&
+      overtimeRes.value &&
+      typeof overtimeRes.value === "object" &&
+      ("active" in overtimeRes.value || "energy" in overtimeRes.value || "stage" in overtimeRes.value)
+    ) {
+      setOvertime(overtimeRes.value);
+    }
+    if (
+      coldRes.status === "fulfilled" &&
+      coldRes.value &&
+      typeof coldRes.value === "object" &&
+      "tier" in coldRes.value
+    ) {
+      setColdDirector(coldRes.value);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -136,11 +237,12 @@ type MockEventType = "chat" | "gift" | "song" | "sfx" | "disconnect";
         }
         chatIdsRef.current = new Set(nextChat.map((item, idx) => item.id ?? idx));
       }
+      void loadAuxiliary();
     } catch {
       setFresh(false);
       setLoadError("暂时读不到直播状态，可刷新重试。");
     }
-  }, []);
+  }, [loadAuxiliary]);
 
   const refresh = useCallback(() => {
     if (!isVisible()) return Promise.resolve();
@@ -264,14 +366,170 @@ type MockEventType = "chat" | "gift" | "song" | "sfx" | "disconnect";
           metadata: submittedType === "sfx" ? { asset_id: submittedAsset.trim() } : {},
         },
       });
-      if (
-        result.status !== "queued" &&
-        result.reason !== "已计票" &&
-        !(submittedType === "disconnect" && result.status === "filtered")
-      ) {
+      if (!isAcceptedMockResult(result, submittedType)) {
         throw new Error(result.reason || result.status || "注入失败");
       }
       setMockText("");
+    });
+  };
+
+  const handleCreateSchedule = async (event: FormEvent) => {
+    event.preventDefault();
+    if (scheduleBusy) return;
+    setScheduleBusy(true);
+    setActionError("");
+    try {
+      const parsedDuration = Number.parseInt(scheduleDuration || "60", 10);
+      const parsedBase = Number.parseInt(scheduleBaseMinutes || "60", 10);
+      const parsedMaxOt = Number.parseInt(scheduleMaxOvertime || "120", 10);
+      const parsedStep = Number.parseInt(scheduleExtStep || "15", 10);
+
+      const body: Record<string, unknown> = {
+        kind: scheduleKind,
+        label: scheduleLabel.trim() || "直播排班",
+        timezone: scheduleTimezone.trim() || "Asia/Shanghai",
+        base_duration_minutes: Number.isNaN(parsedBase) ? 60 : parsedBase,
+        max_overtime_minutes: Number.isNaN(parsedMaxOt) ? 120 : parsedMaxOt,
+        extension_step_minutes: Number.isNaN(parsedStep) ? 15 : parsedStep,
+        auto_pause_operations: scheduleAutoPause,
+      };
+      if (scheduleKind === "duration") {
+        body.duration_minutes = Number.isNaN(parsedDuration) ? 60 : parsedDuration;
+      } else if (scheduleKind === "once_window") {
+        body.start_local = scheduleOnceStart.trim();
+        body.end_local = scheduleOnceEnd.trim();
+      } else {
+        body.start_time = scheduleStartLocal.trim();
+        body.end_time = scheduleEndLocal.trim();
+        body.weekdays = scheduleWeekdays;
+      }
+
+      await apiRequest("/api/v1/live/schedules", { method: "POST", body });
+      setActionState("已新增直播排班。");
+      await loadAuxiliary();
+    } catch (error) {
+      setActionError(errorMessage(error));
+    } finally {
+      setScheduleBusy(false);
+    }
+  };
+
+  const handleToggleSchedule = async (item: LiveScheduleItem) => {
+    if (scheduleBusy) return;
+    setScheduleBusy(true);
+    setActionError("");
+    try {
+      await apiRequest(`/api/v1/live/schedules/${encodeURIComponent(item.id)}`, {
+        method: "PATCH",
+        body: { enabled: !(item.enabled ?? true) },
+      });
+      await loadAuxiliary();
+    } catch (error) {
+      setActionError(errorMessage(error));
+    } finally {
+      setScheduleBusy(false);
+    }
+  };
+
+  const handleDeleteSchedule = async (id: string) => {
+    if (scheduleBusy) return;
+    setScheduleBusy(true);
+    setActionError("");
+    try {
+      await apiRequest(`/api/v1/live/schedules/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      setActionState("已删除直播排班。");
+      await loadAuxiliary();
+    } catch (error) {
+      setActionError(errorMessage(error));
+    } finally {
+      setScheduleBusy(false);
+    }
+  };
+
+  const handleStartOvertime = async () => {
+    if (overtimeBusy) return;
+    setOvertimeBusy(true);
+    setActionError("");
+    try {
+      const base = Number.parseInt(overtimeBaseMinutes || "60", 10);
+      const maxOt = Number.parseInt(overtimeMaxMinutes || "120", 10);
+      const step = Number.parseInt(overtimeStepMinutes || "15", 10);
+      const next = await apiRequest<OvertimeStatusData>("/api/v1/live/overtime/start", {
+        method: "POST",
+        body: {
+          base_duration_minutes: Number.isNaN(base) ? 60 : base,
+          max_overtime_minutes: Number.isNaN(maxOt) ? 120 : maxOt,
+          extension_step_minutes: Number.isNaN(step) ? 15 : step,
+        },
+      });
+      setOvertime(next);
+      setActionState("白饭加班能量条已开启。");
+    } catch (error) {
+      setActionError(errorMessage(error));
+    } finally {
+      setOvertimeBusy(false);
+    }
+  };
+
+  const handleStopOvertime = async () => {
+    if (overtimeBusy) return;
+    setOvertimeBusy(true);
+    setActionError("");
+    try {
+      const next = await apiRequest<OvertimeStatusData>("/api/v1/live/overtime/stop", {
+        method: "POST",
+      });
+      setOvertime(next);
+      setActionState("已打卡下班，停止加班剧场。");
+    } catch (error) {
+      setActionError(errorMessage(error));
+    } finally {
+      setOvertimeBusy(false);
+    }
+  };
+
+  const handleTriggerColdDirector = async () => {
+    if (coldBusy) return;
+    setColdBusy(true);
+    setActionError("");
+    try {
+      const res = await apiRequest<{ spoken_text?: string }>("/api/v1/live/cold-director/trigger", {
+        method: "POST",
+      });
+      setActionState(res.spoken_text || "已触发冷场导演暖场。");
+      await loadAuxiliary();
+    } catch (error) {
+      setActionError(errorMessage(error));
+    } finally {
+      setColdBusy(false);
+    }
+  };
+
+  const handleQuickMock = (
+    type: "chat" | "gift",
+    text: string,
+    metadata: Record<string, unknown> = {}
+  ) => {
+    void runAction(async () => {
+      const result = await apiPost<
+        "/api/v1/live/mock-event",
+        { status?: string; reason?: string | null }
+      >("/api/v1/live/mock-event", {
+        body: {
+          type,
+          platform: "mock",
+          room_id: "debug",
+          display_name: mockName.trim() || "测试观众",
+          platform_user_id: "workbench-debug",
+          text,
+          metadata,
+        },
+      });
+      if (!isAcceptedMockResult(result)) {
+        throw new Error(result.reason || result.status || "注入失败");
+      }
     });
   };
 
@@ -835,10 +1093,419 @@ type MockEventType = "chat" | "gift" | "song" | "sfx" | "disconnect";
                     onChange={(e) => setMockAsset(e.target.value)}
                   />
                 </label>
-                <button type="submit">注入 Mock 事件</button>
+            <button type="submit">注入 Mock 事件</button>
               </fieldset>
             </form>
           </details>
+        </section>
+      </div>
+
+      <div className={styles.phase2Grid}>
+        <section
+          id="desk-schedules-panel"
+          data-desk-schedules
+          className={`panel ${styles.deskPanel}`}
+          aria-labelledby="desk-schedules-title"
+        >
+          <div className={styles.deskPanelHeading}>
+            <h2 id="desk-schedules-title">定时开播排班</h2>
+            <span className={styles.deskChip} data-desk-schedule-count>
+              {schedules.length} 条排班
+            </span>
+          </div>
+          <form data-desk-schedule-form onSubmit={(e) => void handleCreateSchedule(e)}>
+            <fieldset disabled={scheduleBusy}>
+              <div className={styles.compactFormGrid}>
+                <label>
+                  排班名称
+                  <input
+                    name="schedule_label"
+                    value={scheduleLabel}
+                    onChange={(e) => setScheduleLabel(e.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  排班类型
+                  <select
+                    name="schedule_kind"
+                    value={scheduleKind}
+                    onChange={(e) =>
+                      setScheduleKind(e.target.value as "duration" | "daily_window" | "once_window")
+                    }
+                  >
+                    <option value="duration">单次定时长</option>
+                    <option value="daily_window">每日时段</option>
+                    <option value="once_window">单次时段</option>
+                  </select>
+                </label>
+                {scheduleKind === "duration" ? (
+                  <label>
+                    直播时长（分钟）
+                    <input
+                      name="duration_minutes"
+                      type="number"
+                      min={1}
+                      max={720}
+                      value={scheduleDuration}
+                      onChange={(e) => setScheduleDuration(e.target.value)}
+                    />
+                  </label>
+                ) : scheduleKind === "once_window" ? (
+                  <>
+                    <label>
+                      开始时间 (YYYY-MM-DD HH:MM)
+                      <input
+                        name="start_local"
+                        type="text"
+                        placeholder="YYYY-MM-DD HH:MM"
+                        value={scheduleOnceStart}
+                        onChange={(e) => setScheduleOnceStart(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      结束时间 (YYYY-MM-DD HH:MM)
+                      <input
+                        name="end_local"
+                        type="text"
+                        placeholder="YYYY-MM-DD HH:MM"
+                        value={scheduleOnceEnd}
+                        onChange={(e) => setScheduleOnceEnd(e.target.value)}
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label>
+                      开始时间 (HH:MM)
+                      <input
+                        name="start_local"
+                        type="text"
+                        placeholder="20:00"
+                        value={scheduleStartLocal}
+                        onChange={(e) => setScheduleStartLocal(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      结束时间 (HH:MM)
+                      <input
+                        name="end_local"
+                        type="text"
+                        placeholder="22:00"
+                        value={scheduleEndLocal}
+                        onChange={(e) => setScheduleEndLocal(e.target.value)}
+                      />
+                    </label>
+                  </>
+                )}
+                <label>
+                  时区
+                  <input
+                    name="timezone"
+                    value={scheduleTimezone}
+                    onChange={(e) => setScheduleTimezone(e.target.value)}
+                  />
+                </label>
+                <label>
+                  基础时长（分）
+                  <input
+                    name="base_duration_minutes"
+                    type="number"
+                    min={5}
+                    value={scheduleBaseMinutes}
+                    onChange={(e) => setScheduleBaseMinutes(e.target.value)}
+                  />
+                </label>
+                <label>
+                  加班上限（分）
+                  <input
+                    name="max_overtime_minutes"
+                    type="number"
+                    min={0}
+                    value={scheduleMaxOvertime}
+                    onChange={(e) => setScheduleMaxOvertime(e.target.value)}
+                  />
+                </label>
+                <label>
+                  单次延长（分）
+                  <input
+                    name="extension_step_minutes"
+                    type="number"
+                    min={1}
+                    value={scheduleExtStep}
+                    onChange={(e) => setScheduleExtStep(e.target.value)}
+                  />
+                </label>
+              </div>
+              {scheduleKind === "daily_window" && (
+                <div className={styles.quickActions} aria-label="重复星期">
+                  {[
+                    [1, "一"],
+                    [2, "二"],
+                    [3, "三"],
+                    [4, "四"],
+                    [5, "五"],
+                    [6, "六"],
+                    [0, "日"],
+                  ].map(([day, label]) => {
+                    const checked = scheduleWeekdays.includes(Number(day));
+                    return (
+                      <label key={day} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const num = Number(day);
+                            setScheduleWeekdays((prev) =>
+                              e.target.checked
+                                ? [...new Set([...prev, num])]
+                                : prev.filter((d) => d !== num)
+                            );
+                          }}
+                        />
+                        周{label}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+                <input
+                  type="checkbox"
+                  name="auto_pause_operations"
+                  checked={scheduleAutoPause}
+                  onChange={(e) => setScheduleAutoPause(e.target.checked)}
+                />
+                开播时自动暂停后台运维巡检，下播后恢复
+              </label>
+              <div className="actions" style={{ marginTop: 10 }}>
+                <button type="submit" className="primary" data-desk-schedule-create>
+                  新增定时开播
+                </button>
+              </div>
+            </fieldset>
+          </form>
+
+          <ul className={styles.scheduleList} data-desk-schedule-list>
+            {schedules.map((item) => {
+              const isEnabled = item.enabled !== false;
+              const isActive = item.status === "active" || Boolean(item.active);
+              const startText =
+                item.start_local_display ||
+                item.next_start_local_display ||
+                item.start_local ||
+                item.start_time ||
+                "--:--";
+              const endText =
+                item.end_local_display ||
+                item.next_end_local_display ||
+                item.end_local ||
+                item.end_time ||
+                "--:--";
+              const windowText =
+                item.kind === "duration"
+                  ? `${item.duration_minutes ?? item.base_duration_minutes ?? 60} 分钟`
+                  : `${startText} ~ ${endText}`;
+              return (
+                <li key={item.id} className={styles.scheduleRow} data-schedule-id={item.id}>
+                  <div className={styles.scheduleMeta}>
+                    <strong>
+                      {item.label || item.kind} · {isEnabled ? "已启用" : "已暂停"}
+                      {isActive ? " (开播中)" : ""}
+                    </strong>
+                    <small>
+                      {item.kind} · {windowText} · 加班上限 {item.max_overtime_minutes ?? 120}m
+                      {item.auto_pause_operations !== false ? " · 自动暂停运维" : ""}
+                    </small>
+                  </div>
+                  <div className={styles.deskRowActions}>
+                    <button
+                      type="button"
+                      data-schedule-toggle={item.id}
+                      disabled={scheduleBusy}
+                      onClick={() => void handleToggleSchedule(item)}
+                    >
+                      {isEnabled ? "暂停" : "启用"}
+                    </button>
+                    <button
+                      type="button"
+                      className="danger"
+                      data-schedule-delete={item.id}
+                      disabled={scheduleBusy}
+                      onClick={() => void handleDeleteSchedule(item.id)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          <p className={styles.deskEmpty} hidden={schedules.length > 0}>
+            暂无定时开播排班。
+          </p>
+        </section>
+
+        <section
+          id="desk-overtime-panel"
+          data-desk-overtime
+          className={`panel ${styles.deskPanel}`}
+          aria-labelledby="desk-overtime-title"
+        >
+          <div className={styles.deskPanelHeading}>
+            <h2 id="desk-overtime-title">🍚 白饭加班剧场 & 本地快速测试</h2>
+            <span className={styles.deskChip} data-desk-overtime-state>
+              {overtime?.active ? `加班中 +${overtime.overtime_minutes ?? 0}m` : "未开启加班条"}
+            </span>
+          </div>
+          {(() => {
+            const th = overtime?.threshold && overtime.threshold > 0 ? overtime.threshold : 100;
+            const en = Math.max(0, overtime?.energy ?? 0);
+            const pct = Math.min(100, Math.round((en / th) * 100));
+            return (
+              <div className={styles.overtimeMeter}>
+                <div className={styles.overtimeMeterRow}>
+                  <strong data-desk-overtime-energy>
+                    白饭能量 {en} / {th} ({pct}%)
+                  </strong>
+                  <span data-desk-overtime-remaining>
+                    剩余 {Math.max(0, Math.ceil((overtime?.remaining_seconds ?? 0) / 60))} 分钟 ·{" "}
+                    延长 {overtime?.extensions_count ?? 0} 次
+                  </span>
+                </div>
+                <div className={styles.overtimeBarTrack}>
+                  <div className={styles.overtimeBarFill} style={{ width: `${pct}%` }} />
+                </div>
+                <p className={styles.deskHint} data-desk-overtime-line style={{ margin: 0 }}>
+                  {overtime?.last_event_line || "开启加班剧场后，送礼或高活跃弹幕会为白饭能量条蓄力续时。"}
+                </p>
+              </div>
+            );
+          })()}
+          <div className={styles.compactFormGrid}>
+            <label>
+              基础时长（分）
+              <input
+                name="ot_base"
+                type="number"
+                min={5}
+                value={overtimeBaseMinutes}
+                onChange={(e) => setOvertimeBaseMinutes(e.target.value)}
+              />
+            </label>
+            <label>
+              加班上限（分）
+              <input
+                name="ot_max"
+                type="number"
+                min={0}
+                value={overtimeMaxMinutes}
+                onChange={(e) => setOvertimeMaxMinutes(e.target.value)}
+              />
+            </label>
+            <label>
+              单次延长时间（分）
+              <input
+                name="ot_step"
+                type="number"
+                min={1}
+                value={overtimeStepMinutes}
+                onChange={(e) => setOvertimeStepMinutes(e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="actions" style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              id="overtime-start-btn"
+              className="primary"
+              disabled={overtimeBusy}
+              onClick={() => void handleStartOvertime()}
+            >
+              开启加班能量条
+            </button>
+            <button
+              type="button"
+              id="overtime-stop-btn"
+              className="danger"
+              disabled={overtimeBusy || !overtime?.active}
+              onClick={() => void handleStopOvertime()}
+            >
+              打卡下班
+            </button>
+            <button
+              type="button"
+              id="desk-cold-trigger-btn"
+              disabled={coldBusy}
+              onClick={() => void handleTriggerColdDirector()}
+            >
+              冷场导演 Tier {coldDirector?.tier ?? 0} · 触发暖场
+            </button>
+          </div>
+
+          <div className={styles.deskTools} data-desk-quick-mock>
+            <span className={styles.deskHint}>
+              本地联调快捷测试（通过 /api/v1/live/mock-event 注入）
+            </span>
+            <div className={styles.quickActions}>
+              <button
+                type="button"
+                data-quick-mock="chat-hello"
+                disabled={!canAct || !enabled}
+                onClick={() => handleQuickMock("chat", "Aqua晚上好，今天吃白饭了吗？")}
+              >
+                测试弹幕：打招呼
+              </button>
+              <button
+                type="button"
+                data-quick-mock="chat-guess"
+                disabled={!canAct || !enabled}
+                onClick={() => handleQuickMock("chat", "西瓜")}
+              >
+                测试弹幕：猜西瓜
+              </button>
+              <button
+                type="button"
+                data-quick-mock="chat-soup"
+                disabled={!canAct || !enabled}
+                onClick={() => handleQuickMock("chat", "这件事发生在太空里吗？")}
+              >
+                测试海龟汤提问
+              </button>
+              <button
+                type="button"
+                data-quick-mock="chat-vote"
+                disabled={!canAct || !enabled}
+                onClick={() => handleQuickMock("chat", "1")}
+              >
+                测试辩论投票 1
+              </button>
+              <button
+                type="button"
+                data-quick-mock="gift-brush"
+                disabled={!canAct || !enabled}
+                onClick={() =>
+                  handleQuickMock("gift", "画笔", { gift_name: "画笔", count: 1, price: 10 })
+                }
+              >
+                测试礼物：画笔 (10电池)
+              </button>
+              <button
+                type="button"
+                data-quick-mock="gift-rice"
+                disabled={!canAct || !enabled}
+                onClick={() =>
+                  handleQuickMock("gift", "白饭应援", {
+                    gift_name: "白饭应援",
+                    count: 1,
+                    price: 100,
+                  })
+                }
+              >
+                测试礼物：白饭应援 (100电池)
+              </button>
+            </div>
+          </div>
         </section>
       </div>
     </main>

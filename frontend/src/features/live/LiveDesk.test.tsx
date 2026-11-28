@@ -197,6 +197,173 @@ describe("LiveDesk", () => {
     fireEvent.keyDown(chatTab, { key: "ArrowRight" });
     expect(document.getElementById("desk-dialogue-tab")?.getAttribute("aria-selected")).toBe("true");
   });
+
+  it("manages scheduled live streams, Overtime Theater controls, Cold-Room trigger, and quick mock triggers", async () => {
+    const currentView = makeStudioView({ state: "live" });
+    let scheduleList = [
+      {
+        id: "sch-1",
+        kind: "daily_window",
+        label: "夜间档",
+        status: "active",
+        enabled: true,
+        start_local_display: "2026-11-28 20:00",
+        end_local_display: "2026-11-28 22:00",
+        max_overtime_minutes: 120,
+        auto_pause_operations: true,
+      },
+    ];
+    let overtimeState: Record<string, unknown> = {
+      active: false,
+      energy: 0,
+      threshold: 100,
+      overtime_minutes: 0,
+      max_overtime_minutes: 120,
+      extensions_count: 0,
+      remaining_seconds: 0,
+      last_event_line: null,
+    };
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method || "GET";
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        requests.push({ url, method, body });
+
+        if (url.endsWith("/api/v1/live/studio")) return Response.json(currentView);
+        if (url.endsWith("/api/v1/live/schedules") && method === "GET") {
+          return Response.json(scheduleList);
+        }
+        if (url.endsWith("/api/v1/live/schedules") && method === "POST") {
+          const created = { id: "sch-2", enabled: true, ...(body as Record<string, unknown>) };
+          scheduleList = [...scheduleList, created as (typeof scheduleList)[number]];
+          return Response.json(created);
+        }
+        if (url.endsWith("/api/v1/live/schedules/sch-1") && method === "PATCH") {
+          scheduleList = scheduleList.map((s) =>
+            s.id === "sch-1" ? { ...s, enabled: Boolean((body as { enabled: boolean }).enabled) } : s
+          );
+          return Response.json({ id: "sch-1" });
+        }
+        if (url.endsWith("/api/v1/live/schedules/sch-2") && method === "DELETE") {
+          scheduleList = scheduleList.filter((s) => s.id !== "sch-2");
+          return Response.json({ removed: "sch-2" });
+        }
+        if (url.endsWith("/api/v1/live/overtime") && method === "GET") {
+          return Response.json(overtimeState);
+        }
+        if (url.endsWith("/api/v1/live/overtime/start") && method === "POST") {
+          overtimeState = {
+            active: true,
+            energy: 40,
+            threshold: 100,
+            overtime_minutes: 15,
+            max_overtime_minutes: 120,
+            extensions_count: 1,
+            remaining_seconds: 2700,
+            last_event_line: "白饭还没吃上，加班条又涨了！",
+          };
+          return Response.json(overtimeState);
+        }
+        if (url.endsWith("/api/v1/live/overtime/stop") && method === "POST") {
+          overtimeState = { ...overtimeState, active: false };
+          return Response.json(overtimeState);
+        }
+        if (url.endsWith("/api/v1/live/cold-director/status")) {
+          return Response.json({ tier: 2, elapsed_seconds: 310 });
+        }
+        if (url.endsWith("/api/v1/live/cold-director/trigger") && method === "POST") {
+          return Response.json({ spoken_text: "暖场小剧场启动！" });
+        }
+        if (url.endsWith("/api/v1/live/mock-event") && method === "POST") {
+          const parsed = body as { text?: string } | undefined;
+          if (parsed?.text === "1") {
+            return Response.json({ status: "recorded", reason: "辩论已计票", vote: { side: "a" } });
+          }
+          return Response.json({ status: "queued" });
+        }
+        return Response.json({});
+      })
+    );
+
+    render(<LiveDesk settings={{ features: { live_enabled: true } }} visible />);
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-desk-schedule-count]")?.textContent).toBe("1 条排班");
+      const rowText = document.querySelector('[data-schedule-id="sch-1"]')?.textContent || "";
+      expect(rowText).toContain("夜间档");
+      expect(rowText).toContain("(开播中)");
+      expect(rowText).toContain("2026-11-28 20:00 ~ 2026-11-28 22:00");
+    });
+
+    // Create new schedule
+    const schedForm = document.querySelector("[data-desk-schedule-form]") as HTMLFormElement;
+    fireEvent.submit(schedForm);
+    await waitFor(() => {
+      expect(document.querySelector("[data-desk-schedule-count]")?.textContent).toBe("2 条排班");
+    });
+
+    // Switching to once_window uses YYYY-MM-DD HH:MM inputs
+    const kindSelect = schedForm.querySelector('select[name="schedule_kind"]') as HTMLSelectElement;
+    fireEvent.change(kindSelect, { target: { value: "once_window" } });
+    const startInput = schedForm.querySelector('input[name="start_local"]') as HTMLInputElement;
+    const endInput = schedForm.querySelector('input[name="end_local"]') as HTMLInputElement;
+    expect(startInput.value).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    expect(endInput.value).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    fireEvent.change(kindSelect, { target: { value: "duration" } });
+
+    // Toggle sch-1
+    fireEvent.click(document.querySelector('[data-schedule-toggle="sch-1"]') as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.querySelector('[data-schedule-id="sch-1"]')?.textContent).toContain("已暂停");
+    });
+
+    // Delete sch-2
+    fireEvent.click(document.querySelector('[data-schedule-delete="sch-2"]') as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.querySelector("[data-desk-schedule-count]")?.textContent).toBe("1 条排班");
+    });
+
+    // Overtime start & stop
+    fireEvent.click(document.getElementById("overtime-start-btn") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.querySelector("[data-desk-overtime-state]")?.textContent).toBe("加班中 +15m");
+      expect(document.querySelector("[data-desk-overtime-energy]")?.textContent).toContain("40 / 100 (40%)");
+      expect(document.querySelector("[data-desk-overtime-line]")?.textContent).toContain("白饭还没吃上");
+    });
+
+    fireEvent.click(document.getElementById("overtime-stop-btn") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.querySelector("[data-desk-overtime-state]")?.textContent).toBe("未开启加班条");
+    });
+
+    // Cold-Room Director quick trigger
+    fireEvent.click(document.getElementById("desk-cold-trigger-btn") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.querySelector("[data-desk-action-state]")?.textContent).toBe("暖场小剧场启动！");
+    });
+
+    // Quick mock gift button -> sends price & count matching InteractiveRulesService.extract_gift_info
+    fireEvent.click(document.querySelector('[data-quick-mock="gift-rice"]') as HTMLButtonElement);
+    await waitFor(() => {
+      const mockReq = requests.find((r) => r.url.endsWith("/api/v1/live/mock-event"));
+      expect(mockReq?.body).toMatchObject({
+        type: "gift",
+        text: "白饭应援",
+        metadata: { gift_name: "白饭应援", count: 1, price: 100 },
+      });
+    });
+
+    // Quick mock debate vote -> accepts { status: "recorded", reason: "辩论已计票" }
+    fireEvent.click(document.querySelector('[data-quick-mock="chat-vote"]') as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.querySelector("[data-desk-action-error]")?.textContent).toBe("");
+      expect(document.querySelector("[data-desk-action-state]")?.textContent).toBe("操作已提交。");
+    });
+  });
 });
 
 describe("LiveMusicPage and LiveSettingsPage", () => {

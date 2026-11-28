@@ -298,4 +298,205 @@ describe("LiveInteractionPage", () => {
       item: "防风草种子",
     });
   });
+
+  it("controls Draw & Guess 2.0 theme/LLM, Turtle Soup, Roast Radio, and Cold-Room Director", async () => {
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    let showsState: Record<string, unknown> = {
+      draw_and_guess: { active: false, state: "idle", scoreboard: { 小明: 2 } },
+      turtle_soup: { active: false, state: "idle", clues_found: [] },
+      roast_radio: { active: false, mode: "idle", votes_a: 0, votes_b: 0 },
+      cold_director: { tier: 1, elapsed_seconds: 125, tier_label: "暖场闲聊" },
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method || "GET";
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        requests.push({ url, method, body });
+
+        if (url.endsWith("/api/v1/live/interactive-rules")) return Response.json(buildBaseRules());
+        if (url.endsWith("/api/v1/live/games/status")) {
+          return Response.json({ active_game_id: "stardew_valley", owner: "studio", active_status: { display_name: "星露谷" } });
+        }
+        if (url.endsWith("/api/v1/live/games/device/stardew")) {
+          return Response.json({ configured: false, online: false, state: null });
+        }
+        if (url.endsWith("/api/v1/live/draw-and-guess/status")) {
+          return Response.json(showsState.draw_and_guess);
+        }
+        if (url.endsWith("/api/v1/live/shows/status")) {
+          return Response.json(showsState);
+        }
+        if (url.endsWith("/api/v1/live/cold-director/status")) {
+          return Response.json(showsState.cold_director);
+        }
+        if (url.endsWith("/api/v1/live/draw-and-guess/start") && method === "POST") {
+          showsState = {
+            ...showsState,
+            draw_and_guess: {
+              active: true,
+              state: "drawing",
+              remaining: 60,
+              category: "美食",
+              theme: "热白饭",
+              hint_level: 1,
+              progressive_hint: "白花花一碗",
+              scoreboard: { 小明: 2 },
+            },
+          };
+          return Response.json({ status: "started", spoken_text: "开始画热白饭！" });
+        }
+        if (url.endsWith("/api/v1/live/shows/turtle-soup/start") && method === "POST") {
+          showsState = {
+            ...showsState,
+            turtle_soup: {
+              active: true,
+              state: "playing",
+              surface: "深夜冰箱门自己开了。",
+              genre: "mystery",
+              clues_found: [],
+            },
+          };
+          return Response.json({ spoken_text: "开汤啦！" });
+        }
+        if (url.endsWith("/api/v1/live/shows/turtle-soup/hint") && method === "POST") {
+          showsState = {
+            ...showsState,
+            turtle_soup: {
+              ...(showsState.turtle_soup as Record<string, unknown>),
+              clues_found: ["冰箱里有人偷吃白饭"],
+            },
+          };
+          return Response.json({ spoken_text: "提示：注意偷吃的人。" });
+        }
+        if (url.endsWith("/api/v1/live/shows/turtle-soup/reveal") && method === "POST") {
+          showsState = {
+            ...showsState,
+            turtle_soup: {
+              active: false,
+              state: "finished",
+              surface: "深夜冰箱门自己开了。",
+              answer: "是猫咪学会了开冰箱门。",
+              clues_found: ["冰箱里有人偷吃白饭"],
+            },
+          };
+          return Response.json({ answer: "是猫咪学会了开冰箱门。" });
+        }
+        if (url.endsWith("/api/v1/live/shows/roast-radio/start-debate") && method === "POST") {
+          showsState = {
+            ...showsState,
+            roast_radio: {
+              active: true,
+              mode: "debate",
+              topic: "白饭配老干妈还是蛋炒饭",
+              side_a: "老干妈",
+              side_b: "蛋炒饭",
+              votes_a: 3,
+              votes_b: 2,
+            },
+          };
+          return Response.json({ spoken_text: "辩论开启！" });
+        }
+        if (url.endsWith("/api/v1/live/shows/roast-radio/roast") && method === "POST") {
+          showsState = {
+            ...showsState,
+            roast_radio: {
+              ...(showsState.roast_radio as Record<string, unknown>),
+              last_roast: "选不出来就两碗都端走。",
+            },
+          };
+          return Response.json({ spoken_text: "选不出来就两碗都端走。" });
+        }
+        if (url.endsWith("/api/v1/live/shows/roast-radio/stop") && method === "POST") {
+          showsState = {
+            ...showsState,
+            roast_radio: { active: false, mode: "idle", votes_a: 0, votes_b: 0 },
+          };
+          return Response.json({ status: "stopped" });
+        }
+        if (url.endsWith("/api/v1/live/cold-director/trigger") && method === "POST") {
+          showsState = {
+            ...showsState,
+            cold_director: {
+              tier: 2,
+              elapsed_seconds: 320,
+              last_segment_kind: "solo_draw_and_guess",
+              last_spoken_text: "没人说话本小姐自己画着玩！",
+            },
+          };
+          return Response.json({ spoken_text: "没人说话本小姐自己画着玩！" });
+        }
+        return Response.json({});
+      })
+    );
+
+    const onFeedback = vi.fn();
+    render(<LiveInteractionPage visible onFeedback={onFeedback} />);
+
+    await waitFor(() => {
+      expect(document.getElementById("cold-director-tier")?.textContent).toBe("Tier 1");
+      expect(document.getElementById("cold-director-idle")?.textContent).toContain("125s");
+    });
+
+    // Draw & Guess 2.0 theme + LLM start
+    fireEvent.change(document.getElementById("dg-theme-input") as HTMLInputElement, {
+      target: { value: "热白饭" },
+    });
+    fireEvent.click(document.getElementById("dg-start-btn") as HTMLButtonElement);
+    await waitFor(() => {
+      const startReq = requests.find((r) => r.url.endsWith("/api/v1/live/draw-and-guess/start"));
+      expect(startReq?.body).toMatchObject({ theme: "热白饭", use_llm: true, mode: "aqua_draws" });
+      expect(document.getElementById("dg-progressive-hint")?.textContent).toContain("提示 L1: 白花花一碗");
+      expect(document.getElementById("dg-live-scoreboard")?.textContent).toContain("小明(2)");
+    });
+
+    // Turtle Soup start -> hint -> reveal
+    fireEvent.change(document.getElementById("ts-genre-input") as HTMLInputElement, {
+      target: { value: "mystery" },
+    });
+    fireEvent.click(document.getElementById("ts-start-btn") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.getElementById("ts-panel-surface")?.textContent).toContain("深夜冰箱门自己开了");
+    });
+    fireEvent.click(document.getElementById("ts-hint-btn") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.getElementById("ts-panel-clues")?.textContent).toContain("冰箱里有人偷吃白饭");
+    });
+    fireEvent.click(document.getElementById("ts-reveal-btn") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.getElementById("ts-panel-answer")?.textContent).toContain("猫咪学会了开冰箱门");
+    });
+
+    // Roast Radio debate -> roast -> stop
+    fireEvent.change(document.getElementById("rr-topic-input") as HTMLInputElement, {
+      target: { value: "白饭配老干妈还是蛋炒饭" },
+    });
+    fireEvent.change(document.getElementById("rr-side-a-input") as HTMLInputElement, {
+      target: { value: "老干妈" },
+    });
+    fireEvent.change(document.getElementById("rr-side-b-input") as HTMLInputElement, {
+      target: { value: "蛋炒饭" },
+    });
+    fireEvent.click(document.getElementById("rr-start-debate-btn") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.getElementById("rr-panel-topic")?.textContent).toContain("白饭配老干妈还是蛋炒饭");
+    });
+    fireEvent.click(document.getElementById("rr-roast-btn") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.getElementById("rr-panel-roast")?.textContent).toContain("两碗都端走");
+    });
+    fireEvent.click(document.getElementById("rr-stop-btn") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.getElementById("rr-live-status")?.textContent).toBe("空闲中");
+    });
+
+    // Cold-Room Director trigger
+    fireEvent.click(document.getElementById("cold-trigger-btn") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.getElementById("cold-director-tier")?.textContent).toBe("Tier 2");
+      expect(document.getElementById("cold-director-spoken")?.textContent).toContain("自己画着玩");
+    });
+  });
 });

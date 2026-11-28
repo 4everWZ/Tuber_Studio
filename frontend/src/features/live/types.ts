@@ -319,6 +319,8 @@ export interface DrawAndGuessRule {
 export interface InteractiveRulesData {
   song_request?: SongRequestRule;
   draw_and_guess?: DrawAndGuessRule;
+  turtle_soup?: Record<string, unknown>;
+  roast_radio?: Record<string, unknown>;
   game_livestream?: Record<string, unknown>;
   [key: string]: unknown;
 }
@@ -335,16 +337,26 @@ export interface GameStatusData {
 }
 
 export interface DrawGuessStroke {
-  type: "path" | "circle" | "ellipse" | string;
+  type: "path" | "circle" | "ellipse" | "rect" | "line" | "polygon" | string;
   d?: string;
   fill?: string;
   stroke?: string;
   width?: number;
+  stroke_width?: number;
+  strokeWidth?: number;
   cx?: number;
   cy?: number;
   r?: number;
   rx?: number;
   ry?: number;
+  x?: number;
+  y?: number;
+  height?: number;
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
+  points?: string | Array<[number, number] | number[]>;
 }
 
 export interface DrawGuessStatusData {
@@ -352,13 +364,125 @@ export interface DrawGuessStatusData {
   state?: string;
   remaining?: number;
   category?: string;
+  theme?: string | null;
+  mode?: string;
+  use_llm?: boolean;
+  llm_generated?: boolean;
   hint?: string;
+  hint_level?: number;
+  progressive_hint?: string;
   word?: string;
   winner?: string | null;
   trigger_user?: string;
   revealed_strokes?: DrawGuessStroke[];
   total_strokes?: number;
   character?: string;
+  scoreboard?: Record<string, number>;
+}
+
+export interface TurtleSoupQAItem {
+  user?: string;
+  display_name?: string;
+  question?: string;
+  text?: string;
+  verdict?: "yes" | "no" | "irrelevant" | "close" | "solved" | string;
+  answer?: string;
+  spoken_text?: string;
+}
+
+export interface TurtleSoupStatusData {
+  active?: boolean;
+  state?: string;
+  surface?: string;
+  genre?: string | null;
+  trigger_user?: string;
+  clues_found?: string[];
+  qa_history?: TurtleSoupQAItem[];
+  hint_index?: number;
+  winner?: string | null;
+  answer?: string | null;
+  spoken_text?: string;
+  llm_generated?: boolean;
+}
+
+export interface RoastRadioStatusData {
+  active?: boolean;
+  mode?: "roast" | "debate" | string;
+  topic?: string;
+  side_a?: string;
+  side_b?: string;
+  votes_a?: number;
+  votes_b?: number;
+  last_roast?: string | null;
+  source_bvid?: string | null;
+  spoken_text?: string;
+}
+
+export interface ColdDirectorStatusData {
+  tier?: number;
+  tier_label?: string;
+  elapsed_seconds?: number;
+  idle_seconds?: number;
+  next_action_due?: number | null;
+  next_action_in_seconds?: number | null;
+  seconds_until_next?: number | null;
+  last_action_at?: number | null;
+  last_segment_kind?: string | null;
+  last_spoken_text?: string | null;
+  cadence_seconds?: number;
+  total_segments?: number;
+  active?: boolean;
+}
+
+export interface OvertimeStatusData {
+  active?: boolean;
+  energy?: number;
+  threshold?: number;
+  base_duration_minutes?: number;
+  overtime_minutes?: number;
+  max_overtime_minutes?: number;
+  extensions_count?: number;
+  remaining_seconds?: number;
+  scheduled_end_at?: number | null;
+  stage?: string;
+  last_event_line?: string | null;
+}
+
+export interface LiveShowsStatusData {
+  character?: { id?: string; version?: number | string; name?: string } | string | null;
+  draw_and_guess?: DrawGuessStatusData | null;
+  turtle_soup?: TurtleSoupStatusData | null;
+  roast_radio?: RoastRadioStatusData | null;
+  cold_director?: ColdDirectorStatusData | null;
+  overtime?: OvertimeStatusData | null;
+}
+
+export interface LiveScheduleItem {
+  id: string;
+  kind: "duration" | "once_window" | "daily_window" | string;
+  label?: string;
+  status?: string;
+  enabled?: boolean;
+  active?: boolean;
+  duration_minutes?: number | null;
+  start_local?: string | null;
+  end_local?: string | null;
+  start_local_display?: string | null;
+  end_local_display?: string | null;
+  next_start_local_display?: string | null;
+  next_end_local_display?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  weekdays?: number[] | null;
+  weekday_labels?: string[];
+  timezone?: string | null;
+  base_duration_minutes?: number | null;
+  max_overtime_minutes?: number | null;
+  extension_step_minutes?: number | null;
+  auto_pause_operations?: boolean;
+  remaining_seconds?: number | null;
+  created_at?: number;
+  next_run_at?: number | null;
 }
 
 export interface StardewFarmSnapshot {

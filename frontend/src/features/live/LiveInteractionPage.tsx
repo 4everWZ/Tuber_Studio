@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { apiGet, apiPost, apiPut, studioPath } from "@/shared/api/client";
+import { apiGet, apiPost, apiPut, apiRequest, studioPath } from "@/shared/api/client";
 import { useUnsavedGuard } from "@/shared/hooks/useUnsavedGuard";
 import { errorMessage } from "@/shared/lib/errors";
 import styles from "./LiveWorkbench.module.css";
 import type {
+  ColdDirectorStatusData,
   DrawGuessStatusData,
   GameStatusData,
   InteractiveRulesData,
+  LiveShowsStatusData,
+  RoastRadioStatusData,
   StardewActionReceipt,
   StardewDeviceState,
   StardewDeviceStatus,
+  TurtleSoupStatusData,
 } from "./types";
 
 const STARDEW_ACTIONS = [
@@ -48,6 +52,23 @@ export function LiveInteractionPage({
   const [drawGuessStatus, setDrawGuessStatus] = useState<DrawGuessStatusData | null>(null);
   const [drawGuessError, setDrawGuessError] = useState("");
   const [drawGuessBusy, setDrawGuessBusy] = useState(false);
+  const [dgTheme, setDgTheme] = useState("");
+  const [dgUseLlm, setDgUseLlm] = useState(true);
+  const [dgRoundMode, setDgRoundMode] = useState("aqua_draws");
+
+  const [turtleSoupStatus, setTurtleSoupStatus] = useState<TurtleSoupStatusData | null>(null);
+  const [tsGenre, setTsGenre] = useState("");
+  const [tsUseLlm, setTsUseLlm] = useState(true);
+  const [tsBusy, setTsBusy] = useState(false);
+
+  const [roastRadioStatus, setRoastRadioStatus] = useState<RoastRadioStatusData | null>(null);
+  const [rrTopic, setRrTopic] = useState("");
+  const [rrSideA, setRrSideA] = useState("正方");
+  const [rrSideB, setRrSideB] = useState("反方");
+  const [rrBusy, setRrBusy] = useState(false);
+
+  const [coldDirectorStatus, setColdDirectorStatus] = useState<ColdDirectorStatusData | null>(null);
+  const [coldBusy, setColdBusy] = useState(false);
 
   const [rules, setRules] = useState<InteractiveRulesData | null>(null);
   const [rulesDirty, setRulesDirty] = useState(false);
@@ -128,6 +149,45 @@ export function LiveInteractionPage({
     }
   }, []);
 
+  const fetchShowsStatus = useCallback(async () => {
+    try {
+      const [showsRes, coldRes] = await Promise.allSettled([
+        apiRequest<LiveShowsStatusData>("/api/v1/live/shows/status", { method: "GET" }),
+        apiRequest<ColdDirectorStatusData>("/api/v1/live/cold-director/status", { method: "GET" }),
+      ]);
+      if (!mountedRef.current) return;
+      if (showsRes.status === "fulfilled" && showsRes.value && typeof showsRes.value === "object") {
+        const shows = showsRes.value;
+        if (shows.turtle_soup && typeof shows.turtle_soup === "object") {
+          setTurtleSoupStatus(shows.turtle_soup);
+        }
+        if (shows.roast_radio && typeof shows.roast_radio === "object") {
+          setRoastRadioStatus(shows.roast_radio);
+        }
+        if (shows.cold_director && typeof shows.cold_director === "object") {
+          setColdDirectorStatus(shows.cold_director);
+        }
+        if (
+          shows.draw_and_guess &&
+          typeof shows.draw_and_guess === "object" &&
+          ("active" in shows.draw_and_guess || "state" in shows.draw_and_guess)
+        ) {
+          setDrawGuessStatus(shows.draw_and_guess);
+        }
+      }
+      if (
+        coldRes.status === "fulfilled" &&
+        coldRes.value &&
+        typeof coldRes.value === "object" &&
+        "tier" in coldRes.value
+      ) {
+        setColdDirectorStatus(coldRes.value);
+      }
+    } catch {
+      // Optional Phase 2 endpoints fail silently if backend isn't mounted yet
+    }
+  }, []);
+
   const fetchRules = useCallback(async () => {
     const seq = ++rulesRequestRef.current;
     try {
@@ -199,6 +259,7 @@ export function LiveInteractionPage({
       fetchGameStatus(),
       fetchDevice(),
       fetchDrawGuessStatus(),
+      fetchShowsStatus(),
       fetchRules(),
     ]);
     return () => {
@@ -207,7 +268,7 @@ export function LiveInteractionPage({
         deviceTimerRef.current = null;
       }
     };
-  }, [visible, fetchGameStatus, fetchDevice, fetchDrawGuessStatus, fetchRules]);
+  }, [visible, fetchGameStatus, fetchDevice, fetchDrawGuessStatus, fetchShowsStatus, fetchRules]);
 
   const handleSwitchGame = async (gameId: string) => {
     if (gameBusy) return;
@@ -346,17 +407,23 @@ export function LiveInteractionPage({
     if (drawGuessBusy) return;
     setDrawGuessBusy(true);
     try {
+      const body: Record<string, unknown> = {
+        trigger_user: "主播",
+        duration_sec: rules?.draw_and_guess?.round_duration_sec ?? 60,
+        use_llm: dgUseLlm,
+        mode: dgRoundMode,
+      };
+      if (dgTheme.trim()) {
+        body.theme = dgTheme.trim();
+      }
       const data = await apiPost<
         "/api/v1/live/draw-and-guess/start",
         { spoken_text?: string }
       >("/api/v1/live/draw-and-guess/start", {
-        body: {
-          trigger_user: "主播",
-          duration_sec: rules?.draw_and_guess?.round_duration_sec ?? 60,
-        },
+        body: body as never,
       });
       onFeedback?.(data.spoken_text || "已开启你画我猜！");
-      await fetchDrawGuessStatus();
+      await Promise.all([fetchDrawGuessStatus(), fetchShowsStatus()]);
     } catch (error) {
       onFeedback?.(errorMessage(error), true);
     } finally {
@@ -373,11 +440,142 @@ export function LiveInteractionPage({
         { word?: string }
       >("/api/v1/live/draw-and-guess/stop");
       onFeedback?.(`已结束本轮你画我猜，答案是：【${data.word ?? ""}】`);
-      await fetchDrawGuessStatus();
+      await Promise.all([fetchDrawGuessStatus(), fetchShowsStatus()]);
     } catch (error) {
       onFeedback?.(errorMessage(error), true);
     } finally {
       setDrawGuessBusy(false);
+    }
+  };
+
+  const handleStartTurtleSoup = async () => {
+    if (tsBusy) return;
+    setTsBusy(true);
+    try {
+      const body: Record<string, unknown> = {
+        trigger_user: "主播",
+        use_llm: tsUseLlm,
+      };
+      if (tsGenre.trim()) body.genre = tsGenre.trim();
+      const data = await apiRequest<{ spoken_text?: string; surface?: string }>(
+        "/api/v1/live/shows/turtle-soup/start",
+        { method: "POST", body }
+      );
+      onFeedback?.(data.spoken_text || "海龟汤已开汤！");
+      await fetchShowsStatus();
+    } catch (error) {
+      onFeedback?.(errorMessage(error), true);
+    } finally {
+      setTsBusy(false);
+    }
+  };
+
+  const handleTurtleSoupHint = async () => {
+    if (tsBusy) return;
+    setTsBusy(true);
+    try {
+      const data = await apiRequest<{ spoken_text?: string; hint?: string }>(
+        "/api/v1/live/shows/turtle-soup/hint",
+        { method: "POST" }
+      );
+      onFeedback?.(data.spoken_text || data.hint || "已给出一条海龟汤提示");
+      await fetchShowsStatus();
+    } catch (error) {
+      onFeedback?.(errorMessage(error), true);
+    } finally {
+      setTsBusy(false);
+    }
+  };
+
+  const handleTurtleSoupReveal = async () => {
+    if (tsBusy) return;
+    setTsBusy(true);
+    try {
+      const data = await apiRequest<{ spoken_text?: string; answer?: string }>(
+        "/api/v1/live/shows/turtle-soup/reveal",
+        { method: "POST" }
+      );
+      onFeedback?.(data.spoken_text || (data.answer ? `汤底揭晓：${data.answer}` : "海龟汤已揭晓"));
+      await fetchShowsStatus();
+    } catch (error) {
+      onFeedback?.(errorMessage(error), true);
+    } finally {
+      setTsBusy(false);
+    }
+  };
+
+  const handleStartDebate = async () => {
+    if (rrBusy) return;
+    const topic = rrTopic.trim() || "今晚宵夜吃白饭还是泡面";
+    setRrBusy(true);
+    try {
+      const data = await apiRequest<{ spoken_text?: string }>(
+        "/api/v1/live/shows/roast-radio/start-debate",
+        {
+          method: "POST",
+          body: {
+            topic,
+            side_a: rrSideA.trim() || "正方",
+            side_b: rrSideB.trim() || "反方",
+          },
+        }
+      );
+      onFeedback?.(data.spoken_text || `已开启辩论：${topic}`);
+      await fetchShowsStatus();
+    } catch (error) {
+      onFeedback?.(errorMessage(error), true);
+    } finally {
+      setRrBusy(false);
+    }
+  };
+
+  const handleTriggerRoast = async () => {
+    if (rrBusy) return;
+    setRrBusy(true);
+    try {
+      const body: Record<string, unknown> = {};
+      if (rrTopic.trim()) body.topic = rrTopic.trim();
+      const data = await apiRequest<{ spoken_text?: string }>(
+        "/api/v1/live/shows/roast-radio/roast",
+        { method: "POST", body }
+      );
+      onFeedback?.(data.spoken_text || "已触发一段犀利锐评");
+      await fetchShowsStatus();
+    } catch (error) {
+      onFeedback?.(errorMessage(error), true);
+    } finally {
+      setRrBusy(false);
+    }
+  };
+
+  const handleStopRoastRadio = async () => {
+    if (rrBusy) return;
+    setRrBusy(true);
+    try {
+      await apiRequest("/api/v1/live/shows/roast-radio/stop", { method: "POST" });
+      onFeedback?.("已结束犀利电台 / 辩论台");
+      await fetchShowsStatus();
+    } catch (error) {
+      onFeedback?.(errorMessage(error), true);
+    } finally {
+      setRrBusy(false);
+    }
+  };
+
+  const handleTriggerColdDirector = async () => {
+    if (coldBusy) return;
+    setColdBusy(true);
+    try {
+      const data = await apiRequest<{ spoken_text?: string; kind?: string }>(
+        "/api/v1/live/cold-director/trigger",
+        { method: "POST" }
+      );
+      onFeedback?.(data.spoken_text || "已触发冷场导演暖场片段");
+      await fetchShowsStatus();
+    } catch (error) {
+      onFeedback?.(errorMessage(error), true);
+    } finally {
+      setColdBusy(false);
     }
   };
 
@@ -586,7 +784,7 @@ export function LiveInteractionPage({
         <article className="win-group-box" id="live-draw-guess-panel">
           <div className="panel-heading">
             <div className="win-group-title" style={{ margin: 0 }}>
-              🎨 你画我猜互动玩法
+              🎨 你画我猜 2.0 互动玩法
             </div>
             <span id="dg-live-status" className={dgActive ? "badge amber" : "badge"}>
               {dgBadgeText}
@@ -595,6 +793,54 @@ export function LiveInteractionPage({
           <p id="dg-live-word" className="speech-text" style={{ fontSize: "14px" }}>
             {dgWordText}
           </p>
+          {(drawGuessStatus?.progressive_hint || drawGuessStatus?.hint_level) && (
+            <p id="dg-progressive-hint" className="hint">
+              {drawGuessStatus.hint_level ? `提示 L${drawGuessStatus.hint_level}: ` : "渐进提示: "}
+              {drawGuessStatus.progressive_hint || drawGuessStatus.hint || ""}
+            </p>
+          )}
+          {drawGuessStatus?.scoreboard && Object.keys(drawGuessStatus.scoreboard).length > 0 && (
+            <p id="dg-live-scoreboard" className="hint">
+              积分榜：
+              {Object.entries(drawGuessStatus.scoreboard)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .map(([name, score]) => `${name}(${score})`)
+                .join(" · ")}
+            </p>
+          )}
+          <div className={styles.compactFormGrid}>
+            <label>
+              主题词（可选）
+              <input
+                id="dg-theme-input"
+                type="text"
+                placeholder="例如：美食、二次元、科技"
+                value={dgTheme}
+                onChange={(e) => setDgTheme(e.target.value)}
+              />
+            </label>
+            <label>
+              玩法模式
+              <select
+                id="dg-mode-select"
+                value={dgRoundMode}
+                onChange={(e) => setDgRoundMode(e.target.value)}
+              >
+                <option value="aqua_draws">Aqua 作画观众猜</option>
+                <option value="viewer_draws">指定主题出题</option>
+              </select>
+            </label>
+            <label className="check-field" style={{ alignSelf: "end" }}>
+              <input
+                id="dg-use-llm-toggle"
+                type="checkbox"
+                checked={dgUseLlm}
+                onChange={(e) => setDgUseLlm(e.target.checked)}
+              />{" "}
+              启用 LLM 现画现猜
+            </label>
+          </div>
           <div className="actions" style={{ marginTop: "10px" }}>
             <button
               type="button"
@@ -625,6 +871,269 @@ export function LiveInteractionPage({
           </div>
           <p className="hint" style={{ marginTop: "12px" }}>
             观众送出指定礼物（如画笔/小心心）或弹幕抢答即可自动参与；猜中后由当前角色接话，结果记入每日趣事。
+          </p>
+        </article>
+      </div>
+
+      <div className={styles.phase2Grid}>
+        <article className="win-group-box" id="live-turtle-soup-panel">
+          <div className="panel-heading">
+            <div className="win-group-title" style={{ margin: 0 }}>
+              🐢 海龟汤推理剧场
+            </div>
+            <span
+              id="ts-live-status"
+              className={turtleSoupStatus?.active ? "badge amber" : "badge"}
+            >
+              {turtleSoupStatus?.active
+                ? "推理进行中"
+                : turtleSoupStatus?.state === "finished"
+                  ? "已揭晓"
+                  : "空闲中"}
+            </span>
+          </div>
+          <div className={styles.showSubBox}>
+            <p id="ts-panel-surface">
+              {turtleSoupStatus?.surface
+                ? `汤面：${turtleSoupStatus.surface}`
+                : "点击开汤或让弹幕输入 #海龟汤 开启一轮推理。"}
+            </p>
+            {(turtleSoupStatus?.clues_found?.length ?? 0) > 0 && (
+              <p id="ts-panel-clues">
+                已解锁线索：{turtleSoupStatus!.clues_found!.join(" / ")}
+              </p>
+            )}
+            {turtleSoupStatus?.answer && turtleSoupStatus.state === "finished" && (
+              <p id="ts-panel-answer">汤底：{turtleSoupStatus.answer}</p>
+            )}
+          </div>
+          <div className={styles.compactFormGrid}>
+            <label>
+              题材偏好（可选）
+              <input
+                id="ts-genre-input"
+                type="text"
+                placeholder="悬疑 / 科幻 / 日常"
+                value={tsGenre}
+                onChange={(e) => setTsGenre(e.target.value)}
+              />
+            </label>
+            <label className="check-field" style={{ alignSelf: "end" }}>
+              <input
+                id="ts-use-llm-toggle"
+                type="checkbox"
+                checked={tsUseLlm}
+                onChange={(e) => setTsUseLlm(e.target.checked)}
+              />{" "}
+              启用 LLM 现编与判题
+            </label>
+          </div>
+          <div className="actions" style={{ marginTop: "10px" }}>
+            <button
+              type="button"
+              id="ts-start-btn"
+              className="primary win-btn"
+              disabled={Boolean(turtleSoupStatus?.active) || tsBusy}
+              onClick={() => void handleStartTurtleSoup()}
+            >
+              开汤出题
+            </button>
+            <button
+              type="button"
+              id="ts-hint-btn"
+              className="win-btn"
+              disabled={!turtleSoupStatus?.active || tsBusy}
+              onClick={() => void handleTurtleSoupHint()}
+            >
+              给一条提示
+            </button>
+            <button
+              type="button"
+              id="ts-reveal-btn"
+              className="win-btn danger"
+              disabled={!turtleSoupStatus?.active || tsBusy}
+              onClick={() => void handleTurtleSoupReveal()}
+            >
+              揭晓汤底并结束
+            </button>
+          </div>
+        </article>
+
+        <article className="win-group-box" id="live-roast-radio-panel">
+          <div className="panel-heading">
+            <div className="win-group-title" style={{ margin: 0 }}>
+              🎙️ 犀利锐评电台 & 辩论台
+            </div>
+            <span
+              id="rr-live-status"
+              className={roastRadioStatus?.active ? "badge amber" : "badge"}
+            >
+              {roastRadioStatus?.active
+                ? roastRadioStatus.mode === "debate"
+                  ? "辩论站队中"
+                  : "锐评中"
+                : "空闲中"}
+            </span>
+          </div>
+          <div className={styles.showSubBox}>
+            <p id="rr-panel-topic">
+              {roastRadioStatus?.topic
+                ? `当前话题：${roastRadioStatus.topic}`
+                : "仅读取公开看过的视频与公开记忆进行安全锐评，或开启正反方辩论。"}
+            </p>
+            {(roastRadioStatus?.mode === "debate" || roastRadioStatus?.side_a || roastRadioStatus?.side_b) && (
+              <div>
+                <div className={styles.overtimeMeterRow}>
+                  <span>
+                    {roastRadioStatus?.side_a || "正方"} ({roastRadioStatus?.votes_a ?? 0})
+                  </span>
+                  <span>
+                    {roastRadioStatus?.side_b || "反方"} ({roastRadioStatus?.votes_b ?? 0})
+                  </span>
+                </div>
+                <div className={styles.voteMiniBar}>
+                  <div
+                    className={styles.voteMiniA}
+                    style={{
+                      width: `${
+                        (roastRadioStatus?.votes_a ?? 0) + (roastRadioStatus?.votes_b ?? 0) > 0
+                          ? Math.round(
+                              ((roastRadioStatus?.votes_a ?? 0) /
+                                ((roastRadioStatus?.votes_a ?? 0) +
+                                  (roastRadioStatus?.votes_b ?? 0))) *
+                                100
+                            )
+                          : 50
+                      }%`,
+                    }}
+                  />
+                  <div
+                    className={styles.voteMiniB}
+                    style={{
+                      width: `${
+                        (roastRadioStatus?.votes_a ?? 0) + (roastRadioStatus?.votes_b ?? 0) > 0
+                          ? 100 -
+                            Math.round(
+                              ((roastRadioStatus?.votes_a ?? 0) /
+                                ((roastRadioStatus?.votes_a ?? 0) +
+                                  (roastRadioStatus?.votes_b ?? 0))) *
+                                100
+                            )
+                          : 50
+                      }%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+            {roastRadioStatus?.last_roast && (
+              <p id="rr-panel-roast">最新锐评：{roastRadioStatus.last_roast}</p>
+            )}
+          </div>
+          <div className={styles.compactFormGrid}>
+            <label style={{ gridColumn: "1 / -1" }}>
+              辩论 / 锐评话题
+              <input
+                id="rr-topic-input"
+                type="text"
+                placeholder="例如：熬夜写代码该配白饭还是咖啡"
+                value={rrTopic}
+                onChange={(e) => setRrTopic(e.target.value)}
+              />
+            </label>
+            <label>
+              正方标签
+              <input
+                id="rr-side-a-input"
+                type="text"
+                value={rrSideA}
+                onChange={(e) => setRrSideA(e.target.value)}
+              />
+            </label>
+            <label>
+              反方标签
+              <input
+                id="rr-side-b-input"
+                type="text"
+                value={rrSideB}
+                onChange={(e) => setRrSideB(e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="actions" style={{ marginTop: "10px" }}>
+            <button
+              type="button"
+              id="rr-start-debate-btn"
+              className="primary win-btn"
+              disabled={rrBusy}
+              onClick={() => void handleStartDebate()}
+            >
+              开启辩论台
+            </button>
+            <button
+              type="button"
+              id="rr-roast-btn"
+              className="win-btn"
+              disabled={rrBusy}
+              onClick={() => void handleTriggerRoast()}
+            >
+              触发一次锐评
+            </button>
+            <button
+              type="button"
+              id="rr-stop-btn"
+              className="win-btn danger"
+              disabled={!roastRadioStatus?.active || rrBusy}
+              onClick={() => void handleStopRoastRadio()}
+            >
+              结束电台
+            </button>
+          </div>
+        </article>
+
+        <article className="win-group-box" id="live-cold-director-panel">
+          <div className="panel-heading">
+            <div className="win-group-title" style={{ margin: 0 }}>
+              🌙 冷场导演状态（60 分钟防冷场）
+            </div>
+            <span id="cold-director-tier" className="badge">
+              Tier {coldDirectorStatus?.tier ?? 0}
+            </span>
+          </div>
+          <div className={styles.showSubBox}>
+            <p id="cold-director-idle">
+              当前冷场时长：{Math.round(coldDirectorStatus?.elapsed_seconds ?? coldDirectorStatus?.idle_seconds ?? 0)}s
+              {coldDirectorStatus?.tier_label ? ` (${coldDirectorStatus.tier_label})` : ""}
+              {coldDirectorStatus?.last_segment_kind
+                ? ` · 最近片段：${coldDirectorStatus.last_segment_kind}`
+                : ""}
+            </p>
+            {coldDirectorStatus?.last_spoken_text && (
+              <p id="cold-director-spoken">最近台词：{coldDirectorStatus.last_spoken_text}</p>
+            )}
+          </div>
+          <div className="actions" style={{ marginTop: "10px" }}>
+            <button
+              type="button"
+              id="cold-trigger-btn"
+              className="primary win-btn"
+              disabled={coldBusy}
+              onClick={() => void handleTriggerColdDirector()}
+            >
+              手动触发冷场暖场
+            </button>
+            <button
+              type="button"
+              id="cold-refresh-btn"
+              className="win-btn"
+              disabled={coldBusy}
+              onClick={() => void fetchShowsStatus()}
+            >
+              刷新演播状态
+            </button>
+          </div>
+          <p className="hint" style={{ marginTop: "10px" }}>
+            Tier 0 活跃 · Tier 1 暖场闲聊 (90s+) · Tier 2 自发你画我猜/锐评/海龟汤 (5m+) · Tier 3 深夜伴播电台 (15m+)。
           </p>
         </article>
       </div>

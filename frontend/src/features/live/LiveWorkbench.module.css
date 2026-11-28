@@ -813,8 +813,129 @@
     flex-direction: column;
   }
 
-  .deskGrid {
+  .deskGrid,
+  .phase2Grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
   }
+}
+
+.phase2Grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+  align-items: start;
+}
+
+.compactFormGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px 10px;
+  margin-top: 8px;
+}
+
+.scheduleList {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.scheduleRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--ocean-line);
+  border-radius: 8px;
+  background: #f7fbfa;
+}
+
+.scheduleMeta {
+  min-width: 0;
+  flex: 1;
+}
+
+.scheduleMeta strong,
+.scheduleMeta small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.scheduleMeta small {
+  color: #49676e;
+  font-size: 12px;
+}
+
+.overtimeMeter {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--ocean-line);
+  background: #f4faf8;
+  margin: 8px 0 10px;
+}
+
+.overtimeMeterRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #355961;
+  font-variant-numeric: tabular-nums;
+}
+
+.overtimeBarTrack {
+  margin: 7px 0;
+  height: 9px;
+  border-radius: 999px;
+  background: #dceae6;
+  overflow: hidden;
+}
+
+.overtimeBarFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0ea5e9, #f59e0b);
+  transition: width 0.3s ease;
+}
+
+.quickActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.showSubBox {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--ocean-line);
+  border-radius: 8px;
+  background: #f7fbfa;
+  font-size: 12px;
+}
+
+.showSubBox p {
+  margin: 4px 0;
+}
+
+.voteMiniBar {
+  display: flex;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #dbe8e5;
+  margin: 6px 0;
+}
+
+.voteMiniA {
+  background: #0284c7;
+}
+
+.voteMiniB {
+  background: #e11d48;
 }

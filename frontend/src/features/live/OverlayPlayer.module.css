@@ -58,3 +58,83 @@
   color: #718e94;
   margin-top: 6px;
 }
+
+.hudStack {
+  position: fixed;
+  left: 18px;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  z-index: 190;
+  pointer-events: none;
+}
+
+.overtimeHud {
+  width: 310px;
+  padding: 11px 14px;
+  border-radius: 14px;
+  background: rgba(12, 24, 42, 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(125, 211, 252, 0.42);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  color: #f0f9ff;
+}
+
+.overtimeHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.overtimeMeta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #bae6fd;
+  font-variant-numeric: tabular-nums;
+}
+
+.overtimeTrack {
+  margin-top: 7px;
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  overflow: hidden;
+}
+
+.overtimeFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #38bdf8, #fde047);
+  transition: width 0.35s ease;
+}
+
+.overtimeLine {
+  margin: 7px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #fef08a;
+}
+
+.coldTierBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.62);
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 600;
+}

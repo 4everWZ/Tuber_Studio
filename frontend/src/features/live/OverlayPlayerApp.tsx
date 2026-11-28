@@ -1,18 +1,39 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiGet, apiPost, studioPath, studioWsUrl } from "@/shared/api/client";
+import { apiGet, apiPost, apiRequest, studioPath, studioWsUrl } from "@/shared/api/client";
 import { errorMessage } from "@/shared/lib/errors";
 import { LiveSceneCanvas } from "./LiveSceneCanvas";
 import { buildSilentWavBlob } from "./liveControls";
 import styles from "./OverlayPlayer.module.css";
 import type {
+  ColdDirectorStatusData,
+  LiveShowsStatusData,
   LiveViewData,
   OverlayActiveJob,
   OverlayPlayMessage,
   OverlayWsMessage,
+  OvertimeStatusData,
   PlaybackSnapshot,
 } from "./types";
 
 const AUTH_CLOSE_CODES = new Set([1008, 4401, 4403]);
+
+const COLD_TIER_LABELS: Record<number, string> = {
+  0: "活跃互动",
+  1: "暖场闲聊",
+  2: "自娱整活",
+  3: "深夜伴播",
+};
+
+function formatCountdown(seconds: number | undefined): string {
+  const safe = Math.max(0, Math.floor(seconds ?? 0));
+  const hrs = Math.floor(safe / 3600);
+  const mins = Math.floor((safe % 3600) / 60);
+  const secs = safe % 60;
+  if (hrs > 0) {
+    return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
 
 function computeMouth(job: OverlayActiveJob | null, audio: HTMLAudioElement): number {
   if (!job?.started || audio.paused || audio.ended || audio.muted || audio.volume === 0) {
@@ -43,6 +64,8 @@ function buildProjectionPlayback(
 
 export function OverlayPlayerApp() {
   const [projectionView, setProjectionView] = useState<LiveViewData | null>(null);
+  const [overtime, setOvertime] = useState<OvertimeStatusData | null>(null);
+  const [coldDirector, setColdDirector] = useState<ColdDirectorStatusData | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<{
     text: string;
     error: boolean;
@@ -217,10 +240,23 @@ export function OverlayPlayerApp() {
     if (loadingRef.current || unmountedRef.current) return;
     loadingRef.current = true;
     try {
-      const nextView = await apiGet<"/api/v1/live/view", LiveViewData>("/api/v1/live/view");
+      const [viewRes, showsRes] = await Promise.allSettled([
+        apiGet<"/api/v1/live/view", LiveViewData>("/api/v1/live/view"),
+        apiRequest<LiveShowsStatusData>("/api/v1/live/shows/status", {
+          method: "GET",
+          cache: "no-store",
+        }),
+      ]);
       if (unmountedRef.current) return;
-      viewRef.current = nextView;
-      draw();
+      if (viewRes.status === "fulfilled") {
+        viewRef.current = viewRes.value;
+        draw();
+      }
+      if (showsRes.status === "fulfilled" && showsRes.value && typeof showsRes.value === "object") {
+        const shows = showsRes.value;
+        if ("overtime" in shows) setOvertime(shows.overtime ?? null);
+        if ("cold_director" in shows) setColdDirector(shows.cold_director ?? null);
+      }
     } catch {
       // The playback websocket owns connection failure and cancellation.
     } finally {
@@ -420,6 +456,11 @@ export function OverlayPlayerApp() {
     }
   };
 
+  const threshold = overtime?.threshold && overtime.threshold > 0 ? overtime.threshold : 100;
+  const energy = Math.max(0, overtime?.energy ?? 0);
+  const energyPct = Math.min(100, Math.round((energy / threshold) * 100));
+  const hasColdTier = typeof coldDirector?.tier === "number";
+
   return (
     <div className={styles.overlayRoot}>
       <LiveSceneCanvas
@@ -430,6 +471,45 @@ export function OverlayPlayerApp() {
         editable={false}
         readMouth={readCurrentMouth}
       />
+      {(overtime?.active || hasColdTier) && (
+        <aside className={styles.hudStack} aria-label="直播剧场状态浮窗">
+          {overtime?.active && (
+            <section id="overtime-hud" className={styles.overtimeHud}>
+              <div className={styles.overtimeHeader}>
+                <span>🍚 白饭加班能量条</span>
+                <span id="overtime-countdown">
+                  下班倒计时 {formatCountdown(overtime.remaining_seconds)}
+                </span>
+              </div>
+              <div className={styles.overtimeMeta}>
+                <span id="overtime-energy-pct">能量 {energyPct}%</span>
+                <span id="overtime-minutes">
+                  已加班 +{overtime.overtime_minutes ?? 0} 分钟
+                  {overtime.max_overtime_minutes ? ` / ${overtime.max_overtime_minutes}m` : ""}
+                </span>
+              </div>
+              <div className={styles.overtimeTrack} role="progressbar" aria-valuenow={energyPct} aria-valuemin={0} aria-valuemax={100}>
+                <div className={styles.overtimeFill} style={{ width: `${energyPct}%` }} />
+              </div>
+              <p id="overtime-status-line" className={styles.overtimeLine}>
+                {overtime.last_event_line || "准点打卡干白饭中，别随便投喂续命啊！"}
+              </p>
+            </section>
+          )}
+          {hasColdTier && coldDirector && (
+            <div
+              id="cold-director-badge"
+              data-cold-tier={coldDirector.tier}
+              className={styles.coldTierBadge}
+            >
+              <span>🌙 冷场导演 Tier {coldDirector.tier}</span>
+              <span>
+                {COLD_TIER_LABELS[coldDirector.tier ?? 0] || "待命中"}
+              </span>
+            </div>
+          )}
+        </aside>
+      )}
       <span
         id="connection"
         className={

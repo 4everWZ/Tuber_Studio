@@ -328,6 +328,52 @@ describe("OverlayPlayerApp", () => {
     });
     expect(MockWebSocket.instances).toHaveLength(2);
   });
+
+  it("renders transparent Overtime HUD and Cold-Room Tier badge from /api/v1/live/shows/status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/live/view")) {
+          return Response.json(buildViewPayload());
+        }
+        if (url.endsWith("/api/v1/live/shows/status")) {
+          return Response.json({
+            overtime: {
+              active: true,
+              energy: 75,
+              threshold: 100,
+              overtime_minutes: 30,
+              max_overtime_minutes: 120,
+              remaining_seconds: 185,
+              stage: "overtime",
+              last_event_line: "白饭还没咽下去呢又被投喂续钟了！",
+            },
+            cold_director: {
+              tier: 2,
+              elapsed_seconds: 360,
+            },
+          });
+        }
+        return Response.json({});
+      })
+    );
+
+    render(<OverlayPlayerApp />);
+
+    await waitFor(() => {
+      const hud = document.getElementById("overtime-hud");
+      expect(hud).not.toBeNull();
+      expect(document.getElementById("overtime-energy-pct")?.textContent).toBe("能量 75%");
+      expect(document.getElementById("overtime-minutes")?.textContent).toContain("+30 分钟");
+      expect(document.getElementById("overtime-countdown")?.textContent).toContain("03:05");
+      expect(document.getElementById("overtime-status-line")?.textContent).toContain("白饭还没咽下去");
+
+      const badge = document.getElementById("cold-director-badge");
+      expect(badge?.getAttribute("data-cold-tier")).toBe("2");
+      expect(badge?.textContent).toContain("Tier 2");
+    });
+  });
 });
 
 describe("Live2DAvatarCanvas", () => {
@@ -497,5 +543,107 @@ describe("DrawGuessOverlayApp", () => {
       await vi.advanceTimersByTimeAsync(4000);
     });
     expect(container.hidden).toBe(true);
+  });
+
+  it("renders rect/line/polygon strokes safely, theme/LLM badge, progressive hint, scoreboard, and Turtle Soup / Roast Radio cards from /shows/status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/live/shows/status")) {
+          return Response.json({
+            character: { name: "Aqua" },
+            draw_and_guess: {
+              active: true,
+              state: "drawing",
+              remaining: 45,
+              category: "日常",
+              theme: "热白饭",
+              llm_generated: true,
+              hint_level: 2,
+              progressive_hint: "装在碗里热气腾腾",
+              trigger_user: "主播",
+              scoreboard: { 小明: 3, 小红: 1 },
+              revealed_strokes: [
+                { type: "rect", x: 10, y: 20, width: 80, height: 40, rx: 6, fill: "#38bdf8", stroke: "javascript:alert(1)" },
+                { type: "line", x1: 0, y1: 0, x2: 120, y2: 90, stroke: "#fde047", width: 3 },
+                { type: "polygon", points: "10,10 50,10 30,50", fill: "#34d399" },
+              ],
+            },
+            turtle_soup: {
+              active: true,
+              state: "playing",
+              genre: "科幻",
+              surface: "宇航员在空间站发现多出一双筷子。",
+              clues_found: ["刚来过货运飞船"],
+              qa_history: [{ user: "路人甲", text: "是补给带的吗？", verdict: "yes" }],
+            },
+            roast_radio: {
+              active: true,
+              mode: "debate",
+              topic: "白饭配拌饭酱还是配汤",
+              side_a: "拌饭酱",
+              side_b: "配汤",
+              votes_a: 6,
+              votes_b: 4,
+              last_roast: "选不出来说明今天只配喝水。",
+            },
+          });
+        }
+        return Response.json({});
+      })
+    );
+
+    render(<DrawGuessOverlayApp />);
+
+    await waitFor(() => {
+      const svg = document.querySelector("svg#drawing-board") as SVGSVGElement;
+      expect(svg.querySelectorAll("rect")).toHaveLength(1);
+      expect(svg.querySelectorAll("line")).toHaveLength(1);
+      expect(svg.querySelectorAll("polygon")).toHaveLength(1);
+      expect(svg.querySelector("rect")?.getAttribute("stroke")).toBeNull();
+      expect(document.getElementById("theme-llm-badge")?.textContent).toBe("主题: 热白饭 · AI");
+      expect(document.getElementById("clue-text")?.textContent).toBe("提示 L2: 装在碗里热气腾腾");
+      expect(document.getElementById("dg-scoreboard")?.textContent).toContain("小明 3分");
+
+      expect(document.getElementById("ts-surface")?.textContent).toContain("多出一双筷子");
+      expect(document.getElementById("ts-clues")?.textContent).toContain("刚来过货运飞船");
+      expect(document.getElementById("ts-qa-list")?.textContent).toContain("是补给带的吗？");
+
+      expect(document.getElementById("rr-topic")?.textContent).toBe("白饭配拌饭酱还是配汤");
+      expect(document.getElementById("rr-vote-bar")?.textContent).toContain("6票 · 60%");
+      expect(document.getElementById("rr-last-roast")?.textContent).toContain("今天只配喝水");
+    });
+  });
+
+  it("falls back to /api/v1/live/draw-and-guess/overlay when /api/v1/live/shows/status fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/live/shows/status")) {
+          return new Response("Not Found", { status: 404 });
+        }
+        if (url.endsWith("/api/v1/live/draw-and-guess/overlay")) {
+          return Response.json({
+            active: true,
+            state: "drawing",
+            remaining: 15,
+            category: "水果",
+            hint: "弯弯的黄色水果",
+            revealed_strokes: [{ type: "line", x1: 10, y1: 10, x2: 100, y2: 100 }],
+          });
+        }
+        return Response.json({});
+      })
+    );
+
+    render(<DrawGuessOverlayApp />);
+
+    await waitFor(() => {
+      const container = document.getElementById("draw-guess-container") as HTMLElement;
+      expect(container.hidden).toBe(false);
+      expect(document.querySelectorAll("svg#drawing-board line")).toHaveLength(1);
+    });
   });
 });
