@@ -192,38 +192,79 @@ describe("LiveDesk", () => {
       });
     });
 
-    // Switch feed tab via keyboard ArrowRight
+    // Switch feed tab via keyboard ArrowRight (chat -> dialogue -> queue)
     const chatTab = document.getElementById("desk-chat-tab") as HTMLButtonElement;
     fireEvent.keyDown(chatTab, { key: "ArrowRight" });
     expect(document.getElementById("desk-dialogue-tab")?.getAttribute("aria-selected")).toBe("true");
+    const dialogueTab = document.getElementById("desk-dialogue-tab") as HTMLButtonElement;
+    fireEvent.keyDown(dialogueTab, { key: "ArrowRight" });
+    expect(document.getElementById("desk-queue-tab")?.getAttribute("aria-selected")).toBe("true");
   });
 
-  it("manages scheduled live streams, Overtime Theater controls, Cold-Room trigger, and quick mock triggers", async () => {
-    const currentView = makeStudioView({ state: "live" });
-    let scheduleList = [
-      {
-        id: "sch-1",
-        kind: "daily_window",
-        label: "夜间档",
-        status: "active",
-        enabled: true,
-        start_local_display: "2026-11-28 20:00",
-        end_local_display: "2026-11-28 22:00",
-        max_overtime_minutes: 120,
-        auto_pause_operations: true,
-      },
-    ];
-    let overtimeState: Record<string, unknown> = {
+  it("drives BroadcastTopBar OBS layout & URLs, StageMonitor layers, ShowDock 6 tabs, and ContextualMockRail", async () => {
+    let currentView = makeStudioView({ state: "live" });
+    let sceneLayout = { active_layout: "chat" as "chat" | "game", layout_locked: false };
+    let activePoll: Record<string, unknown> | null = null;
+    let rundownState: Record<string, unknown> = {
       active: false,
-      energy: 0,
-      threshold: 100,
-      overtime_minutes: 0,
-      max_overtime_minutes: 120,
-      extensions_count: 0,
+      paused: false,
+      status: "idle",
+      current_index: 0,
+      current_segment: null,
       remaining_seconds: 0,
-      last_event_line: null,
+      hot_chat_prompt: false,
     };
+    const rundownPlan = {
+      name: "多游戏轮播→闲聊",
+      enabled_games: ["draw_and_guess", "turtle_soup", "roast_radio", "song_party"],
+      hold_on_last: true,
+      auto_switch_layout: true,
+      chat_entry: {
+        opening_mode: "chat_opening",
+        opening_chat_minutes: 15,
+        poll_duration_seconds: 90,
+        min_votes: 1,
+        include_continue_chat: true,
+        avoid_repeat: true,
+        allow_chat_vote_trigger: true,
+        vote_trigger_threshold: 2,
+        allow_chat_extend: true,
+        chat_adaptive_enabled: true,
+        chat_hot_threshold_per_2m: 12,
+      },
+      segments: [
+        {
+          id: "seg-open",
+          title: "开场闲聊",
+          kind: "chat",
+          duration_minutes: 15,
+          obs_layout: "chat",
+          auto_start_show: false,
+          graceful_finish: true,
+          settings: {},
+        },
+        {
+          id: "seg-dg",
+          title: "你画我猜 2.0",
+          kind: "draw_and_guess",
+          duration_minutes: 25,
+          obs_layout: "game",
+          auto_start_show: true,
+          graceful_finish: true,
+          settings: {},
+        },
+      ],
+    };
+
     const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    const writeTextMock = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: writeTextMock },
+      configurable: true,
+    });
+    const openedWindow = { opener: {} as unknown, location: "" };
+    const windowOpenSpy = vi.fn(() => openedWindow as unknown as Window);
+    vi.stubGlobal("open", windowOpenSpy);
 
     vi.stubGlobal(
       "fetch",
@@ -234,46 +275,94 @@ describe("LiveDesk", () => {
         requests.push({ url, method, body });
 
         if (url.endsWith("/api/v1/live/studio")) return Response.json(currentView);
-        if (url.endsWith("/api/v1/live/schedules") && method === "GET") {
-          return Response.json(scheduleList);
+        if (url.endsWith("/api/v1/live/shows/status")) {
+          return Response.json({
+            character: { id: "whale", name: "Aqua" },
+            draw_and_guess: { active: false, state: "idle", word: "机械键盘" },
+            turtle_soup: { active: false, state: "idle", surface: "深夜电梯", answer: "测试汤底" },
+            roast_radio: { active: false, mode: "debate", topic: "宵夜白饭", votes_a: 2, votes_b: 1 },
+            cold_director: { tier: 2, tier_label: "自娱整活", elapsed_seconds: 310 },
+            overtime: {
+              active: true,
+              energy: 40,
+              threshold: 100,
+              overtime_minutes: 15,
+              max_overtime_minutes: 120,
+              remaining_seconds: 900,
+            },
+            poll: activePoll,
+            rundown: rundownState,
+            scene_layout: sceneLayout,
+          });
         }
-        if (url.endsWith("/api/v1/live/schedules") && method === "POST") {
-          const created = { id: "sch-2", enabled: true, ...(body as Record<string, unknown>) };
-          scheduleList = [...scheduleList, created as (typeof scheduleList)[number]];
-          return Response.json(created);
+        if (url.endsWith("/api/v1/live/games/status")) {
+          return Response.json({
+            active_game_id: "stardew_valley",
+            owner: "studio",
+            active_status: { display_name: "星露谷物语", summary: "正在浇水" },
+          });
         }
-        if (url.endsWith("/api/v1/live/schedules/sch-1") && method === "PATCH") {
-          scheduleList = scheduleList.map((s) =>
-            s.id === "sch-1" ? { ...s, enabled: Boolean((body as { enabled: boolean }).enabled) } : s
-          );
-          return Response.json({ id: "sch-1" });
+        if (url.endsWith("/api/v1/live/rundown")) {
+          return Response.json({
+            plan: rundownPlan,
+            state: rundownState,
+            presets: [],
+            game_catalog: [
+              { kind: "draw_and_guess", label: "你画我猜 2.0", default_layout: "game", description: "" },
+              { kind: "turtle_soup", label: "灵魂海龟汤", default_layout: "game", description: "" },
+            ],
+          });
         }
-        if (url.endsWith("/api/v1/live/schedules/sch-2") && method === "DELETE") {
-          scheduleList = scheduleList.filter((s) => s.id !== "sch-2");
-          return Response.json({ removed: "sch-2" });
-        }
-        if (url.endsWith("/api/v1/live/overtime") && method === "GET") {
-          return Response.json(overtimeState);
-        }
-        if (url.endsWith("/api/v1/live/overtime/start") && method === "POST") {
-          overtimeState = {
-            active: true,
-            energy: 40,
-            threshold: 100,
-            overtime_minutes: 15,
-            max_overtime_minutes: 120,
-            extensions_count: 1,
-            remaining_seconds: 2700,
-            last_event_line: "白饭还没吃上，加班条又涨了！",
+        if (url.endsWith("/api/v1/live/scene/layout") && method === "POST") {
+          const patch = body as { layout?: "chat" | "game"; locked?: boolean };
+          sceneLayout = {
+            active_layout: patch.layout ?? sceneLayout.active_layout,
+            layout_locked: patch.locked ?? sceneLayout.layout_locked,
           };
-          return Response.json(overtimeState);
+          currentView = {
+            ...currentView,
+            scene: {
+              ...currentView.scene,
+              background: sceneLayout.active_layout === "game" ? "transparent" : "ocean",
+            },
+          };
+          return Response.json(sceneLayout);
         }
-        if (url.endsWith("/api/v1/live/overtime/stop") && method === "POST") {
-          overtimeState = { ...overtimeState, active: false };
-          return Response.json(overtimeState);
+        if (url.endsWith("/api/v1/live/rundown/start") && method === "POST") {
+          rundownState = {
+            active: true,
+            paused: false,
+            status: "running",
+            current_index: 0,
+            current_segment: rundownPlan.segments[0],
+            remaining_seconds: 900,
+            hot_chat_prompt: true,
+          };
+          return Response.json({ state: rundownState });
         }
-        if (url.endsWith("/api/v1/live/cold-director/status")) {
-          return Response.json({ tier: 2, elapsed_seconds: 310 });
+        if (url.endsWith("/api/v1/live/rundown/vote-now") && method === "POST") {
+          activePoll = {
+            id: "poll-1",
+            topic: "接下来玩什么？",
+            options: ["你画我猜", "灵魂海龟汤"],
+            counts: { 你画我猜: 1, 灵魂海龟汤: 0 },
+            total_votes: 1,
+            remaining_seconds: 90,
+            phase: "started",
+          };
+          return Response.json({ poll: activePoll });
+        }
+        if (url.endsWith("/api/v1/live/rundown/settle-vote") && method === "POST") {
+          activePoll = null;
+          rundownState = {
+            ...rundownState,
+            current_index: 1,
+            current_segment: rundownPlan.segments[1],
+          };
+          return Response.json({ spoken_text: "投票结果：你画我猜胜出！" });
+        }
+        if (url.endsWith("/api/v1/live/rundown/next") && method === "POST") {
+          return Response.json({ spoken_text: "切到下一环节" });
         }
         if (url.endsWith("/api/v1/live/cold-director/trigger") && method === "POST") {
           return Response.json({ spoken_text: "暖场小剧场启动！" });
@@ -281,7 +370,7 @@ describe("LiveDesk", () => {
         if (url.endsWith("/api/v1/live/mock-event") && method === "POST") {
           const parsed = body as { text?: string } | undefined;
           if (parsed?.text === "1") {
-            return Response.json({ status: "recorded", reason: "辩论已计票", vote: { side: "a" } });
+            return Response.json({ status: "recorded", reason: "已计票" });
           }
           return Response.json({ status: "queued" });
         }
@@ -289,79 +378,107 @@ describe("LiveDesk", () => {
       })
     );
 
-    render(<LiveDesk settings={{ features: { live_enabled: true } }} visible />);
+    render(
+      <LiveDesk
+        settings={{
+          overlay_url: "http://127.0.0.1:8020/overlay#token=xyz",
+          features: { live_enabled: true },
+        }}
+        visible
+      />
+    );
 
     await waitFor(() => {
-      expect(document.querySelector("[data-desk-schedule-count]")?.textContent).toBe("1 条排班");
-      const rowText = document.querySelector('[data-schedule-id="sch-1"]')?.textContent || "";
-      expect(rowText).toContain("夜间档");
-      expect(rowText).toContain("(开播中)");
-      expect(rowText).toContain("2026-11-28 20:00 ~ 2026-11-28 22:00");
+      expect(document.querySelector("[data-desk-cold-tier]")?.textContent).toContain("T2");
+      expect(document.querySelector("[data-desk-overtime-pill]")?.textContent).toContain("+15m · 40%");
     });
 
-    // Create new schedule
-    const schedForm = document.querySelector("[data-desk-schedule-form]") as HTMLFormElement;
-    fireEvent.submit(schedForm);
+    // OBS layout switch & lock
+    fireEvent.click(document.querySelector('[data-layout-btn="game"]') as HTMLButtonElement);
     await waitFor(() => {
-      expect(document.querySelector("[data-desk-schedule-count]")?.textContent).toBe("2 条排班");
+      expect(
+        requests.some(
+          (r) =>
+            r.url.endsWith("/api/v1/live/scene/layout") &&
+            (r.body as { layout?: string })?.layout === "game"
+        )
+      ).toBe(true);
+      expect(document.querySelector("[data-stage-layout-badge]")?.textContent).toContain("游戏布局");
     });
 
-    // Switching to once_window uses YYYY-MM-DD HH:MM inputs
-    const kindSelect = schedForm.querySelector('select[name="schedule_kind"]') as HTMLSelectElement;
-    fireEvent.change(kindSelect, { target: { value: "once_window" } });
-    const startInput = schedForm.querySelector('input[name="start_local"]') as HTMLInputElement;
-    const endInput = schedForm.querySelector('input[name="end_local"]') as HTMLInputElement;
-    expect(startInput.value).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
-    expect(endInput.value).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
-    fireEvent.change(kindSelect, { target: { value: "duration" } });
-
-    // Toggle sch-1
-    fireEvent.click(document.querySelector('[data-schedule-toggle="sch-1"]') as HTMLButtonElement);
+    fireEvent.click(document.querySelector("[data-layout-lock]") as HTMLButtonElement);
     await waitFor(() => {
-      expect(document.querySelector('[data-schedule-id="sch-1"]')?.textContent).toContain("已暂停");
+      expect(document.querySelector("[data-layout-lock]")?.getAttribute("aria-pressed")).toBe("true");
     });
 
-    // Delete sch-2
-    fireEvent.click(document.querySelector('[data-schedule-delete="sch-2"]') as HTMLButtonElement);
+    // Copy OBS URLs menu
+    fireEvent.click(document.querySelector("[data-obs-menu-toggle]") as HTMLButtonElement);
+    fireEvent.click(document.querySelector('[data-copy-obs="game"]') as HTMLButtonElement);
     await waitFor(() => {
-      expect(document.querySelector("[data-desk-schedule-count]")?.textContent).toBe("1 条排班");
+      expect(writeTextMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8020/overlay?layout=game#token=xyz"
+      );
     });
+    fireEvent.click(document.querySelector("[data-obs-menu-toggle]") as HTMLButtonElement);
+    fireEvent.click(document.querySelector("[data-open-draw-guess-preview]") as HTMLButtonElement);
+    expect(openedWindow.location).toBe("http://127.0.0.1:8020/overlay/draw-guess?preview=1");
 
-    // Overtime start & stop
-    fireEvent.click(document.getElementById("overtime-start-btn") as HTMLButtonElement);
+    // StageMonitor 3-way layer switcher -> show_only renders standby placeholder
+    fireEvent.click(document.querySelector('[data-stage-layer="show_only"]') as HTMLButtonElement);
+    expect(document.getElementById("show-standby-placeholder")).not.toBeNull();
+    fireEvent.click(document.querySelector('[data-stage-layer="all"]') as HTMLButtonElement);
+
+    // Rundown start & poll -> StageMonitor renders #live-poll-card & ContextualMockRail adapts to poll
+    fireEvent.click(document.querySelector("[data-rundown-start]") as HTMLButtonElement);
     await waitFor(() => {
-      expect(document.querySelector("[data-desk-overtime-state]")?.textContent).toBe("加班中 +15m");
-      expect(document.querySelector("[data-desk-overtime-energy]")?.textContent).toContain("40 / 100 (40%)");
-      expect(document.querySelector("[data-desk-overtime-line]")?.textContent).toContain("白饭还没吃上");
+      expect(document.querySelector("[data-rundown-hot-chat]")).not.toBeNull();
     });
-
-    fireEvent.click(document.getElementById("overtime-stop-btn") as HTMLButtonElement);
+    fireEvent.click(document.querySelector("[data-rundown-vote-now]") as HTMLButtonElement);
     await waitFor(() => {
-      expect(document.querySelector("[data-desk-overtime-state]")?.textContent).toBe("未开启加班条");
+      expect(document.getElementById("live-poll-card")).not.toBeNull();
+      expect(document.querySelector("[data-simulator-context]")?.textContent).toBe("投票进行中");
+      expect(document.querySelector('[data-quick-mock="poll-vote-1"]')).not.toBeNull();
+      expect(document.querySelector('[data-quick-mock="poll-settle-empty"]')).not.toBeNull();
     });
 
-    // Cold-Room Director quick trigger
+    // Vote 1 and settle vote
+    fireEvent.click(document.querySelector('[data-quick-mock="poll-vote-1"]') as HTMLButtonElement);
+    await waitFor(() => {
+      expect(
+        requests.some((r) => r.url.endsWith("/api/v1/live/mock-event") && (r.body as { text?: string })?.text === "1")
+      ).toBe(true);
+    });
+    fireEvent.click(document.querySelector("[data-rundown-settle-vote]") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(document.getElementById("live-poll-card")).toBeNull();
+    });
+
+    // Switch ShowDock tabs -> ContextualMockRail adapts + host-only secret toggle + Cold Director trigger
+    fireEvent.click(document.querySelector('[data-dock-tab="draw_guess"]') as HTMLButtonElement);
+    expect(document.querySelector("[data-simulator-context]")?.textContent).toBe("你画我猜 2.0");
+    expect(document.querySelector('[data-quick-mock="chat-guess"]')).not.toBeNull();
+    fireEvent.click(document.querySelector("[data-dg-toggle-secret]") as HTMLButtonElement);
+    expect(screen.getByText("机械键盘")).toBeInTheDocument();
+
+    fireEvent.click(document.querySelector('[data-dock-tab="cold_director"]') as HTMLButtonElement);
     fireEvent.click(document.getElementById("desk-cold-trigger-btn") as HTMLButtonElement);
     await waitFor(() => {
       expect(document.querySelector("[data-desk-action-state]")?.textContent).toBe("暖场小剧场启动！");
     });
 
-    // Quick mock gift button -> sends price & count matching InteractiveRulesService.extract_gift_info
+    // Pinned gift button -> sends price & count matching InteractiveRulesService.extract_gift_info
     fireEvent.click(document.querySelector('[data-quick-mock="gift-rice"]') as HTMLButtonElement);
     await waitFor(() => {
-      const mockReq = requests.find((r) => r.url.endsWith("/api/v1/live/mock-event"));
-      expect(mockReq?.body).toMatchObject({
+      const giftReq = requests.find(
+        (r) =>
+          r.url.endsWith("/api/v1/live/mock-event") &&
+          (r.body as { type?: string })?.type === "gift"
+      );
+      expect(giftReq?.body).toMatchObject({
         type: "gift",
         text: "白饭应援",
         metadata: { gift_name: "白饭应援", count: 1, price: 100 },
       });
-    });
-
-    // Quick mock debate vote -> accepts { status: "recorded", reason: "辩论已计票" }
-    fireEvent.click(document.querySelector('[data-quick-mock="chat-vote"]') as HTMLButtonElement);
-    await waitFor(() => {
-      expect(document.querySelector("[data-desk-action-error]")?.textContent).toBe("");
-      expect(document.querySelector("[data-desk-action-state]")?.textContent).toBe("操作已提交。");
     });
   });
 });
@@ -796,6 +913,16 @@ describe("LiveMusicPage and LiveSettingsPage", () => {
     await waitFor(() => {
       expect(document.getElementById("live-desk")).not.toBeNull();
       expect(document.querySelector("[data-desk-session]")?.textContent).toBe("未开播");
+      expect(screen.getByText("Aqua 直播工坊")).toBeInTheDocument();
+      const tabs = [...document.querySelectorAll("[data-live-tab]")].map((el) =>
+        el.textContent?.trim()
+      );
+      expect(tabs).toEqual(["导播台", "排班与规则", "场景编排", "曲库与点歌", "直播设置"]);
+    });
+
+    fireEvent.click(document.querySelector('[data-live-tab="interaction"]') as HTMLAnchorElement);
+    await waitFor(() => {
+      expect(document.querySelector('[data-live-page="live-interaction"]')).not.toBeNull();
     });
   });
 });

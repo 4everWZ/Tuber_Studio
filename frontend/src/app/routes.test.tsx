@@ -136,4 +136,19 @@ describe("routes.tsx ManageMemoriesHost & AutomationStatusBridge", () => {
     expect(fullSpy).toHaveBeenCalledWith(fullPayload);
     expect(refreshSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("maps all five live routes and #live-game-panel anchor to LiveFeature", () => {
+    for (const hash of [
+      "#live",
+      "#live-interaction",
+      "#live-game-panel",
+      "#live-scene",
+      "#live-music",
+      "#live-settings",
+    ]) {
+      const { unmount } = render(<>{renderWorkbenchRoute(parseHashRoute(hash))}</>);
+      expect(screen.getByTestId("live-feature-stub")).toBeTruthy();
+      unmount();
+    }
+  });
 });

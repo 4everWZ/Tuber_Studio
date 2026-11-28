@@ -4,16 +4,18 @@ import type { SystemSettings } from "@/shared/hooks/useAppSession";
 import { hasAnyUnsavedChanges } from "@/shared/lib/dirtyRegistry";
 import { errorMessage } from "@/shared/lib/errors";
 import { LiveDesk } from "./LiveDesk";
+import { LiveInteractionPage } from "./LiveInteractionPage";
 import { LiveMusicPage } from "./LiveMusicPage";
 import { LiveScenePage } from "./LiveScenePage";
 import { LiveSettingsPage } from "./LiveSettingsPage";
 import styles from "./LiveWorkbench.module.css";
 import type { BilibiliAccountSnapshot } from "./types";
 
-type StandaloneView = "desk" | "scene" | "music" | "settings";
+export type StandaloneView = "desk" | "interaction" | "scene" | "music" | "settings";
 
 const STANDALONE_VIEWS: readonly { id: StandaloneView; label: string; href: string }[] = [
-  { id: "desk", label: "播控台", href: "/live" },
+  { id: "desk", label: "导播台", href: "/live" },
+  { id: "interaction", label: "排班与规则", href: "/live?view=interaction" },
   { id: "scene", label: "场景编排", href: "/live?view=scene" },
   { id: "music", label: "曲库与点歌", href: "/live?view=music" },
   { id: "settings", label: "直播设置", href: "/live?view=settings" },
@@ -21,7 +23,10 @@ const STANDALONE_VIEWS: readonly { id: StandaloneView; label: string; href: stri
 
 function parseStandaloneView(search: string): StandaloneView {
   const focusView = new URLSearchParams(search).get("view");
-  return focusView === "scene" || focusView === "music" || focusView === "settings"
+  return focusView === "interaction" ||
+    focusView === "scene" ||
+    focusView === "music" ||
+    focusView === "settings"
     ? focusView
     : "desk";
 }
@@ -172,7 +177,7 @@ export function LiveStandaloneApp() {
             >
               <span className={styles.brandIcon}>🐋</span>
               <span>
-                大肥鱼工坊 <small>直播工作台</small>
+                Aqua 直播工坊 <small>直播工作台</small>
               </span>
             </a>
             <a href={studioPath("/#live")}>回到主工作台 ↗</a>
@@ -235,6 +240,9 @@ export function LiveStandaloneApp() {
           visible
           onNavigateStandaloneView={(target) => navigateView(target)}
         />
+      )}
+      {view === "interaction" && (
+        <LiveInteractionPage visible onFeedback={handleFeedback} />
       )}
       {view === "scene" && (
         <LiveScenePage visible showWorkbenchHeading={false} onFeedback={handleFeedback} />
