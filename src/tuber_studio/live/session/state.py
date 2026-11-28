@@ -19,6 +19,7 @@ from ..music.online_songs import OnlineSongs
 from ..options import LiveLookup, LiveOptions
 from .cold_director import ColdRoomDirector
 from .overtime_theater import OvertimeTheater
+from .rundown import DrawAndGuessFineSettings, RundownManager, TurtleSoupFineSettings
 from .schedules import LiveSchedules
 
 TERMINAL = {"completed", "failed", "cancelled", "expired"}
@@ -40,6 +41,9 @@ LIVE_OUTCOMES = (
     "roast_radio_roast",
     "overtime_extended",
     "cold_wakeup",
+    "rundown_vote_opened",
+    "rundown_vote_progress",
+    "rundown_chat_extended",
 )
 
 
@@ -63,6 +67,10 @@ class LiveSessionState:
         self.cold_director = ColdRoomDirector()
         self.overtime_theater = OvertimeTheater()
         self.live_schedules = LiveSchedules(self)
+        self.rundown = RundownManager(self)
+        self._draw_guess_fine = DrawAndGuessFineSettings().model_dump()
+        self._turtle_soup_fine = TurtleSoupFineSettings().model_dump()
+        self._load_fine_settings()
         self.live_scene = live_scene
         self.state = "stopped"
         self.muted = False
@@ -149,11 +157,15 @@ class LiveSessionState:
         elif action == "pause":
             if self.state != "stopped":
                 self.state = "paused"
+                if self.rundown.active and not self.rundown.paused:
+                    self.rundown.pause()
                 if self.idle_unplayed():
                     await self.cancel_current("已暂停冷场任务")
         elif action == "resume":
             self.state = "live"
             self.runtime.error = None
+            if self.rundown.active and self.rundown.paused:
+                self.rundown.resume()
         elif action == "stop":
             self.state = "stopped"
             self.online_songs.choices.clear()
@@ -163,6 +175,8 @@ class LiveSessionState:
             self.runtime.relationships.clear_live()
             if self.overtime_theater.active:
                 self.overtime_theater.stop()
+            if self.rundown.active:
+                self.rundown.stop()
             self.cold_director.reset()
             self.live_schedules.on_manual_stop()
             self.clear_queue()
@@ -219,3 +233,63 @@ class LiveSessionState:
             or (self._timezone_provider() if self._timezone_provider else None)
             or "Asia/Taipei"
         )
+
+    def _load_fine_settings(self) -> None:
+        raw = self.store.get("live_fine_settings")
+        if not isinstance(raw, dict):
+            return
+        if isinstance(raw.get("cold_director"), dict):
+            try:
+                self.cold_director.configure(raw["cold_director"])
+            except ValueError:
+                pass
+        if isinstance(raw.get("overtime"), dict):
+            try:
+                self.overtime_theater.configure(raw["overtime"])
+            except ValueError:
+                pass
+        if isinstance(raw.get("draw_and_guess"), dict):
+            try:
+                self._draw_guess_fine = DrawAndGuessFineSettings.model_validate(
+                    self._draw_guess_fine | raw["draw_and_guess"]
+                ).model_dump()
+            except Exception:
+                pass
+        if isinstance(raw.get("turtle_soup"), dict):
+            try:
+                self._turtle_soup_fine = TurtleSoupFineSettings.model_validate(
+                    self._turtle_soup_fine | raw["turtle_soup"]
+                ).model_dump()
+            except Exception:
+                pass
+
+    def fine_settings(self) -> dict:
+        return {
+            "cold_director": self.cold_director.config(),
+            "overtime": self.overtime_theater.config(),
+            "draw_and_guess": dict(self._draw_guess_fine),
+            "turtle_soup": dict(self._turtle_soup_fine),
+        }
+
+    def save_fine_settings(self, patch: dict) -> dict:
+        if not isinstance(patch, dict):
+            raise ValueError("fine-settings 载荷须为对象")
+        if "cold_director" in patch and patch["cold_director"] is not None:
+            self.cold_director.configure(patch["cold_director"])
+        if "overtime" in patch and patch["overtime"] is not None:
+            self.overtime_theater.configure(patch["overtime"])
+        if "draw_and_guess" in patch and patch["draw_and_guess"] is not None:
+            if not isinstance(patch["draw_and_guess"], dict):
+                raise ValueError("draw_and_guess 配置必须为字典")
+            self._draw_guess_fine = DrawAndGuessFineSettings.model_validate(
+                self._draw_guess_fine | patch["draw_and_guess"]
+            ).model_dump()
+        if "turtle_soup" in patch and patch["turtle_soup"] is not None:
+            if not isinstance(patch["turtle_soup"], dict):
+                raise ValueError("turtle_soup 配置必须为字典")
+            self._turtle_soup_fine = TurtleSoupFineSettings.model_validate(
+                self._turtle_soup_fine | patch["turtle_soup"]
+            ).model_dump()
+        result = self.fine_settings()
+        self.store.set("live_fine_settings", result)
+        return result

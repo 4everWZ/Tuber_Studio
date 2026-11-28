@@ -33,13 +33,20 @@ class OvertimeTheater:
         threshold: float = 100.0,
         chat_cooldown_seconds: float = 15.0,
         decay_per_minute: float = 4.0,
+        gift_coin_multiplier: float = 1.5,
+        chat_base_energy: float = 6.0,
     ) -> None:
         self.threshold = max(10.0, float(threshold))
         self.chat_cooldown_seconds = max(0.0, float(chat_cooldown_seconds))
         self.decay_per_minute = max(0.0, float(decay_per_minute))
+        self.gift_coin_multiplier = max(0.1, float(gift_coin_multiplier))
+        self.chat_base_energy = max(0.5, float(chat_base_energy))
 
         self.active: bool = False
         self.energy: float = 0.0
+        self.default_base_duration_minutes: int = 60
+        self.default_max_overtime_minutes: int = 120
+        self.default_extension_step_minutes: int = 15
         self.base_duration_minutes: int = 60
         self.max_overtime_minutes: int = 120
         self.extension_step_minutes: int = 15
@@ -56,6 +63,55 @@ class OvertimeTheater:
         self._closing_cue_emitted: bool = False
         self._ended_cue_emitted: bool = False
 
+    def config(self) -> dict[str, float | int]:
+        return {
+            "threshold": self.threshold,
+            "gift_coin_multiplier": self.gift_coin_multiplier,
+            "chat_base_energy": self.chat_base_energy,
+            "chat_cooldown_seconds": self.chat_cooldown_seconds,
+            "decay_per_minute": self.decay_per_minute,
+            "default_base_duration_minutes": self.default_base_duration_minutes,
+            "default_max_overtime_minutes": self.default_max_overtime_minutes,
+            "default_extension_step_minutes": self.default_extension_step_minutes,
+        }
+
+    def configure(self, patch: dict[str, Any]) -> dict[str, float | int]:
+        if not isinstance(patch, dict):
+            raise ValueError("overtime 配置必须为字典")
+        threshold = float(patch.get("threshold", self.threshold))
+        gift_mult = float(patch.get("gift_coin_multiplier", self.gift_coin_multiplier))
+        chat_energy = float(patch.get("chat_base_energy", self.chat_base_energy))
+        cooldown = float(patch.get("chat_cooldown_seconds", self.chat_cooldown_seconds))
+        decay = float(patch.get("decay_per_minute", self.decay_per_minute))
+        base_dur = int(patch.get("default_base_duration_minutes", self.default_base_duration_minutes))
+        max_ot = int(patch.get("default_max_overtime_minutes", self.default_max_overtime_minutes))
+        step = int(patch.get("default_extension_step_minutes", self.default_extension_step_minutes))
+        if not (10.0 <= threshold <= 10000.0):
+            raise ValueError("加班能量条阈值须在 10..10000 之间")
+        if not (0.1 <= gift_mult <= 100.0):
+            raise ValueError("礼物能量倍率须在 0.1..100 之间")
+        if not (0.5 <= chat_energy <= 50.0):
+            raise ValueError("弹幕基础充能须在 0.5..50 之间")
+        if not (0.0 <= cooldown <= 600.0):
+            raise ValueError("弹幕冷却时间须在 0..600 秒之间")
+        if not (0.0 <= decay <= 100.0):
+            raise ValueError("每分钟衰减须在 0..100 之间")
+        if not (1 <= base_dur <= 1440) or not (0 <= max_ot <= 720) or not (1 <= step <= 120):
+            raise ValueError("默认基础/最大/步长时长超出范围")
+        self.threshold = threshold
+        self.gift_coin_multiplier = gift_mult
+        self.chat_base_energy = chat_energy
+        self.chat_cooldown_seconds = cooldown
+        self.decay_per_minute = decay
+        self.default_base_duration_minutes = base_dur
+        self.default_max_overtime_minutes = max_ot
+        self.default_extension_step_minutes = step
+        if not self.active:
+            self.base_duration_minutes = base_dur
+            self.max_overtime_minutes = max_ot
+            self.extension_step_minutes = step
+        return self.config()
+
     @staticmethod
     def _now(now: float | None) -> float:
         return time.time() if now is None else float(now)
@@ -63,15 +119,15 @@ class OvertimeTheater:
     def start_window(
         self,
         *,
-        base_duration_minutes: int = 60,
-        max_overtime_minutes: int = 120,
-        extension_step_minutes: int = 15,
+        base_duration_minutes: int | None = None,
+        max_overtime_minutes: int | None = None,
+        extension_step_minutes: int | None = None,
         now: float | None = None,
     ) -> dict[str, Any]:
         """Start an Overtime Theater broadcast window."""
-        base_dur = int(base_duration_minutes)
-        max_ot = int(max_overtime_minutes)
-        step = int(extension_step_minutes)
+        base_dur = int(self.default_base_duration_minutes if base_duration_minutes is None else base_duration_minutes)
+        max_ot = int(self.default_max_overtime_minutes if max_overtime_minutes is None else max_overtime_minutes)
+        step = int(self.default_extension_step_minutes if extension_step_minutes is None else extension_step_minutes)
         if base_dur < 1 or base_dur > 1440:
             raise ValueError("基础直播时长须在 1 到 1440 分钟之间")
         if max_ot < 0 or max_ot > 720:
@@ -200,7 +256,7 @@ class OvertimeTheater:
             return None
         now_ts = self._now(now)
         coin_val = max(0.0, float(coins or 0))
-        gain = max(12.0, coin_val * 1.5)
+        gain = max(12.0, coin_val * self.gift_coin_multiplier)
         return self._apply_energy(
             gain,
             source="gift",
@@ -236,7 +292,7 @@ class OvertimeTheater:
             }
             while len(self._last_chat_by_user) > 1000:
                 self._last_chat_by_user.pop(next(iter(self._last_chat_by_user)))
-        gain = min(10.0, 6.0 + min(4.0, len(cleaned) * 0.2))
+        gain = min(max(self.chat_base_energy + 4.0, 10.0), self.chat_base_energy + min(4.0, len(cleaned) * 0.2))
         return self._apply_energy(
             gain,
             source="chat",

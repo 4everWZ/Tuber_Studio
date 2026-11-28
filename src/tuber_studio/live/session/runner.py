@@ -113,12 +113,20 @@ class LiveSessionRunnerMixin:
         while True:
             deadline = self.idle_deadline()
             delay = max(0.001, deadline - time.monotonic()) if deadline is not None else None
+            if self.rundown.active and not self.rundown.paused:
+                rundown_delay = self.rundown.next_wake_delay()
+                if rundown_delay is not None:
+                    delay = rundown_delay if delay is None else min(delay, rundown_delay)
             if not self.queue or self.state != "live" or self.muted:
                 try:
                     await asyncio.wait_for(self.wake.wait(), timeout=delay)
                 except TimeoutError:
                     pass
             self.wake.clear()
+            if self.rundown.active and not self.rundown.paused:
+                transition = await self.rundown.tick()
+                if transition and transition.get("scene_changed"):
+                    await self.send_overlay({"type": "scene", "scene": self.media.scene()})
             idle_at = self.idle_deadline()
             if not self.queue and idle_at is not None and time.monotonic() >= idle_at:
                 if self.runtime.generation_lock.locked():
@@ -222,6 +230,9 @@ class LiveSessionRunnerMixin:
                         or meta.get("roast_radio_roast")
                         or meta.get("game_switch")
                         or meta.get("draw_guess_near_miss")
+                        or meta.get("rundown_vote_opened")
+                        or meta.get("rundown_vote_progress")
+                        or meta.get("rundown_chat_extended")
                         or (meta.get("overtime_extended") if not any(k in meta for k in ("draw_guess_won", "game_action")) else None)
                     ):
                         spoken = announcement.get("spoken_text") or announcement.get("roast") or event["text"]

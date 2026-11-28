@@ -66,7 +66,12 @@ class ColdRoomDirector:
         if not (240.0 <= float(tier3_cadence) <= 360.0):
             raise ValueError("tier3_cadence must be between 240 and 360 seconds")
         base_now = time.monotonic() if now is None else float(now)
-        self.tier3_cadence = float(tier3_cadence)
+        self.tier1_delay_sec: float = TIER_1_START_SEC
+        self.tier2_delay_sec: float = TIER_2_START_SEC
+        self.tier3_delay_sec: float = TIER_3_START_SEC
+        self.tier1_cooldown_sec: float = TIER_1_CADENCE_SEC
+        self.tier2_cooldown_sec: float = TIER_2_CADENCE_SEC
+        self.tier3_cadence: float = float(tier3_cadence)
         self.last_viewer_activity: float = base_now
         self.last_action_at: float | None = None
         self.last_action_tier: int = 0
@@ -76,16 +81,49 @@ class ColdRoomDirector:
         self.total_segments: int = 0
         self.last_segment: dict[str, Any] | None = None
 
+    def config(self) -> dict[str, float]:
+        return {
+            "tier1_delay_sec": self.tier1_delay_sec,
+            "tier2_delay_sec": self.tier2_delay_sec,
+            "tier3_delay_sec": self.tier3_delay_sec,
+            "tier1_cooldown_sec": self.tier1_cooldown_sec,
+            "tier2_cooldown_sec": self.tier2_cooldown_sec,
+            "tier3_cadence_sec": self.tier3_cadence,
+        }
+
+    def configure(self, patch: dict[str, Any]) -> dict[str, float]:
+        if not isinstance(patch, dict):
+            raise ValueError("cold_director 配置必须为字典")
+        t1 = float(patch.get("tier1_delay_sec", self.tier1_delay_sec))
+        t2 = float(patch.get("tier2_delay_sec", self.tier2_delay_sec))
+        t3 = float(patch.get("tier3_delay_sec", self.tier3_delay_sec))
+        c1 = float(patch.get("tier1_cooldown_sec", self.tier1_cooldown_sec))
+        c2 = float(patch.get("tier2_cooldown_sec", self.tier2_cooldown_sec))
+        c3 = float(patch.get("tier3_cadence_sec", patch.get("tier3_cadence", self.tier3_cadence)))
+        if not (10.0 <= t1 < t2 < t3 <= 7200.0):
+            raise ValueError("冷场阶段触发时间须严格递增且在 10..7200 秒内")
+        if min(c1, c2) < 10.0 or max(c1, c2) > 3600.0:
+            raise ValueError("冷场冷却时间须在 10..3600 秒内")
+        if not (120.0 <= c3 <= 600.0):
+            raise ValueError("Tier 3 陪伴电台间隔须在 120..600 秒内")
+        self.tier1_delay_sec = t1
+        self.tier2_delay_sec = t2
+        self.tier3_delay_sec = t3
+        self.tier1_cooldown_sec = c1
+        self.tier2_cooldown_sec = c2
+        self.tier3_cadence = c3
+        return self.config()
+
     def _now(self, now: float | None) -> float:
         return time.monotonic() if now is None else float(now)
 
     def current_tier(self, now: float | None = None) -> int:
         elapsed = max(0.0, self._now(now) - self.last_viewer_activity)
-        if elapsed < TIER_1_START_SEC:
+        if elapsed < self.tier1_delay_sec:
             return 0
-        if elapsed < TIER_2_START_SEC:
+        if elapsed < self.tier2_delay_sec:
             return 1
-        if elapsed < TIER_3_START_SEC:
+        if elapsed < self.tier3_delay_sec:
             return 2
         return 3
 
@@ -93,17 +131,17 @@ class ColdRoomDirector:
         current = self._now(now)
         tier = self.current_tier(current)
         if tier == 0:
-            return self.last_viewer_activity + TIER_1_START_SEC
+            return self.last_viewer_activity + self.tier1_delay_sec
         if self.last_action_at is None or self.last_action_tier < tier:
             tier_start = {
-                1: self.last_viewer_activity + TIER_1_START_SEC,
-                2: self.last_viewer_activity + TIER_2_START_SEC,
-                3: self.last_viewer_activity + TIER_3_START_SEC,
+                1: self.last_viewer_activity + self.tier1_delay_sec,
+                2: self.last_viewer_activity + self.tier2_delay_sec,
+                3: self.last_viewer_activity + self.tier3_delay_sec,
             }[tier]
             return tier_start
         cadence = {
-            1: TIER_1_CADENCE_SEC,
-            2: TIER_2_CADENCE_SEC,
+            1: self.tier1_cooldown_sec,
+            2: self.tier2_cooldown_sec,
             3: self.tier3_cadence,
         }[tier]
         return self.last_action_at + cadence

@@ -9,6 +9,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from fastapi import Body, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -19,7 +20,14 @@ from ...core.models import Event, StrictModel
 from ...live.activity_filter import LivePoll
 from ...live.avatar import LiveAvatar
 from ...live.games.stardew_device import DeviceCommand, create_stardew_device
-from ...live.media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
+from ...live.media import (
+    MAX_UPLOAD,
+    MEDIA_TYPES,
+    MusicSettings,
+    default_game_scene,
+    default_scene,
+    inspect_audio,
+)
 from ...live.music.online_songs import SongRequestSettings
 from ...live.options import LiveOptions
 from ...live.session.schedules import LiveScheduleCreate, LiveScheduleUpdate
@@ -48,7 +56,7 @@ def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None
     view_dep = [Depends(auth.require_view)]
     prefix = "/api/v1/live"
 
-    def view(*, operator: bool = False):
+    def view(*, operator: bool = False, layout: Literal["chat", "game"] | None = None):
         queued = []
         for identity in runtime.live.queue:
             job = store.job(identity)
@@ -85,7 +93,8 @@ def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None
         character = runtime.character
         show = performance(store)
         return {
-            "scene": media.scene(),
+            "scene": media.scene(layout=layout),
+            "scene_layout": media.layout_state(),
             "queue": queued,
             "events": list(reversed(events)),
             "character": {
@@ -107,7 +116,7 @@ def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None
             "server_time": time.time(),
             "overlay_connected": runtime.live.overlay is not None,
             "activities": list(runtime.live.recent_activities),
-            "poll": (runtime.live.activity_filter.active_poll or {}).get("public"),
+            "poll": runtime.live.activity_filter.public_poll(),
             "weather_attribution": bool(runtime.live.options().weather and not settings.data.get("commercial_mode")),
         }
 
@@ -136,8 +145,8 @@ def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None
             temporary.unlink(missing_ok=True)
 
     @app.get(prefix + "/view", dependencies=view_dep, responses=ERROR_RESPONSES, tags=["live"])
-    async def live_view(request: Request):
-        return view(operator=auth.admin_ok(request))
+    async def live_view(request: Request, layout: Literal["chat", "game"] | None = Query(default=None)):
+        return view(operator=auth.admin_ok(request), layout=layout)
 
     @app.get(prefix + "/studio", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def live_studio():
@@ -164,13 +173,37 @@ def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None
         runtime.cache.touch(path)
         return FileResponse(path, media_type=MEDIA_TYPES[path.suffix])
 
+    @app.get(prefix + "/scene/profiles", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def scene_profiles():
+        return media.scene_profiles()
+
+    @app.get(prefix + "/scene", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def get_scene(layout: Literal["chat", "game"] | None = Query(default=None)):
+        return media.scene(layout=layout)
+
     @app.put(prefix + "/scene", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
-    async def save_scene(data: dict = Body(...)):
-        return media.save_scene(data)
+    async def save_scene(
+        data: dict = Body(...),
+        layout: Literal["chat", "game"] | None = Query(default=None),
+    ):
+        payload = dict(data)
+        body_layout = payload.pop("layout", None)
+        resolved = layout or body_layout
+        saved = media.save_scene(payload, layout=resolved)
+        if resolved is None or resolved == media.layout_state()["active_layout"]:
+            await runtime.live.send_overlay({"type": "scene", "scene": saved})
+        return saved
 
     @app.get(prefix + "/scene/default", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
-    async def reset_scene():
-        return default_scene()
+    async def reset_scene(layout: Literal["chat", "game"] | None = Query(default=None)):
+        return default_game_scene() if layout == "game" else default_scene()
+
+    @app.post(prefix + "/scene/layout", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def set_scene_layout(data: dict = Body(default_factory=dict)):
+        state = media.set_layout(layout=data.get("layout"), locked=data.get("locked"))
+        scene = media.scene()
+        await runtime.live.send_overlay({"type": "scene", "scene": scene})
+        return state | {"scene": scene}
 
     @app.get(prefix + "/music", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def music():
@@ -323,8 +356,18 @@ def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None
     async def stop_overtime_window():
         return runtime.live.overtime_theater.stop()
 
+    async def _push_scene_if_changed(result: dict | None) -> None:
+        if result and result.get("scene_changed"):
+            await runtime.live.send_overlay({"type": "scene", "scene": media.scene()})
+
+    async def _sync_rundown() -> None:
+        if runtime.live.rundown.active and not runtime.live.rundown.paused:
+            transition = await runtime.live.rundown.tick()
+            await _push_scene_if_changed(transition)
+
     @app.get(prefix + "/shows/status", responses=ERROR_RESPONSES, tags=["live"])
     async def get_live_shows_status():
+        await _sync_rundown()
         return {
             "character": store.display_name(runtime.character["id"]),
             "draw_and_guess": runtime.live.draw_and_guess.get_overlay_state(),
@@ -332,13 +375,88 @@ def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None
             "roast_radio": runtime.live.roast_radio.get_overlay_state(),
             "cold_director": cold_director_snapshot(),
             "overtime": runtime.live.overtime_theater.status(),
+            "poll": runtime.live.activity_filter.public_poll(),
+            "rundown": runtime.live.rundown.state(),
+            "scene_layout": media.layout_state(),
         }
+
+    @app.get(prefix + "/rundown", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def get_rundown():
+        await _sync_rundown()
+        return runtime.live.rundown.snapshot()
+
+    @app.put(prefix + "/rundown", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def put_rundown(data: dict = Body(...)):
+        runtime.live.rundown.save_plan(data)
+        return runtime.live.rundown.snapshot()
+
+    @app.post(prefix + "/rundown/start", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def start_rundown(data: dict = Body(default_factory=dict)):
+        res = await runtime.live.rundown.start(mode=data.get("mode"))
+        await _push_scene_if_changed(res)
+        return runtime.live.rundown.snapshot()
+
+    @app.post(prefix + "/rundown/pause", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def pause_rundown():
+        runtime.live.rundown.pause()
+        return runtime.live.rundown.snapshot()
+
+    @app.post(prefix + "/rundown/resume", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def resume_rundown():
+        runtime.live.rundown.resume()
+        return runtime.live.rundown.snapshot()
+
+    @app.post(prefix + "/rundown/stop", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def stop_rundown():
+        runtime.live.rundown.stop()
+        return runtime.live.rundown.snapshot()
+
+    @app.post(prefix + "/rundown/next", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def next_rundown(data: dict = Body(default_factory=dict)):
+        res = await runtime.live.rundown.next(force=bool(data.get("force", True)))
+        await _push_scene_if_changed(res)
+        return runtime.live.rundown.snapshot()
+
+    @app.post(prefix + "/rundown/jump", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def jump_rundown(data: dict = Body(...)):
+        res = await runtime.live.rundown.jump(index=data.get("index"), segment_id=data.get("segment_id"))
+        await _push_scene_if_changed(res)
+        return runtime.live.rundown.snapshot()
+
+    @app.post(prefix + "/rundown/vote-now", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def vote_now_rundown():
+        res = await runtime.live.rundown.open_game_vote()
+        return runtime.live.rundown.snapshot() | {"poll": res["poll"]}
+
+    @app.post(prefix + "/rundown/settle-vote", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def settle_vote_rundown():
+        res = await runtime.live.rundown.settle_vote()
+        await _push_scene_if_changed(res)
+        return runtime.live.rundown.snapshot() | {
+            "vote_result": res.get("vote_result"),
+            "fallback": res.get("fallback", False),
+        }
+
+    @app.post(prefix + "/rundown/extend-chat", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def extend_chat_rundown(data: dict = Body(default_factory=dict)):
+        res = await runtime.live.rundown.extend_chat(minutes=int(data.get("minutes", 15)))
+        await _push_scene_if_changed(res)
+        return runtime.live.rundown.snapshot()
+
+    @app.get(prefix + "/fine-settings", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def get_fine_settings():
+        return runtime.live.fine_settings()
+
+    @app.put(prefix + "/fine-settings", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
+    async def put_fine_settings(data: dict = Body(...)):
+        return runtime.live.save_fine_settings(data)
 
     @app.post(prefix + "/shows/turtle-soup/start", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def start_turtle_soup(data: dict = Body(default_factory=dict)):
+        ts_fine = runtime.live.fine_settings()["turtle_soup"]
         trigger_user = str(data.get("trigger_user") or "主播")
-        genre = data.get("genre")
-        use_llm = bool(data.get("use_llm", True))
+        genre = data.get("genre") if "genre" in data else (ts_fine.get("default_genre") or None)
+        use_llm = bool(data["use_llm"]) if "use_llm" in data else bool(ts_fine.get("use_llm", True))
         if use_llm:
             return await runtime.live.turtle_soup.start_round_llm(
                 runtime.llm, trigger_user=trigger_user, genre=genre
@@ -467,10 +585,11 @@ def register_live_routes(app, settings, runtime, auth, *, on_stardew_device=None
 
     @app.post(prefix + "/draw-and-guess/start", dependencies=admin_dep, responses=ERROR_RESPONSES, tags=["live"])
     async def start_draw_and_guess(data: dict = Body(default_factory=dict)):
+        dg_fine = runtime.live.fine_settings()["draw_and_guess"]
         user = str(data.get("trigger_user") or "主播")
-        duration = int(data.get("duration_sec", 60))
-        theme = data.get("theme")
-        mode = str(data.get("mode") or "aqua_draws")
+        duration = int(data.get("duration_sec", dg_fine["duration_sec"]))
+        theme = data.get("theme") if "theme" in data else (dg_fine.get("default_theme") or None)
+        mode = str(data.get("mode") or dg_fine["mode"])
         use_llm = bool(data.get("use_llm", False))
         if use_llm:
             return await runtime.live.draw_and_guess.start_round_llm(

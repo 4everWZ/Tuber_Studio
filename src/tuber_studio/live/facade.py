@@ -30,6 +30,7 @@ from .media import (
     LiveMedia,
     MusicSettings,
     Scene,
+    default_game_scene,
     default_scene,
     inspect_audio,
     inspect_wav,
@@ -43,10 +44,12 @@ from .scene import LiveScene
 from .session import HANDOFF_PLATFORM, IDLE_AFTER, LiveSession, clean_barrage
 from .session.cold_director import ColdRoomDirector
 from .session.overtime_theater import OvertimeTheater
+from .session.rundown import ChatEntryConfig, RundownManager, RundownPlan, RundownSegment
 from .session.schedules import LiveScheduleCreate, LiveSchedules, LiveScheduleUpdate
 from .studio import room_feed
 
 __all__ = [
+    "ChatEntryConfig",
     "ColdRoomDirector",
     "DeviceCommand",
     "DrawAndGuessRule",
@@ -80,6 +83,9 @@ __all__ = [
     "PvZAdapter",
     "RoastRadioRule",
     "RoastRadioService",
+    "RundownManager",
+    "RundownPlan",
+    "RundownSegment",
     "SDK",
     "Scene",
     "SingingResult",
@@ -98,6 +104,7 @@ __all__ = [
     "clean_barrage",
     "create_live_facade",
     "create_stardew_device",
+    "default_game_scene",
     "default_rules",
     "default_scene",
     "inspect_audio",
@@ -196,12 +203,21 @@ class LiveFacade:
         self._session.set_options(updated)
         return updated.model_dump()
 
-    def scene_config(self) -> dict:
-        return self._session.media.scene()
+    def scene_config(self, layout: str | None = None) -> dict:
+        return self._session.media.scene(layout=layout)
 
-    def save_scene_config(self, patch: dict) -> dict:
-        current = self._session.media.scene()
-        return self._session.media.save_scene(current | patch)
+    def save_scene_config(self, patch: dict, layout: str | None = None) -> dict:
+        current = self._session.media.scene(layout=layout)
+        return self._session.media.save_scene(current | patch, layout=layout)
+
+    def scene_profiles(self) -> dict:
+        return self._session.media.scene_profiles()
+
+    def layout_state(self) -> dict:
+        return self._session.media.layout_state()
+
+    def set_layout(self, layout: str | None = None, locked: bool | None = None) -> dict:
+        return self._session.media.set_layout(layout=layout, locked=locked)
 
     def music_config(self) -> dict:
         return self._session.media.config()
@@ -321,7 +337,19 @@ class LiveFacade:
             "roast_radio": session.roast_radio.get_overlay_state(),
             "cold_director": session.cold_director.status(),
             "overtime": session.overtime_theater.status(),
+            "poll": session.activity_filter.public_poll(),
+            "rundown": session.rundown.state(),
+            "scene_layout": session.media.layout_state(),
         }
+
+    def rundown_status(self) -> dict:
+        return self._session.rundown.snapshot()
+
+    def fine_settings(self) -> dict:
+        return self._session.fine_settings()
+
+    def update_fine_settings(self, patch: dict) -> dict:
+        return self._session.save_fine_settings(patch)
 
     def overtime_status(self) -> dict:
         return self._session.overtime_theater.status()

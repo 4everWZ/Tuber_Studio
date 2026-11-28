@@ -12,13 +12,25 @@ from ..core.models import StrictModel
 MAX_VOTERS = 5000
 MAX_VOTE_EVENTS = 20000
 
+_DEFAULT_OPTION_ALIASES: dict[str, tuple[str, ...]] = {
+    "你画我猜": ("画猜", "涂鸦", "画画"),
+    "灵魂海龟汤": ("海龟汤", "喝汤", "推理"),
+    "锐评辩论": ("锐评", "辩论", "吐槽"),
+    "点歌听歌会": ("点歌", "听歌", "唱歌", "歌会"),
+    "星露谷物语": ("星露谷", "种田", "stardew"),
+    "植物大战僵尸": ("pvz", "僵尸", "塔防"),
+    "继续闲聊": ("继续聊", "闲聊", "聊天", "继续"),
+}
+
 
 class LivePoll(StrictModel):
-    platform: str = Field(default="mock", pattern=r"^[a-z0-9_-]{1,32}$")
+    platform: str = Field(default="mock", pattern=r"^(?:\*|[a-z0-9_-]{1,32})$")
     room_id: str = Field(default="debug", min_length=1, max_length=80)
     topic: str = Field(min_length=1, max_length=80)
     options: list[str] = Field(min_length=2, max_length=9)
     duration_seconds: float = Field(default=60, ge=1, le=600)
+    aliases: dict[str, str] = Field(default_factory=dict)
+    fallback_label: str | None = Field(default=None, max_length=80)
 
     @field_validator("topic")
     @classmethod
@@ -65,6 +77,16 @@ class LiveActivityFilter:
         for index, option in enumerate(request.options):
             for alias in (str(index + 1), chr(ord("a") + index)):
                 aliases.setdefault(alias, option)
+            for prefix, extra_aliases in _DEFAULT_OPTION_ALIASES.items():
+                if option == prefix or option.startswith(prefix):
+                    aliases.setdefault(prefix.casefold(), option)
+                    for extra in extra_aliases:
+                        aliases.setdefault(extra.casefold(), option)
+        valid_options = set(request.options)
+        for raw_alias, target_opt in request.aliases.items():
+            cleaned_alias = str(raw_alias).strip().casefold()
+            if cleaned_alias and target_opt in valid_options:
+                aliases.setdefault(cleaned_alias, target_opt)
         public = {
             "id": str(uuid4()),
             "platform": request.platform,
@@ -75,6 +97,8 @@ class LiveActivityFilter:
             "duration": request.duration_seconds,
             "phase": "started",
         }
+        if request.fallback_label:
+            public["fallback_label"] = request.fallback_label
         self.active_poll = {
             "public": public,
             "deadline": time.monotonic() + request.duration_seconds,
@@ -84,6 +108,30 @@ class LiveActivityFilter:
             "saturated": False,
         }
         return public
+
+    def public_poll(self, now: float | None = None) -> dict | None:
+        """Return live public poll counts and remaining seconds, or None if inactive/expired."""
+        poll = self.active_poll
+        if poll is None:
+            return None
+        public = poll["public"]
+        if now is None:
+            remaining = poll["deadline"] - time.monotonic()
+        elif now > 1_000_000_000:
+            remaining = (public["started_at"] + public["duration"]) - float(now)
+        else:
+            remaining = poll["deadline"] - float(now)
+        if remaining <= 0:
+            return None
+        counts = dict.fromkeys(public["options"], 0)
+        for _, voted in poll["voters"].values():
+            if voted in counts:
+                counts[voted] += 1
+        return public | {
+            "counts": counts,
+            "total_votes": len(poll["voters"]),
+            "remaining_seconds": round(max(0.0, remaining), 1),
+        }
 
     def end_poll(self):
         poll, self.active_poll = self.active_poll, None
@@ -115,7 +163,9 @@ class LiveActivityFilter:
             return None
         poll = self.active_poll
         public = poll["public"]
-        if (event.platform, event.room_id) != (public["platform"], public["room_id"]):
+        platform_ok = public["platform"] == "*" or event.platform == public["platform"]
+        room_ok = public["room_id"] == "*" or event.room_id == public["room_id"]
+        if not (platform_ok and room_ok):
             return None
         text = event.text.strip().casefold()
         choice = poll["aliases"].get(text) or poll["aliases"].get(text.removeprefix("#"))

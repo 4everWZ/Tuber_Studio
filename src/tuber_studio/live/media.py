@@ -64,6 +64,10 @@ class Song(StrictModel):
     lyrics: list[Lyric] = Field(default_factory=list, max_length=1000)
 
 
+ObsLayoutId = Literal["chat", "game"]
+VALID_LAYOUTS: tuple[ObsLayoutId, ...] = ("chat", "game")
+
+
 def default_scene():
     entries = [
         ("title", "title", 60, 35, 1150, 135, ""),
@@ -77,10 +81,54 @@ def default_scene():
         ("microphone", "decoration", 935, 585, 115, 180, "🎙️"),
     ]
     return Scene(
+        background="ocean",
         items=[
             SceneItem(id=i, kind=k, x=x, y=y, width=w, height=h, text=t) for i, k, x, y, w, h, t in entries
-        ]
+        ],
     ).model_dump()
+
+
+def default_game_scene():
+    """Compact bottom-right PiP transparent layout leaving ~75% left/center clear for games/shows."""
+    entries = [
+        ("title", "title", 32, 24, 520, 60, "", True),
+        ("now", "now", 32, 92, 460, 64, "", True),
+        ("avatar", "avatar", 1440, 620, 440, 420, "", True),
+        ("lyrics", "lyrics", 320, 885, 1040, 70, "", True),
+        ("chat", "chat", 320, 965, 1040, 85, "", True),
+        ("gifts", "gifts", 32, 975, 260, 75, "", True),
+        ("queue", "queue", 1440, 24, 440, 240, "", False),
+    ]
+    return Scene(
+        title="游戏节目",
+        background="transparent",
+        items=[
+            SceneItem(id=i, kind=k, x=x, y=y, width=w, height=h, text=t, visible=v)
+            for i, k, x, y, w, h, t, v in entries
+        ],
+    ).model_dump()
+
+
+def _normalize_layout(layout: str) -> ObsLayoutId:
+    if layout not in VALID_LAYOUTS:
+        raise ValueError("未知场景布局，仅支持 chat 或 game")
+    return layout  # type: ignore[return-value]
+
+
+def _default_for_layout(layout: ObsLayoutId) -> dict:
+    return default_game_scene() if layout == "game" else default_scene()
+
+
+def _validate_scene_dict(value) -> dict:
+    scene = Scene.model_validate(value).model_dump()
+    ids = [item["id"] for item in scene["items"]]
+    if len(ids) != len(set(ids)):
+        raise ValueError("场景组件ID不可重复")
+    for item in scene["items"]:
+        if item["x"] + item["width"] > scene["width"] or item["y"] + item["height"] > scene["height"]:
+            raise ValueError("组件须位于画布范围内")
+    return scene
+
 
 class LiveMedia:
     def __init__(self, settings, store, *, singing_provider=None):
@@ -116,19 +164,63 @@ class LiveMedia:
         self.store.set("music_settings", data.model_dump())
         return self.config()
 
-    def scene(self):
-        return self.store.get("live_scene", default_scene())
+    def layout_state(self) -> dict:
+        raw = self.store.get("live_scene_layout", {})
+        if not isinstance(raw, dict):
+            raw = {}
+        active = raw.get("active_layout")
+        return {
+            "active_layout": active if active in VALID_LAYOUTS else "chat",
+            "layout_locked": bool(raw.get("layout_locked", False)),
+        }
 
-    def save_scene(self, value):
-        scene = Scene.model_validate(value).model_dump()
-        ids = [item["id"] for item in scene["items"]]
-        if len(ids) != len(set(ids)):
-            raise ValueError("场景组件ID不可重复")
-        for item in scene["items"]:
-            if item["x"] + item["width"] > scene["width"] or item["y"] + item["height"] > scene["height"]:
-                raise ValueError("组件须位于画布范围内")
-        self.store.set("live_scene", scene)
+    def set_layout(self, layout: str | None = None, locked: bool | None = None) -> dict:
+        state = self.layout_state()
+        if layout is not None:
+            state["active_layout"] = _normalize_layout(layout)
+        if locked is not None:
+            state["layout_locked"] = bool(locked)
+        self.store.set("live_scene_layout", state)
+        return state
+
+    def _profiles(self) -> dict[str, dict]:
+        raw = self.store.get("live_scene_profiles")
+        if isinstance(raw, dict) and "chat" in raw and "game" in raw:
+            return {"chat": raw["chat"], "game": raw["game"]}
+        chat_scene = (raw.get("chat") if isinstance(raw, dict) else None) or self.store.get("live_scene") or default_scene()
+        game_scene = (raw.get("game") if isinstance(raw, dict) else None) or default_game_scene()
+        return {"chat": chat_scene, "game": game_scene}
+
+    def scene_for(self, layout: str) -> dict:
+        target = _normalize_layout(layout)
+        return self._profiles()[target]
+
+    def save_scene_for(self, layout: str, value) -> dict:
+        target = _normalize_layout(layout)
+        scene = _validate_scene_dict(value)
+        profiles = self._profiles()
+        profiles[target] = scene
+        self.store.set("live_scene_profiles", profiles)
+        if target == self.layout_state()["active_layout"]:
+            self.store.set("live_scene", scene)
         return scene
+
+    def scene_profiles(self) -> dict:
+        ls = self.layout_state()
+        return {
+            "active_layout": ls["active_layout"],
+            "layout_locked": ls["layout_locked"],
+            "profiles": self._profiles(),
+            "defaults": {"chat": default_scene(), "game": default_game_scene()},
+        }
+
+    def scene(self, layout: str | None = None):
+        target = _normalize_layout(layout) if layout is not None else self.layout_state()["active_layout"]
+        return self.scene_for(target)
+
+    def save_scene(self, value, layout: str | None = None):
+        target = _normalize_layout(layout) if layout is not None else self.layout_state()["active_layout"]
+        return self.save_scene_for(target, value)
 
     def songs(self):
         return self.store.get("music_catalog", [])
